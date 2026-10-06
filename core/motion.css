@@ -1,0 +1,4 @@
+.playroom-motion-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:80;contain:strict}
+.playroom-motion-layer *{pointer-events:none!important}
+.playroom-motion-flight{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;pointer-events:none}
+.playroom-motion-piece{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important}

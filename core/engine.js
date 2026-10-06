@@ -1,0 +1,210 @@
+(function (root) {
+  'use strict';
+  const registry = new Map(), versions = new Map();
+  const LEGACY_PACK_VERSION = '0.1.0';
+  const packVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+  const clone = value => JSON.parse(JSON.stringify(value));
+  function seedValue(value) {
+    if (value == null) return (Math.random() * 4294967296) >>> 0;
+    let n = 2166136261;
+    for (const c of String(value)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
+    return n >>> 0;
+  }
+  function random(state) {
+    if (!state) return Math.random();
+    state.rng = (state.rng + 0x6D2B79F5) >>> 0;
+    let n = state.rng;
+    n = Math.imul(n ^ n >>> 15, n | 1);
+    n ^= n + Math.imul(n ^ n >>> 7, n | 61);
+    return ((n ^ n >>> 14) >>> 0) / 4294967296;
+  }
+  function shuffle(items, state) {
+    const out = items.slice();
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(random(state) * (i + 1));
+      [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+  }
+  function rollDie(sides = 6, state) {
+    if (!Number.isInteger(sides) || sides < 2 || sides > 1000) throw Error('У кубика должно быть от 2 до 1000 граней');
+    return 1 + Math.floor(random(state) * sides);
+  }
+  function event(state, text, player = null, kind = 'action', extra = {}) {
+    state.events.push({ id: (state.events.at(-1)?.id || 0) + 1, text, player, kind, ...extra });
+  }
+  function finish(state, winner, text, points = 1) {
+    state.status = 'finished';
+    state.winner = winner;
+    if (winner != null) state.players[winner].score += points;
+    event(state, text || (winner == null ? 'Ничья' : `${state.players[winner].name} побеждает`), winner, 'finish');
+  }
+  // Presentation metadata stays independent of Web Audio and of game rules.
+  // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
+  function soundCues(state, viewer, afterEventId = 0) {
+    const fallback = {move:'move',play:'move',action:'move',draw:'draw',take:'draw',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'notify'};
+    return state.events.filter(e => e.id > afterEventId && (e.privateTo == null || e.privateTo === viewer)).flatMap(e => {
+      const id = e.kind === 'finish'
+        ? state.winner == null ? 'draw-game' : viewer < 0 || !Number.isInteger(viewer) || viewer >= state.players.length ? 'notify' : state.winner === viewer ? 'victory' : 'defeat'
+        : e.sound?.id || fallback[e.kind];
+      return id ? [{id, eventId:e.id, ...(e.sound?.target != null ? {target:e.sound.target} : {})}] : [];
+    });
+  }
+  const hidden = cards => cards.map(() => ({ hidden: true }));
+  function checkedPack(pack) {
+    for (const key of ['id', 'name', 'create', 'legal', 'apply']) if (!pack?.[key]) throw Error(`В наборе отсутствует ${key}`);
+    const version = pack.version === undefined ? LEGACY_PACK_VERSION : pack.version;
+    if (typeof version !== 'string' || !packVersionPattern.test(version)) throw Error('Некорректная версия набора');
+    const stateVersion = pack.stateVersion === undefined ? 1 : pack.stateVersion;
+    if (!Number.isSafeInteger(stateVersion) || stateVersion < 1) throw Error('Некорректная версия данных набора');
+    return {...pack, version, stateVersion};
+  }
+  function registerVersion(pack, {replace = false} = {}) {
+    const checked = checkedPack(pack), key = checked.id + '@' + checked.version;
+    if (versions.has(key) && !replace) throw Error(`Версия набора ${key} уже зарегистрирована`);
+    versions.set(key, checked);return checked;
+  }
+  function register(pack) {
+    const checked = checkedPack(pack);
+    if (registry.has(checked.id)) throw Error(`Набор ${checked.id} уже зарегистрирован`);
+    versions.set(checked.id + '@' + checked.version, checked);registry.set(checked.id, checked);return checked;
+  }
+  function activatePack(pack) {
+    const checked = registerVersion(pack, {replace:true});registry.set(checked.id, checked);return checked;
+  }
+  function unregisterVersion(id, version) {
+    versions.delete(id + '@' + version);
+    if (registry.get(id)?.version === version) registry.delete(id);
+  }
+  function get(id, version) {
+    const pack = version === undefined ? registry.get(id) : versions.get(id + '@' + version);
+    if (!pack) {
+      const error = Error(version === undefined ? `Неизвестная игра: ${id}` : `Нужен набор ${id} версии ${version}`);
+      if (version !== undefined) Object.assign(error, {code:'PACK_VERSION_MISSING', game:id, packVersion:version});
+      throw error;
+    }
+    return pack;
+  }
+  const forState = state => get(state.game, state.packVersion || LEGACY_PACK_VERSION);
+  function assertState(condition, detail = '') {
+    if (!condition) throw Error(`Некорректное состояние игры${detail ? `: ${detail}` : ''}`);
+  }
+  function validateComponents(groups, predicate, count) {
+    assertState(groups.every(Array.isArray), 'зоны компонентов');
+    const items = groups.flat();
+    assertState(items.length === count && items.every(item => item && typeof item === 'object' && predicate(item)), 'состав компонентов');
+    assertState(new Set(items.map(item => item.id)).size === items.length, 'повторяющиеся компоненты');
+  }
+  // Validate imported authoritative snapshots once at the storage/transport
+  // boundary. Normal moves operate on trusted immutable snapshots.
+  function validateState(state) {
+    const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+    const int = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
+    assertState(record(state) && state.version === 1 && typeof state.game === 'string', 'версия и игра');
+    assertState(state.packVersion === undefined || (typeof state.packVersion === 'string' && packVersionPattern.test(state.packVersion)), 'версия набора');
+    const pack = forState(state);
+    assertState((state.packStateVersion === undefined ? 1 : state.packStateVersion) === pack.stateVersion, 'версия данных набора');
+    assertState(Array.isArray(state.players) && int(state.players.length, pack.min, pack.max), 'игроки');
+    assertState(state.players.every(p => record(p) && typeof p.name === 'string' && p.name.length > 0 && p.name.length <= 40 && typeof p.bot === 'boolean' && int(p.score, 0, Number.MAX_SAFE_INTEGER)), 'данные игроков');
+    assertState(pack.presets.some(p => p.id === state.preset), 'набор правил');
+    assertState(int(state.turn, 0, state.players.length - 1) && int(state.move, 0, Number.MAX_SAFE_INTEGER) && int(state.rng, 0, 4294967295), 'ход и генератор');
+    assertState(typeof state.openHands === 'boolean' && ['playing', 'finished'].includes(state.status), 'статус');
+    assertState((state.winner === null || int(state.winner, 0, state.players.length - 1)) && (state.status !== 'playing' || state.winner === null), 'победитель');
+    assertState(record(state.data) && Array.isArray(state.events), 'данные и события');
+    let last = 0;
+    for (const e of state.events) {
+      assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
+      assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1), 'видимость события');
+      assertState(e.sound == null || (record(e.sound) && typeof e.sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(e.sound.id) && (e.sound.target == null || int(e.sound.target, 0, state.players.length - 1))), 'звук события');
+      last = e.id;
+    }
+    if (pack.validateState) pack.validateState(state);
+    return true;
+  }
+  function createGame(game, options = {}) {
+    const pack = get(game, options.packVersion), players = options.players || [{ name: 'Вы' }, { name: 'Бот', bot: true }];
+    if (players.length < pack.min || players.length > pack.max) throw Error(`Для игры нужно ${pack.min}–${pack.max} игроков`);
+    const preset = options.preset || pack.presets[0].id;
+    if (!pack.presets.some(p => p.id === preset)) throw Error('Неизвестный набор правил');
+    const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || `Игрок ${i + 1}`).slice(0, 40), bot: !!p.bot, score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
+    pack.create(state, options);
+    event(state, `${pack.name}: партия началась`, null, 'start');
+    return state;
+  }
+  function activePlayer(state, actor) {
+    return state.status === 'playing' && Number.isInteger(actor) && actor >= 0 && actor < state.players.length;
+  }
+  function reactions(state, actor = state.turn) {
+    if (!activePlayer(state, actor)) return [];
+    return forState(state).reactions?.(state, actor) || [];
+  }
+  function legalActions(state, actor = state.turn) {
+    if (!activePlayer(state, actor)) return [];
+    return [...(actor === state.turn ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
+  }
+  function applyAction(state, actor, action) {
+    if (!action || typeof action !== 'object') throw Error('Не задано действие');
+    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    if (!legal) throw Error('Этот ход сейчас недоступен');
+    const next = clone(state);
+    next.move++;
+    forState(next).apply(next, actor, legal);
+    return next;
+  }
+  function project(state, viewer) {
+    const out = clone(state), pack = forState(state);
+    if (!Number.isInteger(viewer) || viewer < 0 || viewer >= state.players.length) viewer = -1;
+    delete out.rng;
+    if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || (out.openHands && viewer >= 0) ? hand : hidden(hand));
+    for (const key of ['drawPile', 'stock']) if (out.data[key]) out.data[key] = hidden(out.data[key]);
+    out.events = out.events.map(e => {
+      if (e.privateTo != null && e.privateTo !== viewer) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind };
+      const event = { ...e }; delete event.privateTo; delete event.publicText; return event;
+    });
+    if (pack.project) pack.project(out, viewer, state);
+    return out;
+  }
+  function botAction(state, actor = state.turn) {
+    if (!activePlayer(state, actor) || actor !== state.turn) return null;
+    // Reactions have their own scheduler; normal bots must not loop on an
+    // always-available declaration or accusation instead of taking their turn.
+    const actions = forState(state).legal(state, actor);
+    if (!actions.length) return null;
+    return forState(state).bot?.(state, actor, actions) || actions[0];
+  }
+  function botReaction(state, actor = state.turn) {
+    const actions = reactions(state, actor);
+    if (!actions.length) return null;
+    const chosen = forState(state).botReaction?.(state, actor, actions);
+    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
+  }
+  // Optional generic components for custom packs: multiple named decks, hands,
+  // boards and counters can coexist; visibility is explicit per zone/item.
+  function createZone(id, { type = 'deck', items = [], visibility = 'hidden', owner = null } = {}) {
+    return { id, type, items: clone(items), visibility, owner };
+  }
+  function moveComponent(zones, from, to, id, index) {
+    const source = zones[from], target = zones[to];
+    if (!source || !target) throw Error('Зона не найдена');
+    const at = source.items.findIndex(item => item.id === id);
+    if (at < 0) throw Error('Компонент не найден');
+    const item = source.items.splice(at, 1)[0];
+    target.items.splice(index == null ? target.items.length : index, 0, item);
+    return item;
+  }
+  function reveal(zones, zone, id, visible = true) {
+    const item = zones[zone]?.items.find(item => item.id === id);
+    if (!item) throw Error('Компонент не найден');
+    item.revealed = visible;
+    return item;
+  }
+  function projectZones(zones, viewer) {
+    const out = clone(zones);
+    for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
+    return out;
+  }
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
+  root.TabletopCore = root.PlayroomEngine = api;
+  if (typeof module !== 'undefined') module.exports = api;
+})(globalThis);
