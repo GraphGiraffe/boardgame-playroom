@@ -3,13 +3,13 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/snakes/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
 
 test('The hub navigation remains available on phones and desktop', {timeout:60000}, async t => {
-  const browser = await chromium.launch({headless:true, executablePath:process.env.CHROME_BIN || '/usr/bin/google-chrome', args:['--no-sandbox','--disable-background-networking']});
+  const browser = await chromium.launch({headless:true, executablePath:executablePath(), args:['--no-sandbox','--disable-background-networking']});
   try {
     for (const width of [320,390,1440]) await t.test(`navigation at ${width}px`, async () => {
       const mobile=width<500, context=await browser.newContext({viewport:{width,height:mobile?740:900},hasTouch:mobile,isMobile:mobile});
@@ -176,7 +176,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
 });
 
 test('Every visible part of each hub tile opens its game setup', {timeout:120000}, async t => {
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   try {
     for(const mobile of [false,true]) await t.test(mobile?'native touch on card contents':'mouse on card contents',async()=>{
       const context=await browser.newContext({viewport:mobile?{width:390,height:740}:{width:1280,height:900},hasTouch:mobile,isMobile:mobile});

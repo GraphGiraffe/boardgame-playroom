@@ -2,11 +2,11 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
 
 test('Motion effects move only public pieces and clean up at completion or cancellation',{timeout:90000},async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,run){await t.test(name,async()=>{
     const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'no-preference'}),page=await context.newPage();
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
