@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
@@ -86,7 +86,7 @@ async function showVariant(page,state,variant,handCount){
   },{state,variant,handCount});
 }
 test('Responsive UNO utilities, turn direction and complete opponent cards stay stable',{timeout:120000},async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const screens=[{width:320,height:640},{width:390,height:740},{width:1280,height:900},{width:1226,height:825},{width:817,height:550,scale:1.5}];
   try{
     for(const screen of screens)for(const players of [2,4]){

@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
@@ -40,7 +40,7 @@ async function touchDrag(page,cdp,id='u1'){
 }
 
 test('UNO desktop and touch drag/drop through the real application',{timeout:120000},async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,options,run){await t.test(name,async()=>{
     const context=await browser.newContext({viewport:options.mobile?{width:390,height:844}:{width:1280,height:900},hasTouch:!!options.mobile,isMobile:!!options.mobile,reducedMotion:'reduce'});
     const saved=fixture(options);await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);

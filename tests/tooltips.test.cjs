@@ -2,11 +2,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 
 test('Context tooltips: escaped text, keyboard ARIA, viewport bounds and lifecycle', async () => {
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--disable-background-networking'] });
+  const browser = await chromium.launch({ executablePath: executablePath(), headless: true, args: ['--no-sandbox', '--disable-background-networking'] });
   const context = await browser.newContext({ viewport: { width: 390, height: 480 }, hasTouch: true });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));

@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 const E = require(path.join(root, 'core/engine.js'));
 const Session = require(path.join(root, 'core/session.js'));
@@ -24,7 +24,7 @@ function fixture(game, longHand = false) {
 }
 
 test('Motion never rotates/resizes the table or introduces temporary visible scrollbars', { timeout: 120000 }, async t => {
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking'] });
+  const browser = await chromium.launch({ headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking'] });
   const overflowByViewport = {};
   try {
     for (const [width, height] of [[1820, 1386], [390, 844]]) {

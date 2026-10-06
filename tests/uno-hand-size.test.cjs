@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
@@ -34,7 +34,7 @@ function stable(before, after, label) {
 async function touch(cdp, type, point) {await cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{...point, radiusX: 4, radiusY: 4, force: 1}]});}
 
 test('UNO hand count never changes row height or shifts the table', {timeout: 120000}, async t => {
-  const browser = await chromium.launch({headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking']});
+  const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function open(viewport, count, fn) {
     const mobile = viewport.width < 500, context = await browser.newContext({viewport, hasTouch: mobile, isMobile: mobile, reducedMotion: 'no-preference'});
     const saved = fixture(count);

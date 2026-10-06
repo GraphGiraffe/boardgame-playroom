@@ -231,10 +231,10 @@ def prepare_dev(packs, source_root):
 def source_files():
     """No game packs, generated preload, symlinks, saves or artifacts enter this archive."""
     paths = {ROOT / name for name in ("index.html", "build.py", "build.sh", "README.md")}
-    for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md"):
+    for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
-    for pattern in ("app/*.js", "app/*.css", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
+    for pattern in ("app/*.js", "app/*.css", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
         paths.update(ROOT.glob(pattern))
     for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
@@ -258,8 +258,8 @@ def main():
     parser.add_argument("--all-games", action="store_true", help="Дополнительно собрать playroom-all-games.html из --packs-dir")
     parser.add_argument("--prepare-dev", action="store_true", help="Создать installed-packs.js для index.html и ссылку packs/ для локальных тестов")
     args = parser.parse_args()
-    if (args.all_games or args.prepare_dev) and not args.packs_dir:
-        parser.error("Для --all-games/--prepare-dev требуется явный --packs-dir")
+    if args.all_games and not args.packs_dir:
+        parser.error("Для --all-games требуется явный --packs-dir")
     if args.packs_dir and not (args.all_games or args.prepare_dev):
         parser.error("Выберите --all-games или --prepare-dev для указанных паков")
     packs, source_root = read_packs(args.packs_dir) if args.packs_dir else ([], None)

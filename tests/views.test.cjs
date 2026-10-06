@@ -1,5 +1,5 @@
 /* Run with Node 22+ and PLAYWRIGHT_MODULE pointing to installed playwright-core.
-   CHROME_PATH optionally overrides /usr/bin/google-chrome. No app/server required. */
+   CHROME_BIN optionally selects a browser; system or managed Chromium is the fallback. No app/server required. */
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
@@ -317,8 +317,8 @@ function publicHandStressStates() {
 }
 
 test('responsive component stress layouts: narrow phones, tablet, desktop, landscape and 200% zoom', async () => {
-  const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--disable-background-networking'] });
+  const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+  const browser = await chromium.launch({ executablePath: executablePath(), headless: true, args: ['--no-sandbox', '--disable-background-networking'] });
   const context = await browser.newContext({ reducedMotion: 'reduce', hasTouch: true });
   const page = await context.newPage(), failures = [];
   const css = ['app/styles.css', 'core/ui.css', 'core/input.css', 'core/motion.css', 'core/tooltips.css', ...games.map(g => `packs/${g}/styles.css`)].map(file => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');

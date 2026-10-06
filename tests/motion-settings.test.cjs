@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
@@ -126,7 +126,7 @@ const playedFrames = (trace, move = 1) => trace.samples.filter(sample => sample.
 
 test('Animation presets persist and stage real card flights before the next actor', {timeout: 120000}, async t => {
   const browser = await chromium.launch({headless: true,
-    executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
+    executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
   async function open({settings = {}, saved = null, reducedMotion = 'no-preference'} = {}) {
     const context = await browser.newContext({viewport: {width: 390, height: 844}, hasTouch: true,

@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
@@ -80,7 +80,7 @@ async function touchDrag(page, cdp, id = 'd12', side = 'right') {
 
 test('Domino selection and drag gestures through the real application', {timeout: 120000}, async t => {
   const browser = await chromium.launch({headless: true,
-    executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
+    executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, {mobile = false, longHand = false, empty = false} = {}, run) {
     await t.test(name, async () => {

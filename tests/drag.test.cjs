@@ -2,11 +2,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 
 test('Pointer input preserves tap, touch scrolling and drag/drop across DOM replacement', { timeout: 90000 }, async t => {
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking'] });
+  const browser = await chromium.launch({ headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking'] });
   async function fixture() {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();

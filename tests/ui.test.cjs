@@ -3,7 +3,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
 const E=require(root+'/core/engine.js');
 const Session=require(root+'/core/session.js');
@@ -29,7 +29,7 @@ function installableCounter(version='0.1.0',step=1) {
   }};
 }
 test('Offline pack installation, updates and empty application preserve saved versions',{timeout:60000},async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];
   page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));
   const choose=async bundle=>page.locator('#pack-file').setInputFiles({name:'counter.playroom-pack.json',mimeType:'application/json',buffer:Buffer.from(typeof bundle==='string'?bundle:JSON.stringify(bundle))});
@@ -87,7 +87,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
   }finally{await context.close();await browser.close();}
 });
 test('Real browser UI regression and responsive checks',{timeout:180000},async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function pageFor(savedValue=null,viewport={width:390,height:844},extra={},traceAudio=false){
     const context=await browser.newContext({viewport,isMobile:true,hasTouch:true,...extra});
     if(traceAudio)await context.addInitScript(()=>{
@@ -270,7 +270,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
 });
 
 test('Phone landscape keeps all games visible, tappable and stable across rotation', {timeout:180000}, async t=>{
-  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const sizes=[[568,320],[640,280],[740,360],[844,390],[932,430],[960,540]];
   const variants=[...['open','closed'].flatMap(visibility=>[2,4].map(count=>({game:'uno',count,open:visibility==='open',name:`uno-${count}-${visibility}`}))),...['domino','durak','checkers','snakes'].map(game=>({game,count:2,open:true,name:game}))];
   function seed(spec){

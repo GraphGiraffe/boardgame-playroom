@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 require('../packs/uno/rules.js');
@@ -89,7 +89,7 @@ async function visibleHandIds(page) {
 
 test('Manual UNO declarations, accusations and device handoff through the real application', {timeout: 120000}, async t => {
   const browser = await chromium.launch({headless: true,
-    executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
+    executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
   async function open(saved = null) {
     const context = await browser.newContext({viewport: {width: 390, height: 844}, hasTouch: true, isMobile: true});
