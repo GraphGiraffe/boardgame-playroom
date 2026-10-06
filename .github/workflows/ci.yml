@@ -1,0 +1,27 @@
+name: Application checks
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check JavaScript syntax
+        run: find core app -name '*.js' -print0 | xargs -0 -n1 node --check
+      - run: python3 build.py
+      - name: Independent input and animation tests
+        run: npm run test:core-ui
+        env:
+          CHROME_BIN: /usr/bin/google-chrome

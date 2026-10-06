@@ -1,0 +1,36 @@
+{
+  "name": "@playroom/core",
+  "version": "0.13.0",
+  "private": true,
+  "description": "Standalone tabletop rules, sessions, sound and optional shared UI/input",
+  "main": "engine.js",
+  "exports": {
+    ".": "./engine.js",
+    "./session": "./session.js",
+    "./audio": "./audio.js",
+    "./ui": "./ui.js",
+    "./input": "./input.js",
+    "./packs": "./packs.js",
+    "./motion": "./motion.js",
+    "./tooltips": "./tooltips.js",
+    "./motion.css": "./motion.css",
+    "./tooltips.css": "./tooltips.css",
+    "./ui.css": "./ui.css",
+    "./input.css": "./input.css"
+  },
+  "files": [
+    "engine.js",
+    "session.js",
+    "audio.js",
+    "ui.js",
+    "ui.css",
+    "input.js",
+    "input.css",
+    "packs.js",
+    "motion.js",
+    "motion.css",
+    "tooltips.js",
+    "tooltips.css",
+    "README.md"
+  ]
+}

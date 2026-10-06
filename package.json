@@ -1,0 +1,14 @@
+{
+  "name": "boardgame-playroom",
+  "version": "0.13.0",
+  "private": true,
+  "description": "Offline tabletop host and independent game-pack engine",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node --test --test-concurrency=1 tests/*.test.cjs",
+    "test:core-ui": "node --test --test-concurrency=1 tests/drag.test.cjs tests/motion-effects.test.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

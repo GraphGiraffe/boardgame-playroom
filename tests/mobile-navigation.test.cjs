@@ -1,0 +1,201 @@
+'use strict';
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const {pathToFileURL} = require('node:url');
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const Core = require('../core/engine.js'), Session = require('../core/session.js');
+require('../packs/snakes/rules.js');
+const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
+
+test('The hub navigation remains available on phones and desktop', {timeout:60000}, async t => {
+  const browser = await chromium.launch({headless:true, executablePath:process.env.CHROME_BIN || '/usr/bin/google-chrome', args:['--no-sandbox','--disable-background-networking']});
+  try {
+    for (const width of [320,390,1440]) await t.test(`navigation at ${width}px`, async () => {
+      const mobile=width<500, context=await browser.newContext({viewport:{width,height:mobile?740:900},hasTouch:mobile,isMobile:mobile});
+      const page=await context.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
+      const press=async locator=>mobile?locator.tap():locator.click();
+      try {
+        await page.goto(url);
+        if(width===390&&process.env.PLAYROOM_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'playroom-v0.6-hub-phone.png')});
+        const nav=page.locator('.side-nav');
+        assert.equal(await nav.isVisible(),true);
+        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Как играть']);
+        for (const button of await nav.locator('button').all()) {
+          const b=await button.boundingBox(); assert(b.width>=44&&b.height>=44&&b.x>=0&&b.x+b.width<=width+1);
+        }
+        assert.equal(await nav.evaluate(e=>getComputedStyle(e).position),mobile?'fixed':'static');
+        await press(nav.locator('[data-command=sessions]'));
+        await page.locator('.saved-games-list').waitFor();
+        assert.equal(await page.locator('.saved-empty').isVisible(),true);
+        await press(nav.locator('[data-command=help]')); await page.locator('.help-grid').waitFor();
+        await press(page.locator('.modal [data-command=close-modal]').first());
+        await press(nav.locator('[data-command=home]'));
+        await press(page.locator('[data-filter=cards]')); assert.equal(await page.locator('.game-tile').count(),2);
+        await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),5);
+        if(mobile){
+          await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
+          const footer=await page.locator('.hub-footer').boundingBox(),bar=await nav.boundingBox();
+          assert(footer.y+footer.height<=bar.y,'navigation must not cover the final hub content');
+          assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+          await page.evaluate(()=>scrollTo(0,0));
+        }
+        await press(page.locator('[data-start=uno]'));await page.locator('input[value=pass]').check();await page.locator('[name=openHands]').check();
+        await press(page.locator('button[type=submit]'));await page.locator('.uno-scene').waitFor();assert.equal(await page.locator('.side-nav').count(),0);
+        await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        // Persistent saves must survive without any test-only sessionStorage marker.
+        await page.evaluate(()=>sessionStorage.clear());
+        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        assert.deepEqual(errors,[]);
+      } finally { await context.close(); }
+    });
+    await t.test('Several same-game sessions survive switching, reload and confirmed deletion with hidden-hand privacy',async()=>{
+      const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
+      const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
+      const press=locator=>locator.tap();
+      const current=()=>page.evaluate(()=>{
+        const raw=JSON.parse(localStorage.getItem('playroom.session.v1'));
+        return raw?{id:raw.libraryId,saved:TabletopSession.restore(TabletopCore,raw).export()}:null;
+      });
+      const home=async()=>{
+        const table=page.locator('.table-heading [data-command=home]');
+        await press(await table.count()?table:page.locator('.side-nav [data-command=home]'));
+      };
+      const list=async()=>{await home();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();};
+      const row=id=>page.locator(`.saved-game[data-session-id="${id}"]`);
+      const ids=()=>page.locator('.saved-game[data-session-id]').evaluateAll(rows=>rows.map(row=>row.dataset.sessionId).sort());
+      const create=async(game,name,{hidden=false,preset='classic'}={})=>{
+        await home();await press(page.locator(`.game-tile [data-start="${game}"]`));
+        await page.locator('input[value=pass]').check();await page.locator('[name=preset]').selectOption(preset);
+        await page.locator('[name=name0]').fill(name);await page.locator('[name=name1]').fill(name+' · друг');
+        if(!hidden&&['uno','domino','durak'].includes(game))await page.locator('[name=openHands]').check();
+        await press(page.locator('button[type=submit]'));
+        if(hidden){await page.locator('.handoff').waitFor();assert.equal(await page.locator('.hand-track .uno-card').count(),0);await press(page.locator('[data-command=unlock]'));}
+        await page.locator(`.${game}-scene`).waitFor();return current();
+      };
+      try{
+        await page.goto(url);
+        await page.evaluate(()=>{
+          localStorage.clear();
+          localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));
+        });
+        await page.reload();
+        await create('uno','Первая');
+        await press(page.locator('.stock-button[data-action]'));
+        await page.waitForFunction(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===1);
+        await page.locator('.scene[aria-busy=false]').waitFor();
+        const first=await current();
+        await press(page.locator('.table-bottom [data-command=pause]'));
+        const second=await create('uno','Вторая',{hidden:true,preset:'quick'});
+        const third=await create('snakes','Третья');
+        assert.equal(new Set([first.id,second.id,third.id]).size,3,'Same game must receive independent session identities');
+        await list();assert.deepEqual(await ids(),[first.id,second.id,third.id].sort());
+        assert.match(await row(first.id).innerText(),/Первая/);assert.match(await row(second.id).innerText(),/Вторая/);
+        if(process.env.PLAYROOM_CAPTURE_DIR){
+          await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'playroom-v0.6-sessions-phone.png'),fullPage:true});
+          await page.setViewportSize({width:1440,height:900});
+          await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'playroom-v0.6-sessions-desktop.png'),fullPage:true});
+          await page.setViewportSize({width:390,height:740});
+        }
+        await press(row(first.id).locator('[data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        assert.deepEqual(await current(),first,'First UNO must resume its own history, cards and preset');
+        assert.equal(await page.locator('.pause-cover').count(),0,'Explicit resume leaves the paused hub session playable');
+        await list();await press(row(second.id).locator('[data-resume-id]'));
+        await page.locator('.handoff').waitFor();assert.equal(await page.locator('.hand-track .uno-card').count(),0);
+        await press(page.locator('[data-command=unlock]'));assert.deepEqual(await current(),second);
+        assert.equal(await page.locator('.hand-track .uno-card').count(),5);
+        await list();await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        assert.deepEqual(await ids(),[first.id,second.id,third.id].sort());
+        await press(row(second.id).locator('[data-resume-id]'));await page.locator('.handoff').waitFor();
+        assert.equal(await page.locator('.hand-track .uno-card').count(),0,'Reload must not bypass the private hand curtain');
+        await press(page.locator('[data-command=unlock]'));assert.deepEqual(await current(),second);
+        await list();await press(row(first.id).locator('[data-delete-id]'));
+        await page.locator('.modal [data-delete-confirm]').waitFor();assert.equal(await page.locator('.saved-game').count(),3,'Opening confirmation must not delete');
+        await press(page.locator('.modal [data-command=close-modal]').first());assert.equal(await page.locator('.saved-game').count(),3);
+        await press(row(first.id).locator('[data-delete-id]'));await press(page.locator('.modal [data-delete-confirm]'));
+        await page.waitForFunction(()=>document.querySelectorAll('.saved-game[data-session-id]').length===2);
+        assert.deepEqual(await ids(),[second.id,third.id].sort());assert.deepEqual(await current(),second,'Deleting an inactive session must preserve the active save');
+        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        assert.deepEqual(await ids(),[second.id,third.id].sort(),'Deleted archive must not reappear during reload');
+        await press(row(second.id).locator('[data-delete-id]'));await press(page.locator('.modal [data-delete-confirm]'));
+        await page.waitForFunction(()=>document.querySelectorAll('.saved-game[data-session-id]').length===1);
+        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        assert.deepEqual(await ids(),[third.id],'Deleted active session must not return through pagehide autosave');
+        await press(row(third.id).locator('[data-resume-id]'));await page.locator('.snakes-scene').waitFor();assert.deepEqual(await current(),third);
+        assert.deepEqual(errors,[]);
+      }finally{await context.close();}
+    });
+    await t.test('Completed result returns to the menu and remains in read-only history after reload',async()=>{
+      const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'quick',players:[{name:'Финиш'},{name:'Соперник'}]});
+      let penultimate;
+      for(let i=0;i<1000&&completed.current.status==='playing';i++){
+        // Export while this is still the current state, before its journal is compacted.
+        penultimate=completed.export();completed.act(completed.current.turn,Core.botAction(completed.current));
+      }
+      assert.equal(completed.current.status,'finished');
+      const finalStates=completed.export().states;
+      const context=await browser.newContext({viewport:{width:320,height:740},hasTouch:true,isMobile:true});
+      const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
+      const current=()=>page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
+      try{
+        await page.goto(url);
+        await page.evaluate(saved=>{
+          localStorage.clear();
+          localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));
+          localStorage.setItem('playroom.session.v1',saved);
+        },JSON.stringify(penultimate));
+        await page.reload();
+        await page.locator('.resume-banner [data-command=resume]').tap();
+        await page.locator('.roll-button').tap();await page.locator('.result-modal').waitFor();
+        const expected=await current();assert.deepEqual(expected.states,finalStates,'the visible final move reaches the expected finished result');
+        const menu=page.locator('.result-modal [data-command=home]');
+        assert.equal((await menu.innerText()).trim(),'В меню');
+        await menu.scrollIntoViewIfNeeded();const bounds=await menu.boundingBox();
+        assert(bounds.width>=44&&bounds.height>=44&&bounds.x>=0&&bounds.x+bounds.width<=320+1,'result menu action remains reachable at 320px');
+        await menu.tap();await page.locator('.game-tile').first().waitFor();
+        assert.equal(await page.locator('.modal').count(),0,'returning to the hub dismisses the result modal');
+        assert.equal(await page.locator('#app').getAttribute('inert'),null,'hub controls become usable again');
+        assert.deepEqual(await current(),expected,'returning to the menu preserves the completed result and replay');
+        for(let visit=0;visit<2;visit++){
+          await page.locator('.side-nav [data-command=sessions]').tap();await page.locator('.saved-games-list').waitFor();
+          const row=page.locator('.saved-game[data-session-id]');assert.equal(await row.count(),1);
+          assert.equal((await row.locator('.saved-status .pill').innerText()).trim(),'Завершена');
+          assert.match(await row.locator('[data-resume-id]').innerText(),/Просмотреть/);
+          await row.locator('[data-resume-id]').tap();await page.locator('#replay-range').waitFor();
+          assert.equal(await page.locator('#replay-range').inputValue(),String(expected.states.length-1));
+          assert.equal(await page.locator('.scene [data-action]').count(),0);
+          await page.locator('#replay-range').focus();await page.keyboard.press('Home');
+          assert.equal(await page.locator('#replay-range').inputValue(),'0');
+          assert.deepEqual(await current(),expected,'History inspection must not modify the completed session');
+          await page.reload();
+        }
+        assert.deepEqual(await current(),expected);assert.deepEqual(errors,[]);
+      }finally{await context.close();}
+    });
+  } finally { await browser.close(); }
+});
+
+test('Every visible part of each hub tile opens its game setup', {timeout:120000}, async t => {
+  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox','--disable-background-networking']});
+  try {
+    for(const mobile of [false,true]) await t.test(mobile?'native touch on card contents':'mouse on card contents',async()=>{
+      const context=await browser.newContext({viewport:mobile?{width:390,height:740}:{width:1280,height:900},hasTouch:mobile,isMobile:mobile});
+      const page=await context.newPage();page.setDefaultTimeout(5000);
+      try {
+        await page.goto(url);
+        for(const game of ['uno','domino','durak','checkers','snakes'])for(const part of ['.tile-top','.tile-title','.tile-description','.tile-meta','.play-tile','.game-cover']){
+          const target=page.locator(`[data-game=${game}] ${part}`);
+          await target.evaluate(el=>el.scrollIntoView({block:'center'}));
+          const p=await target.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};});
+          assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.closest('[data-start]')?.dataset.start,p),game,`${game} ${part} must hit launch button`);
+          if(mobile)await page.touchscreen.tap(p.x,p.y);else await page.mouse.click(p.x,p.y);
+          await page.locator('#setup-form').waitFor();assert.equal(await page.locator('#setup-form').getAttribute('data-game'),game);
+          assert.equal(await page.evaluate(()=>getSelection().toString()),'');
+          await page.locator('.modal [data-command=close-modal]').first().click();
+        }
+        const selectability=await page.locator('.game-tile').evaluateAll(tiles=>tiles.map(el=>getComputedStyle(el).userSelect));
+        assert(selectability.every(value=>value==='none'));
+      } finally {await context.close();}
+    });
+  } finally {await browser.close();}
+});
