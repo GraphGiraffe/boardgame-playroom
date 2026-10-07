@@ -2,7 +2,7 @@
 const CACHE='playroom-pwa-v0.15.0-preview.2';
 const QR_LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
 const CORE=[
-  './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./installed-packs.js',
+  './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './core/ui.css','./core/input.css','./core/motion.css','./core/tooltips.css',
   './core/engine.js','./core/audio.js','./core/session.js','./core/protocol.js','./core/authority.js','./core/ui.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
