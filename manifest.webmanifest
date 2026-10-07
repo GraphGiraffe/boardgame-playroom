@@ -31,5 +31,11 @@
       "protocol": "web+playroom",
       "url": "./?protocol=%s"
     }
-  ]
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "focus-existing",
+      "auto"
+    ]
+  }
 }
