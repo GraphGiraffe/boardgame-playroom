@@ -52,6 +52,11 @@ jobs:
           rm -rf app/dist/smoke
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --output-dir app/dist/smoke
           printf '%s\n'             'Playroom 0.15.0-preview.1'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing is manual: host invitation -> client answer -> host confirms.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
+      - name: Validate built file preview
+        working-directory: app
+        env:
+          PLAYROOM_URL: file://${{ github.workspace }}/app/dist/smoke/playroom-all-games.html
+        run: node --test --test-concurrency=1 tests/network-main-app.test.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: playroom-0.15.0-preview.1
