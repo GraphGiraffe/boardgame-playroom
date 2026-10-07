@@ -32,12 +32,14 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
     assert.ok(offerToken?.startsWith('PR2.'));
-    await client.evaluate(token=>window.dispatchEvent(new CustomEvent('playroom-pair-token',{detail:{token}})),offerToken);
+    assert.equal(await host.locator('#net-host-token-qr').count(),1);
+    await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
     await client.locator('#net-client-token').waitFor();
     const answerLink=await value(client,'#net-client-token');
     const answerToken=await client.evaluate(link=>PlayroomPairing.extract(link),answerLink);
     assert.ok(answerToken?.startsWith('PR2.'));
-    await host.evaluate(token=>window.dispatchEvent(new CustomEvent('playroom-pair-token',{detail:{token}})),answerToken);
+    assert.equal(await client.locator('#net-client-token-qr').count(),1);
+    await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);
     try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
     catch(_){
       const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
