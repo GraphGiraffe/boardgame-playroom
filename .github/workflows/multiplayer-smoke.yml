@@ -47,6 +47,10 @@ jobs:
           PY
       - name: Prepare bundled games
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
+      - name: Legacy layout regression gate
+        working-directory: app
+        timeout-minutes: 4
+        run: node --test --test-concurrency=1 tests/checkers-drag.test.cjs tests/uno-hand-size.test.cjs
       - name: Two-device release gate
         working-directory: app
         run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs
