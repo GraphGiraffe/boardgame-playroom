@@ -48,19 +48,22 @@
   }
   function serve(channel,connection){
     if(!channel||!connection)throw Error('Нужны канал и привязанное соединение authority.');
-    const unsubscribe=connection.subscribe?.(snapshot=>{if(channel.readyState==='open')send(channel,{kind:'snapshot',snapshot});});
+    const debug=channel.__playroomDebug={side:'server',requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
+    const unsubscribe=connection.subscribe?.(snapshot=>{if(channel.readyState==='open'){debug.snapshots++;send(channel,{kind:'snapshot',snapshot});}});
     const onMessage=event=>{
-      let message;try{message=JSON.parse(event.data);}catch(_){return;}
+      let message;try{message=JSON.parse(event.data);}catch(error){debug.errors++;debug.lastError='parse';return;}
       if(message?.kind!=='request'||!Number.isSafeInteger(message.requestId))return;
+      debug.requests++;debug.lastMethod=message.method;
       try{
         let result;
         if(message.method==='snapshot')result=connection.snapshot();
         else if(message.method==='dispatch')result=connection.dispatch(message.value);
         else if(message.method==='history')result=connection.history(message.value);
         else throw Error('Unknown request');
-        send(channel,{kind:'response',requestId:message.requestId,result});
-      }catch(_){
-        if(channel.readyState==='open')send(channel,{kind:'response',requestId:message.requestId,error:'Запрос не выполнен.'});
+        send(channel,{kind:'response',requestId:message.requestId,result});debug.responses++;
+      }catch(error){
+        debug.errors++;debug.lastError=error?.message||String(error);
+        if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,error:'Запрос не выполнен.'});debug.responses++;}
       }
     };
     channel.addEventListener('message',onMessage);
@@ -70,19 +73,20 @@
   }
   function client(channel,{timeout=7000}={}){
     let sequence=0,closed=false;const pending=new Map(),listeners=new Set();
+    const debug=channel.__playroomClientDebug={side:'client',requests:0,responses:0,snapshots:0,timeouts:0,lastMethod:null};
     const onMessage=event=>{
       let message;try{message=JSON.parse(event.data);}catch(_){return;}
-      if(message?.kind==='snapshot'){for(const listener of listeners)listener(clone(message.snapshot));return;}
+      if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
       if(message?.kind!=='response')return;
       const item=pending.get(message.requestId);if(!item)return;
-      pending.delete(message.requestId);clearTimeout(item.timer);
+      debug.responses++;pending.delete(message.requestId);clearTimeout(item.timer);
       message.error?item.reject(Error(message.error)):item.resolve(clone(message.result));
     };
     channel.addEventListener('message',onMessage);
     const request=(method,value)=>new Promise((resolve,reject)=>{
       if(closed||channel.readyState!=='open')return reject(Error('Нет соединения с хостом.'));
-      const requestId=++sequence,timer=setTimeout(()=>{pending.delete(requestId);reject(Error('Хост не ответил. Повторите запрос.'));},timeout);
-      pending.set(requestId,{resolve,reject,timer});
+      const requestId=++sequence,timer=setTimeout(()=>{debug.timeouts++;pending.delete(requestId);reject(Error('Хост не ответил. Повторите запрос.'));},timeout);
+      debug.requests++;debug.lastMethod=method;pending.set(requestId,{resolve,reject,timer});
       try{send(channel,{kind:'request',requestId,method,value});}catch(error){clearTimeout(timer);pending.delete(requestId);reject(error);}
     });
     return Object.freeze({
