@@ -10,6 +10,8 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   assert.equal(manifest.share_target.params.text,'text');
   assert.ok(manifest.protocol_handlers.some(item=>item.protocol==='web+playroom'&&item.url.includes('%s')));
   assert.deepEqual(manifest.launch_handler.client_mode,['focus-existing','auto']);
+  assert.ok(manifest.icons.some(item=>item.src==='icons/icon-192.png'&&item.sizes==='192x192'&&item.type==='image/png'));
+  assert.ok(manifest.icons.some(item=>item.src==='icons/icon-512.png'&&item.sizes==='512x512'&&item.type==='image/png'));
   assert.ok(manifest.icons.some(item=>item.src==='icons/playroom.svg'));
 });
 
