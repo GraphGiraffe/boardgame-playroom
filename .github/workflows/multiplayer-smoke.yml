@@ -53,15 +53,28 @@ jobs:
       - name: Build all-games preview
         run: |
           rm -rf app/dist/smoke
-          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --output-dir app/dist/smoke
-          printf '%s\n'             'Playroom 0.15.0-preview.1'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing is manual: host invitation -> client answer -> host confirms.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --pwa --output-dir app/dist/smoke
+          mkdir -p app/dist/smoke/pwa/vendor
+          curl --fail --location "https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" -o app/dist/smoke/pwa/vendor/qrcode.js
+          sed -i 's#https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js#./vendor/qrcode.js#g' app/dist/smoke/pwa/app/qr.js app/dist/smoke/pwa/sw.js
+          printf '%s\n'             'Playroom 0.15.0-preview.2'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - name: Validate built file preview
         working-directory: app
         env:
           PLAYROOM_URL: file://${{ github.workspace }}/app/dist/smoke/playroom-all-games.html
         run: node --test --test-concurrency=1 tests/network-main-app.test.cjs
+      - name: Validate installable PWA preview
+        working-directory: app
+        run: |
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory dist/smoke/pwa >/tmp/playroom-pwa.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          PLAYROOM_URL=http://127.0.0.1:4174/ node --test --test-concurrency=1 tests/network-main-app.test.cjs
+          curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
+          curl --fail http://127.0.0.1:4174/vendor/qrcode.js >/dev/null
       - uses: actions/upload-artifact@v4
         with:
-          name: playroom-0.15.0-preview.1
+          name: playroom-0.15.0-preview.2
           path: app/dist/smoke/
           retention-days: 30
