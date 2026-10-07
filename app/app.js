@@ -16,6 +16,7 @@
   function localClient(player){const executor=localAuthority();if(!localClients.has(player))localClients.set(player,executor.connect(player));return localClients.get(player);}
   const packs = globalThis.PlayroomPacks;
   const library = new globalThis.PlayroomLibrary(() => localStorage, E, Session, packs);
+  try { globalThis.PlayroomPackManager?.reconcile?.(packs,library); } catch (error) { globalThis.PlayroomPackLoadError ||= error.message || 'Не удалось сверить версии паков.'; }
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
@@ -85,6 +86,16 @@
     return active;
   }
   function latestPacks() { if(packs)for(const id of new Set(packs.list().map(item=>item.id)))activatePack(id); }
+  function reconcileSavedPackConflicts() {
+    try {
+      globalThis.PlayroomPackManager?.reconcile?.(packs,library);
+      latestPacks();
+      return true;
+    } catch (error) {
+      globalThis.PlayroomPackLoadError='Не удалось сверить версии паков. '+(error.message||'');
+      return false;
+    }
+  }
   function activateSession() { if(session)activatePack(session.game,session.packVersion || Session.packVersionOf(session.export())); }
   const isPass = () => session && session.options.mode === 'pass';
   const isReplay = () => replayIndex !== null;
@@ -183,7 +194,8 @@
     try {
       library.remove(id);
       if(id===sessionId){interruptAction();cancelBot();stopReplay();session=null;sessionId=null;selected=null;gate=null;lastResult=null;missedFrom=null;awaitingPass=false;}
-      screen='hub';hubTab='sessions';closeModal(true);render();toast('Партия удалена');
+      const packsOK=reconcileSavedPackConflicts();
+      screen='hub';hubTab='sessions';closeModal(true);render();toast(packsOK?'Партия удалена':'Партия удалена, но список паков не удалось обновить.');
     } catch (_) {toast('Не удалось удалить партию: хранилище браузера недоступно.');}
   }
   function activeActions(state) {
