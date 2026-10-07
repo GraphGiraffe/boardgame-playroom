@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='playroom-pwa-v0.15.0-preview.2';
+const CACHE='playroom-pwa-v0.15.0-preview.3';
 const QR_LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
