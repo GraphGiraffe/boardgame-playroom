@@ -1,5 +1,13 @@
 # Изменения
 
+## 0.15.0-preview.1 — 2026-10-07
+
+- Первый минимально тестируемый browser-to-browser multiplayer: основной Playroom на двух устройствах, WebRTC DataChannel, ручной offer/answer pairing, лобби, цветные места, ready и 3-секундный старт.
+- Имя игрока при первом запуске, название комнаты, зрители, kick и уведомление при изменении правил.
+- Удалён отдельный Node/HTTP LAN-host preview; хост теперь обычная вкладка основного приложения.
+- На этом preview reconnect и локальный архив сетевой истории ещё не входят в приёмку.
+
+
 ## Unreleased — authority / responsive preview
 
 - Add a DOM-independent SessionAuthority, projected client snapshots/history and command identity/revision validation with retry deduplication.
