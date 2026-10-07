@@ -86,14 +86,33 @@
       if(value.kind==='answer'){await acceptAnswerSignal(value.signal);return;}
     }catch(error){toast(error.message);}
   }
-  function rulesText(room){const values=[room.rules?.presetLabel||room.rules?.preset||'Основной набор'];for(const value of Object.values(room.rules?.options||{}))values.push(String(value));if(room.rules?.openHands)values.push('Открытые руки');return values.join(' · ');}
+  function roomRuleEntries(room){
+    const b=bridge(),catalog=b?.catalog?.[room.game.id]||{},entries=[
+      {label:'Игра',value:room.game.name},
+      {label:'Режим хоста',value:room.hostMode==='table'?'Публичный стол':'Хост играет'}
+    ];
+    const presetRaw=room.rules?.presetLabel||room.rules?.preset||'Основной набор';
+    const handMatch=String(presetRaw).match(/^(.+?)\s*·\s*(\d+)\s+карт/i);
+    entries.push({label:'Набор правил',value:(handMatch?.[1]||presetRaw).trim()});
+    if(handMatch&&catalog.capabilities?.hands)entries.push({label:'Стартовый размер руки',value:handMatch[2]});
+    for(const field of catalog.settings||[]){
+      const raw=room.rules?.options?.[field.key]??field.default;
+      if(raw===undefined)continue;
+      const option=(field.options||[]).find(item=>String(item.value)===String(raw));
+      entries.push({label:field.label||field.key,value:option?.label||String(raw)});
+    }
+    if(catalog.capabilities?.hands)entries.push({label:'Открытые руки',value:room.rules?.openHands?'Да':'Нет'});
+    return entries;
+  }
+  function rulesText(room){return roomRuleEntries(room).filter(item=>!['Игра','Режим хоста'].includes(item.label)).map(item=>item.value).join(' · ');}
+  function roomRuleSummary(room){return '<dl class="room-preview-summary">'+roomRuleEntries(room).map(item=>'<div><dt>'+esc(item.label)+'</dt><dd>'+esc(item.value)+'</dd></div>').join('')+'</dl>';}
   function showPreview(room){
     const b=bridge();try{b.packs.activate(room.game.id,room.game.version);}catch(_){}
-    b.openModal(b.modalHead('Войти · '+room.name)+'<p class="lead"><strong>'+esc(room.game.name)+'</strong> · '+(room.hostMode==='table'?'Хост показывает Стол':'Хост играет')+'</p><div class="rules-mode-note"><strong>Выбрано:</strong> '+esc(rulesText(room))+'</div><form id="net-client-join"><label class="field"><span>Ваш никнейм</span><input name="nickname" maxlength="24" value="'+esc(b.profile()?.name||'Игрок')+'" required></label><button class="btn" type="submit" style="width:100%">Войти в комнату</button></form>');
+    b.openModal(b.modalHead('Войти · '+room.name)+roomRuleSummary(room)+'<form id="net-client-join"><label class="field"><span>Ваш никнейм</span><input name="nickname" maxlength="24" value="'+esc(b.profile()?.name||'Игрок')+'" required></label><button class="btn" type="submit" style="width:100%">Войти в комнату</button></form>');
   }
   async function joinRoom(form){
     try{
-      const b=bridge(),profile=b.profile();const result=await clientTransport.dispatch({type:'join',profileId:profile.id,nickname:form.elements.nickname.value});
+      const b=bridge();const result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error('Не удалось войти в комнату.');
       clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;b.closeModal(true);
       clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});
