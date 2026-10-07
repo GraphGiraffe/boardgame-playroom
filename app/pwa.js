@@ -13,15 +13,19 @@
     for(const key of ['pair','protocol','share-target','title','text','url'])if(url.searchParams.has(key)){url.searchParams.delete(key);changed=true;}
     if(changed)history.replaceState(history.state,'',url.pathname+(url.search||'')+(url.hash||''));
   }
-  function incomingFromLocation(){
-    const url=new URL(location.href),values=[url.searchParams.get('pair'),url.searchParams.get('protocol'),url.searchParams.get('text'),url.searchParams.get('url')];
+  function tokenFromUrl(href){
+    let url;try{url=new URL(href,location.href);}catch(_){return null;}
+    const values=[url.searchParams.get('pair'),url.searchParams.get('protocol'),url.searchParams.get('text'),url.searchParams.get('url')];
     for(const value of values){
       if(!value)continue;
       let decoded=value;try{decoded=decodeURIComponent(value);}catch(_){}
       const token=Pairing.extract(decoded)||Pairing.extract(value);
-      if(token&&remember(token)){cleanUrl();return token;}
+      if(token)return token;
     }
     return null;
+  }
+  function incomingFromLocation(){
+    const token=tokenFromUrl(location.href);if(token&&remember(token)){cleanUrl();return token;}return null;
   }
   function dispatch(token){
     if(!token)return;
@@ -49,14 +53,23 @@
   }
   root.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;root.dispatchEvent(new Event('playroom-install-available'));});
   root.addEventListener('appinstalled',()=>{installPrompt=null;root.dispatchEvent(new Event('playroom-installed'));});
-  if('serviceWorker' in navigator&&secure)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  if('serviceWorker' in navigator&&secure){
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    navigator.serviceWorker.addEventListener('message',event=>{
+      if(event.data?.kind!=='playroom-pair-token')return;
+      const token=event.data.token;if(remember(token))dispatch(token);
+    });
+  }
+  if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>{
+    const token=tokenFromUrl(params?.targetURL||'');if(token&&remember(token))dispatch(token);
+  });
   const incoming=incomingFromLocation();
   root.PlayroomPWA=Object.freeze({
     secure,
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
     canShare:()=>typeof navigator.share==='function',
     canInstall:()=>!!installPrompt,
-    shareToken,install,consumePending,pairingUrl,
+    shareToken,install,consumePending,pairingUrl,tokenFromUrl,
     protocolUrl:Pairing.protocolUrl
   });
   dispatch(incoming);
