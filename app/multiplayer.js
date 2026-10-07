@@ -47,7 +47,7 @@
 
   class RoomService{
     constructor({idFactory=uuid,clock=now,random=Math.random}={}){
-      this.idFactory=idFactory;this.clock=clock;this.random=random;this.rooms=new Map();
+      this.idFactory=idFactory;this.clock=clock;this.random=random;this.rooms=new Map();this.listeners=new Map();
     }
     _room(roomId){const room=this.rooms.get(roomId);if(!room)throw Error('Комната не найдена.');return room;}
     _participant(room,participantId){const participant=room.participants.find(item=>item.id===participantId);if(!participant)throw Error('Участник не найден.');return participant;}
@@ -59,6 +59,7 @@
       room.eventSequence++;
       room.events.push({id:room.eventSequence,type,text:textValue,at:this.clock(),...extra});
       if(room.events.length>100)room.events.splice(0,room.events.length-100);
+      for(const listener of this.listeners.get(room.id)||[])listener(this.snapshot(room.id));
     }
     _code(){
       for(let attempt=0;attempt<100;attempt++){
@@ -183,7 +184,55 @@
       }
       return {room:this.snapshot(roomId),remaining,started:false};
     }
+    subscribe(roomId,listener){
+      this._room(roomId);if(typeof listener!=='function')throw Error('Нужен обработчик комнаты.');
+      if(!this.listeners.has(roomId))this.listeners.set(roomId,new Set());
+      this.listeners.get(roomId).add(listener);
+      return ()=>{const set=this.listeners.get(roomId);set?.delete(listener);if(set&&!set.size)this.listeners.delete(roomId);};
+    }
+    connection(roomId){
+      this._room(roomId);let participantId=null;
+      const packet=()=>participantId?{kind:'lobby',room:this.snapshot(roomId),participantId}:{kind:'room-preview',room:this.preview(roomId)};
+      return {
+        get participantId(){return participantId;},
+        snapshot:packet,
+        dispatch:command=>{
+          if(!command||typeof command.type!=='string')throw Error('Некорректная команда комнаты.');
+          if(command.type==='join'){
+            if(participantId)throw Error('Участник уже вошёл.');
+            const joined=this.join(roomId,{id:command.profileId||this.idFactory(),nickname:command.nickname});
+            participantId=joined.participantId;return {ok:true,snapshot:packet()};
+          }
+          if(!participantId)throw Error('Сначала войдите в комнату.');
+          let state;
+          if(command.type==='rename')state=this.rename(roomId,participantId,command.nickname);
+          else if(command.type==='claim-seat')state=this.claimSeat(roomId,participantId,command.seatId);
+          else if(command.type==='spectator')state=this.becomeSpectator(roomId,participantId);
+          else if(command.type==='ready')state=this.setReady(roomId,participantId,command.ready);
+          else throw Error('Эта команда комнаты недоступна.');
+          return {ok:true,snapshot:{kind:'lobby',room:state,participantId}};
+        },
+        history(){throw Error('История комнаты недоступна.');},
+        subscribe:listener=>this.subscribe(roomId,()=>listener(packet())),
+        close:()=>{if(participantId){try{this.setConnected(roomId,participantId,false);}catch(_){} }}
+      };
+    }
     snapshot(roomId){return clone(this._room(roomId));}
   }
-  return {PROFILE_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,ProfileStore,RoomService};
+
+  class SwitchableConnection{
+    constructor(connection=null){this.current=null;this.listeners=new Set();this.unsubscribe=null;if(connection)this.set(connection);}
+    set(connection){
+      this.unsubscribe?.();this.current=connection;
+      this.unsubscribe=connection?.subscribe?.(snapshot=>{for(const listener of this.listeners)listener(snapshot);})||null;
+      if(connection)for(const listener of this.listeners)listener(connection.snapshot());
+      return this;
+    }
+    snapshot(){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.snapshot();}
+    dispatch(value){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.dispatch(value);}
+    history(value){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.history(value);}
+    subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
+    close(){this.unsubscribe?.();this.current?.close?.();this.listeners.clear();this.current=null;}
+  }
+  return {PROFILE_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,ProfileStore,RoomService,SwitchableConnection};
 });
