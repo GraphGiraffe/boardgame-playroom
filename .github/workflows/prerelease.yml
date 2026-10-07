@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: multiplayer-prerelease-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   prerelease:
     runs-on: ubuntu-latest
@@ -51,6 +54,7 @@ jobs:
       - name: Prepare app with pinned source packs
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
       - name: Full application and pack checks
+        timeout-minutes: 15
         run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
       - name: Build testable all-games pre-release
         run: |
