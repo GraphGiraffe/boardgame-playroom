@@ -200,7 +200,9 @@
           if(!command||typeof command.type!=='string')throw Error('Некорректная команда комнаты.');
           if(command.type==='join'){
             if(participantId)throw Error('Участник уже вошёл.');
-            const joined=this.join(roomId,{id:command.profileId||this.idFactory(),nickname:command.nickname});
+            // A profile identifies a person across launches; a participant identifies one live room connection.
+            // Never reuse profileId as participantId: two tabs/devices may legitimately share one browser profile.
+            const joined=this.join(roomId,{nickname:command.nickname});
             participantId=joined.participantId;return {ok:true,snapshot:packet()};
           }
           if(!participantId)throw Error('Сначала войдите в комнату.');
