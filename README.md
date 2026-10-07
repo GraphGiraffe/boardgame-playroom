@@ -84,7 +84,7 @@ CI этого репозитория запускает те же `scripts/codex
 
 ## Эксперимент: личные экраны и масштабирование
 
-Ветка `feature/authority-responsive-preview` добавляет исполнитель команд, пропорциональный artboard с optional compact-рисунком и отдельный общий/личный UNO. Это не стабильный релиз комнат.
+Ветка `feature/phone-pc-preview` добавляет исполнитель команд, пропорциональный artboard с optional compact-рисунком и отдельный общий/личный UNO. Это не стабильный релиз комнат.
 
 ```sh
 python3 dev/package-preview.py --packs-dir ../boardgame-playroom-paks/packs

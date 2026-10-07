@@ -9,3 +9,21 @@ test('canonical art scales borders and glyphs uniformly, while compact remains o
   assert.ok(Math.abs(sizes.large.width/sizes.small.width-4)<.01);assert.ok(Math.abs(sizes.large.height/sizes.small.height-4)<.01);assert.ok(Math.abs(sizes.large.glyph/sizes.small.glyph-4)<.01);assert.ok(Math.abs(sizes.wide.width/sizes.wide.height-72/103)<.001);assert.equal(sizes.small.variant,'main');
  }finally{await browser.close();}
 });
+
+test('authority default clock binds browser timers and cancels bot callbacks',async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});try{
+  const page=await browser.newPage();await page.setContent('<main>Clock regression</main>');
+  for(const file of ['core/engine.js','core/session.js','core/protocol.js','core/authority.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+  const result=await page.evaluate(async()=>{
+   TabletopCore.register({id:'clock-fixture',name:'Clock',min:2,max:2,presets:[{id:'standard',label:'Standard'}],rules:[],create:s=>{s.data={};},legal:()=>[{type:'next'}],apply:s=>{s.turn=1;}});
+   const session=new TabletopSession(TabletopCore,'clock-fixture',{players:[{name:'Bot',bot:true},{name:'Human'}]});
+   const authority=new SessionAuthority(session),errors=[];
+   authority.scheduleBot({delay:0,onError:e=>errors.push(e.message)});authority.cancelBot();
+   await new Promise(resolve=>setTimeout(resolve,40));const cancelled=session.current.move;
+   authority.scheduleBot({delay:0,onError:e=>errors.push(e.message)});
+   await new Promise(resolve=>setTimeout(resolve,80));const moved=session.current.move;authority.dispose();
+   return {cancelled,moved,errors};
+  });
+  assert.deepEqual(result,{cancelled:0,moved:1,errors:[]});
+ }finally{await browser.close();}
+});

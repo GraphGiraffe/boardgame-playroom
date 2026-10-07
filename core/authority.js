@@ -14,7 +14,7 @@
     return [...groups.values()];
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout,clearTimeout},receiptLimit=20000}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
       records.set(this,{session,sessionId,authorityEpoch,clock,receipts:new Map(),bindings:new Set(),timer:null,busy:false,disposed:false,receiptLimit,effects:[]});
     }
