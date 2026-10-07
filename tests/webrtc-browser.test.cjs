@@ -22,5 +22,9 @@ test('two browser pages connect by manual WebRTC offer/answer and exchange RPC',
     assert.deepEqual(await client.evaluate(()=>transport.snapshot()),{kind:'test',value:1});
     assert.deepEqual(await client.evaluate(()=>transport.dispatch({add:2})),{ok:true,value:3});
     assert.deepEqual(await client.evaluate(()=>transport.history(4)),{index:4,value:3});
+    const staleAnswer=answer;
+    const nextOffer=await host.evaluate(async()=>{window.nextPeer=await PlayroomWebRTCTransport.createHostPeer();return nextPeer.offer;});
+    assert.notEqual(JSON.parse(nextOffer).pairingId,JSON.parse(offer).pairingId);
+    await assert.rejects(()=>host.evaluate(stale=>nextPeer.acceptAnswer(stale),staleAnswer),/другому приглашению/i);
   }finally{await Promise.all([hostContext.close(),clientContext.close()]);await browser.close();}
 });
