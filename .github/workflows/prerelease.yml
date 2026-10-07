@@ -31,17 +31,28 @@ jobs:
           curl --fail --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/GraphGiraffe/boardgame-playroom/actions/artifacts/11459727753/zip"             -o pinned/old-preview.zip
           unzip -q pinned/old-preview.zip -d pinned/old
           unzip -q pinned/old/boardgame-playroom/boardgame-playroom/dist/preview/playroom-phone-pc-preview.zip -d pinned/kit
-          mkdir -p pinned/packs
-          cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/packs/
-          ls -l pinned/packs
-      - name: Prepare app with pinned pack bundles
-        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/packs"
+          mkdir -p pinned/bundles pinned/sourcepacks
+          cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/bundles/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source=Path('pinned/bundles'); target=Path('pinned/sourcepacks')
+          for bundle_path in source.glob('*.playroom-pack.json'):
+              bundle=json.loads(bundle_path.read_text(encoding='utf-8'))
+              root=target / bundle['manifest']['id']; root.mkdir(parents=True,exist_ok=True)
+              (root/'manifest.json').write_text(json.dumps(bundle['manifest'],ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              for name,value in bundle['files'].items():
+                  path=root/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_text(value,encoding='utf-8')
+          PY
+          find pinned/sourcepacks -maxdepth 2 -name manifest.json -print
+      - name: Prepare app with pinned source packs
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
       - name: Full application and pack checks
-        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/pinned/packs"
+        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
       - name: Build testable all-games pre-release
         run: |
           rm -rf app/dist/prerelease
-          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/packs" --all-games --output-dir app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --output-dir app/dist/prerelease
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
           printf '%s\n'             'Playroom 0.15.0-preview.1'             "App head: ${GITHUB_SHA}"             'Packs: verified bundles from artifact 11459727753 / pack head b01652e56c70ff180f2fdde8da2f11ba115534fe'             'Open playroom-all-games.html on both devices. Multiplayer uses manual WebRTC offer/answer pairing.'             > app/dist/prerelease/README-TEST.txt
       - uses: actions/upload-artifact@v4
