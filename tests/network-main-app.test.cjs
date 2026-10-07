@@ -43,8 +43,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     }
     try{await client.locator('#net-client-join').waitFor({timeout:12000});}
     catch(_){
-      const diag=await client.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',body:document.body.innerText.slice(0,1200)}));
-      assert.fail('Client did not receive room preview after host accepted answer: '+JSON.stringify(diag));
+      const [clientDiag,hostDiag]=await Promise.all([
+        client.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',network:globalThis.PlayroomNetworkDebug?.()})),
+        host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',network:globalThis.PlayroomNetworkDebug?.()}))
+      ]);
+      assert.fail('Client did not receive room preview after host accepted answer: '+JSON.stringify({client:clientDiag,host:hostDiag}));
     }
     assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
     assert.match(await client.locator('.modal').innerText(),/UNO/);
