@@ -41,9 +41,3 @@ jobs:
           python-version: '3.12'
       - run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
-      - run: python3 app/dev/package-preview.py --packs-dir companion/packs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: phone-pc-preview
-          path: app/dist/preview/
-          retention-days: 14
