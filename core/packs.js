@@ -81,7 +81,7 @@
       const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version})};
       const deny=()=>{throw Error('Регистрация версий недоступна во время подготовки пакета');};
       scope.TabletopCore=scope.PlayroomEngine=Object.freeze({...this.engine,register:pack=>{if(rules||pack?.id!==m.id)throw Error('Пакет регистрирует неверную или повторную игру');rules=pack;return pack;},registerVersion:deny,activatePack:deny,unregisterVersion:deny});
-      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,register:(id,render,cover)=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Некорректный интерфейс пакета');view={render,cover};}});
+      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,register:(id,render,cover,options={})=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Некорректный интерфейс пакета');const surfaces=options?.surfaces||{};if(!record(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Некорректные представления пакета');view={render,cover,surfaces:{...surfaces}};}});
       scope.TabletopUI=Object.freeze({...this.views.helpers,helpers:this.views.helpers});
       for(const entry of ['rules.js','view.js','sounds.js']){
         if(bundle.files[entry]===undefined)continue;
@@ -118,12 +118,12 @@
       try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}
       const previousView=this.views.get(m.id),hadCatalog=Object.hasOwn(this.catalog,m.id),previousCatalog=this.catalog[m.id];
       const oldStyle=this._styles.get(m.id)||this.document?.querySelector?.(`style[data-playroom-pack="${m.id}"]`),previousCSS=oldStyle?.textContent??null;
-      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover);this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
+      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{surfaces:item.view.surfaces});this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
       catch(error){
         this.engine.unregisterVersion(m.id,m.version);
         if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});
         if(previousRules)this.engine.activatePack(previousRules);
-        if(previousView)this.views.register(m.id,previousView.render,previousView.cover);else this.views.remove(m.id);
+        if(previousView)this.views.register(m.id,previousView.render,previousView.cover,{surfaces:previousView.surfaces});else this.views.remove(m.id);
         if(hadCatalog)this.catalog[m.id]=previousCatalog;else delete this.catalog[m.id];
         this._style(m.id,previousCSS);throw error;
       }
@@ -142,6 +142,8 @@
       try{this.engine.registerVersion(item.rules,{replace:true});this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
     }
+    // Presentation-only payload: no rule execution, Session, or saved state.
+    exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}
     remove(id,version){
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);

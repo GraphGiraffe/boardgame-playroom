@@ -60,3 +60,16 @@
  .game-scene .mini-hand:not(.is-open)>*:first-child{margin-left:0!important}
  .game-scene .mini-hand:not(.is-open) .piece-back span{font-size:19px}
 }
+
+/* Artwork has a canonical coordinate system. Layout owns only its viewport.
+   The SVG uses meet (never stretch), so changing aspect ratios adds tiny insets. */
+.game-scene .art-card,.art-card{padding:0!important;border-width:0!important;background:transparent!important;overflow:hidden}
+.game-scene .piece-art,.piece-art{display:block;width:100%;height:100%;max-width:none;overflow:hidden;pointer-events:none;flex:none}
+.piece-artboard{position:relative;box-sizing:border-box;overflow:hidden}
+.piece-artboard *,.piece-artboard *::before,.piece-artboard *::after{box-sizing:border-box}
+.piece-back.art-card:before{content:none}
+.piece-artboard .back-art-face{width:69px;height:99px;position:relative;display:grid;place-items:center;background:#3d6853;border:5px solid #fffdf3;border-radius:12px;overflow:hidden}
+.piece-artboard .back-art-face:before{content:"";position:absolute;inset:5px;border:1px solid #b7c9a977;border-radius:5px}
+.piece-artboard .back-art-face span{font:700 37px/1 system-ui,sans-serif!important;color:#dce8c8}
+.mini-hand.is-open>.public-card>button.art-card{border-width:0!important}
+.mini-hand>.piece-back.art-card{border-width:0!important}

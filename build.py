@@ -234,7 +234,7 @@ def source_files():
     for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
-    for pattern in ("app/*.js", "app/*.css", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
+    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
         paths.update(ROOT.glob(pattern))
     for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):

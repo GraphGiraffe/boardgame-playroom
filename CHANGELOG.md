@@ -1,5 +1,14 @@
 # Изменения
 
+## Unreleased — authority / responsive preview
+
+- Add a DOM-independent SessionAuthority, projected client snapshots/history and command identity/revision validation with retry deduplication.
+- Route local actions/bots through authority; filter shell footer/history/badges/notifications through the audience projection.
+- Extend portable view registration with optional table/player surfaces, preserved on version activation and rollback.
+- Scale component art uniformly; support optional compact pack artwork with main fallback and canonical card backs.
+- Add isolated view-only client, MessagePort harness, trusted-LAN Node preview, packaging and device acceptance guide.
+- Preserve local modes, save formats and independent releases. LAN persistence, production rooms and physical-device acceptance remain deferred.
+
 ## Не выпущено
 
 - Подготовка Codex Cloud: переносимые setup/check/serve, закреплённые зависимости, поиск системного или управляемого Playwright браузера.

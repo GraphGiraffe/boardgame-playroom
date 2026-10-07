@@ -4,6 +4,13 @@
   const V = globalThis.PlayroomViews;
   const Session = globalThis.TabletopSession;
   const Motion = globalThis.PlayroomMotion;
+  const Authority=globalThis.SessionAuthority, Protocol=globalThis.PlayroomProtocol;
+  let authority=null,authoritySession=null,localClients=new Map(),commandSequence=0;
+  function localAuthority(){
+    if(authoritySession!==session){authority?.dispose();authoritySession=session;authority=session?new Authority(session):null;localClients=new Map();}
+    return authority;
+  }
+  function localClient(player){const executor=localAuthority();if(!localClients.has(player))localClients.set(player,executor.connect(player));return localClients.get(player);}
   const packs = globalThis.PlayroomPacks;
   const library = new globalThis.PlayroomLibrary(() => localStorage, E, Session, packs);
   const $ = selector => document.querySelector(selector);
@@ -104,7 +111,7 @@
     if(await audio.unlock()&&ticket===soundTicket&&settings.sound&&!document.hidden)void audio.sequence([id],{pack});
   }
   function stopSounds() {soundTicket++;audio.stop();}
-  function cancelBot() { clearTimeout(botTimer); botTimer=null; }
+  function cancelBot() { clearTimeout(botTimer); botTimer=null; authority?.cancelBot(); }
   function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;Motion.cancel();if(stopAudio)stopSounds(); }
   function tile(g, featured) {
     const info=catalog[g.id]||{};
@@ -177,11 +184,11 @@
   }
   function activeActions(state) {
     if (transition||isReplay()||gate!==null||paused||state.status==='finished'||state.players[viewer]?.bot) return [];
-    return E.legalActions(session.current,viewer);
+    return localClient(viewer).snapshot().actions;
   }
-  function playersMarkup(state) {
+  function playersMarkup(state,actions=[]) {
     const game=meta(session.game);
-    const reactions=E.reactions?.(state,viewer)||[];
+    const reactions=actions;
     const badge=i=>{try { const value=catalog[state.game]?.playerBadge?.(state,i);return typeof value==='string'?esc(value):''; }catch(_){return '';}};
     return state.players.map((p,i)=>`<div class="player-token ${state.turn===i?'active':''}" ${reactions.some(a=>a.target===i)?`data-accuse-player="${i}" role="button" tabindex="0" aria-label="Действия игрока ${esc(p.name)}"`:''}><span class="avatar p${i}">${esc(p.name.slice(0,1))}</span><span>${esc(p.name)}${i===viewer&&p.name!=='Вы'?' · вы':''}<small>${p.bot?'Бот':'Игрок'}${Number.isFinite(p.score)?' · '+esc(game.scoreLabel||'очки')+': '+p.score:''}${badge(i)}</small></span></div>`).join('');
   }
@@ -196,34 +203,34 @@
     $('#app').innerHTML=`<main class="table-shell"><header class="table-header"><div class="table-heading"><button class="icon-btn" data-command="home" aria-label="К играм" title="В хаб, с сохранением партии">${icon('back')}</button><div class="table-title"><h1>${esc(game.name)}</h1><p>${isPass()?'Вместе на одном устройстве':'За столом с ботами'} · ${esc(session.options.presetLabel||'Основной набор')}</p></div></div>
       <div class="table-tools"><button class="icon-btn desktop-tool" data-command="settings" aria-label="Настройки">${icon('settings')}</button><button class="icon-btn" data-command="rules" aria-label="Правила игры">${icon('help')}</button><button class="icon-btn ${historyOpen?'active':''}" data-command="history" aria-label="История ходов">${icon('history')}</button><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран">${icon('full')}</button></div></header>
       <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${!replay&&turnPlayer?.bot?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`}</span></div>
-      <div class="player-strip" aria-label="Игроки">${playersMarkup(state)}</div>
+      <div class="player-strip" aria-label="Игроки">${playersMarkup(projected,actions)}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="Игровой стол" aria-busy="${!!transition}" data-animation-speed="${settings.animationSpeed}">${V.render(projected,shownViewer,actions,{selected,flipped:shownViewer===1,quickPlay:settings.quickPlay})}${paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''}</section>
       ${historyOpen?historyMarkup():''}
       ${isPass()&&hasReactions(state)?`<div class="pass-device-bar"><button class="btn secondary" data-command="pass-device" ${!awaitingPass||transition||paused||replay||gate!==null?'disabled':''}>Передать устройство ${icon('arrow')}</button></div>`:''}
-      <footer class="table-bottom"><span class="event-latest" title="${esc(lastEvent(state)?.text||'Новая партия')}">${esc(lastEvent(state)?.text||'Выберите доступное действие на столе')}</span><span class="auto-saved">${icon(storageOK?'check':'save')}${storageOK?'Сохранено':'Не сохранено'}</span><button class="text-btn" data-command="${finished?'result':'pause'}">${finished?'Результаты':paused?'Продолжить':'Пауза'} ${icon(finished?'arrow':paused?'play':'pause')}</button></footer></main>`;
+      <footer class="table-bottom"><span class="event-latest" title="${esc(lastEvent(projected)?.text||'Новая партия')}">${esc(lastEvent(projected)?.text||'Выберите доступное действие на столе')}</span><span class="auto-saved">${icon(storageOK?'check':'save')}${storageOK?'Сохранено':'Не сохранено'}</span><button class="text-btn" data-command="${finished?'result':'pause'}">${finished?'Результаты':paused?'Продолжить':'Пауза'} ${icon(finished?'arrow':paused?'play':'pause')}</button></footer></main>`;
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     if(gate!==null)showGate();
     scheduleBot();
   }
   function historyMarkup() {
-    const idx=replayIndex??session.states.length-1, state=session.states[idx];
+    const idx=replayIndex??session.states.length-1, state=session.view(gate!==null?-1:viewer,idx);
     return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>Каждый ход на месте</strong><span class="replay-badge">${idx} / ${session.states.length-1}</span><button class="text-btn" data-command="history-close">К игре ${icon('close')}</button></div>
       <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${idx===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${replayTimer?'Остановить':'Воспроизвести'} повтор">${icon(replayTimer?'pause':'play')}</button><input type="range" min="0" max="${session.states.length-1}" value="${idx}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${idx===session.states.length-1?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(lastEvent(state)?.text||'Начальная расстановка. Все готовы!')}</p></section>`;
   }
   function scrubHistory(index) {
     input?.cancel();stopReplay();replayIndex=index;selected=null;
-    const state=currentState(),count=session.states.length-1;
+    const state=currentState(),projected=E.project(state,gate!==null?-1:viewer),count=session.states.length-1;
     $('.scene').innerHTML=V.render(E.project(state,viewer),viewer,[],{selected:null,flipped:viewer===1,quickPlay:settings.quickPlay});
     $('.turn-extra').textContent=`Ход ${index} из ${count}`;
-    $('.history-caption').textContent=lastEvent(state)?.text||'Начальная расстановка. Все готовы!';
-    $('.event-latest').textContent=lastEvent(state)?.text||'Новая партия';
-    $('.event-latest').title=lastEvent(state)?.text||'Новая партия';
+    $('.history-caption').textContent=lastEvent(projected)?.text||'Начальная расстановка. Все готовы!';
+    $('.event-latest').textContent=lastEvent(projected)?.text||'Новая партия';
+    $('.event-latest').title=lastEvent(projected)?.text||'Новая партия';
     $('.replay-badge').textContent=`${index} / ${count}`;
     $('[data-command="replay-prev"]').disabled=index===0;
     $('[data-command="replay-next"]').disabled=index===count;
     $('[data-command="replay-play"]').innerHTML=icon('play');
     $('[data-command="replay-play"]').setAttribute('aria-label','Воспроизвести повтор');
-    $('.player-strip').innerHTML=playersMarkup(state);
+    $('.player-strip').innerHTML=playersMarkup(projected);
   }
   function showGate() {
     if($('.handoff'))return;
@@ -236,13 +243,7 @@
   function scheduleBot() {
     cancelBot();
     if(transition||!session||screen!=='table'||isReplay()||paused||gate!==null||document.hidden||$('#modal-root').children.length||session.current.status==='finished')return;
-    const reacting=session.current.players.findIndex((p,i)=>p.bot&&E.botReaction?.(session.current,i));
-    const player=reacting>=0?reacting:session.current.turn;
-    if(!session.current.players[player]?.bot)return;
-    botTimer=setTimeout(()=>{
-      try {const action=E.botReaction?.(session.current,player)||(player===session.current.turn?E.botAction(session.current,player):null);if(action)act(player,action);}
-      catch(error){paused=true;render();toast(error.message);}
-    },pace().botDelay);
+    localAuthority().scheduleBot({delay:pace().botDelay,run:(actor,action)=>act(actor,action),onError(error){paused=true;render();toast(error.message);}});
   }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
@@ -257,26 +258,15 @@
     if(result&&screen==='table'&&!isReplay()&&!$('#modal-root').children.length&&session.current.status==='finished'&&lastResult!==session.createdAt){lastResult=session.createdAt;showResult();}
   }
   function interruptAction() { if(transition)finishAction(transition,{redraw:false,result:false}); }
-  function cardTransfers(before,after) {
-    if(!before.data.hands||!after.data.hands)return [];
-    const owners=new Map(),tableIds=new Set(),groups=new Map();
-    before.data.hands.forEach((hand,player)=>hand.forEach(card=>owners.set(card.id,player)));
-    const collect=value=>{if(!value||typeof value!=='object')return;if(value.id)tableIds.add(value.id);else Object.values(value).forEach(collect);};
-    collect(before.data.table);
-    after.data.hands.forEach((hand,player)=>hand.forEach(card=>{
-      const previous=owners.get(card.id);if(previous===player)return;
-      const from=previous!==undefined?'hand':tableIds.has(card.id)?'table':'stock',key=`${player}:${from}:${previous??''}`;
-      if(!groups.has(key))groups.set(key,{player,count:0,from,...(previous!==undefined?{fromPlayer:previous}:{})});
-      groups.get(key).count++;
-    }));
-    return [...groups.values()];
-  }
+  const cardTransfers=Authority.transfers;
   function act(actor,action,context={}) {
     if(transition||isReplay()||paused||gate!==null)return;
     try {
       const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=timing.duration?Motion.capture({actor,action,viewer,playedFrom:context.playedFrom}):null;
-      session.act(actor,action);selected=null;playSounds(beforeState,session.current);save();input?.cancel();
-      if(action.notify)toast(session.current.events.filter(e=>e.id>(beforeState.events.at(-1)?.id||0)).map(e=>e.text).join(' · '));
+      if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
+      else {const client=localClient(actor),receipt=client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));if(!receipt.ok)throw Error(receipt.message);}
+      selected=null;playSounds(beforeState,session.current);save();input?.cancel();
+      if(action.notify)toast(localClient(viewer).snapshot().events.filter(e=>e.id>(beforeState.events.at(-1)?.id||0)).map(e=>e.text).join(' · '));
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
       Motion.play(snapshot,{duration:timing.duration,draws:cardTransfers(beforeState,session.current)}).then(()=>{

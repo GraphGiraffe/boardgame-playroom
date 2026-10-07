@@ -81,3 +81,15 @@ CI этого репозитория запускает те же `scripts/codex
 - [План руководства для авторов: геймплей, адаптивность, форматы, ассеты](docs/AUTHORING-PLAN.md).
 - [План мультиплеера: общий экран и личные телефоны](docs/ROADMAP.md).
 - [Ветки, PR и релизы](CONTRIBUTING.md).
+
+## Эксперимент: личные экраны и масштабирование
+
+Ветка `feature/authority-responsive-preview` добавляет исполнитель команд, пропорциональный artboard с optional compact-рисунком и отдельный общий/личный UNO. Это не стабильный релиз комнат.
+
+```sh
+python3 dev/package-preview.py --packs-dir ../boardgame-playroom-paks/packs
+cd dist/preview/playroom-preview
+node dev/serve-preview.cjs --lan --players 2
+```
+
+Телефону нужен браузер и личная ссылка из терминала, ПК — Node 22+. Для обычной локальной игры используйте полученный `playroom-all-games.html` без сервера. Подробности и ограничения: [проверка на устройствах](docs/PREVIEW-TESTING.md), [API представлений и compact](docs/MULTIVIEW.md). Паки публикуются отдельно; старые партии требуют точную прежнюю версию.

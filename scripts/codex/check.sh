@@ -20,9 +20,9 @@ if $full; then
 fi
 cd -- "$playroom_root"
 node scripts/codex/browser.cjs >/dev/null
-for script in app/*.js core/*.js scripts/codex/*.cjs tests/*.cjs; do node --check "$script"; done
+for script in app/*.js app/transports/*.js core/*.js dev/*.js dev/*.cjs scripts/codex/*.cjs tests/*.cjs; do node --check "$script"; done
 for script in build.sh scripts/codex/*.sh; do bash -n "$script"; done
-python3 -c 'import ast; from pathlib import Path; ast.parse(Path("build.py").read_text(encoding="utf-8"))'
+python3 -c 'import ast; from pathlib import Path; [ast.parse(p.read_text(encoding="utf-8")) for p in [Path("build.py"), *Path("dev").glob("*.py")]]'
 if $full; then
   python3 build.py --prepare-dev --all-games --packs-dir "$resolved_packs"
   npm test

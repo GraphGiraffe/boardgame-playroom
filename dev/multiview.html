@@ -1,0 +1,9 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ХОД · многооконный стенд</title><style>body{font:17px system-ui;max-width:780px;margin:35px auto;padding:20px;background:#f2efe3;color:#263c30}button,input{font:inherit;padding:12px;margin:5px}button{cursor:pointer}label{display:block}#links{display:flex;flex-wrap:wrap}#error{color:#9b281c}</style></head><body>
+<h1>Общий стол и личные окна</h1><p>Локальный стенд MessagePort. Эта вкладка исполняет правила; не закрывайте её во время партии. Новая партия хранится только в памяти.</p>
+<p>Стандартная библиотека и её сохранения здесь не читаются. Для разных физических устройств используйте <code>dev/serve-preview.cjs</code>.</p>
+<label>Установочный JSON доверенного пака: <input id="pack-file" type="file" accept=".json"></label>
+<label>Игроки <input id="players" type="number" min="2" max="4" value="2"></label>
+<label>Origin личных окон <input id="client-origin" type="url" placeholder="Текущий origin"></label>
+<p>Для проверки границ хранения можно обслужить клиентскую страницу с другого origin. Окна одного origin не изолируют хранилище от других страниц этого origin.</p>
+<button id="create">Начать тестовую партию</button><p id="error" role="status"></p><div id="links"></div>
+<script src="../core/engine.js"></script><script src="../core/session.js"></script><script src="../core/protocol.js"></script><script src="../core/authority.js"></script><script src="../core/ui.js"></script><script src="../app/views.js"></script><script src="../core/packs.js"></script><script src="../app/transports/message-port.js"></script><script src="multiview.js"></script></body></html>

@@ -1,6 +1,6 @@
 {
   "name": "boardgame-playroom",
-  "version": "0.13.0",
+  "version": "0.14.0-preview.1",
   "private": true,
   "description": "Offline tabletop host and independent game-pack engine",
   "scripts": {
@@ -12,7 +12,8 @@
     "check:full": "bash scripts/codex/check.sh --full",
     "serve": "bash scripts/codex/serve.sh",
     "prepare:dev": "python3 build.py --prepare-dev",
-    "test:app": "node --test --test-concurrency=1 tests/session.test.cjs tests/drag.test.cjs tests/motion-effects.test.cjs tests/tooltips.test.cjs"
+    "test:app": "node --test --test-concurrency=1 tests/session.test.cjs tests/drag.test.cjs tests/motion-effects.test.cjs tests/tooltips.test.cjs tests/authority.test.cjs tests/preview-server.test.cjs tests/view-contract.test.cjs tests/artwork.test.cjs",
+    "preview": "node dev/serve-preview.cjs"
   },
   "devDependencies": {
     "playwright-core": "1.63.0"
