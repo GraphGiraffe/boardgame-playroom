@@ -65,8 +65,13 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       ]);
       assert.fail('Client did not receive room preview after host accepted answer: '+JSON.stringify({client:clientDiag,host:hostDiag}));
     }
-    assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
-    assert.match(await client.locator('.modal').innerText(),/UNO/);
+    const previewText=await client.locator('.modal').innerText();
+    assert.match(previewText,/Тестовая комната/);
+    assert.match(previewText,/Игра\s+UNO/);
+    assert.match(previewText,/Набор правил\s+Классика/);
+    assert.match(previewText,/Стартовый размер руки\s+7/);
+    assert.match(previewText,/Объявление UNO\s+Вручную/i);
+    assert.doesNotMatch(previewText,/\bmanual\b/);
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
 
