@@ -29,15 +29,15 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
     await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
-    const offer=await value(host,'#net-host-offer');
-
-    await client.locator('#network-join-button').click();
-    await client.locator('#net-client-offer textarea[name=offer]').fill(offer);
-    await client.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
-    await client.locator('#net-client-answer').waitFor();
-    const answer=await value(client,'#net-client-answer');
-    await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
-    await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
+    const offerLink=await value(host,'#net-host-token');
+    const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
+    assert.ok(offerToken?.startsWith('PR2.'));
+    await client.evaluate(token=>window.dispatchEvent(new CustomEvent('playroom-pair-token',{detail:{token}})),offerToken);
+    await client.locator('#net-client-token').waitFor();
+    const answerLink=await value(client,'#net-client-token');
+    const answerToken=await client.evaluate(link=>PlayroomPairing.extract(link),answerLink);
+    assert.ok(answerToken?.startsWith('PR2.'));
+    await host.evaluate(token=>window.dispatchEvent(new CustomEvent('playroom-pair-token',{detail:{token}})),answerToken);
     try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
     catch(_){
       const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
