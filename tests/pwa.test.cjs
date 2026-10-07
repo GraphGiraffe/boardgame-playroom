@@ -24,3 +24,13 @@ test('service worker precaches pairing/PWA shell and has offline navigation fall
   assert.match(source,/playroom-pair-token/);
   assert.match(source,/clients\.matchAll/);
 });
+
+
+test('index HTML does not contain escaped newlines between tags',()=>{
+  const source=fs.readFileSync(path.join(root,'index.html'),'utf8');
+  assert.equal(source.includes('\\n  <'),false,'literal \\n between HTML tags changes parser/layout behavior');
+  assert.match(source,/rel="manifest" href="manifest\.webmanifest"/);
+  assert.match(source,/src="app\/pairing\.js"/);
+  assert.match(source,/src="app\/pwa\.js"/);
+  assert.match(source,/src="app\/qr\.js"/);
+});
