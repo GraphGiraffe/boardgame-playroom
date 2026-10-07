@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
+  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null;
@@ -14,8 +14,12 @@
     try{await PWA.shareToken(token);}catch(error){toast(error.message);}
   }
   function pairingFallback(token,id){
-    const link=PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
-    return '<details class="pairing-fallback"><summary>Другие способы</summary><p class="lead">Можно отправить эту ссылку сообщением. На устройстве с установленным ХОД она откроется через protocol handler.</p><label class="field"><span>Ссылка ХОД</span><textarea id="'+id+'" rows="5" readonly>'+esc(link)+'</textarea></label><button class="btn secondary" type="button" data-net-copy="'+id+'" style="width:100%">Скопировать ссылку</button></details>';
+    const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
+    return '<details class="pairing-fallback" open><summary>QR и другие способы</summary><p class="lead">QR содержит ту же pairing-ссылку. На телефоне можно открыть его обычной камерой; текст ниже — fallback для copy/paste.</p><div class="pairing-qr" id="'+id+'-qr" aria-label="QR-код подключения"><div class="pairing-qr-loading">Готовим QR…</div></div><label class="field"><span>Ссылка ХОД</span><textarea id="'+id+'" rows="5" readonly>'+esc(link)+'</textarea></label><button class="btn secondary" type="button" data-net-copy="'+id+'" style="width:100%">Скопировать ссылку</button></details>';
+  }
+  function renderPairingQR(token,id){
+    const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
+    QR?.render?.(document.getElementById(id+'-qr'),link,{level:'L',cellSize:4,margin:4});
   }
   function closeClient(){clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
   function closeHostPeer(){hostServeClose?.();hostServeClose=null;hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;}
@@ -46,7 +50,7 @@
       hostPeer=await W.createHostPeer();hostServeClose=W.serve(hostPeer.channel,hostSwitch);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
       const share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="offer" style="width:100%">Поделиться приглашением</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы» ниже.</div>';
       const secure=PWA?.secure?'':'<div class="rules-mode-note"><strong>PWA-функции ограничены:</strong> откройте ХОД по HTTPS после установки. Локальный file/content URL не является secure context.</div>';
-      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">Передайте приглашение второму устройству через системное меню. Если на нём установлен ХОД, полученную ссылку можно открыть прямо в PWA.</p>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');
+      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">На телефоне можно просто отсканировать QR камерой. Также приглашение можно передать через системное меню «Поделиться».</p>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');renderPairingQR(offerToken,'net-host-token');
     }catch(error){toast(error.message);}
   }
   async function acceptAnswerSignal(signal){
@@ -67,7 +71,7 @@
   async function createClientAnswer(signal){
     closeClient();clientPeer=await W.createClientPeer(signal);answerToken=Pairing.fromSignal('answer',clientPeer.answer);
     const b=bridge(),share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="answer" style="width:100%">Поделиться ответом</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы».</div>';
-    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. Если ХОД установлен на ПК и protocol handler поддерживается, ссылка откроет приложение и ответ применится автоматически.</p>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');
+    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');renderPairingQR(answerToken,'net-client-token');
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
     showPreview(preview.room);
