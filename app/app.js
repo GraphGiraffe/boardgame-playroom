@@ -326,6 +326,7 @@
   }
   function createNetworkRoom(form){
     const game=form.dataset.game,mode=form.elements.mode.value,g=meta(game),active=activatePack(game);
+    if(!V.supports(game,'player')||!V.supports(game,'table'))throw Error('Сетевой режим этого игрового пака пока не готов. Для preview используйте UNO.');
     if(!playerProfile?.name)throw Error('Сначала задайте имя игрока.');
     room=roomService.create({name:form.elements.roomName.value,game:{id:game,name:g.name,version:active?.version||'0.1.0'},host:{id:playerProfile.id,nickname:form.elements.networkNickname.value||playerProfile.name},hostMode:mode==='network-table'?'table':'player',rules:roomRulesFromForm(form),constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     lobbyParticipantId=playerProfile.id;screen='lobby';lobbyCountdown=null;closeModal(true);renderLobby();
@@ -484,6 +485,7 @@
     commit(action,context){act(viewer,action,context);}
   });
   document.addEventListener('click',event=>{
+    if(event.target.closest('.shared-shell,.shared-modal-backdrop'))return;
     const person=event.target.closest('[data-accuse-player]');
     if(person){showPlayerActions(Number(person.dataset.accusePlayer));return;}
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
