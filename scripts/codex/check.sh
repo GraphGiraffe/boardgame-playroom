@@ -20,7 +20,10 @@ if $full; then
 fi
 cd -- "$playroom_root"
 node scripts/codex/browser.cjs >/dev/null
-for script in app/*.js app/transports/*.js core/*.js dev/*.js dev/*.cjs scripts/codex/*.cjs tests/*.cjs; do node --check "$script"; done
+shopt -s nullglob
+js_files=(app/*.js app/transports/*.js core/*.js dev/*.js dev/*.cjs scripts/codex/*.cjs tests/*.cjs)
+for script in "${js_files[@]}"; do node --check "$script"; done
+shopt -u nullglob
 for script in build.sh scripts/codex/*.sh; do bash -n "$script"; done
 python3 -c 'import ast; from pathlib import Path; [ast.parse(p.read_text(encoding="utf-8")) for p in [Path("build.py"), *Path("dev").glob("*.py")]]'
 if $full; then
