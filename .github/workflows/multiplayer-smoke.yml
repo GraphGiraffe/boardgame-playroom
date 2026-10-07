@@ -61,6 +61,11 @@ jobs:
           mkdir -p app/dist/smoke/pwa/vendor
           curl --fail --location "https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" -o app/dist/smoke/pwa/vendor/qrcode.js
           sed -i 's#https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js#./vendor/qrcode.js#g' app/dist/smoke/pwa/app/qr.js app/dist/smoke/pwa/sw.js
+          rm -f app/dist/smoke/playroom-pwa.zip
+          (
+            cd app/dist/smoke
+            zip -q -r playroom-pwa.zip pwa
+          )
           printf '%s\n'             'Playroom 0.15.0-preview.2'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - name: Validate built file preview
         working-directory: app
@@ -77,6 +82,11 @@ jobs:
           PLAYROOM_URL=http://127.0.0.1:4174/ node --test --test-concurrency=1 tests/network-main-app.test.cjs
           curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
           curl --fail http://127.0.0.1:4174/vendor/qrcode.js >/dev/null
+          rm -rf /tmp/playroom-pwa-zip && mkdir -p /tmp/playroom-pwa-zip
+          unzip -q dist/smoke/playroom-pwa.zip -d /tmp/playroom-pwa-zip
+          test -s /tmp/playroom-pwa-zip/pwa/vendor/qrcode.js
+          grep -F "./vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/app/qr.js >/dev/null
+          grep -F "./vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: playroom-0.15.0-preview.2
