@@ -49,7 +49,10 @@ test('shared preview: private clients, manual actions, public updates and rotati
    const preview=await start(),{page,context,errors}=await open(browser,preview,0);try{
     const wild=preview.session.current.data.hands[0].find(c=>c.color==='wild'&&c.value==='wild')||preview.session.current.data.hands[0].find(c=>c.color==='wild');
     const selector=`.own-hand [data-select="${wild.id}"]`;const point=await page.locator(selector).evaluate(el=>{const r=el.getBoundingClientRect();for(const y of [.2,.5,.8])for(const x of [.05,.15,.5,.9]){const p={x:r.x+r.width*x,y:r.y+r.height*y},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('No exposed card point');});await page.touchscreen.tap(point.x,point.y);await page.locator('.uno-color-picker').waitFor();
-    await page.setViewportSize({width:844,height:390});await visibleControl(page,'.uno-call');await visibleControl(page,'.uno-card-help');await visibleControl(page,'.color-choice');
+    await page.setViewportSize({width:844,height:390});
+    // Wait for resize dispatch and rendering; boundingBox can otherwise observe a detached old button.
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await visibleControl(page,'.uno-call');await visibleControl(page,'.uno-card-help');await visibleControl(page,'.color-choice');
     assert.equal(await page.locator(selector).evaluate(n=>n.classList.contains('is-selected')),true);assert.equal(preview.authority.revision,0);
     await page.locator('.color-choice').first().click();await page.waitForFunction(()=>document.querySelector('.shared-status').textContent.includes('Ход 2'));assert.equal(preview.authority.revision,1);assert.deepEqual(errors,[]);
    }finally{await context.close();await preview.close();}
