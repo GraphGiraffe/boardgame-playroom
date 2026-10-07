@@ -33,13 +33,25 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
     assert.ok(offerToken?.startsWith('PR2.'));
     assert.equal(await host.locator('#net-host-token-qr').count(),1);
-    await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
+    const pwaHandoff=new URL(url).protocol!=='file:';
+    if(pwaHandoff){
+      await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
+    }else{
+      await client.locator('#network-join-button').click();
+      await client.locator('#net-client-offer textarea[name=offer]').fill(offerLink);
+      await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+    }
     await client.locator('#net-client-token').waitFor();
     const answerLink=await value(client,'#net-client-token');
     const answerToken=await client.evaluate(link=>PlayroomPairing.extract(link),answerLink);
     assert.ok(answerToken?.startsWith('PR2.'));
     assert.equal(await client.locator('#net-client-token-qr').count(),1);
-    await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);
+    if(pwaHandoff){
+      await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);
+    }else{
+      await host.locator('#net-host-answer textarea[name=answer]').fill(answerLink);
+      await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+    }
     try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
     catch(_){
       const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
