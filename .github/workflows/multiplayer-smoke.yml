@@ -30,17 +30,27 @@ jobs:
           curl --fail --location -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/GraphGiraffe/boardgame-playroom/actions/artifacts/11459727753/zip" -o pinned/old.zip
           unzip -q pinned/old.zip -d pinned/old
           unzip -q pinned/old/boardgame-playroom/boardgame-playroom/dist/preview/playroom-phone-pc-preview.zip -d pinned/kit
-          mkdir -p pinned/bundles
+          mkdir -p pinned/bundles pinned/sourcepacks
           cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/bundles/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for bp in Path('pinned/bundles').glob('*.playroom-pack.json'):
+              b=json.loads(bp.read_text(encoding='utf-8')); m=b['manifest']; root=Path('pinned/sourcepacks')/m['id']; root.mkdir(parents=True,exist_ok=True)
+              (root/'manifest.json').write_text(json.dumps(m,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              (root/'manifest.js').write_text("// smoke generated\n(function(root){root.PlayroomCatalog||={};root.PlayroomCatalog["+json.dumps(m['id'])+"]="+json.dumps(m,ensure_ascii=False)+";})(globalThis);\n",encoding='utf-8')
+              for name,value in b['files'].items():
+                  p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value,encoding='utf-8')
+          PY
       - name: Prepare bundled games
-        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/bundles"
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
       - name: Two-device release gate
         working-directory: app
         run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs
       - name: Build all-games preview
         run: |
           rm -rf app/dist/smoke
-          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/bundles" --all-games --output-dir app/dist/smoke
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --output-dir app/dist/smoke
           printf '%s\n'             'Playroom 0.15.0-preview.1'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing is manual: host invitation -> client answer -> host confirms.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - uses: actions/upload-artifact@v4
         with:
