@@ -14,7 +14,7 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['app/pairing.js','app/pwa.js','app/network-ui.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['app/pairing.js','app/pwa.js','app/qr.js','app/network-ui.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
-  assert.match(source,/caches\.match\('\.\/index\.html'\)/);
+  assert.match(source,/caches\.match\('\.\/index\.html'\)/);\n  assert.match(source,/qrcode-generator@2\.0\.4\/dist\/qrcode\.js/);
 });
