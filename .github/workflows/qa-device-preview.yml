@@ -1,0 +1,114 @@
+name: Device preview regression
+on:
+  push:
+    branches: [feature/phone-pc-preview]
+    paths: [.github/workflows/qa-device-preview.yml]
+permissions:
+  contents: write
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/feature/phone-pc-preview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply checksum-verified regression fixes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 730c85af5a31b2c268867273845829a59caad07e
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/2877f54ecd3b3411c4e9f2440c60645359d93b5b" --jq .content | base64 --decode > "$RUNNER_TEMP/fixes.gz"
+          python3 - <<'PY'
+          import gzip,hashlib,json,os,pathlib,subprocess
+          data=json.loads(gzip.decompress((pathlib.Path(os.environ['RUNNER_TEMP'])/'fixes.gz').read_bytes()))
+          for item in data['app']:
+              path=pathlib.Path(item['path'])
+              assert not path.is_absolute() and '..' not in path.parts and '.git' not in path.parts
+              old=path.read_bytes();assert hashlib.sha256(old).hexdigest()==item['before'],path
+              text=old.decode('utf-8')
+              for a,b,replacement in reversed(item['edits']):text=text[:a]+replacement+text[b:]
+              raw=text.encode('utf-8');assert hashlib.sha256(raw).hexdigest()==item['after'],path
+              path.write_bytes(raw)
+          subprocess.run(['git','add','--',*[e['path'] for e in data['app']]],check=True)
+          PY
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "fix: bind browser bot timers and test private UNO projection contract"
+          git push origin HEAD:feature/phone-pc-preview
+      - name: Build hash-pinned companion fixture
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for sha in 412e0b81d34e7d2e1c284f215c5e71eb7acda38d 628ce5ed05a051ba236728feea9832ac2f9972ea 2f31bfbe9877a238fb4629742b61f9c92a3ebe0e 1f91d6fa5b55fea7a2054dea813eaebc6fc26864; do
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$sha" --jq .content | base64 --decode >> "$RUNNER_TEMP/transfer.bz2"
+          done
+          gh api -H 'Accept: application/octet-stream' repos/GraphGiraffe/boardgame-playroom/releases/assets/615994793 > "$RUNNER_TEMP/legacy.html"
+          python3 - <<'PY'
+          import bz2,gzip,hashlib,json,os,pathlib
+          temp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          raw=bz2.decompress((temp/'transfer.bz2').read_bytes())
+          assert hashlib.sha256(raw).hexdigest()=='3faf45c3bb3a6eef1122ac4f4ab37572c9b25b11113ce9004ff9f607fde31948'
+          original=json.loads(raw)
+          raw=(temp/'legacy.html').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='2140ecc9060c371853814756c175dc6ec75fbba2c5b8c16c39e4ebe6ee2b3dee'
+          bundles,_=json.JSONDecoder().raw_decode(raw.decode('utf-8').split('globalThis.PlayroomInstalledPacks = ',1)[1])
+          root=temp/'companion'
+          for bundle in bundles:
+              game=bundle['manifest']['id'];assert game in ('uno','domino','durak','checkers','snakes')
+              folder=root/'packs'/game;folder.mkdir(parents=True,exist_ok=True)
+              (folder/'manifest.json').write_text(json.dumps(bundle['manifest'],ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              for name,text in bundle['files'].items():
+                  rel=pathlib.PurePosixPath(name);assert not rel.is_absolute() and '..' not in rel.parts
+                  path=folder/rel;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text,encoding='utf-8')
+          def apply(entries):
+              for item in entries:
+                  path=root/item['path'];old=path.read_bytes();assert hashlib.sha256(old).hexdigest()==item['before'],path
+                  text=old.decode('utf-8')
+                  for a,b,replacement in reversed(item['edits']):text=text[:a]+replacement+text[b:]
+                  raw=text.encode('utf-8');assert hashlib.sha256(raw).hexdigest()==item['after'],path
+                  path.write_bytes(raw)
+          apply(original['packs'])
+          for name,expected in original['packHashes'].items():assert hashlib.sha256((root/name).read_bytes()).hexdigest()==expected,name
+          fixes=json.loads(gzip.decompress((temp/'fixes.gz').read_bytes()));apply(fixes['packs'])
+          for folder in (root/'packs').iterdir():
+              manifest=json.loads((folder/'manifest.json').read_text(encoding='utf-8'))
+              text='// Generated by build.py from manifest.json. Edit manifest.json instead.\n(function (root) {\n  \'use strict\';\n  root.PlayroomCatalog ||= {};\n  root.PlayroomCatalog['+json.dumps(manifest['id'])+'] = '+json.dumps(manifest,ensure_ascii=False,indent=2)+';\n})(globalThis);\n'
+              (folder/'manifest.js').write_text(text,encoding='utf-8')
+          print('All companion production sources verified against reviewed hashes')
+          PY
+      - name: Install test dependencies and Chromium
+        run: bash scripts/codex/setup.sh --packs-dir "$RUNNER_TEMP/companion/packs" --install-system-deps
+      - name: Independent application tests
+        run: |
+          set -o pipefail
+          bash scripts/codex/check.sh 2>&1 | tee "$RUNNER_TEMP/independent-tests.log"
+      - name: Full application and five-pack native browser tests
+        run: |
+          set -o pipefail
+          bash scripts/codex/check.sh --full --packs-dir "$RUNNER_TEMP/companion/packs" 2>&1 | tee "$RUNNER_TEMP/full-tests.log"
+      - name: Build phone and PC kit
+        run: |
+          python3 dev/package-preview.py --packs-dir "$RUNNER_TEMP/companion/packs"
+          git archive --format=zip --output="$RUNNER_TEMP/reviewed-app-source.zip" HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phone-pc-preview-verified
+          path: |
+            dist/preview/playroom-phone-pc-preview.zip
+            dist/preview/playroom-all-games.html
+            ${{ runner.temp }}/independent-tests.log
+            ${{ runner.temp }}/full-tests.log
+            ${{ runner.temp }}/reviewed-app-source.zip
+          retention-days: 14
