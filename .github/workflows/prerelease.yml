@@ -66,12 +66,12 @@ jobs:
           sed -i 's#https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js#./vendor/qrcode.js#g' app/dist/prerelease/pwa/app/qr.js app/dist/prerelease/pwa/sw.js
           (
             cd app/dist/prerelease/pwa
-            zip -q -r ../playroom-pwa-0.15.0-preview.2.zip .
+            zip -q -r ../playroom-pwa-0.15.0-preview.3.zip .
           )
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n'             'Playroom 0.15.0-preview.2'             "App head: ${GITHUB_SHA}"             'Packs: verified bundles from artifact 11459727753 / pack head b01652e56c70ff180f2fdde8da2f11ba115534fe'             'For the PWA experiment, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+          printf '%s\n'             'Playroom 0.15.0-preview.3'             "App head: ${GITHUB_SHA}"             'Packs: verified bundles from artifact 11459727753 / pack head b01652e56c70ff180f2fdde8da2f11ba115534fe'             'For the PWA experiment, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: playroom-0.15.0-preview.2
+          name: playroom-0.15.0-preview.3
           path: app/dist/prerelease/
           retention-days: 30
