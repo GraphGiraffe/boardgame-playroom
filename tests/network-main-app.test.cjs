@@ -34,6 +34,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const answer=await value(client,'#net-client-answer');
     await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
     await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
+    await client.waitForFunction(()=>document.querySelector('#net-client-join')||document.querySelector('#toast')?.textContent?.trim(),null,{timeout:10000});
+    if(!await client.locator('#net-client-join').count()){
+      const diag=await client.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',body:document.body.innerText.slice(0,1200)}));
+      assert.fail('Client did not receive room preview: '+JSON.stringify(diag));
+    }
 
     await client.locator('#net-client-join').waitFor();
     assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
