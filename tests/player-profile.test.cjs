@@ -9,7 +9,7 @@ test('first launch requires a player name and persists it',{timeout:30000},async
   const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});
   const page=await context.newPage();
   try{
-    await context.addInitScript(()=>localStorage.clear());
+    await context.addInitScript(()=>{if(sessionStorage.getItem('profile-first-run-seeded'))return;sessionStorage.setItem('profile-first-run-seeded','1');localStorage.clear();});
     await page.goto(url);
     await page.locator('#profile-form').waitFor();
     assert.equal(await page.locator('.game-grid').count(),1,'Hub may render behind the required modal');
