@@ -1,5 +1,16 @@
 # Изменения
 
+## 0.15.0-preview.2 — 2026-10-07
+
+- Добавлена installable PWA-сборка: manifest, Service Worker и offline app-shell.
+- Pairing можно передавать через Web Share; установленный ХОД регистрируется как Web Share Target.
+- Добавлен custom protocol handler `web+playroom:` для открытия pairing-ссылок напрямую в PWA.
+- Offer/answer получили `pairingId`; ответ от старого приглашения отвергается до WebRTC negotiation.
+- SDP скрыт из основного UX; copy/paste сохранён только как fallback.
+- Исправлен перенос длинных сетевых уведомлений/toast на мобильных экранах.
+- PWA-функции требуют HTTPS (или localhost для разработки); Web Share/Share Target/protocol handlers используются только при наличии поддержки браузером.
+
+
 ## 0.15.0-preview.1 — 2026-10-07
 
 - Первый минимально тестируемый browser-to-browser multiplayer: основной Playroom на двух устройствах, WebRTC DataChannel, ручной offer/answer pairing, лобби, цветные места, ready и 3-секундный старт.
