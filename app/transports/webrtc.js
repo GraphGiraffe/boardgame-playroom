@@ -48,10 +48,15 @@
   }
   function serve(channel,connection){
     if(!channel||!connection)throw Error('Нужны канал и привязанное соединение authority.');
-    const debug=channel.__playroomDebug={side:'server',requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
+    const debug=channel.__playroomDebug={side:'server',hellos:0,ready:0,requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
     const unsubscribe=connection.subscribe?.(snapshot=>{if(channel.readyState==='open'){debug.snapshots++;send(channel,{kind:'snapshot',snapshot});}});
     const onMessage=event=>{
       let message;try{message=JSON.parse(event.data);}catch(error){debug.errors++;debug.lastError='parse';return;}
+      if(message?.kind==='hello'){
+        debug.hellos++;
+        if(channel.readyState==='open'){send(channel,{kind:'transport-ready',version:1});debug.ready++;}
+        return;
+      }
       if(message?.kind!=='request'||!Number.isSafeInteger(message.requestId))return;
       debug.requests++;debug.lastMethod=message.method;
       try{
@@ -71,30 +76,69 @@
     channel.addEventListener('close',()=>{unsubscribe?.();connection.close?.();},{once:true});
     return close;
   }
-  function client(channel,{timeout=7000}={}){
-    let sequence=0,closed=false;const pending=new Map(),listeners=new Set();
-    const debug=channel.__playroomClientDebug={side:'client',requests:0,responses:0,snapshots:0,timeouts:0,lastMethod:null};
+  function client(channel,{timeout=7000,handshakeTimeout=5000}={}){
+    let sequence=0,closed=false,ready=false;const pending=new Map(),listeners=new Set();
+    const debug=channel.__playroomClientDebug={side:'client',hellos:0,ready:0,requests:0,responses:0,snapshots:0,timeouts:0,lastMethod:null,lastError:null};
+    let resolveReady,rejectReady;
+    const readyPromise=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
+    const readyTimer=setTimeout(()=>{
+      if(ready||closed)return;
+      debug.timeouts++;debug.lastError='handshake-timeout';
+      rejectReady(Error('Хост не подтвердил готовность соединения.'));
+    },handshakeTimeout);
+    let helloTimer=null;
+    const sendHello=()=>{
+      if(closed||ready||channel.readyState!=='open')return;
+      try{send(channel,{kind:'hello',version:1});debug.hellos++;}
+      catch(error){debug.lastError=error?.message||String(error);}
+    };
+    const stopHello=()=>{clearInterval(helloTimer);helloTimer=null;};
+    const markReady=()=>{
+      if(ready)return;
+      ready=true;debug.ready++;clearTimeout(readyTimer);stopHello();resolveReady();
+    };
     const onMessage=event=>{
       let message;try{message=JSON.parse(event.data);}catch(_){return;}
+      if(message?.kind==='transport-ready'){markReady();return;}
       if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
       if(message?.kind!=='response')return;
       const item=pending.get(message.requestId);if(!item)return;
       debug.responses++;pending.delete(message.requestId);clearTimeout(item.timer);
       message.error?item.reject(Error(message.error)):item.resolve(clone(message.result));
     };
+    const onOpen=()=>sendHello();
+    const onClose=()=>{
+      if(!ready){clearTimeout(readyTimer);stopHello();rejectReady(Error('Соединение закрылось до подтверждения готовности.'));}
+    };
     channel.addEventListener('message',onMessage);
-    const request=(method,value)=>new Promise((resolve,reject)=>{
-      if(closed||channel.readyState!=='open')return reject(Error('Нет соединения с хостом.'));
-      const requestId=++sequence,timer=setTimeout(()=>{debug.timeouts++;pending.delete(requestId);reject(Error('Хост не ответил. Повторите запрос.'));},timeout);
-      debug.requests++;debug.lastMethod=method;pending.set(requestId,{resolve,reject,timer});
-      try{send(channel,{kind:'request',requestId,method,value});}catch(error){clearTimeout(timer);pending.delete(requestId);reject(error);}
-    });
+    channel.addEventListener('open',onOpen);
+    channel.addEventListener('close',onClose,{once:true});
+    if(channel.readyState==='open'){sendHello();helloTimer=setInterval(sendHello,250);}
+    else helloTimer=setInterval(sendHello,250);
+    const request=async(method,value)=>{
+      if(closed)throw Error('Подключение закрыто.');
+      await readyPromise;
+      return new Promise((resolve,reject)=>{
+        if(closed||channel.readyState!=='open')return reject(Error('Нет соединения с хостом.'));
+        const requestId=++sequence,timer=setTimeout(()=>{debug.timeouts++;pending.delete(requestId);reject(Error('Хост не ответил. Повторите запрос.'));},timeout);
+        debug.requests++;debug.lastMethod=method;pending.set(requestId,{resolve,reject,timer});
+        try{send(channel,{kind:'request',requestId,method,value});}
+        catch(error){clearTimeout(timer);pending.delete(requestId);reject(error);}
+      });
+    };
     return Object.freeze({
+      ready:()=>readyPromise,
       snapshot:()=>request('snapshot'),
       dispatch:command=>request('dispatch',command),
       history:index=>request('history',index),
       subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},
-      close(){if(closed)return;closed=true;channel.removeEventListener('message',onMessage);for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}pending.clear();listeners.clear();try{channel.close();}catch(_){}}
+      debug:()=>clone(debug),
+      close(){
+        if(closed)return;closed=true;clearTimeout(readyTimer);stopHello();
+        channel.removeEventListener('message',onMessage);channel.removeEventListener('open',onOpen);channel.removeEventListener('close',onClose);
+        for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}
+        pending.clear();listeners.clear();try{channel.close();}catch(_){}
+      }
     });
   }
   async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
