@@ -20,6 +20,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
   try{
     await profile(host,'Хост');await profile(client,'Клиент');
+    await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
+    await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="uno"]').click();
     await host.locator('#setup-form input[name=mode][value=network-player]').check();
     await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
@@ -34,13 +36,16 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const answer=await value(client,'#net-client-answer');
     await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
     await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
-    await client.waitForFunction(()=>document.querySelector('#net-client-join')||document.querySelector('#toast')?.textContent?.trim(),null,{timeout:10000});
-    if(!await client.locator('#net-client-join').count()){
-      const diag=await client.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',body:document.body.innerText.slice(0,1200)}));
-      assert.fail('Client did not receive room preview: '+JSON.stringify(diag));
+    try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
+    catch(_){
+      const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
+      assert.fail('Host did not accept WebRTC answer: '+JSON.stringify(diag));
     }
-
-    await client.locator('#net-client-join').waitFor();
+    try{await client.locator('#net-client-join').waitFor({timeout:12000});}
+    catch(_){
+      const diag=await client.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||'',body:document.body.innerText.slice(0,1200)}));
+      assert.fail('Client did not receive room preview after host accepted answer: '+JSON.stringify(diag));
+    }
     assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
     assert.match(await client.locator('.modal').innerText(),/UNO/);
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
