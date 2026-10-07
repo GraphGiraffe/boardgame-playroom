@@ -30,8 +30,15 @@
   function consumePending(){
     const token=sessionStorage.getItem(PENDING);if(token)sessionStorage.removeItem(PENDING);return token;
   }
+  function pairingUrl(token){
+    Pairing.decode(token);
+    if(location.protocol==='http:'||location.protocol==='https:'){
+      const url=new URL('./',location.href);url.search='';url.hash='';url.searchParams.set('pair',token);return url.href;
+    }
+    return Pairing.protocolUrl(token);
+  }
   async function shareToken(token){
-    const value=Pairing.decode(token),data={title:value.kind==='offer'?'ХОД · приглашение в игру':'ХОД · ответ на приглашение',text:Pairing.shareText(token)};
+    const value=Pairing.decode(token),data={title:value.kind==='offer'?'ХОД · приглашение в игру':'ХОД · ответ на приглашение',text:Pairing.shareText(token),url:pairingUrl(token)};
     if(typeof navigator.share!=='function')throw Error('Системное «Поделиться» не поддерживается этим браузером.');
     if(typeof navigator.canShare==='function'&&!navigator.canShare(data))throw Error('Браузер не может передать это приглашение через системное меню.');
     await navigator.share(data);
@@ -49,7 +56,7 @@
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
     canShare:()=>typeof navigator.share==='function',
     canInstall:()=>!!installPrompt,
-    shareToken,install,consumePending,
+    shareToken,install,consumePending,pairingUrl,
     protocolUrl:Pairing.protocolUrl
   });
   dispatch(incoming);
