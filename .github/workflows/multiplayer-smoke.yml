@@ -66,7 +66,7 @@ jobs:
             cd app/dist/smoke
             zip -q -r playroom-pwa.zip pwa
           )
-          printf '%s\n'             'Playroom 0.15.0-preview.2'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
+          printf '%s\n'             'Playroom 0.15.0-preview.3'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - name: Validate built file preview
         working-directory: app
         env:
@@ -89,6 +89,6 @@ jobs:
           grep -F "./vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
       - uses: actions/upload-artifact@v4
         with:
-          name: playroom-0.15.0-preview.2
+          name: playroom-0.15.0-preview.3
           path: app/dist/smoke/
           retention-days: 30
