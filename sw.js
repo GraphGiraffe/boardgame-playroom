@@ -9,6 +9,25 @@ const CORE=[
   './app/views.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/pairing.js','./app/pwa.js','./app/qr.js','./app/session-client.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
   './app/transports/webrtc.js','./app/transports/local.js',QR_LIB
 ];
+
+function pairingTokenFromUrl(href){
+  let url;try{url=new URL(href,self.location.href);}catch(_){return null;}
+  const values=[url.searchParams.get('pair'),url.searchParams.get('protocol'),url.searchParams.get('text'),url.searchParams.get('url')];
+  for(const raw of values){
+    if(!raw)continue;let value=raw;try{value=decodeURIComponent(raw);}catch(_){}
+    const match=String(value).match(/(?:PLAYROOM_PAIR:|web\+playroom:pair\/)?(PR2\.[A-Za-z0-9_-]+)/);
+    if(match)return match[1];
+  }
+  return null;
+}
+async function handoffPairing(token){
+  const list=await self.clients.matchAll({type:'window',includeUncontrolled:false});
+  if(!list.length)return false;
+  for(const client of list)client.postMessage({kind:'playroom-pair-token',token});
+  try{await list[0].focus();}catch(_){}
+  return true;
+}
+
 self.addEventListener('install',event=>{
   event.waitUntil((async()=>{const cache=await caches.open(CACHE);await Promise.allSettled(CORE.map(async url=>{const response=await fetch(url,{cache:'reload'});if(response.ok)await cache.put(url,response);}));await self.skipWaiting();})());
 });
@@ -22,7 +41,14 @@ self.addEventListener('fetch',event=>{
   }
   if(url.origin!==self.location.origin)return;
   if(event.request.mode==='navigate'){
-    event.respondWith((async()=>{try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open(CACHE);cache.put('./index.html',response.clone());}return response;}catch(_){return await caches.match('./index.html')||await caches.match('./');}})());
+    const pairToken=pairingTokenFromUrl(event.request.url);
+    event.respondWith((async()=>{
+      if(pairToken&&await handoffPairing(pairToken)){
+        return new Response('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ХОД</title><body style="font-family:system-ui;padding:2rem">Приглашение передано в открытый ХОД. Это окно можно закрыть.</body>',{headers:{'Content-Type':'text/html; charset=utf-8'}});
+      }
+      try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open(CACHE);cache.put('./index.html',response.clone());}return response;}
+      catch(_){return await caches.match('./index.html')||await caches.match('./');}
+    })());
     return;
   }
   event.respondWith((async()=>{const cached=await caches.match(event.request,{ignoreSearch:true});if(cached)return cached;try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open(CACHE);cache.put(event.request,response.clone());}return response;}catch(_){return Response.error();}})());
