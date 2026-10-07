@@ -58,7 +58,13 @@ test('bundled conflict is preserved only while a saved game still needs it',()=>
 test('pack-manager reconcile clears stale compatibility warning when no saves reference the version',()=>{
   delete require.cache[require.resolve('../app/pack-manager.js')];
   globalThis.PlayroomPackLoadError='Старое предупреждение';
-  require('../app/pack-manager.js');
+  const previousPacks=globalThis.TabletopPacks;
+  try{
+    globalThis.TabletopPacks=null;
+    require('../app/pack-manager.js');
+  }finally{
+    globalThis.TabletopPacks=previousPacks;
+  }
   const manager={
     warnings:['Старое предупреждение'],
     bootstrap(_bundles,options){
