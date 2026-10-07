@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/qrcode.js';
+  const LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
   let loading=null;
   function ensure(){
     if(typeof root.qrcode==='function')return Promise.resolve(root.qrcode);
