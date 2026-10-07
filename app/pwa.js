@@ -1,12 +1,21 @@
 (function(root){
   'use strict';
   const Pairing=root.PlayroomPairing;
-  const PENDING='playroom.pending-pair-token.v2';
   let installPrompt=null;
+  const pairListeners=new Set(),pairQueue=[];
   const secure=location.protocol==='https:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);
-  function remember(token){
-    if(!token)return false;
-    try{Pairing.decode(token);sessionStorage.setItem(PENDING,token);return true;}catch(_){return false;}
+  function validToken(token){try{Pairing.decode(token);return true;}catch(_){return false;}}
+  function emitPair(token){
+    if(!token||!validToken(token))return false;
+    if(pairListeners.size){for(const listener of pairListeners)listener(token);}
+    else if(!pairQueue.includes(token))pairQueue.push(token);
+    return true;
+  }
+  function subscribePair(listener){
+    if(typeof listener!=='function')throw Error('Нужен обработчик pairing.');
+    pairListeners.add(listener);
+    while(pairQueue.length)listener(pairQueue.shift());
+    return ()=>pairListeners.delete(listener);
   }
   function cleanUrl(){
     const url=new URL(location.href);let changed=false;
@@ -23,16 +32,6 @@
       if(token)return token;
     }
     return null;
-  }
-  function incomingFromLocation(){
-    const token=tokenFromUrl(location.href);if(token&&remember(token)){cleanUrl();return token;}return null;
-  }
-  function dispatch(token){
-    if(!token)return;
-    setTimeout(()=>root.dispatchEvent(new CustomEvent('playroom-pair-token',{detail:{token}})),0);
-  }
-  function consumePending(){
-    const token=sessionStorage.getItem(PENDING);if(token)sessionStorage.removeItem(PENDING);return token;
   }
   function pairingUrl(token){
     Pairing.decode(token);
@@ -55,22 +54,16 @@
   root.addEventListener('appinstalled',()=>{installPrompt=null;root.dispatchEvent(new Event('playroom-installed'));});
   if('serviceWorker' in navigator&&secure){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
-    navigator.serviceWorker.addEventListener('message',event=>{
-      if(event.data?.kind!=='playroom-pair-token')return;
-      const token=event.data.token;if(remember(token))dispatch(token);
-    });
+    navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);});
   }
-  if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>{
-    const token=tokenFromUrl(params?.targetURL||'');if(token&&remember(token))dispatch(token);
-  });
-  const incoming=incomingFromLocation();
+  if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>emitPair(tokenFromUrl(params?.targetURL||'')));
+  const incoming=tokenFromUrl(location.href);if(incoming){emitPair(incoming);cleanUrl();}
   root.PlayroomPWA=Object.freeze({
     secure,
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
     canShare:()=>typeof navigator.share==='function',
     canInstall:()=>!!installPrompt,
-    shareToken,install,consumePending,pairingUrl,tokenFromUrl,
+    shareToken,install,pairingUrl,tokenFromUrl,subscribePair,
     protocolUrl:Pairing.protocolUrl
   });
-  dispatch(incoming);
 })(globalThis);
