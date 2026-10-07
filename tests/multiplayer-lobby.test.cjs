@@ -104,3 +104,16 @@ test('three second countdown freezes lobby and transitions to playing',()=>{
   time=4000;const done=rooms.tick(room.id);
   assert.equal(done.started,true);assert.equal(done.room.phase,'playing');
 });
+
+
+test('room preview exposes join information without participant details',()=>{
+  const {rooms,room}=createRoom('table');
+  const preview=rooms.preview(room.id);
+  assert.match(preview.code,/^\d{4}$/);
+  assert.equal(preview.name,'Вечерняя партия');
+  assert.equal(preview.game.name,'UNO');
+  assert.equal(preview.hostMode,'table');
+  assert.equal(preview.rules.presetLabel,'Классика');
+  assert.equal(Object.hasOwn(preview,'participants'),false);
+  assert.equal(Object.hasOwn(preview,'ownerId'),false);
+});
