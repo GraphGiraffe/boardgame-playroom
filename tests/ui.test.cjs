@@ -258,7 +258,11 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const touch=async(type,x,y)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});
       const p=await cardTouchPoint(page.locator('[data-select="'+wild.id+'"]'));
       await touch('touchStart',p.x,p.y);await touch('touchMove',p.x,p.y-55);await touch('touchEnd');
-      const start=Date.now(),choice=await page.locator('.color-choice').first().boundingBox();
+      const start=Date.now();
+      // Input commits selection on requestAnimationFrame after pointerup.
+      // CDP may acknowledge touchEnd before that frame; keep the original 400 ms assertion.
+      await page.locator('.color-choice').first().waitFor({state:'visible',timeout:300});
+      const choice=await page.locator('.color-choice').first().boundingBox();
       await touch('touchStart',choice.x+choice.width/2,choice.y+choice.height/2);await touch('touchEnd');
       assert(Date.now()-start<400,'choice must occur inside the former swipe suppression window');
       // CDP may acknowledge touchEnd before Chrome dispatches its native click.
