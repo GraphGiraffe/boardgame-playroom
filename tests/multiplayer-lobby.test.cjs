@@ -117,3 +117,15 @@ test('room preview exposes join information without participant details',()=>{
   assert.equal(Object.hasOwn(preview,'participants'),false);
   assert.equal(Object.hasOwn(preview,'ownerId'),false);
 });
+
+
+test('same browser profile gets a distinct live participant for a second tab',()=>{
+  const {rooms,room}=createRoom();
+  const connection=rooms.connection(room.id);
+  const result=connection.dispatch({type:'join',profileId:'host',nickname:'Вторая вкладка'});
+  assert.equal(result.ok,true);
+  assert.equal(result.snapshot.kind,'lobby');
+  assert.notEqual(result.snapshot.participantId,'host');
+  assert.equal(result.snapshot.room.participants.length,2);
+  assert.equal(result.snapshot.room.participants.find(p=>p.id===result.snapshot.participantId).nickname,'Вторая вкладка');
+});
