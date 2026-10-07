@@ -23,7 +23,10 @@
   function ensureHostSubscription(room){
     if(hostRoomId===room.id)return;
     hostRoomUnsub?.();hostRoomUnsub=null;hostRoomId=room.id;hostStarted=false;closeHostPeer();
-    hostRoomUnsub=bridge().roomService.subscribe(room.id,state=>{if(state.phase==='playing'&&!hostStarted)startHostGame(state).catch(error=>toast(error.message));});
+    hostRoomUnsub=bridge().roomService.subscribe(room.id,state=>{
+      if(state.phase==='playing'&&!hostStarted)startHostGame(state).catch(error=>toast(error.message));
+      else if(document.querySelector('.lobby-shell'))bridge().renderLobby();
+    });
   }
   async function hostInvite(){
     try{
