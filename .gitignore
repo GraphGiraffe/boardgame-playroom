@@ -8,3 +8,5 @@ __pycache__/
 *.log
 packs
 installed-packs.js
+icons/icon-192.png
+icons/icon-512.png
