@@ -285,6 +285,7 @@
     $('.modal button,.modal input,.modal select')?.focus();
   }
   function closeModal(ignoreBack=false) {
+    if($('#profile-form')&&!playerProfile?.name&&!ignoreBack)return;
     const back=modalBack;modalBack=null;
     if(back&&!ignoreBack){back();return;}
     stopSounds();$('#modal-root').innerHTML='';$('#app').inert=false;modalReturn?.focus?.();scheduleBot();
@@ -386,10 +387,16 @@
   function savePlayerProfile(form){try{playerProfile=profileStore.save(form.elements.playerName.value);closeModal(true);render();toast('Имя игрока сохранено.');}catch(error){toast(error.message);}}
   function showRules(gameId=session?.game||room?.game?.id) {
     if(!gameId)return showHelp();const g=meta(gameId),roomRules=screen==='lobby'&&room?.game?.id===gameId?room.rules:null;
+    const chosenRules=roomRules?(()=>{
+      const fields=catalog[gameId]?.settings||[],details=[roomRules.presetLabel||roomRules.preset||'Основной набор'];
+      for(const field of fields){const value=roomRules.options?.[field.key],option=field.options?.find(item=>item.value===value);if(option)details.push(field.label+': '+option.label);}
+      if(catalog[gameId]?.capabilities?.hands)details.push('Открытые руки: '+(roomRules.openHands?'да':'нет'));
+      return details;
+    })():null;
     const form=$('#setup-form');
     const draft=form?{mode:form.elements.mode.value,players:Number(form.elements.players.value),preset:form.elements.preset.value,openHands:!!form.elements.openHands?.checked,names:Array.from(form.querySelectorAll('#player-names input')).map(i=>i.value),options:Object.fromEntries((catalog[form.dataset.game]?.settings||[]).map(field=>[field.key,form.elements['option-'+field.key].value]))}:null;
     const rules=Array.isArray(g.rules)?g.rules:[String(g.rules||g.description)];
-    openModal(`${modalHead(g.name+' · правила')}<p class="lead">${esc(g.description)}</p>${roomRules?`<p class="rules-mode-note"><strong>Выбрано в комнате:</strong> ${esc(roomRules.presetLabel||roomRules.preset||'Основной набор')}</p>`:''}<ol class="rules-list">${rules.map(r=>`<li>${esc(r)}</li>`).join('')}</ol><p class="rules-mode-note">Доступные действия подсвечиваются. Проведите по руке влево или вправо, чтобы посмотреть остальные карты. История сохраняет каждый шаг партии.</p><p class="pack-line">Пак ${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} игрока</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">Понятно</button>`);
+    openModal(`${modalHead(g.name+' · правила')}<p class="lead">${esc(g.description)}</p>${chosenRules?`<div class="rules-mode-note"><strong>Выбрано в комнате</strong><ul style="margin:7px 0 0;padding-left:18px">${chosenRules.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></div>`:''}<ol class="rules-list">${rules.map(r=>`<li>${esc(r)}</li>`).join('')}</ol><p class="rules-mode-note">Доступные действия подсвечиваются. Проведите по руке влево или вправо, чтобы посмотреть остальные карты. История сохраняет каждый шаг партии.</p><p class="pack-line">Пак ${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} игрока</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">Понятно</button>`);
     if(draft)modalBack=()=>setup(gameId,draft);
   }
   function showHelp() {
