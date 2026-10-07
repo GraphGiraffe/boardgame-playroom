@@ -11,17 +11,26 @@
     if(typeof root.RTCPeerConnection!=='function')throw Error('Этот браузер не поддерживает WebRTC.');
     return root.RTCPeerConnection;
   }
-  function serializeDescription(description){
-    if(!description||!['offer','answer'].includes(description.type)||typeof description.sdp!=='string')throw Error('Некорректное описание WebRTC.');
-    return JSON.stringify({v:SIGNAL_VERSION,type:description.type,sdp:description.sdp});
+  function pairingId(){
+    if(root.crypto?.randomUUID)return root.crypto.randomUUID();
+    if(root.crypto?.getRandomValues){const bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');}
+    return 'pair-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   }
-  function parseDescription(value,expected){
+  function serializeDescription(description,{pairingId:nullablePairingId=null}={}){
+    if(!description||!['offer','answer'].includes(description.type)||typeof description.sdp!=='string')throw Error('Некорректное описание WebRTC.');
+    const value={v:SIGNAL_VERSION,type:description.type,sdp:description.sdp};
+    if(nullablePairingId)value.pairingId=String(nullablePairingId);
+    return JSON.stringify(value);
+  }
+  function parseSignal(value,expected){
     let data=value;
     if(typeof data==='string')try{data=JSON.parse(data);}catch(_){throw Error('Некорректный код подключения.');}
     if(!data||data.v!==SIGNAL_VERSION||!['offer','answer'].includes(data.type)||typeof data.sdp!=='string'||!data.sdp)throw Error('Некорректный код подключения.');
     if(expected&&data.type!==expected)throw Error('Ожидался '+expected+' WebRTC.');
-    return {type:data.type,sdp:data.sdp};
+    return {description:{type:data.type,sdp:data.sdp},pairingId:typeof data.pairingId==='string'&&data.pairingId?data.pairingId:null};
   }
+  function parseDescription(value,expected){return parseSignal(value,expected).description;}
+
   function waitIce(pc,{timeout=8000}={}){
     if(pc.iceGatheringState==='complete')return Promise.resolve();
     return new Promise((resolve,reject)=>{
@@ -142,29 +151,33 @@
     });
   }
   async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
-    const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true});
+    const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true}),id=pairingId();
     await pc.setLocalDescription(await pc.createOffer());await waitIce(pc);
     return {
-      pc,channel,offer:serializeDescription(pc.localDescription),
-      async acceptAnswer(signal){await pc.setRemoteDescription(parseDescription(signal,'answer'));return waitOpen(channel);},
+      pc,channel,pairingId:id,offer:serializeDescription(pc.localDescription,{pairingId:id}),
+      async acceptAnswer(signal){
+        const parsed=parseSignal(signal,'answer');
+        if(parsed.pairingId&&parsed.pairingId!==id)throw Error('Этот ответ относится к другому приглашению. Создайте новый ответ для текущего подключения.');
+        await pc.setRemoteDescription(parsed.description);return waitOpen(channel);
+      },
       waitOpen:options=>waitOpen(channel,options),
       close(){try{channel.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
   async function createClientPeer(signal,{configuration={iceServers:[]}}={}){
-    const PC=rtc(),pc=new PC(configuration);let channel=null,resolveChannel,rejectChannel;
+    const parsed=parseSignal(signal,'offer'),PC=rtc(),pc=new PC(configuration);let channel=null,resolveChannel,rejectChannel;
     const channelReady=new Promise((resolve,reject)=>{resolveChannel=resolve;rejectChannel=reject;});
     pc.addEventListener('datachannel',event=>{channel=event.channel;resolveChannel(channel);},{once:true});
     try{
-      await pc.setRemoteDescription(parseDescription(signal,'offer'));
+      await pc.setRemoteDescription(parsed.description);
       await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc);
     }catch(error){rejectChannel(error);try{pc.close();}catch(_){}throw error;}
     return {
-      pc,answer:serializeDescription(pc.localDescription),
+      pc,pairingId:parsed.pairingId,answer:serializeDescription(pc.localDescription,{pairingId:parsed.pairingId}),
       async waitOpen(options){const value=channel||await channelReady;return waitOpen(value,options);},
       async transport(options){const value=channel||await channelReady;await waitOpen(value,options);return client(value,options);},
       close(){try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
-  return {SIGNAL_VERSION,serializeDescription,parseDescription,waitIce,waitOpen,serve,client,createHostPeer,createClientPeer};
+  return {SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,serve,client,createHostPeer,createClientPeer};
 });
