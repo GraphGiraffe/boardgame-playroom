@@ -40,7 +40,10 @@ jobs:
           for bundle_path in source.glob('*.playroom-pack.json'):
               bundle=json.loads(bundle_path.read_text(encoding='utf-8'))
               root=target / bundle['manifest']['id']; root.mkdir(parents=True,exist_ok=True)
-              (root/'manifest.json').write_text(json.dumps(bundle['manifest'],ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              manifest=bundle['manifest']
+              (root/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              manifest_js="// Generated from pinned manifest.json for prerelease validation.\n(function (root) {\n  'use strict';\n  root.PlayroomCatalog ||= {};\n  root.PlayroomCatalog["+json.dumps(manifest['id'])+"] = "+json.dumps(manifest,ensure_ascii=False,indent=2)+";\n})(globalThis);\n"
+              (root/'manifest.js').write_text(manifest_js,encoding='utf-8')
               for name,value in bundle['files'].items():
                   path=root/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_text(value,encoding='utf-8')
           PY
