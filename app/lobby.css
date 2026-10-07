@@ -14,3 +14,9 @@
 .lobby-countdown{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:#f3f0e7e8;backdrop-filter:blur(8px);text-align:center}.lobby-countdown strong{font-size:min(30vw,160px);line-height:1}.lobby-countdown p{font-size:18px;font-weight:750}
 .room-create-fields[hidden],.local-create-fields[hidden]{display:none!important}
 @media(max-width:760px){.lobby-shell{padding:10px 10px max(16px,env(safe-area-inset-bottom))}.lobby-grid{grid-template-columns:1fr}.lobby-seats{grid-template-columns:1fr}.lobby-header{padding:15px;border-radius:20px}.lobby-card{padding:14px;border-radius:20px}.lobby-profile{grid-template-columns:1fr}.lobby-profile .btn{width:100%}}
+
+.room-preview-summary{display:grid;gap:8px;margin:0 0 18px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:#f1f4e6}
+.room-preview-summary>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px;align-items:baseline}
+.room-preview-summary dt{font-weight:800;color:var(--ink)}
+.room-preview-summary dd{margin:0;color:var(--ink);text-align:right}
+@media(max-width:520px){.room-preview-summary>div{grid-template-columns:1fr}.room-preview-summary dd{text-align:left}}
