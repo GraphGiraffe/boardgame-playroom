@@ -14,6 +14,11 @@ test('two browser pages connect by manual WebRTC offer/answer and exchange RPC',
       host.evaluate(answer=>peer.acceptAnswer(answer),answer),
       client.evaluate(async()=>{window.transport=await peer.transport({timeout:5000});})
     ]);
+    await client.evaluate(()=>transport.ready());
+    const clientDebug=await client.evaluate(()=>transport.debug());
+    const hostDebug=await host.evaluate(()=>peer.channel.__playroomDebug);
+    assert.equal(clientDebug.ready,1);assert.ok(clientDebug.hellos>=1);
+    assert.equal(hostDebug.ready>=1,true);assert.ok(hostDebug.hellos>=1);
     assert.deepEqual(await client.evaluate(()=>transport.snapshot()),{kind:'test',value:1});
     assert.deepEqual(await client.evaluate(()=>transport.dispatch({add:2})),{ok:true,value:3});
     assert.deepEqual(await client.evaluate(()=>transport.history(4)),{index:4,value:3});
