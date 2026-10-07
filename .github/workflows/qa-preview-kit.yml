@@ -65,9 +65,12 @@ jobs:
           apply(final['packs'])
           p=root/'packs/durak/styles.css';s=p.read_text(encoding='utf-8')
           a='gap:1px;top:5px!important;left:4px!important;right:auto!important;bottom:auto!important;font:850 16px/1'
-          b='gap:1px;top:5px!important;left:2px!important;right:auto!important;bottom:auto!important;font:850 14px/1'
+          b='gap:0;top:5px!important;left:2px!important;right:auto!important;bottom:auto!important;font:850 13px/1'
           assert s.count(a)==1;s=s.replace(a,b)
-          assert hashlib.sha256(s.encode('utf-8')).hexdigest()=='ac3103822c54caa669fce24a715b23f1ebd9987924106d0f69dccdaae086a332'
+          a='display:inline!important;font:850 12px/1 system-ui,sans-serif!important;margin:0!important'
+          b='display:inline!important;font:850 10px/1 system-ui,sans-serif!important;margin:0!important'
+          assert s.count(a)==1;s=s.replace(a,b)
+          assert hashlib.sha256(s.encode('utf-8')).hexdigest()=='571421901e059800c399fc2489035b0a45481052a41eb2b9a101fa7e05b88d01'
           p.write_text(s,encoding='utf-8')
           for folder in (root/'packs').iterdir():
               manifest=json.loads((folder/'manifest.json').read_text(encoding='utf-8'))
