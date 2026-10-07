@@ -1,0 +1,50 @@
+name: Multiplayer pre-release
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - name: Require companion access
+        env:
+          PACKS_TOKEN: ${{ secrets.PLAYROOM_PAKS_READ_TOKEN }}
+        run: test -n "$PACKS_TOKEN" || { echo '::error::PLAYROOM_PAKS_READ_TOKEN is required'; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: GraphGiraffe/boardgame-playroom-paks
+          ref: b01652e56c70ff180f2fdde8da2f11ba115534fe
+          token: ${{ secrets.PLAYROOM_PAKS_READ_TOKEN }}
+          path: companion
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare app with pinned packs
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Full application and pack checks
+        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Build testable all-games pre-release
+        run: |
+          rm -rf app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --output-dir app/dist/prerelease
+          cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
+          printf '%s\n'             'Playroom 0.15.0-preview.1'             'App head: '${GITHUB_SHA}             'Packs: b01652e56c70ff180f2fdde8da2f11ba115534fe'             'Open playroom-all-games.html on both devices. Multiplayer uses manual WebRTC offer/answer pairing.'             > app/dist/prerelease/README-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-0.15.0-preview.1
+          path: app/dist/prerelease/
+          retention-days: 30
