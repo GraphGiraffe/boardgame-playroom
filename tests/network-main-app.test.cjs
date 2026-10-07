@@ -14,7 +14,9 @@ async function profile(page,name){await page.goto(page._url);await page.locator(
 async function value(page,selector){return page.locator(selector).inputValue();}
 
 test('main app: two browsers join UNO lobby, ready, countdown and share a move',{timeout:90000,skip:!hasUno},async()=>{
-  const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const externalUrl=process.env.PLAYROOM_URL||'';
+  const hosted=externalUrl?{s:null,url:externalUrl}:await server();
+  const {s,url}=hosted,browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),cc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   const host=await hc.newPage(),client=await cc.newPage();host._url=url;client._url=url;
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
@@ -68,5 +70,5 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.waitForFunction(r=>Number(document.querySelector('.shared-shell')?.dataset.revision)>r,before);
     assert.ok(Number(await client.locator('.shared-shell').getAttribute('data-revision'))>before);
     assert.deepEqual(errors,[]);
-  }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();await new Promise(r=>s.close(r));}
+  }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
 });
