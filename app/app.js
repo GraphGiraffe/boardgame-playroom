@@ -377,7 +377,7 @@
   function startLobbyCountdown(){
     try{
       room=roomService.beginCountdown(room.id,lobbyParticipantId,{seconds:3});lobbyCountdown=3;renderLobby();clearInterval(lobbyTimer);
-      lobbyTimer=setInterval(()=>{const step=roomService.tick(room.id);room=step.room;lobbyCountdown=step.remaining;if(step.started){clearInterval(lobbyTimer);lobbyTimer=null;renderLobby();toast('Лобби зафиксировано. Следующий шаг — запуск общей сетевой Session через HostRuntime.');}else renderLobby();},250);
+      lobbyTimer=setInterval(()=>{const step=roomService.tick(room.id);room=step.room;lobbyCountdown=step.remaining;if(step.started){clearInterval(lobbyTimer);lobbyTimer=null;renderLobby();toast('Лобби зафиксировано. Запускаем сетевую партию…');}else renderLobby();},250);
     }catch(error){toast(error.message);}
   }
   function leaveLobby(){clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;room=null;lobbyParticipantId=null;screen='hub';renderHub();}
@@ -549,6 +549,7 @@
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
+  globalThis.PlayroomAppBridge=Object.freeze({profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,renderLobby,openModal,closeModal,modalHead});
   render();
   if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();
