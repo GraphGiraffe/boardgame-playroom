@@ -1,0 +1,49 @@
+name: Multiplayer preview smoke
+on:
+  pull_request:
+    branches: [dev]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore pinned tested packs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p pinned
+          curl --fail --location -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/GraphGiraffe/boardgame-playroom/actions/artifacts/11459727753/zip" -o pinned/old.zip
+          unzip -q pinned/old.zip -d pinned/old
+          unzip -q pinned/old/boardgame-playroom/boardgame-playroom/dist/preview/playroom-phone-pc-preview.zip -d pinned/kit
+          mkdir -p pinned/bundles
+          cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/bundles/
+      - name: Prepare bundled games
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/bundles"
+      - name: Two-device release gate
+        working-directory: app
+        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs
+      - name: Build all-games preview
+        run: |
+          rm -rf app/dist/smoke
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/bundles" --all-games --output-dir app/dist/smoke
+          printf '%s\n'             'Playroom 0.15.0-preview.1'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing is manual: host invitation -> client answer -> host confirms.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-0.15.0-preview.1
+          path: app/dist/smoke/
+          retention-days: 30
