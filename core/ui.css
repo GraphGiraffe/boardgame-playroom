@@ -31,7 +31,7 @@
 
 /* A fixed-height row compresses to readable corners, then scrolls independently. */
 .hand-track.is-fan{--fan-card-width:72px;--fan-card-height:103px;--fan-peek:28px;--fan-gap:10px;--fan-lift:11px;display:block;overflow-x:auto;overflow-y:hidden;padding:18px 6px 10px;height:calc(var(--fan-card-height) + 28px);min-height:calc(var(--fan-card-height) + 28px);scroll-snap-type:none;scrollbar-width:none;isolation:isolate}
-.hand-track.is-fan::-webkit-scrollbar{display:none}
+/* Long fanned hands need a genuinely exposed rank corner for every card.\n   Keep the compact peek for up to eight cards so normal UNO fits at 320px. */\n.hand-track.is-fan.is-long-hand{--fan-peek:40px}\n.hand-track.is-fan::-webkit-scrollbar{display:none}
 .hand-track.is-fan:before,.hand-track.is-fan:after{content:none}
 .hand-fan-row{display:grid;grid-template-columns:repeat(calc(var(--fan-count) - 1),minmax(var(--fan-peek),1fr)) var(--fan-card-width);align-items:center;position:relative;height:var(--fan-card-height);width:min(100%,calc(var(--fan-count) * (var(--fan-card-width) + var(--fan-gap)) - var(--fan-gap)));min-width:calc((var(--fan-count) - 1) * var(--fan-peek) + var(--fan-card-width));margin-inline:auto}
 .hand-fan-row.is-single{grid-template-columns:var(--fan-card-width)}

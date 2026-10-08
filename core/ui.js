@@ -37,7 +37,7 @@
     if(fan){
       body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
     }
-    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${fan?'is-fan':''}">${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
+    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${fan?'is-fan':''} ${fan&&cards.length>8?'is-long-hand':''}">${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
   }
   function source(id, actions, selected, options = {}) {
     const key = options.key || 'card', value = String(id);
