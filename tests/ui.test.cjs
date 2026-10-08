@@ -261,9 +261,16 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const start=Date.now();
       // Input commits selection on requestAnimationFrame after pointerup.
       // CDP may acknowledge touchEnd before that frame; keep the original 400 ms assertion.
-      await page.locator('.color-choice').first().waitFor({state:'visible',timeout:300});
-      const choice=await page.locator('.color-choice').first().boundingBox();
-      await touch('touchStart',choice.x+choice.width/2,choice.y+choice.height/2);await touch('touchEnd');
+      // Resolve visibility, current coordinates and hit-testing atomically.
+      // A scene rerender between waitFor(visible) and boundingBox() could
+      // detach the old button and return null on slower CI runners.
+      const choice=await page.waitForFunction(()=>{
+        const button=document.querySelector('.color-choice');if(!button)return false;
+        const r=button.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
+        return r.width>1&&r.height>1&&document.elementFromPoint(x,y)?.closest('.color-choice')===button?{x,y}:false;
+      },null,{timeout:300});
+      const point=await choice.jsonValue();
+      await touch('touchStart',point.x,point.y);await touch('touchEnd');
       assert(Date.now()-start<400,'choice must occur inside the former swipe suppression window');
       // CDP may acknowledge touchEnd before Chrome dispatches its native click.
       await page.waitForFunction(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===1,{},{timeout:700}).catch(async()=>assert.fail(JSON.stringify(await page.evaluate(()=>touchTrace))));

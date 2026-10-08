@@ -181,7 +181,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Large hands keep one fixed-height row and reveal every card through horizontal scrolling', {long: true, viewport: {width: 320, height: 640}}, async ({page}) => {
       const track=page.locator('.hand-track'),info = await track.evaluate(el => ({count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth - el.clientWidth, y:el.scrollHeight-el.clientHeight,overflow: getComputedStyle(el).overflowX}));
       assert.equal(info.count, 35); assert.equal(info.rows, 1); assert(info.x > 1); assert(info.y <= 1); assert.equal(info.overflow, 'auto');
-      assert(await track.evaluate(el=>el.classList.contains('is-long-hand')&&parseFloat(getComputedStyle(el).getPropertyValue('--fan-peek'))>=40),'Long hands need a readable, exposed peek for every rank');
+      assert(await track.evaluate(el=>el.classList.contains('is-long-hand')&&parseFloat(getComputedStyle(el).getPropertyValue('--fan-peek'))>=64),'Long hands need a readable, exposed peek for every rank');
       const ids = await track.locator('[data-hand-preview]').evaluateAll(els => els.map(el => el.dataset.handPreview));
       // A fanned row overlaps card bodies, and scrollIntoView may decide a
       // partly covered card is already visible. Pan the *actual* horizontal
