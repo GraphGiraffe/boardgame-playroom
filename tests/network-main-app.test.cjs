@@ -67,6 +67,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     }
     assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
     assert.match(await client.locator('.modal').innerText(),/UNO/);
+    assert.match(await client.locator('.modal').innerText(),/Объявление UNO/);
+    assert.match(await client.locator('.modal').innerText(),/Вручную · можно ошибаться/);
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
 
