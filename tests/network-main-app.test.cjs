@@ -36,6 +36,19 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
     assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
     assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
+    const previousAddress=await host.locator('#acoustic-host-address').inputValue();
+    await host.locator('#acoustic-host-address').selectOption('manual');
+    await host.locator('#acoustic-host-manual').fill('192.168.44.66');
+    const manualLink=await value(host,'#net-host-token');
+    const manualToken=await host.evaluate(link=>PlayroomPairing.extract(link),manualLink);
+    // A change of IP updates the URL/QR and audio's exact PR3 bytes together.
+    const manualInfo=await host.evaluate(token=>PlayroomPairing.decode(token),manualToken);
+    if(manualInfo.compact){
+      assert.equal(manualInfo.ip,'192.168.44.66');
+      assert.ok(manualToken.length<200);
+    }
+    await host.locator('#acoustic-host-address').selectOption(previousAddress);
+
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
     assert.match(offerToken||'',/^PR[23]\./);
