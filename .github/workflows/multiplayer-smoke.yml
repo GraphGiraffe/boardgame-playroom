@@ -68,6 +68,14 @@ jobs:
             cd app/dist/smoke
             zip -q -r playroom-pwa.zip pwa
           )
+          # QR vendoring changes the PWA after build.py wrote its checksums.
+          # Recompute against the exact final upload, never the pre-vendor zip.
+          (
+            cd app/dist/smoke
+            sha256sum playroom.html playroom-source.zip tabletop-core.zip playroom-all-games.html playroom-pwa.zip > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
+          unzip -tq app/dist/smoke/playroom-pwa.zip
           printf '%s\n'             'Playroom 0.15.0-preview.3'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - name: Validate built file preview
         working-directory: app
