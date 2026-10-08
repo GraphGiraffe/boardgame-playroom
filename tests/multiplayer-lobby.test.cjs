@@ -117,3 +117,30 @@ test('room preview exposes join information without participant details',()=>{
   assert.equal(Object.hasOwn(preview,'participants'),false);
   assert.equal(Object.hasOwn(preview,'ownerId'),false);
 });
+
+test('same-profile browser tabs are distinct participants without host authority',()=>{
+  const {rooms,room}=createRoom('player'),firstLink=rooms.connection(room.id),secondLink=rooms.connection(room.id);
+  const first=firstLink.dispatch({type:'join',profileId:'host',nickname:'Вкладка 2'}).snapshot;
+  const second=secondLink.dispatch({type:'join',profileId:'host',nickname:'Вкладка 3'}).snapshot;
+  assert.equal(first.kind,'lobby');assert.equal(second.kind,'lobby');
+  assert.notEqual(first.participantId,'host');assert.notEqual(second.participantId,'host');
+  assert.notEqual(first.participantId,second.participantId);
+  assert.equal(rooms.snapshot(room.id).participants.filter(p=>p.isHost).length,1);
+  assert.equal(rooms.snapshot(room.id).participants.length,3);
+  assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id===first.participantId).role,'spectator');
+  assert.throws(()=>rooms.join(room.id,{id:'host',nickname:'Подмена'}),/занят/i);
+  firstLink.close();
+  assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id===first.participantId).connected,false);
+  assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id===second.participantId).connected,true);
+});
+test('room options show the pack labels instead of technical option IDs',()=>{
+  const {describeRules}=require('../app/multiplayer.js');
+  const rules={preset:'classic',presetLabel:'Классический',openHands:false,options:{unoMode:'manual'}};
+  const settings=[{key:'unoMode',label:'Объявление UNO',options:[{value:'manual',label:'Вручную · можно ошибаться'}]}];
+  assert.deepEqual(describeRules(rules,settings,true),[
+    {label:'Набор правил',value:'Классический'},
+    {label:'Объявление UNO',value:'Вручную · можно ошибаться'},
+    {label:'Открытые руки',value:'Нет'}
+  ]);
+  assert.deepEqual(describeRules({...rules,options:{choice:2}},[{key:'choice',label:'Очки',options:[{value:2,label:'Два'}]}],false)[1],{label:'Очки',value:'Два'});
+});
