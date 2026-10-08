@@ -79,6 +79,7 @@ CI этого репозитория запускает те же `scripts/codex
 - [Архитектура и границы ответственности](docs/ARCHITECTURE.md).
 - [Справочник существующих механик](docs/PACKS.md).
 - [План руководства для авторов: геймплей, адаптивность, форматы, ассеты](docs/AUTHORING-PLAN.md).
+- [Актуальный roadmap PlayRoom 0.15.x и handoff](docs/PlayRoom_Roadmap_and_Agent_Handoff_2026-10-08.md) — дальнейшая работа над LAN-P2P.
 - [План мультиплеера: общий экран и личные телефоны](docs/ROADMAP.md).
 - [Ветки, PR и релизы](CONTRIBUTING.md).
 
