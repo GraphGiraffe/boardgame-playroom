@@ -29,6 +29,12 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
     await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
+    // Every ICE candidate supplied by the browser is visible in the IP selector;
+    // manual choice remains available for browsers that hide interfaces behind mDNS.
+    assert.equal(await host.locator('[data-net-scan="host"]').count(),1);
+    assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
+    assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
+    assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
     assert.ok(offerToken?.startsWith('PR2.'));
