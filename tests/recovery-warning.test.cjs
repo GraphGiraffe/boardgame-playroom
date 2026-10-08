@@ -28,7 +28,7 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
     // Also filter startup pack-version conflicts when there are no dependent games.
     await page.evaluate(()=>{
       PlayroomPacks.warnings.push('Встроенный пакет uno@0.1.0 отличается от сохранённой версии. Для совместимости партий используется сохранённая версия.');
-      PlayroomPackLoadError=PlayroomPacks.warnings.join(' ');
+      globalThis.PlayroomPackLoadError=PlayroomPacks.warnings.join(' ');
     });
     await page.locator('.pack-hub-button').click();
     assert.equal(await page.locator('.pack-message').count(),0);
