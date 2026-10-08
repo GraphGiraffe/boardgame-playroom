@@ -22,6 +22,7 @@ test('service worker precaches pairing/PWA shell and has offline navigation fall
   assert.match(source,/caches\.match\('\.\/index\.html'\)/);
   assert.match(source,/qrcode-generator@2\.0\.4\/dist\/qrcode\.js/);
   assert.match(source,/playroom-pair-token/);
+  assert.match(source,/PR2\|PR3/,'service-worker pairing links must accept compact PR3');
   assert.match(source,/clients\.matchAll/);
 });
 
