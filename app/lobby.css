@@ -1,0 +1,24 @@
+.lobby-shell{min-height:100dvh;background:var(--paper);padding:18px clamp(14px,3vw,34px) max(20px,env(safe-area-inset-bottom));color:var(--ink)}
+.lobby-wrap{max-width:1180px;margin:0 auto;display:grid;gap:16px}
+.lobby-header,.lobby-card{background:#fffdf4;border:1px solid var(--line);border-radius:24px;box-shadow:0 5px 0 #d7decc}
+.lobby-header{padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.lobby-header h1{margin:4px 0 2px;font-size:clamp(26px,5vw,42px);letter-spacing:-1.4px}.lobby-header p{margin:0;color:#7b8872;font-size:12px}
+.lobby-meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.lobby-code{font-size:18px;font-weight:900;letter-spacing:2px;background:#e5ead9;padding:9px 13px;border-radius:12px}
+.lobby-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.8fr);gap:16px}.lobby-card{padding:18px}.lobby-card h2{margin:0 0 13px;font-size:18px}
+.lobby-seats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.lobby-seat{min-height:92px;border:1px solid #d5ddc9;border-radius:17px;padding:12px;background:#f6f5eb;display:flex;gap:10px;align-items:center;text-align:left}
+.lobby-seat.available{cursor:pointer}.lobby-seat.available:hover{border-color:#819978;background:#fbfbf3}.seat-color{width:19px;height:44px;border-radius:9px;flex:none;box-shadow:inset 0 0 0 2px #ffffff66}
+.lobby-seat strong{display:block;font-size:13px}.lobby-seat small{display:block;color:#7d8875;margin-top:4px;line-height:1.35}.lobby-ready{font-weight:850;color:#466d4d}.lobby-not-ready{color:#a25c45}
+.lobby-participants{display:grid;gap:8px}.lobby-person{display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:14px;background:#eef1e4}.lobby-person>span:nth-child(2){min-width:0;flex:1}.lobby-person strong,.lobby-person small{display:block;overflow-wrap:anywhere}.lobby-person small{color:#7e8877;margin-top:2px}
+.lobby-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.lobby-actions .btn{min-height:44px}.lobby-rules-note{margin:0 0 12px;padding:11px 13px;border-radius:13px;background:#f1e4bd;font-size:12px;line-height:1.5}
+.lobby-profile{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.lobby-profile .field{margin:0}.lobby-spectator{border-style:dashed}
+.lobby-countdown{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:#f3f0e7e8;backdrop-filter:blur(8px);text-align:center}.lobby-countdown strong{font-size:min(30vw,160px);line-height:1}.lobby-countdown p{font-size:18px;font-weight:750}
+.room-create-fields[hidden],.local-create-fields[hidden]{display:none!important}
+@media(max-width:760px){.lobby-shell{padding:10px 10px max(16px,env(safe-area-inset-bottom))}.lobby-grid{grid-template-columns:1fr}.lobby-seats{grid-template-columns:1fr}.lobby-header{padding:15px;border-radius:20px}.lobby-card{padding:14px;border-radius:20px}.lobby-profile{grid-template-columns:1fr}.lobby-profile .btn{width:100%}}
+
+/* Shared host/client presentation of user-facing pack options. */
+.lobby-rules-summary{margin:12px 0;}
+.lobby-rule-grid{margin:10px 0;display:grid;gap:7px;}
+.lobby-rule-row{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:10px;border-bottom:1px solid rgba(80,95,82,.13);padding:6px 0;}
+.lobby-rule-row dt{font-weight:600;overflow-wrap:anywhere;}
+.lobby-rule-row dd{margin:0;overflow-wrap:anywhere;}
+@media(max-width:480px){.lobby-rule-row{grid-template-columns:1fr;gap:2px;}}

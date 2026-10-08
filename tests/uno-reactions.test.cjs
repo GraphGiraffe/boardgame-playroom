@@ -33,10 +33,10 @@ test('manual UNO offers declaration and every other accusation even with the wro
   s.status='finished';assert.deepEqual(E.reactions(s,0),[]);assert.equal(E.botReaction(s,0),null);
 });
 
-test('playing to one opens a public manual window without announcing automatically',()=>{
+test('playing to one opens an internal manual window without disclosing its pending hint',()=>{
   const before=fixture(),json=JSON.stringify(before);const s=play(before,0,'u1');
   assert.equal(JSON.stringify(before),json);assert.equal(s.turn,1);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[0],false);assert(!s.events.some(e=>e.kind==='uno'));
-  const projected=E.project(s,1);assert.deepEqual(projected.data.uno,{mode:'manual',declared:[false,false],pending:0});assert.deepEqual(projected.data.hands[0],[{hidden:true}]);
+  const projected=E.project(s,1);assert.deepEqual(projected.data.uno,{mode:'manual',declared:[false,false]});assert.deepEqual(projected.data.hands[0],[{hidden:true}]);
   E.validateState(s);
 });
 

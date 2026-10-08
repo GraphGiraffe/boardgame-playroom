@@ -9,7 +9,14 @@
   const actionAttr = action => `data-action="${esc(JSON.stringify(action))}"`;
   const actionButton = (action, extra = '') => `<button class="scene-button ${extra}" ${actionAttr(action)}>${esc(action.label || action.type)}</button>`;
   const actionBar = (actions, hint) => `<div class="scene-actions">${actions.map(a => actionButton(a)).join('')}${!actions.length && hint ? `<span class="scene-hint">${esc(hint)}</span>` : ''}</div>`;
-  const back = (kind = 'card') => `<span class="piece-back ${kind}-back" role="img" aria-label="Закрытая карта"><span>✦</span></span>`;
+  // A canonical artboard scales as a whole, including typography and frame.
+  // main/compact are trusted pack HTML; neither contains interaction handlers.
+  function art({main,compact,width=72,height=103}, variant='main') {
+    if (typeof main !== 'string' || !Number.isFinite(width) || !Number.isFinite(height) || width<=0 || height<=0 || width>4096 || height>4096) throw Error('Invalid card artwork');
+    const small=variant==='compact' && typeof compact==='string' && compact.length>0;
+    return `<svg class="piece-art" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" data-art-variant="${small?'compact':'main'}"><foreignObject width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" class="piece-artboard" style="width:${width}px;height:${height}px">${small?compact:main}</div></foreignObject></svg>`;
+  }
+  const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="Закрытая карта">${art({main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99})}</span>`;
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
     return `<div class="opponent-hands">${state.players.map((p,i) => {
@@ -19,7 +26,7 @@
       const pieces=visible.map((c,index)=>{
         if(c.hidden)return back();
         const caption=options.cardLabel?.(c);
-        return `<span class="public-card" data-public-card-index="${index}">${caption!=null?`<span class="public-card-caption" aria-hidden="true">${esc(caption)}</span>`:''}${cardRender(c,'disabled')}</span>`;
+        return `<span class="public-card" data-public-card-index="${index}">${caption!=null?`<span class="public-card-caption" aria-hidden="true">${esc(caption)}</span>`:''}${cardRender(c,'disabled',{variant:'compact',surface:'opponent',interactive:false})}</span>`;
       }).join('');
       return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} карт${open?', открытая рука':''}">${pieces}</div></div>`;
     }).join('')}</div>`;
@@ -30,7 +37,7 @@
     if(fan){
       body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
     }
-    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${fan?'is-fan':''}">${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
+    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${fan?'is-fan':''} ${fan&&cards.length>8?'is-long-hand':''}">${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
   }
   function source(id, actions, selected, options = {}) {
     const key = options.key || 'card', value = String(id);
@@ -59,15 +66,21 @@
     return source(card.id, actions, selected, {mode: 'immediate'});
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
-  const helpers = {esc,actionAttr,actionButton,actionBar,back,opponents,hand,source,target,cardAttrs,svg};
+  const helpers = {art,esc,actionAttr,actionButton,actionBar,back,opponents,hand,source,target,cardAttrs,svg};
   function createRegistry() {
     const packs = new Map();
     return {
-      register(id,render,cover){if(typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Invalid game view');packs.set(id,{render,cover});},
+      register(id,render,cover,options={}) {
+        if(typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Invalid game view');
+        const surfaces=options?.surfaces||{};
+        if(typeof surfaces!=='object'||Array.isArray(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Invalid view surfaces');
+        packs.set(id,{render,cover,surfaces:Object.freeze({...surfaces})});
+      },
+      supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { return packs.get(state.game)?.render(state,viewer,actions,ui) || '<p class="scene-hint">Этот игровой пакет не загружен.</p>'; }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; return render?.(state,viewer,surface==='table'?[]:actions,ui) || '<p class="scene-hint">Этот игровой пакет не загружен.</p>'; }
         catch (_) { return '<p class="scene-hint" role="alert">Не удалось показать игру. Вернитесь к списку игр и обновите этот пак.</p>'; }
       },
       cover(id){

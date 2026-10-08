@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
 const E=require(root+'/core/engine.js');
 const Session=require(root+'/core/session.js');
@@ -29,6 +30,8 @@ function installableCounter(version='0.1.0',step=1) {
   }};
 }
 test('Offline pack installation, updates and empty application preserve saved versions',{timeout:60000},async t=>{
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(root);
+  const testUrl=fixtureServer?.url||url;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];
   page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));
@@ -37,7 +40,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
   const close=()=>page.locator('.modal [data-command=close-modal]').click();
   const add=async expected=>{await page.locator('.qa-counter-scene [data-action]').click();await page.waitForFunction(n=>document.querySelector('.qa-count')?.textContent===String(n),expected);await page.waitForSelector('.scene[aria-busy=false]');};
   try{
-    await page.goto(url);
+    await page.goto(testUrl);
     await page.evaluate(()=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));});await page.reload();
     await t.test('All bundled games can be removed into a persistent empty hub',async()=>{
       await openManager();
@@ -53,7 +56,15 @@ test('Offline pack installation, updates and empty application preserve saved ve
     await t.test('Preview does not execute code; explicit confirmation installs an offline custom game',async()=>{
       await choose(installableCounter());await page.locator('.pack-preview').waitFor();assert.match(await page.locator('.pack-trust').innerText(),/содержит код.*доверяете/s);assert.equal(await page.evaluate(()=>TabletopCore.GAMES.length),0);
       await page.locator('[data-pack-install]').click();await page.locator('.pack-entry[data-pack-id="qa-counter"]').waitFor();await close();assert.equal(await page.locator('[data-start="qa-counter"]').count(),1);
-      await page.reload();assert.equal(await page.locator('[data-start="qa-counter"]').count(),1);
+      await page.reload();assert.equal(await page.locator('[data-start="qa-counter"]').count(),1,
+        'Custom pack not visible after reload: '+JSON.stringify(await page.evaluate(()=>({
+          list:globalThis.PlayroomPacks?.list?.().map(x=>x.id+'@'+x.version),
+          catalog:Object.keys(globalThis.PlayroomCatalog||{}),
+          packs:(()=>{try{return JSON.parse(localStorage.getItem('playroom.packs.v1'))?.packs?.map(x=>x.manifest.id)}catch(e){return String(e)}})(),
+          removed:(()=>{try{return JSON.parse(localStorage.getItem('playroom.packs.v1'))?.removed}catch(e){return String(e)}})(),
+          app:document.getElementById('app')?.innerText.slice(0,240),
+          warning:globalThis.PlayroomPackLoadError,
+        })))+'; JS errors: '+JSON.stringify(errors));
       await page.locator('[data-start="qa-counter"]').click();await page.locator('input[value=pass]').check();await page.locator('button[type=submit]').click();await add(1);
       assert.equal((await saved(page)).packVersion,'0.1.0');await page.locator('.table-heading [data-command=home]').click();
     });
@@ -84,7 +95,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
       await resume(page);assert.equal(await page.locator('.qa-count').innerText(),'10');assert.equal(await page.locator('.table-heading [data-command=home]').isVisible(),true);
     });
     assert.deepEqual(errors,[]);
-  }finally{await context.close();await browser.close();}
+  }finally{await context.close();await browser.close();await fixtureServer?.close();}
 });
 test('Real browser UI regression and responsive checks',{timeout:180000},async t=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -258,8 +269,19 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const touch=async(type,x,y)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});
       const p=await cardTouchPoint(page.locator('[data-select="'+wild.id+'"]'));
       await touch('touchStart',p.x,p.y);await touch('touchMove',p.x,p.y-55);await touch('touchEnd');
-      const start=Date.now(),choice=await page.locator('.color-choice').first().boundingBox();
-      await touch('touchStart',choice.x+choice.width/2,choice.y+choice.height/2);await touch('touchEnd');
+      const start=Date.now();
+      // Input commits selection on requestAnimationFrame after pointerup.
+      // CDP may acknowledge touchEnd before that frame; keep the original 400 ms assertion.
+      // Resolve visibility, current coordinates and hit-testing atomically.
+      // A scene rerender between waitFor(visible) and boundingBox() could
+      // detach the old button and return null on slower CI runners.
+      const choice=await page.waitForFunction(()=>{
+        const button=document.querySelector('.color-choice');if(!button)return false;
+        const r=button.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
+        return r.width>1&&r.height>1&&document.elementFromPoint(x,y)?.closest('.color-choice')===button?{x,y}:false;
+      },null,{timeout:300});
+      const point=await choice.jsonValue();
+      await touch('touchStart',point.x,point.y);await touch('touchEnd');
       assert(Date.now()-start<400,'choice must occur inside the former swipe suppression window');
       // CDP may acknowledge touchEnd before Chrome dispatches its native click.
       await page.waitForFunction(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===1,{},{timeout:700}).catch(async()=>assert.fail(JSON.stringify(await page.evaluate(()=>touchTrace))));

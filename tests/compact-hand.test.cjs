@@ -16,7 +16,7 @@ function fixture(long = false) {
   const take = id => {const c = cards.get(id); assert(c); cards.delete(id); return c;};
   d.discard = [take('u9')]; d.color = 'red'; d.direction = 1; d.drawn = null; d.noDraw = false; d.stalled = 0;
   d.hands = [['u1', 'u26', 'u100', 'u3', 'u27', 'u4', 'u2'].map(take), ['u5', 'u76', 'u30', 'u50', 'u60', 'u81', 'u52'].map(take)];
-  d.drawPile = [...cards.values()]; if (long) d.hands[0].push(...d.drawPile.splice(0, 28));
+  d.drawPile = [...cards.values()]; if (long) d.hands[0].push(...d.drawPile.splice(0, (Number.isInteger(long)?long:35)-7));
   s.turn = 0; Core.validateState(s); return saved;
 }
 function durakFixture(count = 6, defending = false) {
@@ -137,6 +137,18 @@ test('Compact card hands preserve readable previews and each game’s play contr
         if (viewport.width === 390 && process.env.PLAYROOM_CAPTURE_DIR) await page.screenshot({path: path.join(process.env.PLAYROOM_CAPTURE_DIR, 'playroom-v0.3-uno-phone.png')});
       });
     }
+    for(const count of [9,14]) await check(`Hand with ${count} cards overlaps and keeps scrolling independent of game mode`,
+      {long:count,viewport:{width:320,height:640},touch:true},async({page})=>{
+        const hand=await page.locator('.own-hand').evaluate(el=>{
+          const track=el.querySelector('.hand-track'),cards=[...track.querySelectorAll('.hand-card')];
+          const first=cards[0].getBoundingClientRect(),second=cards[1].getBoundingClientRect();
+          return {count:cards.length,overlap:first.right-second.left,overflow:track.scrollWidth-track.clientWidth,
+            marker:el.classList.contains('hand-overflow-right'),rows:track.querySelectorAll('.hand-fan-row').length};
+        });
+        assert.equal(hand.count,count);assert.equal(hand.rows,1);
+        assert(hand.overlap>=12,`Cards must visibly overlap, got ${JSON.stringify(hand)}`);
+        assert(hand.overflow>1&&hand.marker,`Scrolled hands need a visible right boundary: ${JSON.stringify(hand)}`);
+      });
     await check('Hover and keyboard focus reveal the whole card, including an unplayable card', {}, async ({page}) => {
       for (const id of ['u1', 'u26']) {
         const p = await exposedPoint(card(page, id)); await page.mouse.move(p.x, p.y); await assertFullPreview(page, id);
@@ -181,12 +193,40 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Large hands keep one fixed-height row and reveal every card through horizontal scrolling', {long: true, viewport: {width: 320, height: 640}}, async ({page}) => {
       const track=page.locator('.hand-track'),info = await track.evaluate(el => ({count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth - el.clientWidth, y:el.scrollHeight-el.clientHeight,overflow: getComputedStyle(el).overflowX}));
       assert.equal(info.count, 35); assert.equal(info.rows, 1); assert(info.x > 1); assert(info.y <= 1); assert.equal(info.overflow, 'auto');
+      assert(await track.evaluate(el=>{
+        const peek=parseFloat(getComputedStyle(el).getPropertyValue('--fan-peek'));
+        const width=parseFloat(getComputedStyle(el).getPropertyValue('--fan-card-width'));
+        return el.classList.contains('is-long-hand')&&peek>=40&&peek<=width-12;
+      }),'Long hands must retain overlapping cards with reachable rank corners');
+      assert.equal(await page.locator('.own-hand.hand-overflow-right').count(),1,'A clipped hand needs a right-edge scroll marker');
       const ids = await track.locator('[data-hand-preview]').evaluateAll(els => els.map(el => el.dataset.handPreview));
-      for (const id of ids) {
-        await card(page,id).scrollIntoViewIfNeeded();await exposedPoint(card(page,id));
+      // A fanned row overlaps card bodies, and scrollIntoView may decide a
+      // partly covered card is already visible. Pan the *actual* horizontal
+      // hand track to the rank corner, as a player would, before testing it.
+      // Keep the hit-test requirement: every card must really be reachable.
+      const reveal=async id=>{
+        const result=await card(page,id).evaluate(async el=>{
+          const track=el.closest('.hand-track'),corner=el.querySelector('.card-corner');
+          const r=corner.getBoundingClientRect(),v=track.getBoundingClientRect();
+          track.scrollLeft+=r.left+r.width/2-(v.left+v.width/2);
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          const final=corner.getBoundingClientRect(),view=track.getBoundingClientRect();
+          const x=final.left+final.width/2,y=final.top+final.height/2;
+          const hit=document.elementFromPoint(x,y)?.closest('[data-hand-preview]')?.dataset.handPreview||null;
+          return {id:el.dataset.handPreview,hit,x,y,trackLeft:view.left,trackRight:view.right,
+            scrollLeft:track.scrollLeft,scrollMax:track.scrollWidth-track.clientWidth};
+        });
+        assert.equal(result.hit,id,'Card rank corner inaccessible after hand pan: '+JSON.stringify(result));
+        assert(result.x>=result.trackLeft&&result.x<result.trackRight,'Rank corner outside scroller: '+JSON.stringify(result));
+      };
+      for(const id of ids){
+        await reveal(id);await exposedPoint(card(page,id));
       }
+      assert.equal(await page.locator('.own-hand.hand-overflow-left').count(),1,'After scrolling, a left edge signals earlier cards');
+      await track.evaluate(el=>{el.scrollLeft=0;});
+      await page.waitForFunction(()=>document.querySelector('.own-hand')?.classList.contains('hand-overflow-right')&&!document.querySelector('.own-hand')?.classList.contains('hand-overflow-left'));
       for(const id of [ids[0],ids[17],ids.at(-1)]){
-        await card(page,id).scrollIntoViewIfNeeded();const p=await exposedPoint(card(page,id));
+        await reveal(id);const p=await exposedPoint(card(page,id));
         await page.mouse.move(p.x,p.y);await assertFullPreview(page,id);await page.mouse.move(1,1);
       }
       assert.equal((await state(page)).move, 0);

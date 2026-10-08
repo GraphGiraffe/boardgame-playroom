@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
@@ -48,6 +49,8 @@ async function point(locator) {
 async function touch(cdp, type, p) {await cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{...p, radiusX: 4, radiusY: 4, force: 1}]});}
 
 test('Optional UNO one-tap play with real mouse and native touch input', {timeout: 120000}, async t => {
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(path.resolve(__dirname,'..'));
+  const testUrl=fixtureServer?.url||url;
   const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, mobile, options, run) {
     await t.test(`${mobile ? 'Touch' : 'Mouse'}: ${name}`, async () => {
@@ -80,7 +83,7 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
       };
       const resume = async () => {await press(page.locator('.resume-banner [data-command="resume"]')); await page.locator('.own-hand').waitFor({state: 'visible'});};
       try {
-        await page.goto(url);
+        await page.goto(testUrl);
         if (options.enabled) await setQuick(true);
         await resume(); await run({page, cdp, press, settings, setQuick, resume, saved}); assert.deepEqual(errors, []);
       } finally {await context.close();}
@@ -129,5 +132,5 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
         assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
       });
     }
-  } finally {await browser.close();}
+  } finally {await browser.close(); await fixtureServer?.close();}
 });

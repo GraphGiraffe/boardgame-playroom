@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
@@ -56,7 +57,15 @@ async function waitMove(page, move) {
     JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === value, move);
 }
 async function resume(page) {
-  await page.locator('.resume-banner [data-command=resume]').click();
+  const resumeButton=page.locator('.resume-banner [data-command=resume]');
+  assert.equal(await resumeButton.count(),1,
+    'Resume missing: '+JSON.stringify(await page.evaluate(()=>({
+      app:document.getElementById('app')?.innerText.slice(0,280),
+      packs:globalThis.PlayroomPacks?.list?.().map(x=>x.id+'@'+x.version),
+      saved:!!localStorage.getItem('playroom.session.v1'),
+      warning:globalThis.PlayroomPackLoadError
+    }))));
+  await resumeButton.click();
   if (await page.locator('.handoff').count()) await page.locator('[data-command=unlock]').click();
 }
 async function playHumanCard(page, saved) {
@@ -125,6 +134,8 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const playedFrames = (trace, move = 1) => trace.samples.filter(sample => sample.move === move && sample.pieces.length);
 
 test('Animation presets persist and stage real card flights before the next actor', {timeout: 120000}, async t => {
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(root);
+  const testUrl=fixtureServer?.url||url;
   const browser = await chromium.launch({headless: true,
     executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
@@ -134,7 +145,7 @@ test('Animation presets persist and stage real card flights before the next acto
     const page = await context.newPage(), errors = [];
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(url);
+    await page.goto(testUrl);
     // Seed once; a reload must read the user's current storage without reseeding.
     await page.evaluate(({settings, saved}) => {
       localStorage.clear();
@@ -321,5 +332,5 @@ test('Animation presets persist and stage real card flights before the next acto
       assert.equal(await page.locator('.handoff').count(), 0);
       assert.equal(await page.locator('.game-tile').count(), 5);
     });
-  } finally { await browser.close(); }
+  } finally { await browser.close(); await fixtureServer?.close(); }
 });

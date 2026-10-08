@@ -8,6 +8,8 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import struct
+import zlib
 import zipfile
 
 
@@ -225,22 +227,75 @@ def prepare_dev(packs, source_root):
         if not link.is_symlink():
             link.symlink_to(source_root, target_is_directory=True)
     (ROOT / "installed-packs.js").write_text(installed_script(packs), encoding="utf-8")
-    print(f"Для index.html подготовлено паков: {len(packs)}; installed-packs.js не входит в исходники приложения.")
+    ensure_dev_icons()
+    print(f"Для index.html подготовлено паков: {len(packs)}; installed-packs.js и PNG-иконки не входят в исходники приложения.")
 
 
 def source_files():
     """No game packs, generated preload, symlinks, saves or artifacts enter this archive."""
-    paths = {ROOT / name for name in ("index.html", "build.py", "build.sh", "README.md")}
+    paths = {ROOT / name for name in ("index.html", "build.py", "build.sh", "README.md", "manifest.webmanifest", "sw.js") if (ROOT / name).is_file()}
     for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
-    for pattern in ("app/*.js", "app/*.css", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
+    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
         paths.update(ROOT.glob(pattern))
     for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
             raise ValueError(f"Недопустимый исходный файл приложения: {path}")
         yield path
 
+
+
+def png_icon(size):
+    background=(243,240,231,255)
+    colors=[(73,107,87,255),(229,121,94,255),(237,189,89,255),(169,185,217,255)]
+    margin=round(size*0.238); gap=max(4,round(size*0.047)); side=round(size*0.238); radius=max(4,round(size*0.058))
+    cells=[(margin,margin),(margin+side+gap,margin),(margin,margin+side+gap),(margin+side+gap,margin+side+gap)]
+    pixels=bytearray(background*size*size)
+    def inside_rounded(px,py,x,y,w,h,r):
+        if x+r<=px<x+w-r or y+r<=py<y+h-r:return x<=px<x+w and y<=py<y+h
+        cx=x+r if px<x+r else x+w-r-1; cy=y+r if py<y+r else y+h-r-1
+        return (px-cx)**2+(py-cy)**2<=r*r
+    for (x,y),color in zip(cells,colors):
+        for py in range(max(0,y),min(size,y+side)):
+            for px in range(max(0,x),min(size,x+side)):
+                if inside_rounded(px,py,x,y,side,side,radius):
+                    offset=(py*size+px)*4; pixels[offset:offset+4]=bytes(color)
+    raw=b''.join(b'\x00'+bytes(pixels[row*size*4:(row+1)*size*4]) for row in range(size))
+    def chunk(kind,data):
+        return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
+    return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b'')
+
+
+def generated_icons():
+    return [('icons/icon-192.png',png_icon(192)),('icons/icon-512.png',png_icon(512))]
+
+
+def ensure_dev_icons():
+    for name,content in generated_icons():
+        path=ROOT/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
+
+
+def pwa_runtime_items(packs=()):
+    """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
+    paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js"}
+    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "core/*.js", "core/*.css", "icons/*.svg"):
+        paths.update(ROOT.glob(pattern))
+    items = []
+    for path in sorted(paths):
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
+            raise ValueError(f"Недопустимый PWA-файл: {path}")
+        items.append((path.relative_to(ROOT).as_posix(), path.read_bytes()))
+    items.append(("installed-packs.js", installed_script(list(packs)).encode("utf-8")))
+    items.extend(generated_icons())
+    return items
+
+
+def write_directory(destination, items):
+    for name, content in items:
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
 
 def write_zip(destination, items):
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -256,12 +311,13 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist", help="Каталог результата (по умолчанию: dist/ рядом со скриптом)")
     parser.add_argument("--packs-dir", type=Path, help="Внешний каталог packs/ с manifest.json или dist/ с *.playroom-pack.json")
     parser.add_argument("--all-games", action="store_true", help="Дополнительно собрать playroom-all-games.html из --packs-dir")
+    parser.add_argument("--pwa", action="store_true", help="Дополнительно собрать installable PWA-каталог и playroom-pwa.zip")
     parser.add_argument("--prepare-dev", action="store_true", help="Создать installed-packs.js для index.html и ссылку packs/ для локальных тестов")
     args = parser.parse_args()
     if args.all_games and not args.packs_dir:
         parser.error("Для --all-games требуется явный --packs-dir")
-    if args.packs_dir and not (args.all_games or args.prepare_dev):
-        parser.error("Выберите --all-games или --prepare-dev для указанных паков")
+    if args.packs_dir and not (args.all_games or args.prepare_dev or args.pwa):
+        parser.error("Выберите --all-games, --pwa или --prepare-dev для указанных паков")
     packs, source_root = read_packs(args.packs_dir) if args.packs_dir else ([], None)
     if args.prepare_dev:
         prepare_dev(packs, source_root)
@@ -286,6 +342,13 @@ def main():
         complete = output / "playroom-all-games.html"
         complete.write_text(complete_html, encoding="utf-8")
         artifacts.append(complete)
+    if args.pwa:
+        pwa_dir = output / "pwa"
+        pwa_items = pwa_runtime_items(packs)
+        write_directory(pwa_dir, pwa_items)
+        pwa_archive = output / "playroom-pwa.zip"
+        write_zip(pwa_archive, [("playroom-pwa/" + name, content) for name, content in pwa_items])
+        artifacts.append(pwa_archive)
     checksums = output / "SHA256SUMS"
     checksums.write_text("".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in sorted(artifacts)), encoding="ascii")
     for path in artifacts:
@@ -293,6 +356,9 @@ def main():
     print("playroom.html содержит приложение и движок. Игры устанавливаются из файлов паков.")
     if complete_html is not None:
         print(f"Для телефона со всеми {len(packs)} играми передайте только playroom-all-games.html.")
+    if args.pwa:
+        print(f"PWA-каталог: {output / 'pwa'}; архив: {output / 'playroom-pwa.zip'}")
+        print("Для установки PWA разместите содержимое pwa/ по HTTPS (или localhost для разработки).")
     print(f"Контрольные суммы: {checksums}")
 
 

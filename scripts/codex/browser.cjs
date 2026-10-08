@@ -2,7 +2,7 @@
 // Shared browser discovery for existing tests and Cloud setup; no app or pack imports.
 const fs = require('node:fs');
 const path = require('node:path');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium: playwrightChromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 function executable(candidate) {
   if (!candidate) return null;
   const paths = candidate.includes('/') || candidate.includes('\\')
@@ -13,6 +13,49 @@ function executable(candidate) {
   }
   return null;
 }
+const TEST_PROFILE_SCRIPT = () => {
+  if (!localStorage.getItem('playroom.player-profile.v1')) {
+    localStorage.setItem('playroom.player-profile.v1', JSON.stringify({
+      version: 1, id: 'playroom-test-player', name: 'Тестовый игрок', createdAt: 1, updatedAt: 1
+    }));
+  }
+};
+function wrapContext(context, seedProfile) {
+  if (!seedProfile) return context;
+  const seed = () => context.addInitScript(TEST_PROFILE_SCRIPT);
+  return new Proxy(context, {
+    get(target, prop) {
+      if (prop === 'addInitScript') return async (...args) => {
+        const result = await target.addInitScript(...args);
+        await seed();
+        return result;
+      };
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
+}
+const chromium = new Proxy(playwrightChromium, {
+  get(target, prop) {
+    if (prop === 'launch') return async options => {
+      const browser = await target.launch(options);
+      return new Proxy(browser, {
+        get(browserTarget, browserProp) {
+          if (browserProp === 'newContext') return async (options = {}) => {
+            const {playroomProfile = true, ...playwrightOptions} = options;
+            const context = await browserTarget.newContext(playwrightOptions);
+            if (playroomProfile) await context.addInitScript(TEST_PROFILE_SCRIPT);
+            return wrapContext(context, playroomProfile);
+          };
+          const value = Reflect.get(browserTarget, browserProp, browserTarget);
+          return typeof value === 'function' ? value.bind(browserTarget) : value;
+        }
+      });
+    };
+    const value = Reflect.get(target, prop, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  }
+});
 function executablePath() {
   const override = process.env.CHROME_BIN || process.env.CHROME_PATH;
   if (override) {
@@ -23,7 +66,7 @@ function executablePath() {
   for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
     const found = executable(name); if (found) return found;
   }
-  const managed = executable(chromium.executablePath());
+  const managed = executable(playwrightChromium.executablePath());
   if (managed) return managed;
   const error = Error('No Chromium browser found. Run bash scripts/codex/setup.sh, or set CHROME_BIN to an installed Chrome/Chromium executable.');
   error.code = 'BROWSER_MISSING'; throw error;
@@ -34,7 +77,7 @@ if (require.main === module) {
     if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--check')) throw Error('Usage: node scripts/codex/browser.cjs [--check]');
     const binary = executablePath();
     if (process.argv[2] === '--check') {
-      const browser = await chromium.launch({headless:true, executablePath:binary, args:['--no-sandbox','--disable-background-networking']});
+      const browser = await playwrightChromium.launch({headless:true, executablePath:binary, args:['--no-sandbox','--disable-background-networking']});
       await browser.close();
     }
     console.log(binary);

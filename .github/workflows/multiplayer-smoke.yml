@@ -1,0 +1,104 @@
+name: Multiplayer preview smoke
+on:
+  pull_request:
+    branches: [dev]
+    types: [ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: multiplayer-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore pinned tested packs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p pinned
+          curl --fail --location -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/GraphGiraffe/boardgame-playroom/actions/artifacts/11459727753/zip" -o pinned/old.zip
+          unzip -q pinned/old.zip -d pinned/old
+          unzip -q pinned/old/boardgame-playroom/boardgame-playroom/dist/preview/playroom-phone-pc-preview.zip -d pinned/kit
+          mkdir -p pinned/bundles pinned/sourcepacks
+          cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/bundles/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for bp in Path('pinned/bundles').glob('*.playroom-pack.json'):
+              b=json.loads(bp.read_text(encoding='utf-8')); m=b['manifest']; root=Path('pinned/sourcepacks')/m['id']; root.mkdir(parents=True,exist_ok=True)
+              (root/'manifest.json').write_text(json.dumps(m,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              (root/'manifest.js').write_text("// smoke generated\n(function(root){root.PlayroomCatalog||={};root.PlayroomCatalog["+json.dumps(m['id'])+"]="+json.dumps(m,ensure_ascii=False)+";})(globalThis);\n",encoding='utf-8')
+              for name,value in b['files'].items():
+                  p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value,encoding='utf-8')
+          PY
+      - name: Prepare bundled games
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
+      - name: Legacy layout regression gate
+        working-directory: app
+        timeout-minutes: 4
+        run: node --test --test-concurrency=1 tests/checkers-drag.test.cjs tests/uno-hand-size.test.cjs tests/compact-hand.test.cjs
+      - name: Two-device release gate
+        working-directory: app
+        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs tests/network-same-origin.test.cjs tests/recovery-warning.test.cjs tests/network-feedback-browser.test.cjs
+      - name: Build all-games preview
+        run: |
+          rm -rf app/dist/smoke
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --pwa --output-dir app/dist/smoke
+          mkdir -p app/dist/smoke/pwa/vendor
+          curl --fail --location "https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" -o app/dist/smoke/pwa/vendor/qrcode.js
+          sed -i 's#https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js#./vendor/qrcode.js#g' app/dist/smoke/pwa/app/qr.js app/dist/smoke/pwa/sw.js
+          rm -f app/dist/smoke/playroom-pwa.zip
+          (
+            cd app/dist/smoke
+            zip -q -r playroom-pwa.zip pwa
+          )
+          # build.py computed SHA256SUMS before the QR library was vendored.
+          # Check the *final* output and fail the workflow on any mismatch.
+          (
+            cd app/dist/smoke
+            sha256sum playroom.html playroom-source.zip tabletop-core.zip playroom-all-games.html playroom-pwa.zip > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
+          unzip -tq app/dist/smoke/playroom-pwa.zip
+          printf '%s\n'             'Playroom 0.15.0-preview.3'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing preview: PWA Web Share / Share Target / web+playroom protocol / QR / copy-paste fallback.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
+      - name: Validate built file preview
+        working-directory: app
+        env:
+          PLAYROOM_URL: file://${{ github.workspace }}/app/dist/smoke/playroom-all-games.html
+        run: node --test --test-concurrency=1 tests/network-main-app.test.cjs
+      - name: Validate installable PWA preview
+        working-directory: app
+        run: |
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory dist/smoke/pwa >/tmp/playroom-pwa.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          PLAYROOM_URL=http://127.0.0.1:4174/ node --test --test-concurrency=1 tests/network-main-app.test.cjs
+          curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
+          curl --fail http://127.0.0.1:4174/vendor/qrcode.js >/dev/null
+          rm -rf /tmp/playroom-pwa-zip && mkdir -p /tmp/playroom-pwa-zip
+          unzip -q dist/smoke/playroom-pwa.zip -d /tmp/playroom-pwa-zip
+          test -s /tmp/playroom-pwa-zip/pwa/vendor/qrcode.js
+          grep -F "./vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/app/qr.js >/dev/null
+          grep -F "./vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-0.15.0-preview.3
+          path: app/dist/smoke/
+          retention-days: 30

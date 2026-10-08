@@ -1,0 +1,74 @@
+name: Multiplayer pre-release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: multiplayer-prerelease-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Restore pinned tested packs from prior artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p pinned
+          curl --fail --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             "https://api.github.com/repos/GraphGiraffe/boardgame-playroom/actions/artifacts/11459727753/zip"             -o pinned/old-preview.zip
+          unzip -q pinned/old-preview.zip -d pinned/old
+          unzip -q pinned/old/boardgame-playroom/boardgame-playroom/dist/preview/playroom-phone-pc-preview.zip -d pinned/kit
+          mkdir -p pinned/bundles pinned/sourcepacks
+          cp pinned/kit/playroom-preview/preview-packs/*.playroom-pack.json pinned/bundles/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source=Path('pinned/bundles'); target=Path('pinned/sourcepacks')
+          for bundle_path in source.glob('*.playroom-pack.json'):
+              bundle=json.loads(bundle_path.read_text(encoding='utf-8'))
+              root=target / bundle['manifest']['id']; root.mkdir(parents=True,exist_ok=True)
+              manifest=bundle['manifest']
+              (root/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              manifest_js="// Generated from pinned manifest.json for prerelease validation.\n(function (root) {\n  'use strict';\n  root.PlayroomCatalog ||= {};\n  root.PlayroomCatalog["+json.dumps(manifest['id'])+"] = "+json.dumps(manifest,ensure_ascii=False,indent=2)+";\n})(globalThis);\n"
+              (root/'manifest.js').write_text(manifest_js,encoding='utf-8')
+              for name,value in bundle['files'].items():
+                  path=root/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_text(value,encoding='utf-8')
+          PY
+          find pinned/sourcepacks -maxdepth 2 -name manifest.json -print
+      - name: Prepare app with pinned source packs
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
+      - name: Full application and pack checks
+        timeout-minutes: 15
+        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks"
+      - name: Build testable all-games pre-release
+        run: |
+          rm -rf app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/pinned/sourcepacks" --all-games --pwa --output-dir app/dist/prerelease
+          mkdir -p app/dist/prerelease/pwa/vendor
+          curl --fail --location "https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js" -o app/dist/prerelease/pwa/vendor/qrcode.js
+          sed -i 's#https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js#./vendor/qrcode.js#g' app/dist/prerelease/pwa/app/qr.js app/dist/prerelease/pwa/sw.js
+          (
+            cd app/dist/prerelease/pwa
+            zip -q -r ../playroom-pwa-0.15.0-preview.3.zip .
+          )
+          cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
+          printf '%s\n'             'Playroom 0.15.0-preview.3'             "App head: ${GITHUB_SHA}"             'Packs: verified bundles from artifact 11459727753 / pack head b01652e56c70ff180f2fdde8da2f11ba115534fe'             'For the PWA experiment, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-0.15.0-preview.3
+          path: app/dist/prerelease/
+          retention-days: 30
