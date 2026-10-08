@@ -21,7 +21,7 @@
       // A bundled version conflict matters to the user while a saved game
       // still references it. Re-evaluate instead of freezing startup warnings.
       const visible=warnings.filter(warning=>{
-        const match=/^Встроенный пакет ([a-z0-9_-]+)@([^\\s]+) отличается/.exec(warning);
+        const match=/^Встроенный пакет ([a-z0-9_-]+)@([^\s]+) отличается/.exec(warning);
         return !match||references(match[1],match[2]).length>0;
       });
       const loadError=root.PlayroomPackLoadError;
