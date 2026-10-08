@@ -16,7 +16,12 @@ async function fixture(browser){
 test('same network GameScreen offers 2-tap UNO target with expiry, highlights and one authoritative action',{timeout:40000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);try{
-    const s=seed(),authority=new Authority(s),owner=authority.connect(0),snapshot=owner.snapshot();
+    const s=seed(),authority=new Authority(s),owner=authority.connect(0);
+    // This browser smoke also runs with the frozen UNO 0.2.0. Supply the
+    // optional action label as projected fixture data: the shared client must
+    // behave identically without requiring the enhanced pack at runtime.
+    const snapshot=structuredClone(owner.snapshot());
+    snapshot.actions=snapshot.actions.map(action=>action.type==='accuse-uno'?{...action,targetPrompt:'UNO!'}:action);
     await page.evaluate(({snapshot,definition})=>{
       window.qaAudio=[];window.qaSent=[];
       window.PlayroomAppBridge={audio:{registerPack(){},play(ids,pack){qaAudio.push({ids,pack});},stop(){}}};
@@ -59,12 +64,20 @@ test('projected notices and cues play once; finish shows per-player results and 
     const action=initial.actions.find(a=>a.type==='declare-uno');
     const receipt=a.dispatch(P.command(initial,action,'browser-uno-1'));
     assert.equal(receipt.ok,true);
-    await page.evaluate(next=>qaClient.emit(next),receipt.snapshot);
+    // The legacy frozen pack emitted this reaction before optional visual
+    // notices were introduced. Exercise the *platform* projected-notice
+    // contract with explicit authorized fixture metadata, then keep all
+    // exact sound, duplicate and visibility assertions below.
+    const projected=structuredClone(receipt.snapshot);
+    const announced=projected.events.at(-1);
+    assert.equal(announced.kind,'false-uno');
+    announced.notice={title:'Иван: UNO! слишком рано',detail:'За ранний выкрик штрафа нет',tone:'warning'};
+    await page.evaluate(next=>qaClient.emit(next),projected);
     assert.match(await page.locator('.game-notice').innerText(),/UNO! слишком рано/);
     assert.deepEqual(await page.evaluate(()=>qaAudio),[{ids:['uno.call'],pack:'uno'}]);
-    await page.evaluate(next=>qaClient.emit(next),receipt.snapshot);
+    await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
-    const finish=structuredClone(receipt.snapshot);
+    const finish=structuredClone(projected);
     finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.players[1].score=148;finish.state.move=finish.revision;
     finish.events.push({id:3,kind:'finish',player:1,text:'Джон побеждает'});finish.state.events=finish.events;
     finish.cues=[{id:'defeat',eventId:3}];
