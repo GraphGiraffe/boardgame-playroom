@@ -130,7 +130,7 @@
     interruptAction();input?.cancel();cancelBot(); latestPacks(); const games = E.GAMES.filter(g=>filter==='all'||catalog[g.id]?.category===filter);
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">⚄</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p2</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">⚄</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p3</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools"><button class="icon-btn pack-hub-button" data-command="packs" aria-label="Паки игр" title="Паки игр">${icon('layers')}</button><span class="status"><i class="dot"></i>${playerProfile?.name?esc(playerProfile.name)+' · ':''}Всё готово к игре</span><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран" title="Полный экран">${icon('full')}</button><button class="icon-btn" data-command="settings" aria-label="Настройки">${icon('settings')}</button></div></header>
       ${hubTab==='sessions'?savedGamesMarkup():`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
@@ -179,10 +179,20 @@
     const entry=library.list().find(entry=>entry.id===id);if(!entry)return;
     openModal(`${modalHead('Удалить партию?')}<p class="lead">${esc(entry.invalid?'Это сохранение':meta(entry.game)?.name||entry.game)} и вся история этой партии будут удалены с устройства. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-delete-confirm="${esc(id)}">Удалить</button></div>`);
   }
+  function refreshSavedGameRecovery(){
+    try{
+      const saved=library.current();
+      if(saved&&!session){session=saved.session;sessionId=saved.id;}
+      loadWarning='';
+    }catch(_){
+      loadWarning='Не удалось восстановить сохранение. Исходная запись сохранена; остальные партии доступны в «Моих партиях».';
+    }
+  }
   function deleteSession(id) {
     try {
       library.remove(id);
       if(id===sessionId){interruptAction();cancelBot();stopReplay();session=null;sessionId=null;selected=null;gate=null;lastResult=null;missedFrom=null;awaitingPass=false;}
+      refreshSavedGameRecovery();
       screen='hub';hubTab='sessions';closeModal(true);render();toast('Партия удалена');
     } catch (_) {toast('Не удалось удалить партию: хранилище браузера недоступно.');}
   }
@@ -322,7 +332,8 @@
   }
   function roomRulesFromForm(form){
     const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,form.elements['option-'+field.key].value]));
-    return {preset:form.elements.preset.value,presetLabel:form.elements.preset.selectedOptions[0].textContent,openHands:!!form.elements.openHands?.checked,options:packOptions};
+    const rules={preset:form.elements.preset.value,presetLabel:form.elements.preset.selectedOptions[0].textContent,openHands:!!form.elements.openHands?.checked,options:packOptions};
+    return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],!!catalog[game]?.capabilities?.hands)};
   }
   function createNetworkRoom(form){
     const game=form.dataset.game,mode=form.elements.mode.value,g=meta(game),active=activatePack(game);
@@ -350,6 +361,8 @@
     if(!room)return leaveTable('games');
     const state=roomService.snapshot(room.id),me=state.participants.find(p=>p.id===lobbyParticipantId),isHost=state.ownerId===lobbyParticipantId;
     const rulesChanged=latestRoomEvent('rules-changed'),players=state.participants.filter(p=>p.role==='player'),spectators=state.participants.filter(p=>p.role==='spectator');
+    const ruleRows=Array.isArray(state.rules.display)?state.rules.display:Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],!!catalog[state.game.id]?.capabilities?.hands);
+    const ruleMarkup='<dl class="lobby-rule-grid">'+ruleRows.map(item=>'<div class="lobby-rule-row"><dt>'+esc(item.label)+'</dt><dd>'+esc(item.value)+'</dd></div>').join('')+'</dl>';
     const participantById=id=>state.participants.find(p=>p.id===id);
     const seatMarkup=state.seats.map(seat=>{const occupant=participantById(seat.participantId),mine=occupant?.id===lobbyParticipantId,locked=state.phase!=='lobby'||!!me?.ready;
       return `<button class="lobby-seat ${occupant?'occupied':'available'}" data-lobby-seat="${esc(seat.id)}" ${locked||occupant&&!mine?'disabled':''}><span class="seat-color" style="background:${esc(seat.color.value)}"></span><span><strong>${occupant?esc(occupant.nickname):esc(seat.color.label)+' слот'}</strong><small>${occupant?(occupant.ready?'<span class="lobby-ready">Готов</span>':'<span class="lobby-not-ready">Не готов</span>'):'Нажмите, чтобы занять место'}</small></span></button>`;}).join('');
@@ -357,6 +370,7 @@
     const canStart=isHost&&roomService.canStart(state.id),countText=state.constraints.allowed?state.constraints.allowed.join(', '):state.constraints.min===state.constraints.max?String(state.constraints.min):state.constraints.min+'–'+state.constraints.max;
     $('#app').innerHTML=`<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>${esc(state.name)}</h1><p>${esc(state.game.name)} · ${state.hostMode==='table'?'Хост показывает Стол':'Хост играет'} · игроков: ${countText}</p></div><div class="lobby-meta"><span class="pill">${esc(state.rules.presetLabel||'Правила')}</span><span class="lobby-code">#${esc(state.code)}</span><button class="icon-btn" data-command="settings" aria-label="Настройки">${icon('settings')}</button></div></header>
       ${rulesChanged?`<p class="lobby-rules-note" role="status">${esc(rulesChanged.text)}</p>`:''}
+      <section class="lobby-card lobby-rules-summary" aria-label="Выбранные правила"><h2>Правила комнаты</h2>${ruleMarkup}</section>
       <div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">${seatMarkup}</div><div class="lobby-actions">${me?.role==='player'?`<button class="btn secondary" data-command="lobby-spectator" ${me.ready||state.phase!=='lobby'?'disabled':''}>Стать зрителем</button>`:''}<button class="btn secondary" data-rules="${esc(state.game.id)}">Правила игры</button>${isHost?`<button class="btn secondary" data-command="room-rules" ${state.phase!=='lobby'?'disabled':''}>Изменить правила</button>`:''}</div></section>
       <aside class="lobby-card"><h2>Вы в комнате</h2><form id="lobby-nickname-form" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="${esc(me?.nickname||playerProfile?.name||'')}" ${me?.ready||state.phase!=='lobby'?'disabled':''}></label><button class="btn secondary" type="submit" ${me?.ready||state.phase!=='lobby'?'disabled':''}>Сохранить</button></form>
       <div class="lobby-actions">${me?.role==='player'?`<button class="btn ${me.ready?'secondary':''}" data-command="lobby-ready" ${state.phase!=='lobby'?'disabled':''}>${me.ready?'Снять готовность':'Я готов'}</button>`:''}${isHost?`<button class="btn" data-command="lobby-start" ${canStart?'':'disabled'}>Начать игру</button>`:''}</div>
@@ -547,7 +561,7 @@
   window.addEventListener('pagehide',()=>{stopSounds();if(session)save();});
   packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,openModal,modalHead,toast,onChange(){
     filter='all';
-    if(!session)try{const saved=library.current();if(saved){session=saved.session;sessionId=saved.id;loadWarning='';}}catch(_){}
+    refreshSavedGameRecovery();
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
