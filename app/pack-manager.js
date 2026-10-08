@@ -12,6 +12,14 @@
     }
     catch (error) { root.PlayroomPackLoadError = error.message || 'Не удалось загрузить установленные паки.'; }
   }
+  // A removed save no longer pins conflicting code under the same version.
+  // The default loader remains conservative until explicit references can be checked.
+  function reconcile(manager,library,bundles=root.PlayroomInstalledPacks||[]) {
+    if(!manager?.bootstrap||!library?.references||!Array.isArray(bundles))return manager?.list?.()||[];
+    const list=manager.bootstrap(bundles,{preserveSavedConflict:(id,version)=>library.references(id,version).length>0});
+    root.PlayroomPackLoadError=manager.warnings?.join(' ')||'';
+    return list;
+  }
   function create({manager,library,openModal,modalHead,toast,onChange}) {
     let pending = null, message = '', reading = 0;
     const title = manifest => manifest.name || manifest.title || manifest.id;
@@ -78,5 +86,5 @@
     });
     return {open(){pending=null;message=currentBootWarnings();open();}};
   }
-  root.PlayroomPackManager = {create};
+  root.PlayroomPackManager = {create,reconcile};
 })(globalThis);

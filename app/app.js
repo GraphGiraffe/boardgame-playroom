@@ -17,6 +17,8 @@
   function localClient(player){const executor=localAuthority();if(!localClients.has(player))localClients.set(player,executor.connect(player));return localClients.get(player);}
   const packs = globalThis.PlayroomPacks;
   const library = new globalThis.PlayroomLibrary(() => localStorage, E, Session, packs);
+  try { globalThis.PlayroomPackManager?.reconcile?.(packs,library); }
+  catch (error) { globalThis.PlayroomPackLoadError ||= error.message || 'Не удалось сверить версии паков.'; }
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
@@ -168,6 +170,12 @@
     try {
       library.remove(id);
       if(id===sessionId){interruptAction();cancelBot();stopReplay();session=null;sessionId=null;selected=null;gate=null;lastResult=null;missedFrom=null;awaitingPass=false;}
+      if(packs?.warnings?.some(warning=>/^Встроенный пакет /.test(warning))) {
+        try {
+          globalThis.PlayroomPackManager?.reconcile?.(packs,library);
+          for(const [packId,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(packId,pack.sounds);
+        }catch(error){globalThis.PlayroomPackLoadError=error.message||'Не удалось пересчитать версии паков.';}
+      }
       refreshSavedGameRecovery();
       screen='hub';hubTab='sessions';closeModal(true);render();toast('Партия удалена');
     } catch (_) {toast('Не удалось удалить партию: хранилище браузера недоступно.');}
