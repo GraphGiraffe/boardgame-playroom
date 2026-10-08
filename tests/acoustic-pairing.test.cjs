@@ -71,7 +71,7 @@ test('enumerates ALL browser-visible addresses including VPN, public, test, TCP,
   assert.equal(items.find(c=>c.address==='fe80::1020').kind,'ipv6');
   assert.equal(items.find(c=>c.type==='srflx').audio,false);
   assert.equal(items.find(c=>c.transport==='tcp').audio,false);
-  assert.equal(items[0].address,'192.168.1.52');
+  assert.equal(items[0].kind,'lan','a private LAN route should be recommended, not a VPN/test address');
   assert.throws(()=>A.pack(datum,{address:'192.0.2.1',port:38808}),/host|тестов|LAN/);
   assert.throws(()=>A.pack(datum,{address:'198.51.100.22',port:40014}),/host/);
   const chosen=A.unpack(A.pack(datum,{address:'10.24.205.39',port:40012}));
