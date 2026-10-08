@@ -68,23 +68,21 @@ jobs:
             cd app/dist/smoke
             zip -q -r playroom-pwa.zip pwa
           )
-          # Include final user-facing RC2 files without mutating published RC1.
+          # Final RC2 candidate artifact, including all modified assets and notices.
           cp app/dist/smoke/playroom-all-games.html app/dist/smoke/playroom-0.15.0-rc.2.html
           cp app/dist/smoke/playroom-pwa.zip app/dist/smoke/playroom-pwa-0.15.0-rc.2.zip
+          cp app/CHANGELOG.md app/dist/smoke/CHANGELOG.md
+          printf '%s\n' 'Playroom 0.15.0-rc.2' "App head: ${GITHUB_SHA}" \
+            'LAN acoustic pairing: audible ggwave Fastest/Fast/Normal and manual IPv4 fallback.' \
+            'QR / Share / paste remain fallback; physical Windows/Android and Safari acceptance pending.' \
+            'Reconnect and network history persistence remain outside RC2 scope.' > app/dist/smoke/README-TEST.txt
           (
             cd app/dist/smoke
-            zip -q playroom-0.15.0-rc.2-bundle.zip playroom-0.15.0-rc.2.html playroom-pwa-0.15.0-rc.2.zip CHANGELOG.md
-          )
-          # build.py computed SHA256SUMS before the vendor files were finalized.
-          # Check the *final* output and fail the workflow on any mismatch.
-          (
-            cd app/dist/smoke
+            zip -q playroom-0.15.0-rc.2-bundle.zip playroom-0.15.0-rc.2.html playroom-pwa-0.15.0-rc.2.zip README-TEST.txt CHANGELOG.md
             sha256sum playroom.html playroom-source.zip tabletop-core.zip playroom-all-games.html playroom-pwa.zip playroom-0.15.0-rc.2.html playroom-pwa-0.15.0-rc.2.zip playroom-0.15.0-rc.2-bundle.zip > SHA256SUMS
             sha256sum -c SHA256SUMS
           )
           unzip -tq app/dist/smoke/playroom-pwa.zip
-          cp app/CHANGELOG.md app/dist/smoke/CHANGELOG.md
-          printf '%s\n'             'Playroom 0.15.0-rc.2'             "App head: ${GITHUB_SHA}"             'Recommended first live test: UNO, Network · Player, two devices.'             'Pairing: ggwave sound Offer/Answer (Fastest, manual LAN IPv4 fallback), plus QR / Share / copy-paste. Browser and physical audio acceptance documented in docs/ACOUSTIC-PAIRING.md.'             'Reconnect and network history persistence are not included yet.'             > app/dist/smoke/README-TEST.txt
       - name: Validate built file preview
         working-directory: app
         env:
