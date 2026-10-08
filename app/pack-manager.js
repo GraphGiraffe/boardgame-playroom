@@ -16,6 +16,18 @@
     let pending = null, message = '', reading = 0;
     const title = manifest => manifest.name || manifest.title || manifest.id;
     const references = (id,version) => library.references(id,version);
+    function currentBootWarnings(){
+      const warnings=root.PlayroomPacks?.warnings||[];
+      // A bundled version conflict matters to the user while a saved game
+      // still references it. Re-evaluate instead of freezing startup warnings.
+      const visible=warnings.filter(warning=>{
+        const match=/^Встроенный пакет ([a-z0-9_-]+)@([^\\s]+) отличается/.exec(warning);
+        return !match||references(match[1],match[2]).length>0;
+      });
+      const loadError=root.PlayroomPackLoadError;
+      const fatal=loadError&&loadError!==warnings.join(' ')?loadError:'';
+      return [fatal,...visible].filter(Boolean).join(' ');
+    }
     function listMarkup() {
       const list = manager?.list() || [];
       if (!list.length) return '<div class="pack-empty"><strong>Пока нет игр</strong><p>Выберите файл пака, чтобы добавить правила, оформление и звуки игры. Подключение к интернету не нужно.</p></div>';
@@ -64,7 +76,7 @@
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';open();}
       else remove(button.dataset.packRemove,button.dataset.packVersion);
     });
-    return {open(){pending=null;message=root.PlayroomPackLoadError||'';open();}};
+    return {open(){pending=null;message=currentBootWarnings();open();}};
   }
   root.PlayroomPackManager = {create};
 })(globalThis);
