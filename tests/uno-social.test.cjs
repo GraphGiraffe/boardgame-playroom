@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 require('../packs/uno/rules.js');
@@ -74,12 +75,22 @@ async function play(page, id, move) {
   await moved(page, move);
 }
 async function accuse(page, target) {
-  await page.locator(`[data-accuse-player="${target}"]`).first().click();
-  const button = await action(page, 'accuse-uno', '.modal', {target});
+  // GameScreen uses a common two-tap player target, not a legacy modal.
+  const previous = (await state(page)).move;
+  const token = page.locator(`.player-token[data-accuse-player="${target}"]`);
+  await token.click();
+  assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
+  const button = page.locator(`.player-target-confirm[data-player-confirm="${target}"]`);
+  await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
+  assert.equal(await token.evaluate(el=>el.classList.contains('is-player-targeted')),true);
+  const hand=page.locator(`.opponent-hand[data-accuse-player="${target}"]`);
+  assert.equal(await hand.evaluate(el=>el.classList.contains('is-player-targeted')),true);
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
+  assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
   await button.click();
+  assert.equal(await page.locator('.player-target-confirm').count(),0);
   return appearance;
 }
 const ids = hand => hand.map(card => card.id);
@@ -88,6 +99,8 @@ async function visibleHandIds(page) {
 }
 
 test('Manual UNO declarations, accusations and device handoff through the real application', {timeout: 120000}, async t => {
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(path.resolve(__dirname,'..'));
+  const testUrl=fixtureServer?.url||url;
   const browser = await chromium.launch({headless: true,
     executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
@@ -101,7 +114,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     }, saved);
     const page = await context.newPage(), errors = [];
     page.setDefaultTimeout(7000); page.on('pageerror', error => errors.push(error.message));
-    await page.goto(url);
+    await page.goto(testUrl);
     return {page, context, errors};
   }
   async function check(name, run) {
@@ -278,5 +291,5 @@ test('Manual UNO declarations, accusations and device handoff through the real a
         assert((await state(page)).events.some(event => /UNO!/.test(event.text)));
       }
     });
-  } finally { await browser.close(); }
+  } finally { await browser.close(); await fixtureServer?.close(); }
 });
