@@ -53,7 +53,7 @@ jobs:
         run: node --test --test-concurrency=1 tests/checkers-drag.test.cjs tests/uno-hand-size.test.cjs
       - name: Two-device release gate
         working-directory: app
-        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs
+        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/network-main-app.test.cjs tests/network-same-origin.test.cjs tests/recovery-warning.test.cjs
       - name: Build all-games preview
         run: |
           rm -rf app/dist/smoke
