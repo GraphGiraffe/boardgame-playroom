@@ -3,7 +3,7 @@
   const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
-  let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null;
+  let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null;
   let offerToken=null,answerToken=null;
   function toast(text){bridge()?.toast?.(text);}
@@ -21,8 +21,8 @@
     const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
     QR?.render?.(document.getElementById(id+'-qr'),link,{level:'L',cellSize:4,margin:4});
   }
-  function closeClient(){clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
-  function closeHostPeer(){hostServeClose?.();hostServeClose=null;hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;}
+  function closeClient(){clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
+  function closeHostPeer(){hostMount?.destroy?.();hostMount=null;hostServeClose?.();hostServeClose=null;hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;}
   function ensureButtons(){
     const b=bridge();if(!b)return;
     const intro=$('.intro');
@@ -131,7 +131,7 @@
     const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
     const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
     const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-    Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'player'}).render();
+    hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
   }
   function startClientGame(snapshot){
     if(clientGameClient)return;
@@ -139,7 +139,7 @@
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
       const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
       clientGameClient=new SessionClient(clientTransport);clientGameClient.accept(snapshot);document.getElementById('modal-root').innerHTML='';document.getElementById('app').inert=false;
-      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'player'});clientMount.render();
+      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'combined'});clientMount.render();
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{

@@ -78,13 +78,41 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
 
-    await host.locator('.shared-shell').waitFor({timeout:10000});await client.locator('.shared-shell').waitFor({timeout:10000});
-    assert.equal(await host.locator('.shared-shell').getAttribute('data-viewer'),'0');
-    assert.equal(await client.locator('.shared-shell').getAttribute('data-viewer'),'1');
-    const before=Number(await host.locator('.shared-shell').getAttribute('data-revision'));
-    const action=host.locator('.shared-scene [data-action]').first();await action.waitFor();await action.click();
-    await client.waitForFunction(r=>Number(document.querySelector('.shared-shell')?.dataset.revision)>r,before);
-    assert.ok(Number(await client.locator('.shared-shell').getAttribute('data-revision'))>before);
+    await host.locator('.table-shell.network-game').waitFor({timeout:10000});await client.locator('.table-shell.network-game').waitFor({timeout:10000});
+    assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
+    assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+    // Network mode MUST use the local bot/hot-seat GameScreen, not a compact
+    // second shell. Opponent hands are visible without exposing hidden faces.
+    for(const page of [host,client]){
+      assert.equal(await page.locator('.table-shell.network-game .table-header').count(),1);
+      assert.equal(await page.locator('.table-shell.network-game .player-strip .player-token').count(),2);
+      assert.equal(await page.locator('.table-shell.network-game .player-strip').isVisible(),true);
+      assert.equal(await page.locator('.table-shell.network-game .scene .opponent-hand').count(),1);
+      assert.equal(await page.locator('.table-shell.network-game .scene .own-hand').count(),1);
+      assert.equal(await page.locator('.table-tools [data-command=history] svg').count(),1);
+      assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),1);
+      assert.equal(await page.locator('.opponent-hand .uno-art-face').count(),0,'Opponent private card faces must stay hidden');
+    }
+    const before=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
+    const action=host.locator('.table-shell.network-game .scene [data-action]').first();await action.waitFor();await action.click();
+    await client.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
+    assert.ok(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'))>before);
+    // History is the same inline panel as local play, read-only and not a
+    // detached modal with a lone slider. Its navigation does not move live game.
+    const latest=Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'));
+    await client.locator('.table-tools [data-command=history]').click();
+    await client.locator('.history-panel').waitFor();
+    assert.equal(await client.locator('.history-panel #replay-range').count(),1);
+    assert.equal(await client.locator('.history-controls [data-command=replay-prev]').count(),1);
+    assert.equal(await client.locator('.history-controls [data-command=replay-play]').count(),1);
+    assert.equal(await client.locator('.history-controls [data-command=replay-next]').count(),1);
+    assert.equal(await client.locator('.table-shell.network-game .scene [data-action]').count(),0,'History is read-only');
+    await client.locator('.history-controls [data-command=replay-prev]').click();
+    await client.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
+    assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
+    await client.locator('.history-panel [data-command=history-close]').click();
+    assert.equal(await client.locator('.history-panel').count(),0);
+
     assert.deepEqual(errors,[]);
   }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
 });

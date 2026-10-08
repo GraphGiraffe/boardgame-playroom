@@ -18,30 +18,7 @@
   const library = new globalThis.PlayroomLibrary(() => localStorage, E, Session, packs);
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
-    grid:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
-    history:'<path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/>',
-    help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 17h.01"/>',
-    full:'<path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/>',
-    settings:'<path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3" fill="currentColor"/><circle cx="16" cy="17" r="3" fill="currentColor"/>',
-    play:'<path d="m9 5 10 7-10 7Z" fill="currentColor" stroke="none"/>',
-    arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
-    back:'<path d="M19 12H5m5-5-5 5 5 5"/>',
-    next:'<path d="m9 6 6 6-6 6"/>',
-    prev:'<path d="m15 6-6 6 6 6"/>',
-    close:'<path d="m6 6 12 12M6 18 18 6"/>',
-    trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
-    people:'<circle cx="9" cy="7" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
-    clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    pause:'<path d="M8 5v14M16 5v14" stroke-width="4"/>',
-    check:'<path d="m5 12 4 4L19 6"/>',
-    hand:'<path d="M8 12V5a2 2 0 0 1 4 0v7-8a2 2 0 0 1 4 0v9-6a2 2 0 0 1 4 0v8c0 5-3 7-7 7-3 0-5-2-7-5l-3-4a2 2 0 0 1 3-3l2 2Z"/>',
-    layers:'<path d="m12 3 10 6-10 6L2 9Zm-10 12 10 6 10-6M2 15l10 6 10-6"/>',
-    sound:'<path d="m11 4-6 5H2v6h3l6 5Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
-    reset:'<path d="M3 10a9 9 0 1 1 2 8M3 3v7h7"/>',
-    save:'<path d="M5 3h12l4 4v14H3V3Zm3 0v6h8V3M7 21v-8h10v8"/>',
-    eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
-  }[name] || '')+'</svg>';
+  const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
   const brand = '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>ХОД<small>β</small>';
   const names = ['Вы','Мика','Тео','Луна'];
   const catalog = globalThis.PlayroomCatalog || {};
@@ -201,10 +178,7 @@
     return localClient(viewer).snapshot().actions;
   }
   function playersMarkup(state,actions=[]) {
-    const game=meta(session.game);
-    const reactions=actions;
-    const badge=i=>{try { const value=catalog[state.game]?.playerBadge?.(state,i);return typeof value==='string'?esc(value):''; }catch(_){return '';}};
-    return state.players.map((p,i)=>`<div class="player-token ${state.turn===i?'active':''}" ${reactions.some(a=>a.target===i)?`data-accuse-player="${i}" role="button" tabindex="0" aria-label="Действия игрока ${esc(p.name)}"`:''}><span class="avatar p${i}">${esc(p.name.slice(0,1))}</span><span>${esc(p.name)}${i===viewer&&p.name!=='Вы'?' · вы':''}<small>${p.bot?'Бот':'Игрок'}${Number.isFinite(p.score)?' · '+esc(game.scoreLabel||'очки')+': '+p.score:''}${badge(i)}</small></span></div>`).join('');
+    return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||'очки',playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
   }
   function renderTable(animate=false) {
     if (!session) return renderHub();
@@ -214,22 +188,26 @@
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
     const turnText=replay?'Просмотр истории':transition?'Показываем ход…':finished?'Партия завершена':paused?'Пауза':turnPlayer?.bot?`${turnPlayer.name} думает…`:isPass()?`Ходит ${turnPlayer?.name}`:'Ваш ход';
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
-    $('#app').innerHTML=`<main class="table-shell"><header class="table-header"><div class="table-heading"><button class="icon-btn" data-command="home" aria-label="К играм" title="В хаб, с сохранением партии">${icon('back')}</button><div class="table-title"><h1>${esc(game.name)}</h1><p>${isPass()?'Вместе на одном устройстве':'За столом с ботами'} · ${esc(session.options.presetLabel||'Основной набор')}</p></div></div>
-      <div class="table-tools"><button class="icon-btn desktop-tool" data-command="settings" aria-label="Настройки">${icon('settings')}</button><button class="icon-btn" data-command="rules" aria-label="Правила игры">${icon('help')}</button><button class="icon-btn ${historyOpen?'active':''}" data-command="history" aria-label="История ходов">${icon('history')}</button><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран">${icon('full')}</button></div></header>
-      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${!replay&&turnPlayer?.bot?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`}</span></div>
-      <div class="player-strip" aria-label="Игроки">${playersMarkup(projected,actions)}</div>
-      <section class="scene ${replay?'replaying':''}" aria-label="Игровой стол" aria-busy="${!!transition}" data-animation-speed="${settings.animationSpeed}">${V.render(projected,shownViewer,actions,{selected,flipped:shownViewer===1,quickPlay:settings.quickPlay})}${paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''}</section>
-      ${historyOpen?historyMarkup():''}
-      ${isPass()&&hasReactions(state)?`<div class="pass-device-bar"><button class="btn secondary" data-command="pass-device" ${!awaitingPass||transition||paused||replay||gate!==null?'disabled':''}>Передать устройство ${icon('arrow')}</button></div>`:''}
-      <footer class="table-bottom"><span class="event-latest" title="${esc(lastEvent(projected)?.text||'Новая партия')}">${esc(lastEvent(projected)?.text||'Выберите доступное действие на столе')}</span><span class="auto-saved">${icon(storageOK?'check':'save')}${storageOK?'Сохранено':'Не сохранено'}</span><button class="text-btn" data-command="${finished?'result':'pause'}">${finished?'Результаты':paused?'Продолжить':'Пауза'} ${icon(finished?'arrow':paused?'play':'pause')}</button></footer></main>`;
+    const eventText=lastEvent(projected)?.text||'Выберите доступное действие на столе';
+    $('#app').innerHTML=GameScreen.render({
+      gameName:game.name,subtitle:(isPass()?'Вместе на одном устройстве':'За столом с ботами')+' · '+(session.options.presetLabel||'Основной набор'),
+      state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||'очки',
+      playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
+      turnText,turnExtra:replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`,
+      replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
+      scene:V.render(projected,shownViewer,actions,{selected,flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''),
+      historyHTML:historyOpen?historyMarkup():'',
+      beforeFooter:isPass()&&hasReactions(state)?`<div class="pass-device-bar"><button class="btn secondary" data-command="pass-device" ${!awaitingPass||transition||paused||replay||gate!==null?'disabled':''}>Передать устройство ${icon('arrow')}</button></div>`:'',
+      footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
+      footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
+    });
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     if(gate!==null)showGate();
     scheduleBot();
   }
   function historyMarkup() {
     const idx=replayIndex??session.states.length-1, state=session.view(gate!==null?-1:viewer,idx);
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>Каждый ход на месте</strong><span class="replay-badge">${idx} / ${session.states.length-1}</span><button class="text-btn" data-command="history-close">К игре ${icon('close')}</button></div>
-      <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${idx===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${replayTimer?'Остановить':'Воспроизвести'} повтор">${icon(replayTimer?'pause':'play')}</button><input type="range" min="0" max="${session.states.length-1}" value="${idx}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${idx===session.states.length-1?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(lastEvent(state)?.text||'Начальная расстановка. Все готовы!')}</p></section>`;
+    return GameScreen.historyMarkup({index:idx,count:session.states.length-1,caption:lastEvent(state)?.text,playing:!!replayTimer});
   }
   function scrubHistory(index) {
     input?.cancel();stopReplay();replayIndex=index;selected=null;
@@ -499,7 +477,7 @@
     commit(action,context){act(viewer,action,context);}
   });
   document.addEventListener('click',event=>{
-    if(event.target.closest('.shared-shell,.shared-modal-backdrop'))return;
+    if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
     const person=event.target.closest('[data-accuse-player]');
     if(person){showPlayerActions(Number(person.dataset.accusePlayer));return;}
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
@@ -565,7 +543,7 @@
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
-  globalThis.PlayroomAppBridge=Object.freeze({profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,renderLobby,openModal,closeModal,modalHead});
+  globalThis.PlayroomAppBridge=Object.freeze({profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,renderLobby,openModal,closeModal,modalHead,showSettings});
   render();
   if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();

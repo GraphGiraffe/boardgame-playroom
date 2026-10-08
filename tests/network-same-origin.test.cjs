@@ -90,13 +90,13 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
 
-    await host.locator('.shared-shell').waitFor({timeout:10000});await client.locator('.shared-shell').waitFor({timeout:10000});
-    assert.equal(await host.locator('.shared-shell').getAttribute('data-viewer'),'0');
-    assert.equal(await client.locator('.shared-shell').getAttribute('data-viewer'),'1');
-    const before=Number(await host.locator('.shared-shell').getAttribute('data-revision'));
-    const action=host.locator('.shared-scene [data-action]').first();await action.waitFor();await action.click();
-    await client.waitForFunction(r=>Number(document.querySelector('.shared-shell')?.dataset.revision)>r,before);
-    assert.ok(Number(await client.locator('.shared-shell').getAttribute('data-revision'))>before);
+    await host.locator('.table-shell.network-game').waitFor({timeout:10000});await client.locator('.table-shell.network-game').waitFor({timeout:10000});
+    assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
+    assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+    const before=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
+    const action=host.locator('.table-shell.network-game .scene [data-action]').first();await action.waitFor();await action.click();
+    await client.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
+    assert.ok(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'))>before);
     assert.deepEqual(errors,[]);
   }finally{await hc.close();await browser.close();if(s)await new Promise(r=>s.close(r));}
 });

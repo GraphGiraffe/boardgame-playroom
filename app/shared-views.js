@@ -1,72 +1,159 @@
 (function(root){
   'use strict';
-  const V=root.PlayroomViews,H=V.helpers;
+  const V=root.PlayroomViews,H=V.helpers,GameScreen=root.PlayroomGameScreen;
   function install(definition){
     const {manifest,view,styles,assets={}}=definition;
     if(!manifest||typeof manifest.id!=='string'||typeof view!=='string'||typeof styles!=='string')throw Error('Нет представления пака.');
     const catalog={[manifest.id]:manifest},scope={PlayroomViews:V,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error('Ресурс отсутствует');return assets[path];}})};
-    // Only a trusted presentation module executes here; no Session or rule module.
+    // A trusted view module executes here. The remote client does not receive Session or rules code.
     Function('globalThis','"use strict";\n'+view)(scope);
     const style=document.createElement('style');style.dataset.sharedPack=manifest.id;style.textContent=styles;document.head.appendChild(style);
     return {manifest,catalog:catalog[manifest.id],rules:definition.rules||[],sounds:definition.sounds||{}};
   }
   function mount(client,definition,{surface}={}){
-    const pack=install(definition),app=document.getElementById('app');
-    let selected=null,connected=true,historySnapshot=null,input=null,dialogOpen=false,renderedRevision=-1;
+    const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
+    let selected=null,connected=true,historyOpen=false,historyIndex=null,historySnapshot=null,historyTicket=0;
+    let input=null,dialogOpen=false,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
     const drawNotice=document.getElementById('toast');
-    let toastTimer;const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;toastTimer=setTimeout(()=>{drawNotice.textContent="";},4000);};
-    const usable=()=>connected&&!client.pending&&!historySnapshot&&!dialogOpen&&client.snapshot?.viewer>=0;
+    let toastTimer;
+    const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;drawNotice.classList.add('show');toastTimer=setTimeout(()=>{drawNotice.textContent='';drawNotice.classList.remove('show');},4000);};
+    const usable=()=>connected&&!client.pending&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
+    const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
+    const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
+    const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
     function render(){
-      const live=client.snapshot,s=historySnapshot||live;if(!s)return;
+      if(destroyed)return;
+      const live=client.snapshot,s=historyOpen&&historySnapshot?historySnapshot:live;
+      if(!s)return;
       if(s.packVersion!==pack.manifest.version||s.game!==pack.manifest.id)throw Error('Версия представления не совпадает с партией.');
-      const actual=surface||(s.viewer<0?'table':'player');
+      // A player uses the SAME combined scene as local bots/hot seat, not the reduced player surface.
+      // The table is public, and only the server's projected state may be rendered.
+      const actual=s.viewer<0?'table':surface==='table'?'table':'combined';
       if(!V.supports(s.game,actual))throw Error('Этот пак не поддерживает выбранный экран.');
       const hand=s.state.data.hands?.[s.viewer];
       if(selected!==null&&hand&&!hand.some(c=>c.id===selected))selected=null;
-      const old=document.querySelector('.hand-track'),scroll={left:old?.scrollLeft||0,top:old?.scrollTop||0};
-      const isPublic=s.viewer<0;
-      app.innerHTML=`<main class="shared-shell" data-revision="${s.revision}" data-viewer="${s.viewer}" data-surface="${actual}"><header class="shared-header"><div><h1>${H.esc(pack.manifest.name)}</h1><span>${isPublic?'Общий стол':H.esc(s.state.players[s.viewer].name)}</span></div><nav><button class="scene-button" data-shared="help" aria-label="Правила игры">?</button><button class="scene-button" data-shared="history">История</button><button class="scene-button" data-shared="fullscreen" aria-label="Полный экран">⛶</button></nav></header>
-        <div class="shared-status" role="status"><span>${historySnapshot?'Просмотр хода '+s.revision:s.state.status==='finished'?'Партия завершена':connected?'Ходит '+H.esc(s.state.players[s.state.turn].name):'Связь потеряна · партия ожидает подключения'}</span><span>Ход ${s.revision+1}</span></div>
-        <section class="scene shared-scene" aria-label="Игровой стол">${V.render(s.state,s.viewer,usable()?s.actions:[],{selected,surface:actual,quickPlay:false})}</section>
-        <footer class="shared-footer"><span class="event-latest">${H.esc(s.events.at(-1)?.text||'')}</span>${historySnapshot?'<button class="scene-button" data-shared="live">К игре</button>':''}${client.pending?'<button class="scene-button" data-shared="retry">Повторить отправку</button>':''}</footer></main>`;
-      const track=document.querySelector('.hand-track');if(track){track.scrollLeft=scroll.left;track.scrollTop=scroll.top;}
-      renderedRevision=s.revision;
+      const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
+      const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
+      const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:false});
+      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer}):'';
+      app.innerHTML=GameScreen.render({
+        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
+        state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
+        playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
+        scene,replay:historyOpen,turnText:historyOpen?'Просмотр истории':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
+        turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
+        historyHTML,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
+        footerAction:{command:'home',label:'К играм',icon:'back'}
+      });
+      const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
+      renderedRevision=live.revision;
     }
-    async function submit(action){
+    function show(content){
+      dialogOpen=true;input.cancel();app.inert=true;
+      modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Информация"><button class="text-btn" data-command="close-modal">Закрыть ${GameScreen.icon('close')}</button>${content}</section></div>`;
+      modal.querySelector('button')?.focus();
+    }
+    function close(){modal.innerHTML='';app.inert=false;dialogOpen=false;pendingAction=null;render();}
+    async function submit(action,confirmed=false){
       if(!usable())return;
-      if(action.confirmation&&!root.confirm(action.confirmation))return;
-      input?.cancel();
+      if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>Подтверждение действия</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||'Подтвердить')}</button>`);return;}
+      input.cancel();
       try{const promise=client.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else toast(receipt.message);render();}
       catch(error){toast(error.message+' Нажмите «Повторить отправку».');render();}
     }
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:usable,select(value){selected=value;render();},commit:submit});
-    const modal=document.getElementById('modal-root');
-    function close(){modal.innerHTML='';app.inert=false;dialogOpen=false;render();}
-    function show(content){dialogOpen=true;input.cancel();app.inert=true;modal.innerHTML=`<div class="shared-modal-backdrop"><section class="shared-modal" role="dialog" aria-modal="true" aria-label="Информация"><button class="scene-button" data-shared="close">Закрыть</button>${content}</section></div>`;modal.querySelector('button').focus();}
-    async function click(event){
-      const target=event.target.closest('button,[data-accuse-player],[data-shared]');if(target?.disabled)return;
-      const command=target?.dataset.shared;
-      try{
-        if(command==='close'){close();return;}
-        if(command==='help'||target?.dataset.command==='card-help'){show('<h2>Правила и карты</h2>'+pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join(''));return;}
-        if(command==='fullscreen'){if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();return;}
-        if(command==='retry'){const receipt=await client.retry();toast(receipt.ok?'Ход подтверждён.':receipt.message);if(receipt.ok)selected=null;render();return;}
-        if(command==='history'){
-          show(`<h2>История</h2><input id="shared-history" type="range" min="0" max="${client.snapshot.historyLength-1}" value="${client.snapshot.historyLength-1}" aria-label="Номер хода"><button class="scene-button" data-shared="show-history">Показать ход</button>`);return;
-        }
-        if(command==='show-history'){const index=Number(document.getElementById('shared-history').value);const result=await client.history(index);if(result.viewer!==client.snapshot.viewer||result.authorityEpoch!==client.snapshot.authorityEpoch)throw Error('Некорректная история.');historySnapshot=result;close();return;}
-        if(command==='live'){historySnapshot=null;await client.refresh();render();return;}
-        const accused=event.target.closest('[data-accuse-player]');
-        if(accused&&usable()){const actions=client.snapshot.actions.filter(a=>a.target===Number(accused.dataset.accusePlayer));if(actions.length===1)await submit(actions[0]);return;}
-        input.handleClick(event);
-      }catch(error){toast(error.message);}
+    async function viewHistory(index){
+      if(!historyOpen||!client.snapshot)return;
+      const pos=Math.min(Math.max(0,index),historyCount()),ticket=++historyTicket;
+      const result=await client.history(pos);
+      if(ticket!==historyTicket||!historyOpen||destroyed)return;
+      if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.revision>client.snapshot.revision)throw Error('Некорректная история.');
+      historyIndex=pos;historySnapshot=result;render();
     }
-    document.addEventListener('click',click);
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&dialogOpen)close();if(event.key==='Tab'&&dialogOpen){const nodes=[...modal.querySelectorAll('button,input,a[href]')].filter(n=>!n.disabled),first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
-    client.subscribe(()=>{if(!historySnapshot){input.cancel();render();}});
-    // Resize only cancels a gesture in TabletopInput; logical selection survives.
-    root.addEventListener('resize',()=>{if(client.snapshot)render();});
-    return {render,setConnected(value){if(connected!==value){connected=value;render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast};
+    async function openHistory(){
+      stopReplay();input.cancel();historyOpen=true;historyIndex=historyCount();historySnapshot=null;render();
+      try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
+    }
+    function closeHistory(){historyTicket++;stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;selected=null;render();}
+    async function stepHistory(delta){stopReplay();try{await viewHistory((historyIndex??historyCount())+delta);}catch(error){toast(error.message);}}
+    async function playStep(){
+      if(!historyOpen||destroyed||document.hidden){stopReplay();render();return;}
+      if((historyIndex??0)>=historyCount()){stopReplay();render();return;}
+      try{await viewHistory(historyIndex+1);}catch(error){stopReplay();toast(error.message);render();return;}
+      if(replayTimer)replayTimer=setTimeout(playStep,650);
+    }
+    async function action(command){
+      switch(command){
+        case 'close-modal':close();break;
+        case 'confirm-action':{
+          const todo=pendingAction;close();if(todo)await submit(todo,true);break;
+        }
+        case 'home':
+          if(root.confirm('Покинуть сетевую партию? Пока организатор остаётся в игре, связь сохраняется.'))root.location.reload();
+          break;
+        case 'settings':root.PlayroomAppBridge?.showSettings?.();break;
+        case 'rules':case 'card-help':show('<h2>Правила игры</h2>'+pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join(''));break;
+        case 'fullscreen':
+          if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
+        case 'retry':{
+          const receipt=await client.retry();toast(receipt.ok?'Ход подтверждён.':receipt.message);if(receipt.ok)selected=null;render();break;
+        }
+        case 'history':historyOpen?closeHistory():await openHistory();break;
+        case 'history-close':closeHistory();break;
+        case 'replay-prev':await stepHistory(-1);break;
+        case 'replay-next':await stepHistory(1);break;
+        case 'replay-play':
+          if(replayTimer){stopReplay();render();break;}
+          if(!historyOpen)break;
+          if(historyIndex>=historyCount())await viewHistory(0);
+          replayTimer=setTimeout(playStep,650);render();break;
+      }
+    }
+    function click(event){
+      if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
+      // Network controls use exactly the same DOM contract as local play, but
+      // must NEVER be delivered to app.js's local Session handlers.
+      event.stopPropagation();
+      const target=event.target.closest('button,[data-accuse-player],[data-command],[data-action],[data-select]');
+      if(!target||target.disabled)return;
+      const command=target.dataset.command;
+      if(command){void action(command).catch(e=>toast(e.message));return;}
+      const accused=event.target.closest('[data-accuse-player]');
+      if(accused&&usable()){
+        const moves=client.snapshot.actions.filter(a=>a.target===Number(accused.dataset.accusePlayer));
+        if(moves.length===1)void submit(moves[0]);
+        return;
+      }
+      input.handleClick(event);
+    }
+    function onInput(event){
+      if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
+      event.stopPropagation();
+      stopReplay();
+      app.querySelector('.replay-badge')?.replaceChildren(document.createTextNode(event.target.value+' / '+historyCount()));
+      void viewHistory(Number(event.target.value)).catch(error=>toast(error.message));
+    }
+    function keydown(event){
+      if(dialogOpen&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}
+      if(event.target.matches?.('[data-accuse-player]')&&event.target.closest('.network-game')&&['Enter',' '].includes(event.key)){
+        event.preventDefault();event.stopPropagation();click({target:event.target,stopPropagation(){}});return;
+      }
+      if(!event.target.closest?.('.table-shell.network-game'))return;
+      if(event.key==='Escape'&&historyOpen){event.preventDefault();event.stopPropagation();closeHistory();}
+      if(historyOpen&&['ArrowLeft','ArrowRight'].includes(event.key)&&!event.target.matches('input,select')){
+        event.preventDefault();event.stopPropagation();void stepHistory(event.key==='ArrowLeft'?-1:1);
+      }
+    }
+    function subscribe(){if(historyOpen)render();else{input.cancel();render();}}
+    const unsub=client.subscribe(subscribe);
+    document.addEventListener('click',click,true);
+    document.addEventListener('change',onInput,true);
+    document.addEventListener('keydown',keydown,true);
+    const resize=()=>{if(client.snapshot)render();};root.addEventListener('resize',resize);
+    const visibility=()=>{if(document.hidden)stopReplay();};document.addEventListener('visibilitychange',visibility);
+    return {render,setConnected(value){if(connected!==value){connected=value;render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
+      destroy(){destroyed=true;stopReplay();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);
