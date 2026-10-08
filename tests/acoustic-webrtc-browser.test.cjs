@@ -3,6 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const source=fs.readFileSync(path.join(__dirname,'../app/acoustic-pairing.js'),'utf8');
 const rtcSource=fs.readFileSync(path.join(__dirname,'../app/transports/webrtc.js'),'utf8');
+const pairingSource=fs.readFileSync(path.join(__dirname,'../app/pairing.js'),'utf8');
 function localIPv4(){
   return Object.values(os.networkInterfaces()).flat().find(x=>x.family==='IPv4'&&!x.internal)?.address||null;
 }
@@ -11,14 +12,16 @@ test('compact acoustic SDP opens an actual Chromium RTCDataChannel', {timeout:45
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking','--disable-features=WebRtcHideLocalIpsWithMdns']});
   const ctxA=await browser.newContext(),ctxB=await browser.newContext(),a=await ctxA.newPage(),b=await ctxB.newPage();
   try{
-    for(const page of [a,b]){await page.addScriptTag({content:rtcSource});await page.addScriptTag({content:source});}
+    for(const page of [a,b]){await page.addScriptTag({content:rtcSource});await page.addScriptTag({content:pairingSource});await page.addScriptTag({content:source});}
     const offer=await a.evaluate(async()=>{window.peer=await PlayroomWebRTCTransport.createHostPeer();return peer.offer;});
-    const encoded=await a.evaluate(([signal,address])=>PlayroomAcousticPairing.pack(signal,{address}),[offer,address]);
-    assert.ok(encoded.length<=140);
-    const answer=await b.evaluate(async msg=>{const received=PlayroomAcousticPairing.unpack(msg);window.peer=await PlayroomWebRTCTransport.createClientPeer(received.signal);return peer.answer;},encoded);
-    const reply=await b.evaluate(([signal,address])=>PlayroomAcousticPairing.pack(signal,{address}),[answer,address]);
+    const offerToken=await a.evaluate(([signal,address])=>PlayroomPairing.fromSignal('offer',signal,{address}),[offer,address]);
+    assert.ok(offerToken.startsWith('PR3.'));
+    assert.ok(offerToken.length<=144);
+    const answer=await b.evaluate(async token=>{const decoded=PlayroomPairing.decode(token);window.peer=await PlayroomWebRTCTransport.createClientPeer(decoded.signal);return peer.answer;},offerToken);
+    const answerToken=await b.evaluate(([signal,address])=>PlayroomPairing.fromSignal('answer',signal,{address}),[answer,address]);
+    assert.ok(answerToken.startsWith('PR3.'));
     await Promise.all([
-      a.evaluate(reply=>peer.acceptAnswer(PlayroomAcousticPairing.unpack(reply).signal),reply),
+      a.evaluate(token=>peer.acceptAnswer(PlayroomPairing.decode(token).signal),answerToken),
       b.evaluate(async()=>{const channel=await peer.waitOpen({timeout:12000});window.channel=channel;})
     ]);
     const states=await Promise.all([

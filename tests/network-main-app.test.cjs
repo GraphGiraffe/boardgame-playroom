@@ -29,9 +29,29 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
     await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
+    // Every ICE candidate supplied by the browser is visible in the IP selector;
+    // manual choice remains available for browsers that hide interfaces behind mDNS.
+    await host.locator('[data-net-scan="host"]').waitFor();
+    assert.equal(await host.locator('[data-net-scan="host"]').count(),1);
+    assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
+    assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
+    assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
+    const previousAddress=await host.locator('#acoustic-host-address').inputValue();
+    await host.locator('#acoustic-host-address').selectOption('manual');
+    await host.locator('#acoustic-host-manual').fill('192.168.44.66');
+    const manualLink=await value(host,'#net-host-token');
+    const manualToken=await host.evaluate(link=>PlayroomPairing.extract(link),manualLink);
+    // A change of IP updates the URL/QR and audio's exact PR3 bytes together.
+    const manualInfo=await host.evaluate(token=>PlayroomPairing.decode(token),manualToken);
+    if(manualInfo.compact){
+      assert.equal(manualInfo.ip,'192.168.44.66');
+      assert.ok(manualToken.length<200);
+    }
+    await host.locator('#acoustic-host-address').selectOption(previousAddress);
+
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
-    assert.ok(offerToken?.startsWith('PR2.'));
+    assert.match(offerToken||'',/^PR[23]\./);
     assert.equal(await host.locator('#net-host-token-qr').count(),1);
     const pwaHandoff=new URL(url).protocol!=='file:';
     if(pwaHandoff){
@@ -44,7 +64,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.locator('#net-client-token').waitFor();
     const answerLink=await value(client,'#net-client-token');
     const answerToken=await client.evaluate(link=>PlayroomPairing.extract(link),answerLink);
-    assert.ok(answerToken?.startsWith('PR2.'));
+    assert.match(answerToken||'',/^PR[23]\./);
     assert.equal(await client.locator('#net-client-token-qr').count(),1);
     if(pwaHandoff){
       await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);

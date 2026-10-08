@@ -36,7 +36,7 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
-    assert.ok(offerToken?.startsWith('PR2.'));
+    assert.match(offerToken||'',/^PR[23]\./);
     assert.equal(await host.locator('#net-host-token-qr').count(),1);
     const pwaHandoff=new URL(url).protocol!=='file:';
     if(pwaHandoff){
@@ -49,7 +49,7 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     await client.locator('#net-client-token').waitFor();
     const answerLink=await value(client,'#net-client-token');
     const answerToken=await client.evaluate(link=>PlayroomPairing.extract(link),answerLink);
-    assert.ok(answerToken?.startsWith('PR2.'));
+    assert.match(answerToken||'',/^PR[23]\./);
     assert.equal(await client.locator('#net-client-token-qr').count(),1);
     if(pwaHandoff){
       await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);

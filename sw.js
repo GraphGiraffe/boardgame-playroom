@@ -1,6 +1,6 @@
 'use strict';
 // Unreleased UI candidate: force a new shell cache to include GameScreen. Published preview.3 stays immutable.
-const CACHE='playroom-pwa-acoustic-rc2-20261008';
+const CACHE='playroom-pwa-acoustic-compact-rc2fix-20261008';
 const QR_LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
@@ -16,7 +16,7 @@ function pairingTokenFromUrl(href){
   const values=[url.searchParams.get('pair'),url.searchParams.get('protocol'),url.searchParams.get('text'),url.searchParams.get('url')];
   for(const raw of values){
     if(!raw)continue;let value=raw;try{value=decodeURIComponent(raw);}catch(_){}
-    const match=String(value).match(/(?:PLAYROOM_PAIR:|web\+playroom:pair\/)?(PR2\.[A-Za-z0-9_-]+)/);
+    const match=String(value).match(/(?:PLAYROOM_PAIR:|web\+playroom:pair\/)?((?:PR2|PR3)\.[A-Za-z0-9_-]+)/);
     if(match)return match[1];
   }
   return null;
