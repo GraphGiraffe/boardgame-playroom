@@ -76,6 +76,7 @@
       '<label class="field"><span>IP вручную (если адрес скрыт)</span><input id="acoustic-'+role+'-manual" inputmode="decimal" placeholder="192.168.0.112" autocomplete="off" '+(preferred>=0?'disabled hidden':'')+'></label>'+
       '<label class="field"><span>UDP порт текущего ICE-сеанса</span><input id="acoustic-'+role+'-port" type="number" min="1" max="65535" value="'+esc(port)+'"></label>'+
       '<label class="field"><span>Tx protocol</span><select id="acoustic-'+role+'-protocol"><option value="fastest">Fastest</option><option value="fast">Fast</option><option value="normal">Normal</option></select></label>'+
+      '<p class="lead" id="acoustic-'+role+'-pair-status" role="status">Один компактный сигнал для звука, ссылки и QR при доступном UDP/IPv4.</p>'+ 
       '<p class="lead">mDNS может скрывать реальный IP. Дополнительный поиск также подчиняется ограничениям браузера. Для приёма звука нужен микрофон и безопасный контекст (обычно HTTPS).</p>'+
       '</fieldset>';
   }
@@ -91,6 +92,7 @@
     const keep=!!current&&current.kind!=='documentation'&&current.kind!=='reserved';
     select.value=manual?'manual':String(keep&&same>=0?same:preferred>=0?preferred:'manual');
     syncSoundChoice(role,signal);
+    updatePairingToken(role);
   }
   async function scanSoundAddresses(role,signal){
     const generation=++scanGenerations[role],button=document.querySelector('[data-net-scan="'+role+'"]');
@@ -110,22 +112,48 @@
       }
     }
   }
-  function soundChoice(role,signal){
+  function pairSignal(role){return role==='host'?hostPeer?.offer:clientPeer?.answer;}
+  function pairToken(role){
+    const signal=pairSignal(role);
+    if(!signal)throw Error('WebRTC-приглашение не готово.');
+    const kind=role==='host'?'offer':'answer';
     const {selected,manual}=selectionDetails(role,signal);
-    const address=manual?document.getElementById('acoustic-'+role+'-manual')?.value.trim():selected?.address;
-    if(selected&&selected.source==='session'&&!selected.audio)
-      throw Error('Выбранный IP ('+selected.type+'/'+selected.transport+') нельзя использовать для звукового UDP host-сигнала. Выберите другой адрес или QR/Share.');
-    const port=Number(document.getElementById('acoustic-'+role+'-port')?.value);
-    return {message:Acoustic.pack(signal,{address,port}),protocol:document.getElementById('acoustic-'+role+'-protocol')?.value||'fastest'};
+    const manualValue=document.getElementById('acoustic-'+role+'-manual')?.value.trim();
+    const address=manual?manualValue||undefined:selected?.address;
+    const rawPort=document.getElementById('acoustic-'+role+'-port')?.value;
+    const port=rawPort&&Number.isInteger(Number(rawPort))&&Number(rawPort)>0?Number(rawPort):null;
+    return Pairing.fromSignal(kind,signal,{address,port});
+  }
+  function updatePairingToken(role){
+    const signal=pairSignal(role);
+    if(!signal)return null;
+    const token=pairToken(role),id=role==='host'?'net-host-token':'net-client-token';
+    if(role==='host')offerToken=token;else answerToken=token;
+    const field=document.getElementById(id);
+    if(field){
+      field.value=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
+      renderPairingQR(token,id);
+    }
+    const note=document.getElementById('acoustic-'+role+'-pair-status');
+    if(note)note.textContent=token.startsWith(Pairing.COMPACT_PREFIX)?
+      'Один компактный PR3-пакет для звука, QR и ссылки. Можно выбрать разные способы передачи Offer и Answer.':
+      'Для выбранного маршрута нет компактного IPv4 UDP host-пакета. QR, ссылка и Share используют полный совместимый PR2; для звука выберите рабочий IPv4.';
+    return token;
+  }
+  function sendSoundToken(role){
+    const token=updatePairingToken(role);
+    if(!token?.startsWith(Pairing.COMPACT_PREFIX))throw Error('Звуковая передача требует допустимого IPv4 UDP host-кандидата. Выберите другой IP; QR/Share доступны.');
+    return {message:token.slice(Pairing.COMPACT_PREFIX.length),
+      protocol:document.getElementById('acoustic-'+role+'-protocol')?.value||'fastest'};
   }
   async function sendHostSound(){
     if(!hostPeer)throw Error('Сначала создайте приглашение.');
-    const {message,protocol}=soundChoice('host',hostPeer.offer);
+    const {message,protocol}=sendSoundToken('host');
     stopHostAudio();
     hostAudioListener=await Acoustic.listen(packet=>{
       if(packet.kind!=='answer')return;
       stopHostAudio();
-      acceptAnswerSignal(packet.signal).catch(error=>toast(error.message));
+      acceptAnswerSignal(Pairing.decode(Pairing.COMPACT_PREFIX+packet.message).signal).catch(error=>toast(error.message));
     });
     toast('Передаём приглашение через динамик.');
     await Acoustic.play(message,{protocol});
@@ -136,21 +164,21 @@
     clientAudioListener=await Acoustic.listen(packet=>{
       if(packet.kind!=='offer')return;
       stopClientAudio();
-      createClientAnswer(packet.signal,{acoustic:true}).catch(error=>toast(error.message));
+      createClientAnswer(Pairing.decode(Pairing.COMPACT_PREFIX+packet.message).signal,{acoustic:true}).catch(error=>toast(error.message));
     });
     toast('Слушаем приглашение. Воспроизведите звук на хосте.');
   }
   async function sendGuestSound(){
     if(!clientPeer?.answer)throw Error('Сначала примите приглашение.');
-    const {message,protocol}=soundChoice('client',clientPeer.answer);
+    const {message,protocol}=sendSoundToken('client');
     await Acoustic.play(message,{protocol});
     toast('Ответ передан. Соединение устанавливается по Wi-Fi.');
   }
   function toast(text){bridge()?.toast?.(text);}
-  function copy(id){const field=document.getElementById(id);if(!field)return;field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
+  function copy(id){if(id==='net-host-token')updatePairingToken('host');if(id==='net-client-token')updatePairingToken('client');const field=document.getElementById(id);if(!field)return;field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
   async function copyText(value){try{await navigator.clipboard.writeText(value);toast('Скопировано');}catch(_){toast('Не удалось скопировать автоматически. Используйте поле в «Другие способы».');}}
   async function sharePair(kind){
-    const token=kind==='offer'?offerToken:answerToken;if(!token)throw Error('Нет данных подключения.');
+    const token=updatePairingToken(kind==='offer'?'host':'client');if(!token)throw Error('Нет данных подключения.');
     try{await PWA.shareToken(token);}catch(error){toast(error.message);}
   }
   function pairingFallback(token,id){
@@ -202,7 +230,7 @@
       hostPeer=await W.createHostPeer();hostServeClose=W.serve(hostPeer.channel,hostSwitch);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
       const share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="offer" style="width:100%">Поделиться приглашением</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы» ниже.</div>';
       const secure=PWA?.secure?'':'<div class="rules-mode-note"><strong>PWA-функции ограничены:</strong> откройте ХОД по HTTPS после установки. Локальный file/content URL не является secure context.</div>';
-      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">На телефоне можно просто отсканировать QR камерой. Также приглашение можно передать через системное меню «Поделиться».</p>'+soundSettings('host',hostPeer.offer)+'<button class="btn" id="net-host-acoustic" type="button" style="width:100%">Передать звуковое приглашение и слушать ответ</button>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');renderPairingQR(offerToken,'net-host-token');void scanSoundAddresses('host',hostPeer.offer);
+      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">На телефоне можно просто отсканировать QR камерой. Также приглашение можно передать через системное меню «Поделиться».</p>'+soundSettings('host',hostPeer.offer)+'<button class="btn" id="net-host-acoustic" type="button" style="width:100%">Передать звуковое приглашение и слушать ответ</button>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
     }catch(error){toast(error.message);}
   }
   async function acceptAnswerSignal(signal){
@@ -216,7 +244,7 @@
     bridge().closeModal(true);toast('Устройство подключено. Теперь войдите в комнату на нём.');
   }
   function signalFromInput(value,expected){
-    const token=Pairing.extract(value)||(/^PR2\./.test(value.trim())?value.trim():null);
+    const token=Pairing.extract(value)||(/^(?:PR2|PR3)\./.test(value.trim())?value.trim():null);
     if(!token)return value.trim();
     const decoded=Pairing.decode(token);if(decoded.kind!==expected)throw Error(expected==='offer'?'Ожидалось приглашение хоста.':'Ожидался ответ клиента.');
     return decoded.signal;
@@ -229,7 +257,7 @@
   async function createClientAnswer(signal,{acoustic=false}={}){
     closeClient();clientPeer=await W.createClientPeer(signal);answerToken=Pairing.fromSignal('answer',clientPeer.answer);
     const b=bridge(),share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="answer" style="width:100%">Поделиться ответом</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы».</div>';
-    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+soundSettings('client',clientPeer.answer)+'<button class="btn" id="net-client-acoustic-send" type="button" style="width:100%">Отправить звуковой ответ</button>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');renderPairingQR(answerToken,'net-client-token');void scanSoundAddresses('client',clientPeer.answer);
+    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+soundSettings('client',clientPeer.answer)+'<button class="btn" id="net-client-acoustic-send" type="button" style="width:100%">Отправить звуковой ответ</button>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
     showPreview(preview.room);
@@ -324,7 +352,17 @@
     if(!['acoustic-host-address','acoustic-client-address'].includes(event.target.id))return;
     const role=event.target.id.includes('host')?'host':'client';
     const signal=role==='host'?hostPeer?.offer:clientPeer?.answer;
-    if(signal)syncSoundChoice(role,signal);
+    if(signal){syncSoundChoice(role,signal);updatePairingToken(role);}
+  });
+  document.addEventListener('change',event=>{
+    if(!['acoustic-host-port','acoustic-client-port'].includes(event.target.id))return;
+    const role=event.target.id.includes('host')?'host':'client';
+    updatePairingToken(role);
+  });
+  document.addEventListener('input',event=>{
+    if(!['acoustic-host-manual','acoustic-client-manual','acoustic-host-port','acoustic-client-port'].includes(event.target.id))return;
+    const role=event.target.id.includes('host')?'host':'client';
+    updatePairingToken(role);
   });
   document.addEventListener('submit',event=>{
     if(!['net-host-answer','net-client-offer','net-client-join','net-client-nickname'].includes(event.target.id))return;
