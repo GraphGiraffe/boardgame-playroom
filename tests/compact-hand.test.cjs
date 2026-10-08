@@ -182,19 +182,24 @@ test('Compact card hands preserve readable previews and each game’s play contr
       const track=page.locator('.hand-track'),info = await track.evaluate(el => ({count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth - el.clientWidth, y:el.scrollHeight-el.clientHeight,overflow: getComputedStyle(el).overflowX}));
       assert.equal(info.count, 35); assert.equal(info.rows, 1); assert(info.x > 1); assert(info.y <= 1); assert.equal(info.overflow, 'auto');
       const ids = await track.locator('[data-hand-preview]').evaluateAll(els => els.map(el => el.dataset.handPreview));
-      // scrollIntoViewIfNeeded may stop as soon as part of an overlapping
-      // card intersects the viewport, leaving the small rank corner clipped.
-      // Center the requested card as a real user can by panning the hand, then
-      // continue to assert the exposed rank corner is hit-testable.
+      // A fanned row overlaps card bodies, and scrollIntoView may decide a
+      // partly covered card is already visible. Pan the *actual* horizontal
+      // hand track to the rank corner, as a player would, before testing it.
+      // Keep the hit-test requirement: every card must really be reachable.
       const reveal=async id=>{
-        await card(page,id).evaluate(el=>el.scrollIntoView({block:'nearest',inline:'center',behavior:'instant'}));
-        await page.waitForFunction(id=>{
-          const el=document.querySelector('.own-hand [data-hand-preview="'+id+'"]');
-          if(!el)return false;
-          const r=el.querySelector('.card-corner').getBoundingClientRect();
-          const x=r.x+r.width/2,y=r.y+r.height/2;
-          return document.elementFromPoint(x,y)?.closest('[data-hand-preview]')===el;
-        },id,{timeout:1500});
+        const result=await card(page,id).evaluate(async el=>{
+          const track=el.closest('.hand-track'),corner=el.querySelector('.card-corner');
+          const r=corner.getBoundingClientRect(),v=track.getBoundingClientRect();
+          track.scrollLeft+=r.left+r.width/2-(v.left+v.width/2);
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          const final=corner.getBoundingClientRect(),view=track.getBoundingClientRect();
+          const x=final.left+final.width/2,y=final.top+final.height/2;
+          const hit=document.elementFromPoint(x,y)?.closest('[data-hand-preview]')?.dataset.handPreview||null;
+          return {id:el.dataset.handPreview,hit,x,y,trackLeft:view.left,trackRight:view.right,
+            scrollLeft:track.scrollLeft,scrollMax:track.scrollWidth-track.clientWidth};
+        });
+        assert.equal(result.hit,id,'Card rank corner inaccessible after hand pan: '+JSON.stringify(result));
+        assert(result.x>=result.trackLeft&&result.x<result.trackRight,'Rank corner outside scroller: '+JSON.stringify(result));
       };
       for(const id of ids){
         await reveal(id);await exposedPoint(card(page,id));
