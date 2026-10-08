@@ -83,6 +83,9 @@
     }
   }
   function ensureButtons(){
+    // Close microphone immediately when the pairing dialog is dismissed.
+    if(hostAudioListener&&!document.getElementById('net-host-acoustic'))stopHostAudio();
+    if(clientAudioListener&&!document.getElementById('net-client-acoustic-listen'))stopClientAudio();
     const b=bridge();if(!b)return;
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
