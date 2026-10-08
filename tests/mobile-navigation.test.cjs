@@ -2,11 +2,36 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
+const http = require('node:http');
 const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/snakes/rules.js');
-const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
+const root = path.resolve(__dirname, '..');
+const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
+
+// Persistent browser storage on file:// is implementation-dependent. Keep the
+// file:// reload smoke above, and check the multi-save deletion lifecycle on
+// a stable HTTP origin (the same deployment model as the installable PWA).
+function serveSavedGames() {
+  const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'};
+  const server=http.createServer((req,res)=>{
+    const pathname=new URL(req.url,'http://localhost').pathname;
+    const rel=pathname==='/'?'index.html':pathname.slice(1);
+    const filename=path.resolve(root,rel);
+    const allowed=rel==='index.html'||rel==='installed-packs.js'||['app/','core/','packs/'].some(prefix=>rel.startsWith(prefix));
+    if(!allowed||!filename.startsWith(root+path.sep)||!fs.existsSync(filename)||!fs.statSync(filename).isFile()){
+      res.writeHead(404);res.end();return;
+    }
+    res.writeHead(200,{'Content-Type':(types[path.extname(filename)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});
+    res.end(fs.readFileSync(filename));
+  });
+  return new Promise((resolve,reject)=>{
+    server.once('error',reject);
+    server.listen(0,'127.0.0.1',()=>resolve({server,url:`http://127.0.0.1:${server.address().port}/`}));
+  });
+}
 
 test('The hub navigation remains available on phones and desktop', {timeout:60000}, async t => {
   const browser = await chromium.launch({headless:true, executablePath:executablePath(), args:['--no-sandbox','--disable-background-networking']});
@@ -50,6 +75,8 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       } finally { await context.close(); }
     });
     await t.test('Several same-game sessions survive switching, reload and confirmed deletion with hidden-hand privacy',async()=>{
+      const hosted=url.startsWith('file:')?await serveSavedGames():null;
+      const testUrl=hosted?.url||url;
       const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
       const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
       const press=locator=>locator.tap();
@@ -64,6 +91,11 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       const list=async()=>{await home();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();};
       const row=id=>page.locator(`.saved-game[data-session-id="${id}"]`);
       const ids=()=>page.locator('.saved-game[data-session-id]').evaluateAll(rows=>rows.map(row=>row.dataset.sessionId).sort());
+      // Observe only save identities, never full state or hidden hands in logs.
+      const persistedIds=()=>page.evaluate(()=>{
+        const keys=['playroom.session.v1',...Object.keys(localStorage).filter(key=>key.startsWith('playroom.paused.v1.'))];
+        return keys.map(key=>localStorage.getItem(key)).filter(Boolean).map(raw=>JSON.parse(raw).libraryId).sort();
+      });
       const create=async(game,name,{hidden=false,preset='classic'}={})=>{
         await home();await press(page.locator(`.game-tile [data-start="${game}"]`));
         await page.locator('input[value=pass]').check();await page.locator('[name=preset]').selectOption(preset);
@@ -74,7 +106,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await page.locator(`.${game}-scene`).waitFor();return current();
       };
       try{
-        await page.goto(url);
+        await page.goto(testUrl);
         await page.evaluate(()=>{
           localStorage.clear();
           localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));
@@ -114,16 +146,23 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('.modal [data-command=close-modal]').first());assert.equal(await page.locator('.saved-game').count(),3);
         await press(row(first.id).locator('[data-delete-id]'));await press(page.locator('.modal [data-delete-confirm]'));
         await page.waitForFunction(()=>document.querySelectorAll('.saved-game[data-session-id]').length===2);
-        assert.deepEqual(await ids(),[second.id,third.id].sort());assert.deepEqual(await current(),second,'Deleting an inactive session must preserve the active save');
-        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
-        assert.deepEqual(await ids(),[second.id,third.id].sort(),'Deleted archive must not reappear during reload');
+        const survivors=[second.id,third.id].sort();
+        assert.deepEqual(await ids(),survivors);assert.deepEqual(await current(),second,'Deleting an inactive session must preserve the active save');
+        assert.deepEqual(await persistedIds(),survivors,'Both remaining save records must exist on disk before reload');
+        await page.reload();
+        assert.deepEqual(await persistedIds(),survivors,'Reload must not lose the active or paused raw saves');
+        await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        assert.deepEqual(await ids(),survivors,'Saved-game UI must show the same surviving records after reload');
         await press(row(second.id).locator('[data-delete-id]'));await press(page.locator('.modal [data-delete-confirm]'));
         await page.waitForFunction(()=>document.querySelectorAll('.saved-game[data-session-id]').length===1);
         await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
         assert.deepEqual(await ids(),[third.id],'Deleted active session must not return through pagehide autosave');
         await press(row(third.id).locator('[data-resume-id]'));await page.locator('.snakes-scene').waitFor();assert.deepEqual(await current(),third);
         assert.deepEqual(errors,[]);
-      }finally{await context.close();}
+      }finally{
+        await context.close();
+        if(hosted)await new Promise(resolve=>hosted.server.close(resolve));
+      }
     });
     await t.test('Completed result returns to the menu and remains in read-only history after reload',async()=>{
       const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'quick',players:[{name:'Финиш'},{name:'Соперник'}]});

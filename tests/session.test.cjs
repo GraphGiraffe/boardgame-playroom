@@ -252,6 +252,28 @@ test('saved library preserves the active game if archiving or activation runs ou
   }
 });
 
+test('deleting an inactive archive keeps the other two sessions through a fresh Library instance', () => {
+  const Library = require('../app/library.js'), values = new Map();
+  const store = {get length(){return values.size;}, key:i=>[...values.keys()][i],
+    getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+  const library=new Library(()=>store,Core,Session);
+  const first=create({seed:'first'}), second=create({seed:'second'}), third=create({seed:'third'});
+  step(first);
+  library.activate(first,'first');library.activate(second,'second');library.activate(third,'third');
+  library.activate(library.open('second'),'second');
+  assert.deepEqual(library.list().map(record=>record.id).sort(),['first','second','third']);
+  library.remove('first');
+  assert.equal(library.current().id,'second');
+  assert.deepEqual(library.open('second').export(),second.export());
+  assert.deepEqual(library.open('third').export(),third.export());
+  const afterReload=new Library(()=>store,Core,Session);
+  assert.deepEqual(afterReload.list().map(record=>record.id).sort(),['second','third']);
+  assert.deepEqual(afterReload.current().session.export(),second.export());
+  afterReload.remove('second');
+  assert.throws(()=>afterReload.write(second,'second'),'A deleted active game cannot be revived by a stale pagehide');
+  assert.deepEqual(new Library(()=>store,Core,Session).list().map(record=>record.id),['third']);
+});
+
 test('legacy and unreadable saves survive new games; a deleted game cannot resurrect on pagehide', () => {
   const Library = require('../app/library.js'),values=new Map();
   const store={get length(){return values.size;},key:i=>[...values.keys()][i],getItem:key=>values.get(key)??null,
