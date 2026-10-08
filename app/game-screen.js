@@ -34,7 +34,7 @@
   // projection-only SessionClient. No rule or network state is read here.
   function playersMarkup(state,viewer,actions=[],{scoreLabel='очки',playerBadge=()=>''}={}){
     return state.players.map((person,i)=>{
-      let badge='';try{const value=playerBadge(state,i);if(typeof value==='string')badge=esc(value);}catch(_){}
+      let badge='';try{const value=playerBadge(state,i);if(typeof value==='string')badge=esc(value);else if(value&&typeof value.label==='string'){const tone=['success','warning','danger'].includes(value.tone)?value.tone:'warning';badge=`<span class="player-status-badge tone-${tone}">${esc(value.label)}</span>`;}}catch(_){}
       const target=actions.some(a=>a.target===i);
       return `<div class="player-token ${state.turn===i?'active':''}" ${target?`data-accuse-player="${i}" role="button" tabindex="0" aria-label="Действия игрока ${esc(person.name)}"`:''}><span class="avatar p${i}">${esc(person.name.slice(0,1))}</span><span>${esc(person.name)}${i===viewer&&person.name!=='Вы'?' · вы':''}<small>${person.bot?'Бот':'Игрок'}${Number.isFinite(person.score)?' · '+esc(scoreLabel)+': '+person.score:''}${badge}</small></span></div>`;
     }).join('');
@@ -42,6 +42,13 @@
   function historyMarkup({index,count,caption='',playing=false}={}){
     return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>Каждый ход на месте</strong><span class="replay-badge">${index} / ${count}</span><button class="text-btn" data-command="history-close">К игре ${icon('close')}</button></div>
       <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
+  }
+  function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
+    if(!state||state.status!=='finished')return '';
+    const winner=state.winner,person=winner==null?null:state.players[winner];
+    const title=winner===null?'Ничья!':viewer<0?`${person?.name||'Игрок'} побеждает`:winner===viewer?'Победа!':'Поражение';
+    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
+    return `<header class="modal-head"><h2>${esc(title)}</h2></header><div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?'':`<button class="btn" data-start="${esc(state.game)}">Ещё партию</button>`}</div><button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`;
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
@@ -57,5 +64,5 @@
       ${beforeFooter}
       <footer class="table-bottom"><span class="event-latest" title="${esc(footerTitle)}">${caption}</span>${saved!==null?`<span class="auto-saved">${icon(saved?'check':'save')}${saved?'Сохранено':'Не сохранено'}</span>`:''}${footerExtra}<button class="text-btn" data-command="${esc(footerAction.command)}">${esc(footerAction.label)} ${icon(footerAction.icon)}</button></footer></main>`;
   }
-  return Object.freeze({icon,esc,playersMarkup,historyMarkup,render});
+  return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render});
 });

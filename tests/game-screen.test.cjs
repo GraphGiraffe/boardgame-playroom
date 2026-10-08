@@ -26,3 +26,12 @@ test('local and network history use the same inline controls and player targetin
   assert.ok(allowed.includes('data-accuse-player="1"'));
   assert.ok(!allowed.includes('data-accuse-player="0"'));
 });
+
+test('shared result screen shows wins, losses, public spectator and hot seat names without leaking game state',()=>{
+  const finished={...projected,status:'finished',winner:1,move:16};
+  assert.match(Screen.resultMarkup({state:finished,viewer:1,gameName:'UNO'}),/Победа!/);
+  assert.match(Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO'}),/Поражение/);
+  assert.match(Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO'}),/Второй побеждает/);
+  const dialog=Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO',scoreLabel:'очки',network:true});
+  assert.match(dialog,/9|4/);assert.match(dialog,/result-replay/);assert.doesNotMatch(dialog,/Ещё партию/);
+});

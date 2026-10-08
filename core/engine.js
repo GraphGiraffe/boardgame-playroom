@@ -116,6 +116,7 @@
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
       assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1), 'видимость события');
       assertState(e.sound == null || (record(e.sound) && typeof e.sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(e.sound.id) && (e.sound.target == null || int(e.sound.target, 0, state.players.length - 1))), 'звук события');
+      assertState(e.notice == null || (record(e.notice) && typeof e.notice.title === 'string' && e.notice.title.length <= 120 && (e.notice.detail === undefined || (typeof e.notice.detail === 'string' && e.notice.detail.length <= 180)) && (e.notice.tone===undefined||['success','warning','danger'].includes(e.notice.tone))), 'объявление события');
       last = e.id;
     }
     if (pack.validateState) pack.validateState(state);
@@ -144,7 +145,7 @@
   }
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error('Не задано действие');
-    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error('Этот ход сейчас недоступен');
     const next = clone(state);
     next.move++;
@@ -176,7 +177,7 @@
     const actions = reactions(state, actor);
     if (!actions.length) return null;
     const chosen = forState(state).botReaction?.(state, actor, actions);
-    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
+    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation', 'targetPrompt'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
   }
   // Optional generic components for custom packs: multiple named decks, hands,
   // boards and counters can coexist; visibility is explicit per zone/item.

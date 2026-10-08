@@ -13,7 +13,11 @@
   function mount(client,definition,{surface}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     let selected=null,connected=true,historyOpen=false,historyIndex=null,historySnapshot=null,historyTicket=0;
-    let input=null,dialogOpen=false,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    let input=null,playerTargets=null,dialogOpen=false,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
+    const feedback=new root.PlayroomGameFeedback({mount:()=>app.querySelector('.table-shell'),play:(ids,id)=>audio?.play?.(ids,id)});
+    feedback.start(client.snapshot?.events||[]);
+    let liveStatus=client.snapshot?.state?.status||'playing';
     const drawNotice=document.getElementById('toast');
     let toastTimer;
     const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;drawNotice.classList.add('show');toastTimer=setTimeout(()=>{drawNotice.textContent='';drawNotice.classList.remove('show');},4000);};
@@ -44,13 +48,13 @@
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
-        footerAction:{command:'home',label:'К играм',icon:'back'}
+        footerAction:finished?{command:'result',label:'Результаты',icon:'arrow'}:{command:'home',label:'К играм',icon:'back'}
       });
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
-      renderedRevision=live.revision;
+      renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
     }
     function show(content){
-      dialogOpen=true;input.cancel();app.inert=true;
+      dialogOpen=true;input.cancel();playerTargets?.cancel();app.inert=true;
       modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Информация"><button class="text-btn" data-command="close-modal">Закрыть ${GameScreen.icon('close')}</button>${content}</section></div>`;
       modal.querySelector('button')?.focus();
     }
@@ -63,6 +67,8 @@
       catch(error){toast(error.message+' Нажмите «Повторить отправку».');render();}
     }
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:usable,select(value){selected=value;render();},commit:submit});
+    playerTargets=new root.PlayroomPlayerTarget({actions:()=>usable()?client.snapshot.actions:[],commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
+    function result(){if(client.snapshot?.state?.status==='finished')show(GameScreen.resultMarkup({state:client.snapshot.state,viewer:client.snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',network:true}));}
     async function viewHistory(index){
       if(!historyOpen||!client.snapshot)return;
       const pos=Math.min(Math.max(0,index),historyCount()),ticket=++historyTicket;
@@ -71,8 +77,8 @@
       if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.revision>client.snapshot.revision)throw Error('Некорректная история.');
       historyIndex=pos;historySnapshot=result;render();
     }
-    async function openHistory(){
-      stopReplay();input.cancel();historyOpen=true;historyIndex=historyCount();historySnapshot=null;render();
+    async function openHistory(index=historyCount()){
+      stopReplay();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historySnapshot=null;render();
       try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
     }
     function closeHistory(){historyTicket++;stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;selected=null;render();}
@@ -100,6 +106,8 @@
           const receipt=await client.retry();toast(receipt.ok?'Ход подтверждён.':receipt.message);if(receipt.ok)selected=null;render();break;
         }
         case 'history':historyOpen?closeHistory():await openHistory();break;
+        case 'result':result();break;
+        case 'result-replay':close();await openHistory(0);break;
         case 'history-close':closeHistory();break;
         case 'replay-prev':await stepHistory(-1);break;
         case 'replay-next':await stepHistory(1);break;
@@ -121,8 +129,7 @@
       if(command){void action(command).catch(e=>toast(e.message));return;}
       const accused=event.target.closest('[data-accuse-player]');
       if(accused&&usable()){
-        const moves=client.snapshot.actions.filter(a=>a.target===Number(accused.dataset.accusePlayer));
-        if(moves.length===1)void submit(moves[0]);
+        playerTargets.tap(Number(accused.dataset.accusePlayer));
         return;
       }
       input.handleClick(event);
@@ -145,15 +152,21 @@
         event.preventDefault();event.stopPropagation();void stepHistory(event.key==='ArrowLeft'?-1:1);
       }
     }
-    function subscribe(){if(historyOpen)render();else{input.cancel();render();}}
+    function subscribe(){
+      const live=client.snapshot,was=liveStatus;liveStatus=live?.state?.status||liveStatus;
+      feedback.accept(live?.events||[],live?.cues||[],pack.manifest.id,{silent:historyOpen||!connected||document.hidden});
+      if(historyOpen){render();return;}
+      input.cancel();playerTargets.cancel();render();
+      if(was==='playing'&&liveStatus==='finished')result();
+    }
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);
     document.addEventListener('change',onInput,true);
     document.addEventListener('keydown',keydown,true);
     const resize=()=>{if(client.snapshot)render();};root.addEventListener('resize',resize);
     const visibility=()=>{if(document.hidden)stopReplay();};document.addEventListener('visibilitychange',visibility);
-    return {render,setConnected(value){if(connected!==value){connected=value;render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;stopReplay();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);input.destroy();}};
+    return {render,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
+      destroy(){destroyed=true;stopReplay();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

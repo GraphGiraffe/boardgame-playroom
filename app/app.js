@@ -36,7 +36,8 @@
   let paused = false, lastResult = null, storageOK = true, modalReturn = null;
   let missedFrom = null, soundTicket = 0;
   let loadWarning = '', modalBack = null;
-  let input = null, packUI = null;
+  let input = null, packUI = null, playerTargets = null, feedbackSession = null;
+  const feedback=new globalThis.PlayroomGameFeedback({mount:()=>document.querySelector('#app .table-shell')});
   let transition = null, replayTicket = 0, awaitingPass = false;
   try {
     const stored=JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}');
@@ -104,7 +105,7 @@
       <button class="tile-hit" data-start="${g.id}" aria-label="Играть в ${esc(g.name)}"></button></article>`;
   }
   function renderHub() {
-    interruptAction();input?.cancel();cancelBot(); latestPacks(); const games = E.GAMES.filter(g=>filter==='all'||catalog[g.id]?.category===filter);
+    interruptAction();input?.cancel();playerTargets?.cancel();feedback.clear();cancelBot(); latestPacks(); const games = E.GAMES.filter(g=>filter==='all'||catalog[g.id]?.category===filter);
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
       <div class="sidebar-note"><span class="little-dice">⚄</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p3</span></div></aside>
@@ -131,7 +132,7 @@
   }
 
   function leaveTable(tab='games') {
-    interruptAction();input?.cancel();cancelBot();stopReplay();
+    interruptAction();input?.cancel();playerTargets?.cancel();cancelBot();stopReplay();
     if(screen==='table')save();
     screen='hub';hubTab=tab;filter='all';historyOpen=false;replayIndex=null;selected=null;paused=true;
     closeModal(true);render();
@@ -185,6 +186,7 @@
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state);
     const shownViewer=gate!==null?-1:viewer, projected=E.project(state,shownViewer);
+    if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
     const turnText=replay?'Просмотр истории':transition?'Показываем ход…':finished?'Партия завершена':paused?'Пауза':turnPlayer?.bot?`${turnPlayer.name} думает…`:isPass()?`Ходит ${turnPlayer?.name}`:'Ваш ход';
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
@@ -202,6 +204,7 @@
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
+    feedback.refresh();playerTargets?.refresh();
     if(gate!==null)showGate();
     scheduleBot();
   }
@@ -257,7 +260,9 @@
       const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=timing.duration?Motion.capture({actor,action,viewer,playedFrom:context.playedFrom}):null;
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
       else {const client=localClient(actor),receipt=client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));if(!receipt.ok)throw Error(receipt.message);}
-      selected=null;playSounds(beforeState,session.current);save();input?.cancel();
+      selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
+      feedback.accept(E.project(session.current,viewer).events,[],session.game);
+      save();input?.cancel();
       if(action.notify)toast(localClient(viewer).snapshot().events.filter(e=>e.id>(beforeState.events.at(-1)?.id||0)).map(e=>e.text).join(' · '));
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
@@ -414,15 +419,15 @@
     const action=E.reactions?.(session.current,viewer).find(a=>a.target===target);
     if(!action)return;
     const name=session.current.players[target].name;
-    openModal(`${modalHead(name)}<p class="lead">${esc(action.confirmation||'Выполнить действие с выбранным игроком?')}</p><button class="btn secondary" data-action="${esc(JSON.stringify(action))}" data-close-on-action style="width:100%">${esc(action.label||'Подтвердить')}</button>`);
+    playerTargets?.tap(target);
   }
   function showResult() {
     if(!session||session.current.status!=='finished'||screen!=='table')return;
     const state=session.current,winner=state.winner;
-    openModal(`${modalHead(winner===null?'Хорошая ничья!':winner===0&&!isPass()?'Ваша победа!':`Побеждает ${state.players[winner]?.name||'игрок'}`)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(meta(session.game).name)} · ${state.move} действий за столом</p><div class="result-scores">${state.players.map((p,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(p.name)}</span><strong>${esc(meta(session.game).scoreLabel||'очки')}: ${Number.isFinite(p.score)?p.score:0}</strong></div>`).join('')}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Повтор</button><button class="btn" data-start="${session.game}">Ещё партию</button></div><button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`,'result-modal',{keepAudio:true});
+    openModal(GameScreen.resultMarkup({state,viewer:isPass()?-1:viewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки'}),'result-modal',{keepAudio:true});
   }
   function openHistory(from=null) {
-    interruptAction();cancelBot();stopReplay();selected=null;historyOpen=true;replayIndex=from??session.states.length-1;renderTable();
+    interruptAction();playerTargets?.cancel();feedback.clear();cancelBot();stopReplay();selected=null;historyOpen=true;replayIndex=from??session.states.length-1;renderTable();
   }
   function startReplay() {
     stopReplay();const ticket=replayTicket;
@@ -475,6 +480,10 @@
     getSelected(){return selected;},
     select(piece){selected=piece;renderTable();},
     commit(action,context){act(viewer,action,context);}
+  });
+  playerTargets=new globalThis.PlayroomPlayerTarget({
+    actions:()=>screen==='table'&&session&&!isReplay()&&!paused&&gate===null&&!transition?activeActions(session.current):[],
+    commit:action=>act(viewer,action),root:()=>document.querySelector('#app .table-shell')
   });
   document.addEventListener('click',event=>{
     if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
@@ -543,7 +552,13 @@
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
-  globalThis.PlayroomAppBridge=Object.freeze({profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,renderLobby,openModal,closeModal,modalHead,showSettings});
+  globalThis.PlayroomAppBridge=Object.freeze({audio:Object.freeze({
+    registerPack:(id,sounds)=>audio.registerPack(id,sounds),
+    play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
+      const important=ids.filter(id=>!['move','draw','notify'].includes(id));
+      void audio.unlock().then(ok=>{if(ok&&settings.sound&&!document.hidden)void audio.sequence(important.length?important:ids,{pack});});},
+    stop:()=>audio.stop()
+  }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,renderLobby,openModal,closeModal,modalHead,showSettings});
   render();
   if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();
