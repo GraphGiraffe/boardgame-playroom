@@ -139,7 +139,8 @@
   function pack(signal,{address,port=null}={}){
     const item=parsed(signal),candidates=hostCandidates(item),all=allCandidates(item);
     const explicit=address!==undefined&&address!==null&&address!=='';
-    if(explicit&&all.some(c=>c.address===address&&(port===null||c.port===Number(port))&&!c.audio))
+    const matching=all.filter(c=>c.address===address);
+    if(explicit&&matching.length&&!matching.some(c=>c.audio&&(port===null||c.port===Number(port))))
       throw Error('Этот ICE-адрес не является пригодным UDP host-кандидатом. Для него используйте QR/Share.');
     const usable=candidates.filter(c=>c.audio);
     const chosen=usable.find(c=>c.address===address&&(port===null||c.port===Number(port)))||
