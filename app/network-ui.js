@@ -86,14 +86,22 @@
       if(value.kind==='answer'){await acceptAnswerSignal(value.signal);return;}
     }catch(error){toast(error.message);}
   }
-  function rulesText(room){const values=[room.rules?.presetLabel||room.rules?.preset||'Основной набор'];for(const value of Object.values(room.rules?.options||{}))values.push(String(value));if(room.rules?.openHands)values.push('Открытые руки');return values.join(' · ');}
+  function rulesRows(room){
+    const supplied=room.rules?.display;
+    if(Array.isArray(supplied)&&supplied.every(item=>typeof item?.label==='string'&&typeof item?.value==='string'))return supplied;
+    const definition=bridge()?.catalog?.[room.game.id]||{};
+    return M.describeRules(room.rules,definition.settings||[],!!definition.capabilities?.hands);
+  }
+  function rulesMarkup(room){
+    return '<dl class="lobby-rule-grid">'+rulesRows(room).map(item=>'<div class="lobby-rule-row"><dt>'+esc(item.label)+'</dt><dd>'+esc(item.value)+'</dd></div>').join('')+'</dl>';
+  }
   function showPreview(room){
     const b=bridge();try{b.packs.activate(room.game.id,room.game.version);}catch(_){}
-    b.openModal(b.modalHead('Войти · '+room.name)+'<p class="lead"><strong>'+esc(room.game.name)+'</strong> · '+(room.hostMode==='table'?'Хост показывает Стол':'Хост играет')+'</p><div class="rules-mode-note"><strong>Выбрано:</strong> '+esc(rulesText(room))+'</div><form id="net-client-join"><label class="field"><span>Ваш никнейм</span><input name="nickname" maxlength="24" value="'+esc(b.profile()?.name||'Игрок')+'" required></label><button class="btn" type="submit" style="width:100%">Войти в комнату</button></form>');
+    b.openModal(b.modalHead('Войти · '+room.name)+'<p class="lead"><strong>'+esc(room.game.name)+'</strong> · '+(room.hostMode==='table'?'Хост показывает Стол':'Хост играет')+'</p><section class="rules-mode-note"><strong>Выбранные правила</strong>'+rulesMarkup(room)+'</section><form id="net-client-join"><label class="field"><span>Ваш никнейм</span><input name="nickname" maxlength="24" value="'+esc(b.profile()?.name||'Игрок')+'" required></label><button class="btn" type="submit" style="width:100%">Войти в комнату</button></form>');
   }
   async function joinRoom(form){
     try{
-      const b=bridge(),profile=b.profile();const result=await clientTransport.dispatch({type:'join',profileId:profile.id,nickname:form.elements.nickname.value});
+      const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error('Не удалось войти в комнату.');
       clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;b.closeModal(true);
       clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});
@@ -106,7 +114,7 @@
     const personBy=id=>participant(room,id);
     const seats=room.seats.map(seat=>{const p=personBy(seat.participantId),mine=p?.id===clientParticipantId,locked=room.phase!=='lobby'||!!me?.ready;return '<button class="lobby-seat '+(p?'occupied':'available')+'" data-net-seat="'+esc(seat.id)+'" '+(locked||(p&&!mine)?'disabled':'')+'><span class="seat-color" style="background:'+esc(seat.color.value)+'"></span><span><strong>'+(p?esc(p.nickname):esc(seat.color.label)+' слот')+'</strong><small>'+(p?(p.ready?'<span class="lobby-ready">Готов</span>':'<span class="lobby-not-ready">Не готов</span>'):'Нажмите, чтобы занять место')+'</small></span></button>';}).join('');
     const list=room.participants.map(p=>'<div class="lobby-person"><span><strong>'+esc(p.nickname)+(p.isHost?' · хост':'')+'</strong><small>'+(p.role==='spectator'?'Зритель':p.role==='table'?'Стол':p.ready?'Готов':'Игрок')+'</small></span></div>').join('');
-    app.inert=false;app.innerHTML='<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>'+esc(room.name)+'</h1><p>'+esc(room.game.name)+' · '+esc(rulesText(room))+'</p></div><span class="lobby-code">#'+esc(room.code)+'</span></header><div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">'+seats+'</div><div class="lobby-actions">'+(me?.role==='player'?'<button class="btn secondary" data-net-action="spectator" '+(me.ready?'disabled':'')+'>Стать зрителем</button>':'')+'<button class="btn secondary" data-net-action="rules">Выбранные правила</button></div></section><aside class="lobby-card"><h2>Вы в комнате</h2><form id="net-client-nickname" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="'+esc(me?.nickname||'')+'" '+(me?.ready?'disabled':'')+'></label><button class="btn secondary" type="submit" '+(me?.ready?'disabled':'')+'>Сохранить</button></form><div class="lobby-actions">'+(me?.role==='player'?'<button class="btn" data-net-action="ready">'+(me.ready?'Снять готовность':'Я готов')+'</button>':'')+'<button class="btn secondary" data-net-action="leave">Выйти</button></div><h2 style="margin-top:20px">Участники</h2><div class="lobby-participants">'+list+'</div></aside></div></div>'+(room.phase==='starting'?'<div class="lobby-countdown" role="status"><div><strong id="net-countdown">3</strong><p>Игра начинается…</p></div></div>':'')+'</main>';
+    app.inert=false;app.innerHTML='<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>'+esc(room.name)+'</h1><p>'+esc(room.game.name)+' · '+esc(room.rules?.presetLabel||'Основной набор')+'</p></div><span class="lobby-code">#'+esc(room.code)+'</span></header><div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">'+seats+'</div><h3>Правила комнаты</h3>'+rulesMarkup(room)+'<div class="lobby-actions">'+(me?.role==='player'?'<button class="btn secondary" data-net-action="spectator" '+(me.ready?'disabled':'')+'>Стать зрителем</button>':'')+'<button class="btn secondary" data-net-action="rules">Выбранные правила</button></div></section><aside class="lobby-card"><h2>Вы в комнате</h2><form id="net-client-nickname" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="'+esc(me?.nickname||'')+'" '+(me?.ready?'disabled':'')+'></label><button class="btn secondary" type="submit" '+(me?.ready?'disabled':'')+'>Сохранить</button></form><div class="lobby-actions">'+(me?.role==='player'?'<button class="btn" data-net-action="ready">'+(me.ready?'Снять готовность':'Я готов')+'</button>':'')+'<button class="btn secondary" data-net-action="leave">Выйти</button></div><h2 style="margin-top:20px">Участники</h2><div class="lobby-participants">'+list+'</div></aside></div></div>'+(room.phase==='starting'?'<div class="lobby-countdown" role="status"><div><strong id="net-countdown">3</strong><p>Игра начинается…</p></div></div>':'')+'</main>';
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
@@ -146,7 +154,7 @@
     if(target.dataset.netAction==='ready'){const me=participant(clientRoom,clientParticipantId);return roomCommand({type:'ready',ready:!me?.ready});}
     if(target.dataset.netAction==='spectator')return roomCommand({type:'spectator'});
     if(target.dataset.netAction==='leave'){closeClient();location.reload();return;}
-    if(target.dataset.netAction==='rules')return toast(rulesText(clientRoom));
+    if(target.dataset.netAction==='rules')return bridge().openModal(bridge().modalHead('Правила · '+clientRoom.game.name)+rulesMarkup(clientRoom));
   },true);
   document.addEventListener('submit',event=>{
     if(!['net-host-answer','net-client-offer','net-client-join','net-client-nickname'].includes(event.target.id))return;
