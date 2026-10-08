@@ -8,7 +8,7 @@
   // Audio carries only compact LAN ICE/DTLS signaling. Game data always uses RTCDataChannel.
   // Wire format v1: PR, version, kind, pairing-ID shape, IPv4, UDP port, priority,
   // ICE lengths, 16-byte pairing ID, 32-byte DTLS fingerprint and ICE credentials.
-  const MAGIC=[80,82],VERSION=1,HEADER=64,MAX_AUDIO_TEXT=140;
+  const MAGIC=[80,82],VERSION=1,HEADER=65,MAX_AUDIO_TEXT=140;
   const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
   const protocols=Object.freeze({normal:'GGWAVE_PROTOCOL_AUDIBLE_NORMAL',fast:'GGWAVE_PROTOCOL_AUDIBLE_FAST',fastest:'GGWAVE_PROTOCOL_AUDIBLE_FASTEST'});
   const ascii=value=>typeof value==='string'&&/^[\x21-\x7e]+$/.test(value);
@@ -98,7 +98,7 @@
   }
   function unpack(message){
     const b=unbase64url(message);
-    if(b.length<HEADER||b.length>105||b[0]!==MAGIC[0]||b[1]!==MAGIC[1]||b[2]!==VERSION||![1,2].includes(b[3])||![0,1].includes(b[4])||HEADER+b[15]+b[16]!==b.length)throw Error('Звуковое сообщение несовместимо с PlayRoom.');
+    if(b.length<HEADER||b.length>120||b[0]!==MAGIC[0]||b[1]!==MAGIC[1]||b[2]!==VERSION||![1,2].includes(b[3])||![0,1].includes(b[4])||HEADER+b[15]+b[16]!==b.length)throw Error('Звуковое сообщение несовместимо с PlayRoom.');
     const ip=Array.from(b.slice(5,9)).join('.');addressBytes(ip);
     const port=(b[9]<<8)|b[10];if(!port)throw Error('Некорректный UDP-порт.');
     const priority=(((b[11]*0x1000000)+(b[12]<<16)+(b[13]<<8)+b[14])>>>0);
