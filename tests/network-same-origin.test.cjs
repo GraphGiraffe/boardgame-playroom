@@ -74,6 +74,7 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     assert.match(await client.locator('.modal').innerText(),/UNO/);
     assert.match(await client.locator('.modal').innerText(),/Объявление UNO/);
     assert.match(await client.locator('.modal').innerText(),/Вручную · можно ошибаться/);
+    await client.locator('#net-client-join input[name=nickname]').fill('Гость из вкладки');
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
     const identity=await client.evaluate(()=>globalThis.PlayroomNetworkDebug().client.participantId);
@@ -84,7 +85,7 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).first().locator('strong').innerText(),'Хост · хост');
 
     const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();
-    await host.locator('.lobby-person').filter({hasText:'Хост'}).last().waitFor();
+    await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();
     await host.locator('[data-command=lobby-ready]').click();
     await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
