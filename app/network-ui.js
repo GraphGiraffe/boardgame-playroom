@@ -1,11 +1,61 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
+  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null;
-  let offerToken=null,answerToken=null;
+  let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
+  const connectedHostPeers=[];
+  const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
+  const stopClientAudio=()=>{clientAudioListener?.stop();clientAudioListener=null;};
+  function soundSettings(role,signal){
+    const candidates=Acoustic.hostCandidates(signal),ipv4=candidates.filter(c=>c.ipv4);
+    const first=ipv4[0]||candidates[0];
+    const options=ipv4.map(c=>'<option value="'+esc(c.address)+'">'+esc(c.address)+' · UDP '+c.port+'</option>').join('');
+    return '<fieldset class="acoustic-options"><legend>Подключение звуком</legend>'+
+      '<label class="field"><span>IPv4 (доступные адреса)</span><select id="acoustic-'+role+'-address">'+options+'<option value="manual">Указать IP вручную</option></select></label>'+
+      '<label class="field"><span>IP вручную (если браузер скрывает адрес)</span><input id="acoustic-'+role+'-manual" inputmode="decimal" placeholder="192.168.1.10" autocomplete="off"></label>'+
+      '<label class="field"><span>UDP порт ICE</span><input id="acoustic-'+role+'-port" type="number" min="1" max="65535" value="'+esc(first?.port||'')+'"></label>'+
+      '<label class="field"><span>Tx protocol</span><select id="acoustic-'+role+'-protocol"><option value="fastest">Fastest</option><option value="fast">Fast</option><option value="normal">Normal</option></select></label>'+
+      '<p class="lead">Для приёма нужен доступ к микрофону. Если адрес показывается только как .local/mDNS, введите действующий IP из параметров Wi-Fi. Для PWA используйте HTTPS.</p>'+
+      '</fieldset>';
+  }
+  function soundChoice(role,signal){
+    const select=document.getElementById('acoustic-'+role+'-address');
+    const candidates=Acoustic.hostCandidates(signal),first=candidates[0];
+    const address=select?.value==='manual'?document.getElementById('acoustic-'+role+'-manual')?.value.trim():select?.value;
+    const port=Number(document.getElementById('acoustic-'+role+'-port')?.value||first?.port);
+    return {message:Acoustic.pack(signal,{address,port}),protocol:document.getElementById('acoustic-'+role+'-protocol')?.value||'fastest'};
+  }
+  async function sendHostSound(){
+    if(!hostPeer)throw Error('Сначала создайте приглашение.');
+    stopHostAudio();
+    hostAudioListener=await Acoustic.listen(packet=>{
+      if(packet.kind!=='answer')return;
+      stopHostAudio();
+      acceptAnswerSignal(packet.signal).catch(error=>toast(error.message));
+    });
+    const {message,protocol}=soundChoice('host',hostPeer.offer);
+    toast('Передаём приглашение через динамик.');
+    await Acoustic.play(message,{protocol});
+    toast('Приглашение передано. Ждём ответ телефона.');
+  }
+  async function listenGuestSound(){
+    stopClientAudio();
+    clientAudioListener=await Acoustic.listen(packet=>{
+      if(packet.kind!=='offer')return;
+      stopClientAudio();
+      createClientAnswer(packet.signal,{acoustic:true}).catch(error=>toast(error.message));
+    });
+    toast('Слушаем приглашение. Воспроизведите звук на хосте.');
+  }
+  async function sendGuestSound(){
+    if(!clientPeer?.answer)throw Error('Сначала примите приглашение.');
+    const {message,protocol}=soundChoice('client',clientPeer.answer);
+    await Acoustic.play(message,{protocol});
+    toast('Ответ передан. Соединение устанавливается по Wi-Fi.');
+  }
   function toast(text){bridge()?.toast?.(text);}
   function copy(id){const field=document.getElementById(id);if(!field)return;field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
   async function copyText(value){try{await navigator.clipboard.writeText(value);toast('Скопировано');}catch(_){toast('Не удалось скопировать автоматически. Используйте поле в «Другие способы».');}}
@@ -21,8 +71,17 @@
     const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
     QR?.render?.(document.getElementById(id+'-qr'),link,{level:'L',cellSize:4,margin:4});
   }
-  function closeClient(){clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
-  function closeHostPeer(){hostMount?.destroy?.();hostMount=null;hostServeClose?.();hostServeClose=null;hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;}
+  function closeClient(){stopClientAudio();clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
+  function closePendingHostPeer(){
+    stopHostAudio();hostServeClose?.();hostServeClose=null;
+    hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;
+  }
+  function closeHostPeer(){
+    hostMount?.destroy?.();hostMount=null;closePendingHostPeer();
+    for(const item of connectedHostPeers.splice(0)){
+      item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();
+    }
+  }
   function ensureButtons(){
     const b=bridge();if(!b)return;
     const intro=$('.intro');
@@ -46,7 +105,7 @@
   async function hostInvite(){
     try{
       const b=bridge(),room=b?.room?.();if(!room)throw Error('Сначала создайте сетевую комнату.');
-      closeHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
+      closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
       hostPeer=await W.createHostPeer();hostServeClose=W.serve(hostPeer.channel,hostSwitch);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
       const share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="offer" style="width:100%">Поделиться приглашением</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы» ниже.</div>';
       const secure=PWA?.secure?'':'<div class="rules-mode-note"><strong>PWA-функции ограничены:</strong> откройте ХОД по HTTPS после установки. Локальный file/content URL не является secure context.</div>';
