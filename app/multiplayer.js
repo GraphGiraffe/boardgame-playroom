@@ -25,6 +25,18 @@
   };
   const normalizeName=value=>text(value,NAME_MAX,'Имя игрока');
   const normalizeRoomName=value=>text(value,ROOM_NAME_MAX,'Название комнаты');
+  // Labels travel with the room; raw IDs remain in rules.options for the engine.
+  function describeRules(rules={},settings=[],hasHands=false){
+    const rows=[{label:'Набор правил',value:String(rules.presetLabel||rules.preset||'Основной набор')}];
+    const fields=Array.isArray(settings)?settings:[];
+    for(const [key,value] of Object.entries(rules.options||{})){
+      const field=fields.find(item=>item?.key===key);
+      const option=field?.options?.find(item=>String(item.value)===String(value));
+      rows.push({label:String(field?.label||key),value:String(option?.label??value)});
+    }
+    if(hasHands)rows.push({label:'Открытые руки',value:rules.openHands?'Да':'Нет'});
+    return rows;
+  }
 
   class ProfileStore{
     constructor(storageProvider=()=>globalThis.localStorage){this.storageProvider=storageProvider;}
@@ -100,7 +112,7 @@
     preview(roomId){const room=this._room(roomId);return {id:room.id,code:room.code,name:room.name,game:clone(room.game),rules:clone(room.rules),rulesRevision:room.rulesRevision,hostMode:room.hostMode,phase:room.phase,players:room.participants.filter(p=>p.role==='player').length,constraints:clone(room.constraints)};}
     join(roomId,{id=this.idFactory(),nickname}={}){
       const room=this._room(roomId);this._lobby(room);
-      if(room.participants.some(item=>item.id===id))return this.snapshot(roomId);
+      if(room.participants.some(item=>item.id===id))throw Error('Этот идентификатор участника уже занят.');
       room.participants.push({id,nickname:normalizeName(nickname),role:'spectator',seatId:null,ready:false,connected:true,isHost:false,joinedAt:this.clock()});
       room.lobbyRevision++;this._touch(room);this._emit(room,'participant-joined',nickname+' вошёл в комнату.',{participantId:id});
       return {participantId:id,room:this.snapshot(roomId)};
@@ -200,7 +212,8 @@
           if(!command||typeof command.type!=='string')throw Error('Некорректная команда комнаты.');
           if(command.type==='join'){
             if(participantId)throw Error('Участник уже вошёл.');
-            const joined=this.join(roomId,{id:command.profileId||this.idFactory(),nickname:command.nickname});
+            // Browser profile IDs are shared between tabs and do not grant any room authority.
+            const joined=this.join(roomId,{id:this.idFactory(),nickname:command.nickname});
             participantId=joined.participantId;return {ok:true,snapshot:packet()};
           }
           if(!participantId)throw Error('Сначала войдите в комнату.');
@@ -234,5 +247,5 @@
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
     close(){this.unsubscribe?.();this.current?.close?.();this.listeners.clear();this.current=null;}
   }
-  return {PROFILE_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,ProfileStore,RoomService,SwitchableConnection};
+  return {PROFILE_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,describeRules,ProfileStore,RoomService,SwitchableConnection};
 });
