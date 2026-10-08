@@ -12,10 +12,30 @@
   const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true});
   const protocols=Object.freeze({normal:'GGWAVE_PROTOCOL_AUDIBLE_NORMAL',fast:'GGWAVE_PROTOCOL_AUDIBLE_FAST',fastest:'GGWAVE_PROTOCOL_AUDIBLE_FASTEST'});
   const ascii=value=>typeof value==='string'&&/^[\x21-\x7e]+$/.test(value);
+  const isDocumentation=parts=>(parts[0]===192&&parts[1]===0&&parts[2]===2)||
+    (parts[0]===198&&parts[1]===51&&parts[2]===100)||
+    (parts[0]===203&&parts[1]===0&&parts[2]===113);
+  function ipv4Parts(address){
+    if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))return null;
+    const values=address.split('.').map(Number);
+    return values.every(value=>Number.isInteger(value)&&value>=0&&value<=255)?values:null;
+  }
+  function addressKind(address){
+    const ip=ipv4Parts(address);
+    if(!ip)return /^([0-9a-f]*:){2,}[0-9a-f:.%]+$/i.test(address)?'ipv6':/\.local$/i.test(address)?'mdns':'hostname';
+    if(isDocumentation(ip))return 'documentation';
+    if(ip[0]===127||ip[0]===0||ip[0]>=224)return 'reserved';
+    if(ip[0]===192&&ip[1]===168)return 'lan';
+    if(ip[0]===10)return 'lan';
+    if(ip[0]===172&&ip[1]>=16&&ip[1]<=31)return 'lan';
+    if(ip[0]===169&&ip[1]===254)return 'linklocal';
+    if(ip[0]===100&&ip[1]>=64&&ip[1]<=127)return 'cgnat';
+    return 'public';
+  }
   function addressBytes(address){
     if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))throw Error('Укажите IPv4-адрес устройства.');
-    const parts=address.split('.').map(Number);
-    if(parts.some(n=>n>255)||parts.every(n=>n===0)||parts[0]===0||parts[0]===127||parts[0]>=224)throw Error('Это не подходящий LAN IPv4-адрес.');
+    const parts=ipv4Parts(address);
+    if(!parts||['documentation','reserved'].includes(addressKind(address)))throw Error('Это служебный или тестовый IPv4-адрес, непригодный для LAN-подключения.');
     return parts;
   }
   function privateRank(ip){
@@ -33,18 +53,62 @@
     if(value?.v!==1||!['offer','answer'].includes(value.type)||typeof value.sdp!=='string'||!value.sdp)throw Error('Некорректные данные WebRTC.');
     return value;
   }
-  function hostCandidates(signal){
-    const sdp=parsed(signal).sdp;
+  function parseCandidates(sdp){
     const result=[],seen=new Set();
-    for(const line of sdp.split(/\r?\n/)){
-      const m=/^a=candidate:\S+\s+(\d+)\s+(UDP)\s+(\d+)\s+(\S+)\s+(\d+)\s+typ\s+host(?:\s|$)/i.exec(line.trim());
-      if(!m||Number(m[1])!==1)continue;
-      const address=m[4],port=Number(m[5]),priority=Number(m[3]);
-      if(!Number.isInteger(port)||port<1||port>65535||!Number.isSafeInteger(priority)||priority<0||priority>0xffffffff)continue;
-      const key=address+':'+port;
-      if(!seen.has(key)){seen.add(key);result.push({address,port,priority,ipv4:/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address)});}
+    for(const line of String(sdp||'').split(/\r?\n/)){
+      const match=/^(?:a=)?candidate:(\S+)\s+(\d+)\s+(\S+)\s+(\d+)\s+(\S+)\s+(\d+)\s+typ\s+(\S+)(?:\s|$)/i.exec(line.trim());
+      if(!match)continue;
+      const component=Number(match[2]),transport=match[3].toLowerCase(),priority=Number(match[4]);
+      const address=match[5],port=Number(match[6]),type=match[7].toLowerCase(),kind=addressKind(address);
+      if(!Number.isInteger(component)||component<1||component>2||!['udp','tcp'].includes(transport)||
+         !Number.isSafeInteger(priority)||priority<0||priority>0xffffffff||
+         !Number.isInteger(port)||port<1||port>65535||!['host','srflx','prflx','relay'].includes(type))continue;
+      const key=[address,port,component,transport,type].join('|');
+      if(seen.has(key))continue;
+      seen.add(key);
+      result.push({address,port,component,transport,type,priority,kind,ipv4:!!ipv4Parts(address),
+        ipv6:kind==='ipv6',audio:transport==='udp'&&component===1&&type==='host'&&
+        !!ipv4Parts(address)&&!['documentation','reserved'].includes(kind),source:'session'});
     }
-    return result.sort((a,b)=>(a.ipv4?privateRank(a.address):9)-(b.ipv4?privateRank(b.address):9)||b.priority-a.priority);
+    return result;
+  }
+  function allCandidates(signal){
+    const entries=parseCandidates(parsed(signal).sdp);
+    // Show EVERY ICE route the browser supplies. Ranking only sets the initial selection.
+    return entries.sort((a,b)=>{
+      const score=c=>(c.audio?0:50)+privateRank(c.address)+(c.kind==='documentation'||c.kind==='reserved'?80:0);
+      return score(a)-score(b)||b.priority-a.priority||a.address.localeCompare(b.address);
+    });
+  }
+  function hostCandidates(signal){
+    return allCandidates(signal).filter(c=>c.type==='host'&&c.transport==='udp'&&c.component===1);
+  }
+  async function probeAddresses({timeout=2500}={}){
+    // Mirrors wave-share's secondary ICE scan, without external STUN/relay servers.
+    // Modern browsers can deliberately hide interface IPs behind .local names.
+    if(typeof root.RTCPeerConnection!=='function')return [];
+    const pc=new root.RTCPeerConnection({iceServers:[]}),found=[],keys=new Set();
+    const collect=raw=>{for(const item of parseCandidates(raw)){
+      const key=[item.address,item.transport,item.type].join('|');
+      if(!keys.has(key)){keys.add(key);found.push({...item,port:null,source:'probe',audio:false});}
+    }};
+    const onCandidate=event=>{if(event.candidate?.candidate)collect(event.candidate.candidate);};
+    pc.addEventListener('icecandidate',onCandidate);
+    let timer=null;
+    try{
+      pc.createDataChannel('playroom-interface-scan');
+      await pc.setLocalDescription(await pc.createOffer());
+      await Promise.race([
+        new Promise(resolve=>{
+          if(pc.iceGatheringState==='complete')return resolve();
+          const onChange=()=>{if(pc.iceGatheringState!=='complete')return;pc.removeEventListener('icegatheringstatechange',onChange);resolve();};
+          pc.addEventListener('icegatheringstatechange',onChange);
+        }),
+        new Promise(resolve=>{timer=setTimeout(resolve,Math.max(200,Math.min(timeout,6000)));})
+      ]);
+      collect(pc.localDescription?.sdp);
+      return found.sort((a,b)=>privateRank(a.address)-privateRank(b.address)||a.address.localeCompare(b.address));
+    }finally{if(timer!==null)clearTimeout(timer);pc.removeEventListener('icecandidate',onCandidate);pc.close();}
   }
   function base64url(bytes){
     let raw='';for(const byte of bytes)raw+=String.fromCharCode(byte);
@@ -73,8 +137,13 @@
     return line?.slice(name.length+3)||null;
   }
   function pack(signal,{address,port=null}={}){
-    const item=parsed(signal),candidates=hostCandidates(item);
-    const chosen=candidates.find(c=>c.address===address&&(port===null||c.port===Number(port)))||candidates.find(c=>c.ipv4)||candidates[0];
+    const item=parsed(signal),candidates=hostCandidates(item),all=allCandidates(item);
+    const explicit=address!==undefined&&address!==null&&address!=='';
+    if(explicit&&all.some(c=>c.address===address&&(port===null||c.port===Number(port))&&!c.audio))
+      throw Error('Этот ICE-адрес не является пригодным UDP host-кандидатом. Для него используйте QR/Share.');
+    const usable=candidates.filter(c=>c.audio);
+    const chosen=usable.find(c=>c.address===address&&(port===null||c.port===Number(port)))||
+      usable.find(c=>port!==null&&c.port===Number(port))||usable[0]||candidates[0];
     if(!chosen)throw Error('WebRTC не предоставил LAN UDP-кандидат. Используйте QR/Share.');
     const ip=address||chosen.address,ipv4=addressBytes(ip),udpPort=port===null?chosen.port:Number(port);
     if(!Number.isInteger(udpPort)||udpPort<1||udpPort>65535)throw Error('Некорректный UDP-порт.');
@@ -191,5 +260,5 @@
       return {stop};
     }catch(error){stop();throw error;}
   }
-  return Object.freeze({protocols,hostCandidates,privateRank,pack,unpack,play,listen});
+  return Object.freeze({protocols,hostCandidates,allCandidates,probeAddresses,addressKind,privateRank,pack,unpack,play,listen});
 });
