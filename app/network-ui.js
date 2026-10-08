@@ -109,12 +109,18 @@
       hostPeer=await W.createHostPeer();hostServeClose=W.serve(hostPeer.channel,hostSwitch);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
       const share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="offer" style="width:100%">Поделиться приглашением</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы» ниже.</div>';
       const secure=PWA?.secure?'':'<div class="rules-mode-note"><strong>PWA-функции ограничены:</strong> откройте ХОД по HTTPS после установки. Локальный file/content URL не является secure context.</div>';
-      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">На телефоне можно просто отсканировать QR камерой. Также приглашение можно передать через системное меню «Поделиться».</p>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');renderPairingQR(offerToken,'net-host-token');
+      b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">На телефоне можно просто отсканировать QR камерой. Также приглашение можно передать через системное меню «Поделиться».</p>'+soundSettings('host',hostPeer.offer)+'<button class="btn" id="net-host-acoustic" type="button" style="width:100%">Передать звуковое приглашение и слушать ответ</button>'+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');renderPairingQR(offerToken,'net-host-token');
     }catch(error){toast(error.message);}
   }
   async function acceptAnswerSignal(signal){
     if(!hostPeer)throw Error('На этом устройстве нет активного приглашения. Создайте комнату и нажмите «Подключить устройство».');
-    await hostPeer.acceptAnswer(signal);bridge().closeModal(true);toast('Устройство подключено. Теперь войдите в комнату на нём.');
+    const peer=hostPeer,sw=hostSwitch,serveClose=hostServeClose,roomConnection=hostRoomConnection;
+    if(!peer)throw Error('Приглашение уже использовано.');
+    await peer.acceptAnswer(signal);
+    stopHostAudio();
+    connectedHostPeers.push({peer,switchable:sw,serveClose,roomConnection});
+    hostPeer=null;hostSwitch=null;hostServeClose=null;hostRoomConnection=null;
+    bridge().closeModal(true);toast('Устройство подключено. Теперь войдите в комнату на нём.');
   }
   function signalFromInput(value,expected){
     const token=Pairing.extract(value)||(/^PR2\./.test(value.trim())?value.trim():null);
@@ -125,12 +131,12 @@
   async function acceptAnswer(form){try{await acceptAnswerSignal(signalFromInput(form.elements.answer.value,'answer'));}catch(error){toast(error.message);}}
   function showJoin(){
     closeClient();const b=bridge(),note=PWA?.secure?'':'<div class="rules-mode-note"><strong>Совет:</strong> для установки PWA и Web Share откройте размещённую HTTPS-версию ХОД.</div>';
-    b.openModal(b.modalHead('Присоединиться к комнате')+note+'<p class="lead">Если приглашение пришло через системное «Поделиться» или ссылку web+playroom:, этот экран откроется автоматически. Fallback — вставьте полученную ссылку или token.</p><form id="net-client-offer"><label class="field"><span>Приглашение</span><textarea name="offer" rows="5" required></textarea></label><button class="btn" type="submit" style="width:100%">Принять приглашение</button></form>');
+    b.openModal(b.modalHead('Присоединиться к комнате')+note+'<button class="btn" id="net-client-acoustic-listen" type="button" style="width:100%">Слушать звуковое приглашение</button><p class="lead">Если приглашение пришло через системное «Поделиться» или ссылку web+playroom:, этот экран откроется автоматически. Fallback — вставьте полученную ссылку или token.</p><form id="net-client-offer"><label class="field"><span>Приглашение</span><textarea name="offer" rows="5" required></textarea></label><button class="btn" type="submit" style="width:100%">Принять приглашение</button></form>');
   }
-  async function createClientAnswer(signal){
+  async function createClientAnswer(signal,{acoustic=false}={}){
     closeClient();clientPeer=await W.createClientPeer(signal);answerToken=Pairing.fromSignal('answer',clientPeer.answer);
     const b=bridge(),share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="answer" style="width:100%">Поделиться ответом</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы».</div>';
-    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');renderPairingQR(answerToken,'net-client-token');
+    b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+soundSettings('client',clientPeer.answer)+'<button class="btn" id="net-client-acoustic-send" type="button" style="width:100%">Отправить звуковой ответ</button>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');renderPairingQR(answerToken,'net-client-token');
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
     showPreview(preview.room);
@@ -185,8 +191,10 @@
     b.packs.activate(room.game.id,room.game.version);
     const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
     hostAuthority=new Authority(session);
-    const remoteId=hostRoomConnection?.participantId,remoteViewer=occupied.findIndex(s=>s.participantId===remoteId);
-    if(hostSwitch&&remoteViewer>=0)hostSwitch.set(hostAuthority.connect(remoteViewer));
+    for(const item of connectedHostPeers){
+      const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
+      if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+    }
     const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
     const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
     const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
@@ -202,10 +210,13 @@
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-seat],[data-net-action],#network-join-button,#network-pair-button,#pwa-install-button');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-seat],[data-net-action],#network-join-button,#network-pair-button,#pwa-install-button,#net-host-acoustic,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.id==='network-join-button')return showJoin();
     if(target.id==='network-pair-button')return hostInvite();
+    if(target.id==='net-host-acoustic')return sendHostSound().catch(error=>{stopHostAudio();toast(error.message);});
+    if(target.id==='net-client-acoustic-listen')return listenGuestSound().catch(error=>{stopClientAudio();toast(error.message);});
+    if(target.id==='net-client-acoustic-send')return sendGuestSound().catch(error=>toast(error.message));
     if(target.id==='pwa-install-button'){PWA?.install?.().catch(error=>toast(error.message));return;}
     if(target.dataset.netShare){sharePair(target.dataset.netShare);return;}
     if(target.dataset.netCopy)return copy(target.dataset.netCopy);
@@ -215,6 +226,14 @@
     if(target.dataset.netAction==='leave'){closeClient();location.reload();return;}
     if(target.dataset.netAction==='rules')return bridge().openModal(bridge().modalHead('Правила · '+clientRoom.game.name)+rulesMarkup(clientRoom));
   },true);
+  document.addEventListener('change',event=>{
+    if(!['acoustic-host-address','acoustic-client-address'].includes(event.target.id))return;
+    const role=event.target.id.includes('host')?'host':'client';
+    const signal=role==='host'?hostPeer?.offer:clientPeer?.answer;
+    if(!signal)return;
+    const candidate=Acoustic.hostCandidates(signal).find(c=>c.address===event.target.value);
+    if(candidate)document.getElementById('acoustic-'+role+'-port').value=String(candidate.port);
+  });
   document.addEventListener('submit',event=>{
     if(!['net-host-answer','net-client-offer','net-client-join','net-client-nickname'].includes(event.target.id))return;
     event.preventDefault();event.stopPropagation();
@@ -226,7 +245,7 @@
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
   root.PlayroomNetworkDebug=()=>({
-    host:{roomId:hostRoomId,peer:!!hostPeer,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
+    host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
