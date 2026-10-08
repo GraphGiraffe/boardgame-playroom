@@ -182,11 +182,25 @@ test('Compact card hands preserve readable previews and each game’s play contr
       const track=page.locator('.hand-track'),info = await track.evaluate(el => ({count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth - el.clientWidth, y:el.scrollHeight-el.clientHeight,overflow: getComputedStyle(el).overflowX}));
       assert.equal(info.count, 35); assert.equal(info.rows, 1); assert(info.x > 1); assert(info.y <= 1); assert.equal(info.overflow, 'auto');
       const ids = await track.locator('[data-hand-preview]').evaluateAll(els => els.map(el => el.dataset.handPreview));
-      for (const id of ids) {
-        await card(page,id).scrollIntoViewIfNeeded();await exposedPoint(card(page,id));
+      // scrollIntoViewIfNeeded may stop as soon as part of an overlapping
+      // card intersects the viewport, leaving the small rank corner clipped.
+      // Center the requested card as a real user can by panning the hand, then
+      // continue to assert the exposed rank corner is hit-testable.
+      const reveal=async id=>{
+        await card(page,id).evaluate(el=>el.scrollIntoView({block:'nearest',inline:'center',behavior:'instant'}));
+        await page.waitForFunction(id=>{
+          const el=document.querySelector('.own-hand [data-hand-preview="'+id+'"]');
+          if(!el)return false;
+          const r=el.querySelector('.card-corner').getBoundingClientRect();
+          const x=r.x+r.width/2,y=r.y+r.height/2;
+          return document.elementFromPoint(x,y)?.closest('[data-hand-preview]')===el;
+        },id,{timeout:1500});
+      };
+      for(const id of ids){
+        await reveal(id);await exposedPoint(card(page,id));
       }
       for(const id of [ids[0],ids[17],ids.at(-1)]){
-        await card(page,id).scrollIntoViewIfNeeded();const p=await exposedPoint(card(page,id));
+        await reveal(id);const p=await exposedPoint(card(page,id));
         await page.mouse.move(p.x,p.y);await assertFullPreview(page,id);await page.mouse.move(1,1);
       }
       assert.equal((await state(page)).move, 0);
