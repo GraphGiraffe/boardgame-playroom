@@ -33,8 +33,8 @@
     if(index<0)index=prefer(c=>c.ipv4&&c.kind!=='documentation'&&c.kind!=='reserved');
     return index;
   }
-  function soundCandidateOptions(items){
-    return items.map((item,index)=>'<option value="'+index+'">'+esc(soundCandidateLabel(item))+'</option>').join('');
+  function soundCandidateOptions(items,selected=-1){
+    return items.map((item,index)=>'<option value="'+index+'" '+(index===selected?'selected':'')+'>'+esc(soundCandidateLabel(item))+'</option>').join('');
   }
   function selectionDetails(role,signal){
     const choice=document.getElementById('acoustic-'+role+'-address'),items=soundCandidates(role,signal);
@@ -44,7 +44,7 @@
   function syncSoundChoice(role,signal){
     const {selected,items,manual}=selectionDetails(role,signal);
     const port=document.getElementById('acoustic-'+role+'-port'),help=document.getElementById('acoustic-'+role+'-hint');
-    const local=Acoustic.hostCandidates(signal).find(c=>c.audio);
+    const local=Acoustic.hostCandidates(signal).find(c=>c.audio)||Acoustic.hostCandidates(signal)[0];
     if(port&&!manual)port.value=String(selected?.source==='session'&&selected.port?selected.port:local?.port||'');
     const manualField=document.getElementById('acoustic-'+role+'-manual');
     if(manualField){manualField.disabled=!manual;manualField.hidden=!manual;}
@@ -65,10 +65,10 @@
     scannedCandidates[role]=[];
     const items=soundCandidates(role,signal),preferred=preferredSoundCandidate(items);
     const selected=preferred>=0?items[preferred]:null;
-    const port=selected?.port||Acoustic.hostCandidates(signal).find(c=>c.audio)?.port||'';
+    const port=selected?.port||Acoustic.hostCandidates(signal).find(c=>c.audio)?.port||Acoustic.hostCandidates(signal)[0]?.port||'';
     return '<fieldset class="acoustic-options"><legend>Подключение звуком</legend>'+
       '<label class="field"><span>Сетевой адрес (все видимые варианты)</span><select id="acoustic-'+role+'-address">'+
-      soundCandidateOptions(items)+'<option value="manual" '+(preferred<0?'selected':'')+'>Указать IP вручную</option></select></label>'+
+      soundCandidateOptions(items,preferred)+'<option value="manual" '+(preferred<0?'selected':'')+'>Указать IP вручную</option></select></label>'+
       '<button type="button" class="btn secondary" data-net-scan="'+role+'">Обновить поиск сетевых адресов</button>'+
       '<p class="lead" id="acoustic-'+role+'-hint" role="status">'+
       (selected?.kind==='documentation'?'Этот тестовый адрес не подходит для LAN. Введите адрес Wi-Fi вручную.':
@@ -88,7 +88,8 @@
     select.innerHTML=soundCandidateOptions(items)+'<option value="manual">Указать IP вручную</option>';
     const same=items.findIndex(c=>current&&c.address===current.address&&c.port===current.port&&c.transport===current.transport);
     const preferred=preferredSoundCandidate(items);
-    select.value=manual?'manual':String(same>=0?same:preferred>=0?preferred:'manual');
+    const keep=!!current&&current.kind!=='documentation'&&current.kind!=='reserved';
+    select.value=manual?'manual':String(keep&&same>=0?same:preferred>=0?preferred:'manual');
     syncSoundChoice(role,signal);
   }
   async function scanSoundAddresses(role,signal){
