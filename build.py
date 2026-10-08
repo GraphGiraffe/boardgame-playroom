@@ -279,7 +279,7 @@ def ensure_dev_icons():
 def pwa_runtime_items(packs=()):
     """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
     paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js"}
-    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "core/*.js", "core/*.css", "icons/*.svg"):
+    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "core/*.js", "core/*.css", "icons/*.svg"):
         paths.update(ROOT.glob(pattern))
     items = []
     for path in sorted(paths):
