@@ -253,7 +253,7 @@
           if(result?.length){
             const text=decoder.decode(new Uint8Array(result));
             let packet;try{packet=unpack(text);}catch(_){return;}
-            onPacket(packet);
+            onPacket({...packet,message:text});
           }
         }catch(_){/* Ambient noise and malformed transmissions are not commands. */}
       };
