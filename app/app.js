@@ -3,7 +3,8 @@
   const E = globalThis.TabletopCore || globalThis.PlayroomEngine;
   const V = globalThis.PlayroomViews;
   const Session = globalThis.TabletopSession;
-  const Motion = globalThis.PlayroomMotion;
+  const Motion = globalThis.PlayroomMotion, Flow = globalThis.PlayroomGameFlow;
+  const HandOverflow=globalThis.PlayroomHandOverflow;
   const Authority=globalThis.SessionAuthority, Protocol=globalThis.PlayroomProtocol;
   const Multiplayer=globalThis.PlayroomMultiplayer;
   const profileStore=new Multiplayer.ProfileStore(()=>localStorage),roomService=new Multiplayer.RoomService();
@@ -22,12 +23,7 @@
   const brand = '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>ХОД<small>β</small>';
   const names = ['Вы','Мика','Тео','Луна'];
   const catalog = globalThis.PlayroomCatalog || {};
-  const animationPresets = {
-    instant:{label:'Мгновенный',duration:0,settle:100,botDelay:220,description:'Без анимаций, с небольшой паузой между действиями.'},
-    fast:{label:'Быстрый',duration:220,settle:80,botDelay:300,description:'Все анимации, короткие перемещения и паузы.'},
-    normal:{label:'Средний',duration:520,settle:160,botDelay:650,description:'Все анимации в спокойном обычном темпе.'},
-    slow:{label:'Медленный',duration:1100,settle:650,botDelay:1200,description:'Плавные перемещения и длинные паузы, чтобы рассмотреть ход.'}
-  };
+  const animationPresets=Flow.presets;
   let settings = {sound:false, volume:.6, animationSpeed:'normal', quickPlay:false};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
   let sessionId = null, hubTab = 'games';
@@ -44,7 +40,7 @@
     if(typeof stored?.sound==='boolean')settings.sound=stored.sound;
     if([.3,.6,1].includes(stored?.volume))settings.volume=stored.volume;
     if(typeof stored?.quickPlay==='boolean')settings.quickPlay=stored.quickPlay;
-    settings.animationSpeed=Object.hasOwn(animationPresets,stored?.animationSpeed)?stored.animationSpeed:stored?.animationSpeed!==undefined?'normal':stored?.motion===false?'instant':'normal';
+    settings.animationSpeed=Flow.speed(stored?.animationSpeed!==undefined?stored.animationSpeed:stored?.motion===false?'instant':'normal');
   } catch (_) {}
   try { const saved = library.current(); if (saved) { session = saved.session; sessionId = saved.id; } }
   catch (_) { loadWarning='Не удалось восстановить сохранение. Исходная запись сохранена; остальные партии доступны в «Моих партиях».'; }
@@ -54,7 +50,9 @@
   const unlockAudio = () => {if(settings.sound&&!document.hidden)void audio.unlock();};
   document.addEventListener('pointerdown',unlockAudio,{capture:true,passive:true});
   document.addEventListener('keydown',unlockAudio,{capture:true});
-  const pace = () => ({...animationPresets[settings.animationSpeed],duration:window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:animationPresets[settings.animationSpeed].duration});
+  const flow=new Flow.GameFlow({options:()=>settings,motion:Motion,reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const pace=()=>flow.pace();
+  HandOverflow.attach(document);
   document.body.classList.toggle('reduced-motion',pace().duration===0);
   const meta = id => E.GAMES.find(g => g.id === id);
   function activatePack(id,version) {
@@ -94,7 +92,7 @@
   }
   function stopSounds() {soundTicket++;audio.stop();}
   function cancelBot() { clearTimeout(botTimer); botTimer=null; authority?.cancelBot(); }
-  function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;Motion.cancel();if(stopAudio)stopSounds(); }
+  function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;flow.cancel();if(stopAudio)stopSounds(); }
   function tile(g, featured) {
     const info=catalog[g.id]||{};
     return `<article class="game-tile ${featured?'featured':''}" data-game="${g.id}">
@@ -204,6 +202,7 @@
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
+    HandOverflow.sync($('#app'));
     feedback.refresh();playerTargets?.refresh();
     if(gate!==null)showGate();
     scheduleBot();
@@ -242,7 +241,7 @@
   }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
-    transition=null;clearTimeout(run.timer);Motion.cancel();
+    transition=null;clearTimeout(run.timer);flow.cancel();
     if(session!==run.session)return;
     if(isPass()&&session.current.turn!==run.beforeTurn&&session.current.status!=='finished'){
       if(hasReactions(session.current))awaitingPass=true;
@@ -257,7 +256,7 @@
   function act(actor,action,context={}) {
     if(transition||isReplay()||paused||gate!==null)return;
     try {
-      const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=timing.duration?Motion.capture({actor,action,viewer,playedFrom:context.playedFrom}):null;
+      const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom});
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
       else {const client=localClient(actor),receipt=client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));if(!receipt.ok)throw Error(receipt.message);}
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
@@ -266,7 +265,7 @@
       if(action.notify)toast(localClient(viewer).snapshot().events.filter(e=>e.id>(beforeState.events.at(-1)?.id||0)).map(e=>e.text).join(' · '));
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
-      Motion.play(snapshot,{duration:timing.duration,draws:cardTransfers(beforeState,session.current)}).then(()=>{
+      flow.play(snapshot,{draws:cardTransfers(beforeState,session.current)}).then(()=>{
         if(transition===run)run.timer=setTimeout(()=>finishAction(run),timing.settle);
       }).catch(()=>finishAction(run));
     } catch(error){toast(error.message||'Это действие сейчас недоступно');}
@@ -282,6 +281,7 @@
     const back=modalBack;modalBack=null;
     if(back&&!ignoreBack){back();return;}
     stopSounds();$('#modal-root').innerHTML='';$('#app').inert=false;modalReturn?.focus?.();scheduleBot();
+    window.dispatchEvent(new Event('playroom:game-options'));
   }
   const modalHead = title => `<header class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" data-command="close-modal" aria-label="Закрыть">${icon('close')}</button></header>`;
   function setup(gameId,draft=null) {
@@ -436,9 +436,9 @@
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
       const before=currentState(),after=session.states[replayIndex+1],events=after.events.filter(e=>e.id>(before.events.at(-1)?.id||0));
-      const action={type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=timing.duration?Motion.capture({actor:before.turn,action,viewer}):null;
+      const action={type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
       replayIndex++;renderTable();playSounds(before,after);
-      await Motion.play(snapshot,{duration:timing.duration,draws:cardTransfers(before,after)});
+      await flow.play(snapshot,{draws:cardTransfers(before,after)});
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
     replayTimer=setTimeout(step,pace().botDelay);renderTable();
@@ -519,6 +519,7 @@
       else {settings.animationSpeed=Object.hasOwn(animationPresets,event.target.value)?event.target.value:'normal';$('#setting-speed-description').textContent=animationPresets[settings.animationSpeed].description;}
       document.body.classList.toggle('reduced-motion',pace().duration===0);
       try{localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));}catch(_){}
+      window.dispatchEvent(new Event('playroom:game-options'));
       if(['setting-sound','setting-volume'].includes(event.target.id))void previewSound();
     }
   });
@@ -552,7 +553,7 @@
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
-  globalThis.PlayroomAppBridge=Object.freeze({audio:Object.freeze({
+  globalThis.PlayroomAppBridge=Object.freeze({gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const important=ids.filter(id=>!['move','draw','notify'].includes(id));

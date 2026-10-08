@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const V=root.PlayroomViews,H=V.helpers,GameScreen=root.PlayroomGameScreen;
+  const V=root.PlayroomViews,H=V.helpers,GameScreen=root.PlayroomGameScreen,Flow=root.PlayroomGameFlow,HandOverflow=root.PlayroomHandOverflow;
   function install(definition){
     const {manifest,view,styles,assets={}}=definition;
     if(!manifest||typeof manifest.id!=='string'||typeof view!=='string'||typeof styles!=='string')throw Error('Нет представления пака.');
@@ -14,6 +14,9 @@
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     let selected=null,connected=true,historyOpen=false,historyIndex=null,historySnapshot=null,historyTicket=0;
     let input=null,playerTargets=null,dialogOpen=false,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
+    let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
+    const stopMotion=()=>{animationTicket++;transitionActive=false;flow.cancel();};
     const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
     const feedback=new root.PlayroomGameFeedback({mount:()=>app.querySelector('.table-shell'),play:(ids,id)=>audio?.play?.(ids,id)});
     feedback.start(client.snapshot?.events||[]);
@@ -21,7 +24,7 @@
     const drawNotice=document.getElementById('toast');
     let toastTimer;
     const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;drawNotice.classList.add('show');toastTimer=setTimeout(()=>{drawNotice.textContent='';drawNotice.classList.remove('show');},4000);};
-    const usable=()=>connected&&!client.pending&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
+    const usable=()=>connected&&!client.pending&&!transitionActive&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
     const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
@@ -38,19 +41,20 @@
       if(selected!==null&&hand&&!hand.some(c=>c.id===selected))selected=null;
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
-      const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:false});
+      const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer}):'';
       app.innerHTML=GameScreen.render({
         network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
-        scene,replay:historyOpen,turnText:historyOpen?'Просмотр истории':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
+        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:finished?{command:'result',label:'Результаты',icon:'arrow'}:{command:'home',label:'К играм',icon:'back'}
       });
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
+      HandOverflow.sync(app);
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
     }
     function show(content){
@@ -63,7 +67,10 @@
       if(!usable())return;
       if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>Подтверждение действия</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||'Подтвердить')}</button>`);return;}
       input.cancel();
-      try{const promise=client.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else toast(receipt.message);render();}
+      try{const promise=client.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else toast(receipt.message);
+        // The authoritative snapshot already rendered the new scene; avoid
+        // destroying its animation destination again on a delayed ACK.
+        if(!transitionActive)render();}
       catch(error){toast(error.message+' Нажмите «Повторить отправку».');render();}
     }
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:usable,select(value){selected=value;render();},commit:submit});
@@ -78,7 +85,7 @@
       historyIndex=pos;historySnapshot=result;render();
     }
     async function openHistory(index=historyCount()){
-      stopReplay();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historySnapshot=null;render();
+      stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historySnapshot=null;render();
       try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
     }
     function closeHistory(){historyTicket++;stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;selected=null;render();}
@@ -153,20 +160,36 @@
       }
     }
     function subscribe(){
-      const live=client.snapshot,was=liveStatus;liveStatus=live?.state?.status||liveStatus;
+      const live=client.snapshot,previous=shownLive,was=liveStatus;
+      // A new authoritative revision is the sole animation trigger. Never
+      // animate an ACK retry, history frame, resize or same-revision snapshot.
+      const change=Flow.eventAction(previous,live);
+      stopMotion();
+      const shot=change&&!historyOpen&&connected&&!document.hidden&&!dialogOpen
+        ?flow.capture({actor:change.actor,action:change.action,viewer:live.viewer}):null;
+      shownLive=live;liveStatus=live?.state?.status||liveStatus;
       feedback.accept(live?.events||[],live?.cues||[],pack.manifest.id,{silent:historyOpen||!connected||document.hidden});
       if(historyOpen){render();return;}
-      input.cancel();playerTargets.cancel();render();
-      if(was==='playing'&&liveStatus==='finished')result();
+      input.cancel();playerTargets.cancel();transitionActive=!!shot;render();
+      const after=()=>{if(was==='playing'&&liveStatus==='finished')result();};
+      if(!shot){after();return;}
+      const ticket=++animationTicket;
+      const draws=(live.effects||[]).filter(effect=>effect.revision===live.revision);
+      void flow.play(shot,{draws}).then(()=>{
+        if(destroyed||ticket!==animationTicket)return;
+        transitionActive=false;render();after();
+      }).catch(error=>{if(ticket!==animationTicket||destroyed)return;
+        transitionActive=false;render();toast(error.message||'Анимация не воспроизведена');after();});
     }
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);
     document.addEventListener('change',onInput,true);
     document.addEventListener('keydown',keydown,true);
-    const resize=()=>{if(client.snapshot)render();};root.addEventListener('resize',resize);
-    const visibility=()=>{if(document.hidden)stopReplay();};document.addEventListener('visibilitychange',visibility);
-    return {render,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;stopReplay();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);input.destroy();}};
+    const resize=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('resize',resize);
+    const onOptions=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
+    const visibility=()=>{if(document.hidden){stopReplay();stopMotion();}};document.addEventListener('visibilitychange',visibility);
+    return {render,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
+      destroy(){destroyed=true;stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

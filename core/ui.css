@@ -31,9 +31,18 @@
 
 /* A fixed-height row compresses to readable corners, then scrolls independently. */
 .hand-track.is-fan{--fan-card-width:72px;--fan-card-height:103px;--fan-peek:28px;--fan-gap:10px;--fan-lift:11px;display:block;overflow-x:auto;overflow-y:hidden;padding:18px 6px 10px;height:calc(var(--fan-card-height) + 28px);min-height:calc(var(--fan-card-height) + 28px);scroll-snap-type:none;scrollbar-width:none;isolation:isolate}
-/* Long fanned hands need a genuinely exposed rank corner for every card.
-   Keep the compact peek for up to eight cards so normal UNO fits at 320px. */
-.hand-track.is-fan.is-long-hand{--fan-peek:64px}
+/* Scrolling never turns a fanned hand into a row of separate cards.
+   The 40px reveal keeps the corner (including +2/+4) legible while the next
+   64px mobile card still covers 24px of its predecessor. */
+.hand-track.is-fan.is-long-hand{--fan-peek:40px}
+.own-hand{position:relative}
+.own-hand.hand-overflow-left::before,.own-hand.hand-overflow-right::after{
+ content:"";position:absolute;top:var(--hand-edge-top,35px);height:var(--hand-edge-height,85px);
+ width:4px;border-radius:8px;pointer-events:none;z-index:100;
+ box-shadow:0 0 0 3px #eff4e6a6,0 0 7px #385f4860
+}
+.own-hand.hand-overflow-left::before{left:2px;background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
+.own-hand.hand-overflow-right::after{right:2px;background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
 .hand-track.is-fan::-webkit-scrollbar{display:none}
 .hand-track.is-fan:before,.hand-track.is-fan:after{content:none}
 .hand-fan-row{display:grid;grid-template-columns:repeat(calc(var(--fan-count) - 1),minmax(var(--fan-peek),1fr)) var(--fan-card-width);align-items:center;position:relative;height:var(--fan-card-height);width:min(100%,calc(var(--fan-count) * (var(--fan-card-width) + var(--fan-gap)) - var(--fan-gap)));min-width:calc((var(--fan-count) - 1) * var(--fan-peek) + var(--fan-card-width));margin-inline:auto}
