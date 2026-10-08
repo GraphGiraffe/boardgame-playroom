@@ -62,11 +62,11 @@
   function extract(value){
     if(!value)return null;
     const text=String(value);
-    const marker=text.match(/PLAYROOM_PAIR:(PR2\.[A-Za-z0-9_-]+)/);
+    const marker=text.match(/PLAYROOM_PAIR:((?:PR2|PR3)\.[A-Za-z0-9_-]+)/);
     if(marker)return marker[1];
-    const protocol=text.match(/web\+playroom:pair\/(PR2\.[A-Za-z0-9_-]+)/i);
+    const protocol=text.match(/web\+playroom:pair\/((?:PR2|PR3)\.[A-Za-z0-9_-]+)/i);
     if(protocol)return protocol[1];
-    const direct=text.match(/(?:^|[?&#=\s])(PR2\.[A-Za-z0-9_-]+)(?:$|[&#\s])/);
+    const direct=text.match(/(?:^|[?&#=\s])((?:PR2|PR3)\.[A-Za-z0-9_-]+)(?:$|[&#\s])/);
     return direct?direct[1]:null;
   }
   return Object.freeze({TOKEN_PREFIX,COMPACT_PREFIX,MARKER,encode,decode,fromSignal,protocolUrl,shareText,extract});
