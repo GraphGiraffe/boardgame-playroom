@@ -125,7 +125,13 @@
       ]);
       collect(pc.localDescription?.sdp);
       if(typeof pc.getStats==='function')try{
-        for(const item of statsAddresses(await pc.getStats())){
+        // Never leave the IP search spinner hanging on a browser's stats API.
+        let statsTimer=null;
+        const report=await Promise.race([
+          pc.getStats(),
+          new Promise(resolve=>{statsTimer=setTimeout(()=>resolve(null),700);})
+        ]).finally(()=>{if(statsTimer!==null)clearTimeout(statsTimer);});
+        for(const item of statsAddresses(report)){
           const key=[item.address,item.transport,item.type].join('|');
           if(!keys.has(key)){keys.add(key);found.push(item);}
         }
