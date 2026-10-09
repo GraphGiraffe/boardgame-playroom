@@ -1,17 +1,9 @@
 (function(root){
   'use strict';
-  const LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
-  let loading=null;
+  const LIB='app/vendor/qrcode.js';
   function ensure(){
-    if(typeof root.qrcode==='function')return Promise.resolve(root.qrcode);
-    if(loading)return loading;
-    loading=new Promise((resolve,reject)=>{
-      const script=document.createElement('script');script.src=LIB;script.async=true;script.crossOrigin='anonymous';
-      script.onload=()=>typeof root.qrcode==='function'?resolve(root.qrcode):reject(Error('QR-модуль не загрузился.'));
-      script.onerror=()=>reject(Error('QR-код недоступен. Используйте Share или копирование ссылки.'));
-      document.head.appendChild(script);
-    });
-    return loading;
+    if(typeof root.qrcode!=='function')throw Error('Локальный QR-генератор не включён в сборку.');
+    return Promise.resolve(root.qrcode);
   }
   async function svg(value,{level='L',cellSize=4,margin=4}={}){
     if(typeof value!=='string'||!value)throw Error('Нет данных для QR-кода.');
