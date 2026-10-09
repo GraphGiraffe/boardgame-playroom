@@ -166,7 +166,7 @@ sequenceDiagram
 
 - `PlayroomNetworkDebug()` показывает `host.roomId/connectedPeers/channel/rpc` и `client.channel/ice/participantId/hasResumeToken/rpc`; **не возвращает секрет**.
 - `RTCPeerConnection.connectionState`/`iceConnectionState` — диагностика конкретного канала; `disconnected` может быть временным, `failed` не исправляется заменой UI.
-- Сетевой `SharedViews.setConnected(false)` отключает UI, эффекты и действия; разрешённые ранее snapshot/read-only history не становятся авторитетным состоянием.
+- `SharedViews.setConnected(false)` **умеет** выключать UI-действия, анимации и звук, но в **RC6** обработчик `RTCPeerConnection.connectionstatechange` в `network-ui.js` **не вызывает его напрямую**: он устанавливает `reconnectStatus` и добавляет баннер через `showDisconnectBanner()`. При развитии автоматического reconnect нужно явно синхронизировать это состояние с `clientMount.setConnected(false/true)`, а не считать блокировку уже подключённой. Даже при показе старого снимка источник истины остаётся у хоста.
 - QR не устанавливает WebRTC, если выбранный IP/UDP-порт недостижим из-за VPN, firewall или изоляции клиентов Wi-Fi.
 - `sessionId`/`authorityEpoch` из [игрового протокола](DEVELOPER-GAMEPLAY.md) и `pairingId` из [PR3](DEVELOPER-PAIRING.md) — **разные** идентификаторы.
 - Полная сетевая Session сейчас не сохраняется через `app/library.js`. UI «Мои партии» относится к локальным `solo/pass`, а не к восстановлению хоста после перезапуска.
