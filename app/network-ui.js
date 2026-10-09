@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
+  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
@@ -8,6 +8,8 @@
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const connectedHostPeers=[];
   const resumeStore=new M.ResumeStore();
+  const hostSessionStore=NetworkSessionStore?new NetworkSessionStore():null;
+  let hostLockRelease=null;
   let reconnectStatus='';
 
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
@@ -318,6 +320,7 @@
     const b=bridge();if(!b)return;
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
+    if(intro&&!document.getElementById('network-saved-host-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='network-saved-host-button';btn.type='button';btn.textContent='Сетевые сохранения хоста';intro.querySelector('.lobby-actions')?.appendChild(btn);}
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent='Установить ХОД';intro.querySelector('.lobby-actions')?.appendChild(btn);}
     showDisconnectBanner();
     const gameShell=document.querySelector('.table-shell.network-game');
@@ -348,8 +351,8 @@
       snapshot:()=>switchable.snapshot(),
       history:index=>switchable.history(index),
       subscribe:listener=>switchable.subscribe(listener),
-      dispatch:command=>{
-        const result=switchable.dispatch(command);
+      dispatch:async command=>{
+        const result=await switchable.dispatch(command);
         if(command?.type==='resume'&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
@@ -487,19 +490,136 @@
   async function roomCommand(command){try{const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;renderClientLobby();}}catch(error){toast(error.message);}}
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
-    const b=bridge(),occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:false};});
-    if(players.length<room.constraints.min){hostStarted=false;return;}
-    b.packs.activate(room.game.id,room.game.version);
-    const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
-    hostAuthority=new Authority(session);
-    for(const item of connectedHostPeers){
-      const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
-      if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+    const b=bridge();let persisted=false;
+    try{
+      const occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:false};});
+      if(players.length<room.constraints.min)throw Error('Недостаточно игроков для запуска.');
+      b.packs.activate(room.game.id,room.game.version);
+      const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
+      // Do not publish the first playable snapshot until the private initial
+      // state and room recovery capability have reached durable storage.
+      const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
+      if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
+      hostLockRelease=await hostSessionStore.acquireHostLock(sessionId);
+      const packDigest=await NetworkSessionStore.fingerprintPack(b.packs,room.game.id,room.game.version);
+      await hostSessionStore.create({sessionId,room,session,recovery:b.roomService.exportRecovery(room.id),packDigest});
+      persisted=true;
+      b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
+      hostAuthority=new Authority(session,{sessionId,persistence:{
+        commit:entry=>hostSessionStore.commit(entry),
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+      }});
+      for(const item of connectedHostPeers){
+        const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
+        if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+      }
+      const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
+      const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
+      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
+    }catch(error){
+      hostGameClient?.close?.();hostGameClient=null;
+      hostAuthority?.dispose?.();hostAuthority=null;
+      hostLockRelease?.();hostLockRelease=null;
+      if(persisted){
+        // This room has already been committed. Starting a new session would
+        // strand a saved match; require an explicit reload/recovery instead.
+        closeHostPeer();
+        throw Error('Партия сохранена, но экран не запустился. Перезагрузите ХОД и восстановите комнату из сетевых сохранений: '+error.message);
+      }
+      hostStarted=false;
+      try{b.roomService.abortStart(room.id,b.participantId());b.renderLobby();}catch(_){}
+      throw Error('Не удалось создать сетевую партию: '+error.message);
     }
-    const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
-    const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
-    const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-    hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
+  }
+  async function showHostArchives(){
+    try{
+      if(!hostSessionStore)throw Error('IndexedDB-модуль не загружен.');
+      const b=bridge(),items=await hostSessionStore.list();
+      b.openModal(b.modalHead('Сетевые сохранения хоста')+
+        '<p class="lead">После перезапуска хоста можно продолжить сохранённую комнату на том же адресе приложения. ' +
+        'Участники вернутся по новому QR с прежними приватными правами. Если сохранение слишком старое, будет доступна только история.</p>'+
+        (items.length?'<div class="lobby-actions">'+items.map(item=>
+          '<button type="button" class="btn secondary" data-network-archive="'+esc(item.sessionId)+'">'+
+          esc(item.game)+' · '+esc(item.packVersion)+' · '+item.revision+' действий · '+
+          esc(new Date(item.updatedAt).toLocaleString('ru-RU'))+'</button>').join('')+'</div>':
+          '<p class="rules-mode-note">Пока нет сохранённых сетевых партий на этом адресе приложения.</p>'));
+    }catch(error){toast('Сетевые сохранения недоступны: '+error.message);}
+  }
+  async function inspectHostArchive(sessionId){
+    try{
+      const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
+      if(!saved)throw Error('Сохранение не найдено.');
+      const b=bridge(),room=saved.room,st=saved.session.current;
+      b.openModal(b.modalHead('Проверенное сохранение')+
+        '<p class="lead"><strong>'+esc(room.name)+'</strong> · '+esc(room.game.name)+' · '+esc(saved.session.packVersion)+'</p>'+
+        '<p class="rules-mode-note">Восстановлена вся история: '+(saved.session.states.length-1)+
+        ' действий. Участников: '+st.players.length+'. Статус: '+esc(st.status)+
+        '. Прежняя игра и квитанции сохранены.</p>'+
+        (saved.recovery&&saved.packDigest?'<button class="btn" type="button" data-network-continue="'+esc(sessionId)+'">Продолжить комнату на этом устройстве</button>':
+          '<p class="rules-mode-note">Это архив до сохранения гостевых прав. Он доступен только для просмотра истории.</p>')+
+        '<button class="btn secondary" id="network-saved-host-button" type="button">К списку сохранений</button>');
+    }catch(error){toast('Не удалось прочитать сетевую партию: '+error.message);}
+  }
+  async function continueHostArchive(sessionId){
+    let pendingRelease=null,recoveredRoomId=null,authority=null;
+    try{
+      const b=bridge(),profile=b.profile?.();
+      if(hostStarted||hostAuthority||hostRoomId||b.room?.())throw Error('Сначала завершите текущую сетевую комнату.');
+      if(!profile?.id)throw Error('Сначала сохраните имя игрока на устройстве хоста.');
+      const item=(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
+      if(!item)throw Error('Сохранение не найдено.');
+      // The precise installed game version must exist. A newer pack may not
+      // silently replace the rules or renderer of an already-started match.
+      b.packs.activate(item.game,item.packVersion);
+      const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
+      if(!saved?.recovery)throw Error('Архив создан без прав гостей. Восстановление комнаты невозможно.');
+      if(!saved.packDigest)throw Error('Архив создан без контрольной суммы правил. Безопасное продолжение невозможно.');
+      if(await NetworkSessionStore.fingerprintPack(b.packs,saved.session.game,saved.session.packVersion)!==saved.packDigest)
+        throw Error('Содержимое пака изменилось при прежнем номере версии. Возобновление заблокировано; архив сохранён.');
+      const room=saved.recovery.room;
+      if(room.ownerId!==profile.id||room.phase!=='playing'||room.id!==saved.room.id||
+          saved.session.game!==room.game.id||saved.session.packVersion!==room.game.version)
+        throw Error('Этот профиль не является хостом сохранённой партии.');
+      const occupied=room.seats.filter(seat=>seat.participantId).sort((a,c)=>a.index-c.index);
+      if(occupied.length!==saved.session.current.players.length||
+          occupied.some((seat,i)=>participant(room,seat.participantId)?.nickname!==saved.session.current.players[i].name))
+        throw Error('Состав игроков не соответствует сохранённой партии.');
+      const viewer=room.hostMode==='table'?-1:occupied.findIndex(seat=>seat.participantId===profile.id);
+      if(room.hostMode==='player'&&viewer<0)throw Error('Место игрока-хоста не найдено.');
+      authority=new Authority(saved.session,{sessionId,restoredReceipts:saved.receipts,persistence:{
+        commit:entry=>hostSessionStore.commit(entry),
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+      }});
+      const definition=b.packs.exportView(room.game.id,room.game.version);
+      // An exclusive Web Lock prevents a second tab from serving the same game.
+      // It is released on pagehide; the next page acquires it afresh.
+      pendingRelease=await hostSessionStore.acquireHostLock(sessionId);
+      // All validation precedes attaching restored identities to the live UI.
+      b.roomService.restoreRecovery(saved.recovery,{hostId:profile.id});recoveredRoomId=room.id;
+      b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
+      b.restoreHostedRoom(room.id);
+      hostLockRelease=pendingRelease;pendingRelease=null;
+      hostRoomId=room.id;hostStarted=true;hostAuthority=authority;
+      const local=LocalTransport(authority.connect(viewer));
+      hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      b.closeModal(true);document.getElementById('app').inert=false;
+      hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined'});
+      hostMount.render();
+      toast('Сетевая партия восстановлена. Предложите гостям новый QR для возвращения на прежние места.');
+    }catch(error){
+      pendingRelease?.();
+      if(recoveredRoomId){
+        hostMount?.destroy?.();hostMount=null;
+        hostGameClient?.close?.();hostGameClient=null;
+        authority?.dispose?.();hostAuthority=null;
+        hostLockRelease?.();hostLockRelease=null;
+        hostRoomId=null;hostStarted=false;
+        const b=bridge();b.rollbackHostedRoom?.(recoveredRoomId);
+        try{b.roomService.discardRecovery(recoveredRoomId);}catch(_){}
+      }else authority?.dispose?.();
+      toast('Не удалось продолжить партию: '+error.message);
+    }
   }
   function startClientGame(snapshot){
     if(clientGameClient)return;
@@ -511,11 +631,14 @@
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
+    if(target.id==='network-saved-host-button')return showHostArchives();
+    if(target.dataset.networkArchive)return inspectHostArchive(target.dataset.networkArchive);
+    if(target.dataset.networkContinue)return continueHostArchive(target.dataset.networkContinue);
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
@@ -570,5 +693,5 @@
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
-  root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();});
+  root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);

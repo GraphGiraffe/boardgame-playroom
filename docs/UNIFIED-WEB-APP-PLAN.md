@@ -1,7 +1,7 @@
 # ХОД / Playroom — план единого web-приложения
 
-**Статус:** актуальный план реализации после требований 7 октября 2026 года.  
-**Рабочая ветка:** `feature/unified-lan-host`, основана на `feature/phone-pc-preview`.  
+**Статус:** исторический архитектурный план browser-only; опубликован RC6, а LAN-01 ведётся отдельно ([ADR](LAN-01-SESSION-STORE.md)). Не считать этот план отчётом о готовом host recovery.  
+**Исторические ветки:** `feature/unified-lan-host`, `feature/phone-pc-preview` закрыты; текущая task-ветка от `dev` — `feature/lan-01-durable-host-session`.  
 **Область:** в первую очередь `boardgame-playroom`; `boardgame-playroom-paks` меняется только там, где нужен однократный переход на стабильный документированный SDK.
 
 ## 1. Цель

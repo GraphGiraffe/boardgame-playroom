@@ -561,7 +561,18 @@
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
   }});
-  globalThis.PlayroomAppBridge=Object.freeze({gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
+  function restoreHostedRoom(roomId){
+    const recovered=roomService.snapshot(roomId);
+    if(!playerProfile?.id||recovered.ownerId!==playerProfile.id)throw Error('Другой профиль не может продолжить комнату хоста.');
+    if(room&&room.id!==roomId)throw Error('Сначала завершите текущую комнату.');
+    room=recovered;lobbyParticipantId=playerProfile.id;screen='lobby';lobbyCountdown=null;
+  }
+  function rollbackHostedRoom(roomId){
+    if(room?.id!==roomId)return;
+    room=null;lobbyParticipantId=null;lobbyCountdown=null;screen='hub';
+    renderHub();
+  }
+  globalThis.PlayroomAppBridge=Object.freeze({restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const important=ids.filter(id=>!['move','draw','notify'].includes(id));

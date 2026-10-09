@@ -178,3 +178,7 @@ sequenceDiagram
 3. Любая новая команда game проходит [`PlayroomProtocol` + `SessionAuthority`](DEVELOPER-GAMEPLAY.md), не напрямую `Session.act()` из клиента.
 4. При изменениях возврата прогоняйте `tests/network-resume.test.cjs`, `tests/network-reconnect-browser.test.cjs`, `tests/network-same-origin.test.cjs` и реальные два устройства.
 5. Для durable host recovery сначала спроектируйте LAN-01: сериализация **хостовой** Session и receipts, packVersion, epoch, запрет второго authority; не делайте вид, что текущий `ResumeStore` решает эту задачу.
+
+## LAN-01 — не выпущенный блок после RC6
+
+В отдельной feature-ветке предусмотрены `Session.prepare/commitPrepared`, `NetworkSessionStore` и async `dispatch` WebRTC: успешный ход фиксируется с receipt до изменения live Session и рассылки. Архив после reload читается, но сеть/идентичности участников не возобновляются до LAN-03/04. Приватные снимки остаются только у авторитетного браузера. [ADR и стоп-условия](LAN-01-SESSION-STORE.md).

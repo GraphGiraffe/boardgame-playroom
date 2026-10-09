@@ -51,6 +51,9 @@
 .hand-track.is-fan .hand-card:hover{transform:none}
 .hand-track.is-fan .hand-card.is-selected{z-index:40;transform:translateY(-9px)}
 .hand-track.is-fan .hand-card:focus,.hand-track.is-fan .hand-card.is-hand-preview{z-index:80;transform:translateY(calc(-1 * var(--fan-lift)))}
+/* Lifted previews must not cover the exposed rank corner of their successor.
+   Make room for the preview by shifting following cards, retaining the fan overlap. */
+@media(hover:hover){.hand-track.is-fan .hand-fan-row>.hand-card:hover ~ .hand-card:not(:hover):not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(calc(var(--fan-card-width) - var(--fan-peek)))}}
 @media(hover:hover){.hand-track.is-fan .hand-card:hover{z-index:90;transform:translateY(calc(-1 * var(--fan-lift)))}}
 @media(max-width:760px){.hand-track.is-fan{--fan-card-width:64px;--fan-card-height:91px;height:calc(var(--fan-card-height) + 26px);min-height:calc(var(--fan-card-height) + 26px);padding-top:17px;padding-bottom:9px}}
 @media(prefers-reduced-motion:reduce){.hand-track.is-fan .hand-card:is(.is-selected,:focus,.is-hand-preview){transform:translateY(-9px)!important}}

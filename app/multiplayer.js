@@ -91,6 +91,7 @@
     constructor({idFactory=uuid,clock=now,random=Math.random,tokenFactory=secureResumeToken}={}){
       this.idFactory=idFactory;this.clock=clock;this.random=random;this.tokenFactory=tokenFactory;
       this.rooms=new Map();this.listeners=new Map();this.resumeTokens=new Map();this.connectionLeases=new Map();
+      this.durableResumes=new Map();this.pendingResumes=new Set();this.resumeFallbacks=new Map();
     }
     _key(roomId,id){return roomId+':'+id;}
     _room(roomId){const room=this.rooms.get(roomId);if(!room)throw Error('Комната не найдена.');return room;}
@@ -103,7 +104,9 @@
       room.eventSequence++;
       room.events.push({id:room.eventSequence,type,text:textValue,at:this.clock(),...extra});
       if(room.events.length>100)room.events.splice(0,room.events.length-100);
-      for(const listener of this.listeners.get(room.id)||[])listener(this.snapshot(room.id));
+      for(const listener of this.listeners.get(room.id)||[]){
+        try{listener(this.snapshot(room.id));}catch(_){/* UI listener cannot invalidate committed room changes. */}
+      }
     }
     _code(){
       for(let attempt=0;attempt<100;attempt++){
@@ -205,19 +208,130 @@
       this._emit(room,'connection-changed',participant.nickname+(participant.connected?' снова в сети.':' потерял соединение.'),{participantId,connected:participant.connected});
       return this.snapshot(roomId);
     }
-    resume(roomId,{participantId,token}={}){
+    _resumeCandidate(roomId,{participantId,token}={}){
       const room=this._room(roomId);
       if(room.phase==='closed'||typeof participantId!=='string'||!resumeTokenValid(token))throw Error('Неверное право переподключения.');
       const member=this._participant(room,participantId);
       if(member.isHost)throw Error('Права хоста нельзя восстановить через гостевое подключение.');
       if(room.phase==='playing'&&!member.seatId)throw Error('У игрока нет места в начатой партии.');
       const key=this._key(roomId,participantId),expected=this.resumeTokens.get(key);
+      const fallback=this.resumeFallbacks.get(key);
+      // If the host committed a rotation but its reply was lost, the previous
+      // secret may recover the same participant (never an active controller).
+      if(expected && expected!==token && fallback?.token===token && fallback.expiresAt>this.clock()&&!member.connected&&
+          !this.connectionLeases.has(key))
+        return {roomId,participantId,key,expected,updated:expected,replayedRotation:true};
       if(!expected||expected!==token)throw Error('Право переподключения недействительно. Потребуется новый вход.');
       const updated=this.tokenFactory();
       if(!resumeTokenValid(updated)||updated===expected)throw Error('Не удалось обновить право переподключения.');
-      this.resumeTokens.set(key,updated);
-      this.setConnected(roomId,participantId,true);
-      return {participantId,room:this.snapshot(roomId),resumeToken:updated};
+      return {roomId,participantId,key,expected,updated};
+    }
+    _finishResume(candidate){
+      this.resumeTokens.set(candidate.key,candidate.updated);
+      this.setConnected(candidate.roomId,candidate.participantId,true);
+      return {participantId:candidate.participantId,room:this.snapshot(candidate.roomId),resumeToken:candidate.updated};
+    }
+    resume(roomId,credentials){return this._finishResume(this._resumeCandidate(roomId,credentials));}
+    async resumeDurably(roomId,credentials){
+      const candidate=this._resumeCandidate(roomId,credentials);
+      if(this.pendingResumes.has(candidate.key))throw Error('Возврат этого игрока уже обрабатывается.');
+      const persist=this.durableResumes.get(roomId);
+      if(!persist)throw Error('Для этой партии не настроено долговечное восстановление.');
+      this.pendingResumes.add(candidate.key);
+      try{
+        if(candidate.replayedRotation)return this._finishResume(candidate);
+        // The prior token is a narrow crash/ACK-loss recovery window, never
+        // accepted while its participant still has a connected lease.
+        const previousExpiresAt=this.clock()+120000;
+        await persist({participantId:candidate.participantId,previousToken:candidate.expected,
+          nextToken:candidate.updated,previousExpiresAt});
+        this.resumeFallbacks.set(candidate.key,{token:candidate.expected,expiresAt:previousExpiresAt});
+        return this._finishResume(candidate);
+      }finally{this.pendingResumes.delete(candidate.key);}
+    }
+    setResumeDurability(roomId,callback){
+      this._room(roomId);
+      if(typeof callback!=='function')throw Error('Нужен обработчик сохранения права переподключения.');
+      this.durableResumes.set(roomId,callback);
+    }
+    exportRecovery(roomId){
+      const room=this._room(roomId);
+      if(room.phase!=='playing')throw Error('Сохранять можно только начатую комнату.');
+      const tokens=room.participants.filter(p=>!p.isHost).map(p=>{
+        const key=this._key(roomId,p.id),fallback=this.resumeFallbacks.get(key);
+        return {participantId:p.id,token:this.resumeTokens.get(key),
+          ...(fallback?.expiresAt>this.clock()?{previousToken:fallback.token,previousExpiresAt:fallback.expiresAt}:{})};
+      });
+      if(tokens.some(p=>!resumeTokenValid(p.token)))throw Error('Участник без права переподключения.');
+      return {version:1,room:clone(room),tokens};
+    }
+    restoreRecovery(value,{hostId}={}){
+      if(value?.version!==1||!value.room||!Array.isArray(value.tokens))throw Error('Нет сохранённого состава комнаты.');
+      const room=clone(value.room),tokens=value.tokens;
+      if(typeof hostId!=='string'||room.ownerId!==hostId||typeof room.id!=='string'||!room.id||
+          room.phase!=='playing'||!ROOM_CODE.test(room.code)||!['player','table'].includes(room.hostMode)||
+          !Array.isArray(room.participants)||!Array.isArray(room.seats)||room.participants.length<1||
+          this.rooms.has(room.id))throw Error('Сохранённая комната несовместима или занята.');
+      this._constraints(room.constraints);
+      const ids=new Set(),seatIds=new Set(),occupied=new Set();
+      for(const p of room.participants){
+        if(typeof p.id!=='string'||!p.id||ids.has(p.id)||typeof p.nickname!=='string'||
+            typeof p.isHost!=='boolean')throw Error('Повреждён список участников.');
+        ids.add(p.id);
+        if(p.isHost!==(p.id===hostId))throw Error('Несовместимый владелец комнаты.');
+        p.connected=p.id===hostId; // Network connections never survive page reload.
+      }
+      for(const seat of room.seats){
+        if(typeof seat.id!=='string'||seatIds.has(seat.id)||!Number.isInteger(seat.index))throw Error('Повреждён список мест.');
+        seatIds.add(seat.id);
+        if(seat.participantId!==null){if(!ids.has(seat.participantId)||occupied.has(seat.participantId))throw Error('Повреждена привязка игрового места.');occupied.add(seat.participantId);}
+      }
+      for(const p of room.participants){
+        if(p.seatId!==null&&(!seatIds.has(p.seatId)||!room.seats.some(s=>s.id===p.seatId&&s.participantId===p.id)))
+          throw Error('Повреждена привязка игрока.');
+      }
+      const found=new Set();
+      for(const entry of tokens){
+        if(!ids.has(entry?.participantId)||entry.participantId===hostId||found.has(entry.participantId)||
+           !resumeTokenValid(entry.token))throw Error('Повреждены права переподключения.');
+        found.add(entry.participantId);
+      }
+      if(room.participants.filter(p=>!p.isHost).some(p=>!found.has(p.id)))throw Error('Не хватает прав переподключения.');
+      // Validate all credentials before installing any recovered room.
+      for(const entry of tokens){
+        if(entry.previousToken!==undefined){
+          if(!resumeTokenValid(entry.previousToken)||!Number.isSafeInteger(entry.previousExpiresAt)||
+              entry.previousExpiresAt<0||entry.previousToken===entry.token)throw Error('Повреждена история прав переподключения.');
+        }
+      }
+      this.rooms.set(room.id,room);
+      for(const entry of tokens){
+        const key=this._key(room.id,entry.participantId);
+        this.resumeTokens.set(key,entry.token);
+        if(entry.previousToken && entry.previousExpiresAt>this.clock())
+          this.resumeFallbacks.set(key,{token:entry.previousToken,expiresAt:entry.previousExpiresAt});
+      }
+      return this.snapshot(room.id);
+    }
+    discardRecovery(roomId){
+      const room=this._room(roomId);
+      if(room.participants.some(p=>!p.isHost&&p.connected)||
+          [...this.connectionLeases.keys()].some(k=>k.startsWith(roomId+':')))
+        throw Error('Нельзя свернуть восстановление: к комнате уже подключены игроки.');
+      this.rooms.delete(roomId);this.listeners.delete(roomId);this.durableResumes.delete(roomId);
+      for(const participant of room.participants){
+        const key=this._key(roomId,participant.id);
+        this.resumeTokens.delete(key);this.connectionLeases.delete(key);
+        this.resumeFallbacks.delete(key);this.pendingResumes.delete(key);
+      }
+    }
+    abortStart(roomId,hostId){
+      const room=this._room(roomId);this._host(room,hostId);
+      if(room.phase!=='playing')throw Error('Можно отменить только несостоявшийся старт.');
+      room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
+      for(const participant of room.participants)participant.ready=false;
+      this._touch(room);this._emit(room,'start-rejected','Начало партии отменено: сохранение недоступно.');
+      return this.snapshot(roomId);
     }
     playerCount(roomId){return this._room(roomId).participants.filter(item=>item.role==='player'&&item.seatId).length;}
     _validCount(room){
@@ -273,10 +387,15 @@
           }
           if(command.type==='resume'){
             if(participantId)throw Error('Участник уже вошёл.');
-            const resumed=this.resume(roomId,{participantId:command.participantId,token:command.resumeToken});
-            participantId=resumed.participantId;lease={};
-            service.connectionLeases.set(service._key(roomId,participantId),lease);
-            return {ok:true,snapshot:packet(),resumeToken:resumed.resumeToken,resumed:true};
+            const apply=resumed=>{
+              participantId=resumed.participantId;lease={};
+              service.connectionLeases.set(service._key(roomId,participantId),lease);
+              return {ok:true,snapshot:packet(),resumeToken:resumed.resumeToken,resumed:true};
+            };
+            const rotated=service.durableResumes.has(roomId)?
+              service.resumeDurably(roomId,{participantId:command.participantId,token:command.resumeToken}):
+              service.resume(roomId,{participantId:command.participantId,token:command.resumeToken});
+            return rotated instanceof Promise?rotated.then(apply):apply(rotated);
           }
           if(!participantId)throw Error('Сначала войдите в комнату.');
           let state;

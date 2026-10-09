@@ -10,13 +10,17 @@
 
 **[docs/DEVELOPER-INDEX.md](docs/DEVELOPER-INDEX.md)** — центральный индекс по текущему приложению. Перед изменением прочитайте профильный файл: `DEVELOPER-ARCHITECTURE.md`, `DEVELOPER-UI.md`, `DEVELOPER-GAMEPLAY.md`, `DEVELOPER-MULTIPLAYER.md`, `DEVELOPER-PAIRING.md`, `DEVELOPER-DATA.md`, `DEVELOPER-WORKFLOW.md`. Они описывают **реализованный RC6**, старые roadmap/handoff содержат предложения, которые ещё не внедрены. Сохраняйте кросс-ссылки, исходные API и список известных ограничений при обновлении архитектуры.
 
-## Приоритетное изменение RC2
+## RC2–RC6: выполнено, исторический приоритет
 
 На 08.10.2026 пользователь поставил акустический pairing (ggwave/wave-share) выше LAN-01 и запросил проверочную 0.15.0-rc.2. См. `docs/ACOUSTIC-PAIRING.md`. После этой изолированной функции возвращаемся к сохранениям/reconnect LAN-01+. Не добавлять правила или звук конкретной игры в общий модуль звуковой сигнализации.
 
 ## Текущая реализация RC6 (QR и возврат)
 
 В RC6 встроен offline сканер QR через системную камеру Android и локальный jsQR; PR3 не менять без требования пользователя. Механизм возвращения использует приватный room-scoped 256-битный resumeToken (только после WebRTC), а не публичный UUID или nickname. Не публиковать токен в QR/SDP/room snapshot, не смешивать viewer чужих рук. Возврат после host restart/автоматическое ICE restart отложены до LAN-01/03. Документ: docs/QR-PAIRING-AND-RESUME.md. Для любых исправлений обязательны network-resume/qr-pairing-browser и совместные сетевые тесты.
+
+## Текущая задача после RC6: LAN-01
+
+Рабочая ветка `feature/lan-01-durable-host-session` содержит первый блок долговечного host-authority журнала. ADR: [docs/LAN-01-SESSION-STORE.md](docs/LAN-01-SESSION-STORE.md). Не считать LAN-01 завершённой до восстановления самой WebRTC-комнаты, привязанных мест, секретов и квитанций после перезапуска. Для сохранения использовать staged transition и атомарную запись **до ACK**. Не возвращать Node LAN-host и не менять опубликованный RC6.
 
 ## Текущий план LAN-мультиплеера
 

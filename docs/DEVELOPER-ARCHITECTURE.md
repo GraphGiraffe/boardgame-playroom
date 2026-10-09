@@ -113,3 +113,7 @@ stateDiagram-v2
 - Для безопасности возвращения/истории и LAN-01/03: [DEVELOPER-MULTIPLAYER](DEVELOPER-MULTIPLAYER.md) и [roadmap](PlayRoom_Roadmap_and_Agent_Handoff_2026-10-08.md).
 - Для PR2/PR3, ggwave, QR и диагностики IP: [DEVELOPER-PAIRING](DEVELOPER-PAIRING.md).
 - Перед изменением сборки/сервиса: [DEVELOPER-WORKFLOW](DEVELOPER-WORKFLOW.md).
+
+## Разрабатываемый слой LAN-01 (ещё не RC6)
+
+Host-only `app/network-session-store.js` на IndexedDB добавляет транзакционный журнал `Session`/receipts. Локальная authority остаётся синхронной, host network authority получает async persistence hook. Это не новая система правил или WebRTC signalling. Подробности: [LAN-01-SESSION-STORE.md](LAN-01-SESSION-STORE.md).
