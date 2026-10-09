@@ -198,7 +198,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         for(let visit=0;visit<2;visit++){
           await page.locator('.side-nav [data-command=sessions]').tap();await page.locator('.saved-games-list').waitFor();
           const row=page.locator('.saved-game[data-session-id]');assert.equal(await row.count(),1);
-          assert.equal((await row.locator('.saved-status .pill').innerText()).trim(),'Завершена');
+          assert.equal((await row.locator('.saved-status .pill').innerText()).trim(),'Локальная · Завершена', 'The unified library identifies both save origin and completed status');
           assert.match(await row.locator('[data-resume-id]').innerText(),/Просмотреть/);
           await row.locator('[data-resume-id]').tap();await page.locator('#replay-range').waitFor();
           assert.equal(await page.locator('#replay-range').inputValue(),String(expected.states.length-1));
