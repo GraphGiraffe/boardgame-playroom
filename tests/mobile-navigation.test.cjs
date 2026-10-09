@@ -184,7 +184,13 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
           localStorage.setItem('playroom.session.v1',saved);
         },JSON.stringify(penultimate));
         await page.reload();
-        await page.locator('.resume-banner [data-command=resume]').tap();
+        // Resume via the persisted library entry, not the optional hero banner.
+        // The saved-game record and the finished replay are still asserted.
+        await page.locator('.side-nav [data-command=sessions]').tap();
+        await page.locator('.saved-games-list').waitFor();
+        const pending=page.locator('.saved-game[data-session-id] [data-resume-id]');
+        assert.equal(await pending.count(),1,'the unfinished local game remains in the saved library after reload');
+        await pending.first().tap();
         await page.locator('.roll-button').tap();await page.locator('.result-modal').waitFor();
         const expected=await current();assert.deepEqual(expected.states,finalStates,'the visible final move reaches the expected finished result');
         const menu=page.locator('.result-modal [data-command=home]');
