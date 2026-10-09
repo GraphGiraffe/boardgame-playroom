@@ -127,8 +127,8 @@ test('secondary probe merges ICE and RTCStats addresses, preserving independent 
     addEventListener(){}
     removeEventListener(){}
     createDataChannel(){}
-    async createOffer(){return {type:'offer',sdp:'v=0\\r\\n'};}
-    async setLocalDescription(){this.localDescription={sdp:'v=0\\r\\na=candidate:1 1 UDP 2122260223 192.0.2.1 60960 typ host\\r\\n'};}
+    async createOffer(){return {type:'offer',sdp:'v=0\r\n'};}
+    async setLocalDescription(){this.localDescription={sdp:'v=0\r\na=candidate:1 1 UDP 2122260223 192.0.2.1 60960 typ host\r\n'};}
     async getStats(){return new Map([['candidate',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}]]);}
     close(){}
   }
