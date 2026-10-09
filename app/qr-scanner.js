@@ -41,7 +41,8 @@
     const item=await readImage(file);
     try{
       if(!item.width||!item.height||item.width*item.height>36000000)throw Error('Фотография имеет недопустимый размер.');
-      const detector=typeof root.BarcodeDetector==='function'?new root.BarcodeDetector({formats:['qr_code']}):null;
+      let detector=null;
+      if(typeof root.BarcodeDetector==='function')try{detector=new root.BarcodeDetector({formats:['qr_code']});}catch(_){/* jsQR remains available. */}
       // Resize for fast Android scanning; second pass improves codes far away.
       const maxDimension=Math.max(item.width,item.height),scales=[Math.min(1,maxSide/maxDimension)];
       if(maxDimension>maxSide&&maxDimension<=5000)scales.push(Math.min(1,3000/maxDimension));
