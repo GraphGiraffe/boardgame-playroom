@@ -154,3 +154,7 @@
 - Для сетевого RPC/снимков не писать произвольный `Session.export()` в канал; пользоваться `authority.connect(viewer)`.
 - Для новых ключей localStorage предусмотреть отказ quota, private mode, недоступный `content://` origin и сохранение оригинала при ошибке.
 - Для релизной сборки после **любого** изменения артефактов повторно пересчитать ZIP и SHA-256; см. [DEVELOPER-WORKFLOW](DEVELOPER-WORKFLOW.md).
+
+## LAN-01 · рабочая ветка, не часть RC6
+
+`app/network-session-store.js` хранит приватную сетевую authority в IndexedDB `playroom.network-host.v1` (`sessions`, `steps`, `receipts`). Состояние, квитанция и revision записываются в одну readwrite-транзакцию **до ACK**. Начальная партия фиксируется до отправки игрового снимка; весь журнал восстанавливается через `Session.restore`. Локальные `playroom.session.v1` и `playroom.paused.v1.*` не мигрируют. Read-only архив в UI проверяет сохранение; **создание активной комнаты/возврат секретов после перезапуска всё ещё не сделаны**. Подробнее: [LAN-01-SESSION-STORE.md](LAN-01-SESSION-STORE.md).
