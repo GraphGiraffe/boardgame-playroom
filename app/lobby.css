@@ -31,3 +31,64 @@
 .network-person-dot{display:block;width:7px;height:7px;border-radius:50%;flex:none;background:#4f9666}
 .network-person.offline .network-person-dot{background:#da754e}
 @media(max-width:760px){.network-presence{gap:4px;padding:3px 6px 5px}.network-person{padding:3px 6px;font-size:10px}.network-presence-count{font-size:10px}}
+
+/* RC7 feedback: compact pairing methods shared by host, guest and guest reply. */
+.modal:has(.pairing-methods){width:min(100%,490px)}
+.modal:has(.pairing-methods) .modal-head{gap:7px;margin-bottom:10px;position:relative;align-items:center}
+.modal:has(.pairing-methods) .modal-head h2{flex:1;min-width:0;font-size:clamp(21px,4.5vw,27px);line-height:1.2}
+.modal:has(.pairing-methods) .modal-head .icon-btn{order:2;min-width:40px;height:40px}
+.pairing-help{position:relative;order:1;flex:none}
+.pairing-help>summary{list-style:none;display:grid;place-items:center;cursor:pointer;width:39px;height:39px;border:1px solid var(--line);border-radius:13px;font-size:18px;font-weight:850;background:#eef0e6;color:var(--green)}
+.pairing-help summary::-webkit-details-marker,.pairing-method summary::-webkit-details-marker,.pairing-methods-unavailable>summary::-webkit-details-marker,.pairing-sound-settings>summary::-webkit-details-marker{display:none}
+.pairing-help>summary:focus-visible,.pairing-method>summary:focus-visible,.pairing-methods-unavailable>summary:focus-visible,.pairing-sound-settings>summary:focus-visible{outline:3px solid #ed9a44;outline-offset:3px}
+.pairing-help[open]>summary{background:var(--green);color:white}
+.pairing-help-popover{position:absolute;z-index:20;top:calc(100% + 10px);right:-47px;width:min(405px,calc(100vw - 42px));max-height:60dvh;overflow:auto;padding:14px 16px;border:1px solid #bbcbb8;border-radius:18px;box-shadow:0 15px 36px #193c3252;background:#fffdf5;color:var(--ink);font-size:12px;line-height:1.55}
+.pairing-help-popover>h3{font-size:16px;margin:2px 0 8px}.pairing-help-popover section{border-top:1px solid var(--line);padding:10px 0}.pairing-help-popover section h3{font-size:13px;margin:0 0 3px}.pairing-help-popover p{margin:5px 0;overflow-wrap:anywhere}.pairing-help-popover .rules-mode-note{margin:7px 0;padding:8px}
+.pairing-methods{display:grid;gap:9px}.pairing-methods-available{display:grid;gap:9px}
+.pairing-method{min-width:0;border:1px solid var(--line);border-radius:17px;background:#fffdf6;overflow:clip}
+.pairing-method[data-pairing-available="false"]{background:#f5f3eb}
+.pairing-method>summary{min-height:48px;list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;font-weight:800}
+.pairing-method>summary:hover{background:#e9eedf}
+.pairing-method-icon{display:grid;place-items:center;flex:none;width:29px;height:29px;border-radius:10px;background:#e5ebdc;color:#36674f;font-size:21px;font-weight:850;line-height:1}
+.pairing-method-title{flex:none;font-size:14px}
+.pairing-method-reason{margin-left:auto;max-width:48%;font-size:10px;font-weight:650;text-align:right;color:#98715b;line-height:1.25}
+.pairing-chevron{margin-left:auto;line-height:1;font-size:19px;transition:transform .15s}
+.pairing-method>summary:has(.pairing-method-reason:not([hidden])) .pairing-chevron{margin-left:0}
+.pairing-method[open]>.pairing-method-body{border-top:1px solid var(--line);padding:10px 12px 12px}
+.pairing-method[open]>.pairing-method-body>:first-child{margin-top:0}
+.pairing-method[open]>.pairing-method-body>:last-child{margin-bottom:0}
+.pairing-method[open]>.pairing-method-body .field{margin:7px 0 12px;gap:5px}
+.pairing-method .field>span{font-size:11px}
+.pairing-method .field textarea{width:100%;min-height:64px;max-height:130px;resize:vertical;font-size:12px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word;padding:8px 10px;border:1px solid var(--line);border-radius:11px;color:var(--ink);background:#fffdf5}
+.pairing-method .field textarea[readonly]{background:#f1f3e8}
+.pairing-method .btn{min-height:42px;padding:9px 11px;box-shadow:0 2px 0 #1c4436;font-size:12px;border-radius:11px}
+.pairing-method .btn.secondary{box-shadow:0 2px 0 #d4d9c6}
+.pairing-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pairing-actions>.btn{flex:1 1 120px;min-width:0;white-space:normal;line-height:1.3}
+.pairing-qr{margin:6px auto 9px;max-width:246px;min-height:128px;padding:7px;border-radius:13px}
+.pairing-qr svg{width:min(100%,232px)}
+.pairing-divider-label{color:var(--muted);font-size:11px;font-weight:700;margin:8px 0 5px}
+.pairing-brief-status{font-size:11px;line-height:1.4;color:#647666;overflow-wrap:anywhere;margin:8px 0}
+.pairing-origin-note{margin:11px 2px 2px;font-size:10px;color:var(--muted);line-height:1.45}
+.pairing-methods-unavailable{border:1px solid #d5d8cc;border-radius:15px;padding:0 10px;background:#f3f2eb}
+.pairing-methods-unavailable[hidden],.pairing-manual-row[hidden],.pairing-method-reason[hidden]{display:none!important}
+.pairing-methods-unavailable>summary{cursor:pointer;list-style:none;min-height:40px;display:flex;gap:9px;align-items:center;font-size:12px;font-weight:750;color:#6c736c}
+.pairing-unavailable-count{border-radius:15px;background:#e5e8de;padding:3px 7px;font-size:10px}
+.pairing-methods-unavailable-items{display:grid;gap:7px;padding-bottom:9px}
+.pairing-sound-settings{margin:10px 0 0;border:1px dashed #cad3c2;border-radius:12px;padding:0 9px}
+.pairing-sound-settings>summary{cursor:pointer;list-style:none;font-size:11px;font-weight:750;color:#5f765f;min-height:37px;display:flex;align-items:center}
+.pairing-sound-fields{padding-bottom:9px}
+.pairing-sound-fields .field{margin:6px 0 8px!important}
+.pairing-inline-row{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.pairing-scan-address{min-width:112px}
+.pairing-manual-row{display:flex;flex:1 1 175px;gap:5px;align-items:center;min-width:0}
+.pairing-manual-row input{flex:1;min-width:0;font-size:13px!important;padding:8px!important}
+.pairing-manual-row .pairing-icon-action{flex:none;padding:8px!important;min-width:42px;font-size:16px!important}
+.pairing-settings-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:9px;margin-top:4px}
+.pairing-settings-grid .field{min-width:0}
+.pairing-settings-grid input,.pairing-settings-grid select{min-width:0;padding:7px!important;font-size:13px!important}
+@media(max-width:520px){.modal:has(.pairing-methods){padding:15px}.pairing-help-popover{right:-45px;width:calc(100vw - 37px)}.pairing-method[open]>.pairing-method-body{padding:9px 10px 11px}.pairing-actions>.btn{flex-basis:108px}.pairing-qr{max-width:225px}.pairing-qr svg{width:min(100%,212px)}}
+/* A full-SDP PR2 QR has more modules: use larger pixels for camera scanning. */
+.pairing-qr.pairing-qr-legacy{max-width:348px}
+.pairing-qr.pairing-qr-legacy svg{width:min(100%,322px)}
+@media(max-width:520px){.pairing-qr.pairing-qr-legacy{max-width:100%}.pairing-qr.pairing-qr-legacy svg{width:min(100%,310px)}}

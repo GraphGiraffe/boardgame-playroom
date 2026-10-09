@@ -46,6 +46,10 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const previousManual=await host.locator('#acoustic-host-manual').inputValue();
     assert.equal(await host.locator('#acoustic-host-manual').getAttribute('placeholder'),'Например: 192.168.1.100',
       'Manual IP placeholder is an example, not a detected network address');
+    await host.locator('[data-pairing-method="sound"]').evaluate(element=>{
+      const section=element.closest('.pairing-methods-unavailable');if(section)section.open=true;
+      element.open=true;element.querySelector('.pairing-sound-settings').open=true;
+    });
     await host.locator('#acoustic-host-address').selectOption('manual');
     await host.locator('#acoustic-host-manual').fill('192.168.44.66');
     const manualLink=await value(host,'#net-host-token');
