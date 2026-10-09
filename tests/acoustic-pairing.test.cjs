@@ -149,6 +149,46 @@ test('secondary probe merges ICE and RTCStats addresses, preserving independent 
   }finally{if(previous===undefined)delete globalThis.RTCPeerConnection;else globalThis.RTCPeerConnection=previous;}
 });
 
+
+test('unspecified IPv4 and IPv6 endpoints are excluded from selectable ICE and RTCStats routes',()=>{
+  const item=JSON.parse(signal()),lines=[
+    'a=candidate:3 1 UDP 2122260223 0.0.0.0 40400 typ host',
+    'a=candidate:4 1 UDP 2122260223 :: 40401 typ host',
+    'a=candidate:5 1 UDP 2122260223 0:0:0:0:0:0:0:0 40402 typ host',
+    'a=candidate:6 1 UDP 2122260223 2001:db8::1 40403 typ host',
+    'a=candidate:7 1 UDP 2122260223 10.0.0.9 40404 typ host'
+  ];
+  item.sdp+='\r\n'+lines.join('\r\n');
+  const candidates=A.allCandidates(item),addresses=candidates.map(c=>c.address);
+  assert.ok(addresses.includes('10.0.0.9'));
+  assert.ok(addresses.includes('2001:db8::1'),'valid IPv6 candidates must still be displayed');
+  for(const ip of ['0.0.0.0','::','0:0:0:0:0:0:0:0']){
+    assert.equal(A.isUnspecifiedAddress(ip),true);
+    assert.equal(addresses.includes(ip),false,ip);
+  }
+  const stats=new Map([
+    ['a',{type:'local-candidate',address:'0.0.0.0',protocol:'udp',candidateType:'host'}],
+    ['b',{type:'local-candidate',address:'::',protocol:'udp',candidateType:'host'}],
+    ['c',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}]
+  ]);
+  assert.deepEqual(A.statsAddresses(stats).map(c=>c.address),['192.168.0.112']);
+});
+
+test('microphone permission failures explain content URL, HTTPS PWA and browser settings',()=>{
+  const mediaDevices={getUserMedia(){}};
+  const insecure=A.microphoneIssue({protocol:'content:',secure:false,mediaDevices});
+  assert.match(insecure,/content:\/\//);
+  assert.match(insecure,/HTTPS/);
+  assert.match(A.microphoneIssue({protocol:'http:',secure:false,mediaDevices}),/HTTPS/);
+  assert.equal(A.microphoneIssue({protocol:'https:',secure:true,mediaDevices}),null);
+  assert.match(A.microphoneIssue({protocol:'https:',secure:true,mediaDevices:{}}),/микрофону/);
+  const denied=A.explainMicrophoneError({name:'NotAllowedError',message:'Permission denied'});
+  assert.match(denied.message,/Доступ к микрофону запрещён/);
+  assert.match(denied.message,/HTTPS/);
+  assert.match(A.explainMicrophoneError({name:'NotFoundError'}).message,/не обнаружен/);
+  assert.match(A.explainMicrophoneError({name:'NotReadableError'}).message,/занят/);
+});
+
 test('bundled ggwave encodes short audio payload without network dependencies',async()=>{
   const factory=require('../app/vendor/ggwave.js');
   const gg=await factory(),params=gg.getDefaultParameters(),inst=gg.init(params);

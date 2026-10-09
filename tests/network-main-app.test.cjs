@@ -36,6 +36,12 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
     assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
     assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
+
+    assert.equal(await host.locator('#net-host-acoustic-send').count(),1,
+      'The host must be able to send a sound invitation without microphone access');
+    assert.equal(await host.locator('#net-host-acoustic-listen').count(),1,
+      'Audio listening and playback are independent actions');
+
     const previousAddress=await host.locator('#acoustic-host-address').inputValue();
     const previousManual=await host.locator('#acoustic-host-manual').inputValue();
     assert.equal(await host.locator('#acoustic-host-manual').getAttribute('placeholder'),'Например: 192.168.1.100',

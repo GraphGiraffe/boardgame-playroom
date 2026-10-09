@@ -20,6 +20,11 @@
     const values=address.split('.').map(Number);
     return values.every(value=>Number.isInteger(value)&&value>=0&&value<=255)?values:null;
   }
+  function isUnspecifiedAddress(address){
+    if(typeof address!=='string')return false;
+    const value=address.trim().toLowerCase();
+    return value==='0.0.0.0'||(value.includes(':')&&/^[0:]+$/.test(value));
+  }
   function addressKind(address){
     const ip=ipv4Parts(address);
     if(!ip)return /^([0-9a-f]*:){2,}[0-9a-f:.%]+$/i.test(address)?'ipv6':/\.local$/i.test(address)?'mdns':'hostname';
@@ -63,7 +68,7 @@
       if(!match)continue;
       const component=Number(match[2]),transport=match[3].toLowerCase(),priority=Number(match[4]);
       const address=match[5],port=Number(match[6]),type=match[7].toLowerCase(),kind=addressKind(address);
-      if(!Number.isInteger(component)||component<1||component>2||!['udp','tcp'].includes(transport)||
+      if(isUnspecifiedAddress(address)||!Number.isInteger(component)||component<1||component>2||!['udp','tcp'].includes(transport)||
          !Number.isSafeInteger(priority)||priority<0||priority>0xffffffff||
          !Number.isInteger(port)||port<1||port>65535||!['host','srflx','prflx','relay'].includes(type))continue;
       const key=[address,port,component,transport,type].join('|');
@@ -94,7 +99,7 @@
     for(const entry of report.values()){
       if(entry?.type!=='local-candidate')continue;
       const address=entry.address||entry.ip,kind=addressKind(address);
-      if(typeof address!=='string'||!address||seen.has(address))continue;
+      if(typeof address!=='string'||!address||isUnspecifiedAddress(address)||seen.has(address))continue;
       const type=entry.candidateType||'host',transport=String(entry.protocol||'udp').toLowerCase();
       if(!['udp','tcp'].includes(transport)||!['host','srflx','prflx','relay'].includes(type))continue;
       seen.add(address);
@@ -222,6 +227,22 @@
     ].join('\r\n');
     return {kind,ip,port,pairingId,signal:JSON.stringify({v:1,type:kind,sdp,pairingId})};
   }
+  function microphoneIssue({protocol=root.location?.protocol,secure=root.isSecureContext,mediaDevices=root.navigator?.mediaDevices}={}){
+    if(protocol==='content:')return 'Звуковой приём недоступен из Android content://: браузер не разрешает доступ к микрофону. Откройте PlayRoom по HTTPS как PWA. Пока можно передать звук через динамик и принять ответ QR/ссылкой.';
+    if(secure===false)return 'Для микрофона нужен безопасный адрес: HTTPS/PWA или localhost. На этой странице приём звука заблокирован. Используйте QR/ссылку либо откройте PlayRoom как HTTPS PWA.';
+    if(typeof mediaDevices?.getUserMedia!=='function')return 'Браузер не предоставляет доступ к микрофону на этой странице. Откройте PlayRoom как HTTPS PWA или воспользуйтесь QR/ссылкой.';
+    return null;
+  }
+  function explainMicrophoneError(error){
+    const source=String(error?.name||'')+' '+String(error?.message||'');
+    if(/NotAllowedError|PermissionDeniedError|SecurityError|permission\s+denied|denied|not\s+allowed/i.test(source))
+      return Error('Доступ к микрофону запрещён браузером или Android. Откройте PlayRoom по HTTPS (лучше установленную PWA) и разрешите микрофон в настройках сайта/системы. Если доступ недоступен, используйте QR или передачу звука только через динамик.');
+    if(/NotFoundError|DevicesNotFoundError/i.test(source))
+      return Error('Микрофон не обнаружен. Подключите микрофон либо используйте QR/ссылку.');
+    if(/NotReadableError|TrackStartError|AbortError/i.test(source))
+      return Error('Микрофон занят или не может быть запущен. Закройте другие приложения, использующие его, либо используйте QR/ссылку.');
+    return error instanceof Error?error:Error('Не удалось запустить микрофон. Попробуйте HTTPS/PWA или QR/ссылку.');
+  }
   async function moduleInstance(){
     if(typeof root.ggwave_factory!=='function')throw Error('Звуковой модуль не включён в сборку.');
     if(!moduleInstance.pending)moduleInstance.pending=root.ggwave_factory();
@@ -259,7 +280,7 @@
   }
   async function listen(onPacket){
     if(typeof onPacket!=='function')throw Error('Нужен обработчик звукового приглашения.');
-    if(!root.navigator?.mediaDevices?.getUserMedia)throw Error('Нужен HTTPS/localhost и доступ к микрофону.');
+    const issue=microphoneIssue();if(issue)throw Error(issue);
     const gg=await moduleInstance(),context=audioContext();
     let instance=null,stream=null,source=null,processor=null,closed=false;
     const stop=()=>{
@@ -271,7 +292,7 @@
     };
     try{
       await context.resume();
-      stream=await root.navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      try{stream=await root.navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}catch(error){throw explainMicrophoneError(error);}
       instance=setup(gg,context);
       if(!context.createScriptProcessor)throw Error('Этот браузер не поддерживает звуковой приём.');
       source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(1024,1,1);
@@ -293,5 +314,5 @@
       return {stop};
     }catch(error){stop();throw error;}
   }
-  return Object.freeze({protocols,hostCandidates,allCandidates,statsAddresses,probeAddresses,addressKind,usableIPv4,privateRank,pack,unpack,play,listen});
+  return Object.freeze({protocols,hostCandidates,allCandidates,statsAddresses,probeAddresses,addressKind,usableIPv4,isUnspecifiedAddress,microphoneIssue,explainMicrophoneError,privateRank,pack,unpack,play,listen});
 });

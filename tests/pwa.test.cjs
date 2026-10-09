@@ -42,3 +42,16 @@ test('index HTML does not contain escaped newlines between tags',()=>{
   assert.match(source,/src="core\/player-target\.js"/);
   assert.match(source,/src="app\/game-feedback\.js"/);
 });
+
+test('offline pairing UI provides speaker-only mode and explains blocked microphone',()=>{
+  const ui=fs.readFileSync(path.join(root,'app/network-ui.js'),'utf8');
+  const acoustic=fs.readFileSync(path.join(root,'app/acoustic-pairing.js'),'utf8');
+  assert.match(ui,/id="net-host-acoustic-send"/,'speaker-only invitation must be offered');
+  assert.match(ui,/async function sendHostSoundOnly\(\)/);
+  assert.match(ui,/await Acoustic\.play\(message,\{protocol\}\)/);
+  assert.match(ui,/captureDisabled\(\)/,'capture buttons are disabled for unsupported origins');
+  assert.match(ui,/captureNotice\(\)/,'show an actionable microphone warning');
+  assert.match(ui,/id="net-client-acoustic-listen"/);
+  assert.match(acoustic,/function microphoneIssue\(/);
+  assert.match(acoustic,/function explainMicrophoneError\(/);
+});
