@@ -13,7 +13,7 @@
 | Исправить переподключение и идентификацию гостя | [Identity и reconnect](DEV-RECONNECT.md) | [`app/multiplayer.js`](../app/multiplayer.js), [`app/network-ui.js`](../app/network-ui.js) |
 | Работать с JSON, токенами, снимками и сетевыми сообщениями | [Протоколы и примеры структур](DEV-PROTOCOLS.md) | [`core/protocol.js`](../core/protocol.js), [`app/pairing.js`](../app/pairing.js), [`core/session.js`](../core/session.js) |
 | Поменять паки, сохранения, версии или миграции | [Паки и хранение](DEV-STORAGE-PACKS.md) | [`core/packs.js`](../core/packs.js), [`app/pack-manager.js`](../app/pack-manager.js), [`app/library.js`](../app/library.js) |
-| Собрать, проверить, выпустить приложение или отладить проблему | [Сборка, тесты и диагностика](DEV-BUILD-QA.md) | [`build.py`](../build.py), [`scripts/codex/check.sh`](../scripts/codex/check.sh), [`tests/`](../tests) |
+| Собрать, проверить, выпустить приложение или отладить проблему | [Сборка, тесты и диагностика](DEV-BUILD-QA.md) | [`build.py`](../build.py), [`scripts/codex/check.sh`](../scripts/codex/check.sh), [`tests/network-main-app.test.cjs`](../tests/network-main-app.test.cjs) |
 
 ## Картина системы за минуту
 
