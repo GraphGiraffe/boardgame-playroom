@@ -210,6 +210,7 @@
       if(room.phase==='closed'||typeof participantId!=='string'||!resumeTokenValid(token))throw Error('Неверное право переподключения.');
       const member=this._participant(room,participantId);
       if(member.isHost)throw Error('Права хоста нельзя восстановить через гостевое подключение.');
+      if(room.phase==='playing'&&!member.seatId)throw Error('У игрока нет места в начатой партии.');
       const key=this._key(roomId,participantId),expected=this.resumeTokens.get(key);
       if(!expected||expected!==token)throw Error('Право переподключения недействительно. Потребуется новый вход.');
       const updated=this.tokenFactory();
