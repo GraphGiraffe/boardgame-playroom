@@ -10,12 +10,7 @@
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
   const stopClientAudio=()=>{clientAudioListener?.stop();clientAudioListener=null;};
   const KNOWN_IP_KEY='playroom.acoustic-known-addresses.v1';
-  function usableManualIp(address){
-    if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))return false;
-    const parts=address.split('.').map(Number);
-    return parts.every(v=>Number.isInteger(v)&&v>=0&&v<=255)&&
-      !['documentation','reserved'].includes(Acoustic.addressKind(address));
-  }
+  const usableManualIp=address=>Acoustic.usableIPv4(address);
   function savedIpEntries(){
     try{
       const values=JSON.parse(localStorage.getItem(KNOWN_IP_KEY)||'[]');
