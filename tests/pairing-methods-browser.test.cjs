@@ -55,7 +55,7 @@ test('join on content://-like unsupported capture: QR/Text first, blocked Share/
     assert.equal(f.errors.length,0,f.errors.join('\n'));
   }finally{await f.context.close();await browser.close();}
 });
-test('host QR precedes scan buttons; manual IP save is inline/conditional and updates sound availability', {timeout:25000},async()=>{
+test('host QR precedes scan buttons; saved manual IP keeps send-only sound under unavailable methods', {timeout:25000},async()=>{
   const browser=await chromium.launch(browserOptions),f=await fixture(browser,{candidate:false,microphone:false});
   try{
     await f.page.locator('#network-pair-button').click();
@@ -79,11 +79,15 @@ test('host QR precedes scan buttons; manual IP save is inline/conditional and up
     // An opaque test origin cannot persist the IP, but the click must not be
     // swallowed when a formerly unavailable sound block changes groups.
     assert.match(await f.page.evaluate(()=>globalThis.__toast||''),/IP добавлен|Браузер не разрешает сохранять адрес/);
-    await f.page.waitForFunction(()=>!!document.querySelector('.pairing-methods-available>[data-pairing-method=\"sound\"]'));
     const after=await methodState(f.page);
-    assert.deepEqual(after.available.map(x=>x.name),['sound','qr','text']);
+    // PR3 enables speaker-only transmission, but Sound is not a complete
+    // available method when the microphone is blocked.
+    assert.deepEqual(after.available.map(x=>x.name),['qr','text']);
+    assert.deepEqual(after.unavailable.map(x=>x.name),['share','sound']);
+    assert.equal(after.unavailableExpanded,false);
     assert.match(await f.page.locator('#net-host-token').inputValue(),/PR3\./);
     assert.equal(await f.page.locator('#net-host-acoustic-send').isEnabled(),true);
+    assert.equal(await f.page.locator('#net-host-acoustic-listen').isEnabled(),false);
     if(process.env.PLAYROOM_CAPTURE_DIR)await f.page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'pairing-host-mobile.png')});
     assert.equal(f.errors.length,0,f.errors.join('\n'));
   }finally{await f.context.close();await browser.close();}
@@ -145,6 +149,7 @@ test('an invalid manual IP cannot leave a stale QR/Share and becomes PR3 without
     assert.equal(await f.page.locator('[data-net-share="offer"]').isEnabled(),false);
     await f.page.locator('#acoustic-host-manual').fill('192.0.2.99');
     assert.equal(await f.page.locator('#net-host-token').inputValue(),'');
+    assert.equal(await f.page.locator('[data-net-share="offer"]').isEnabled(),false);
     await f.page.locator('#acoustic-host-manual').fill('192.168.5.77');
     const current=await f.page.evaluate(()=>PlayroomPairing.extract(document.getElementById('net-host-token').value));
     assert.match(current,/^PR3\./);

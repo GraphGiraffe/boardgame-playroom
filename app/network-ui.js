@@ -330,7 +330,7 @@
     }
     const count=missing.children.length;unavailable.hidden=count===0;
     unavailable.querySelector('.pairing-unavailable-count').textContent=String(count);
-    const shareButton=wrapper.querySelector('[data-net-share]');if(shareButton)shareButton.disabled=!states.share.available;
+    const shareButton=wrapper.querySelector('[data-net-share]');if(shareButton)shareButton.disabled=!token||!states.share.available;
     const sending=soundOutputReady(token),receiving=microphoneReady();
     for(const [id,can] of [['net-host-acoustic',sending&&receiving],['net-host-acoustic-send',sending],
       ['net-host-acoustic-listen',receiving],['net-client-acoustic-send',sending]]){
