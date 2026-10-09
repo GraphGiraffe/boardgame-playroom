@@ -62,7 +62,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
 test('guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno},async()=>{
   const hosted=await server(),{server:listener,url}=hosted;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const hc=await browser.newContext({viewport:{width:1000,height:780}}),cc=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
+  const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),cc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   const host=await hc.newPage(),client=await cc.newPage();host._url=url;client._url=url;
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
   try{
