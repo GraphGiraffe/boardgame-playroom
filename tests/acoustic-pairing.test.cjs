@@ -36,6 +36,14 @@ test('private candidate ordering favours 192.168 and 10.0; manual IP supports mD
   assert.equal(manual.ip,'192.168.0.78');assert.equal(manual.port,53920);
 });
 
+test('manual IPv4 validation used by the network UI rejects reserved and malformed values',()=>{
+  for(const address of ['192.168.44.66','192.168.0.112','10.24.205.39','172.16.3.4'])
+    assert.equal(A.usableIPv4(address),true,address);
+  for(const address of ['192.0.2.1','198.51.100.10','203.0.113.7','0.0.0.0','127.0.0.1',
+    '999.2.3.4','foo.local','192.168.1','192\\.168\\.0\\.112',''])
+    assert.equal(A.usableIPv4(address),false,address);
+});
+
 test('invalid LAN addresses, malformed packets and unsupported signaling fail safely',()=>{
   for(const addr of ['127.0.0.1','0.0.0.0','999.1.2.3','abc.local']){
     assert.throws(()=>A.pack(signal(),{address:addr}),/IPv4|LAN/i);
