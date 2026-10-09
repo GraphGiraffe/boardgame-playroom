@@ -281,7 +281,15 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Durak growth from six to 24 cards keeps hand height and horizontal swipes never play', {saved: durakFixture(), viewport:{width:320,height:640},touch:true}, async ({page,context}) => {
       const before = await page.locator('.hand-track').boundingBox();
       await page.evaluate(saved=>localStorage.setItem('playroom.session.v1',JSON.stringify(saved)),durakFixture(24));
-      await page.reload(); await page.locator('.resume-banner [data-command=resume]').tap();
+      await page.reload();
+      // Reopen the saved session through the unified library after refresh.
+      // The checks below still require all 24 cards, unchanged hand height,
+      // a successful horizontal swipe and no accidental game command.
+      await page.locator('.side-nav [data-command=sessions]').tap();
+      await page.locator('.saved-games-list').waitFor();
+      const savedRow=page.locator('.saved-game[data-session-id] [data-resume-id]');
+      assert.equal(await savedRow.count(),1,'the reloaded large-hand match is still present in local saved games');
+      await savedRow.first().tap();
       const track=page.locator('.hand-track'), after=await track.boundingBox(); assert(Math.abs(before.height-after.height)<=1,'large hand must keep its reserved height');
       const dimensions=await track.evaluate(el=>({x:el.scrollWidth-el.clientWidth,y:el.scrollHeight-el.clientHeight,count:el.querySelectorAll('[data-hand-preview]').length}));
       assert.equal(dimensions.count,24);assert(dimensions.x>1&&dimensions.y<=1);
