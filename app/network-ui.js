@@ -7,6 +7,9 @@
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null;
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const connectedHostPeers=[];
+  const resumeStore=new M.ResumeStore();
+  let reconnectStatus='';
+
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
   const stopClientAudio=()=>{clientAudioListener?.stop();clientAudioListener=null;};
   const KNOWN_IP_KEY='playroom.acoustic-known-addresses.v1';
@@ -299,6 +302,15 @@
       item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();
     }
   }
+  function showDisconnectBanner(){
+    const shell=document.querySelector('.table-shell.network-game');
+    if(!shell||!clientPeer||!['disconnected','failed','closed'].includes(clientPeer.pc.connectionState))return;
+    if(shell.querySelector('#network-reconnect-button'))return;
+    const wrap=document.createElement('div');wrap.className='network-reconnect-banner';wrap.setAttribute('role','status');
+    wrap.innerHTML='<strong>Связь с хостом прервана.</strong> '+esc(reconnectStatus||'Ваше игровое место сохраняется у хоста.')+
+      ' <button class="btn secondary" id="network-reconnect-button" type="button">Повторно подключиться через QR</button>';
+    shell.appendChild(wrap);
+  }
   function ensureButtons(){
     // Close microphone immediately when the pairing dialog is dismissed.
     if(hostAudioListener&&!document.getElementById('net-host-acoustic'))stopHostAudio();
@@ -307,6 +319,13 @@
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent='Установить ХОД';intro.querySelector('.lobby-actions')?.appendChild(btn);}
+    showDisconnectBanner();
+    const gameShell=document.querySelector('.table-shell.network-game');
+    if(gameShell&&hostAuthority&&!document.getElementById('network-pair-button')){
+      const tools=gameShell.querySelector('.table-header')||gameShell;
+      const btn=document.createElement('button');btn.id='network-pair-button';btn.className='btn secondary';
+      btn.type='button';btn.textContent='Подключить / вернуть игрока';tools.appendChild(btn);
+    }
     const room=b.room?.(),lobby=$('.lobby-shell');
     if(room&&lobby){
       ensureHostSubscription(room);
@@ -322,11 +341,40 @@
       else if(document.querySelector('.lobby-shell'))bridge().renderLobby();
     });
   }
+  function hostPeerServing(peer,switchable,roomConnection,roomId){
+    // Keep the original lobby capability for identity binding, even after the
+    // transport switches to the host-authority game projection.
+    const served={
+      snapshot:()=>switchable.snapshot(),
+      history:index=>switchable.history(index),
+      subscribe:listener=>switchable.subscribe(listener),
+      dispatch:command=>{
+        const result=switchable.dispatch(command);
+        if(command?.type==='resume'&&result?.ok){
+          const id=result.snapshot.participantId;
+          for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
+            old.serveClose?.();old.peer?.close?.();old.switchable?.close?.();
+            const i=connectedHostPeers.indexOf(old);if(i>=0)connectedHostPeers.splice(i,1);
+          }
+          const room=bridge().roomService.snapshot(roomId);
+          if(room.phase==='playing'&&hostAuthority){
+            const occupied=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);
+            const viewer=occupied.findIndex(seat=>seat.participantId===id);
+            if(viewer<0)throw Error('В комнате больше нет игрового места для этого участника.');
+            switchable.set(hostAuthority.connect(viewer));
+          }
+        }
+        return result;
+      },
+      close:()=>{roomConnection.close?.();switchable.close();}
+    };
+    return W.serve(peer.channel,served);
+  }
   async function hostInvite(){
     try{
       const b=bridge(),room=b?.room?.();if(!room)throw Error('Сначала создайте сетевую комнату.');
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
-      hostPeer=await W.createHostPeer();hostServeClose=W.serve(hostPeer.channel,hostSwitch);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
+      hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
       const share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="offer" style="width:100%">Поделиться приглашением</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы» ниже.</div>';
       const secure=PWA?.secure?'':'<div class="rules-mode-note"><strong>PWA-функции ограничены:</strong> откройте ХОД по HTTPS после установки. Локальный file/content URL не является secure context.</div>';
       b.openModal(b.modalHead('Подключить устройство')+secure+'<p class="lead">Приглашение можно отправить звуком, QR или ссылкой. Приём звукового ответа требует микрофон.</p>'+soundSettings('host',hostPeer.offer)+captureNotice()+'<button class="btn" id="net-host-acoustic" type="button" style="width:100%" '+captureDisabled()+'>Передать звуковое приглашение и слушать ответ</button><button class="btn secondary" id="net-host-acoustic-send" type="button" style="width:100%">Только передать приглашение звуком (ответ по QR/ссылке)</button><button class="btn secondary" id="net-host-acoustic-listen" type="button" style="width:100%" '+captureDisabled()+'>Только слушать звуковой ответ (Offer через QR/ссылку)</button>'+scanControls('host')+share+pairingFallback(offerToken,'net-host-token')+'<form id="net-host-answer"><label class="field"><span>Fallback: ответ второго устройства</span><textarea name="answer" rows="4" placeholder="Можно вставить ссылку ХОД, pairing token или старый WebRTC answer"></textarea></label><button class="btn secondary" type="submit" style="width:100%">Принять вставленный ответ</button></form><p class="lead" style="margin-top:14px">Если ответ придёт через share target или web+playroom:, ХОД примет его автоматически.</p>');updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
@@ -358,7 +406,35 @@
     const b=bridge(),share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="answer" style="width:100%">Поделиться ответом</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы».</div>';
     b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+soundSettings('client',clientPeer.answer)+'<button class="btn" id="net-client-acoustic-send" type="button" style="width:100%">Отправить звуковой ответ</button>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
+    const currentPeer=clientPeer;
+    currentPeer.pc.addEventListener('connectionstatechange',()=>{
+      if(currentPeer!==clientPeer)return;
+      if(['failed','disconnected','closed'].includes(currentPeer.pc.connectionState)){
+        reconnectStatus='Нажмите «Повторно подключиться» и отсканируйте новый QR хоста.';
+        showDisconnectBanner();
+      }
+    });
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
+    const saved=resumeStore.load(preview.room.id);
+    if(saved){
+      try{
+        const resumed=await clientTransport.dispatch({type:'resume',participantId:saved.participantId,resumeToken:saved.token});
+        if(!resumed?.ok||!resumed.resumeToken)throw Error('Сервер не подтвердил переподключение.');
+        const durable=resumeStore.save(preview.room.id,resumed.snapshot.participantId,resumed.resumeToken);
+        if(!durable)toast('Место восстановлено, но браузер не сохранил новый ключ. Не закрывайте страницу.');
+        clientRoom=resumed.snapshot.room;clientParticipantId=resumed.snapshot.participantId;
+        bridge().closeModal(true);
+        const state=await clientTransport.snapshot();
+        if(state?.kind==='snapshot')startClientGame(state);
+        else{clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});renderClientLobby();}
+        return;
+      }catch(error){
+        toast('Автовозврат не удался: '+error.message+' Можно присоединиться новым игроком.');
+      }
+    }
+    if(preview.room.phase==='playing'){
+      throw Error('Партия уже началась. Вернуться можно только с сохранённым ключом игрока на этом устройстве.');
+    }
     showPreview(preview.room);
   }
   async function createAnswer(form){
@@ -388,7 +464,12 @@
     try{
       const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error('Не удалось войти в комнату.');
-      clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;b.closeModal(true);
+      clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;
+      if(result.resumeToken){
+        const persisted=resumeStore.save(clientRoom.id,clientParticipantId,result.resumeToken);
+        if(!persisted)toast('Место занято, но браузер не сохранил ключ возврата. Без него нельзя вернуться после перезапуска.');
+      }
+      b.closeModal(true);
       clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});
       renderClientLobby();
     }catch(error){toast(error.message);}
@@ -430,11 +511,11 @@
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-pair-button,#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
-    if(target.id==='network-join-button')return showJoin();
+    if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
@@ -486,7 +567,7 @@
   root.addEventListener('playroom-install-available',ensureButtons);
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
-    client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,rpc:clientTransport?.debug?.()||null}
+    client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
   root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();});
