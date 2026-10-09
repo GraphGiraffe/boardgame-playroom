@@ -80,7 +80,8 @@
     async commit({sessionId,previousRevision,nextState,viewer,commandId,signature,receipt}){
       if(!isId(sessionId)||!Number.isSafeInteger(previousRevision)||previousRevision<0||
           nextState?.move!==previousRevision+1||!Number.isInteger(viewer)||viewer<0||
-          !isId(commandId)||typeof signature!=='string'||!receipt?.ok||receipt.revision!==nextState.move)
+          !isId(commandId)||typeof signature!=='string'||!signature||!receipt?.ok||
+          receipt.commandId!==commandId||receipt.revision!==nextState.move)
         throw Error('Некорректная запись подтверждённого хода.');
       await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
         const sessions=tx.objectStore('sessions');
@@ -100,7 +101,8 @@
     }
     async recordReceipt({sessionId,viewer,commandId,signature,receipt}){
       if(!isId(sessionId)||!Number.isInteger(viewer)||viewer<0||!isId(commandId)||
-          typeof signature!=='string'||receipt?.ok!==false)throw Error('Некорректная квитанция отклонённой команды.');
+          typeof signature!=='string'||!signature||receipt?.ok!==false||receipt.commandId!==commandId)
+        throw Error('Некорректная квитанция отклонённой команды.');
       await this.transaction(['sessions','receipts'],'readwrite',(tx,_,abort)=>{
         const check=tx.objectStore('sessions').get(sessionId);
         check.onsuccess=()=>{
@@ -138,9 +140,34 @@
       if(!stored.record)return null;
       const {record}=stored,steps=(stored.steps||[]).sort((a,b)=>a.revision-b.revision);
       if(record.format!=='playroom-network-host'||record.version!==1||record.initial?.version!==1||
+          !isId(record.roomId)||record.room?.id!==record.roomId||
+          record.room?.game?.id!==record.game||record.room.game.version!==record.packVersion||
+          (record.recovery&&(record.recovery.version!==1||record.recovery.room?.id!==record.roomId||
+            record.recovery.room?.ownerId!==record.room.ownerId))||
           record.initial.game!==record.game||record.initial.packVersion!==record.packVersion||
           steps.length!==record.revision||steps.some((step,i)=>step.revision!==i+1||step.sessionId!==sessionId))
         throw Error('Сетевое сохранение повреждено. Данные не удалены.');
+      // A committed step without its receipt (or a receipt without its step)
+      // makes lost-ACK recovery ambiguous. Fail closed instead of resuming a
+      // journal in which a previously acknowledged action could run twice.
+      const accepted=new Set(),commandIds=new Set();
+      for(const row of stored.receipts||[]){
+        const key=row?.viewer+':'+row?.commandId,receipt=row?.receipt;
+        if(row?.sessionId!==sessionId||!Number.isInteger(row.viewer)||row.viewer<0||
+            !isId(row.commandId)||typeof row.signature!=='string'||!row.signature||
+            receipt?.commandId!==row.commandId||typeof receipt.ok!=='boolean'||
+            commandIds.has(key))
+          throw Error('Журнал квитанций повреждён. Данные не удалены.');
+        commandIds.add(key);
+        if(receipt.ok){
+          if(!Number.isSafeInteger(receipt.revision)||receipt.revision<1||
+              receipt.revision>record.revision||accepted.has(receipt.revision))
+            throw Error('Несогласованные подтверждения ходов. Данные не удалены.');
+          accepted.add(receipt.revision);
+        }
+      }
+      if(accepted.size!==record.revision)
+        throw Error('Неполный журнал подтверждений ходов. Данные не удалены.');
       const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
         states:[...record.initial.states,...steps.map(step=>step.state)]};
       return {room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,

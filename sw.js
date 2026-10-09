@@ -1,6 +1,7 @@
 'use strict';
-// RC6 baseline PWA cache. Increase CACHE for future shell changes; never change an already published release tag.
-const CACHE='playroom-pwa-lan01-dev';
+// Unreleased LAN-01 candidate: invalidate cached code after host-journal and
+// recovery changes. Immutable published RC6 assets are not modified.
+const CACHE='playroom-pwa-lan01-dev.2';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',

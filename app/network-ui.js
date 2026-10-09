@@ -490,33 +490,46 @@
   async function roomCommand(command){try{const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;renderClientLobby();}}catch(error){toast(error.message);}}
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
-    const b=bridge(),occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:false};});
-    if(players.length<room.constraints.min){hostStarted=false;return;}
-    b.packs.activate(room.game.id,room.game.version);
-    const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
-    // LAN-01: save the private initial host state before issuing any playable
-    // snapshot. A failed/blocked IndexedDB must not silently start an unsafe game.
-    const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
-    if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
+    const b=bridge();let persisted=false;
     try{
+      const occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:false};});
+      if(players.length<room.constraints.min)throw Error('Недостаточно игроков для запуска.');
+      b.packs.activate(room.game.id,room.game.version);
+      const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
+      // Do not publish the first playable snapshot until the private initial
+      // state and room recovery capability have reached durable storage.
+      const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
+      if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
       hostLockRelease=await hostSessionStore.acquireHostLock(sessionId);
       await hostSessionStore.create({sessionId,room,session,recovery:b.roomService.exportRecovery(room.id)});
-    }catch(error){hostLockRelease?.();hostLockRelease=null;hostStarted=false;
+      persisted=true;
+      b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
+      hostAuthority=new Authority(session,{sessionId,persistence:{
+        commit:entry=>hostSessionStore.commit(entry),
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+      }});
+      for(const item of connectedHostPeers){
+        const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
+        if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+      }
+      const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
+      const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
+      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
+    }catch(error){
+      hostGameClient?.close?.();hostGameClient=null;
+      hostAuthority?.dispose?.();hostAuthority=null;
+      hostLockRelease?.();hostLockRelease=null;
+      if(persisted){
+        // This room has already been committed. Starting a new session would
+        // strand a saved match; require an explicit reload/recovery instead.
+        closeHostPeer();
+        throw Error('Партия сохранена, но экран не запустился. Перезагрузите ХОД и восстановите комнату из сетевых сохранений: '+error.message);
+      }
+      hostStarted=false;
       try{b.roomService.abortStart(room.id,b.participantId());b.renderLobby();}catch(_){}
-      throw Error('Не удалось создать сетевое сохранение: '+error.message);}
-    b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
-    hostAuthority=new Authority(session,{sessionId,persistence:{
-      commit:entry=>hostSessionStore.commit(entry),
-      recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
-    }});
-    for(const item of connectedHostPeers){
-      const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
-      if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+      throw Error('Не удалось создать сетевую партию: '+error.message);
     }
-    const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
-    const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
-    const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-    hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
   }
   async function showHostArchives(){
     try{
