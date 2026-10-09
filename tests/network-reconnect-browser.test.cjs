@@ -32,6 +32,22 @@ async function profile(page,name){
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').waitFor();
 }
+async function qrPng(page,selector){
+  // The UI replaces its QR when asynchronous IP discovery completes.
+  // Read the current SVG atomically rather than screenshot a detached node.
+  const svg=await page.locator(selector).evaluate(node=>node.outerHTML);
+  const base64=await page.evaluate(async markup=>{
+    const blob=new Blob([markup],{type:'image/svg+xml;charset=utf-8'}),url=URL.createObjectURL(blob);
+    try{
+      const image=new Image();image.src=url;await image.decode();
+      const canvas=document.createElement('canvas');canvas.width=700;canvas.height=700;
+      const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,700,700);
+      ctx.drawImage(image,0,0,700,700);
+      return canvas.toDataURL('image/png').split(',')[1];
+    }finally{URL.revokeObjectURL(url);}
+  },svg);
+  return Buffer.from(base64,'base64');
+}
 async function pair(host,client,{offerButton=false,photo=false}={}){
   if(offerButton)await host.locator('#network-pair-button').click();
   await host.locator('#net-host-token').waitFor();
@@ -41,7 +57,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   await client.locator('#network-join-button').click();
   if(photo){
     const qr=host.locator('#net-host-token-qr svg');await qr.waitFor({timeout:10000});
-    const image=await qr.screenshot();
+    const image=await qrPng(host,'#net-host-token-qr svg');
     await client.locator('#net-client-qr-gallery').setInputFiles({name:'offer.png',mimeType:'image/png',buffer:image});
   }else{
     await client.locator('#net-client-offer textarea[name=offer]').fill(offer);
@@ -51,7 +67,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   const answer=await client.locator('#net-client-token').inputValue();
   if(photo){
     const qr=client.locator('#net-client-token-qr svg');await qr.waitFor({timeout:10000});
-    const image=await qr.screenshot();
+    const image=await qrPng(client,'#net-client-token-qr svg');
     await host.locator('#net-host-qr-gallery').setInputFiles({name:'answer.png',mimeType:'image/png',buffer:image});
   }else{
     await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
