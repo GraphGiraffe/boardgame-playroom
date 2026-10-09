@@ -7,16 +7,27 @@ const url=process.env.PLAYROOM_URL||pathToFileURL(path.resolve(__dirname,'../ind
 test('deleting the final old-pack save clears the stale recovery warning',{timeout:30000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const context=await browser.newContext({viewport:{width:390,height:740}});
-  const page=await context.newPage();
+  const page=await context.newPage(),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
   try{
     await page.goto(url);
+    const boot=await page.evaluate(()=>({app:!!globalThis.PlayroomAppBridge,
+      multiplayer:!!globalThis.PlayroomMultiplayer,network:!!globalThis.PlayroomNetworkDebug,
+      scanner:!!globalThis.PlayroomQRScanner,profile:!!document.getElementById('profile-form'),
+      body:document.body?.innerText.slice(0,200)}));
+    assert.ok(boot.app&&boot.network,'PlayRoom failed to initialize: '+JSON.stringify({boot,errors}));
     await page.evaluate(()=>{
       localStorage.setItem('playroom.session.v1',JSON.stringify({
         game:'uno',packVersion:'0.1.0',createdAt:1712345678,updatedAt:1712345678
       }));
     });
     await page.reload();
-    await page.locator('.recovery-note').waitFor();
+    try{await page.locator('.recovery-note').waitFor({timeout:10000});}
+    catch(error){
+      const diagnostics=await page.evaluate(()=>({body:document.body?.innerText.slice(0,350),
+        modal:document.getElementById('modal-root')?.innerText.slice(0,350),app:!!globalThis.PlayroomAppBridge}));
+      assert.fail('No recovery warning: '+JSON.stringify({diagnostics,errors,error:error.message}));
+    }
     assert.match(await page.locator('.recovery-note').innerText(),/Не удалось восстановить/);
     await page.locator('.side-nav [data-command=sessions]').click();
     await page.locator('[data-delete-id]').first().click();
