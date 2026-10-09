@@ -24,6 +24,10 @@ test('compact acoustic SDP opens an actual Chromium RTCDataChannel', {timeout:45
       a.evaluate(token=>peer.acceptAnswer(PlayroomPairing.decode(token).signal),answerToken),
       b.evaluate(async()=>{const channel=await peer.waitOpen({timeout:12000});window.channel=channel;})
     ]);
+    await Promise.all([
+      a.waitForFunction(()=>globalThis.peer?.channel?.readyState==='open',null,{timeout:12000}),
+      b.waitForFunction(()=>globalThis.channel?.readyState==='open',null,{timeout:12000})
+    ]);
     const states=await Promise.all([
       a.evaluate(()=>peer.channel.readyState),
       b.evaluate(()=>channel.readyState)
