@@ -32,6 +32,9 @@
     if(ip[0]===100&&ip[1]>=64&&ip[1]<=127)return 'cgnat';
     return 'public';
   }
+  function usableIPv4(address){
+    return !!ipv4Parts(address)&&!['documentation','reserved'].includes(addressKind(address));
+  }
   function addressBytes(address){
     if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))throw Error('Укажите IPv4-адрес устройства.');
     const parts=ipv4Parts(address);
@@ -290,5 +293,5 @@
       return {stop};
     }catch(error){stop();throw error;}
   }
-  return Object.freeze({protocols,hostCandidates,allCandidates,statsAddresses,probeAddresses,addressKind,privateRank,pack,unpack,play,listen});
+  return Object.freeze({protocols,hostCandidates,allCandidates,statsAddresses,probeAddresses,addressKind,usableIPv4,privateRank,pack,unpack,play,listen});
 });
