@@ -392,7 +392,7 @@
     $('#app').innerHTML=`<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>${esc(state.name)}</h1><p>${esc(state.game.name)} · ${state.hostMode==='table'?'Хост показывает Стол':'Хост играет'} · игроков: ${countText}</p></div><div class="lobby-meta"><span class="pill">${esc(state.rules.presetLabel||'Правила')}</span><span class="lobby-code">#${esc(state.code)}</span><button class="icon-btn" data-command="settings" aria-label="Настройки">${icon('settings')}</button></div></header>
       ${rulesChanged?`<p class="lobby-rules-note" role="status">${esc(rulesChanged.text)}</p>`:''}
       <section class="lobby-card lobby-rules-summary" aria-label="Выбранные правила"><h2>Правила комнаты</h2>${ruleMarkup}</section>
-      <div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">${seatMarkup}</div><div class="lobby-actions">${me?.role==='player'?`<button class="btn secondary" data-command="lobby-spectator" ${me.ready||state.phase!=='lobby'?'disabled':''}>Стать зрителем</button>`:''}<button class="btn secondary" data-rules="${esc(state.game.id)}">Правила игры</button>${isHost?`<button class="btn secondary" data-command="room-rules" ${state.phase!=='lobby'?'disabled':''}>Изменить правила</button>`:''}</div></section>
+      <div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">${seatMarkup}</div><div class="lobby-actions">${me?.role==='player'?`<button class="btn secondary" data-command="lobby-spectator" ${me.ready||state.phase!=='lobby'?'disabled':''}>Стать зрителем</button>`:''}<button class="btn secondary" data-rules="${esc(state.game.id)}">Правила игры</button>${isHost?`<button class="btn secondary" data-command="room-rules" ${state.phase!=='lobby'?'disabled':''}>Изменить правила</button><button class="btn secondary" data-command="room-change-game" ${state.phase!=='lobby'?'disabled':''}>Сменить игру</button>`:''}</div></section>
       <aside class="lobby-card"><h2>Вы в комнате</h2><form id="lobby-nickname-form" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="${esc(me?.nickname||playerProfile?.name||'')}" ${me?.ready||state.phase!=='lobby'?'disabled':''}></label><button class="btn secondary" type="submit" ${me?.ready||state.phase!=='lobby'?'disabled':''}>Сохранить</button></form>
       <div class="lobby-actions">${me?.role==='player'?`<button class="btn ${me.ready?'secondary':''}" data-command="lobby-ready" ${state.phase!=='lobby'?'disabled':''}>${me.ready?'Снять готовность':'Я готов'}</button>`:''}${isHost?`<button class="btn" data-command="lobby-start" ${canStart?'':'disabled'}>Начать игру</button>`:''}</div>
       <h2 style="margin-top:20px">Участники</h2><div class="lobby-participants">${players.map(person).join('')||'<p class="lead">Игровые места пока свободны.</p>'}</div>
@@ -406,6 +406,28 @@
   function showRoomRulesEditor(){
     const state=roomService.snapshot(room.id),g=meta(state.game.id),presets=g.presets?.length?g.presets:[{id:'default',label:'Классический'}],fields=catalog[state.game.id]?.settings||[];
     openModal(`${modalHead('Правила · '+g.name)}<form id="room-rules-form" data-game="${esc(state.game.id)}"><label class="field"><span>Набор правил</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<label class="field"><span>${esc(field.label)}</span><select name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></label>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>Открытые руки</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}<p class="lead">После сохранения готовность всех игроков будет снята, а участники получат уведомление об изменении правил.</p><div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">Просмотреть правила</button><button class="btn" type="submit">Сохранить правила</button></div></form>`);
+  }
+  function showRoomGameEditor(){
+    if(!room||roomService.snapshot(room.id).phase!=='lobby'||room.ownerId!==lobbyParticipantId)return;
+    const available=E.GAMES.filter(g=>V.supports(g.id,'player')&&V.supports(g.id,'table'));
+    if(!available.length)return toast('Нет установленных игр с сетевым режимом.');
+    openModal(`${modalHead('Сменить игру в комнате')}<form id="room-game-form"><label class="field"><span>Новая игра</span>
+      <select name="gameId">${available.map(g=>`<option value="${esc(g.id)}" ${g.id===room.game.id?'selected':''}>${esc(g.name)}</option>`).join('')}</select></label>
+      <p class="lead">Комната и подключённые устройства сохраняются. Все участники подтвердят готовность заново. Если мест окажется недостаточно, сперва освободите лишние слоты.</p>
+      <div class="modal-foot"><button class="btn secondary" type="button" data-command="close-modal">Отмена</button><button class="btn" type="submit">Выбрать игру</button></div></form>`);
+  }
+  function updateRoomGame(form){
+    try{
+      const gameId=form.elements.gameId.value,g=meta(gameId),active=activatePack(gameId);
+      if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error('Этот пак пока не поддерживает сетевую игру.');
+      const preset=g.presets?.[0]||{id:'default',label:'Основной набор'};
+      const rules={preset:preset.id,presetLabel:preset.label||preset.name||preset.id,openHands:false,
+        options:Object.fromEntries((catalog[gameId]?.settings||[]).map(field=>[field.key,field.default??field.options?.[0]?.value]))};
+      rules.display=Multiplayer.describeRules(rules,catalog[gameId]?.settings||[],!!catalog[gameId]?.capabilities?.hands);
+      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version},rules,
+        constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      closeModal(true);renderLobby();toast('Игра изменена. Участникам необходимо подтвердить готовность.');
+    }catch(error){toast(error.message);}
   }
   function updateRoomRules(form){try{room=roomService.updateRules(room.id,lobbyParticipantId,roomRulesFromForm(form));closeModal(true);renderLobby();toast('Правила изменены. Игрокам нужно подтвердить готовность заново.');}catch(error){toast(error.message);}}
   function toggleLobbyReady(){try{const me=room.participants.find(p=>p.id===lobbyParticipantId);room=roomService.setReady(room.id,lobbyParticipantId,!me?.ready);renderLobby();}catch(error){toast(error.message);}}
@@ -494,7 +516,7 @@
     resume(){resumeSession();},
     packs(){packUI?.open();},
     help:showHelp,settings:showSettings,'card-help':showCardHelp,fullscreen,rules:()=>showRules(),
-    'room-rules':showRoomRulesEditor,
+    'room-rules':showRoomRulesEditor,'room-change-game':showRoomGameEditor,
     'lobby-ready':toggleLobbyReady,
     'lobby-spectator':becomeLobbySpectator,
     'lobby-start':startLobbyCountdown,
@@ -547,6 +569,7 @@
     else if(event.target.id==='profile-form'){event.preventDefault();savePlayerProfile(event.target);}
     else if(event.target.id==='lobby-nickname-form'){event.preventDefault();updateLobbyNickname(event.target);}
     else if(event.target.id==='room-rules-form'){event.preventDefault();updateRoomRules(event.target);}
+    else if(event.target.id==='room-game-form'){event.preventDefault();updateRoomGame(event.target);}
   });
   document.addEventListener('change',event=>{
     if(event.target.closest('#setup-form')&&['players','mode'].includes(event.target.name))updateNames();
@@ -562,7 +585,12 @@
       if(['setting-sound','setting-volume'].includes(event.target.id))void previewSound();
     }
   });
-  document.addEventListener('input',event=>{if(event.target.id==='replay-range')scrubHistory(Number(event.target.value));});
+  document.addEventListener('input',event=>{
+    // The shared network/archive viewer also uses #replay-range. Never let an
+    // unrelated local Session (possibly a DIFFERENT game) render into it.
+    if(screen==='table'&&event.target.id==='replay-range'&&
+        event.target.closest('.table-shell:not(.network-game)'))scrubHistory(Number(event.target.value));
+  });
   document.addEventListener('keydown',event=>{
     if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-accuse-player]')){event.preventDefault();showPlayerActions(Number(event.target.dataset.accusePlayer));return;}
     if(event.key==='Escape'){
@@ -598,13 +626,18 @@
     if(room&&room.id!==roomId)throw Error('Сначала завершите текущую комнату.');
     room=recovered;lobbyParticipantId=playerProfile.id;screen='lobby';lobbyCountdown=null;
   }
+  function returnHostedRoomToLobby(roomId){
+    if(room?.id!==roomId)throw Error('Комната хоста изменена.');
+    room=roomService.snapshot(roomId);lobbyCountdown=null;screen='lobby';
+    closeModal(true);renderLobby();
+  }
   function rollbackHostedRoom(roomId){
     if(room?.id!==roomId)return;
     room=null;lobbyParticipantId=null;lobbyCountdown=null;screen='hub';
     renderHub();
   }
   function showSessions(){screen='hub';hubTab='sessions';closeModal(true);renderHub();}
-  globalThis.PlayroomAppBridge=Object.freeze({showSessions,restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
+  globalThis.PlayroomAppBridge=Object.freeze({showSessions,showHub:()=>leaveTable('games'),parkLocalSession:()=>{if(screen==='table')leaveTable('games');},returnHostedRoomToLobby,restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const important=ids.filter(id=>!['move','draw','notify'].includes(id));

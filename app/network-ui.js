@@ -4,7 +4,7 @@
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
-  let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientPresence=null,clientPresenceUnsub=null;
+  let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const pairingQrGenerations=new Map();
   const connectedHostPeers=[];
@@ -274,14 +274,14 @@
   const microphoneReady=()=>!Acoustic?.microphoneIssue?.()&&typeof Acoustic?.listen==='function'&&audioOutput();
   const soundOutputReady=token=>audioOutput()&&typeof token==='string'&&token.startsWith(Pairing.COMPACT_PREFIX);
   function methodAvailability(stage,token){
-    const outgoing=stage!=='client-join',share=outgoing?!!PWA?.canShare?.():!!(PWA?.secure&&PWA?.standalone);
+    const outgoing=stage!=='client-join',share=outgoing?!!PWA?.canShare?.(token):!!(PWA?.secure&&PWA?.standalone);
     const microphone=microphoneReady(),soundOut=outgoing&&soundOutputReady(token);
-    const sound=stage==='client-join'?microphone:stage==='host-offer'?microphone||soundOut:soundOut;
+    const sound=stage==='client-join'?microphone:stage==='host-offer'?microphone&&soundOut:soundOut;
     return {
-      share:{available:share,reason:outgoing?'Нет системного меню':'Нужна установленная PWA'},
+      share:{available:share,reason:outgoing?'Системное меню недоступно на этом адресе или для данного приглашения':'Нужна установленная HTTPS PWA'},
       sound:{available:sound,reason:!audioOutput()?'Нет звукового модуля':
         stage==='client-join'?'Нет доступа к микрофону':
-        stage==='host-offer'?'Нужен IPv4 или микрофон':'Нужен IPv4 UDP'},
+        stage==='host-offer'?'Для полного звукового обмена нужны PR3 и микрофон; отдельная передача доступна при PR3':'Нужен IPv4 UDP'},
       qr:{available:outgoing?!!QR?.render:!!Scanner?.scan,reason:'Нет QR-модуля'},
       text:{available:true,reason:''}
     };
@@ -330,6 +330,7 @@
     }
     const count=missing.children.length;unavailable.hidden=count===0;
     unavailable.querySelector('.pairing-unavailable-count').textContent=String(count);
+    const shareButton=wrapper.querySelector('[data-net-share]');if(shareButton)shareButton.disabled=!states.share.available;
     const sending=soundOutputReady(token),receiving=microphoneReady();
     for(const [id,can] of [['net-host-acoustic',sending&&receiving],['net-host-acoustic-send',sending],
       ['net-host-acoustic-listen',receiving],['net-client-acoustic-send',sending]]){
@@ -353,7 +354,20 @@
   }
   const pairingFooter=()=>'<p class="pairing-origin-note">Для некоторых способов нужен HTTPS/PWA. Сетевые сохранения требуют постоянного адреса приложения.</p>';
   function toast(text){bridge()?.toast?.(text);}
-  function copy(id){if(id==='net-host-token')updatePairingToken('host');if(id==='net-client-token')updatePairingToken('client');const field=document.getElementById(id);if(!field?.value)return toast('Сначала выберите соединение или укажите корректный IPv4.');field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
+  function copy(id){
+    if(id==='net-host-token')updatePairingToken('host');if(id==='net-client-token')updatePairingToken('client');
+    const field=document.getElementById(id);if(!field?.value)return toast('Сначала выберите соединение или укажите корректный IPv4.');
+    // Synchronous copy can work in Android content:// even when the modern
+    // async Clipboard API is disallowed by the origin. Never claim success
+    // unless one of these APIs actually confirms it.
+    field.focus();field.select?.();field.setSelectionRange?.(0,field.value.length);
+    let copied=false;try{copied=!!document.execCommand?.('copy');}catch(_){}
+    if(copied){toast('Скопировано в буфер обмена.');return;}
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано в буфер обмена.'))
+        .catch(()=>toast('Копирование заблокировано браузером. Нажмите и удерживайте выделенный текст → «Копировать».'));
+    }else toast('Браузер запрещает копирование с этой страницы. Нажмите и удерживайте выделенный текст → «Копировать».');
+  }
   async function copyText(value){try{await navigator.clipboard.writeText(value);toast('Скопировано');}catch(_){toast('Не удалось скопировать автоматически. Используйте поле в «Другие способы».');}}
   async function sharePair(kind){
     try{const token=updatePairingToken(kind==='offer'?'host':'client');if(!token)throw Error('Сначала выберите соединение или укажите корректный IPv4.');await PWA.shareToken(token);}catch(error){toast(error.message);}
@@ -408,7 +422,7 @@
       toast('QR: '+(error?.message||String(error)));
     }
   }
-  function closeClient(){clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
+  function closeClient(){clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
   function closePendingHostPeer(){
     stopHostAudio();hostServeClose?.();hostServeClose=null;
     hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;
@@ -480,14 +494,15 @@
       if(card&&room.ownerId===b.participantId?.()&&!document.getElementById('network-pair-button')){const actions=card.querySelector('.lobby-actions');if(actions){const btn=document.createElement('button');btn.className='btn';btn.id='network-pair-button';btn.type='button';btn.textContent='Подключить устройство';actions.prepend(btn);}}
     }
   }
+  function handleHostRoomState(state){
+    if(state.phase==='playing'&&!hostStarted)startHostGame(state).catch(error=>toast(error.message));
+    else if(document.querySelector('.lobby-shell'))bridge().renderLobby();
+    if(state.phase==='playing'){notifyPresence(state);renderPresence();}
+  }
   function ensureHostSubscription(room){
     if(hostRoomId===room.id)return;
     hostRoomUnsub?.();hostRoomUnsub=null;hostRoomId=room.id;hostStarted=false;closeHostPeer();
-    hostRoomUnsub=bridge().roomService.subscribe(room.id,state=>{
-      if(state.phase==='playing'&&!hostStarted)startHostGame(state).catch(error=>toast(error.message));
-      else if(document.querySelector('.lobby-shell'))bridge().renderLobby();
-      if(state.phase==='playing'){notifyPresence(state);renderPresence();}
-    });
+    hostRoomUnsub=bridge().roomService.subscribe(room.id,handleHostRoomState);
   }
   function hostPeerServing(peer,switchable,roomConnection,roomId){
     // Keep the original lobby capability for identity binding, even after the
@@ -528,7 +543,7 @@
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
       hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
       const network=initialNetworkChoice('host',hostPeer.offer);offerToken=network.token;
-      const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.()?'':'disabled')+'>↗ Поделиться</button>';
+      const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.(offerToken)?'':'disabled')+'>↗ Поделиться</button>';
       const sound='<div class="pairing-actions">'+
         '<button class="btn pairing-compact-button" id="net-host-acoustic" type="button" '+captureDisabled()+' title="Передать звуком и слушать ответ">🔊 + 🎙 Передать и слушать</button>'+
         '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-send" type="button" title="Отправить сигнал через динамик">🔊 Передать</button>'+
@@ -570,10 +585,14 @@
       pairingMethods('client-join',{share,sound,qr,text})+pairingFooter());
   }
   async function createClientAnswer(signal,{acoustic=false}={}){
+    // A QR/share invite may arrive while a DIFFERENT local game is active.
+    // Persist and park that game before mounting network UI: otherwise local
+    // bots and input/replay listeners can repaint the network scene.
+    bridge()?.parkLocalSession?.();
     closeClient();clientPeer=await W.createClientPeer(signal);
     const network=initialNetworkChoice('client',clientPeer.answer);answerToken=network.token;
     const b=bridge();
-    const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.()?'':'disabled')+'>↗ Поделиться ответом</button>';
+    const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.(answerToken)?'':'disabled')+'>↗ Поделиться ответом</button>';
     const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-send" type="button">🔊 Передать ответ</button>'+soundSettings('client');
     const qr=pairingQr('net-client-token');
     const text=pairingText(answerToken,'net-client-token');
@@ -607,7 +626,7 @@
         bridge().closeModal(true);
         const state=await clientTransport.snapshot();
         if(state?.kind==='snapshot')startClientGame(state);
-        else{clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});renderClientLobby();}
+        else{attachClientLobbyListener();renderClientLobby();}
         return;
       }catch(error){
         toast('Автовозврат не удался: '+error.message+' Можно присоединиться новым игроком.');
@@ -651,17 +670,68 @@
         if(!persisted)toast('Место занято, но браузер не сохранил ключ возврата. Без него нельзя вернуться после перезапуска.');
       }
       b.closeModal(true);
-      clientUnsub=clientTransport.subscribe(snapshot=>{if(snapshot?.kind==='lobby'){clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;renderClientLobby();}else if(snapshot?.kind==='snapshot')startClientGame(snapshot);});
+      attachClientLobbyListener();
       renderClientLobby();
     }catch(error){toast(error.message);}
   }
   function participant(room,id){return room.participants.find(p=>p.id===id);}
+  function attachClientLobbyListener(){
+    clientUnsub?.();clientUnsub=clientTransport.subscribe(snapshot=>{
+      if(snapshot?.kind==='lobby'){
+        clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;
+        if(clientGameClient){
+          clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;
+          clientMount?.destroy?.();clientMount=null;
+          clientGameClient.close({keepTransport:true});clientGameClient=null;
+        }
+        clientWaitingForLobby=false;renderClientLobby();
+      }else if(snapshot?.kind==='snapshot'&&!clientWaitingForLobby){startClientGame(snapshot);}
+    });
+  }
+  function clientToLobby({waiting=false}={}){
+    if(!clientTransport||!clientRoom)return;
+    clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;
+    clientMount?.destroy?.();clientMount=null;
+    clientGameClient?.close({keepTransport:true});clientGameClient=null;
+    clientWaitingForLobby=waiting;
+    attachClientLobbyListener();renderClientLobby();
+  }
+  function exitClientGame({finished=false}={}){
+    if(finished){clientToLobby({waiting:clientRoom?.phase!=='lobby'});return;}
+    closeClient();bridge().showHub();
+  }
+  function exitHostGame({finished=false}={}){
+    const b=bridge(),roomId=hostRoomId;
+    if(finished&&roomId&&hostGameClient?.snapshot?.state?.status==='finished'){
+      // A completed game remains in its immutable SessionStore journal.
+      // Rebind existing RTC channels to room (instead of a new QR pairing).
+      b.roomService.returnToLobby(roomId,b.participantId());
+      for(const item of connectedHostPeers)if(item.roomConnection?.participantId)
+        item.switchable?.set(item.roomConnection);
+      hostMount?.destroy?.();hostMount=null;
+      hostGameClient?.close?.();hostGameClient=null;
+      hostAuthority?.dispose?.();hostAuthority=null;
+      hostLockRelease?.();hostLockRelease=null;
+      hostStarted=false;
+      b.returnHostedRoomToLobby(roomId);
+      toast('Комната готова к новой игре. Все участники подтвердят готовность.');
+      return;
+    }
+    // Unfinished games are preserved for explicit recovery. Leaving is never
+    // a delete, and requires no navigation/reload on Android content://.
+    closeHostPeer();hostGameClient?.close?.();hostGameClient=null;
+    hostAuthority?.dispose?.();hostAuthority=null;
+    hostLockRelease?.();hostLockRelease=null;
+    hostRoomUnsub?.();hostRoomUnsub=null;hostRoomId=null;hostStarted=false;
+    if(roomId)b.rollbackHostedRoom?.(roomId);
+    b.showHub();
+  }
   function renderClientLobby(){
     if(!clientRoom)return;const room=clientRoom,me=participant(room,clientParticipantId),app=document.getElementById('app');
     const personBy=id=>participant(room,id);
     const seats=room.seats.map(seat=>{const p=personBy(seat.participantId),mine=p?.id===clientParticipantId,locked=room.phase!=='lobby'||!!me?.ready;return '<button class="lobby-seat '+(p?'occupied':'available')+'" data-net-seat="'+esc(seat.id)+'" '+(locked||(p&&!mine)?'disabled':'')+'><span class="seat-color" style="background:'+esc(seat.color.value)+'"></span><span><strong>'+(p?esc(p.nickname):esc(seat.color.label)+' слот')+'</strong><small>'+(p?(p.ready?'<span class="lobby-ready">Готов</span>':'<span class="lobby-not-ready">Не готов</span>'):'Нажмите, чтобы занять место')+'</small></span></button>';}).join('');
     const list=room.participants.map(p=>'<div class="lobby-person"><span><strong>'+esc(p.nickname)+(p.isHost?' · хост':'')+'</strong><small>'+(p.role==='spectator'?'Зритель':p.role==='table'?'Стол':p.ready?'Готов':'Игрок')+'</small></span></div>').join('');
-    app.inert=false;app.innerHTML='<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>'+esc(room.name)+'</h1><p>'+esc(room.game.name)+' · '+esc(room.rules?.presetLabel||'Основной набор')+'</p></div><span class="lobby-code">#'+esc(room.code)+'</span></header><div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">'+seats+'</div><h3>Правила комнаты</h3>'+rulesMarkup(room)+'<div class="lobby-actions">'+(me?.role==='player'?'<button class="btn secondary" data-net-action="spectator" '+(me.ready?'disabled':'')+'>Стать зрителем</button>':'')+'<button class="btn secondary" data-net-action="rules">Выбранные правила</button></div></section><aside class="lobby-card"><h2>Вы в комнате</h2><form id="net-client-nickname" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="'+esc(me?.nickname||'')+'" '+(me?.ready?'disabled':'')+'></label><button class="btn secondary" type="submit" '+(me?.ready?'disabled':'')+'>Сохранить</button></form><div class="lobby-actions">'+(me?.role==='player'?'<button class="btn" data-net-action="ready">'+(me.ready?'Снять готовность':'Я готов')+'</button>':'')+'<button class="btn secondary" data-net-action="leave">Выйти</button></div><h2 style="margin-top:20px">Участники</h2><div class="lobby-participants">'+list+'</div></aside></div></div>'+(room.phase==='starting'?'<div class="lobby-countdown" role="status"><div><strong id="net-countdown">3</strong><p>Игра начинается…</p></div></div>':'')+'</main>';
+    app.inert=false;app.innerHTML='<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header"><div><span class="eyebrow muted">СЕТЕВАЯ КОМНАТА</span><h1>'+esc(room.name)+'</h1><p>'+esc(room.game.name)+' · '+esc(room.rules?.presetLabel||'Основной набор')+'</p></div><span class="lobby-code">#'+esc(room.code)+'</span></header>'+(clientWaitingForLobby?'<p class="rules-mode-note" role="status">Партия завершена. Ждём, пока хост вернёт комнату в лобби.</p>':'')+'<div class="lobby-grid"><section class="lobby-card"><h2>Игровые места</h2><div class="lobby-seats">'+seats+'</div><h3>Правила комнаты</h3>'+rulesMarkup(room)+'<div class="lobby-actions">'+(me?.role==='player'?'<button class="btn secondary" data-net-action="spectator" '+(me.ready?'disabled':'')+'>Стать зрителем</button>':'')+'<button class="btn secondary" data-net-action="rules">Выбранные правила</button></div></section><aside class="lobby-card"><h2>Вы в комнате</h2><form id="net-client-nickname" class="lobby-profile"><label class="field"><span>Никнейм</span><input name="nickname" maxlength="24" value="'+esc(me?.nickname||'')+'" '+(me?.ready?'disabled':'')+'></label><button class="btn secondary" type="submit" '+(me?.ready?'disabled':'')+'>Сохранить</button></form><div class="lobby-actions">'+(me?.role==='player'?'<button class="btn" data-net-action="ready" '+(room.phase!=='lobby'?'disabled':'')+'>'+(me.ready?'Снять готовность':'Я готов')+'</button>':'')+'<button class="btn secondary" data-net-action="leave">Выйти</button></div><h2 style="margin-top:20px">Участники</h2><div class="lobby-participants">'+list+'</div></aside></div></div>'+(room.phase==='starting'?'<div class="lobby-countdown" role="status"><div><strong id="net-countdown">3</strong><p>Игра начинается…</p></div></div>':'')+'</main>';
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
@@ -694,7 +764,7 @@
       const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
       const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();renderPresence();notifyPresence(room);
+      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined',onExit:exitHostGame});hostMount.render();renderPresence();notifyPresence(room);
     }catch(error){
       hostGameClient?.close?.();hostGameClient=null;
       hostAuthority?.dispose?.();hostAuthority=null;
@@ -807,11 +877,11 @@
       hostLockRelease=pendingRelease;pendingRelease=null;
       hostRoomId=room.id;hostStarted=true;hostAuthority=authority;
       hostRoomUnsub?.();
-      hostRoomUnsub=b.roomService.subscribe(room.id,state=>{if(state.phase==='playing'){notifyPresence(state);renderPresence();}});
+      hostRoomUnsub=b.roomService.subscribe(room.id,handleHostRoomState);
       const local=LocalTransport(authority.connect(viewer));
       hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       b.closeModal(true);document.getElementById('app').inert=false;
-      hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined'});
+      hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined',onExit:exitHostGame});
       hostMount.render();renderPresence();
       toast('Сетевая партия восстановлена. Предложите гостям новый QR для возвращения на прежние места.');
     }catch(error){
@@ -900,13 +970,14 @@
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
       const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
       clientGameClient=new SessionClient(clientTransport);clientGameClient.accept(snapshot);
+      attachClientLobbyListener();clientWaitingForLobby=false;
       if(clientHistoryStore&&clientRoom?.id&&clientParticipantId){
         clientHistoryUnsub=clientGameClient.subscribe(saveClientProjection);
         saveClientProjection(snapshot);
         void backfillClientHistory(snapshot,clientTransport,clientRoom.id,clientParticipantId);
       }
       document.getElementById('modal-root').innerHTML='';document.getElementById('app').inert=false;
-      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'combined'});clientMount.render();renderPresence();
+      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'combined',onExit:exitClientGame});clientMount.render();renderPresence();
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
@@ -933,7 +1004,7 @@
     if(target.dataset.netSeat)return roomCommand({type:'claim-seat',seatId:target.dataset.netSeat});
     if(target.dataset.netAction==='ready'){const me=participant(clientRoom,clientParticipantId);return roomCommand({type:'ready',ready:!me?.ready});}
     if(target.dataset.netAction==='spectator')return roomCommand({type:'spectator'});
-    if(target.dataset.netAction==='leave'){closeClient();location.reload();return;}
+    if(target.dataset.netAction==='leave'){closeClient();bridge().showHub();return;}
     if(target.dataset.netAction==='rules')return bridge().openModal(bridge().modalHead('Правила · '+clientRoom.game.name)+rulesMarkup(clientRoom));
   },true);
   document.addEventListener('change',event=>{

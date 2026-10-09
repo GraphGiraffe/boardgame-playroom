@@ -25,3 +25,12 @@ test('client history key separates room from participant and does not expose bea
   assert.notEqual(Store.id('room-1','participant-2'),Store.id('room-1','participant-3'));
   assert.throws(()=>Store.id('', 'participant'));
 });
+
+test('client match IDs are scoped by Session, not only by room/seat',()=>{
+  const id1=Store.id('room-1','participant-2','uno-session');
+  const id2=Store.id('room-1','participant-2','checkers-session');
+  assert.notEqual(id1,id2);
+  assert.equal(id1,'room-1|participant-2|uno-session');
+  // Previously saved RC7-derived entries retain their old archive ID.
+  assert.equal(Store.id('room-1','participant-2'),'room-1|participant-2');
+});

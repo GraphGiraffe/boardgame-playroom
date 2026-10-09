@@ -179,6 +179,33 @@
       room.lobbyRevision++;this._touch(room);this._emit(room,'became-spectator',participant.nickname+' теперь зритель.',{participantId});
       return this.snapshot(roomId);
     }
+    changeGame(roomId,hostId,{game,rules={},constraints}={}){
+      const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      if(!game?.id||!game?.name||!game?.version)throw Error('Выберите установленный пак игры.');
+      const next=this._constraints(constraints);
+      const occupied=room.seats.filter(seat=>seat.participantId);
+      if(occupied.some(seat=>seat.index>=next.max)||occupied.length>next.max)
+        throw Error('В новой игре меньше мест. Освободите лишние слоты перед сменой игры.');
+      const players=room.participants.filter(p=>p.role==='player'&&p.seatId).length;
+      if(players>next.max)throw Error('В новой игре недостаточно мест для участников.');
+      room.seats=Array.from({length:next.max},(_,i)=>room.seats[i]||
+        {id:'seat-'+(i+1),index:i,color:this._color(i),participantId:null});
+      room.game=clone(game);room.rules=clone(rules);room.constraints=next;
+      room.rulesRevision++;room.lobbyRevision++;
+      for(const p of room.participants)p.ready=false;
+      this._touch(room);this._emit(room,'game-changed','Хост выбрал '+room.game.name+'. Проверьте игру и подтвердите готовность снова.',{gameId:game.id});
+      return this.snapshot(roomId);
+    }
+    returnToLobby(roomId,hostId){
+      const room=this._room(roomId);this._host(room,hostId);
+      if(room.phase!=='playing')throw Error('Комната не находится в игре.');
+      // The caller must verify that the authoritative match is FINISHED.
+      // It remains in its immutable per-session IndexedDB journal.
+      room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
+      for(const p of room.participants)p.ready=false;
+      this._touch(room);this._emit(room,'new-match-lobby','Партия завершена. Выберите следующую игру и подтвердите готовность.');
+      return this.snapshot(roomId);
+    }
     setReady(roomId,participantId,ready){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);
       if(participant.role!=='player'||!participant.seatId)throw Error('Сначала выберите игровое место.');

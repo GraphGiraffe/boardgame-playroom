@@ -28,6 +28,23 @@
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
     const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
+    function fitReplayScene(){
+      if(!historyOpen||destroyed)return;
+      const scene=app.querySelector('.scene.replaying'),stage=scene?.firstElementChild;
+      if(!scene||!stage)return;
+      stage.style.zoom='';stage.style.width='';stage.style.minHeight='';
+      const viewportWidth=scene.clientWidth,viewportHeight=scene.clientHeight;
+      if(!viewportWidth||!viewportHeight)return;
+      // Preserve the pack renderer and aspect ratios. Scale its complete
+      // snapshot only in read-only replay, never on the live interactive table.
+      const ratio=Math.min(1,(viewportWidth-4)/Math.max(1,stage.scrollWidth),
+        (viewportHeight-4)/Math.max(1,stage.scrollHeight));
+      if(ratio>=0.985)return;
+      const scale=Math.max(0.2,ratio);
+      stage.style.zoom=String(scale);
+      stage.style.width=(100/scale)+'%';
+      stage.style.minHeight='0';
+    }
     function render(){
       if(destroyed)return;
       const live=client.snapshot,s=historyOpen&&historySnapshot?historySnapshot:live;
@@ -50,11 +67,12 @@
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
-        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
-        footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'result',label:'Результаты',icon:'arrow'}:{command:'home',label:'К играм',icon:'back'}
+        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':finished&&!readOnly?'<button class="text-btn" data-command="result">Результаты</button>':'',
+        footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       HandOverflow.sync(app);
+      if(historyOpen){fitReplayScene();root.requestAnimationFrame?.(()=>fitReplayScene());}
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
     }
     function show(content){
@@ -104,7 +122,10 @@
         }
         case 'home':
           if(readOnly){onExit?.();break;}
-          if(root.confirm('Покинуть сетевую партию? Пока организатор остаётся в игре, связь сохраняется.'))root.location.reload();
+          if(client.snapshot?.state?.status==='finished'||root.confirm('Покинуть сетевую партию? Сохранение останется в «Моих партиях».')){
+            if(onExit)onExit({finished:client.snapshot?.state?.status==='finished'});
+            else root.location.reload();
+          }
           break;
         case 'settings':root.PlayroomAppBridge?.showSettings?.();break;
         case 'rules':case 'card-help':show('<h2>Правила игры</h2>'+pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join(''));break;
@@ -142,11 +163,17 @@
       }
       input.handleClick(event);
     }
-    function onInput(event){
+    function historySliderInput(event){
       if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
       event.stopPropagation();
+      // Keep pointer capture while dragging: show the requested frame index,
+      // but do not rebuild the whole board until change / pointer release.
       stopReplay();
       app.querySelector('.replay-badge')?.replaceChildren(document.createTextNode(event.target.value+' / '+historyCount()));
+    }
+    function historySliderChange(event){
+      if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
+      event.stopPropagation();
       void viewHistory(Number(event.target.value)).catch(error=>toast(error.message));
     }
     function keydown(event){
@@ -184,13 +211,14 @@
     }
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);
-    document.addEventListener('change',onInput,true);
+    document.addEventListener('input',historySliderInput,true);
+    document.addEventListener('change',historySliderChange,true);
     document.addEventListener('keydown',keydown,true);
     const resize=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('resize',resize);
     const onOptions=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){stopReplay();stopMotion();}};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('change',onInput,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+      destroy(){destroyed=true;stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

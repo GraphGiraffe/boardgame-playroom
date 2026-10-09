@@ -22,7 +22,7 @@ async function profile(page,name,url){
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').waitFor();
 }
-async function pair(host,guest){
+async function pair(host,guest,{shareHandoff=false}={}){
   // The same live PR2/PR3 offer/answer flow used by the normal QR screen.
   // Browser text transport avoids requiring a camera in CI; the QR decoder
   // itself is already exercised by qr-pairing-browser.test.cjs.
@@ -30,9 +30,14 @@ async function pair(host,guest){
   await host.locator('#net-host-token').waitFor();
   const offer=await host.locator('#net-host-token').inputValue();
   assert.match(await host.evaluate(value=>PlayroomPairing.extract(value),offer),/^PR[23]\./);
-  await guest.locator('#network-join-button').click();
-  await guest.locator('#net-client-offer textarea[name=offer]').fill(offer);
-  await guest.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+  if(shareHandoff){
+    await guest.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',
+      {data:{kind:'playroom-pair-token',token}})),await host.evaluate(link=>PlayroomPairing.extract(link),offer));
+  }else{
+    await guest.locator('#network-join-button').click();
+    await guest.locator('#net-client-offer textarea[name=offer]').fill(offer);
+    await guest.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+  }
   await guest.locator('#net-client-token').waitFor({timeout:15000});
   const answer=await guest.locator('#net-client-token').inputValue();
   await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
@@ -66,13 +71,22 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           guest.on('pageerror',e=>errors.push('guest '+index+' '+e.message));
           await profile(guest,'Гость '+index,url);guests.push(guest);
         }
+        // The guest can receive a PlayRoom Share Target while a completely
+        // different local game is open. Its bots/replay must be parked, and
+        // must never repaint the incoming UNO network session.
+        if(mode==='network-player'){
+          await guests[0].locator('[data-start="checkers"]').click();
+          await guests[0].locator('#setup-form').evaluate(f=>f.requestSubmit());
+          await guests[0].locator('.table-shell:not(.network-game)').waitFor();
+          assert.match(await guests[0].locator('.table-title h1').innerText(),/Шашки/);
+        }
         await host.locator('[data-start="uno"]').click();
         await host.locator(`#setup-form input[name=mode][value=${mode}]`).check();
         await host.locator('#setup-form input[name=roomName]').fill('Продолжение LAN-01');
         await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
         await host.locator('.lobby-shell').waitFor();
-        for(const guest of guests){
-          await pair(host,guest);
+        for(const [guestIndex,guest] of guests.entries()){
+          await pair(host,guest,{shareHandoff:mode==='network-player'&&guestIndex===0});
           await guest.locator('#net-client-join').evaluate(f=>f.requestSubmit());
           await guest.locator('.lobby-shell').waitFor();
           await guest.locator('[data-net-seat]:not(:disabled)').first().click();
@@ -91,6 +105,35 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>rev,initial);
         const savedRevision=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
         for(const guest of guests)await guest.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)===rev,savedRevision);
+        if(mode==='network-player'){
+          const guest=guests[0];
+          await guest.locator('.table-tools [data-command=history]').click();
+          await guest.locator('#replay-range').waitFor();
+          // The input event is fired while a finger is DRAGGING, not released.
+          // The old app-level #replay-range handler once repainted a local
+          // Checkers session into this UNO game at exactly this moment.
+          const during=await guest.locator('#replay-range').evaluate(slider=>{
+            slider.value='0';slider.dispatchEvent(new Event('input',{bubbles:true}));
+            return {title:document.querySelector('.table-title h1')?.textContent,
+              game:document.querySelector('.table-shell.network-game .scene .game-scene')?.className,
+              inNetwork:!!document.querySelector('.table-shell.network-game')};
+          });
+          assert.equal(during.inNetwork,true);
+          assert.equal(during.title?.trim(),'UNO','local Checkers cannot render while scrubbing the guest UNO replay');
+          await guest.locator('#replay-range').evaluate(slider=>slider.dispatchEvent(new Event('change',{bubbles:true})));
+          await guest.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
+          assert.equal((await guest.locator('.table-title h1').innerText()).trim(),'UNO');
+          const fit=await guest.evaluate(()=>{
+            const scene=document.querySelector('.table-shell.network-game .scene.replaying'),stage=scene?.firstElementChild;
+            if(!scene||!stage)return {exists:false};
+            return {exists:true,viewportHeight:scene.getBoundingClientRect().height,
+              stageHeight:stage.getBoundingClientRect().height,scrollExcess:scene.scrollHeight-scene.clientHeight};
+          });
+          assert.equal(fit.exists,true);
+          assert.ok(fit.stageHeight<=fit.viewportHeight+8,'the replay board must fit above history controls: '+JSON.stringify(fit));
+          assert.ok(fit.scrollExcess<=8,'network replay must not require internal page scrolling: '+JSON.stringify(fit));
+          await guest.locator('[data-command="history-close"]').click();
+        }
         // Each guest persists only projected frames (never host authority or
         // private resume capabilities) before the host page disappears.
         for(const guest of guests){
@@ -166,6 +209,14 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         const action=nextPage.locator('.table-shell.network-game .scene [data-action]').first();
         await action.waitFor({timeout:12000});await action.click();
         await host.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>rev,savedRevision);
+        if(mode==='network-player'){
+          // Android content:// cannot safely rely on location.reload() as an
+          // exit mechanism. Leaving the game must close RTC and show the hub.
+          await guests[0].evaluate(()=>{window.confirm=()=>true;});
+          await guests[0].locator('.table-shell.network-game .table-header [data-command=home]').click();
+          await guests[0].locator('.game-grid').waitFor({timeout:10000});
+          await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length>=1);
+        }
         assert.deepEqual(errors,[]);
       }finally{
         await Promise.all(contexts.map(c=>c.close().catch(()=>{})));await browser.close();

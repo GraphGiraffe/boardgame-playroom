@@ -1,7 +1,7 @@
 'use strict';
 // Unreleased LAN-01 candidate: invalidate cached code after host-journal and
 // recovery changes. Immutable published RC6 assets are not modified.
-const CACHE='playroom-pwa-network-ux-dev.1';
+const CACHE='playroom-pwa-network-ux-dev.2';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',

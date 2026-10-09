@@ -53,9 +53,14 @@
       });
     }
     static frame(snapshot){return projectFrame(snapshot);}
-    static id(roomId,participantId){if(!id(roomId)||!id(participantId))throw Error('Некорректное игровое место.');return encodeURIComponent(roomId)+'|'+encodeURIComponent(participantId);}
+    static id(roomId,participantId,sessionId=null){
+      if(!id(roomId)||!id(participantId)||(sessionId!==null&&!id(sessionId)))throw Error('Некорректное игровое место.');
+      // Match scope is required: the same persistent room + participant may
+      // play multiple games without overwriting (or mixing) the old replay.
+      return [roomId,participantId,...(sessionId?[sessionId]:[])].map(encodeURIComponent).join('|');
+    }
     async save({roomId,participantId,roomName='',snapshot}){
-      const frame=projectFrame(snapshot),key=ClientHistory.id(roomId,participantId);
+      const frame=projectFrame(snapshot),key=ClientHistory.id(roomId,participantId,frame.sessionId);
       await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
         const matches=tx.objectStore('matches'),get=matches.get(key);
         get.onsuccess=()=>{

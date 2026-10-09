@@ -144,3 +144,56 @@ test('room options show the pack labels instead of technical option IDs',()=>{
   ]);
   assert.deepEqual(describeRules({...rules,options:{choice:2}},[{key:'choice',label:'Очки',options:[{value:2,label:'Два'}]}],false)[1],{label:'Очки',value:'Два'});
 });
+
+test('finished host returns the SAME room and peer seats to lobby without a new pairing',()=>{
+  const {rooms,room}=createRoom();
+  const joined=rooms.join(room.id,{id:'guest',nickname:'Маша'});
+  rooms.claimSeat(room.id,'guest','seat-2');
+  rooms.setReady(room.id,'host',true);rooms.setReady(room.id,'guest',true);
+  rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>2500;rooms.tick(room.id);
+  // In production network-ui checks the authority's finished status before
+  // invoking this host-only transition.
+  const oldToken=joined.resumeToken;
+  const next=rooms.returnToLobby(room.id,'host');
+  assert.equal(next.phase,'lobby');
+  assert.equal(next.id,room.id);
+  assert.equal(next.code,room.code);
+  assert.equal(next.seats[1].participantId,'guest');
+  assert.equal(next.participants.find(p=>p.id==='guest').ready,false);
+  assert.throws(()=>rooms.returnToLobby(room.id,'guest'),/только хосту/i);
+  assert.equal(rooms.canStart(room.id),false);
+  const connection=rooms.connection(room.id);
+  rooms.setConnected(room.id,'guest',false);
+  const resumed=connection.dispatch({type:'resume',participantId:'guest',resumeToken:oldToken});
+  assert.equal(resumed.resumed,true);
+  assert.equal(resumed.snapshot.participantId,'guest');
+});
+
+test('host can change network pack inside lobby while preserving members and clearing readiness',()=>{
+  const {rooms,room}=createRoom();
+  rooms.join(room.id,{id:'guest',nickname:'Маша'});
+  rooms.claimSeat(room.id,'guest','seat-2');
+  rooms.setReady(room.id,'host',true);rooms.setReady(room.id,'guest',true);
+  const updated=rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'0.1.0'},
+    rules:{preset:'basic',presetLabel:'Классика'},constraints:{min:2,max:2}});
+  assert.equal(updated.game.id,'checkers');
+  assert.equal(updated.code,room.code);
+  assert.equal(updated.seats.length,2);
+  assert.equal(updated.seats[1].participantId,'guest');
+  assert.equal(updated.participants.find(p=>p.id==='guest').ready,false);
+  assert.equal(updated.events.at(-1).type,'game-changed');
+  assert.throws(()=>rooms.changeGame(room.id,'guest',{game:{id:'uno',name:'UNO',version:'0.2.1'},constraints:{min:2,max:4}}),/хосту/i);
+  assert.throws(()=>rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'0.1.0'},constraints:{min:2,max:1}}),/ограничения/i);
+});
+
+test('host cannot silently drop an occupied seat when choosing a smaller pack',()=>{
+  const {rooms,room}=createRoom();
+  rooms.join(room.id,{id:'guest',nickname:'Маша'});
+  rooms.claimSeat(room.id,'guest','seat-4');
+  const original=rooms.snapshot(room.id);
+  assert.throws(()=>rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'0.1.0'},
+    constraints:{min:2,max:2}}),/меньше мест/i);
+  const after=rooms.snapshot(room.id);
+  assert.equal(after.game.id,original.game.id);
+  assert.equal(after.seats[3].participantId,'guest');
+});
