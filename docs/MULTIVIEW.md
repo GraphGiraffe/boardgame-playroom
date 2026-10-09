@@ -1,5 +1,8 @@
 # Исполнитель партии, клиентские проекции и миниатюры
 
+[Общий индекс RC6](DEVELOPER-INDEX.md) · [GameState/команды](DEVELOPER-GAMEPLAY.md) · [Network viewer/reconnect](DEVELOPER-MULTIPLAYER.md) · [Единый UI](DEVELOPER-UI.md)
+
+
 Документ фиксирует переиспользуемый контракт authority/projection из preview. Отдельный Node LAN-server и отдельные пользовательские client-страницы удалены: целевая сеть теперь browser-to-browser через `RTCDataChannel` внутри основного Playroom.
 
 ## Роли и границы
