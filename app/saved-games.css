@@ -19,3 +19,10 @@
  .saved-game-actions .btn{flex:1;min-height:46px}
  .saved-game-actions .icon-btn{min-height:46px}
 }
+
+/* Shared library filters: local sessions and privacy-scoped network archives. */
+.saved-filter-bar{display:flex;align-items:center;gap:8px;margin:-7px 0 20px;flex-wrap:wrap}
+.saved-filter-bar .filter{background:#e6eadc;border:1px solid transparent}
+.saved-filter-bar .filter.active{background:var(--green);color:white}
+.saved-network-info{font-size:12px;color:var(--muted);margin:-8px 0 14px}
+@media(max-width:760px){.saved-filter-bar{margin:0 0 16px}.saved-filter-bar .filter{padding:10px 13px}}

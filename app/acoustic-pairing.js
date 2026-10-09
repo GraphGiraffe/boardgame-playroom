@@ -245,7 +245,7 @@
   }
   async function moduleInstance(){
     if(typeof root.ggwave_factory!=='function')throw Error('Звуковой модуль не включён в сборку.');
-    if(!moduleInstance.pending)moduleInstance.pending=root.ggwave_factory();
+    if(!moduleInstance.pending)moduleInstance.pending=Promise.resolve().then(()=>root.ggwave_factory()).catch(error=>{moduleInstance.pending=null;throw error;});
     return moduleInstance.pending;
   }
   function audioContext(){
@@ -261,10 +261,13 @@
     return instance;
   }
   async function play(message,{protocol='fastest',volume=12}={}){
-    const gg=await moduleInstance(),context=audioContext();
-    let instance=null;
+    const context=audioContext();
+    let gg=null,instance=null;
     try{
-      await context.resume();instance=setup(gg,context);
+      // Android playback must establish AudioContext user activation before
+      // asynchronous ggwave Wasm preparation consumes the initial tap.
+      const loading=moduleInstance();
+      await context.resume();gg=await loading;instance=setup(gg,context);
       const protocolId=gg.ProtocolId[protocols[protocol]];
       if(protocolId===undefined)throw Error('Неизвестный звуковой протокол.');
       const waveform=gg.encode(instance,message,protocolId,volume);

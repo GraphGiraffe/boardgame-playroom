@@ -198,3 +198,29 @@ test('bundled ggwave encodes short audio payload without network dependencies',a
     assert.equal(wave.byteLength%4,0);
   }finally{gg.free(inst);}
 });
+
+test('failed first audio module initialization is retryable and playback resumes audio before async Wasm loading',async()=>{
+  const priorFactory=globalThis.ggwave_factory,priorContext=globalThis.AudioContext;
+  const calls=[];let attempts=0;
+  const gg={getDefaultParameters:()=>({}),init:()=>42,free:()=>{},
+    ProtocolId:{GGWAVE_PROTOCOL_AUDIBLE_FASTEST:7},encode:()=>new Float32Array([0,0.1,0.1,0])};
+  class FakeAudioContext{
+    constructor(){this.sampleRate=48000;this.destination={};}
+    async resume(){calls.push('resume');}
+    createBuffer(){return {copyToChannel(){}};}
+    createBufferSource(){return {connect(){},start(){queueMicrotask(()=>this.onended?.());},onended:null};}
+    async close(){calls.push('close');}
+  }
+  globalThis.AudioContext=FakeAudioContext;
+  globalThis.ggwave_factory=async()=>{calls.push('factory');if(++attempts===1)throw Error('temporary Wasm startup');return gg;};
+  try{
+    await assert.rejects(A.play('test'),/temporary Wasm startup/);
+    await A.play('test');
+    assert.equal(attempts,2,'the first rejected Wasm promise must not be permanently cached');
+    assert.equal(calls.filter(x=>x==='resume').length,2);
+    assert.equal(calls.filter(x=>x==='close').length,2);
+  }finally{
+    if(priorFactory===undefined)delete globalThis.ggwave_factory;else globalThis.ggwave_factory=priorFactory;
+    if(priorContext===undefined)delete globalThis.AudioContext;else globalThis.AudioContext=priorContext;
+  }
+});

@@ -34,4 +34,6 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.match(Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO'}),/Второй побеждает/);
   const dialog=Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO',scoreLabel:'очки',network:true});
   assert.match(dialog,/9|4/);assert.match(dialog,/result-replay/);assert.doesNotMatch(dialog,/Ещё партию/);
+  assert.match(dialog,/Вернуться в комнату/);
+  assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
 });

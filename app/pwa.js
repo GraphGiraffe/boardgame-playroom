@@ -40,11 +40,24 @@
     }
     return Pairing.protocolUrl(token);
   }
+  function sharePayload(token){
+    const value=Pairing.decode(token);
+    const data={title:value.kind==='offer'?'ХОД · приглашение в игру':'ХОД · ответ на приглашение',text:Pairing.shareText(token)};
+    // Android content:// and file:// may expose navigator.share yet refuse the
+    // web+playroom URL. Only offer the system action on a secure, stable origin.
+    if(location.protocol==='http:'||location.protocol==='https:')data.url=pairingUrl(token);
+    return data;
+  }
+  function canShare(token=null){
+    if(!secure||!root.isSecureContext||typeof navigator.share!=='function')return false;
+    // Check the exact payload (including long PR2). Some Android browsers
+    // expose the API but reject a particular URL/text combination.
+    const data=token?sharePayload(token):{text:'ХОД · приглашение'};
+    try{return typeof navigator.canShare!=='function'||navigator.canShare(data);}catch(_){return false;}
+  }
   async function shareToken(token){
-    const value=Pairing.decode(token),data={title:value.kind==='offer'?'ХОД · приглашение в игру':'ХОД · ответ на приглашение',text:Pairing.shareText(token),url:pairingUrl(token)};
-    if(typeof navigator.share!=='function')throw Error('Системное «Поделиться» не поддерживается этим браузером.');
-    if(typeof navigator.canShare==='function'&&!navigator.canShare(data))throw Error('Браузер не может передать это приглашение через системное меню.');
-    await navigator.share(data);
+    if(!canShare(token))throw Error('Системное меню обмена на этой странице недоступно. Используйте QR или текст.');
+    await navigator.share(sharePayload(token));
   }
   async function install(){
     if(!installPrompt)throw Error('Установка PWA сейчас недоступна. Откройте меню браузера → «Установить приложение».');
@@ -61,7 +74,7 @@
   root.PlayroomPWA=Object.freeze({
     secure,
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
-    canShare:()=>typeof navigator.share==='function',
+    canShare,
     canInstall:()=>!!installPrompt,
     shareToken,install,pairingUrl,tokenFromUrl,subscribePair,
     protocolUrl:Pairing.protocolUrl

@@ -87,7 +87,7 @@
     return close;
   }
   function client(channel,{timeout=7000,handshakeTimeout=5000}={}){
-    let sequence=0,closed=false,ready=false;const pending=new Map(),listeners=new Set();
+    let sequence=0,closed=false,ready=false;const pending=new Map(),listeners=new Set(),presenceListeners=new Set();let latestPresence=null;
     const debug=channel.__playroomClientDebug={side:'client',hellos:0,ready:0,requests:0,responses:0,snapshots:0,timeouts:0,lastMethod:null,lastError:null};
     let resolveReady,rejectReady;
     const readyPromise=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
@@ -111,6 +111,19 @@
       let message;try{message=JSON.parse(event.data);}catch(_){return;}
       if(message?.kind==='transport-ready'){markReady();return;}
       if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
+      // Presence is a separate public control-plane message. The host sends it
+      // only on an authenticated participant's RTC channel; never a full room
+      // snapshot, authoritative game data, or private resume credentials.
+      if(message?.kind==='room-presence' && typeof message.roomId==='string' &&
+          Number.isSafeInteger(message.revision) && Array.isArray(message.participants) &&
+          message.participants.length<=32 && message.participants.every(p=>
+            typeof p?.id==='string'&&typeof p?.nickname==='string'&&typeof p?.connected==='boolean')){
+        if(!latestPresence||message.roomId!==latestPresence.roomId||message.revision>latestPresence.revision){
+          latestPresence=clone(message);
+          for(const listener of presenceListeners)listener(clone(latestPresence));
+        }
+        return;
+      }
       if(message?.kind!=='response')return;
       const item=pending.get(message.requestId);if(!item)return;
       debug.responses++;pending.delete(message.requestId);clearTimeout(item.timer);
@@ -142,12 +155,14 @@
       dispatch:command=>request('dispatch',command),
       history:index=>request('history',index),
       subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},
+      subscribePresence:listener=>{if(typeof listener!=='function')throw Error('Listener required');presenceListeners.add(listener);
+        if(latestPresence)listener(clone(latestPresence));return ()=>presenceListeners.delete(listener);},
       debug:()=>clone(debug),
       close(){
         if(closed)return;closed=true;clearTimeout(readyTimer);stopHello();
         channel.removeEventListener('message',onMessage);channel.removeEventListener('open',onOpen);channel.removeEventListener('close',onClose);
         for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}
-        pending.clear();listeners.clear();try{channel.close();}catch(_){}
+        pending.clear();listeners.clear();presenceListeners.clear();latestPresence=null;try{channel.close();}catch(_){}
       }
     });
   }

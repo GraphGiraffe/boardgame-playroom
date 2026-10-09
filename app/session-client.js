@@ -36,7 +36,7 @@
       this.pending=null;return receipt;
     }
     history(index){return this.transport.history(index);}
-    close(){this.closed=true;this.unsubscribe?.();this.transport.close?.();this.listeners.clear();}
+    close({keepTransport=false}={}){this.closed=true;this.unsubscribe?.();if(!keepTransport)this.transport.close?.();this.listeners.clear();}
   }
   return SessionClient;
 });

@@ -54,6 +54,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   const address=photo?Object.values(os.networkInterfaces()).flat().find(x=>x.family==='IPv4'&&!x.internal)?.address:null;
   if(photo){
     assert.ok(address,'Chromium LAN QR test needs the current host IPv4');
+    assert.equal(await host.locator('.pairing-network-choice').isVisible(),true);
     await host.locator('#acoustic-host-address').selectOption('manual');
     await host.locator('#acoustic-host-manual').fill(address);
   }
@@ -81,6 +82,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
     assert.fail('QR Offer did not produce an Answer: '+JSON.stringify({diagnosis,message:error.message}));
   }
   if(photo){
+    assert.equal(await client.locator('.pairing-network-choice').isVisible(),true);
     await client.locator('#acoustic-client-address').selectOption('manual');
     await client.locator('#acoustic-client-manual').fill(address);
     const answer=await client.locator('#net-client-token').inputValue();

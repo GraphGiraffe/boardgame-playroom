@@ -41,8 +41,8 @@
  width:4px;border-radius:8px;pointer-events:none;z-index:100;
  box-shadow:0 0 0 3px #eff4e6a6,0 0 7px #385f4860
 }
-.own-hand.hand-overflow-left::before{left:2px;background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
-.own-hand.hand-overflow-right::after{right:2px;background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
+.own-hand.hand-overflow-left::before{left:var(--hand-edge-left,2px);background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
+.own-hand.hand-overflow-right::after{right:var(--hand-edge-right,2px);background:linear-gradient(to bottom,#aec19c,#42745b,#aec19c)}
 .hand-track.is-fan::-webkit-scrollbar{display:none}
 .hand-track.is-fan:before,.hand-track.is-fan:after{content:none}
 .hand-fan-row{display:grid;grid-template-columns:repeat(calc(var(--fan-count) - 1),minmax(var(--fan-peek),1fr)) var(--fan-card-width);align-items:center;position:relative;height:var(--fan-card-height);width:min(100%,calc(var(--fan-count) * (var(--fan-card-width) + var(--fan-gap)) - var(--fan-gap)));min-width:calc((var(--fan-count) - 1) * var(--fan-peek) + var(--fan-card-width));margin-inline:auto}
@@ -88,3 +88,15 @@
 .piece-artboard .back-art-face span{font:700 37px/1 system-ui,sans-serif!important;color:#dce8c8}
 .mini-hand.is-open>.public-card>button.art-card{border-width:0!important}
 .mini-hand>.piece-back.art-card{border-width:0!important}
+
+/* Hand navigation lives against the scroll viewport rather than the full board width. */
+.hand-scroll-controls{display:none;position:absolute;z-index:101;top:calc(var(--hand-edge-top,35px) - 34px);right:var(--hand-edge-right,0px);align-items:center;gap:5px;font-size:11px;color:#425d48;pointer-events:auto}
+.hand-scroll-controls button{width:30px;height:28px;border:1px solid #bac9a8;border-radius:9px;background:#f8f7ed;color:#315644;font-weight:800;font-size:21px;line-height:1;box-shadow:0 2px 0 #c8d1be}
+.hand-scroll-controls button:hover:not(:disabled){background:#e4edd9}
+.hand-scroll-controls button:disabled{opacity:.35}
+.hand-scroll-hint{margin-right:3px;font-size:10px}
+@media (hover:hover) and (pointer:fine){.own-hand.hand-overflow .hand-scroll-controls{display:flex}}
+@media (max-width:480px){.hand-scroll-hint{display:none}}
+/* The regular game hint and scroll controls share the hand-heading's right edge.
+   When scroll is available, show the actionable controls instead of overlapping. */
+@media (hover:hover) and (pointer:fine){.own-hand.hand-overflow .hand-heading>span{visibility:hidden}}

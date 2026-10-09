@@ -34,7 +34,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('[data-net-scan="host"]').waitFor();
     assert.equal(await host.locator('[data-net-scan="host"]').count(),1);
     assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
-    assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
+    assert.match((await host.locator('#acoustic-host-address').innerText()),/Ввести IPv4 вручную/);
     assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
 
     assert.equal(await host.locator('#net-host-acoustic-send').count(),1,
@@ -54,12 +54,12 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const manualInfo=await host.evaluate(token=>PlayroomPairing.decode(token),manualToken);
     assert.equal(manualInfo.ip,'192.168.44.66');
     assert.ok(manualToken.length<200);
-    assert.match(await host.locator('#acoustic-host-pair-status').innerText(),/PR3/);
+    assert.match(await host.locator('#acoustic-host-mode').innerText(),/компактное приглашение/);
     // A saved manual address is an explicit option, clearly marked as user-entered.
     await host.locator('[data-net-save-ip="host"]').click();
     assert.match(await host.locator('#acoustic-host-address').innerText(),/192.168.44.66/);
     assert.match(await host.locator('#acoustic-host-address').innerText(),/внесён пользователем/);
-    assert.match(await host.locator('#acoustic-host-discovery').innerText(),/сохранённые IP: 1/i);
+    assert.match(await host.locator('#acoustic-host-discovery').textContent(),/сохранённые IP: 1/i);
     if(previousAddress==='manual'){
       await host.locator('#acoustic-host-address').selectOption('manual');
       await host.locator('#acoustic-host-manual').fill(previousManual);

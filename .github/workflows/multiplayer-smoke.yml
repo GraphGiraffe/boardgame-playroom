@@ -55,7 +55,7 @@ jobs:
         run: node --test --test-concurrency=1 tests/checkers-drag.test.cjs tests/uno-hand-size.test.cjs tests/compact-hand.test.cjs
       - name: Two-device release gate
         working-directory: app
-        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/acoustic-webrtc-browser.test.cjs tests/qr-pairing-browser.test.cjs tests/network-resume.test.cjs tests/network-reconnect-browser.test.cjs tests/network-host-recovery-browser.test.cjs tests/network-main-app.test.cjs tests/network-same-origin.test.cjs tests/recovery-warning.test.cjs tests/network-feedback-browser.test.cjs
+        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/acoustic-webrtc-browser.test.cjs tests/qr-pairing-browser.test.cjs tests/pairing-methods-browser.test.cjs tests/network-resume.test.cjs tests/network-next-match.test.cjs tests/network-client-history-browser.test.cjs tests/pwa-share.test.cjs tests/network-reconnect-browser.test.cjs tests/network-host-recovery-browser.test.cjs tests/network-main-app.test.cjs tests/network-same-origin.test.cjs tests/recovery-warning.test.cjs tests/network-feedback-browser.test.cjs
       - name: Build all-games preview
         run: |
           rm -rf app/dist/smoke
