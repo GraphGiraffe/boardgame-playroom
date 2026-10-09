@@ -39,7 +39,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const previousAddress=await host.locator('#acoustic-host-address').inputValue();
     const previousManual=await host.locator('#acoustic-host-manual').inputValue();
     assert.equal(await host.locator('#acoustic-host-manual').getAttribute('placeholder'),'Например: 192.168.1.100',
-      'The field must not pretend to have detected the user's actual IP');
+      'Manual IP placeholder is an example, not a detected network address');
     await host.locator('#acoustic-host-address').selectOption('manual');
     await host.locator('#acoustic-host-manual').fill('192.168.44.66');
     const manualLink=await value(host,'#net-host-token');
