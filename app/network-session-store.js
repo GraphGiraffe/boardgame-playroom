@@ -46,14 +46,32 @@
         try{run(tx,value=>{result=value;},abort);}catch(error){abort(error);}
       });
     }
-    async create({sessionId,room,session}){
+    async acquireHostLock(sessionId){
+      if(!isId(sessionId))throw Error('Некорректный идентификатор партии.');
+      const locks=globalThis.navigator?.locks;
+      if(!locks?.request)throw Error('Для сетевых сохранений нужна поддержка Web Locks. Откройте ХОД как HTTPS PWA или в совместимом браузере.');
+      let released=false;
+      const granted=new Promise((resolve,reject)=>{
+        locks.request('playroom-network-authority:'+sessionId,{mode:'exclusive',ifAvailable:true},async lock=>{
+          if(!lock){resolve(null);return;}
+          await new Promise(done=>resolve(()=>{if(!released){released=true;done();}}));
+        }).catch(reject);
+      });
+      const release=await granted;
+      if(!release)throw Error('Эта сетевая партия уже открыта в другой вкладке хоста.');
+      return release;
+    }
+    async create({sessionId,room,session,recovery=null}){
       if(!isId(sessionId)||!isId(room?.id)||!session?.export||room.game?.id!==session.game||room.game?.version!==session.packVersion)
         throw Error('Некорректные данные исходной сетевой партии.');
       if(session.current.move!==0)throw Error('Начальное сохранение должно предшествовать первому ходу.');
+      if(recovery&&(recovery.version!==1||recovery.room?.id!==room.id||
+          recovery.room?.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))
+        throw Error('Некорректная приватная копия комнаты.');
       const timestamp=Date.now();
       const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
         game:session.game,packVersion:session.packVersion,room:clone(room),
-        initial:session.export(),revision:0,createdAt:timestamp,updatedAt:timestamp};
+        recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
       return {sessionId,revision:0};
     }
@@ -91,6 +109,22 @@
         };
       });
     }
+    async rotateResumeToken({sessionId,participantId,previousToken,nextToken,previousExpiresAt}){
+      if(!isId(sessionId)||!isId(participantId)||![previousToken,nextToken].every(t=>typeof t==='string'&&/^[0-9a-f]{64}$/.test(t))||
+          previousToken===nextToken||!Number.isSafeInteger(previousExpiresAt)||previousExpiresAt<0)
+        throw Error('Некорректное обновление права переподключения.');
+      await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
+        const sessions=tx.objectStore('sessions'),lookup=sessions.get(sessionId);
+        lookup.onsuccess=()=>{
+          const entry=lookup.result,rec=entry?.recovery;
+          if(rec?.version!==1){abort(Error('Нет приватных данных для восстановления комнаты.'));return;}
+          const token=rec.tokens.find(t=>t.participantId===participantId);
+          if(!token||token.token!==previousToken){abort(Error('Право переподключения уже изменено.'));return;}
+          token.token=nextToken;token.previousToken=previousToken;token.previousExpiresAt=previousExpiresAt;
+          sessions.put({...entry,recovery:rec});
+        };
+      });
+    }
     async load(sessionId,engine,Session){
       if(!isId(sessionId))throw Error('Некорректный идентификатор сетевой партии.');
       const stored=await this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{
@@ -109,7 +143,8 @@
         throw Error('Сетевое сохранение повреждено. Данные не удалены.');
       const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
         states:[...record.initial.states,...steps.map(step=>step.state)]};
-      return {room:clone(record.room),session:Session.restore(engine,saved),
+      return {room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
+        session:Session.restore(engine,saved),
         receipts:clone(stored.receipts||[]),sessionId,revision:record.revision};
     }
     async list(){

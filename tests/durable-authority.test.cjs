@@ -66,3 +66,15 @@ test('durable rejected actions retain stable receipts, without a transition',asy
     assert.equal(d.receipts.length,1);
   }finally{d.authority.dispose();}
 });
+
+test('disk-committed move never receives a false rollback notice if live commit fails',async()=>{
+  const d=setup(),command=cmd(d.a,'postcommit-failure');
+  d.session.commitPrepared=()=>{throw Error('injected in-memory failure');};
+  try{
+    const result=await d.a.dispatch(command);
+    assert.equal(result.ok,false);assert.equal(result.code,'RECOVERY_REQUIRED');
+    assert.equal(d.commits.length,1);assert.equal(d.commits[0].receipt.ok,true);
+    assert.equal(d.session.current.move,0);
+    assert.equal((await d.a.dispatch(command)).code,'CLOSED');
+  }finally{d.authority.dispose();}
+});

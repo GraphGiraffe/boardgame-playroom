@@ -4,7 +4,7 @@
   const {clone,freeze,canonical}=P;
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
-  const text={BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Общий стол доступен только для просмотра.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.'};
+  const text={BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Общий стол доступен только для просмотра.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.',RECOVERY_REQUIRED:'Ход записан в хранилище, но интерфейс исполнителя не удалось обновить. Перезагрузите страницу хоста и восстановите комнату из сетевого сохранения.'};
   function transfers(before,after){
     if(!before.data.hands||!after.data.hands)return [];
     const owners=new Map(),table=new Set(),groups=new Map();
@@ -14,9 +14,20 @@
     return [...groups.values()];
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[]}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
-      records.set(this,{session,sessionId,authorityEpoch,clock,receipts:new Map(),bindings:new Set(),timer:null,busy:false,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[]});
+      const receipts=new Map();
+      if(!Array.isArray(restoredReceipts))throw Error('Invalid restored receipts');
+      for(const row of restoredReceipts){
+        if(!Number.isInteger(row?.viewer)||row.viewer<0||row.viewer>=session.current.players.length||
+            typeof row.commandId!=='string'||!row.commandId||typeof row.signature!=='string'||
+            row.receipt?.commandId!==row.commandId||typeof row.receipt?.ok!=='boolean')
+          throw Error('Invalid restored receipt');
+        const key=`${row.viewer}:${row.commandId}`;
+        if(receipts.has(key))throw Error('Duplicate restored receipt');
+        receipts.set(key,{signature:row.signature,receipt:freeze(clone(row.receipt))});
+      }
+      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[]});
     }
     get revision(){return records.get(this).session.current.move;}
     connect(viewer=-1){
@@ -74,12 +85,15 @@
       if(binding.closed||r.disposed)return reject('CLOSED');
       if(!P.validate(command))return reject('BAD_COMMAND');
       if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
-      if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
       if(binding.viewer<0||s.current.players[binding.viewer]?.bot)return reject('READ_ONLY');
       const key=`${binding.viewer}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
+      // An old epoch may only resolve an already-committed command. It must
+      // never authorize a NEW action after restoring the host.
       if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer)}):reject('ID_CONFLICT');
+      if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
       if(r.busy)return reject('BUSY');
       r.busy=true;
+      let committed=false;
       try{
         let receipt,next;
         if(command.expectedRevision!==this.revision)receipt=reject('STALE');
@@ -91,6 +105,7 @@
           receipt={ok:true,code:'OK',commandId:command.commandId,revision:next.move};
           await r.persistence.commit({sessionId:r.sessionId,previousRevision:revision,nextState:next,
             viewer:binding.viewer,commandId:command.commandId,signature,receipt});
+          committed=true;
           s.commitPrepared(next);
           r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));
         }else{
@@ -101,7 +116,16 @@
         r.receipts.set(key,{signature,receipt:freeze(result)});
         if(receipt.ok)this._publish();
         return freeze({...result,snapshot:this._snapshot(binding.viewer)});
-      }catch(_){return reject('STORAGE_ERROR');}
+      }catch(_){
+        if(committed){
+          // The journal already contains the step: never claim it was rolled
+          // back. Fence this authority until host recovery reloads the disk.
+          r.disposed=true;
+          return freeze({ok:false,code:'RECOVERY_REQUIRED',message:text.RECOVERY_REQUIRED,
+            commandId:command.commandId,revision:this.revision});
+        }
+        return reject('STORAGE_ERROR');
+      }
       finally{r.busy=false;}
     }
     _publish(){

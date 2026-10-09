@@ -9,6 +9,7 @@
   const connectedHostPeers=[];
   const resumeStore=new M.ResumeStore();
   const hostSessionStore=NetworkSessionStore?new NetworkSessionStore():null;
+  let hostLockRelease=null;
   let reconnectStatus='';
 
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
@@ -350,8 +351,8 @@
       snapshot:()=>switchable.snapshot(),
       history:index=>switchable.history(index),
       subscribe:listener=>switchable.subscribe(listener),
-      dispatch:command=>{
-        const result=switchable.dispatch(command);
+      dispatch:async command=>{
+        const result=await switchable.dispatch(command);
         if(command?.type==='resume'&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
@@ -497,8 +498,13 @@
     // snapshot. A failed/blocked IndexedDB must not silently start an unsafe game.
     const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
     if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
-    try{await hostSessionStore.create({sessionId,room,session});}
-    catch(error){hostStarted=false;throw Error('Не удалось создать сетевое сохранение: '+error.message);}
+    try{
+      hostLockRelease=await hostSessionStore.acquireHostLock(sessionId);
+      await hostSessionStore.create({sessionId,room,session,recovery:b.roomService.exportRecovery(room.id)});
+    }catch(error){hostLockRelease?.();hostLockRelease=null;hostStarted=false;
+      try{b.roomService.abortStart(room.id,b.participantId());b.renderLobby();}catch(_){}
+      throw Error('Не удалось создать сетевое сохранение: '+error.message);}
+    b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
     hostAuthority=new Authority(session,{sessionId,persistence:{
       commit:entry=>hostSessionStore.commit(entry),
       recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
@@ -517,8 +523,8 @@
       if(!hostSessionStore)throw Error('IndexedDB-модуль не загружен.');
       const b=bridge(),items=await hostSessionStore.list();
       b.openModal(b.modalHead('Сетевые сохранения хоста')+
-        '<p class="lead">Здесь хранятся полное состояние и история, доступные только этому профилю браузера. ' +
-        'На этапе LAN-01 можно проверить сохранение; повторное открытие комнаты с гостями разрабатывается отдельно.</p>'+
+        '<p class="lead">После перезапуска хоста можно продолжить сохранённую комнату на том же адресе приложения. ' +
+        'Участники вернутся по новому QR с прежними приватными правами. Если сохранение слишком старое, будет доступна только история.</p>'+
         (items.length?'<div class="lobby-actions">'+items.map(item=>
           '<button type="button" class="btn secondary" data-network-archive="'+esc(item.sessionId)+'">'+
           esc(item.game)+' · '+esc(item.packVersion)+' · '+item.revision+' действий · '+
@@ -535,9 +541,68 @@
         '<p class="lead"><strong>'+esc(room.name)+'</strong> · '+esc(room.game.name)+' · '+esc(saved.session.packVersion)+'</p>'+
         '<p class="rules-mode-note">Восстановлена вся история: '+(saved.session.states.length-1)+
         ' действий. Участников: '+st.players.length+'. Статус: '+esc(st.status)+
-        '. Прежняя игра и квитанции сохранены. Восстановление WebRTC-комнаты и прав участников входит в LAN-03/04.</p>'+
+        '. Прежняя игра и квитанции сохранены.</p>'+
+        (saved.recovery?'<button class="btn" type="button" data-network-continue="'+esc(sessionId)+'">Продолжить комнату на этом устройстве</button>':
+          '<p class="rules-mode-note">Это архив до сохранения гостевых прав. Он доступен только для просмотра истории.</p>')+
         '<button class="btn secondary" id="network-saved-host-button" type="button">К списку сохранений</button>');
     }catch(error){toast('Не удалось прочитать сетевую партию: '+error.message);}
+  }
+  async function continueHostArchive(sessionId){
+    let pendingRelease=null,recoveredRoomId=null,authority=null;
+    try{
+      const b=bridge(),profile=b.profile?.();
+      if(hostStarted||hostAuthority||hostRoomId||b.room?.())throw Error('Сначала завершите текущую сетевую комнату.');
+      if(!profile?.id)throw Error('Сначала сохраните имя игрока на устройстве хоста.');
+      const item=(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
+      if(!item)throw Error('Сохранение не найдено.');
+      // The precise installed game version must exist. A newer pack may not
+      // silently replace the rules or renderer of an already-started match.
+      b.packs.activate(item.game,item.packVersion);
+      const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
+      if(!saved?.recovery)throw Error('Архив создан без прав гостей. Восстановление комнаты невозможно.');
+      const room=saved.recovery.room;
+      if(room.ownerId!==profile.id||room.phase!=='playing'||room.id!==saved.room.id||
+          saved.session.game!==room.game.id||saved.session.packVersion!==room.game.version)
+        throw Error('Этот профиль не является хостом сохранённой партии.');
+      const occupied=room.seats.filter(seat=>seat.participantId).sort((a,c)=>a.index-c.index);
+      if(occupied.length!==saved.session.current.players.length||
+          occupied.some((seat,i)=>participant(room,seat.participantId)?.nickname!==saved.session.current.players[i].name))
+        throw Error('Состав игроков не соответствует сохранённой партии.');
+      const viewer=room.hostMode==='table'?-1:occupied.findIndex(seat=>seat.participantId===profile.id);
+      if(room.hostMode==='player'&&viewer<0)throw Error('Место игрока-хоста не найдено.');
+      authority=new Authority(saved.session,{sessionId,restoredReceipts:saved.receipts,persistence:{
+        commit:entry=>hostSessionStore.commit(entry),
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+      }});
+      const definition=b.packs.exportView(room.game.id,room.game.version);
+      // An exclusive Web Lock prevents a second tab from serving the same game.
+      // It is released on pagehide; the next page acquires it afresh.
+      pendingRelease=await hostSessionStore.acquireHostLock(sessionId);
+      // All validation precedes attaching restored identities to the live UI.
+      b.roomService.restoreRecovery(saved.recovery,{hostId:profile.id});recoveredRoomId=room.id;
+      b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
+      b.restoreHostedRoom(room.id);
+      hostLockRelease=pendingRelease;pendingRelease=null;
+      hostRoomId=room.id;hostStarted=true;hostAuthority=authority;
+      const local=LocalTransport(authority.connect(viewer));
+      hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      b.closeModal(true);document.getElementById('app').inert=false;
+      hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined'});
+      hostMount.render();
+      toast('Сетевая партия восстановлена. Предложите гостям новый QR для возвращения на прежние места.');
+    }catch(error){
+      pendingRelease?.();
+      if(recoveredRoomId){
+        hostMount?.destroy?.();hostMount=null;
+        hostGameClient?.close?.();hostGameClient=null;
+        authority?.dispose?.();hostAuthority=null;
+        hostLockRelease?.();hostLockRelease=null;
+        hostRoomId=null;hostStarted=false;
+        const b=bridge();b.rollbackHostedRoom?.(recoveredRoomId);
+        try{b.roomService.discardRecovery(recoveredRoomId);}catch(_){}
+      }else authority?.dispose?.();
+      toast('Не удалось продолжить партию: '+error.message);
+    }
   }
   function startClientGame(snapshot){
     if(clientGameClient)return;
@@ -549,13 +614,14 @@
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
     if(target.id==='network-saved-host-button')return showHostArchives();
     if(target.dataset.networkArchive)return inspectHostArchive(target.dataset.networkArchive);
+    if(target.dataset.networkContinue)return continueHostArchive(target.dataset.networkContinue);
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
@@ -610,5 +676,5 @@
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
-  root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();});
+  root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);
