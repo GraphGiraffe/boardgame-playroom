@@ -11,7 +11,7 @@
   const stopClientAudio=()=>{clientAudioListener?.stop();clientAudioListener=null;};
   const KNOWN_IP_KEY='playroom.acoustic-known-addresses.v1';
   function usableManualIp(address){
-    if(typeof address!=='string'||!/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(address))return false;
+    if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))return false;
     const parts=address.split('.').map(Number);
     return parts.every(v=>Number.isInteger(v)&&v>=0&&v<=255)&&
       !['documentation','reserved'].includes(Acoustic.addressKind(address));
@@ -245,7 +245,7 @@
   }
   function pairingFallback(token,id){
     const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
-    return '<details class="pairing-fallback" '+(token?.startsWith(Pairing.COMPACT_PREFIX)?'open':'')+'><summary>QR и другие способы</summary><p class="lead">QR содержит ту же pairing-ссылку. На телефоне можно открыть его обычной камерой; текст ниже — fallback для copy/paste.</p><div class="pairing-qr" id="'+id+'-qr" aria-label="QR-код подключения"><div class="pairing-qr-loading">Готовим QR…</div></div><label class="field"><span>Ссылка ХОД</span><textarea id="'+id+'" rows="5" readonly>'+esc(link)+'</textarea></label><button class="btn secondary" type="button" data-net-copy="'+id+'" style="width:100%">Скопировать ссылку</button></details>';
+    return '<details class="pairing-fallback" open><summary>QR и другие способы</summary><p class="lead">QR содержит ту же pairing-ссылку. На телефоне можно открыть его обычной камерой; текст ниже — fallback для copy/paste.</p><div class="pairing-qr" id="'+id+'-qr" aria-label="QR-код подключения"><div class="pairing-qr-loading">Готовим QR…</div></div><label class="field"><span>Ссылка ХОД</span><textarea id="'+id+'" rows="5" readonly>'+esc(link)+'</textarea></label><button class="btn secondary" type="button" data-net-copy="'+id+'" style="width:100%">Скопировать ссылку</button></details>';
   }
   function renderPairingQR(token,id){
     const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
