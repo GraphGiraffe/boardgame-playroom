@@ -59,7 +59,7 @@ QR генератор получает `PWA.pairingUrl(token)`:
 
 `WebRTC.serve` и `WebRTC.client` обмениваются строками `JSON.stringify(message)` (никакой protobuf/сжатия игровых snapshot в этом протоколе):
 
-```json
+```jsonl
 {"kind":"hello","version":1}
 {"kind":"transport-ready","version":1}
 {"kind":"request","requestId":1,"method":"snapshot"}
