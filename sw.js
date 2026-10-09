@@ -1,13 +1,13 @@
 'use strict';
 // Unreleased UI candidate: force a new shell cache to include GameScreen. Published preview.3 stays immutable.
-const CACHE='playroom-pwa-acoustic-compact-rc2fix-20261008';
+const CACHE='playroom-pwa-rc6-qr-resume-20261009';
 const QR_LIB='https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './core/ui.css','./core/input.css','./core/motion.css','./core/tooltips.css',
   './core/engine.js','./core/game-flow.js','./core/hand-overflow.js','./core/audio.js','./core/session.js','./core/protocol.js','./core/authority.js','./core/ui.js','./core/player-target.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
-  './app/views.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/pairing.js','./app/acoustic-pairing.js','./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/session-client.js','./app/game-screen.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
+  './app/views.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/pairing.js','./app/acoustic-pairing.js','./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./app/session-client.js','./app/game-screen.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
   './app/transports/webrtc.js','./app/transports/local.js',QR_LIB
 ];
 
