@@ -32,90 +32,102 @@
   const scannedCandidates={host:[],client:[]};
   const scanGenerations={host:0,client:0};
   function soundCandidates(role,signal){
-    const active=Acoustic.allCandidates(signal);
-    const extra=scannedCandidates[role].filter(item=>!active.some(c=>c.address===item.address));
+    // The selector lists IPv4 addresses for PR3 only. IPv6, mDNS, TCP and
+    // other candidates remain in the *full* SDP when "All connections" is used.
+    const active=Acoustic.allCandidates(signal).filter(c=>c.audio&&usableManualIp(c.address));
+    const validExtra=scannedCandidates[role].filter(c=>usableManualIp(c.address));
+    const extra=validExtra.filter(item=>!active.some(c=>c.address===item.address));
     const saved=savedIpEntries().filter(item=>![...active,...extra].some(c=>c.address===item.address));
     return [...active,...extra,...saved];
   }
   function soundCandidateLabel(item){
-    const kinds={lan:'частная сеть',public:'публичный/другой интерфейс',
-      cgnat:'CGNAT / возможно VPN',linklocal:'link-local',
-      documentation:'TEST-NET · непригоден',reserved:'служебный адрес · непригоден',
-      mdns:'mDNS · IP скрыт браузером',ipv6:'IPv6',hostname:'имя хоста'};
-    const origin=item.source==='saved'?' · внесён пользователем':item.source==='stats'?' · RTCStats':item.source==='probe'?' · дополнительная проверка':'';
-    const details=item.port?item.transport.toUpperCase()+' '+item.port+' · '+item.type:'порт из текущего сеанса';
-    return item.address+' · '+details+' · '+(kinds[item.kind]||item.kind)+origin;
+    const origin=item.source==='saved'?' · внесён пользователем':
+      item.source==='stats'?' · найден (RTCStats)':item.source==='probe'?' · найден отдельно':'';
+    const network=item.kind==='lan'?'LAN':item.kind==='linklocal'?'link-local':
+      item.kind==='cgnat'?'CGNAT':item.kind==='public'?'внешний':item.kind;
+    return item.address+' · '+network+(item.port?' · UDP '+item.port:'')+origin;
+  }
+  function localNetworkRank(ip){
+    const p=String(ip||'').split('.').map(Number);
+    if(p.length!==4)return -1;
+    if(p[0]===192&&p[1]===168)return 0; // RFC 1918 192.168.0.0/16
+    if(p[0]===10)return 1;               // RFC 1918 10.0.0.0/8
+    if(p[0]===172&&p[1]>=16&&p[1]<=31)return 2; // RFC 1918 172.16.0.0/12
+    return -1;
   }
   function preferredSoundCandidate(items){
-    const prefer=predicate=>items.findIndex(predicate);
-    let index=prefer(c=>c.audio&&c.kind==='lan');
-    if(index<0)index=prefer(c=>['probe','stats','saved'].includes(c.source)&&c.kind==='lan'&&c.ipv4);
-    if(index<0)index=prefer(c=>c.audio);
-    if(index<0)index=prefer(c=>c.ipv4&&c.kind!=='documentation'&&c.kind!=='reserved');
-    return index;
+    // Auto-select only real IPv4/UDP host candidates in this very Offer/Answer.
+    // Saved IPs and secondary probes are unverified for this ICE connection;
+    // they must be explicitly selected. No private candidate => full PR2.
+    return items.map((item,index)=>({item,index,rank:localNetworkRank(item.address)}))
+      .filter(x=>x.item.source==='session'&&x.item.audio&&x.rank>=0)
+      .sort((a,b)=>a.rank-b.rank||b.item.priority-a.item.priority)[0]?.index??-1;
   }
   function soundCandidateOptions(items,selected=-1){
     return items.map((item,index)=>'<option value="'+index+'" '+(index===selected?'selected':'')+'>'+esc(soundCandidateLabel(item))+'</option>').join('');
   }
   function selectionDetails(role,signal){
     const choice=document.getElementById('acoustic-'+role+'-address'),items=soundCandidates(role,signal);
-    const selected=choice?.value==='manual'?null:items[Number(choice?.value)];
-    return {selected,items,manual:choice?.value==='manual'};
+    const value=choice?.value??'all',manual=value==='manual',all=value==='all';
+    const selected=manual||all?null:items[Number(value)];
+    return {selected,items,manual,all};
   }
   function syncSoundChoice(role,signal){
-    const {selected,manual}=selectionDetails(role,signal);
-    const port=document.getElementById('acoustic-'+role+'-port'),help=document.getElementById('acoustic-'+role+'-hint');
-    const local=Acoustic.hostCandidates(signal).find(c=>c.audio)||Acoustic.hostCandidates(signal)[0];
-    if(port&&!manual)port.value=String(selected?.source==='session'&&selected.port?selected.port:local?.port||'');
+    const {selected,manual,all}=selectionDetails(role,signal);
+    const help=document.getElementById('acoustic-'+role+'-hint');
     const manualField=document.getElementById('acoustic-'+role+'-manual');
     const manualRow=document.getElementById('acoustic-'+role+'-manual-row');
     if(manualField)manualField.disabled=!manual;
     if(manualRow)manualRow.hidden=!manual;
     if(!help)return;
-    if(!selected){
-      help.textContent=manual?'Введите действующий IPv4 своего устройства. Порт берётся из текущего WebRTC-сеанса.':'Браузер не раскрыл адреса. Введите IPv4 вручную или используйте QR.';
+    if(all){
+      help.textContent='Все соединения: передаём полный SDP через PR2. WebRTC сам проверяет доступные ICE-маршруты; звук для отправки в этом формате недоступен.';
+    }else if(manual){
+      help.textContent='Введённый IPv4 действует сразу, без сохранения в список. Для PR3 также нужен UDP host-кандидат текущего соединения.';
     }else if(selected.source==='saved'){
       help.textContent='Этот IP сохранён после вашего ручного ввода, но браузер не подтвердил его в текущем ICE-сеансе. Порт взят из действующего Offer/Answer; соединение необходимо проверить.';
     }else if(selected.source==='probe'||selected.source==='stats'){
       help.textContent='Адрес обнаружен отдельной WebRTC-проверкой. Порт текущего соединения может относиться к другому интерфейсу; такое подключение не гарантировано.';
-    }else if(selected.kind==='documentation'||selected.kind==='reserved'){
-      help.textContent='Это служебный/тестовый адрес, непригодный для LAN. Выберите другой IP или введите реальный адрес Wi-Fi.';
-    }else if(!selected.audio){
-      help.textContent='Адрес показан для диагностики. Для звуковой передачи требуется IPv4 UDP host-кандидат; для других типов используйте QR/Share.';
     }else{
-      help.textContent='Адрес и порт взяты из действующего WebRTC-сеанса. Вы можете выбрать любой другой доступный вариант.';
+      help.textContent='IPv4 и UDP-порт взяты из действующего WebRTC-сеанса. Один выбранный маршрут передаётся через PR3.';
     }
   }
-  function soundSettings(role,signal){
+  function initialNetworkChoice(role,signal){
     scannedCandidates[role]=[];
-    const items=soundCandidates(role,signal),preferred=preferredSoundCandidate(items);
-    const selected=preferred>=0?items[preferred]:null;
-    const port=selected?.port||Acoustic.hostCandidates(signal).find(c=>c.audio)?.port||Acoustic.hostCandidates(signal)[0]?.port||'';
-    return '<details class="pairing-sound-settings"><summary>⚙ Настройки звука и сети</summary><div class="pairing-sound-fields">'+
-      '<label class="field"><span>Сетевой адрес</span><select id="acoustic-'+role+'-address">'+
-      soundCandidateOptions(items,preferred)+'<option value="manual" '+(preferred<0?'selected':'')+'>Указать IP вручную</option></select></label>'+
-      '<div class="pairing-inline-row"><div id="acoustic-'+role+'-manual-row" class="pairing-manual-row" '+(preferred>=0?'hidden':'')+'>'+
-      '<input id="acoustic-'+role+'-manual" inputmode="decimal" aria-label="IPv4 вручную" placeholder="Например: 192.168.1.100" autocomplete="off" '+(preferred>=0?'disabled':'')+'>'+
-      '<button class="btn secondary pairing-icon-action" id="acoustic-'+role+'-save" type="button" data-net-save-ip="'+role+'" title="Сохранить IP" aria-label="Сохранить введённый IP" >💾</button></div>'+
-      '<button type="button" class="btn secondary pairing-scan-address" data-net-scan="'+role+'">↻ Найти IP</button></div>'+
-      '<div class="pairing-settings-grid"><label class="field"><span>UDP-порт</span><input id="acoustic-'+role+'-port" type="number" min="1" max="65535" value="'+esc(port)+'"></label>'+
-      '<label class="field"><span>Скорость звука</span><select id="acoustic-'+role+'-protocol"><option value="fastest">Fastest</option><option value="fast">Fast</option><option value="normal">Normal</option></select></label></div>'+
+    const items=soundCandidates(role,signal);let preferred=preferredSoundCandidate(items);
+    const kind=role==='host'?'offer':'answer';let token;
+    if(preferred>=0)try{
+      const selected=items[preferred];token=Pairing.COMPACT_PREFIX+Acoustic.pack(signal,{address:selected.address,port:selected.port});
+    }catch(_){preferred=-1;}
+    if(preferred<0)token=Pairing.fromSignal(kind,signal,{legacy:true});
+    return {preferred,token,html:'<div class="pairing-network-choice" data-pairing-network="'+role+'"><div class="pairing-network-select-row">'+
+      '<label class="field"><span>Сетевое соединение</span><select id="acoustic-'+role+'-address" aria-label="Сетевое соединение">'+
+      '<option value="all" '+(preferred<0?'selected':'')+'>Все соединения (автоматически)</option>'+
+      soundCandidateOptions(items,preferred)+'<option value="manual">Ввести IPv4 вручную</option></select></label>'+
+      '<button type="button" class="btn secondary pairing-scan-address" data-net-scan="'+role+'" title="Обновить обнаруженные сетевые адреса" aria-label="Обновить обнаруженные сетевые адреса">↻</button></div>'+
+      '<div class="pairing-inline-row"><div id="acoustic-'+role+'-manual-row" class="pairing-manual-row" hidden>'+
+      '<input id="acoustic-'+role+'-manual" inputmode="decimal" aria-label="IPv4 вручную" placeholder="Например: 192.168.1.100" autocomplete="off" disabled>'+
+      '<button class="btn secondary pairing-icon-action" id="acoustic-'+role+'-save" type="button" data-net-save-ip="'+role+'" title="Сохранить IP" aria-label="Сохранить введённый IP">💾</button></div>'+
+      '</div>'+
+      '<p class="pairing-network-mode" id="acoustic-'+role+'-mode" role="status"></p></div>'};
+  }
+  function soundSettings(role){
+    return '<details class="pairing-sound-settings"><summary>⚙ Скорость звука</summary><div class="pairing-sound-fields">'+
+      '<label class="field"><span>Скорость передачи</span><select id="acoustic-'+role+'-protocol"><option value="fastest">Fastest</option><option value="fast">Fast</option><option value="normal">Normal</option></select></label>'+
       '</div></details>';
   }
   function updateSoundOptions(role,signal,additional){
     const select=document.getElementById('acoustic-'+role+'-address');
     if(!select)return;
-    const old=selectionDetails(role,signal),current=old.selected,manual=old.manual;
+    const old=selectionDetails(role,signal),current=old.selected,manual=old.manual,all=old.all;
+    const explicit=select.dataset.userChoice==='true';
     scannedCandidates[role]=additional;
     const items=soundCandidates(role,signal);
-    select.innerHTML=soundCandidateOptions(items)+'<option value="manual">Указать IP вручную</option>';
+    select.innerHTML='<option value="all">Все соединения (автоматически)</option>'+soundCandidateOptions(items)+'<option value="manual">Ввести IPv4 вручную</option>';
     const same=items.findIndex(c=>current&&c.address===current.address&&c.port===current.port&&c.transport===current.transport);
     const preferred=preferredSoundCandidate(items);
-    const keep=!!current&&current.kind!=='documentation'&&current.kind!=='reserved';
-    // When initial ICE only exposed TEST-NET, switch from an empty manual
-    // choice to a valid newly discovered interface instead of staying on Manual.
-    const hasTypedManual=!!document.getElementById('acoustic-'+role+'-manual')?.value.trim();
-    select.value=manual&&hasTypedManual?'manual':String(keep&&same>=0?same:preferred>=0?preferred:'manual');
+    select.value=explicit?(manual?'manual':all?'all':same>=0?String(same):'all'):
+      preferred>=0?String(preferred):'all';
     syncSoundChoice(role,signal);
     updateDiscoverySummary(role,signal);
     updatePairingToken(role);
@@ -127,7 +139,7 @@
     const usable=active.filter(c=>c.audio);
     node.textContent='Текущий WebRTC: '+active.length+' кандидатов ('+usable.length+
       ' пригодных IPv4 UDP host). Дополнительный поиск: '+extra.length+
-      '. Ваши сохранённые IP: '+saved.length+'. Отсутствие IP в списке не означает отсутствие интерфейса на устройстве.';
+      '. Ваши сохранённые IP: '+saved.length+'. Все соединения включают также IPv6, mDNS и другие ICE-маршруты.';
   }
   function saveManualIp(role){
     const field=document.getElementById('acoustic-'+role+'-manual');
@@ -142,14 +154,14 @@
       updateSoundOptions(role,signal,scannedCandidates[role]);
       const items=soundCandidates(role,signal),at=items.findIndex(c=>c.address===ip);
       const select=document.getElementById('acoustic-'+role+'-address');
-      if(select&&at>=0){select.value=String(at);syncSoundChoice(role,signal);}
+      if(select&&at>=0){select.value=String(at);select.dataset.userChoice='true';syncSoundChoice(role,signal);}
       updatePairingToken(role);
     }
     toast('IP добавлен в список на этом устройстве (не обнаружен автоматически).');
   }
   async function scanSoundAddresses(role,signal){
     const generation=++scanGenerations[role],button=document.querySelector('[data-net-scan="'+role+'"]');
-    if(button){button.disabled=true;button.textContent='Ищем доступные интерфейсы…';}
+    if(button){button.disabled=true;button.textContent='↻ …';}
     try{
       const discovered=await Acoustic.probeAddresses({timeout:2500});
       if(scanGenerations[role]!==generation)return;
@@ -161,7 +173,7 @@
     }finally{
       if(scanGenerations[role]===generation){
         const current=document.querySelector('[data-net-scan="'+role+'"]');
-        if(current){current.disabled=false;current.textContent='Обновить поиск сетевых адресов';}
+        if(current){current.disabled=false;current.textContent='↻';}
       }
     }
   }
@@ -170,33 +182,41 @@
     const signal=pairSignal(role);
     if(!signal)throw Error('WebRTC-приглашение не готово.');
     const kind=role==='host'?'offer':'answer';
-    const {selected,manual}=selectionDetails(role,signal);
+    const {selected,manual,all}=selectionDetails(role,signal);
+    if(all)return Pairing.fromSignal(kind,signal,{legacy:true});
     const manualValue=document.getElementById('acoustic-'+role+'-manual')?.value.trim();
-    // While an IPv4 is being typed, preserve the original SDP fallback rather
-    // than publishing a stale, invalid or partially entered manual address.
-    const address=manual?(usableManualIp(manualValue)?manualValue:undefined):selected?.address;
-    const rawPort=document.getElementById('acoustic-'+role+'-port')?.value;
-    const port=rawPort&&Number.isInteger(Number(rawPort))&&Number(rawPort)>0?Number(rawPort):null;
-    return Pairing.fromSignal(kind,signal,{address,port});
+    const address=manual?manualValue:selected?.address;
+    if(!usableManualIp(address))throw Error('Введите корректный IPv4 или выберите «Все соединения».');
+    // A selected IP is STRICTLY PR3: never quietly substitute another ICE
+    // address or return PR2 without telling the user.
+    return Pairing.COMPACT_PREFIX+Acoustic.pack(signal,{address,port:selected?.source==='session'?selected.port:null});
   }
   function updatePairingToken(role){
     const signal=pairSignal(role);
     if(!signal)return null;
-    let token;
-    try{token=pairToken(role);}catch(_){
-      token=Pairing.fromSignal(role==='host'?'offer':'answer',signal);
-    }
+    let token=null,error=null;
+    try{token=pairToken(role);}catch(e){error=e;}
     const id=role==='host'?'net-host-token':'net-client-token';
     if(role==='host')offerToken=token;else answerToken=token;
     const field=document.getElementById(id);
     if(field){
-      field.value=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
-      renderPairingQR(token,id);
+      field.value=token?(PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token)):'';
+      if(token)renderPairingQR(token,id);
+      else{
+        const qr=document.getElementById(id+'-qr');
+        pairingQrGenerations.set(id,(pairingQrGenerations.get(id)||0)+1);
+        if(qr){qr.innerHTML='<p class="pairing-brief-status">Укажите действительный IPv4 либо выберите «Все соединения».</p>';qr.classList.remove('pairing-qr-ready','pairing-qr-legacy');}
+      }
     }
+    for(const button of document.querySelectorAll('[data-net-copy="'+id+'"], [data-net-share="'+(role==='host'?'offer':'answer')+'"]'))button.disabled=!token;
     const note=document.getElementById('acoustic-'+role+'-pair-status');
-    if(note)note.textContent=token.startsWith(Pairing.COMPACT_PREFIX)?
-      'PR3: компактный пакет для звука, QR и ссылки. Выбранный адрес: '+Pairing.decode(token).ip+'.':
-      'PR2: полный SDP — компактный пакет недоступен, потому что нет пригодного IP. Укажите настоящий IP Wi-Fi вручную и QR/ссылка переключатся на PR3.';
+    if(note)note.textContent=error?'Не удалось создать PR3: '+error.message:
+      token.startsWith(Pairing.COMPACT_PREFIX)?'PR3: один выбранный IPv4/UDP host-кандидат, текущие ICE и DTLS-параметры.':
+        'PR2: полный SDP со всеми предоставленными браузером ICE-кандидатами (включая mDNS/IPv6).';
+    const mode=document.getElementById('acoustic-'+role+'-mode');
+    if(mode)mode.textContent=error?'Нужен корректный IPv4/UDP · '+error.message:
+      token.startsWith(Pairing.COMPACT_PREFIX)?'Выбранный IPv4 · компактное приглашение':
+        'Все соединения · WebRTC выберет маршрут';
     syncPairingAvailability(role,token);
     return token;
   }
@@ -319,12 +339,12 @@
   function pairingHeader(title,role,stage){
     const sections=[
       ['Поделиться','Системное меню обмена передаёт ссылку. Получение через него работает при поддержке Android/браузера и ассоциации установленной PWA. В остальных случаях откройте ссылку или выберите другой метод.'],
-      ['Звук','Передача использует короткий PR3 с пригодным IPv4 UDP и динамик; приём требует микрофона и разрешений браузера. Передавать и принимать звук можно независимо друг от друга.'],
-      ['QR','Сфотографируйте QR-код системной камерой Android или выберите фото из галереи. ХОД сам распознает PR3/PR2. PR3 — компактный формат; PR2 — полный WebRTC SDP.'],
+      ['Звук','Передача требует PR3: выберите пригодный IPv4 UDP из списка или введите IPv4 вручную. При «Все соединения» передаётся PR2, который слишком велик для звука. Приём требует разрешённого микрофона и безопасного контекста; принимать и отправлять можно разными методами.'],
+      ['QR','Сфотографируйте QR-код системной камерой Android или выберите фото из галереи. ХОД сам распознает PR3 и PR2; полный PR2 может содержать значительно больше данных.'],
       ['Текст','Скопируйте ссылку и передайте собеседнику. Полученное приглашение или ответ можно вставить в отдельное поле и подтвердить.']
     ];
     const details=sections.map(([name,message])=>'<section><h3>'+name+'</h3><p>'+esc(message)+'</p></section>').join('');
-    const ipHelp=stage!=='client-join'?'<section><h3>IP и протокол</h3><p>Список может содержать адреса ICE/WebRTC, диагностики и сохранённые вами IP. TEST-NET нельзя использовать для LAN. Браузер/VPN может скрывать сетевой интерфейс; ручной IPv4 берите из настроек Wi-Fi. Порт относится к текущему WebRTC-сеансу.</p>'+
+    const ipHelp=stage!=='client-join'?'<section><h3>Сетевой адрес и формат</h3><p>«Все соединения» всегда отправляет PR2 — полный SDP со всеми маршрутами (в том числе mDNS и IPv6), которые WebRTC разрешил браузеру обнаружить. Браузер проверит маршруты сам. Выбор конкретного IPv4 отправляет короткий PR3. По умолчанию предпочитаем 192.168.0.0/16, затем 10.0.0.0/8 и 172.16.0.0/12 из действующих UDP host-кандидатов; если таких адресов нет — «Все соединения». Найденные дополнительно и сохранённые адреса предлагаются только для явного выбора, потому что не доказано, что они принадлежат текущему ICE-сеансу. Ручной IP действует сразу и сохраняется в список только кнопкой 💾. Если нет пригодного UDP host-кандидата, PR3 построить нельзя: выберите PR2. TEST-NET и служебные IPv4 запрещены.</p>'+
       '<p id="acoustic-'+role+'-hint"></p><p id="acoustic-'+role+'-discovery"></p><p id="acoustic-'+role+'-pair-status"></p></section>':'';
     const access='<section><h3>Почему способ недоступен?</h3><p>Это зависит от безопасного HTTPS/PWA origin, системного обмена, микрофона, динамика и сетевого адреса. Свёрнутый метод можно открыть, чтобы изменить его настройки.</p>'+captureNotice()+
       (location.protocol==='content:'?'<p>Здесь открыт Android content://: браузер может ограничивать IP, микрофон и системный обмен. HTTPS/PWA даёт больше возможностей.</p>':'')+'</section>';
@@ -333,11 +353,10 @@
   }
   const pairingFooter=()=>'<p class="pairing-origin-note">Для некоторых способов нужен HTTPS/PWA. Сетевые сохранения требуют постоянного адреса приложения.</p>';
   function toast(text){bridge()?.toast?.(text);}
-  function copy(id){if(id==='net-host-token')updatePairingToken('host');if(id==='net-client-token')updatePairingToken('client');const field=document.getElementById(id);if(!field)return;field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
+  function copy(id){if(id==='net-host-token')updatePairingToken('host');if(id==='net-client-token')updatePairingToken('client');const field=document.getElementById(id);if(!field?.value)return toast('Сначала выберите соединение или укажите корректный IPv4.');field.focus();field.select?.();if(navigator.clipboard?.writeText)navigator.clipboard.writeText(field.value).then(()=>toast('Скопировано')).catch(()=>toast('Текст выделен — скопируйте его вручную.'));else toast('Текст выделен — скопируйте его вручную.');}
   async function copyText(value){try{await navigator.clipboard.writeText(value);toast('Скопировано');}catch(_){toast('Не удалось скопировать автоматически. Используйте поле в «Другие способы».');}}
   async function sharePair(kind){
-    const token=updatePairingToken(kind==='offer'?'host':'client');if(!token)throw Error('Нет данных подключения.');
-    try{await PWA.shareToken(token);}catch(error){toast(error.message);}
+    try{const token=updatePairingToken(kind==='offer'?'host':'client');if(!token)throw Error('Сначала выберите соединение или укажите корректный IPv4.');await PWA.shareToken(token);}catch(error){toast(error.message);}
   }
   function pairingText(token,id){
     const link=PWA?.pairingUrl?.(token)||PWA?.protocolUrl?.(token)||Pairing.protocolUrl(token);
@@ -507,19 +526,20 @@
     try{
       const b=bridge(),room=b?.room?.();if(!room)throw Error('Сначала создайте сетевую комнату.');
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
-      hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);offerToken=Pairing.fromSignal('offer',hostPeer.offer);
+      hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
+      const network=initialNetworkChoice('host',hostPeer.offer);offerToken=network.token;
       const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.()?'':'disabled')+'>↗ Поделиться</button>';
       const sound='<div class="pairing-actions">'+
         '<button class="btn pairing-compact-button" id="net-host-acoustic" type="button" '+captureDisabled()+' title="Передать звуком и слушать ответ">🔊 + 🎙 Передать и слушать</button>'+
         '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-send" type="button" title="Отправить сигнал через динамик">🔊 Передать</button>'+
-        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-listen" type="button" '+captureDisabled()+' title="Принять звуковой ответ">🎙 Слушать</button></div>'+soundSettings('host',hostPeer.offer);
+        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-listen" type="button" '+captureDisabled()+' title="Принять звуковой ответ">🎙 Слушать</button></div>'+soundSettings('host');
       const qr=pairingQr('net-host-token')+'<div class="pairing-divider-label">Получить QR-ответ</div>'+scanControls('host');
       const text=pairingText(offerToken,'net-host-token')+
         '<form id="net-host-answer"><label class="field"><span>Ответ игрока</span><textarea name="answer" rows="2" placeholder="Вставьте ответ или ссылку ХОД"></textarea></label>'+
         '<button class="btn secondary pairing-compact-button" type="submit">↘ Принять ответ</button></form>';
       b.openModal(pairingHeader('Подключить устройство','host','host-offer')+
-        pairingMethods('host-offer',{share,sound,qr,text},offerToken)+pairingFooter());
-      updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
+        network.html+pairingMethods('host-offer',{share,sound,qr,text},offerToken)+pairingFooter());
+      syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
     }catch(error){toast(error.message);}
   }
   async function acceptAnswerSignal(signal){
@@ -550,15 +570,16 @@
       pairingMethods('client-join',{share,sound,qr,text})+pairingFooter());
   }
   async function createClientAnswer(signal,{acoustic=false}={}){
-    closeClient();clientPeer=await W.createClientPeer(signal);answerToken=Pairing.fromSignal('answer',clientPeer.answer);
+    closeClient();clientPeer=await W.createClientPeer(signal);
+    const network=initialNetworkChoice('client',clientPeer.answer);answerToken=network.token;
     const b=bridge();
     const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.()?'':'disabled')+'>↗ Поделиться ответом</button>';
-    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-send" type="button">🔊 Передать ответ</button>'+soundSettings('client',clientPeer.answer);
+    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-send" type="button">🔊 Передать ответ</button>'+soundSettings('client');
     const qr=pairingQr('net-client-token');
     const text=pairingText(answerToken,'net-client-token');
     b.openModal(pairingHeader('Ответ для хоста','client','client-answer')+
-      pairingMethods('client-answer',{share,sound,qr,text},answerToken)+'<p class="pairing-brief-status" role="status">Ждём подтверждения хоста…</p>'+pairingFooter());
-    updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
+      network.html+pairingMethods('client-answer',{share,sound,qr,text},answerToken)+'<p class="pairing-brief-status" role="status">Ждём подтверждения хоста…</p>'+pairingFooter());
+    syncSoundChoice('client',clientPeer.answer);updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
     clientPresenceUnsub=clientTransport.subscribePresence?.(status=>{clientPresence=status;renderPresence();});
     const currentPeer=clientPeer;
@@ -925,15 +946,10 @@
     if(!['acoustic-host-address','acoustic-client-address'].includes(event.target.id))return;
     const role=event.target.id.includes('host')?'host':'client';
     const signal=role==='host'?hostPeer?.offer:clientPeer?.answer;
-    if(signal){syncSoundChoice(role,signal);updatePairingToken(role);}
-  });
-  document.addEventListener('change',event=>{
-    if(!['acoustic-host-port','acoustic-client-port'].includes(event.target.id))return;
-    const role=event.target.id.includes('host')?'host':'client';
-    updatePairingToken(role);
+    if(signal){event.target.dataset.userChoice='true';syncSoundChoice(role,signal);updatePairingToken(role);}
   });
   document.addEventListener('input',event=>{
-    if(!['acoustic-host-manual','acoustic-client-manual','acoustic-host-port','acoustic-client-port'].includes(event.target.id))return;
+    if(!['acoustic-host-manual','acoustic-client-manual'].includes(event.target.id))return;
     const role=event.target.id.includes('host')?'host':'client';
     updatePairingToken(role);
   });

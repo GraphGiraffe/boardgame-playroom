@@ -29,12 +29,13 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
     await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
-    // Every ICE candidate supplied by the browser is visible in the IP selector;
-    // manual choice remains available for browsers that hide interfaces behind mDNS.
+    // The selector offers compatible IPv4/UDP candidates, the full SDP mode,
+    // and manual IPv4 for browsers that hide interfaces behind mDNS.
     await host.locator('[data-net-scan="host"]').waitFor();
     assert.equal(await host.locator('[data-net-scan="host"]').count(),1);
     assert.ok(await host.locator('#acoustic-host-address option').count()>=1);
-    assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
+    assert.match((await host.locator('#acoustic-host-address').innerText()),/Все соединения/);
+    assert.match((await host.locator('#acoustic-host-address').innerText()),/Ввести IPv4 вручную/);
     assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
 
     assert.equal(await host.locator('#net-host-acoustic-send').count(),1,
@@ -46,10 +47,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     const previousManual=await host.locator('#acoustic-host-manual').inputValue();
     assert.equal(await host.locator('#acoustic-host-manual').getAttribute('placeholder'),'Например: 192.168.1.100',
       'Manual IP placeholder is an example, not a detected network address');
-    await host.locator('[data-pairing-method="sound"]').evaluate(element=>{
-      const section=element.closest('.pairing-methods-unavailable');if(section)section.open=true;
-      element.open=true;element.querySelector('.pairing-sound-settings').open=true;
-    });
+    assert.equal(await host.locator('.pairing-network-choice').isVisible(),true,
+      'all delivery methods share the same visible network selection');
     await host.locator('#acoustic-host-address').selectOption('manual');
     await host.locator('#acoustic-host-manual').fill('192.168.44.66');
     const manualLink=await value(host,'#net-host-token');
