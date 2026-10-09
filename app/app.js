@@ -28,7 +28,7 @@
   const animationPresets=Flow.presets;
   let settings = {sound:false, volume:.6, animationSpeed:'normal', quickPlay:false};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
-  let sessionId = null, hubTab = 'games';
+  let sessionId = null, hubTab = 'games', savedFilter='all', networkSaved=[], networkSavedState='idle', networkSavedTicket=0;
   let room=null,lobbyParticipantId=null,lobbyTimer=null,lobbyCountdown=null;
   let historyOpen = false, replayIndex = null, replayTimer = null, botTimer = null, toastTimer = null;
   let paused = false, lastResult = null, storageOK = true, modalReturn = null;
@@ -111,24 +111,54 @@
       <div class="sidebar-note"><span class="little-dice">⚄</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p3</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools"><button class="icon-btn pack-hub-button" data-command="packs" aria-label="Паки игр" title="Паки игр">${icon('layers')}</button><span class="status"><i class="dot"></i>${playerProfile?.name?esc(playerProfile.name)+' · ':''}Всё готово к игре</span><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран" title="Полный экран">${icon('full')}</button><button class="icon-btn" data-command="settings" aria-label="Настройки">${icon('settings')}</button></div></header>
-      ${hubTab==='sessions'?savedGamesMarkup():`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
+      ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
       ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}</p>`:''}
       ${session?`<section class="resume-banner"><div><strong>${session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт'} · ${esc(meta(session.game).name)}</strong><p>${session.current.status==='finished'?'Результат и вся история ходов сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'} · сохранено на устройстве`}</p></div><button class="btn" data-command="resume">${session.current.status==='finished'?'Посмотреть':'Продолжить'} ${icon('arrow')}</button></section>`:''}
       <div class="library-heading"><div class="filters" role="group" aria-label="Категории игр"><button class="filter ${filter==='all'?'active':''}" data-filter="all">Все игры</button><button class="filter ${filter==='cards'?'active':''}" data-filter="cards">Карточные</button><button class="filter ${filter==='board'?'active':''}" data-filter="board">На поле</button></div><span class="collection-count">${games.length} В КОЛЛЕКЦИИ</span></div>
       <section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0&&filter==='all')).join('')}${!E.GAMES.length?'<div class="packs-empty-hub"><h2>Начните с первой игры</h2><p>Приложение готово. Добавьте файл пака: в нём есть правила, компоненты и оформление вашей игры.</p><button class="btn" data-command="packs">Установить пак игры</button></div>':!games.length?'<p class="lead">В этой категории пока нет игр.</p>':''}</section>`}
       <footer class="hub-footer"><span>${icon('hand')} Сделано для игры, а не для спешки</span><span>Без регистрации.<br class="mobile-text"> Даже без интернета.</span></footer></main></div>`;
+    if(hubTab==='sessions')refreshNetworkSaved();
   }
-  function savedGamesMarkup() {
-    let entries=[];
-    try { entries=library.list(); } catch (_) { return '<p class="recovery-note" role="alert">Хранилище браузера недоступно. Ваш текущий стол остаётся открытым до закрытия страницы.</p>'; }
+  function savedGamesMarkup(){
+    let local=[];
+    try{local=library.list();}catch(_){return '<p class="recovery-note" role="alert">Хранилище локальных партий недоступно. Записи не изменены.</p>';}
     const date=value=>new Date(value).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    const entries=[...local.map(x=>({...x,kind:'local'})),...networkSaved.map(x=>({...x,kind:'network'}))]
+      .filter(x=>savedFilter==='all'||x.kind===savedFilter).sort((a,b)=>b.updatedAt-a.updatedAt||Number(b.active)-Number(a.active));
     const cards=entries.map(entry=>{
       const blocked=entry.invalid||entry.missingPack,name=entry.invalid?'Сохранение':meta(entry.game)?.name||entry.game;
+      if(entry.kind==='network'){
+        const host=entry.role!=='client',role=host?'Хост':'Клиент',players=(entry.players||[]).map(esc).join(' · '),archiveId=(host?'':'client:')+(host?entry.sessionId:entry.id);
+        return `<article class="saved-game" data-network-session-id="${esc(archiveId)}"><div>
+          <div class="saved-status"><span class="pill">Сетевая · ${role}</span><span class="muted">${Number(entry.revision)||0} действий${!host&&entry.savedFrames<entry.revision+1?' · часть истории не загружена':''}</span></div>
+          <h2>${esc(name)}</h2><p class="saved-players">${esc(entry.name||'Комната')} · ${players||'Участники'}</p>
+          <p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>
+          </div><div class="saved-game-actions">
+          <button class="btn secondary" data-network-history="${esc(archiveId)}">История ${icon('history')}</button>
+          <button class="btn" data-network-continue="${esc(archiveId)}">${host?'Продолжить':'Присоединиться'} ${icon('play')}</button>
+          </div></article>`;
+      }
       const details=entry.missingPack?`<p>Для этой партии нужен пак ${esc(entry.game)} версии ${esc(entry.packVersion)}. Установите его, чтобы продолжить. Сохранение осталось на устройстве.</p>`:entry.invalid?'<p>Запись оставлена без изменений. Можно удалить её, если она больше не нужна.</p>':`<p class="saved-players">${entry.players.map(esc).join(' · ')}</p>${entry.finished?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>${entry.mode==='pass'?'На одном устройстве':'С ботами'} · ${esc(entry.preset||'Основной набор')}</p><p>Начало: ${esc(date(entry.createdAt))} · Последний ход: ${esc(date(entry.updatedAt))}</p>`;
-      return `<article class="saved-game" data-session-id="${esc(entry.id)}"><div><div class="saved-status"><span class="pill">${entry.missingPack?'Нужен игровой пак':entry.invalid?'Не удалось прочитать':entry.finished?'Завершена':'На паузе'}</span><span class="muted">${blocked?'':`Ход ${entry.move+1}`}</span></div><h2>${esc(name)}</h2>${details}</div><div class="saved-game-actions">${entry.missingPack?'<button class="btn" data-command="packs">Установить пак</button>':blocked?'':`<button class="btn" data-resume-id="${esc(entry.id)}">${entry.finished?'Просмотреть':'Продолжить'} ${icon(entry.finished?'history':'play')}</button>`}<button class="icon-btn" data-delete-id="${esc(entry.id)}" aria-label="Удалить партию ${esc(entry.invalid?'':name)}" title="Удалить партию">${icon('trash')}</button></div></article>`;
+      return `<article class="saved-game" data-session-id="${esc(entry.id)}"><div><div class="saved-status"><span class="pill">Локальная · ${entry.missingPack?'Нужен игровой пак':entry.invalid?'Не удалось прочитать':entry.finished?'Завершена':'На паузе'}</span><span class="muted">${blocked?'':`Ход ${entry.move+1}`}</span></div><h2>${esc(name)}</h2>${details}</div><div class="saved-game-actions">${entry.missingPack?'<button class="btn" data-command="packs">Установить пак</button>':blocked?'':`<button class="btn" data-resume-id="${esc(entry.id)}">${entry.finished?'Просмотреть':'Продолжить'} ${icon(entry.finished?'history':'play')}</button>`}<button class="icon-btn" data-delete-id="${esc(entry.id)}" aria-label="Удалить партию ${esc(entry.invalid?'':name)}" title="Удалить партию">${icon('trash')}</button></div></article>`;
     }).join('');
-    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Столы на паузе и завершённые игры. Продолжайте с того же места или пересматривайте историю.</p></div><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></header>
-      <section class="saved-games-list" aria-label="Сохранённые партии">${entries.length?cards:'<div class="saved-empty"><h2>Здесь будут ваши партии</h2><p>Начните любую игру. Её можно оставить на паузе и вернуться позже; завершённые партии тоже сохраняются.</p><button class="btn" data-command="home">Выбрать игру</button></div>'}</section>`;
+    const filters=[['all','Все'],['local','Локальные'],['network','Сетевые']].map(([value,label])=>
+      `<button type="button" class="filter ${savedFilter===value?'active':''}" data-saved-filter="${value}" aria-pressed="${savedFilter===value}">${label}</button>`).join('');
+    const note=networkSavedState==='loading'?'<p class="saved-network-info" role="status">Загружаем сетевые сохранения…</p>':
+      networkSavedState==='error'?'<p class="recovery-note" role="alert">Сетевой архив этого браузера недоступен. Локальные партии не затронуты.</p>':'';
+    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></header>
+      <div class="saved-filter-bar" role="group" aria-label="Тип партии">${filters}</div>${note}
+      <section class="saved-games-list" aria-label="Сохранённые партии">${entries.length?cards:'<div class="saved-empty"><h2>Пока нет партий</h2><p>Начните игру или проверьте другой раздел.</p><button class="btn" data-command="home">Выбрать игру</button></div>'}</section>`;
+  }
+  async function refreshNetworkSaved(){
+    const ticket=++networkSavedTicket;networkSavedState='loading';networkSaved=[];
+    try{
+      const records=await globalThis.PlayroomNetworkLibrary?.list?.()||[];
+      if(ticket!==networkSavedTicket||hubTab!=='sessions'||screen!=='hub')return;
+      networkSaved=records;networkSavedState='ready';
+    }catch(_){if(ticket!==networkSavedTicket)return;networkSavedState='error';}
+    if(ticket===networkSavedTicket&&screen==='hub'&&hubTab==='sessions'){
+      const panel=$('#saved-games-panel');if(panel)panel.innerHTML=savedGamesMarkup();
+    }
   }
 
   function leaveTable(tab='games') {
@@ -499,6 +529,7 @@
     if(person){showPlayerActions(Number(person.dataset.accusePlayer));return;}
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
     if(!button||button.disabled)return;
+    if(button.dataset.savedFilter){savedFilter=button.dataset.savedFilter;const panel=$('#saved-games-panel');if(panel)panel.innerHTML=savedGamesMarkup();return;}
     if(button.dataset.resumeId){resumeSession(button.dataset.resumeId);return;}
     if(button.dataset.deleteId){try{askDelete(button.dataset.deleteId);}catch(_){toast('Не удалось прочитать сохранения.');}return;}
     if(button.dataset.deleteConfirm){deleteSession(button.dataset.deleteConfirm);return;}
@@ -572,7 +603,8 @@
     room=null;lobbyParticipantId=null;lobbyCountdown=null;screen='hub';
     renderHub();
   }
-  globalThis.PlayroomAppBridge=Object.freeze({restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
+  function showSessions(){screen='hub';hubTab='sessions';closeModal(true);renderHub();}
+  globalThis.PlayroomAppBridge=Object.freeze({showSessions,restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const important=ids.filter(id=>!['move','draw','notify'].includes(id));

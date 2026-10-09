@@ -91,6 +91,25 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>rev,initial);
         const savedRevision=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
         for(const guest of guests)await guest.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)===rev,savedRevision);
+        // Each guest persists only projected frames (never host authority or
+        // private resume capabilities) before the host page disappears.
+        for(const guest of guests){
+          await guest.waitForFunction(async rev=>{
+            const store=new PlayroomNetworkClientHistory();
+            try{const list=await store.list();return list.some(x=>x.role==='client'&&x.revision>=rev&&x.savedFrames>0);}
+            finally{store.close();}
+          },savedRevision,{timeout:10000});
+          const personal=await guest.evaluate(async()=>{
+            const store=new PlayroomNetworkClientHistory(),list=await store.list();
+            const snapshot=await store.read(list[0].id);store.close();
+            return {records:list.length,role:list[0].role,viewer:snapshot.viewer,
+              leaked:JSON.stringify(snapshot).includes('resumeToken')||JSON.stringify(snapshot).includes('packDigest')||
+                JSON.stringify(snapshot).includes('recovery')};
+          });
+          assert.equal(personal.records,1);assert.equal(personal.role,'client');
+          assert.equal(personal.leaked,false);
+        }
+
         const expected=await host.evaluate(async()=>{
           const store=new PlayroomNetworkSessionStore(),entries=await store.list();
           const current=entries[0]&&await store.load(entries[0].sessionId,TabletopCore,TabletopSession);
@@ -107,13 +126,21 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         // This destroys the live authority, WebRTC channels and all in-memory
         // RoomService maps. Only the host IndexedDB record may survive.
         await host.reload();
-        await host.locator('#network-saved-host-button').waitFor();
-        await host.locator('#network-saved-host-button').click();
-        await host.locator('[data-network-archive]').first().click();
-        await host.locator('[data-network-continue]').click();
+        await host.locator('[data-command="sessions"]').click();
+        await host.locator('[data-saved-filter="network"]').click();
+        assert.equal(await host.locator('.saved-game[data-network-session-id]').count(),1);
+        assert.match(await host.locator('.saved-game[data-network-session-id]').innerText(),/Сетевая · Хост/);
+        // The history must remain readable even while the network room is stopped.
+        await host.locator('[data-network-history]').first().click();
+        await host.locator('.table-shell.network-game .history-panel').waitFor();
+        assert.equal(await host.locator('.table-shell.network-game .scene [data-action]:not([disabled])').count(),0,
+          'read-only archives must not expose legal actions');
+        await host.locator('.table-shell.network-game [data-command=home]').first().click();
+        await host.locator('[data-network-continue]').first().click();
         await host.locator('.table-shell.network-game').waitFor({timeout:15000});
         assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
+        await host.waitForFunction(count=>document.querySelectorAll('.network-presence .network-person.offline').length===count,guestCount);
         for(let index=0;index<guests.length;index++){
           const guest=guests[index];await guest.reload();await guest.locator('#network-join-button').waitFor();
           await pair(host,guest);
@@ -124,6 +151,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.equal(await guest.locator('.table-shell.network-game').getAttribute('data-viewer'),String(mode==='network-player'?index+1:index));
           assert.equal(Number(await guest.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         }
+        await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length===0);
         const room=await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id));
         assert.equal(room.participants.filter(p=>!p.isHost).length,guestCount);
         assert.deepEqual(room.seats.map(s=>s.participantId),expected.seats);

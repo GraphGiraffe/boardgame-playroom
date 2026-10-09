@@ -1,13 +1,13 @@
 'use strict';
 // Unreleased LAN-01 candidate: invalidate cached code after host-journal and
 // recovery changes. Immutable published RC6 assets are not modified.
-const CACHE='playroom-pwa-lan01-dev.2';
+const CACHE='playroom-pwa-network-ux-dev.1';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './core/ui.css','./core/input.css','./core/motion.css','./core/tooltips.css',
   './core/engine.js','./core/game-flow.js','./core/hand-overflow.js','./core/audio.js','./core/session.js','./core/protocol.js','./core/authority.js','./core/ui.js','./core/player-target.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
-  './app/views.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/network-session-store.js','./app/pairing.js','./app/acoustic-pairing.js' ,'./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/vendor/qrcode.js','./app/vendor/LICENSE.qrcode','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./app/session-client.js','./app/game-screen.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
+  './app/views.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/network-session-store.js','./app/network-client-history.js','./app/pairing.js','./app/acoustic-pairing.js' ,'./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/vendor/qrcode.js','./app/vendor/LICENSE.qrcode','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./app/session-client.js','./app/game-screen.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
   './app/transports/webrtc.js','./app/transports/local.js'
 ];
 

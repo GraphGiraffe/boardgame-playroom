@@ -191,7 +191,9 @@
       return this.transaction(['sessions'],'readonly',(tx,done)=>{
         const request=tx.objectStore('sessions').getAll();
         request.onsuccess=()=>done(request.result.map(s=>({sessionId:s.sessionId,roomId:s.roomId,
-          game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt}))
+          game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt,
+          name:s.room?.name||'',hostMode:s.room?.hostMode||'player',
+          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),role:'host'}))
           .sort((a,b)=>b.updatedAt-a.updatedAt));
       });
     }

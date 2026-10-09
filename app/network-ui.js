@@ -1,15 +1,17 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore;
+  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore,ClientHistory=root.PlayroomNetworkClientHistory;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
-  let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null;
+  let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientPresence=null,clientPresenceUnsub=null;
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const connectedHostPeers=[];
   const resumeStore=new M.ResumeStore();
   const hostSessionStore=NetworkSessionStore?new NetworkSessionStore():null;
-  let hostLockRelease=null;
+  const clientHistoryStore=ClientHistory?new ClientHistory():null;
+  let clientHistoryUnsub=null,clientHistoryQueue=Promise.resolve(),clientHistoryWarning=false,clientBackfillId=0;
+  let hostLockRelease=null,archiveMount=null,archiveAuthority=null;
   let reconnectStatus='';
 
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
@@ -293,7 +295,7 @@
       toast('QR: '+(error?.message||String(error)));
     }
   }
-  function closeClient(){stopClientAudio();clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
+  function closeClient(){clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;}
   function closePendingHostPeer(){
     stopHostAudio();hostServeClose?.();hostServeClose=null;
     hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;
@@ -303,6 +305,35 @@
     for(const item of connectedHostPeers.splice(0)){
       item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();
     }
+  }
+  function roomPresence(room){
+    return {kind:'room-presence',roomId:room.id,revision:room.revision,participants:room.participants
+      .map(p=>({id:p.id,nickname:p.nickname,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost}))};
+  }
+  function notifyPresence(room){
+    if(room?.phase!=='playing')return;
+    const data=roomPresence(room);
+    for(const item of connectedHostPeers){
+      if(!item.roomConnection?.participantId||item.peer?.channel?.readyState!=='open')continue;
+      try{item.peer.channel.send(JSON.stringify(data));}catch(_){}
+    }
+  }
+  function renderPresence(){
+    const shell=$('.table-shell.network-game');if(!shell)return;
+    let data;
+    if(hostAuthority&&hostRoomId){try{data=roomPresence(bridge().roomService.snapshot(hostRoomId));}catch(_){}}
+    else if(clientGameClient&&clientPresence?.roomId===clientRoom?.id)data=clientPresence;
+    if(!data)return;
+    const status=shell.querySelector('.table-status');if(!status)return;
+    let line=shell.querySelector('.network-presence');
+    if(!line){line=document.createElement('div');line.className='network-presence';line.setAttribute('role','status');line.setAttribute('aria-live','polite');status.after(line);}
+    const players=data.participants.filter(p=>p.role==='player');
+    const connected=players.filter(p=>p.connected).length;
+    const value='<span class="network-presence-count">В сети: '+connected+' из '+players.length+'</span>'+
+      players.map(p=>'<span class="network-person '+(p.connected?'online':'offline')+'">'+
+        '<i class="network-person-dot" aria-hidden="true"></i>'+esc(p.nickname)+(p.isHost?' · хост':'')+
+        (p.connected?'':' · отключён')+'</span>').join('');
+    if(line.dataset.content!==value){line.dataset.content=value;line.innerHTML=value;}
   }
   function showDisconnectBanner(){
     const shell=document.querySelector('.table-shell.network-game');
@@ -320,9 +351,9 @@
     const b=bridge();if(!b)return;
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
-    if(intro&&!document.getElementById('network-saved-host-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='network-saved-host-button';btn.type='button';btn.textContent='Сетевые сохранения хоста';intro.querySelector('.lobby-actions')?.appendChild(btn);}
+
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent='Установить ХОД';intro.querySelector('.lobby-actions')?.appendChild(btn);}
-    showDisconnectBanner();
+    showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     if(gameShell&&hostAuthority&&!document.getElementById('network-pair-button')){
       const tools=gameShell.querySelector('.table-header')||gameShell;
@@ -342,6 +373,7 @@
     hostRoomUnsub=bridge().roomService.subscribe(room.id,state=>{
       if(state.phase==='playing'&&!hostStarted)startHostGame(state).catch(error=>toast(error.message));
       else if(document.querySelector('.lobby-shell'))bridge().renderLobby();
+      if(state.phase==='playing'){notifyPresence(state);renderPresence();}
     });
   }
   function hostPeerServing(peer,switchable,roomConnection,roomId){
@@ -353,7 +385,7 @@
       subscribe:listener=>switchable.subscribe(listener),
       dispatch:async command=>{
         const result=await switchable.dispatch(command);
-        if(command?.type==='resume'&&result?.ok){
+        if((command?.type==='resume'||command?.type==='join')&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
             old.serveClose?.();old.peer?.close?.();old.switchable?.close?.();
@@ -366,6 +398,10 @@
             if(viewer<0)throw Error('В комнате больше нет игрового места для этого участника.');
             switchable.set(hostAuthority.connect(viewer));
           }
+        }
+        if(result?.ok&&(command?.type==='resume'||command?.type==='join')){
+          const room=bridge().roomService.snapshot(roomId);
+          if(peer.channel?.readyState==='open')peer.channel.send(JSON.stringify(roomPresence(room)));
         }
         return result;
       },
@@ -409,12 +445,18 @@
     const b=bridge(),share=PWA?.canShare?.()?'<button class="btn" type="button" data-net-share="answer" style="width:100%">Поделиться ответом</button>':'<div class="rules-mode-note">Системное «Поделиться» недоступно. Используйте «Другие способы».</div>';
     b.openModal(b.modalHead('Ответ для хоста')+'<p class="lead">Передайте ответ обратно хосту. QR показан как дополнительный вариант; если на ПК нет камеры, используйте Share или копирование ссылки.</p>'+soundSettings('client',clientPeer.answer)+'<button class="btn" id="net-client-acoustic-send" type="button" style="width:100%">Отправить звуковой ответ</button>'+share+pairingFallback(answerToken,'net-client-token')+'<p class="lead" style="margin-top:14px">Ждём подтверждения хоста…</p>');updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
+    clientPresenceUnsub=clientTransport.subscribePresence?.(status=>{clientPresence=status;renderPresence();});
     const currentPeer=clientPeer;
     currentPeer.pc.addEventListener('connectionstatechange',()=>{
       if(currentPeer!==clientPeer)return;
-      if(['failed','disconnected','closed'].includes(currentPeer.pc.connectionState)){
-        reconnectStatus='Нажмите «Повторно подключиться» и отсканируйте новый QR хоста.';
-        showDisconnectBanner();
+      const state=currentPeer.pc.connectionState;
+      if(['failed','disconnected','closed'].includes(state)){
+        reconnectStatus='Если связь сама не восстановится, используйте новый QR хоста.';
+        clientMount?.setConnected(false);showDisconnectBanner();
+      }else if(state==='connected'){
+        clientMount?.setConnected(true);reconnectStatus='';
+        document.getElementById('network-reconnect-button')?.closest('.network-reconnect-banner')?.remove();
+        renderPresence();
       }
     });
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
@@ -516,7 +558,7 @@
       const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
       const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
+      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();renderPresence();notifyPresence(room);
     }catch(error){
       hostGameClient?.close?.();hostGameClient=null;
       hostAuthority?.dispose?.();hostAuthority=null;
@@ -556,16 +598,43 @@
         '<p class="rules-mode-note">Восстановлена вся история: '+(saved.session.states.length-1)+
         ' действий. Участников: '+st.players.length+'. Статус: '+esc(st.status)+
         '. Прежняя игра и квитанции сохранены.</p>'+
+        '<button class="btn secondary" type="button" data-network-history="'+esc(sessionId)+'">Посмотреть историю ходов</button>'+
         (saved.recovery&&saved.packDigest?'<button class="btn" type="button" data-network-continue="'+esc(sessionId)+'">Продолжить комнату на этом устройстве</button>':
           '<p class="rules-mode-note">Это архив до сохранения гостевых прав. Он доступен только для просмотра истории.</p>')+
         '<button class="btn secondary" id="network-saved-host-button" type="button">К списку сохранений</button>');
     }catch(error){toast('Не удалось прочитать сетевую партию: '+error.message);}
   }
+  function closeHostHistory(){
+    archiveMount?.destroy?.();archiveMount=null;
+    archiveAuthority?.dispose?.();archiveAuthority=null;
+  }
+  async function openHostHistory(sessionId){
+    if(hostStarted||hostAuthority||bridge().room?.())return toast('Сначала выйдите из активной сетевой комнаты.');
+    try{
+      const b=bridge(),saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
+      if(!saved)throw Error('Сохранение не найдено.');
+      b.packs.activate(saved.session.game,saved.session.packVersion);
+      const definition=b.packs.exportView(saved.session.game,saved.session.packVersion);
+      const room=saved.recovery?.room||saved.room;
+      const occupied=room.seats.filter(seat=>seat.participantId).sort((a,c)=>a.index-c.index);
+      const viewer=room.hostMode==='table'?-1:occupied.findIndex(seat=>seat.participantId===room.ownerId);
+      if(room.hostMode==='player'&&viewer<0)throw Error('Не найдено место хоста.');
+      closeHostHistory();
+      archiveAuthority=new Authority(saved.session,{sessionId});
+      const binding=archiveAuthority.connect(viewer);
+      const reader={snapshot:binding.snapshot(),pending:null,subscribe:()=>()=>{},
+        history:index=>Promise.resolve(binding.history(index)),send:()=>Promise.reject(Error('Архив доступен только для чтения.'))};
+      const exit=()=>{closeHostHistory();b.showSessions();};
+      b.closeModal(true);document.getElementById('app').inert=false;
+      archiveMount=Shared.mount(reader,definition,{surface:viewer<0?'table':'combined',readOnly:true,onExit:exit});
+      archiveMount.render();await archiveMount.openHistory(saved.revision);
+    }catch(error){closeHostHistory();toast('Не удалось открыть историю: '+error.message);}
+  }
   async function continueHostArchive(sessionId){
     let pendingRelease=null,recoveredRoomId=null,authority=null;
     try{
       const b=bridge(),profile=b.profile?.();
-      if(hostStarted||hostAuthority||hostRoomId||b.room?.())throw Error('Сначала завершите текущую сетевую комнату.');
+      if(hostStarted||hostAuthority||hostRoomId||b.room?.()||archiveMount)throw Error('Сначала завершите текущую сетевую комнату или просмотр истории.');
       if(!profile?.id)throw Error('Сначала сохраните имя игрока на устройстве хоста.');
       const item=(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
       if(!item)throw Error('Сохранение не найдено.');
@@ -601,11 +670,13 @@
       b.restoreHostedRoom(room.id);
       hostLockRelease=pendingRelease;pendingRelease=null;
       hostRoomId=room.id;hostStarted=true;hostAuthority=authority;
+      hostRoomUnsub?.();
+      hostRoomUnsub=b.roomService.subscribe(room.id,state=>{if(state.phase==='playing'){notifyPresence(state);renderPresence();}});
       const local=LocalTransport(authority.connect(viewer));
       hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       b.closeModal(true);document.getElementById('app').inert=false;
       hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined'});
-      hostMount.render();
+      hostMount.render();renderPresence();
       toast('Сетевая партия восстановлена. Предложите гостям новый QR для возвращения на прежние места.');
     }catch(error){
       pendingRelease?.();
@@ -621,24 +692,97 @@
       toast('Не удалось продолжить партию: '+error.message);
     }
   }
+  function saveClientProjection(snapshot){
+    if(!clientHistoryStore||!clientRoom?.id||!clientParticipantId||!snapshot||snapshot.kind!=='snapshot')return;
+    const roomId=clientRoom.id,participantId=clientParticipantId,roomName=clientRoom.name;
+    // Serialized writes prevent competing older and newer revisions overwriting
+    // metadata on the same browser. A failure leaves the live game usable.
+    clientHistoryQueue=clientHistoryQueue.catch(()=>{}).then(()=>clientHistoryStore.save({roomId,participantId,roomName,snapshot}));
+    clientHistoryQueue.catch(error=>{
+      if(!clientHistoryWarning){clientHistoryWarning=true;toast('Не удалось сохранить историю на этом устройстве: '+error.message);}
+    });
+  }
+  async function backfillClientHistory(initial,transport,roomId,participantId){
+    if(!clientHistoryStore||!initial||initial.viewer< -1)return;
+    const ticket=++clientBackfillId;
+    // Only projected history RPCs: never request/serialize the host full Session.
+    for(let index=0;index<=initial.revision;index++){
+      if(ticket!==clientBackfillId||clientTransport!==transport)break;
+      try{
+        const frame=await transport.history(index);
+        if(frame?.kind!=='history'||frame.sessionId!==initial.sessionId||frame.viewer!==initial.viewer||
+            frame.game!==initial.game||frame.packVersion!==initial.packVersion||frame.revision!==index)break;
+        await clientHistoryStore.save({roomId,participantId,roomName:clientRoom?.name||'',snapshot:frame});
+      }catch(_){break;} // Preserve already received frames; retry at next join.
+    }
+  }
+  async function listNetworkArchives(){
+    const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
+    if(responses.every(x=>x.status==='rejected'))throw Error('Сетевые архивы недоступны.');
+    return responses.flatMap(x=>x.status==='fulfilled'?x.value:[]);
+  }
+  async function openClientHistory(key){
+    if(hostStarted||hostAuthority||clientGameClient||bridge().room?.())return toast('Сначала закройте действующую сетевую партию.');
+    try{
+      const saved=await clientHistoryStore.read(key);
+      if(!saved?.frames.length)throw Error('История отсутствует на устройстве.');
+      const b=bridge();b.packs.activate(saved.game,saved.packVersion);
+      const last=saved.frames.at(-1),definition=b.packs.exportView(saved.game,saved.packVersion);
+      closeHostHistory();
+      archiveAuthority=null;
+      const epoch=last.authorityEpoch;
+      const packet=(frame,kind)=>Object.freeze({protocolVersion:1,kind,sessionId:saved.sessionId,
+        authorityEpoch:epoch,revision:frame.revision,game:saved.game,packVersion:saved.packVersion,
+        viewer:saved.viewer,audience:saved.viewer<0?'public':'player',state:frame.state,
+        events:frame.events,actions:[],cues:[],effects:[],historyLength:last.revision+1});
+      const frames=new Map(saved.frames.map(f=>[f.revision,f]));
+      const reader={snapshot:packet(last,'snapshot'),pending:null,subscribe:()=>()=>{},
+        history:index=>frames.has(index)?Promise.resolve(packet(frames.get(index),'history')):
+          Promise.reject(Error('Этот ход отсутствует в локальной истории. Подключитесь к хосту для синхронизации.')),
+        send:()=>Promise.reject(Error('Просмотр истории доступен только для чтения.'))};
+      const exit=()=>{closeHostHistory();b.showSessions();};
+      b.closeModal(true);document.getElementById('app').inert=false;
+      archiveMount=Shared.mount(reader,definition,{surface:saved.viewer<0?'table':'combined',readOnly:true,onExit:exit});
+      archiveMount.render();await archiveMount.openHistory(last.revision);
+    }catch(error){closeHostHistory();toast('Не удалось открыть клиентскую историю: '+error.message);}
+  }
+  async function openNetworkHistory(key){
+    const client=key.startsWith('client:');
+    return client?openClientHistory(key.slice(7)):openHostHistory(key);
+  }
+  function continueSavedNetwork(key){
+    if(key.startsWith('client:')){
+      if(hostStarted||hostAuthority||bridge().room?.())return toast('Сначала закройте текущую комнату.');
+      showJoin();toast('Для присоединения требуется новый QR хоста. Право прежнего игрока сохранено на этом устройстве.');
+      return;
+    }
+    return continueHostArchive(key);
+  }
   function startClientGame(snapshot){
     if(clientGameClient)return;
     try{
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
       const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
-      clientGameClient=new SessionClient(clientTransport);clientGameClient.accept(snapshot);document.getElementById('modal-root').innerHTML='';document.getElementById('app').inert=false;
-      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'combined'});clientMount.render();
+      clientGameClient=new SessionClient(clientTransport);clientGameClient.accept(snapshot);
+      if(clientHistoryStore&&clientRoom?.id&&clientParticipantId){
+        clientHistoryUnsub=clientGameClient.subscribe(saveClientProjection);
+        saveClientProjection(snapshot);
+        void backfillClientHistory(snapshot,clientTransport,clientRoom.id,clientParticipantId);
+      }
+      document.getElementById('modal-root').innerHTML='';document.getElementById('app').inert=false;
+      clientMount=Shared.mount(clientGameClient,definition,{surface:snapshot.viewer<0?'table':'combined'});clientMount.render();renderPresence();
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],[data-network-history],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
     if(target.id==='network-saved-host-button')return showHostArchives();
     if(target.dataset.networkArchive)return inspectHostArchive(target.dataset.networkArchive);
-    if(target.dataset.networkContinue)return continueHostArchive(target.dataset.networkContinue);
+    if(target.dataset.networkHistory)return openNetworkHistory(target.dataset.networkHistory);
+    if(target.dataset.networkContinue)return continueSavedNetwork(target.dataset.networkContinue);
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
@@ -688,10 +832,12 @@
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
+  root.PlayroomNetworkLibrary=Object.freeze({list:listNetworkArchives,
+    inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
-  root.addEventListener('pagehide',()=>{closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
+  root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);

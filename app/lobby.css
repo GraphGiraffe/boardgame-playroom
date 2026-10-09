@@ -22,3 +22,12 @@
 .lobby-rule-row dt{font-weight:600;overflow-wrap:anywhere;}
 .lobby-rule-row dd{margin:0;overflow-wrap:anywhere;}
 @media(max-width:480px){.lobby-rule-row{grid-template-columns:1fr;gap:2px;}}
+
+/* Network presence stays visible after the lobby has been replaced by GameScreen. */
+.network-presence{display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;padding:5px 12px 7px;min-height:31px;color:#536b55}
+.network-presence-count{font-size:11px;font-weight:800;white-space:nowrap;margin-right:4px}
+.network-person{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:10px;font-size:11px;font-weight:650;background:#e9efdf;border:1px solid #c7d7b9}
+.network-person.offline{background:#fff0df;border-color:#efc2a0;color:#8d4126}
+.network-person-dot{display:block;width:7px;height:7px;border-radius:50%;flex:none;background:#4f9666}
+.network-person.offline .network-person-dot{background:#da754e}
+@media(max-width:760px){.network-presence{gap:4px;padding:3px 6px 5px}.network-person{padding:3px 6px;font-size:10px}.network-presence-count{font-size:10px}}
