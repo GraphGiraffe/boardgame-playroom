@@ -18,20 +18,32 @@ async function profile(page,name){
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').waitFor();
 }
-async function pair(host,client,{offerButton=false}={}){
+async function pair(host,client,{offerButton=false,photo=false}={}){
   if(offerButton)await host.locator('#network-pair-button').click();
   await host.locator('#net-host-token').waitFor();
   const offer=await host.locator('#net-host-token').inputValue();
   const token=await host.evaluate(value=>PlayroomPairing.extract(value),offer);
   assert.match(token,/^PR[23]\./);
   await client.locator('#network-join-button').click();
-  await client.locator('#net-client-offer textarea[name=offer]').fill(offer);
-  await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
-  await client.locator('#net-client-token').waitFor();
+  if(photo){
+    const qr=host.locator('#net-host-token-qr svg');await qr.waitFor({timeout:10000});
+    const image=await qr.screenshot();
+    await client.locator('#net-client-qr-gallery').setInputFiles({name:'offer.png',mimeType:'image/png',buffer:image});
+  }else{
+    await client.locator('#net-client-offer textarea[name=offer]').fill(offer);
+    await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+  }
+  await client.locator('#net-client-token').waitFor({timeout:15000});
   const answer=await client.locator('#net-client-token').inputValue();
-  await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
-  await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
-  await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});
+  if(photo){
+    const qr=client.locator('#net-client-token-qr svg');await qr.waitFor({timeout:10000});
+    const image=await qr.screenshot();
+    await host.locator('#net-host-qr-gallery').setInputFiles({name:'answer.png',mimeType:'image/png',buffer:image});
+  }else{
+    await host.locator('#net-host-answer textarea[name=answer]').fill(answer);
+    await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+  }
+  await host.locator('#net-host-answer').waitFor({state:'detached',timeout:15000});
 }
 test('guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno},async()=>{
   const hosted=await server(),{server:listener,url}=hosted;
@@ -72,7 +84,7 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
     await client.reload();
     await client.locator('#network-join-button').waitFor();
     await host.locator('#network-pair-button').waitFor();
-    await pair(host,client,{offerButton:true});
+    await pair(host,client,{offerButton:true,photo:true});
     await client.locator('.table-shell.network-game').waitFor({timeout:15000});
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-revision'),previousRevision);
