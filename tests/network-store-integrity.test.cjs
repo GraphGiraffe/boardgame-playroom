@@ -84,3 +84,24 @@ test('LAN-01 never opens a transaction for receipts with mismatched command IDs'
     signature:'signed',receipt:{ok:false,commandId:'wrong',revision:0}}),/Некорректная квитанция/);
   assert.equal(writes,0);
 });
+
+test('LAN-01 does not allow a recoverable room without an immutable pack digest',async()=>{
+  const archive=fixture(),store=new Store({indexedDB:null});
+  let writes=0;store.transaction=async()=>{writes++;};
+  const room={id:'same-room',ownerId:'host',game:{id:'lan01-integrity',version:'0.1.0'}};
+  await assert.rejects(store.create({sessionId:'another',room,session:new Session(E,'lan01-integrity',{players:[{name:'A'},{name:'B'}]}),
+    recovery:{version:1,room,tokens:[]}}),/SHA-256/);
+  assert.equal(writes,0);
+  archive.record.packDigest='sha256:invalid';
+  await assert.rejects(restore(archive),/Сетевое сохранение повреждено/);
+});
+
+test('LAN-01 hashes the complete installed pack including rules, not only its manifest',async()=>{
+  const value=JSON.stringify({manifest:{id:'uno',version:'0.2.1'},files:{'rules.js':'old-rules'}});
+  const packs={exportPack:()=>value};
+  const before=await Store.fingerprintPack(packs,'uno','0.2.1');
+  assert.match(before,/^sha256:[0-9a-f]{64}$/);
+  packs.exportPack=()=>value.replace('old-rules','new-rules');
+  const after=await Store.fingerprintPack(packs,'uno','0.2.1');
+  assert.notEqual(after,before);
+});

@@ -501,7 +501,8 @@
       const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
       if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
       hostLockRelease=await hostSessionStore.acquireHostLock(sessionId);
-      await hostSessionStore.create({sessionId,room,session,recovery:b.roomService.exportRecovery(room.id)});
+      const packDigest=await NetworkSessionStore.fingerprintPack(b.packs,room.game.id,room.game.version);
+      await hostSessionStore.create({sessionId,room,session,recovery:b.roomService.exportRecovery(room.id),packDigest});
       persisted=true;
       b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
       hostAuthority=new Authority(session,{sessionId,persistence:{
@@ -555,7 +556,7 @@
         '<p class="rules-mode-note">Восстановлена вся история: '+(saved.session.states.length-1)+
         ' действий. Участников: '+st.players.length+'. Статус: '+esc(st.status)+
         '. Прежняя игра и квитанции сохранены.</p>'+
-        (saved.recovery?'<button class="btn" type="button" data-network-continue="'+esc(sessionId)+'">Продолжить комнату на этом устройстве</button>':
+        (saved.recovery&&saved.packDigest?'<button class="btn" type="button" data-network-continue="'+esc(sessionId)+'">Продолжить комнату на этом устройстве</button>':
           '<p class="rules-mode-note">Это архив до сохранения гостевых прав. Он доступен только для просмотра истории.</p>')+
         '<button class="btn secondary" id="network-saved-host-button" type="button">К списку сохранений</button>');
     }catch(error){toast('Не удалось прочитать сетевую партию: '+error.message);}
@@ -573,6 +574,9 @@
       b.packs.activate(item.game,item.packVersion);
       const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
       if(!saved?.recovery)throw Error('Архив создан без прав гостей. Восстановление комнаты невозможно.');
+      if(!saved.packDigest)throw Error('Архив создан без контрольной суммы правил. Безопасное продолжение невозможно.');
+      if(await NetworkSessionStore.fingerprintPack(b.packs,saved.session.game,saved.session.packVersion)!==saved.packDigest)
+        throw Error('Содержимое пака изменилось при прежнем номере версии. Возобновление заблокировано; архив сохранён.');
       const room=saved.recovery.room;
       if(room.ownerId!==profile.id||room.phase!=='playing'||room.id!==saved.room.id||
           saved.session.game!==room.game.id||saved.session.packVersion!==room.game.version)

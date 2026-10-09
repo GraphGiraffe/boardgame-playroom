@@ -12,6 +12,15 @@
   // All network authority data is PRIVATE to the host origin. No record from
   // this store may be returned through RTC snapshot/history or a public link.
   class NetworkSessionStore{
+    // The digest covers the COMPLETE original package including rules.js,
+    // not only a view-only network payload. A version string is insufficient.
+    static async fingerprintPack(packs,id,version){
+      if(typeof packs?.exportPack!=='function'||!globalThis.crypto?.subtle||typeof TextEncoder==='undefined')
+        throw Error('Нужен установленный пакет и защищённый браузерный контекст для проверки правил.');
+      const source=packs.exportPack(id,version);
+      const hash=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
+      return 'sha256:'+Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
+    }
     constructor({indexedDB=globalThis.indexedDB,name=DB_NAME}={}){
       this.indexedDB=indexedDB;this.name=name;this.database=null;
     }
@@ -61,16 +70,18 @@
       if(!release)throw Error('Эта сетевая партия уже открыта в другой вкладке хоста.');
       return release;
     }
-    async create({sessionId,room,session,recovery=null}){
+    async create({sessionId,room,session,recovery=null,packDigest=null}){
       if(!isId(sessionId)||!isId(room?.id)||!session?.export||room.game?.id!==session.game||room.game?.version!==session.packVersion)
         throw Error('Некорректные данные исходной сетевой партии.');
       if(session.current.move!==0)throw Error('Начальное сохранение должно предшествовать первому ходу.');
+      if((packDigest!==null&&!/^sha256:[0-9a-f]{64}$/.test(packDigest))||
+          (recovery&&packDigest===null))throw Error('Для возобновляемой комнаты нужен SHA-256 точной версии пака.');
       if(recovery&&(recovery.version!==1||recovery.room?.id!==room.id||
           recovery.room?.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))
         throw Error('Некорректная приватная копия комнаты.');
       const timestamp=Date.now();
       const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
-        game:session.game,packVersion:session.packVersion,room:clone(room),
+        game:session.game,packVersion:session.packVersion,packDigest,room:clone(room),
         recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
       return {sessionId,revision:0};
@@ -139,7 +150,8 @@
       });
       if(!stored.record)return null;
       const {record}=stored,steps=(stored.steps||[]).sort((a,b)=>a.revision-b.revision);
-      if(record.format!=='playroom-network-host'||record.version!==1||record.initial?.version!==1||
+       if(record.format!=='playroom-network-host'||record.version!==1||record.initial?.version!==1||
+           (record.packDigest!=null&&!/^sha256:[0-9a-f]{64}$/.test(record.packDigest))||
           !isId(record.roomId)||record.room?.id!==record.roomId||
           record.room?.game?.id!==record.game||record.room.game.version!==record.packVersion||
           (record.recovery&&(record.recovery.version!==1||record.recovery.room?.id!==record.roomId||
@@ -170,7 +182,8 @@
         throw Error('Неполный журнал подтверждений ходов. Данные не удалены.');
       const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
         states:[...record.initial.states,...steps.map(step=>step.state)]};
-      return {room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
+       return {room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
+         packDigest:record.packDigest||null,
         session:Session.restore(engine,saved),
         receipts:clone(stored.receipts||[]),sessionId,revision:record.revision};
     }

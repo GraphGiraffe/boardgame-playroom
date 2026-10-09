@@ -92,7 +92,7 @@ test('LAN-01 restores guest room identity and persisted rotated token after host
         const session=new TabletopSession(E,'network-store-fixture',{players:[{name:'A'},{name:'B'}]});
         const store=new PlayroomNetworkSessionStore({name:'playroom-lan01-room-restore-test'});
         await store.create({sessionId:'identity-1',room:rooms.snapshot(host.id),session,
-          recovery:rooms.exportRecovery(host.id)});
+          recovery:rooms.exportRecovery(host.id),packDigest:'sha256:'+'a'.repeat(64)});
         rooms.setResumeDurability(host.id,entry=>store.rotateResumeToken({sessionId:'identity-1',...entry}));
         link.close();
         const returned=await rooms.connection(host.id).dispatch({type:'resume',participantId,resumeToken:join.resumeToken});
