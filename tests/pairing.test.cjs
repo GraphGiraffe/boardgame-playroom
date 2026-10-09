@@ -53,3 +53,20 @@ test('PR3 fallback and legacy PR2 are both accepted, corrupt PR3 is rejected',()
   assert.deepEqual(Pairing.decode(fallback),{v:2,kind:'offer',signal:noIce});
   assert.throws(()=>Pairing.decode('PR3.bad'),/компактное/i);
 });
+
+test('TEST-NET-only browser SDP never masquerades as LAN; explicit manual IP switches QR/link to PR3',()=>{
+  const sig=JSON.stringify({v:1,type:'offer',
+    pairingId:'123e4567-e89b-12d3-a456-426614174000',
+    sdp:['v=0','a=ice-ufrag:abcd','a=ice-pwd:abcdefghijklmnopqrstuvwx',
+      'a=fingerprint:sha-256 '+Array(32).fill('AB').join(':'),
+      'a=candidate:1 1 UDP 2122260223 192.0.2.1 60960 typ host',''].join('\r\n')});
+  const without=Pairing.fromSignal('offer',sig);
+  assert.ok(without.startsWith('PR2.'),'cannot pretend 192.0.2.1 is a routable local IP');
+  const explicit=Pairing.fromSignal('offer',sig,{address:'192.168.0.112',port:60960});
+  assert.ok(explicit.startsWith('PR3.'),'manual real IPv4 creates a compact QR/Share/audio frame');
+  const packet=Pairing.decode(explicit);
+  assert.equal(packet.ip,'192.168.0.112');
+  assert.equal(packet.port,60960);
+  assert.ok(explicit.length<200);
+  assert.equal(Pairing.extract(Pairing.protocolUrl(explicit)),explicit);
+});
