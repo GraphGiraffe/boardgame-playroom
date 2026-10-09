@@ -14,7 +14,18 @@ const options=(mode='pass')=>({players:[{name:'Аня'},{name:'Борис',bot:m
 function fixture(game='uno',mode='pass',turns=0){const s=new Session(E,game,options(mode));for(let i=0;i<turns&&s.current.status==='playing';i++)s.act(s.current.turn,E.botAction(s.current));return s.export();}
 async function saved(page){return page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).export());}
 async function move(page){return page.evaluate(()=>{return TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move;});}
-async function resume(page){await page.locator('.resume-banner [data-command=resume]').click();if(await page.locator('.handoff').count())await page.locator('[data-command=unlock]').click();}
+async function resume(page){
+  // With the unified «Мои партии» hub, an active local match may appear
+  // in the saved-games panel rather than as a hero banner on reload.
+  // Require an actual stored session and continue through either real UI path.
+  const banner=page.locator('.resume-banner [data-command=resume]');
+  if(await banner.count())await banner.click();
+  else{
+    await page.locator('.side-nav [data-command=sessions]').click();
+    await page.locator('.saved-games-list .saved-game[data-session-id] [data-resume-id]').first().click();
+  }
+  if(await page.locator('.handoff').count())await page.locator('[data-command=unlock]').click();
+}
 async function cardTouchPoint(card){return card.evaluate(el=>{const r=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const f of [.5,.12,.88]){const p={x:r.x+r.width*f,y:r.y+r.height*fy},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('No exposed card position');});}
 async function clickMove(page,game){
   if(game==='checkers'){await page.locator('.checker-piece.movable').first().click();await page.locator('.checker-cell.destination').first().click();}
@@ -186,6 +197,12 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
       assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:17,scoped:true,global:false});
       await page.locator('#setting-volume').selectOption('0.3');
+      // Observe the persisted state before reloading; distinguish a failed
+      // settings write from a delayed browser navigation or a fresh context.
+      await page.waitForFunction(()=>{
+        const stored=JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}');
+        return stored.sound===true&&stored.volume===0.3;
+      });
       await page.locator('.modal [data-command=close-modal]').click();await page.reload();
       await page.locator('[data-command=settings]').click();
       assert.equal(await page.locator('#setting-sound').isChecked(),true);
