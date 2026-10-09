@@ -59,7 +59,7 @@
     if(!channel||!connection)throw Error('Нужны канал и привязанное соединение authority.');
     const debug=channel.__playroomDebug={side:'server',hellos:0,ready:0,requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
     const unsubscribe=connection.subscribe?.(snapshot=>{if(channel.readyState==='open'){debug.snapshots++;send(channel,{kind:'snapshot',snapshot});}});
-    const onMessage=event=>{
+    const onMessage=async event=>{
       let message;try{message=JSON.parse(event.data);}catch(error){debug.errors++;debug.lastError='parse';return;}
       if(message?.kind==='hello'){
         debug.hellos++;
@@ -74,7 +74,8 @@
         else if(message.method==='dispatch')result=connection.dispatch(message.value);
         else if(message.method==='history')result=connection.history(message.value);
         else throw Error('Unknown request');
-        send(channel,{kind:'response',requestId:message.requestId,result});debug.responses++;
+        result=await result;
+        if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,result});debug.responses++;}
       }catch(error){
         debug.errors++;debug.lastError=error?.message||String(error);
         if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,error:'Запрос не выполнен.'});debug.responses++;}

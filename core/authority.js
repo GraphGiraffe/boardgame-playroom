@@ -4,7 +4,7 @@
   const {clone,freeze,canonical}=P;
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
-  const text={BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Общий стол доступен только для просмотра.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.'};
+  const text={BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Общий стол доступен только для просмотра.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.'};
   function transfers(before,after){
     if(!before.data.hands||!after.data.hands)return [];
     const owners=new Map(),table=new Set(),groups=new Map();
@@ -14,9 +14,9 @@
     return [...groups.values()];
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
-      records.set(this,{session,sessionId,authorityEpoch,clock,receipts:new Map(),bindings:new Set(),timer:null,busy:false,disposed:false,receiptLimit,effects:[]});
+      records.set(this,{session,sessionId,authorityEpoch,clock,receipts:new Map(),bindings:new Set(),timer:null,busy:false,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[]});
     }
     get revision(){return records.get(this).session.current.move;}
     connect(viewer=-1){
@@ -27,7 +27,7 @@
       return Object.freeze({
         snapshot:()=>{requireOpen();return this._snapshot(viewer);},
         history:(index)=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.states.length)throw Error('Invalid history index');return this._snapshot(viewer,index);},
-        dispatch:command=>this._dispatch(binding,command),
+        dispatch:command=>r.persistence?this._dispatchDurable(binding,command):this._dispatch(binding,command),
         subscribe:listener=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');binding.listeners.add(listener);return ()=>binding.listeners.delete(listener);},
         close:()=>{binding.closed=true;binding.listeners.clear();r.bindings.delete(binding);}
       });
@@ -65,6 +65,45 @@
       }
       const {snapshot,...result}=receipt;r.receipts.set(key,{signature,receipt:freeze(result)});return receipt;
     }
+    // Network-only path: stage the transition, wait for atomic journal + receipt
+    // commit, and only then change the live Session or publish a snapshot.
+    async _dispatchDurable(binding,command){
+      const r=records.get(this),s=r.session;
+      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
+        revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:this._snapshot(binding.viewer)}:{})});
+      if(binding.closed||r.disposed)return reject('CLOSED');
+      if(!P.validate(command))return reject('BAD_COMMAND');
+      if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
+      if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
+      if(binding.viewer<0||s.current.players[binding.viewer]?.bot)return reject('READ_ONLY');
+      const key=`${binding.viewer}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
+      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer)}):reject('ID_CONFLICT');
+      if(r.busy)return reject('BUSY');
+      r.busy=true;
+      try{
+        let receipt,next;
+        if(command.expectedRevision!==this.revision)receipt=reject('STALE');
+        else {
+          try{next=s.prepare(binding.viewer,command.action);}catch(_){receipt=reject('ILLEGAL');}
+        }
+        if(next){
+          const before=s.current,revision=before.move;
+          receipt={ok:true,code:'OK',commandId:command.commandId,revision:next.move};
+          await r.persistence.commit({sessionId:r.sessionId,previousRevision:revision,nextState:next,
+            viewer:binding.viewer,commandId:command.commandId,signature,receipt});
+          s.commitPrepared(next);
+          r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));
+        }else{
+          const {snapshot,...result}=receipt;
+          await r.persistence.recordReceipt({sessionId:r.sessionId,viewer:binding.viewer,commandId:command.commandId,signature,receipt:result});
+        }
+        const {snapshot,...result}=receipt;
+        r.receipts.set(key,{signature,receipt:freeze(result)});
+        if(receipt.ok)this._publish();
+        return freeze({...result,snapshot:this._snapshot(binding.viewer)});
+      }catch(_){return reject('STORAGE_ERROR');}
+      finally{r.busy=false;}
+    }
     _publish(){
       const r=records.get(this);
       for(const binding of [...r.bindings])if(!binding.closed){let snapshot;try{snapshot=this._snapshot(binding.viewer);}catch(_){continue;}for(const listener of [...binding.listeners]){try{listener(snapshot);}catch(_){/* View failure cannot roll back a committed move. */}}}
@@ -81,7 +120,7 @@
       },Math.max(0,delay));
     }
     // Host-only entrypoint; never attached to a client capability.
-    actBot(actor,action){const r=records.get(this),s=r.session;if(r.disposed||r.busy||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');const before=s.current;r.busy=true;try{s.act(actor,action);r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));this._publish();}finally{r.busy=false;}return s.current;}
+    actBot(actor,action){const r=records.get(this),s=r.session;if(r.persistence)throw Error('Durable bot actions require a committed async transition');if(r.disposed||r.busy||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');const before=s.current;r.busy=true;try{s.act(actor,action);r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));this._publish();}finally{r.busy=false;}return s.current;}
     dispose(){const r=records.get(this);this.cancelBot();r.disposed=true;for(const b of r.bindings){b.closed=true;b.listeners.clear();}r.bindings.clear();}
   }
   SessionAuthority.transfers=transfers;

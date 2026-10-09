@@ -2,6 +2,7 @@
   'use strict';
   const clone = value => JSON.parse(JSON.stringify(value));
   const records = new WeakMap();
+  const preparedTransitions = new WeakMap();
   const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -120,22 +121,37 @@
     get createdAt() { return records.get(this).createdAt; }
     get updatedAt() { return records.get(this).updatedAt; }
     get current() { return this.states[this.states.length - 1]; }
-    act(actor, action) {
-      const record = records.get(this);
-      const next = freeze(this.engine.applyAction(this.current, actor, action));
-      // The live state keeps the complete event stream. Older board snapshots
-      // only need their recent events, avoiding quadratic save-file growth.
+    // The candidate is not applied to the live session. A network host may
+    // persist it atomically with its command receipt before committing it.
+    prepare(actor, action) {
       const previous = this.current;
+      const next = freeze(this.engine.applyAction(previous, actor, action));
+      preparedTransitions.set(next, {session:this, previous});
+      return next;
+    }
+    commitPrepared(next) {
+      const prepared = preparedTransitions.get(next);
+      if (!prepared || prepared.session !== this || prepared.previous !== this.current)
+        throw new Error('Prepared transition is no longer current');
+      const record = records.get(this),previous = this.current;
+      preparedTransitions.delete(next);
+      // Only the live state keeps the complete event journal.
       if (previous.events?.length > 4) {
         const compacted = freeze({...previous, events: previous.events.slice(-4)});
         record.states = Object.freeze([...this.states.slice(0, -1), compacted, next]);
       } else {
         record.states = Object.freeze([...this.states, next]);
       }
-      if (record.saveCache) record.saveCache.states.push(encodeSnapshot(record.saveCache, next));
+      // Serialization is an optimization. A failed cache update must not
+      // invalidate a transition already committed to durable storage.
+      if (record.saveCache) {
+        try { record.saveCache.states.push(encodeSnapshot(record.saveCache, next)); }
+        catch (_) { record.saveCache = null; }
+      }
       record.updatedAt = Math.max(Date.now(), record.updatedAt);
       return next;
     }
+    act(actor, action) { return this.commitPrepared(this.prepare(actor, action)); }
     view(player, index = this.states.length - 1) {
       if (!Number.isInteger(index)) throw new Error('Номер снимка должен быть целым числом');
       const state = this.states[Math.max(0, Math.min(index, this.states.length - 1))];

@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews;
+  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
@@ -8,6 +8,7 @@
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const connectedHostPeers=[];
   const resumeStore=new M.ResumeStore();
+  const hostSessionStore=NetworkSessionStore?new NetworkSessionStore():null;
   let reconnectStatus='';
 
   const stopHostAudio=()=>{hostAudioListener?.stop();hostAudioListener=null;};
@@ -318,6 +319,7 @@
     const b=bridge();if(!b)return;
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
+    if(intro&&!document.getElementById('network-saved-host-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='network-saved-host-button';btn.type='button';btn.textContent='Сетевые сохранения хоста';intro.querySelector('.lobby-actions')?.appendChild(btn);}
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent='Установить ХОД';intro.querySelector('.lobby-actions')?.appendChild(btn);}
     showDisconnectBanner();
     const gameShell=document.querySelector('.table-shell.network-game');
@@ -491,7 +493,16 @@
     if(players.length<room.constraints.min){hostStarted=false;return;}
     b.packs.activate(room.game.id,room.game.version);
     const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
-    hostAuthority=new Authority(session);
+    // LAN-01: save the private initial host state before issuing any playable
+    // snapshot. A failed/blocked IndexedDB must not silently start an unsafe game.
+    const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
+    if(!hostSessionStore)throw Error('Хранилище сетевой партии не загружено.');
+    try{await hostSessionStore.create({sessionId,room,session});}
+    catch(error){hostStarted=false;throw Error('Не удалось создать сетевое сохранение: '+error.message);}
+    hostAuthority=new Authority(session,{sessionId,persistence:{
+      commit:entry=>hostSessionStore.commit(entry),
+      recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+    }});
     for(const item of connectedHostPeers){
       const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
       if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
@@ -500,6 +511,33 @@
     const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
     const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
     hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined'});hostMount.render();
+  }
+  async function showHostArchives(){
+    try{
+      if(!hostSessionStore)throw Error('IndexedDB-модуль не загружен.');
+      const b=bridge(),items=await hostSessionStore.list();
+      b.openModal(b.modalHead('Сетевые сохранения хоста')+
+        '<p class="lead">Здесь хранятся полное состояние и история, доступные только этому профилю браузера. ' +
+        'На этапе LAN-01 можно проверить сохранение; повторное открытие комнаты с гостями разрабатывается отдельно.</p>'+
+        (items.length?'<div class="lobby-actions">'+items.map(item=>
+          '<button type="button" class="btn secondary" data-network-archive="'+esc(item.sessionId)+'">'+
+          esc(item.game)+' · '+esc(item.packVersion)+' · '+item.revision+' действий · '+
+          esc(new Date(item.updatedAt).toLocaleString('ru-RU'))+'</button>').join('')+'</div>':
+          '<p class="rules-mode-note">Пока нет сохранённых сетевых партий на этом адресе приложения.</p>'));
+    }catch(error){toast('Сетевые сохранения недоступны: '+error.message);}
+  }
+  async function inspectHostArchive(sessionId){
+    try{
+      const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
+      if(!saved)throw Error('Сохранение не найдено.');
+      const b=bridge(),room=saved.room,st=saved.session.current;
+      b.openModal(b.modalHead('Проверенное сохранение')+
+        '<p class="lead"><strong>'+esc(room.name)+'</strong> · '+esc(room.game.name)+' · '+esc(saved.session.packVersion)+'</p>'+
+        '<p class="rules-mode-note">Восстановлена вся история: '+(saved.session.states.length-1)+
+        ' действий. Участников: '+st.players.length+'. Статус: '+esc(st.status)+
+        '. Прежняя игра и квитанции сохранены. Восстановление WebRTC-комнаты и прав участников входит в LAN-03/04.</p>'+
+        '<button class="btn secondary" id="network-saved-host-button" type="button">К списку сохранений</button>');
+    }catch(error){toast('Не удалось прочитать сетевую партию: '+error.message);}
   }
   function startClientGame(snapshot){
     if(clientGameClient)return;
@@ -511,11 +549,13 @@
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
+    if(target.id==='network-saved-host-button')return showHostArchives();
+    if(target.dataset.networkArchive)return inspectHostArchive(target.dataset.networkArchive);
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
