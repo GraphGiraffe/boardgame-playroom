@@ -113,14 +113,18 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           // The old app-level #replay-range handler once repainted a local
           // Checkers session into this UNO game at exactly this moment.
           const during=await guest.locator('#replay-range').evaluate(slider=>{
+            // Input and release must target the SAME slider. The initial
+            // asynchronous history snapshot can replace the DOM between
+            // separate Playwright evaluate() calls, losing the intended 0.
             slider.value='0';slider.dispatchEvent(new Event('input',{bubbles:true}));
-            return {title:document.querySelector('.table-title h1')?.textContent,
+            const state={title:document.querySelector('.table-title h1')?.textContent,
               game:document.querySelector('.table-shell.network-game .scene .game-scene')?.className,
               inNetwork:!!document.querySelector('.table-shell.network-game')};
+            slider.dispatchEvent(new Event('change',{bubbles:true}));
+            return state;
           });
           assert.equal(during.inNetwork,true);
           assert.equal(during.title?.trim(),'UNO','local Checkers cannot render while scrubbing the guest UNO replay');
-          await guest.locator('#replay-range').evaluate(slider=>slider.dispatchEvent(new Event('change',{bubbles:true})));
           await guest.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
           assert.equal((await guest.locator('.table-title h1').innerText()).trim(),'UNO');
           const fit=await guest.evaluate(()=>{
