@@ -4,6 +4,7 @@ on:
     branches: [chore/rc6-dev-baseline]
 permissions:
   contents: write
+  pull-requests: read
 concurrency:
   group: rc6-once-prune-merged-branches
   cancel-in-progress: false
