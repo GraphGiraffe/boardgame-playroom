@@ -5,7 +5,16 @@
   root.PlayroomMultiplayer=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  const PROFILE_KEY='playroom.player-profile.v1';
+  const PROFILE_KEY='playroom.player-profile.v1',RESUME_KEY='playroom.network-resume.v1';
+  function secureResumeToken(){
+    const cryptoProvider=globalThis.crypto?.getRandomValues?globalThis.crypto:
+      (typeof require==='function'?require('node:crypto').webcrypto:null);
+    if(!cryptoProvider?.getRandomValues)throw Error('Браузер не предоставляет криптографически защищённый токен переподключения.');
+    const bytes=new Uint8Array(32);cryptoProvider.getRandomValues(bytes);
+    return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  function resumeTokenValid(token){return typeof token==='string'&&/^[0-9a-f]{64}$/.test(token);}
+
   const ROOM_CODE=/^\d{4}$/;
   const NAME_MAX=24, ROOM_NAME_MAX=48;
   const COLORS=[
@@ -57,10 +66,33 @@
     }
   }
 
-  class RoomService{
-    constructor({idFactory=uuid,clock=now,random=Math.random}={}){
-      this.idFactory=idFactory;this.clock=clock;this.random=random;this.rooms=new Map();this.listeners=new Map();
+  class ResumeStore{
+    constructor(storageProvider=()=>globalThis.localStorage){this.storageProvider=storageProvider;this.memory=new Map();}
+    _key(roomId){if(typeof roomId!=='string'||!roomId||roomId.length>128)throw Error('Некорректная комната.');return RESUME_KEY+'.'+roomId;}
+    load(roomId){
+      const key=this._key(roomId);
+      let value=this.memory.get(key);
+      if(!value)try{const raw=this.storageProvider?.()?.getItem(key);if(raw)value=JSON.parse(raw);}catch(_){/* Private or content:// storage can be blocked. */}
+      return value?.version===1&&typeof value.participantId==='string'&&value.participantId&&resumeTokenValid(value.token)?
+        {...value}:null;
     }
+    save(roomId,participantId,token){
+      if(typeof participantId!=='string'||!participantId||!resumeTokenValid(token))throw Error('Некорректное право переподключения.');
+      const key=this._key(roomId),value={version:1,roomId,participantId,token};
+      this.memory.set(key,value);
+      try{this.storageProvider?.()?.setItem(key,JSON.stringify(value));return true;}catch(_){return false;}
+    }
+    remove(roomId){
+      const key=this._key(roomId);this.memory.delete(key);
+      try{this.storageProvider?.()?.removeItem(key);}catch(_){}
+    }
+  }
+  class RoomService{
+    constructor({idFactory=uuid,clock=now,random=Math.random,tokenFactory=secureResumeToken}={}){
+      this.idFactory=idFactory;this.clock=clock;this.random=random;this.tokenFactory=tokenFactory;
+      this.rooms=new Map();this.listeners=new Map();this.resumeTokens=new Map();this.connectionLeases=new Map();
+    }
+    _key(roomId,id){return roomId+':'+id;}
     _room(roomId){const room=this.rooms.get(roomId);if(!room)throw Error('Комната не найдена.');return room;}
     _participant(room,participantId){const participant=room.participants.find(item=>item.id===participantId);if(!participant)throw Error('Участник не найден.');return participant;}
     _host(room,participantId){if(room.ownerId!==participantId)throw Error('Это действие доступно только хосту.');}
@@ -113,9 +145,13 @@
     join(roomId,{id=this.idFactory(),nickname}={}){
       const room=this._room(roomId);this._lobby(room);
       if(room.participants.some(item=>item.id===id))throw Error('Этот идентификатор участника уже занят.');
+      // Credentials belong to the host's private map, never to room snapshots.
+      const token=this.tokenFactory();
+      if(!resumeTokenValid(token))throw Error('Не удалось создать защищённый ключ повторного подключения.');
       room.participants.push({id,nickname:normalizeName(nickname),role:'spectator',seatId:null,ready:false,connected:true,isHost:false,joinedAt:this.clock()});
+      this.resumeTokens.set(this._key(roomId,id),token);
       room.lobbyRevision++;this._touch(room);this._emit(room,'participant-joined',nickname+' вошёл в комнату.',{participantId:id});
-      return {participantId:id,room:this.snapshot(roomId)};
+      return {participantId:id,room:this.snapshot(roomId),resumeToken:token};
     }
     rename(roomId,participantId,nickname){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);this._editable(participant);
@@ -160,6 +196,7 @@
       const target=this._participant(room,targetId);
       for(const seat of room.seats)if(seat.participantId===targetId)seat.participantId=null;
       room.participants=room.participants.filter(item=>item.id!==targetId);
+      this.resumeTokens.delete(this._key(roomId,targetId));this.connectionLeases.delete(this._key(roomId,targetId));
       room.lobbyRevision++;this._touch(room);this._emit(room,'participant-kicked',target.nickname+' исключён из комнаты.',{participantId:targetId});
       return this.snapshot(roomId);
     }
@@ -167,6 +204,20 @@
       const room=this._room(roomId),participant=this._participant(room,participantId);participant.connected=!!connected;this._touch(room);
       this._emit(room,'connection-changed',participant.nickname+(participant.connected?' снова в сети.':' потерял соединение.'),{participantId,connected:participant.connected});
       return this.snapshot(roomId);
+    }
+    resume(roomId,{participantId,token}={}){
+      const room=this._room(roomId);
+      if(room.phase==='closed'||typeof participantId!=='string'||!resumeTokenValid(token))throw Error('Неверное право переподключения.');
+      const member=this._participant(room,participantId);
+      if(member.isHost)throw Error('Права хоста нельзя восстановить через гостевое подключение.');
+      if(room.phase==='playing'&&!member.seatId)throw Error('У игрока нет места в начатой партии.');
+      const key=this._key(roomId,participantId),expected=this.resumeTokens.get(key);
+      if(!expected||expected!==token)throw Error('Право переподключения недействительно. Потребуется новый вход.');
+      const updated=this.tokenFactory();
+      if(!resumeTokenValid(updated)||updated===expected)throw Error('Не удалось обновить право переподключения.');
+      this.resumeTokens.set(key,updated);
+      this.setConnected(roomId,participantId,true);
+      return {participantId,room:this.snapshot(roomId),resumeToken:updated};
     }
     playerCount(roomId){return this._room(roomId).participants.filter(item=>item.role==='player'&&item.seatId).length;}
     _validCount(room){
@@ -203,18 +254,29 @@
       return ()=>{const set=this.listeners.get(roomId);set?.delete(listener);if(set&&!set.size)this.listeners.delete(roomId);};
     }
     connection(roomId){
-      this._room(roomId);let participantId=null;
+      this._room(roomId);let participantId=null,lease={};const service=this;
       const packet=()=>participantId?{kind:'lobby',room:this.snapshot(roomId),participantId}:{kind:'room-preview',room:this.preview(roomId)};
+      const active=()=>!participantId||service.connectionLeases.get(service._key(roomId,participantId))===lease;
       return {
         get participantId(){return participantId;},
-        snapshot:packet,
+        snapshot:()=>{if(!active())throw Error('Это подключение заменено новым.');return packet();},
         dispatch:command=>{
           if(!command||typeof command.type!=='string')throw Error('Некорректная команда комнаты.');
+          if(!active())throw Error('Это подключение заменено новым.');
           if(command.type==='join'){
             if(participantId)throw Error('Участник уже вошёл.');
-            // Browser profile IDs are shared between tabs and do not grant any room authority.
+            // Profile IDs are NOT credentials. Always allocate a fresh identity.
             const joined=this.join(roomId,{id:this.idFactory(),nickname:command.nickname});
-            participantId=joined.participantId;return {ok:true,snapshot:packet()};
+            participantId=joined.participantId;
+            service.connectionLeases.set(service._key(roomId,participantId),lease);
+            return {ok:true,snapshot:packet(),resumeToken:joined.resumeToken};
+          }
+          if(command.type==='resume'){
+            if(participantId)throw Error('Участник уже вошёл.');
+            const resumed=this.resume(roomId,{participantId:command.participantId,token:command.resumeToken});
+            participantId=resumed.participantId;lease={};
+            service.connectionLeases.set(service._key(roomId,participantId),lease);
+            return {ok:true,snapshot:packet(),resumeToken:resumed.resumeToken,resumed:true};
           }
           if(!participantId)throw Error('Сначала войдите в комнату.');
           let state;
@@ -226,8 +288,8 @@
           return {ok:true,snapshot:{kind:'lobby',room:state,participantId}};
         },
         history(){throw Error('История комнаты недоступна.');},
-        subscribe:listener=>this.subscribe(roomId,()=>listener(packet())),
-        close:()=>{if(participantId){try{this.setConnected(roomId,participantId,false);}catch(_){} }}
+        subscribe:listener=>this.subscribe(roomId,()=>{if(active())listener(packet());}),
+        close:()=>{if(participantId&&active()){service.connectionLeases.delete(service._key(roomId,participantId));try{service.setConnected(roomId,participantId,false);}catch(_){}}}
       };
     }
     snapshot(roomId){return clone(this._room(roomId));}
@@ -247,5 +309,5 @@
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
     close(){this.unsubscribe?.();this.current?.close?.();this.listeners.clear();this.current=null;}
   }
-  return {PROFILE_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,describeRules,ProfileStore,RoomService,SwitchableConnection};
+  return {PROFILE_KEY,RESUME_KEY,ROOM_CODE,COLORS:clone(COLORS),normalizeName,normalizeRoomName,describeRules,ProfileStore,ResumeStore,RoomService,SwitchableConnection};
 });

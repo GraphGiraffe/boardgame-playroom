@@ -17,10 +17,10 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','app/pwa.js','app/qr.js','app/network-ui.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','app/network-ui.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
   assert.match(source,/caches\.match\('\.\/index\.html'\)/);
-  assert.match(source,/qrcode-generator@2\.0\.4\/dist\/qrcode\.js/);
+  assert.match(source,/app\/vendor\/qrcode\.js/);
   assert.match(source,/playroom-pair-token/);
   assert.match(source,/PR2\|PR3/,'service-worker pairing links must accept compact PR3');
   assert.match(source,/clients\.matchAll/);
@@ -34,6 +34,9 @@ test('index HTML does not contain escaped newlines between tags',()=>{
   assert.match(source,/src="app\/pairing\.js"/);
   assert.match(source,/src="app\/pwa\.js"/);
   assert.match(source,/src="app\/qr\.js"/);
+  assert.match(source,/src="app\/vendor\/qrcode\.js"/);
+  assert.match(source,/src="app\/vendor\/jsqr\.js"/);
+  assert.match(source,/src="app\/qr-scanner\.js"/);
   assert.match(source,/src="app\/acoustic-pairing\.js"/);
   assert.match(source,/src="app\/vendor\/ggwave\.js"/);
   assert.match(source,/src="app\/game-screen\.js"/);
