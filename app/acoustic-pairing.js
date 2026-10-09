@@ -83,6 +83,23 @@
   function hostCandidates(signal){
     return allCandidates(signal).filter(c=>c.type==='host'&&c.transport==='udp'&&c.component===1);
   }
+  function statsAddresses(report){
+    // RTCStats reports can expose interfaces absent from SDP. They obey the
+    // same browser privacy policy; an empty report does not imply no Wi-Fi.
+    if(!report||typeof report.values!=='function')return [];
+    const candidates=[],seen=new Set();
+    for(const entry of report.values()){
+      if(entry?.type!=='local-candidate')continue;
+      const address=entry.address||entry.ip,kind=addressKind(address);
+      if(typeof address!=='string'||!address||seen.has(address))continue;
+      const type=entry.candidateType||'host',transport=String(entry.protocol||'udp').toLowerCase();
+      if(!['udp','tcp'].includes(transport)||!['host','srflx','prflx','relay'].includes(type))continue;
+      seen.add(address);
+      candidates.push({address,port:null,component:1,transport,type,priority:Number(entry.priority)||0,
+        kind,ipv4:kind!=='ipv6'&&!!ipv4Parts(address),ipv6:kind==='ipv6',audio:false,source:'stats'});
+    }
+    return candidates;
+  }
   async function probeAddresses({timeout=2500}={}){
     // Mirrors wave-share's secondary ICE scan, without external STUN/relay servers.
     // Modern browsers can deliberately hide interface IPs behind .local names.
@@ -107,7 +124,13 @@
         new Promise(resolve=>{timer=setTimeout(resolve,Math.max(200,Math.min(timeout,6000)));})
       ]);
       collect(pc.localDescription?.sdp);
-      return found.sort((a,b)=>privateRank(a.address)-privateRank(b.address)||a.address.localeCompare(b.address));
+      if(typeof pc.getStats==='function')try{
+        for(const item of statsAddresses(await pc.getStats())){
+          const key=[item.address,item.transport,item.type].join('|');
+          if(!keys.has(key)){keys.add(key);found.push(item);}
+        }
+      }catch(_){/* Some browsers disallow stats until a connection exists. */}
+      return found.sort((a,b)=>privateRank(a.address)-privateRank(b.address||'')||a.address.localeCompare(b.address));
     }finally{if(timer!==null)clearTimeout(timer);pc.removeEventListener('icecandidate',onCandidate);pc.close();}
   }
   function base64url(bytes){
@@ -261,5 +284,5 @@
       return {stop};
     }catch(error){stop();throw error;}
   }
-  return Object.freeze({protocols,hostCandidates,allCandidates,probeAddresses,addressKind,privateRank,pack,unpack,play,listen});
+  return Object.freeze({protocols,hostCandidates,allCandidates,statsAddresses,probeAddresses,addressKind,privateRank,pack,unpack,play,listen});
 });
