@@ -1,10 +1,15 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
-const {pathToFileURL}=require('node:url');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const url=process.env.PLAYROOM_URL||pathToFileURL(path.resolve(__dirname,'../index.html')).href;
+const {serveBrowserFixture}=require('./browser-origin.cjs');
+const root=path.resolve(__dirname,'..');
 
 test('deleting the final old-pack save clears the stale recovery warning',{timeout:30000},async()=>{
+  // File origins have implementation-dependent localStorage persistence across
+  // reloads. Exercise this durable-storage behavior on a stable local origin.
+  // Explicit PLAYROOM_URL still lets packaged HTML/PWA smoke choose its target.
+  const fixture=process.env.PLAYROOM_URL?null:await serveBrowserFixture(root);
+  const url=process.env.PLAYROOM_URL||fixture.url;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const context=await browser.newContext({viewport:{width:390,height:740}});
   const page=await context.newPage(),errors=[];
@@ -22,6 +27,8 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
       }));
     });
     await page.reload();
+    const persisted=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
+    assert.ok(persisted,'The damaged save must remain in browser storage after reload');
     try{await page.locator('.recovery-note').waitFor({timeout:10000});}
     catch(error){
       const diagnostics=await page.evaluate(()=>({body:document.body?.innerText.slice(0,350),
@@ -43,5 +50,5 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
     });
     await page.locator('.pack-hub-button').click();
     assert.equal(await page.locator('.pack-message').count(),0);
-  }finally{await context.close();await browser.close();}
+  }finally{await context.close();await browser.close();await fixture?.close();}
 });

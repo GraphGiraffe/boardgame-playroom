@@ -1,6 +1,6 @@
 'use strict';
-// Unreleased UI candidate: force a new shell cache to include GameScreen. Published preview.3 stays immutable.
-const CACHE='playroom-pwa-rc6-qr-resume-20261009';
+// RC6 baseline PWA cache. Increase CACHE for future shell changes; never change an already published release tag.
+const CACHE='playroom-pwa-v0.15.0-rc.6';
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
