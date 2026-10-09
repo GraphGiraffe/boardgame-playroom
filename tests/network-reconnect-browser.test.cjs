@@ -1,5 +1,5 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),os=require('node:os');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..'),hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
 function server(){
@@ -51,9 +51,16 @@ async function qrPng(page,selector){
 async function pair(host,client,{offerButton=false,photo=false}={}){
   if(offerButton)await host.locator('#network-pair-button').click();
   await host.locator('#net-host-token').waitFor();
+  const address=photo?Object.values(os.networkInterfaces()).flat().find(x=>x.family==='IPv4'&&!x.internal)?.address:null;
+  if(photo){
+    assert.ok(address,'Chromium LAN QR test needs the current host IPv4');
+    await host.locator('#acoustic-host-address').selectOption('manual');
+    await host.locator('#acoustic-host-manual').fill(address);
+  }
   const offer=await host.locator('#net-host-token').inputValue();
   const token=await host.evaluate(value=>PlayroomPairing.extract(value),offer);
   assert.match(token,/^PR[23]\./);
+  if(photo)assert.ok(token.startsWith('PR3.'),'QR photo test requires the same compact PR3 used on Android');
   await client.locator('#network-join-button').click();
   if(photo){
     const qr=host.locator('#net-host-token-qr svg');await qr.waitFor({timeout:10000});
@@ -63,7 +70,22 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
     await client.locator('#net-client-offer textarea[name=offer]').fill(offer);
     await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
   }
-  await client.locator('#net-client-token').waitFor({timeout:15000});
+  try{await client.locator('#net-client-token').waitFor({timeout:15000});}
+  catch(error){
+    const diagnosis=await client.evaluate(()=>({
+      status:document.getElementById('net-client-qr-status')?.textContent,
+      toast:document.getElementById('toast')?.textContent,
+      modal:document.getElementById('modal-root')?.innerText.slice(0,500),
+      network:globalThis.PlayroomNetworkDebug?.()
+    }));
+    assert.fail('QR Offer did not produce an Answer: '+JSON.stringify({diagnosis,message:error.message}));
+  }
+  if(photo){
+    await client.locator('#acoustic-client-address').selectOption('manual');
+    await client.locator('#acoustic-client-manual').fill(address);
+    const answer=await client.locator('#net-client-token').inputValue();
+    assert.match(answer,/PR3\./,'QR Answer must also use compact PR3');
+  }
   const answer=await client.locator('#net-client-token').inputValue();
   if(photo){
     const qr=client.locator('#net-client-token-qr svg');await qr.waitFor({timeout:10000});
