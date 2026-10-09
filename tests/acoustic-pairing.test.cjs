@@ -104,6 +104,43 @@ test('dedicated WebRTC interface probe returns additional IPs without external S
   }finally{if(previous===undefined)delete globalThis.RTCPeerConnection;else globalThis.RTCPeerConnection=previous;}
 });
 
+test('RTCStats discovery reveals additional exposed interfaces without inventing IPs',()=>{
+  const report=new Map([
+    ['a',{type:'local-candidate',address:'192.0.2.1',protocol:'udp',candidateType:'host'}],
+    ['b',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}],
+    ['c',{type:'local-candidate',ip:'10.24.205.39',protocol:'udp',candidateType:'host'}],
+    ['d',{type:'local-candidate',address:'fe80::1234',protocol:'udp',candidateType:'host'}],
+    ['e',{type:'remote-candidate',address:'8.8.8.8'}]
+  ]);
+  const addresses=A.statsAddresses(report);
+  assert.deepEqual(addresses.map(v=>v.address),['192.0.2.1','192.168.0.112','10.24.205.39','fe80::1234']);
+  assert.equal(addresses.find(v=>v.address==='192.0.2.1').kind,'documentation');
+  assert.ok(addresses.every(v=>v.source==='stats'&&!v.audio&&v.port===null),
+    'diagnostic stats are not candidates of the active offer');
+  assert.deepEqual(A.statsAddresses(null),[]);
+});
+
+test('secondary probe merges ICE and RTCStats addresses, preserving independent provenance',async()=>{
+  const previous=globalThis.RTCPeerConnection;
+  class StatsProbe {
+    constructor(configuration){assert.deepEqual(configuration,{iceServers:[]});this.iceGatheringState='complete';}
+    addEventListener(){}
+    removeEventListener(){}
+    createDataChannel(){}
+    async createOffer(){return {type:'offer',sdp:'v=0\\r\\n'};}
+    async setLocalDescription(){this.localDescription={sdp:'v=0\\r\\na=candidate:1 1 UDP 2122260223 192.0.2.1 60960 typ host\\r\\n'};}
+    async getStats(){return new Map([['candidate',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}]]);}
+    close(){}
+  }
+  globalThis.RTCPeerConnection=StatsProbe;
+  try{
+    const found=await A.probeAddresses({timeout:100});
+    assert.deepEqual(found.map(v=>v.address),['192.168.0.112','192.0.2.1']);
+    assert.equal(found[0].source,'stats');
+    assert.equal(found[1].source,'probe');
+  }finally{if(previous===undefined)delete globalThis.RTCPeerConnection;else globalThis.RTCPeerConnection=previous;}
+});
+
 test('bundled ggwave encodes short audio payload without network dependencies',async()=>{
   const factory=require('../app/vendor/ggwave.js');
   const gg=await factory(),params=gg.getDefaultParameters(),inst=gg.init(params);
