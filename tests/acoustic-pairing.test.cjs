@@ -36,6 +36,14 @@ test('private candidate ordering favours 192.168 and 10.0; manual IP supports mD
   assert.equal(manual.ip,'192.168.0.78');assert.equal(manual.port,53920);
 });
 
+test('manual IPv4 validation used by the network UI rejects reserved and malformed values',()=>{
+  for(const address of ['192.168.44.66','192.168.0.112','10.24.205.39','172.16.3.4'])
+    assert.equal(A.usableIPv4(address),true,address);
+  for(const address of ['192.0.2.1','198.51.100.10','203.0.113.7','0.0.0.0','127.0.0.1',
+    '999.2.3.4','foo.local','192.168.1','192\\.168\\.0\\.112',''])
+    assert.equal(A.usableIPv4(address),false,address);
+});
+
 test('invalid LAN addresses, malformed packets and unsupported signaling fail safely',()=>{
   for(const addr of ['127.0.0.1','0.0.0.0','999.1.2.3','abc.local']){
     assert.throws(()=>A.pack(signal(),{address:addr}),/IPv4|LAN/i);
@@ -101,6 +109,43 @@ test('dedicated WebRTC interface probe returns additional IPs without external S
     assert.deepEqual(values.map(c=>c.address),['192.168.0.112','10.24.205.39']);
     assert.ok(values.every(c=>c.source==='probe'&&c.port===null&&!c.audio));
     assert.deepEqual(observed,[{iceServers:[]}]);
+  }finally{if(previous===undefined)delete globalThis.RTCPeerConnection;else globalThis.RTCPeerConnection=previous;}
+});
+
+test('RTCStats discovery reveals additional exposed interfaces without inventing IPs',()=>{
+  const report=new Map([
+    ['a',{type:'local-candidate',address:'192.0.2.1',protocol:'udp',candidateType:'host'}],
+    ['b',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}],
+    ['c',{type:'local-candidate',ip:'10.24.205.39',protocol:'udp',candidateType:'host'}],
+    ['d',{type:'local-candidate',address:'fe80::1234',protocol:'udp',candidateType:'host'}],
+    ['e',{type:'remote-candidate',address:'8.8.8.8'}]
+  ]);
+  const addresses=A.statsAddresses(report);
+  assert.deepEqual(addresses.map(v=>v.address),['192.0.2.1','192.168.0.112','10.24.205.39','fe80::1234']);
+  assert.equal(addresses.find(v=>v.address==='192.0.2.1').kind,'documentation');
+  assert.ok(addresses.every(v=>v.source==='stats'&&!v.audio&&v.port===null),
+    'diagnostic stats are not candidates of the active offer');
+  assert.deepEqual(A.statsAddresses(null),[]);
+});
+
+test('secondary probe merges ICE and RTCStats addresses, preserving independent provenance',async()=>{
+  const previous=globalThis.RTCPeerConnection;
+  class StatsProbe {
+    constructor(configuration){assert.deepEqual(configuration,{iceServers:[]});this.iceGatheringState='complete';}
+    addEventListener(){}
+    removeEventListener(){}
+    createDataChannel(){}
+    async createOffer(){return {type:'offer',sdp:'v=0\r\n'};}
+    async setLocalDescription(){this.localDescription={sdp:'v=0\r\na=candidate:1 1 UDP 2122260223 192.0.2.1 60960 typ host\r\n'};}
+    async getStats(){return new Map([['candidate',{type:'local-candidate',address:'192.168.0.112',protocol:'udp',candidateType:'host'}]]);}
+    close(){}
+  }
+  globalThis.RTCPeerConnection=StatsProbe;
+  try{
+    const found=await A.probeAddresses({timeout:100});
+    assert.deepEqual(found.map(v=>v.address),['192.168.0.112','192.0.2.1']);
+    assert.equal(found[0].source,'stats');
+    assert.equal(found[1].source,'probe');
   }finally{if(previous===undefined)delete globalThis.RTCPeerConnection;else globalThis.RTCPeerConnection=previous;}
 });
 

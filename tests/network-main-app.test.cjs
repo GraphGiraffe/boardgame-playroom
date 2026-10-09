@@ -37,17 +37,27 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.match((await host.locator('#acoustic-host-address').innerText()),/Указать IP вручную/);
     assert.equal(await host.locator('#acoustic-host-protocol').inputValue(),'fastest');
     const previousAddress=await host.locator('#acoustic-host-address').inputValue();
+    const previousManual=await host.locator('#acoustic-host-manual').inputValue();
+    assert.equal(await host.locator('#acoustic-host-manual').getAttribute('placeholder'),'Например: 192.168.1.100',
+      'Manual IP placeholder is an example, not a detected network address');
     await host.locator('#acoustic-host-address').selectOption('manual');
     await host.locator('#acoustic-host-manual').fill('192.168.44.66');
     const manualLink=await value(host,'#net-host-token');
     const manualToken=await host.evaluate(link=>PlayroomPairing.extract(link),manualLink);
-    // A change of IP updates the URL/QR and audio's exact PR3 bytes together.
+    assert.ok(manualToken.startsWith('PR3.'),'a manually chosen real IP must yield compact QR/link');
     const manualInfo=await host.evaluate(token=>PlayroomPairing.decode(token),manualToken);
-    if(manualInfo.compact){
-      assert.equal(manualInfo.ip,'192.168.44.66');
-      assert.ok(manualToken.length<200);
-    }
-    await host.locator('#acoustic-host-address').selectOption(previousAddress);
+    assert.equal(manualInfo.ip,'192.168.44.66');
+    assert.ok(manualToken.length<200);
+    assert.match(await host.locator('#acoustic-host-pair-status').innerText(),/PR3/);
+    // A saved manual address is an explicit option, clearly marked as user-entered.
+    await host.locator('[data-net-save-ip="host"]').click();
+    assert.match(await host.locator('#acoustic-host-address').innerText(),/192.168.44.66/);
+    assert.match(await host.locator('#acoustic-host-address').innerText(),/внесён пользователем/);
+    assert.match(await host.locator('#acoustic-host-discovery').innerText(),/сохранённые IP: 1/i);
+    if(previousAddress==='manual'){
+      await host.locator('#acoustic-host-address').selectOption('manual');
+      await host.locator('#acoustic-host-manual').fill(previousManual);
+    }else await host.locator('#acoustic-host-address').selectOption(previousAddress);
 
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
