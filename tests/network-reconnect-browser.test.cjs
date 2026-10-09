@@ -13,8 +13,22 @@ function server(){
   return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({server:s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
 async function profile(page,name){
+  const errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  page.on('console',message=>{if(message.type()==='error')errors.push('console: '+message.text());});
   await page.goto(page._url);
-  await page.locator('#profile-form input').fill(name);
+  const diagnostics=await page.evaluate(()=>({
+    bridge:!!globalThis.PlayroomAppBridge,network:!!globalThis.PlayroomNetworkDebug,
+    multiplayer:!!globalThis.PlayroomMultiplayer,
+    resumeStore:typeof globalThis.PlayroomMultiplayer?.ResumeStore,
+    scanner:!!globalThis.PlayroomQRScanner,
+    profileForm:!!document.getElementById('profile-form'),
+    modal:document.getElementById('modal-root')?.innerText.slice(0,250),
+    body:document.body?.innerText.slice(0,250)
+  }));
+  if(!diagnostics.bridge||!diagnostics.network)assert.fail('PlayRoom failed startup: '+JSON.stringify({diagnostics,errors}));
+  try{await page.locator('#profile-form input').fill(name,{timeout:8000});}
+  catch(error){assert.fail('No profile modal: '+JSON.stringify({diagnostics,errors,error:error.message}));}
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').waitFor();
 }
