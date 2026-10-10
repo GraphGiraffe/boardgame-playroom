@@ -75,6 +75,8 @@
         // Keep the actual range element, its focus and native pointer gesture.
         // Only read-only frame content and control labels change during replay.
         const template=document.createElement('template');template.innerHTML=markup;
+        app.querySelector('.network-game').dataset.revision=String(live.revision);
+        const sceneNode=app.querySelector('.scene');sceneNode.setAttribute('aria-busy',String(!!transitionActive));sceneNode.dataset.animationSpeed=flow.pace().mode;
         for(const selector of ['.scene','.player-strip','.table-status','.table-bottom','.history-caption']){
           app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
         }
