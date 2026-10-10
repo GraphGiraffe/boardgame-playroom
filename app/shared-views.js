@@ -45,7 +45,7 @@
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
       const markup=GameScreen.render({
-        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
+        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':turn?`Ходит ${turn.name}`:'Ожидание хода',
@@ -145,7 +145,8 @@
             else root.location.reload();
           }
           break;
-        case 'settings':root.PlayroomAppBridge?.showSettings?.();break;
+        case 'settings':show('<h2>Настройки</h2><button class="btn secondary" data-command="rules">Правила игры</button><button class="btn secondary" data-command="fullscreen">На весь экран</button><button class="btn secondary" data-command="preferences">Настройки устройства</button>');break;
+        case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;
         case 'rules':case 'card-help':show('<h2>Правила игры</h2>'+pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join(''));break;
         case 'fullscreen':
           if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
@@ -170,14 +171,15 @@
       if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
       // Network controls use exactly the same DOM contract as local play, but
       // must NEVER be delivered to app.js's local Session handlers.
+      if(event.target.closest('.player-target-menu'))return;
       event.stopPropagation();
-      const target=event.target.closest('button,[data-player-target],[data-command],[data-action],[data-select]');
+      const target=event.target.closest('button,[data-player-target],[data-player-panel-target],[data-command],[data-action],[data-select]');
       if(!target||target.disabled)return;
       const command=target.dataset.command;
       if(command){void action(command).catch(e=>toast(e.message));return;}
-      const accused=event.target.closest('[data-player-target]');
+      const accused=event.target.closest('[data-player-target],[data-player-panel-target]');
       if(accused&&usable()){
-        playerTargets.tap(Number(accused.dataset.playerTarget));
+        playerTargets.tap(Number(accused.dataset.playerTarget??accused.dataset.playerPanelTarget));
         return;
       }
       input.handleClick(event);

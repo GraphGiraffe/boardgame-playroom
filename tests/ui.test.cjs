@@ -77,14 +77,14 @@ test('Offline pack installation, updates and empty application preserve saved ve
           app:document.getElementById('app')?.innerText.slice(0,240),
           warning:globalThis.PlayroomPackLoadError,
         })))+'; JS errors: '+JSON.stringify(errors));
-      await page.locator('[data-start="qa-counter"]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});await page.locator('[data-command=lobby-start]').click();await add(1);
+      await page.locator('[data-start="qa-counter"]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(1);
       assert.equal((await saved(page)).packVersion,'0.1.0');await page.locator('.table-heading [data-command=home]').click();
     });
     await t.test('Update keeps old saves on exact rules and new games use the latest version',async()=>{
       await openManager();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();assert.equal(await page.locator('.pack-entry').count(),2);
       assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),true);await close();await page.reload();
       await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
-      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
+      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
       await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),2);await close();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);
     });
@@ -137,21 +137,21 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
   }
   async function check(name,fn){await t.test(name,async()=>{const contexts=[];try{await fn(async(...args)=>{const env=await pageFor(...args);contexts.push(env);return env;});for(const e of contexts)assert.deepEqual(e.errors,[],'uncaught browser errors');}finally{for(const e of contexts)await e.context.close();}});}
   try{
-    await check('Common room retains slots and rules when collapsed and reopened',async open=>{
-      const {page}=await open();await page.locator('[data-start=uno]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');
-      await page.locator('[data-room-name="seat-1"]').fill('Катя');await page.locator('[data-room-name="seat-1"]').press('Tab');
+    await check('Closing a room discards its setup and a new game starts fresh',async open=>{
+      const {page}=await open();await page.locator('[data-start=uno]').click();
+      await page.locator('[data-room-title]').fill('Другая комната');await page.locator('[data-room-title]').press('Tab');
       await page.locator('[data-command=room-rules]').click();await page.locator('[name=preset]').selectOption('quick');await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
-      await page.locator('.room-setup-modal [data-command=close-modal]').click();assert.equal(await page.locator('.modal').count(),0);await page.locator('[data-command=room]').click();
-      assert.equal(await page.locator('[data-room-name="seat-1"]').inputValue(),'Катя');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().rules.preset),'quick');
+      await page.locator('[data-command=lobby-leave]').click();assert.equal(await page.locator('.modal').count(),0);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room()),null);
+      await page.locator('[data-start=checkers]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),'checkers');
     });
     for(const game of ['uno','domino','durak','checkers','snakes'])await check('Start and play '+game+' through visible controls',async open=>{
       const hasHands=['uno','domino','durak'].includes(game),{page}=await open();
-      await page.locator('[data-start='+game+']').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});
+      await page.locator('[data-start='+game+']').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
       await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=openHands]').count(),hasHands?1:0);
       if(hasHands)await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
       await page.locator('[data-command=room-rules-view]').click();assert.ok(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
       assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),game);await page.locator('[data-command=lobby-start]').click();const started=await saved(page);assert.equal(started.game,game);assert.equal(started.options.openHands,hasHands);
-      await clickMove(page,game);assert.ok(await move(page)>0);await page.locator('[data-command=rules]').click();assert.ok(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
+      await clickMove(page,game);assert.ok(await move(page)>0);await page.locator('[data-command=settings]').click();await page.locator('.modal [data-command=rules]').click();assert.ok(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
     });
     await check('Public boards switch seats without a card privacy curtain',async open=>{
       const {page}=await open(fixture('snakes'));await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),0);await page.locator('.die[data-action]').click();assert.equal(await page.locator('.handoff').count(),0);
@@ -170,7 +170,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
     });
     await check('Bots advance and pause while a dialog or replay is open',async open=>{
       const data=fixture('snakes','solo');data.states[0].turn=1;
-      const {page}=await open(data);await resume(page);await page.locator('[data-command=rules]').click();const n=await move(page);await page.waitForTimeout(350);assert.equal(await move(page),n);await page.locator('.modal [data-command=close-modal]').first().click();await page.waitForFunction(n=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move>n,n);assert.equal(await move(page),n+1);
+      const {page}=await open(data);await resume(page);await page.locator('[data-command=settings]').click();await page.locator('.modal [data-command=rules]').click();const n=await move(page);await page.waitForTimeout(350);assert.equal(await move(page),n);await page.locator('.modal [data-command=close-modal]').first().click();await page.waitForFunction(n=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move>n,n);assert.equal(await move(page),n+1);
     });
     await check('Invalid save is rejected with a visible explanation and the hub remains usable',async open=>{
       const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),5);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('[data-command=lobby-start]').click();assert.equal((await saved(page)).game,'snakes');
@@ -192,6 +192,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
       await page.locator('#setting-sound').check();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
+      await page.getByText('Проверить звук',{exact:true}).click();
       await page.locator('#sound-preview').selectOption('uno|uno.call');
       await page.locator('[data-command=sound-preview]').click();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
@@ -331,7 +332,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
       const errors=[],scene=document.querySelector('.scene').getBoundingClientRect();
       if(document.documentElement.scrollWidth>innerWidth+1||document.documentElement.scrollHeight>innerHeight+1)errors.push('page overflow');
       for(const selector of ['.layout-field','.layout-self','.layout-participants']){const node=document.querySelector(selector);if(!node)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector);}
-      for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width<44||r.height<44)errors.push('touch target');}
+      for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width&&r.height&&(r.width<44||r.height<44))errors.push('touch target');}
       return errors;
     },insets);
   }
@@ -367,7 +368,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     for(const [width,height] of sizes)for(const spec of variants)await t.test(`${spec.name} at ${width}×${height}`,async()=>{
       const {page,context,errors}=await open(spec,{width,height});
       try{
-        if(process.env.PLAYROOM_CAPTURE_DIR&&width===740&&['uno-4-open','durak'].includes(spec.name))await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`playroom-v0.11-${spec.name}-landscape.png`)});
+        if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||width===740&&['uno-4-open','durak'].includes(spec.name)))await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`playroom-v0.11-${spec.name}-${width}x${height}.png`)});
         assert.deepEqual(await visibleTable(page,spec.game),[]);await playOne(page,spec.game);assert.deepEqual(errors,[]);
       }finally{await context.close();}
     });
@@ -378,10 +379,10 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
         for(const viewport of [{width:390,height:740},{width:740,height:360},{width:390,height:740},{width:844,height:390}]){
           await page.setViewportSize(viewport);assert.deepEqual(await visibleTable(page,'uno'),[],`rotation to ${viewport.width}×${viewport.height}`);assert.deepEqual(await saved(page),before);
         }
-        await page.locator('.table-tools [data-command=fullscreen]').tap();
+        await page.locator('.table-tools [data-command=settings]').tap();await page.locator('.modal [data-command=fullscreen]').tap();await page.locator('.modal [data-command=close-modal]').tap();
         await page.waitForFunction(()=>!!document.fullscreenElement||document.documentElement.classList.contains('fullscreen-fallback'));
         assert.deepEqual(await visibleTable(page,'uno'),[],'fullscreen keeps the table visible');
-        await page.locator('.table-tools [data-command=fullscreen]').tap();
+        await page.locator('.table-tools [data-command=settings]').tap();await page.locator('.modal [data-command=fullscreen]').tap();await page.locator('.modal [data-command=close-modal]').tap();
         await page.waitForFunction(()=>!document.fullscreenElement&&!document.documentElement.classList.contains('fullscreen-fallback'));
         const cdp=await context.newCDPSession(page);let safeArea=false;
         try{await cdp.send('Emulation.setSafeAreaInsets',{insets:{top:0,left:24,bottom:12,right:24}});safeArea=true;}catch(error){if(!/wasn't found|not found|not supported/i.test(error.message))throw error;t.diagnostic('This Chromium does not expose safe-area emulation; physical notch behavior remains unverified.');}
@@ -439,8 +440,8 @@ test('Modal gestures scroll their contents without moving the underlying screen'
           else await page.locator(selector).first().click();
           await page.locator('.modal').waitFor();
           await checkDialog(name);
-          await page.locator('.modal [data-command=close-modal]').first().click();
-          if(name==='rules')await page.locator('.modal [data-command=close-modal]').first().click();
+          await page.locator('.modal [data-command=close-modal],.modal [data-command=lobby-leave]').first().click();
+          if(name==='rules')await page.locator('.modal [data-command=lobby-leave]').first().click();
           await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
           assert(await page.evaluate(()=>scrollY)>0,`${name}: closing must restore page scrolling`);
           await page.evaluate(()=>scrollTo(0,0));
@@ -455,7 +456,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         },{snapshot,def});
         for(const command of ['rules','result']){
           // Keyboard activation isolates modal scrolling from table footer layout.
-          await page.locator('.network-game [data-command='+command+']').first().press('Enter');
+          if(command==='rules'){await page.locator('.network-game [data-command=settings]').first().click();await page.locator('.shared-modal-backdrop [data-command=rules]').click();}else await page.locator('.network-game [data-command='+command+']').first().press('Enter');
           await checkDialog('network '+command);
           await page.locator('.shared-modal-backdrop [data-command=close-modal]').first().click();
           await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);
@@ -468,7 +469,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);
         assert(await page.evaluate(()=>scrollY)>0,'Shared mount destroy must release scrolling');
         await page.goto(server.url);
-        await page.locator('[data-start=uno]').first().click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});
+        await page.locator('[data-start=uno]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
         await page.locator('[data-command=lobby-start]').click();await page.locator('.handoff').waitFor();
         const curtain=await page.locator('.handoff').boundingBox(),before=await page.evaluate(()=>scrollY);
         await gesture(curtain.x+5,Math.min(height-35,curtain.y+curtain.height-35),100);

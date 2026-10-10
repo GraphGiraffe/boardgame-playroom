@@ -29,7 +29,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="uno"]').click();
-    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');
+    await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();

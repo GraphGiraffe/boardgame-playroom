@@ -200,3 +200,25 @@ test('host cannot silently drop an occupied seat when choosing a smaller pack',(
 
 test('common slots mix local humans and bots, preserve identities when swapped, and retain first actor',()=>{const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat'});let state=rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Мика'});const bot=state.seats[1].participantId;rooms.configure(room.id,'host',{firstPlayerMode:'assigned',firstParticipantId:bot});state=rooms.moveParticipant(room.id,'host',bot,'seat-1');assert.equal(state.seats[0].participantId,bot);assert.equal(state.seats[1].participantId,'host');assert.equal(state.firstParticipantId,bot);assert.equal(rooms.canStart(room.id),true);rooms.startHotSeat(room.id,'host');assert.throws(()=>rooms.moveParticipant(room.id,'host',bot,'seat-2'));});
 test('network bots need no guest resume credentials and are restored as connected',()=>{const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Бот'});rooms.setReady(room.id,'host',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.rooms.get(room.id).countdownEndsAt=0;rooms.tick(room.id);const recovery=rooms.exportRecovery(room.id);assert.equal(recovery.tokens.length,0);const next=service();const restored=next.restoreRecovery(recovery,{hostId:'host'});assert.equal(restored.participants.find(p=>p.bot).connected,true);});
+
+test('host can move to spectators and reclaim a slot without creating another participant',()=>{
+ const {rooms,room}=createRoom();
+ let state=rooms.moveParticipant(room.id,'host','host',null);
+ assert.equal(state.participants.find(p=>p.id==='host').role,'spectator');
+ state=rooms.claimSeat(room.id,'host','seat-2');
+ assert.equal(state.participants.length,1);assert.equal(state.seats[1].participantId,'host');
+ assert.equal(state.participants[0].nickname,room.participants[0].nickname);
+ rooms.setLocalSeat(room.id,'host','seat-1',{kind:'closed'});
+ assert.throws(()=>rooms.claimSeat(room.id,'host','seat-1'),/закрыто/);
+ rooms.setLocalSeat(room.id,'host','seat-1',{kind:'empty'});
+ state=rooms.claimSeat(room.id,'host','seat-1');assert.equal(state.participants.length,1);
+});
+
+test('single table slot accepts any network participant and drag swaps preserve identity',()=>{
+ const {rooms,room}=createRoom();rooms.join(room.id,{id:'guest',nickname:'Мария'});rooms.claimSeat(room.id,'guest','seat-2');
+ let state=rooms.claimTable(room.id,'guest');assert.equal(state.seats[1].participantId,null);assert.equal(state.participants.find(p=>p.id==='guest').role,'table');assert.throws(()=>rooms.claimTable(room.id,'host'),/занят/);
+ state=rooms.moveParticipant(room.id,'host','host','table');assert.equal(state.seats[0].participantId,'guest');assert.equal(state.participants.find(p=>p.id==='host').role,'table');assert.equal(state.participants.length,2);
+ state=rooms.claimSeat(room.id,'host','seat-2');assert.equal(state.participants.filter(p=>p.role==='table').length,0);assert.equal(state.hostMode,'player');
+ const connection=rooms.connection(room.id);const joined=connection.dispatch({type:'join',id:'remote',nickname:'Тео'});const table=connection.dispatch({type:'claim-table'});assert.equal(table.snapshot.room.participants.find(p=>p.id===joined.snapshot.participantId).role,'table');
+ rooms.claimSeat(room.id,joined.snapshot.participantId,'seat-3');rooms.becomeSpectator(room.id,'host');state=rooms.configure(room.id,'host',{transportMode:'hotseat'});assert.equal(state.participants.find(p=>p.id==='host').role,'player');assert.throws(()=>rooms.claimTable(room.id,'host'),/Online/);
+});

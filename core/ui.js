@@ -19,6 +19,7 @@
     prev:'<path d="m15 6-6 6 6 6"/>',
     close:'<path d="m6 6 12 12M6 18 18 6"/>',
     trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
+    seatType:'<rect x="5" y="3" width="14" height="9" rx="2"/><path d="M4 12v5h16v-5M6 17v4M18 17v4"/>',
     people:'<circle cx="9" cy="7" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
@@ -81,7 +82,7 @@
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const badges=(content.badges||[]).map(b=>`<span class="player-status-badge">${esc(typeof b==='string'?b:b.label)}</span>`).join('');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
-    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
+    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}" ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
       <${target?'button':'div'} class="player-info player-token ${state.turn===index?'active':''}" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Действия игрока ${esc(person.name)}"`:''}>
       <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''}>${esc(person.name.slice(0,1))}</span><span class="player-details"><strong>${esc(person.name)}${own?' · вы':''}</strong><small>${person.bot?'Бот':'Игрок'} · ${esc(content.scoreLabel||'очки')}: ${Number.isFinite(person.score)?person.score:0}${content.colorLabel?' · '+esc(content.colorLabel):''}</small><span class="player-badges">${state.turn===index?'<span class="turn-badge">Ходит</span>':''}${content.handCount!==undefined?`<span>${content.handCount} ${esc(content.countLabel||'в руке')}</span>`:''}${badges}</span></span></${target?'button':'div'}>
       ${own?'<!--self-controls-->':''}${!own&&content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</article>`;
@@ -143,7 +144,7 @@
       e.participants=`<div class="players-panels opponent-hands">${state.players.map((_,i)=>i===viewer?'':playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
-    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
+    const slots=elementNames.filter(name=>e[name]&&!((self||surface==='table')&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
     return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''} data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 

@@ -25,8 +25,7 @@
   }
 
   function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>История</strong><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div>
-      <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
+    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
@@ -41,7 +40,7 @@
     if(!state?.players)throw Error('Projected game state required');
     const caption=esc(replay?'':footerText||'');
     if(beforeFooter)scene=scene.replace('<!--self-controls-->',beforeFooter);
-    return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle)}</p></div></div>
+    return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML},
         ...(!readOnly?[{attrs:'data-command="pause"',label:pause?'Продолжить':'Пауза',name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
@@ -55,6 +54,11 @@
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
   function fitHand(stage){
+    for(const mini of stage.querySelectorAll('.player-panel .mini-hand:not(.is-open)')){
+      const count=mini.children.length;if(!count)continue;
+      const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+      mini.style.setProperty('--mini-step',(count>1?Math.max(0,Math.min(32,(available-28)/(count-1))):32)+'px');
+    }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
       track.style.removeProperty('--fan-peek');
       const win=track.ownerDocument.defaultView,baseline=parseFloat(win.getComputedStyle(track).getPropertyValue('--fan-peek'))||28;
@@ -64,6 +68,8 @@
         const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
         peek=Math.max(peek,Math.min(box.width,Math.ceil(marker.right-box.left+2)));
       }
+      const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
+      if(count>1&&card){const width=card.getBoundingClientRect().width,style=win.getComputedStyle(track),available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);peek=Math.max(peek,Math.min(width,(available-width)/(count-1)));}
       if(peek>baseline)track.style.setProperty('--fan-peek',peek+'px');
     }
   }
@@ -74,8 +80,8 @@
       const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
     }
-    field.style.zoom='1';field.style.width=width+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
-    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
+    field.style.zoom='1';field.style.width=Math.min(width,520)+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
+    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(['desktop','tablet'].includes(stage.dataset.layoutMode)?1.4:1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
   }
   const replayFitters=new WeakMap();
@@ -86,10 +92,10 @@
       if(scene){
         const Observer=scene.ownerDocument.defaultView.ResizeObserver;
         const observer=Observer?new Observer(()=>layoutScene(host)):null;
-        replayFitters.set(host,{scene,observer});observer?.observe(scene);
+        replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitHand(stage);fitField(stage);root.PlayroomHandOverflow?.sync?.(host);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage)stage.style.zoom='1';
   }
   return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});

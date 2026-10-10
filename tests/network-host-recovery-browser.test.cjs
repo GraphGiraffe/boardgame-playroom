@@ -81,7 +81,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.match(await guests[0].locator('.table-title h1').innerText(),/Шашки/);
         }
         await host.locator('[data-start="uno"]').click();
-        await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');if(mode==='network-table')await host.locator('[data-room-option=hostMode]').selectOption('table');
+        await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});if(mode==='network-table')await host.locator('[data-command=lobby-table]').click();
         await host.locator('[data-room-title]').fill('Продолжение LAN-01');
         await host.locator('[data-room-title]').press('Tab');
         await host.locator('.lobby-shell').waitFor();

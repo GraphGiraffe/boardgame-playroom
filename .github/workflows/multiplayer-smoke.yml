@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
-          ref: 43b7b4e7e93de039b1df8b535acfb81d3ca4fb37
+          ref: 49320b0acc3291aa47f0f7fc1ad79ed354c4e43b
           ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false

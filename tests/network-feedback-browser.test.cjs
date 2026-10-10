@@ -33,6 +33,8 @@ test('network player popover keeps geometry and commits only explicit legal acti
     const shell=page.locator('.network-game');
     const target=shell.locator('[data-player-target="1"]');
     assert.equal(await target.count(),1);const box=await target.boundingBox();
+    await target.locator('..').locator('.mini-hand').tap();assert.equal(await page.locator('.player-target-menu').count(),1);
+    await target.locator('..').locator('.mini-hand').tap();assert.equal(await page.locator('.player-target-menu').count(),0,'whole player card toggles its menu');
     await target.tap();assert.equal(await page.locator('.player-target-menu').count(),1);
     assert.deepEqual(await target.boundingBox(),box,'Popover must not resize its panel');
     assert.equal(await page.evaluate(()=>qaSent.length),0);
