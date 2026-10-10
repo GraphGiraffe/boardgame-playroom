@@ -6,7 +6,7 @@
 .saved-game h2{margin:10px 0 8px;font-size:23px;letter-spacing:-.6px}
 .saved-game p{color:var(--muted);font-size:13px;line-height:1.6;margin:4px 0;overflow-wrap:anywhere}
 .saved-game .saved-players{color:var(--ink)}
-.saved-game-actions{display:flex;gap:10px;align-items:center}
+.saved-game-actions{display:flex;gap:8px;align-items:center}
 .saved-game-actions .icon-btn{flex:none}
 .saved-empty{border:1px dashed #b8c6a7;background:#e9eedc;border-radius:24px;padding:45px 25px;text-align:center}
 .saved-empty h2{margin:0 0 12px;font-size:25px}
@@ -26,3 +26,10 @@
 .saved-filter-bar .filter.active{background:var(--green);color:white}
 .saved-network-info{font-size:12px;color:var(--muted);margin:-8px 0 14px}
 @media(max-width:760px){.saved-filter-bar{margin:0 0 16px}.saved-filter-bar .filter{padding:10px 13px}}
+
+.saved-game-actions .icon-btn{width:46px;min-width:46px;height:46px;padding:0;border-radius:14px}
+.saved-game-actions .saved-continue{background:var(--green);border-color:var(--green);color:#fffdf4}
+.saved-game-actions .saved-history{background:#e6eadc}
+.saved-game-actions .icon-btn:disabled{opacity:.4}
+.saved-game-actions .saved-delete{margin-left:8px}
+@media(max-width:760px){.saved-game-actions{justify-content:flex-end}.saved-game h2{margin-top:8px}.saved-game p{line-height:1.45}}

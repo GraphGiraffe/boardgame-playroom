@@ -29,23 +29,6 @@
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
     const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
-    function fitReplayScene(){
-      if(!historyOpen||destroyed)return;
-      const scene=app.querySelector('.scene.replaying'),stage=scene?.firstElementChild;
-      if(!scene||!stage)return;
-      stage.style.zoom='';stage.style.width='';stage.style.minHeight='';
-      const viewportWidth=scene.clientWidth,viewportHeight=scene.clientHeight;
-      if(!viewportWidth||!viewportHeight)return;
-      // Preserve the pack renderer and aspect ratios. Scale its complete
-      // snapshot only in read-only replay, never on the live interactive table.
-      const ratio=Math.min(1,(viewportWidth-4)/Math.max(1,stage.scrollWidth),
-        (viewportHeight-4)/Math.max(1,stage.scrollHeight));
-      if(ratio>=0.985)return;
-      const scale=Math.max(0.2,ratio);
-      stage.style.zoom=String(scale);
-      stage.style.width=(100/scale)+'%';
-      stage.style.minHeight='0';
-    }
     function render(){
       if(destroyed)return;
       const live=client.snapshot,s=historyOpen&&historySnapshot?historySnapshot:live;
@@ -60,14 +43,14 @@
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
-      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer}):'';
+      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
       const markup=GameScreen.render({
         network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
-        historyHTML,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        historyHTML,historyResult:finished&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':finished&&!readOnly?'<button class="text-btn" data-command="result">Результаты</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
@@ -81,6 +64,7 @@
           app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
         }
         app.querySelector('.replay-badge').textContent=template.content.querySelector('.replay-badge').textContent;
+        app.querySelector('.replay-badge').setAttribute('aria-label',template.content.querySelector('.replay-badge').getAttribute('aria-label'));
         const range=app.querySelector('#replay-range');range.max=String(historyCount());range.value=String(historyRequested??historyIndex??historyCount());
         for(const command of ['replay-prev','replay-play','replay-next']){
           const selector='[data-command="'+command+'"]',button=app.querySelector(selector),next=template.content.querySelector(selector);
@@ -91,7 +75,7 @@
       const historyPanel=app.querySelector('.history-panel');
       if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot&&historyRequested===null?'false':'true');
       HandOverflow.sync(app);
-      if(historyOpen){fitReplayScene();root.requestAnimationFrame?.(()=>fitReplayScene());}
+      GameScreen.fitReplayScene(app);
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
     }
     function show(content){

@@ -183,7 +183,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await page.locator('#setting-speed').selectOption('normal');await page.locator('#setting-sound').check();await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'normal');assert.equal(await page.locator('#setting-sound').isChecked(),true);await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
     });
     await check('Sound starts muted; real offline UNO preview, volume and mute survive reload',async open=>{
-      const {page}=await open(fixture('uno'),{width:390,height:844},{},true);
+      const {page}=await open(fixture('uno'),{width:390,height:844},{},true,storageUrl);
       await resume(page);await clickMove(page,'uno');await page.waitForSelector('.scene[aria-busy=false]');
       assert.equal(await move(page),1);
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='play'||c.method==='sequence').length),0,'muted actions never enter playback');
@@ -222,7 +222,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='play'||c.method==='sequence').length),0,'muted reload never starts a preview');
       assert.equal(await move(page),1,'sound preferences preserve the game');
     });
-    await check('Live UNO cues play once; inspections stay silent and replay pause/stop cancel real sources',async open=>{
+    await check('Live UNO cues play once; inspections stay silent and history exit/stop cancel real sources',async open=>{
       const data=fixture('uno'),state=data.states[0],d=state.data;
       data.options.openHands=state.openHands=true;data.options.unoMode=d.uno.mode='manual';state.turn=0;
       const pool=[...d.hands[0],...d.drawPile];
@@ -256,10 +256,10 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.deepEqual(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').at(-1).ids),['move']);
       await page.locator('[data-command=replay-next]').click();
       await page.waitForFunction(()=>qaAudio.audio._groups.size>0&&qaAudio.calls.filter(c=>c.method==='sequence').at(-1).ids[0]==='uno.call');
-      await page.locator('.table-bottom [data-command=pause]').click();
+      await page.locator('[data-command=history-close]').click();
       await page.waitForFunction(()=>qaAudio.calls.filter(c=>c.method==='sequence').at(-1).finished);
-      assert.deepEqual(await page.evaluate(()=>({result:qaAudio.calls.filter(c=>c.method==='sequence').at(-1).result,groups:qaAudio.audio._groups.size,voices:qaAudio.audio._voices.size})),{result:false,groups:0,voices:0},'pause cancels the active decoded speech source');
-      await page.locator('#replay-range').focus();await page.keyboard.press('Home');
+      assert.deepEqual(await page.evaluate(()=>({result:qaAudio.calls.filter(c=>c.method==='sequence').at(-1).result,groups:qaAudio.audio._groups.size,voices:qaAudio.audio._voices.size})),{result:false,groups:0,voices:0},'leaving history cancels the active decoded speech source');
+      await page.locator('.table-tools [data-command=history]').click();await page.locator('#replay-range').focus();await page.keyboard.press('Home');
       const beforeAuto=await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').length);
       await page.locator('[data-command=replay-play]').click();
       await page.waitForFunction(n=>qaAudio.calls.filter(c=>c.method==='sequence').length>=n+2&&qaAudio.calls.filter(c=>c.method==='sequence').at(-1).ids[0]==='uno.call'&&qaAudio.audio._groups.size>0,beforeAuto);

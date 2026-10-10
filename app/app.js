@@ -126,20 +126,20 @@
     const entries=[...local.map(x=>({...x,kind:'local'})),...networkSaved.map(x=>({...x,kind:'network'}))]
       .filter(x=>savedFilter==='all'||x.kind===savedFilter).sort((a,b)=>b.updatedAt-a.updatedAt||Number(b.active)-Number(a.active));
     const cards=entries.map(entry=>{
-      const blocked=entry.invalid||entry.missingPack,name=entry.invalid?'Сохранение':meta(entry.game)?.name||entry.game;
-      if(entry.kind==='network'){
-        const host=entry.role!=='client',role=host?'Хост':'Клиент',players=(entry.players||[]).map(esc).join(' · '),archiveId=(host?'':'client:')+(host?entry.sessionId:entry.id);
-        return `<article class="saved-game" data-network-session-id="${esc(archiveId)}"><div>
-          <div class="saved-status"><span class="pill">Сетевая · ${role}</span><span class="muted">${Number(entry.revision)||0} действий${!host&&entry.savedFrames<entry.revision+1?' · часть истории не загружена':''}</span></div>
-          <h2>${esc(name)}</h2><p class="saved-players">${esc(entry.name||'Комната')} · ${players||'Участники'}</p>
-          <p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>
-          </div><div class="saved-game-actions">
-          <button class="btn secondary" data-network-history="${esc(archiveId)}">История ${icon('history')}</button>
-          <button class="btn" data-network-continue="${esc(archiveId)}">${host?'Продолжить':'Присоединиться'} ${icon('play')}</button>
-          </div></article>`;
-      }
-      const details=entry.missingPack?`<p>Для этой партии нужен пак ${esc(entry.game)} версии ${esc(entry.packVersion)}. Установите его, чтобы продолжить. Сохранение осталось на устройстве.</p>`:entry.invalid?'<p>Запись оставлена без изменений. Можно удалить её, если она больше не нужна.</p>':`<p class="saved-players">${entry.players.map(esc).join(' · ')}</p>${entry.finished?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>${entry.mode==='pass'?'На одном устройстве':'С ботами'} · ${esc(entry.preset||'Основной набор')}</p><p>Начало: ${esc(date(entry.createdAt))} · Последний ход: ${esc(date(entry.updatedAt))}</p>`;
-      return `<article class="saved-game" data-session-id="${esc(entry.id)}"><div><div class="saved-status"><span class="pill">Локальная · ${entry.missingPack?'Нужен игровой пак':entry.invalid?'Не удалось прочитать':entry.finished?'Завершена':'На паузе'}</span><span class="muted">${blocked?'':`Ход ${entry.move+1}`}</span></div><h2>${esc(name)}</h2>${details}</div><div class="saved-game-actions">${entry.missingPack?'<button class="btn" data-command="packs">Установить пак</button>':blocked?'':`<button class="btn" data-resume-id="${esc(entry.id)}">${entry.finished?'Просмотреть':'Продолжить'} ${icon(entry.finished?'history':'play')}</button>`}<button class="icon-btn" data-delete-id="${esc(entry.id)}" aria-label="Удалить партию ${esc(entry.invalid?'':name)}" title="Удалить партию">${icon('trash')}</button></div></article>`;
+      const network=entry.kind==='network',host=entry.role!=='client',blocked=entry.invalid||entry.missingPack;
+      const name=entry.invalid?'Сохранение':meta(entry.game)?.name||entry.game;
+      const id=network?(host?entry.sessionId:'client:'+entry.id):entry.id;
+      const status=network?'Сетевая · '+(host?'Хост':'Клиент'):'Локальная · '+(entry.missingPack?'Нужен пак':entry.invalid?'Ошибка сохранения':entry.finished?'Завершена':'На паузе');
+      const count=network?Number(entry.revision)||0:Number(entry.move)||0;
+      const summary=network?entry.name:(entry.mode==='pass'?'На одном устройстве':'С ботами')+' · '+(entry.preset||'Основной набор');
+      const details=blocked?`<p>${entry.missingPack?'Для этой партии нужен пак '+esc(entry.game)+' версии '+esc(entry.packVersion)+'. Установите его, чтобы открыть сохранение.':'Запись сохранена без изменений.'}</p>`:
+        `<p class="saved-players">${(entry.players||[]).map(esc).join(' · ')}</p>${summary?`<p class="saved-summary">${esc(summary)}</p>`:''}${entry.result?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>${network&&!host&&entry.savedFrames<entry.revision+1?'<p>Часть истории ещё не загружена</p>':''}`;
+      const history=network?`data-network-history="${esc(id)}"`:`data-history-id="${esc(id)}"`;
+      const continuation=network?`data-network-continue="${esc(id)}"`:`data-resume-id="${esc(id)}"`;
+      const label=network&&!host?'Присоединиться к партии':'Продолжить партию';
+      return `<article class="saved-game" ${network?`data-network-session-id="${esc(id)}"`:`data-session-id="${esc(id)}"`}><div><div class="saved-status"><span class="pill">${status}</span>${blocked?'':`<span class="muted">${count} действий</span>`}</div><h2>${esc(name)}</h2>${details}</div><div class="saved-game-actions">
+        ${entry.missingPack?`<button class="icon-btn" data-command="packs" aria-label="Установить пак" title="Установить пак">${icon('layers')}</button>`:blocked?'':`<button class="icon-btn saved-history" ${history} aria-label="История партии" title="История партии">${icon('history')}</button><button class="icon-btn saved-continue" ${continuation} aria-label="${entry.finished?'Партия завершена':label}" title="${entry.finished?'Партия завершена':label}" ${entry.finished?'disabled':''}>${icon('play')}</button>`}
+        ${network?'':`<button class="icon-btn saved-delete" data-delete-id="${esc(id)}" aria-label="Удалить партию ${esc(name)}" title="Удалить партию">${icon('trash')}</button>`}</div></article>`;
     }).join('');
     const filters=[['all','Все'],['local','Локальные'],['network','Сетевые']].map(([value,label])=>
       `<button type="button" class="filter ${savedFilter===value?'active':''}" data-saved-filter="${value}" aria-pressed="${savedFilter===value}">${label}</button>`).join('');
@@ -167,7 +167,7 @@
     screen='hub';hubTab=tab;filter='all';historyOpen=false;replayIndex=null;selected=null;paused=true;
     closeModal(true);render();
   }
-  function resumeSession(id=sessionId) {
+  function resumeSession(id=sessionId,{history=false}={}) {
     if(!id)return toast('Выберите игру — ваш стол появится здесь.');
     try {
       interruptAction();input?.cancel();cancelBot();stopReplay();
@@ -180,7 +180,7 @@
       screen='table';historyOpen=false;replayIndex=null;selected=null;paused=false;awaitingPass=false;lastResult=null;missedFrom=null;
       viewer=isPass()?session.current.turn:0;gate=needsGate(session.current)?viewer:null;
       closeModal(true);render();
-      if(session.current.status==='finished')openHistory();
+      if(history||session.current.status==='finished')openHistory();
     } catch(error) {toast('Не удалось открыть партию. '+error.message);}
   }
   function askDelete(id) {
@@ -234,13 +234,14 @@
       turnText,turnExtra:replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`,
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
       scene:V.render(projected,shownViewer,actions,{selected,flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''),
-      historyHTML:historyOpen?historyMarkup():'',
+      historyHTML:historyOpen?historyMarkup():'',historyResult:finished,
       beforeFooter:isPass()&&hasReactions(state)?`<div class="pass-device-bar"><button class="btn secondary" data-command="pass-device" ${!awaitingPass||transition||paused||replay||gate!==null?'disabled':''}>Передать устройство ${icon('arrow')}</button></div>`:'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     HandOverflow.sync($('#app'));
+    GameScreen.fitReplayScene($('#app'));
     feedback.refresh();playerTargets?.refresh();
     if(gate!==null)showGate();
     scheduleBot();
@@ -258,11 +259,13 @@
     $('.event-latest').textContent=lastEvent(projected)?.text||'Новая партия';
     $('.event-latest').title=lastEvent(projected)?.text||'Новая партия';
     $('.replay-badge').textContent=`${index} / ${count}`;
+    $('.replay-badge').setAttribute('aria-label',`Ход ${index} из ${count}`);
     $('[data-command="replay-prev"]').disabled=index===0;
     $('[data-command="replay-next"]').disabled=index===count;
     $('[data-command="replay-play"]').innerHTML=icon('play');
     $('[data-command="replay-play"]').setAttribute('aria-label','Воспроизвести повтор');
     $('.player-strip').innerHTML=playersMarkup(projected);
+    GameScreen.fitReplayScene($('#app'));
   }
   function showGate() {
     if($('.handoff'))return;
@@ -549,6 +552,7 @@
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
     if(!button||button.disabled)return;
     if(button.dataset.savedFilter){savedFilter=button.dataset.savedFilter;const panel=$('#saved-games-panel');if(panel)panel.innerHTML=savedGamesMarkup();return;}
+    if(button.dataset.historyId){resumeSession(button.dataset.historyId,{history:true});return;}
     if(button.dataset.resumeId){resumeSession(button.dataset.resumeId);return;}
     if(button.dataset.deleteId){try{askDelete(button.dataset.deleteId);}catch(_){toast('Не удалось прочитать сохранения.');}return;}
     if(button.dataset.deleteConfirm){deleteSession(button.dataset.deleteConfirm);return;}
