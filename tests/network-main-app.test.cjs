@@ -18,6 +18,10 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
   const hosted=externalUrl?{s:null,url:externalUrl}:await server();
   const {s,url}=hosted,browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),cc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740},hasTouch:true,isMobile:true});
+  await cc.addInitScript(()=>{
+    const RTC=window.RTCPeerConnection;window.qaRTCs=[];
+    window.RTCPeerConnection=class extends RTC{constructor(...args){super(...args);qaRTCs.push(this);}};
+  });
   const host=await hc.newPage(),client=await cc.newPage();host._url=url;client._url=url;
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
   try{
@@ -148,6 +152,48 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
     await client.locator('.history-panel [data-command=history-close]').click();
     assert.equal(await client.locator('.history-panel').count(),0);
+
+    const identity=await client.evaluate(()=>{
+      window.qaLiveRTC=qaRTCs.find(peer=>peer.connectionState==='connected');
+      return {participant:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length};
+    });
+    // Finish after a real legal command, keeping authority persistence, RTC
+    // snapshots and all result/lobby lifecycle code in the real application.
+    // The fixture shortens UNO only in this browser; published packs are intact.
+    await host.evaluate(()=>{
+      const apply=TabletopCore.applyAction;
+      TabletopCore.applyAction=(...args)=>{const next=apply(...args);TabletopCore.finish(next,args[1],'Тестовая партия завершена');return next;};
+    });
+    for(const exit of ['guest','host']){
+      const actor=await host.locator('.scene [data-action]').count()?host:client;
+      await actor.locator('.scene [data-action]').first().click();
+      await host.locator('.shared-modal-backdrop').waitFor();
+      await client.locator('.shared-modal-backdrop').waitFor();
+      await client.locator('.shared-modal-backdrop [data-command=close-modal]').click();
+      assert.equal(await client.locator('.shared-modal-backdrop').count(),0);
+      await client.locator('[data-command=result]').click();
+      await client.locator('.shared-modal-backdrop [data-command=result-replay]').click();
+      await client.locator('.history-panel').waitFor();
+      await client.locator('[data-command=history-close]').click();
+      await client.locator('[data-command=result]').click();
+      if(exit==='guest'){
+        await client.locator('.shared-modal-backdrop [data-command=home]').click();
+        await client.locator('.lobby-shell').waitFor();
+        assert.equal(await client.locator('.shared-modal-backdrop').count(),0,'Guest exit must remove its result dialog');
+      }
+      await host.locator('.shared-modal-backdrop [data-command=home]').click();
+      await host.locator('.lobby-shell').waitFor();
+      await client.locator('[data-net-action=ready]:not(:disabled)').waitFor();
+      assert.equal(await client.locator('.shared-modal-backdrop').count(),0,'Host transition must remove the guest result dialog');
+      assert.equal(await client.locator('#app').evaluate(e=>e.inert),false);
+      await host.locator('[data-command=lobby-ready]').click();
+      await client.locator('[data-net-action=ready]').click();
+      await host.locator('[data-command=lobby-start]:not(:disabled)').click();
+      await client.locator('.table-shell.network-game').waitFor({timeout:10000});
+      await host.locator('.table-shell.network-game').waitFor({timeout:10000});
+      assert.deepEqual(await client.evaluate(()=>({participant:PlayroomNetworkDebug().client.participantId,
+        peers:qaRTCs.length,state:qaLiveRTC.connectionState})),{...identity,state:'connected'});
+    }
 
     assert.deepEqual(errors,[]);
   }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}

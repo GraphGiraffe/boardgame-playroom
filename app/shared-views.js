@@ -13,7 +13,7 @@
   function mount(client,definition,{surface,readOnly=false,onExit=null}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     let selected=null,connected=true,historyOpen=false,historyIndex=null,historySnapshot=null,historyTicket=0;
-    let input=null,playerTargets=null,dialogOpen=false,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
     const stopMotion=()=>{animationTicket++;transitionActive=false;flow.cancel();};
@@ -80,9 +80,16 @@
     function show(content){
       dialogOpen=true;input.cancel();playerTargets?.cancel();app.inert=true;
       modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Информация"><button class="text-btn" data-command="close-modal">Закрыть ${GameScreen.icon('close')}</button>${content}</section></div>`;
+      ownedDialog=modal.firstElementChild;
       modal.querySelector('button')?.focus();
     }
-    function close(){modal.innerHTML='';app.inert=false;dialogOpen=false;pendingAction=null;render();}
+    function clearDialog(){
+      // The mount owns only its own dialog. Another screen may already have
+      // replaced it (for example app settings) when this mount is destroyed.
+      if(ownedDialog?.parentNode===modal){ownedDialog.remove();if(!modal.children.length)app.inert=false;}
+      ownedDialog=null;dialogOpen=false;pendingAction=null;
+    }
+    function close(){clearDialog();render();}
     async function submit(action,confirmed=false){
       if(!usable())return;
       if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>Подтверждение действия</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||'Подтвердить')}</button>`);return;}
@@ -224,7 +231,7 @@
     const onOptions=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){stopReplay();stopMotion();}};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+      destroy(){destroyed=true;clearDialog();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);
