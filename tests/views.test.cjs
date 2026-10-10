@@ -235,3 +235,23 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
 test('all source packs provide only API 2 elements with application-owned placement',()=>{
   for(const game of games){const state=make(game),view=V.get(game).render(E.project(state,state.turn),state.turn,E.legalActions(state),{selected:null});assert.equal(view.api,2);assert.ok(['cards','board'].includes(view.family));assert.equal(typeof view.elements.field,'string');assert.ok(view.elements.field.length);assert.doesNotMatch(Object.values(view.elements).join(''),/class="game-scene/);assert.match(V.render(E.project(state,state.turn),state.turn,[],{}),/data-view-api="2"/);}
 });
+
+
+test('player hands render every hidden piece and score units agree with the rules',()=>{
+  for(const game of games){
+    const state=make(game),projected=E.project(state,0),descriptor=V.get(game).render(projected,0,E.legalActions(state,0),{selected:null});
+    assert.equal(descriptor.playerContent.length,state.players.length);
+    for(const [index,content]of descriptor.playerContent.entries()){
+      assert.equal(content.scoreLabel,E.get(game).scoreLabel);
+      if(state.data.hands&&index!==0){
+        assert.equal((content.handHTML.match(/class="piece-back /g)||[]).length,state.data.hands[index].length,game);
+        assert.equal(content.handCount,state.data.hands[index].length);
+        assert.equal(content.open,false);
+        if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
+      }
+    }
+  }
+  const state=make('durak'),html=render(state);
+  assert.doesNotMatch(html,/Время первого хода|Соперник выбирает карту/);
+  assert.doesNotMatch(render(make('domino')),/Выберите первую костяшку|Коснитесь места на поле/);
+});

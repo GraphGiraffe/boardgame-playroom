@@ -7,7 +7,9 @@
     const catalog={[manifest.id]:manifest},scope={PlayroomViews:V,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error('Ресурс отсутствует');return assets[path];}})};
     // A trusted view module executes here. The remote client does not receive Session or rules code.
     Function('globalThis','"use strict";\n'+view)(scope);
-    const style=document.createElement('style');style.dataset.sharedPack=manifest.id;style.textContent=styles;document.head.appendChild(style);
+    let style=document.querySelector?.('style[data-shared-pack="'+manifest.id+'"]');
+    if(!style){style=document.createElement('style');style.dataset.sharedPack=manifest.id;document.head.appendChild(style);}
+    style.textContent=styles;
     return {manifest,catalog:catalog[manifest.id],rules:definition.rules||[],sounds:definition.sounds||{}};
   }
   function mount(client,definition,{surface,readOnly=false,onExit=null}={}){

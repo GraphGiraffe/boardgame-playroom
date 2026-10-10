@@ -62,7 +62,7 @@
   }
   function styles(bundle){
     const css=bundle.files['styles.css'];
-    if(/(?:#app\b|\.(?:table-shell|table-header|player-strip|game-layout-slot|app-game-layout|own-hand|hand-track|opponent-hands|scene-actions)(?![-\w]))/.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('Компоновка общих элементов принадлежит приложению');
+    if(/(?:#app\b|\.(?:table-shell|table-header|player-strip|game-layout-slot|app-game-layout|own-hand|hand-track|opponent-hands|scene-actions|player-panel|player-info|player-details|player-badges|mini-hand|hand-heading|hand-tools|opponent-hand|opponent-label|is-open-hand)(?![-\w]))/.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('Компоновка общих элементов принадлежит приложению');
     if(/@import\b|expression\s*\(/i.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('CSS пакета не должен загружать внешние стили');
     return css.replace(/url\(\s*(?:(['"])(.*?)\1|([^)]*))\s*\)/gis,(_,quote,quoted,plain)=>{
       const url=(quoted??plain).trim();if(url.startsWith('#'))return `url("${url}")`;
