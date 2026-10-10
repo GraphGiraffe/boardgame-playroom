@@ -439,3 +439,101 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     });
   }finally{await browser.close();}
 });
+
+test('Modal gestures scroll their contents without moving the underlying screen', {timeout:180000}, async t=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const server=await serveBrowserFixture(root);
+  try{
+    for(const [width,height,touch] of [[320,740,true],[390,840,true],[740,390,true],[1440,900,false]])await t.test(`${width}×${height} ${touch?'touch':'wheel'}`,async()=>{
+      const context=await browser.newContext({viewport:{width,height},hasTouch:touch,isMobile:touch});
+      const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
+      const cdp=await context.newCDPSession(page);
+      const gesture=async(x,y,delta)=>{
+        if(touch){
+          await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+          for(let i=1;i<=10;i++){
+            await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-delta*i/10}]});
+            await page.waitForTimeout(20);
+          }
+          await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+        }else{await page.mouse.move(x,y);await page.mouse.wheel(0,delta);}
+        await page.waitForTimeout(180);
+      };
+      const checkDialog=async(name)=>{
+        await page.evaluate(()=>scrollTo(0,120));
+        const before=await page.evaluate(()=>({y:scrollY,top:document.querySelector('#app').getBoundingClientRect().top}));
+        const dialog=page.locator('.modal,.lobby-countdown'),box=await dialog.boundingBox();
+        const x=box.x+box.width/2,y=Math.min(box.y+box.height-40,height-35);
+        await dialog.evaluate(e=>e.scrollTop=0);
+        const overflow=await dialog.evaluate(e=>e.scrollHeight-e.clientHeight);
+        await gesture(x,y,100);
+        if(overflow>2)assert(await dialog.evaluate(e=>e.scrollTop)>0,`${name}: content must scroll`);
+        // Both limits, short dialogs and the backdrop must consume gestures.
+        await dialog.evaluate(e=>e.scrollTop=e.scrollHeight);await gesture(x,y,100);
+        await dialog.evaluate(e=>e.scrollTop=0);await gesture(x,Math.max(box.y+40,125),-100);
+        await gesture(3,height/2,100);
+        assert.deepEqual(await page.evaluate(()=>({y:scrollY,top:document.querySelector('#app').getBoundingClientRect().top})),before,`${name}: background moved`);
+      };
+      try{
+        await page.goto(server.url);
+        // A desktop hub also needs an actual scrollable background to catch leaks.
+        await page.evaluate(()=>document.querySelector('#app').style.minHeight='2400px');
+        const screens=[['packs','[data-command=packs]'],['settings','.topbar-tools [data-command=settings]'],['help','.side-nav [data-command=help]'],['setup','[data-start=uno]'],['rules',null],['pairing','#network-join-button']];
+        for(const [name,selector] of screens){
+          if(name==='rules'){await page.locator('[data-start=uno]').first().click();await page.locator('[data-rules=uno]').click();}
+          else await page.locator(selector).first().click();
+          await page.locator('.modal').waitFor();
+          await checkDialog(name);
+          await page.locator('.modal [data-command=close-modal]').first().click();
+          if(name==='rules')await page.locator('.modal [data-command=close-modal]').first().click();
+          await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
+          assert(await page.evaluate(()=>scrollY)>0,`${name}: closing must restore page scrolling`);
+          await page.evaluate(()=>scrollTo(0,0));
+        }
+        const fs=require('node:fs'),Authority=require('../core/authority.js');
+        const session=Session.restore(E,fixture()),snapshot=new Authority(session).connect(0).snapshot();
+        const def={manifest:JSON.parse(fs.readFileSync(root+'/packs/uno/manifest.json','utf8')),view:fs.readFileSync(root+'/packs/uno/view.js','utf8'),styles:fs.readFileSync(root+'/packs/uno/styles.css','utf8'),rules:['Правила UNO']};
+        await page.evaluate(({snapshot,def})=>{
+          snapshot.state.status='finished';
+          const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('No actions during modal test');}};
+          window.scrollGame=PlayroomSharedViews.mount(client,def);scrollGame.render();
+        },{snapshot,def});
+        for(const command of ['rules','result']){
+          // Keyboard activation isolates modal scrolling from table footer layout.
+          await page.locator('.network-game [data-command='+command+']').first().press('Enter');
+          await checkDialog('network '+command);
+          await page.locator('.shared-modal-backdrop [data-command=close-modal]').first().click();
+          await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
+          assert(await page.evaluate(()=>scrollY)>0,'Shared dialog close must release scrolling');
+          await page.evaluate(()=>scrollTo(0,0));
+        }
+        await page.locator('.network-game [data-command=result]').press('Enter');
+        await page.evaluate(()=>scrollGame.destroy());
+        assert.equal(await page.locator('.modal').count(),0);
+        await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
+        assert(await page.evaluate(()=>scrollY)>0,'Shared mount destroy must release scrolling');
+        await page.goto(server.url);
+        await page.locator('[data-start=uno]').first().click();await page.locator('input[value=pass]').check();
+        await page.locator('button[type=submit]').click();await page.locator('.handoff').waitFor();
+        const curtain=await page.locator('.handoff').boundingBox(),before=await page.evaluate(()=>scrollY);
+        await gesture(curtain.x+5,Math.min(height-35,curtain.y+curtain.height-35),100);
+        assert.equal(await page.evaluate(()=>scrollY),before,'Handoff must not scroll the background');
+        assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY),'hidden');
+        await page.locator('.handoff [data-command=unlock]').click();
+        assert.notEqual(await page.evaluate(()=>getComputedStyle(document.documentElement).overflowY),'hidden');
+        // Use the same static overlay markup emitted by both room renderers;
+        // scrolling isolation does not require connecting an authority.
+        await page.goto(server.url);
+        await page.evaluate(()=>{
+          document.querySelector('#app').style.minHeight='2400px';
+          document.querySelector('#app').insertAdjacentHTML('beforeend','<div class="lobby-countdown" role="status" aria-live="assertive"><div><strong>3</strong><p>Игра начинается…</p></div></div>');
+        });
+        await checkDialog('room countdown');
+        await page.evaluate(()=>{document.querySelector('.lobby-countdown').remove();scrollTo(0,0);});
+        await gesture(3,height/2,100);
+        assert(await page.evaluate(()=>scrollY)>0,'Countdown teardown must restore scrolling');
+        assert.deepEqual(errors,[]);
+      }finally{await context.close();}
+    });
+  }finally{await browser.close();await server.close();}
+});
