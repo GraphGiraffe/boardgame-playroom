@@ -52,10 +52,10 @@ jobs:
       - name: Legacy layout regression gate
         working-directory: app
         timeout-minutes: 4
-        run: node --test --test-concurrency=1 tests/checkers-drag.test.cjs tests/uno-hand-size.test.cjs tests/compact-hand.test.cjs
+        run: npm run test:layout
       - name: Two-device release gate
         working-directory: app
-        run: node --test --test-concurrency=1 tests/multiplayer-lobby.test.cjs tests/webrtc-browser.test.cjs tests/acoustic-webrtc-browser.test.cjs tests/qr-pairing-browser.test.cjs tests/pairing-methods-browser.test.cjs tests/network-resume.test.cjs tests/network-next-match.test.cjs tests/network-client-history-browser.test.cjs tests/pwa-share.test.cjs tests/network-reconnect-browser.test.cjs tests/network-host-recovery-browser.test.cjs tests/network-main-app.test.cjs tests/network-same-origin.test.cjs tests/recovery-warning.test.cjs tests/network-feedback-browser.test.cjs tests/unified-game-screen-browser.test.cjs tests/ui.test.cjs tests/lobby-layout-browser.test.cjs tests/history-library-layout-browser.test.cjs
+        run: npm run test:smoke
       - name: Build all-games preview
         run: |
           rm -rf app/dist/smoke
@@ -88,7 +88,7 @@ jobs:
         working-directory: app
         env:
           PLAYROOM_URL: file://${{ github.workspace }}/app/dist/smoke/playroom-all-games.html
-        run: node --test --test-concurrency=1 tests/network-main-app.test.cjs
+        run: npm run test:rtc
       - name: Validate installable PWA preview
         working-directory: app
         run: |
@@ -96,7 +96,7 @@ jobs:
           server=$!
           trap 'kill $server 2>/dev/null || true' EXIT
           sleep 1
-          PLAYROOM_URL=http://127.0.0.1:4174/ node --test --test-concurrency=1 tests/network-main-app.test.cjs
+          PLAYROOM_URL=http://127.0.0.1:4174/ npm run test:rtc
           curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
           curl --fail http://127.0.0.1:4174/app/vendor/qrcode.js >/dev/null
           curl --fail http://127.0.0.1:4174/app/vendor/jsqr.js >/dev/null

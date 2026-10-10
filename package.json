@@ -5,14 +5,24 @@
   "description": "Browser tabletop app and independent game-pack engine",
   "scripts": {
     "build": "python3 build.py",
-    "test": "node --test --test-concurrency=1 tests/*.test.cjs",
-    "test:core-ui": "node --test --test-concurrency=1 tests/drag.test.cjs tests/motion-effects.test.cjs",
+    "test": "node scripts/codex/test.cjs all",
+    "test:core-ui": "node scripts/codex/test.cjs core-ui",
     "setup": "bash scripts/codex/setup.sh",
     "check": "bash scripts/codex/check.sh",
     "check:full": "bash scripts/codex/check.sh --full",
     "serve": "bash scripts/codex/serve.sh",
     "prepare:dev": "python3 build.py --prepare-dev",
-    "test:app": "node --test --test-concurrency=1 tests/session.test.cjs tests/drag.test.cjs tests/motion-effects.test.cjs tests/tooltips.test.cjs tests/authority.test.cjs tests/multiplayer-lobby.test.cjs tests/network-resume.test.cjs tests/durable-authority.test.cjs tests/host-recovery.test.cjs tests/network-store-integrity.test.cjs tests/network-session-store-browser.test.cjs tests/pairing.test.cjs tests/qr-pairing-browser.test.cjs tests/pairing-methods-browser.test.cjs tests/pwa.test.cjs tests/player-profile.test.cjs tests/recovery-warning.test.cjs tests/packs-reconcile.test.cjs tests/webrtc-transport.test.cjs tests/acoustic-pairing.test.cjs tests/acoustic-webrtc-browser.test.cjs tests/webrtc-browser.test.cjs tests/view-contract.test.cjs tests/artwork.test.cjs tests/game-screen.test.cjs tests/game-flow.test.cjs tests/hand-overflow.test.cjs tests/hand-overflow-browser.test.cjs tests/hand-navigation.test.cjs tests/presence-transport.test.cjs tests/network-client-history.test.cjs tests/network-client-history-browser.test.cjs tests/network-next-match.test.cjs tests/pwa-share.test.cjs"
+    "test:app": "node scripts/codex/test.cjs app",
+    "test:core": "node scripts/codex/test.cjs core",
+    "test:input": "node scripts/codex/test.cjs input",
+    "test:games": "node scripts/codex/test.cjs games",
+    "test:ui": "node scripts/codex/test.cjs ui",
+    "test:storage": "node scripts/codex/test.cjs storage",
+    "test:network": "node scripts/codex/test.cjs network",
+    "test:pairing": "node scripts/codex/test.cjs pairing",
+    "test:layout": "node scripts/codex/test.cjs layout",
+    "test:smoke": "node scripts/codex/test.cjs smoke",
+    "test:rtc": "node scripts/codex/test.cjs rtc"
   },
   "devDependencies": {
     "playwright-core": "1.63.0"
