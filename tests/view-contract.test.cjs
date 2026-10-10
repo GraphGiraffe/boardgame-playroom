@@ -9,4 +9,39 @@ test('failed activation restores surface registry as well as combined renderer',
 test('compact art is optional, retains canonical dimensions and has a main fallback',()=>{const H=UI.helpers,art={main:'<b>Main</b>',compact:'<b>Small</b>',width:72,height:103};assert.match(H.art(art,'compact'),/Small/);assert.doesNotMatch(H.art(art,'compact'),/Main/);assert.match(H.art({...art,compact:undefined},'compact'),/data-art-variant="main"/);assert.match(H.art(art),/viewBox="0 0 72 103" preserveAspectRatio="xMidYMid meet"/);assert.throws(()=>H.art({...art,width:0}));assert.throws(()=>H.art({...art,height:Infinity}));assert.match(H.back(),/piece-art/);});
 
 
-test('old manifests and pack CSS that places application components are rejected',()=>{const core={...E,GAMES:[...E.GAMES]},views=UI.createRegistry(),manager=new Packs({engine:core,views,catalog:{},storage:{get:()=>null,set(){}}});const old=bundle();delete old.manifest.viewApi;assert.throws(()=>manager.prepare(old),/API интерфейса 2/);for(const selector of ['.table-shell','.own-hand','.game-layout-slot']){const value=bundle();value.files['styles.css']=selector+'{display:grid}';assert.throws(()=>manager.prepare(value),/принадлежит приложению/);}});
+test('old manifests and pack CSS that places application components are rejected',()=>{const core={...E,GAMES:[...E.GAMES]},views=UI.createRegistry(),manager=new Packs({engine:core,views,catalog:{},storage:{get:()=>null,set(){}}});const old=bundle();delete old.manifest.viewApi;assert.throws(()=>manager.prepare(old),/API интерфейса 2/);for(const selector of ['.table-shell','.own-hand','.game-layout-slot','.mini-hand','.player-info','.hand-heading','.opponent-hand']){const value=bundle();value.files['styles.css']=selector+'{display:grid}';assert.throws(()=>manager.prepare(value),/принадлежит приложению/);}});
+
+
+test('public table strips player-target actions even when supplied by a caller',()=>{
+  const state={game:'public-fixture',turn:0,data:{},players:[{name:'One',score:0},{name:'Two',score:0}]};
+  const scene={api:2,family:'board',elements:{field:'<p>Table</p>',actions:'<button>Personal</button>',hand:'Private'}};
+  const actions=[{type:'react',target:0,targetKind:'player'}],views=UI.createRegistry();
+  views.register(state.game,()=>scene,null,{surfaces:{table:(s,v,a)=>{assert.deepEqual(a,[]);return scene;}}});
+  for(const html of [UI.composeScene(scene,{surface:'table',state,viewer:-1,actions}),views.render(state,-1,actions,{surface:'table'})])assert.doesNotMatch(html,/data-player-target|layout-self|layout-hand|layout-actions|Personal|Private/);
+  assert.match(UI.composeScene(scene,{state,viewer:1,actions}),/data-player-target="0"/);
+});
+
+test('player descriptors require matching indexes and valid public metadata',()=>{
+  const state={players:[{name:'One'},{name:'Two'}]},scene={api:2,family:'cards',elements:{field:'Field'}};
+  for(const content of [[{}],[{},null],[{},[]],[{open:'yes'},{}],[{badges:[null]},{}],[{colorLabel:1},{}],[{countLabel:false},{}]])assert.throws(()=>UI.composeScene({...scene,playerContent:content},{state}));
+  assert.doesNotThrow(()=>UI.composeScene({...scene,playerContent:[{badges:['UNO!',{label:'Ready'}]},{}]},{state}));
+});
+
+test('pack assets survive export to a remote view without rules or external requests',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),value=bundle();
+  value.files['assets/piece.svg']='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+  value.files['styles.css']='.view-fixture{background:url("assets/piece.svg")}';
+  value.files['view.js']=`const asset=globalThis.PlayroomPack.asset('assets/piece.svg');globalThis.PlayroomViews.register('view-fixture',()=>({api:2,family:'board',elements:{field:'<img src="'+asset+'" alt="Piece">'}}));`;
+  const {manager,views}=env();manager.install(manager.prepare(value));
+  const definition=manager.exportView('view-fixture'),remote=UI.createRegistry(),nodes=[];
+  const scope={PlayroomViews:remote,TabletopUI:UI,document:{querySelector:()=>nodes[0],createElement:()=>({dataset:{}}),head:{appendChild:n=>nodes.push(n)}}};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../app/shared-views.js'),'utf8'),scope);
+  scope.PlayroomSharedViews.install(definition);
+  assert.equal(remote.render({game:'view-fixture'},-1,[]),views.render({game:'view-fixture'},-1,[]));
+  assert.match(nodes[0].textContent,/url\("data:image\/svg\+xml/);assert.equal(nodes[0].textContent,definition.styles);
+  scope.PlayroomSharedViews.install({...definition,styles:'.view-fixture{color:red}'});
+  assert.equal(nodes.length,1);assert.equal(nodes[0].textContent,'.view-fixture{color:red}');
+  assert.match(definition.assets['assets/piece.svg'],/^data:image\/svg\+xml/);
+  assert.ok(!Object.hasOwn(definition,'files'));assert.doesNotMatch(JSON.stringify(definition),/create\(s\)/);
+  delete value.files['assets/piece.svg'];assert.throws(()=>manager.prepare(value),/Ресурс|ресурс/);
+});

@@ -10,7 +10,7 @@ test('all packs share player panels and preserve geometry across reported screen
  await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div></body></html>');
  for(const f of ['app/styles.css','app/design-system.css','core/ui.css',...['uno','durak','domino','checkers','snakes'].map(id=>`packs/${id}/styles.css`)])await page.addStyleTag({content:read(f)});
  for(const f of ['core/engine.js','core/ui.js','app/views.js','app/game-screen.js',...['uno','durak','domino','checkers','snakes'].flatMap(id=>[`packs/${id}/rules.js`,`packs/${id}/view.js`])])await page.addScriptTag({content:read(f)});
- const cases=[...sourceSizes,...[...['uno','durak','domino','checkers','snakes']].flatMap(id=>[[320,640,id],[390,740,id],[740,390,id],[640,280,id],[768,1024,id],[1024,768,id],[1280,900,id],[1920,1080,id]]),...['uno','durak','domino','checkers','snakes'].flatMap(id=>[[390,740,id,'table'],[740,390,id,'table'],[1280,900,id,'table'],[390,740,id,'open']])];
+ const cases=[...sourceSizes,...[...['uno','durak','domino','checkers','snakes']].flatMap(id=>[[320,640,id],[390,740,id],[740,390,id],[640,280,id],[768,1024,id],[1024,768,id],[1280,900,id],[1920,1080,id]]),...['uno','durak','domino','checkers','snakes'].flatMap(id=>[[390,740,id,'table'],[740,390,id,'table'],[1280,900,id,'table'],[390,740,id,'player'],[740,390,id,'player'],[1280,900,id,'player'],[390,740,id,'open']])];
  let capture=0;
  for(const [width,height,game,surface]of cases)for(const replay of [false,true])await t.test(`${game} ${surface||'combined'} ${width}x${height} ${replay?'replay':'live'}`,async()=>{
   await page.setViewportSize({width,height});
@@ -19,7 +19,7 @@ test('all packs share player panels and preserve geometry across reported screen
    if(['domino','snakes'].includes(game))for(let i=0;i<14&&state.status!=='finished';i++)state=E.applyAction(state,state.turn,E.botAction(state));
    if(game==='checkers')state.turn=1;
    const viewer=surface==='table'?-1:game==='checkers'?1:0,projected=E.project(state,viewer),actions=replay?[]:E.legalActions(state,viewer);
-   document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:E.get(game).name,subtitle:'За столом с ботами · Основные правила игры',state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions,{selected:null,surface:surface==='table'?'table':'combined'}),turnText:'Ходит '+state.players[state.turn].name,turnExtra:'Ход '+state.move,footerText:'Последнее действие',replay,historyHTML:replay?PlayroomGameScreen.historyMarkup({index:state.move,count:state.move,caption:'Последнее действие'}):''});
+   document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:E.get(game).name,subtitle:'За столом с ботами · Основные правила игры',state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions,{selected:null,surface:['table','player'].includes(surface)?surface:'combined'}),turnText:'Ходит '+state.players[state.turn].name,turnExtra:'Ход '+state.move,footerText:'Последнее действие',replay,historyHTML:replay?PlayroomGameScreen.historyMarkup({index:state.move,count:state.move,caption:'Последнее действие'}):''});
    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
   },{game,replay,surface});
   await page.waitForTimeout(25);
