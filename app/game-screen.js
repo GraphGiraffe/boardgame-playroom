@@ -54,6 +54,19 @@
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
+  function fitHand(stage){
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
+      track.style.removeProperty('--fan-peek');
+      const win=track.ownerDocument.defaultView,baseline=parseFloat(win.getComputedStyle(track).getPropertyValue('--fan-peek'))||28;
+      let peek=baseline;
+      for(const card of track.querySelectorAll('.hand-card')){
+        const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
+        const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
+        peek=Math.max(peek,Math.min(box.width,Math.ceil(marker.right-box.left+2)));
+      }
+      if(peek>baseline)track.style.setProperty('--fan-peek',peek+'px');
+    }
+  }
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
@@ -76,7 +89,7 @@
         replayFitters.set(host,{scene,observer});observer?.observe(scene);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitHand(stage);fitField(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage)stage.style.zoom='1';
   }
   return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});

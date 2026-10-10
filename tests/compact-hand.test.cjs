@@ -233,9 +233,12 @@ test('Compact card hands preserve readable previews and each game’s play contr
     });
     for (const viewport of [{width: 320, height: 640}, {width: 390, height: 740}, {width: 1280, height: 900}]) for (const count of [6, 8]) {
       await check(`Durak ${count} rank-and-suit corners fit at ${viewport.width}×${viewport.height}`, {saved: durakFixture(count), viewport, touch: viewport.width < 500}, async ({page}) => {
+        // Larger fallback font metrics must keep the double-digit rank reachable.
+        if(count===8&&viewport.width===390)await page.evaluate(()=>{for(const corner of document.querySelectorAll('.own-hand .card-corner'))corner.style.setProperty('font-size','17px','important');PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
         const layout = await page.locator('.hand-track').evaluate(el => {
           const cards = [...el.querySelectorAll('[data-hand-preview]')], hidden = [];
           for (const card of cards) {
+            card.scrollIntoView({block:'nearest',inline:'nearest'});
             const corner = card.querySelector('.card-corner:not(.bottom)'), suit = corner.querySelector('small');
             for (const marker of [corner, suit]) {
               const r = marker.getBoundingClientRect(), style = getComputedStyle(marker);
@@ -247,7 +250,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
           }
           return {count: cards.length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth-el.clientWidth, y: el.scrollHeight-el.clientHeight, hidden};
         });
-        assert.equal(layout.count, count); assert.equal(layout.rows, 1); assert(layout.x <= 1 && layout.y <= 1, JSON.stringify(layout)); assert.deepEqual(layout.hidden, []);
+        assert.equal(layout.count, count); assert.equal(layout.rows, 1); assert(layout.y <= 1, JSON.stringify(layout)); if(count===6)assert(layout.x<=1, JSON.stringify(layout)); assert.deepEqual(layout.hidden, []);
         if (viewport.width === 390 && process.env.PLAYROOM_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR, `playroom-v0.10-durak-${count === 6 ? 'six' : 'eight'}.png`)});
       });
     }

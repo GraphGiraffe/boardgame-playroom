@@ -128,3 +128,9 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 .opponent-hand .player-info{min-height:72px}.self-player .player-info{min-height:56px}
 .app-game-layout .layout-field{align-items:safe center;justify-content:safe center}
+
+/* A changing event or turn name cannot resize the table during an action. */
+#app .table-status{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:16px 14px;gap:2px 12px;height:44px;min-height:44px;align-items:center}
+#app .table-status .turn-label,#app .table-status .turn-extra{min-width:0;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .table-status .status-event{grid-column:1 / -1;min-width:0;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+@media(max-height:550px) and (orientation:landscape){#app .table-status{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-rows:18px;height:26px;min-height:26px}#app .table-status .status-event{grid-column:auto;text-align:right}}
