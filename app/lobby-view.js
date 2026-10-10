@@ -1,0 +1,37 @@
+(function(root){
+  'use strict';
+  const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const icon=name=>root.PlayroomGameScreen.icon(name);
+  const action=(host,local,remote)=>host?`data-command="${local}"`:`data-net-action="${remote}"`;
+  const button=(attrs,label,name,disabled=false)=>`<button class="icon-btn" type="button" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" ${disabled?'disabled':''}>${icon(name)}</button>`;
+  function render({room,participantId,isHost=false,canStart=false,waiting=false,countdown=3,notice=''}){
+    const me=room.participants.find(p=>p.id===participantId),locked=room.phase!=='lobby',occupied=new Set(room.seats.map(s=>s.participantId).filter(Boolean));
+    const person=p=>esc(p.nickname)+(p.isHost?' · хост':'');
+    const kick=p=>isHost&&!p.isHost?button(`data-kick-participant="${esc(p.id)}"`,'Исключить '+p.nickname,'trash',locked):'';
+    const seats=room.seats.map(seat=>{
+      const p=room.participants.find(p=>p.id===seat.participantId),mine=p?.id===participantId;
+      return `<div class="lobby-seat-row ${p?'lobby-person':''}" ${p?`data-participant-id="${esc(p.id)}"`:''}><button class="lobby-seat ${p?'occupied':'available'} ${mine?'mine':''}" ${isHost?`data-lobby-seat="${esc(seat.id)}"`:`data-net-seat="${esc(seat.id)}"`} ${locked||me?.ready||(p&&!mine)?'disabled':''}><span class="seat-color" style="background:${esc(seat.color.value)}"></span><span><strong>${p?person(p):esc(seat.color.label)+' слот'}</strong><small>${p?`${mine?'Вы · ':''}<span class="${p.ready?'lobby-ready':'lobby-not-ready'}">${p.ready?'Готов':'Не готов'}</span>${p.connected===false?' · нет связи':''}`:'Свободно'}</small></span></button>${p?kick(p):''}</div>`;
+    }).join('');
+    const watchers=room.participants.filter(p=>!occupied.has(p.id)).map(p=>`<div class="lobby-person lobby-observer" data-participant-id="${esc(p.id)}"><span>${icon(p.role==='table'?'grid':'eye')}</span><span><strong>${person(p)}</strong><small>${p.id===participantId?'Вы · ':''}${p.role==='table'?'Общий стол':'Зритель'}${p.connected===false?' · нет связи':''}</small></span>${kick(p)}</div>`).join('');
+    return `<main class="lobby-shell"><div class="lobby-wrap"><header class="lobby-header">${button(action(isHost,'lobby-leave','leave'),'Выйти из комнаты','back')}<div class="lobby-title"><h1><span class="lobby-code">#${esc(room.code)}</span> <strong>${esc(room.name)}</strong></h1></div><div class="lobby-tools">${button(action(isHost,'room-help','help'),'Справка о комнате','help')}${button(action(isHost,'settings','settings'),'Настройки','settings')}</div></header>
+      ${waiting?'<p class="lobby-rules-note" role="status">Ждём возвращения хоста в комнату.</p>':notice?`<p class="lobby-rules-note" role="status">${esc(notice)}</p>`:''}
+      <section class="lobby-card"><div class="lobby-game-line"><h2>${esc(room.game.name)}</h2><div class="lobby-tools">${button(action(isHost,'room-rules-view','rules'),'Правила','rules')}${isHost?button('data-command="room-rules"','Изменить правила','edit',locked)+button('data-command="room-change-game"','Сменить игру','layers',locked):''}</div></div>
+      <div class="lobby-section-head"><h2>Игровые места</h2>${isHost?button('id="network-pair-button"','Подключить устройство','connect',locked):''}</div><div class="lobby-seats">${seats}</div>
+      <div class="lobby-section-head lobby-observers-head"><h2>Зрители</h2>${me?.role==='player'?button(action(isHost,'lobby-spectator','spectator'),'Стать зрителем','eye',locked||me.ready):''}</div><div class="lobby-observers">${watchers||'<p class="lobby-empty">Пока нет</p>'}</div>
+      <div class="lobby-actions lobby-primary">${me?.role==='player'?`<button class="btn ${me.ready?'secondary':''}" ${action(isHost,'lobby-ready','ready')} aria-pressed="${!!me.ready}" ${locked?'disabled':''}>${icon('check')}${me.ready?'Не готов':'Готов'}</button>`:''}${isHost?`<button class="btn" data-command="lobby-start" ${canStart?'':'disabled'}>${icon('play')}Начать</button>`:''}</div></section></div>
+      ${room.phase==='starting'?`<div class="lobby-countdown" role="status" aria-live="assertive"><div><strong ${isHost?'':'id="net-countdown"'}>${countdown}</strong><p>Игра начинается…</p></div></div>`:''}</main>`;
+  }
+  function nicknameMarkup(room,participantId,client=false){
+    const me=room.participants.find(p=>p.id===participantId),disabled=me?.ready||room.phase!=='lobby';
+    return `<form id="${client?'net-client-nickname':'lobby-nickname-form'}" class="lobby-profile"><label class="field"><span>Никнейм в комнате</span><input name="nickname" maxlength="24" autocomplete="nickname" required value="${esc(me?.nickname||'')}" ${disabled?'disabled':''}></label><button class="icon-btn" type="submit" aria-label="Сохранить никнейм" title="Сохранить никнейм" ${disabled?'disabled':''}>${icon('check')}</button></form>`;
+  }
+  function rulesMarkup(room,rows,game={}){
+    const rules=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];
+    return `<dl class="lobby-rule-grid">${rows.map(item=>`<div class="lobby-rule-row"><dt>${esc(item.label)}</dt><dd>${esc(item.value)}</dd></div>`).join('')}</dl>${rules.length?`<ol class="rules-list">${rules.map(rule=>`<li>${esc(rule)}</li>`).join('')}</ol>`:''}`;
+  }
+  function helpMarkup(room){
+    const count=room.constraints.allowed?.join(', ')||`${room.constraints.min}–${room.constraints.max}`;
+    return `<div class="help-grid"><p>Выберите свободное игровое место или оставайтесь зрителем. Зрителям доступен общий стол, без скрытых рук.</p><p>Нажмите «Готов», когда можно начинать. Готовность блокирует место и никнейм; повторное нажатие снимает её. Никнейм меняется в настройках.</p><p>Хост запускает партию после готовности игроков. Изменение игры или правил снимает готовность у всех.</p><p>Игроков: ${esc(count)}. ${room.hostMode==='table'?'Хост показывает общий стол.':'Хост участвует в игре.'}</p></div>`;
+  }
+  root.PlayroomLobbyView={render,nicknameMarkup,rulesMarkup,helpMarkup};
+})(globalThis);

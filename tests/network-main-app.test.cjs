@@ -112,6 +112,20 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
 
+    assert.equal(await client.locator('.lobby-shell input,.lobby-rules-summary,.lobby-participants').count(),0);
+    await client.locator('[data-net-action=rules]').click();
+    assert.equal(await client.locator('.modal .lobby-rule-grid').count(),1);
+    assert(await client.locator('.modal .rules-list li').count()>0);
+    await client.locator('.modal [data-command=close-modal]').click();
+    await client.locator('[data-net-action=settings]').click();
+    await client.locator('#net-client-nickname input').fill('Клиент новый');
+    await client.locator('#net-client-nickname').evaluate(f=>f.requestSubmit());
+    await host.locator('.lobby-person').filter({hasText:'Клиент новый'}).waitFor();
+    assert.equal(await client.evaluate(()=>document.querySelector('#app').inert),true,'nickname ACK must preserve modal inert');
+    await client.locator('#net-client-nickname input').fill('Клиент');
+    await client.locator('#net-client-nickname').evaluate(f=>f.requestSubmit());
+    await client.locator('.modal [data-command=close-modal]').click();
+
     const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();
     await host.locator('.lobby-person').filter({hasText:'Клиент'}).waitFor();
     await host.locator('[data-command=lobby-ready]').click();
