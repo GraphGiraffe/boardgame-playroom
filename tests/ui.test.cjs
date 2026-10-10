@@ -109,8 +109,10 @@ test('Offline pack installation, updates and empty application preserve saved ve
   }finally{await context.close();await browser.close();await fixtureServer?.close();}
 });
 test('Real browser UI regression and responsive checks',{timeout:180000},async t=>{
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(root);
+  const storageUrl=fixtureServer?.url||url;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  async function pageFor(savedValue=null,viewport={width:390,height:844},extra={},traceAudio=false){
+  async function pageFor(savedValue=null,viewport={width:390,height:844},extra={},traceAudio=false,testUrl=url){
     const context=await browser.newContext({viewport,isMobile:true,hasTouch:true,...extra});
     if(traceAudio)await context.addInitScript(()=>{
       window.qaAudio={calls:[],audio:null};
@@ -130,7 +132,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
     });
     await context.addInitScript(({savedValue})=>{if(sessionStorage.getItem('qa-seeded'))return;sessionStorage.setItem('qa-seeded','1');localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));if(savedValue!==null)localStorage.setItem('playroom.session.v1',typeof savedValue==='string'?savedValue:JSON.stringify(savedValue));},{savedValue});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
-    await page.goto(url);return {page,context,errors};
+    await page.goto(testUrl);return {page,context,errors};
   }
   async function check(name,fn){await t.test(name,async()=>{const contexts=[];try{await fn(async(...args)=>{const env=await pageFor(...args);contexts.push(env);return env;});for(const e of contexts)assert.deepEqual(e.errors,[],'uncaught browser errors');}finally{for(const e of contexts)await e.context.close();}});}
   try{
@@ -159,7 +161,9 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open(fixture('snakes'));await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),0);await page.locator('.roll-button').click();assert.equal(await page.locator('.handoff').count(),0);
     });
     await check('Hidden hand curtain protects each seat and reload retains the latest state',async open=>{
-      const {page}=await open(fixture('uno'));await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),1);assert.equal(await page.locator('.hand-track .uno-card').count(),0);await page.locator('[data-command=unlock]').click();assert(await page.locator('.hand-track .uno-card').count()>0);
+      // Reload persistence needs the stable HTTP/PWA origin. file:// storage
+      // is browser-dependent; the other UI and layout checks still use file://.
+      const {page}=await open(fixture('uno'),undefined,{},false,storageUrl);await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),1);assert.equal(await page.locator('.hand-track .uno-card').count(),0);await page.locator('[data-command=unlock]').click();assert(await page.locator('.hand-track .uno-card').count()>0);
       await clickMove(page,'uno');if(!await page.locator('.handoff').count()){const pass=page.locator('.scene-actions [data-action]').filter({hasText:'Передать'});if(await pass.count())await pass.first().click();}
       const before=await move(page);await page.reload();await resume(page);assert.equal(await move(page),before);
     });
@@ -305,7 +309,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const trace=await page.evaluate(()=>touchTrace),click=trace.find(e=>e.type==='click'&&e.target==='color-choice');
       assert(click&&click.t-trace.find(e=>e.type==='pointerup').t<400,'native color click must occur inside the former suppression window');assert.equal(await move(page),1);
     });
-  } finally {await browser.close();}
+  } finally {await browser.close();await fixtureServer?.close();}
 });
 
 test('Phone landscape keeps all games visible, tappable and stable across rotation', {timeout:180000}, async t=>{
