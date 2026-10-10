@@ -209,6 +209,27 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
         peers:qaRTCs.length,state:qaLiveRTC.connectionState})),{...identity,state:'connected'});
     }
 
+    // Leave a completed match through its lobby, then continue a saved room
+    // without reloading. The app and network module must release the same room.
+    const lastActor=await host.locator('.scene [data-action]').count()?host:client;
+    await lastActor.locator('.scene [data-action]').first().click();
+    await host.locator('.shared-modal-backdrop [data-command=home]').click();
+    await host.locator('.lobby-shell').waitFor();
+    const archiveId=await host.evaluate(async()=>
+      (await PlayroomNetworkLibrary.list()).find(item=>item.role==='host').sessionId);
+    await host.evaluate(id=>PlayroomNetworkLibrary.continue(id),archiveId);
+    assert.match(await host.locator('#toast').innerText(),/Сначала завершите текущую сетевую комнату/,
+      'an active lobby must still prevent restoring a second room');
+    await host.locator('[data-command=lobby-leave]').click();
+    await host.locator('[data-command=sessions]').click();
+    await host.locator('[data-network-history]').first().click();
+    await host.locator('.table-shell.network-game .history-panel').waitFor();
+    await host.locator('.table-shell.network-game [data-command=home]').first().click();
+    await host.locator('[data-network-continue]').first().click();
+    await host.locator('.table-shell.network-game').waitFor({timeout:10000});
+    assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),0,
+      'leaving the lobby must close its old RTC connections');
+
     assert.deepEqual(errors,[]);
   }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
 });

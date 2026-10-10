@@ -427,7 +427,11 @@
       lobbyTimer=setInterval(()=>{const step=roomService.tick(room.id);room=step.room;lobbyCountdown=step.remaining;if(step.started){clearInterval(lobbyTimer);lobbyTimer=null;renderLobby();toast('Лобби зафиксировано. Запускаем сетевую партию…');}else renderLobby();},250);
     }catch(error){toast(error.message);}
   }
-  function leaveLobby(){clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;room=null;lobbyParticipantId=null;screen='hub';renderHub();}
+  function leaveLobby(){
+    clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;
+    globalThis.PlayroomNetworkLibrary?.leaveHostRoom?.(room?.id);
+    room=null;lobbyParticipantId=null;screen='hub';renderHub();
+  }
   function showPlayerNamePrompt(){
     openModal(`<header class="modal-head"><h2>Как вас называть?</h2></header><p class="lead">Имя используется по умолчанию в локальных и сетевых партиях. В конкретной комнате никнейм можно поменять отдельно.</p><form id="profile-form"><label class="field"><span>Имя игрока</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="Например, Иван" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">Сохранить</button></form>`);
   }

@@ -425,12 +425,13 @@
   function closeClient(){clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
   function closePendingHostPeer(){
     stopHostAudio();hostServeClose?.();hostServeClose=null;
-    hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;hostRoomConnection=null;
+    hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;
+    hostRoomConnection?.close?.();hostRoomConnection=null;
   }
   function closeHostPeer(){
     hostMount?.destroy?.();hostMount=null;closePendingHostPeer();
     for(const item of connectedHostPeers.splice(0)){
-      item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();
+      item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();item.roomConnection?.close?.();
     }
   }
   function roomPresence(room){
@@ -719,12 +720,25 @@
     }
     // Unfinished games are preserved for explicit recovery. Leaving is never
     // a delete, and requires no navigation/reload on Android content://.
+    leaveHostRoom(roomId);
+    if(roomId)b.rollbackHostedRoom?.(roomId);
+    b.showHub();
+  }
+  function leaveHostRoom(roomId){
+    if(hostRoomId&&hostRoomId!==roomId)throw Error('Комната хоста изменена.');
+    // Remove the live room only after releasing its subscriptions, RTC leases
+    // and authority. IndexedDB journals and private recovery rights stay intact.
+    hostRoomUnsub?.();hostRoomUnsub=null;
     closeHostPeer();hostGameClient?.close?.();hostGameClient=null;
     hostAuthority?.dispose?.();hostAuthority=null;
     hostLockRelease?.();hostLockRelease=null;
-    hostRoomUnsub?.();hostRoomUnsub=null;hostRoomId=null;hostStarted=false;
-    if(roomId)b.rollbackHostedRoom?.(roomId);
-    b.showHub();
+    if(roomId){
+      const service=bridge().roomService;
+      for(const participant of service.snapshot(roomId).participants)
+        if(!participant.isHost&&participant.connected)service.setConnected(roomId,participant.id,false);
+      service.discardRecovery(roomId);
+    }
+    hostRoomId=null;hostStarted=false;
   }
   function renderClientLobby(){
     if(!clientRoom)return;const room=clientRoom,me=participant(room,clientParticipantId),app=document.getElementById('app');
@@ -1042,7 +1056,7 @@
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({list:listNetworkArchives,
-    inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory});
+    inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}

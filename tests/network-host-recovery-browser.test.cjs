@@ -227,6 +227,18 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           await guests[0].locator('.game-grid').waitFor({timeout:10000});
           await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length>=1);
         }
+        // An unfinished match can also be parked and restored in the same page.
+        // Releasing its authority must release the original lobby RTC leases.
+        const parkedRevision=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
+        await host.evaluate(()=>{window.confirm=()=>true;});
+        await host.locator('.table-shell.network-game .table-header [data-command=home]').click();
+        await host.locator('.game-grid').waitFor({timeout:10000});
+        assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId),null);
+        await host.locator('[data-command=sessions]').click();
+        await host.locator('[data-network-continue]').first().click();
+        await host.locator('.table-shell.network-game').waitFor({timeout:10000});
+        assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),parkedRevision);
+        assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
         assert.deepEqual(errors,[]);
       }finally{
         await Promise.all(contexts.map(c=>c.close().catch(()=>{})));await browser.close();
