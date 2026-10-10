@@ -45,7 +45,7 @@
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
       const markup=GameScreen.render({
-        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
+        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':turn?`Ходит ${turn.name}`:'Ожидание хода',

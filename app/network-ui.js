@@ -459,9 +459,10 @@
     const players=data.participants.filter(p=>p.role==='player');
     const connected=players.filter(p=>p.connected).length;
     const value='<span class="network-presence-count">В сети: '+connected+' из '+players.length+'</span>'+
-      players.map(p=>'<span class="network-person '+(p.connected?'online':'offline')+'">'+
+      players.filter(p=>!p.connected).map(p=>'<span class="network-person '+(p.connected?'online':'offline')+'">'+
         '<i class="network-person-dot" aria-hidden="true"></i>'+esc(p.nickname)+(p.isHost?' · хост':'')+
         (p.connected?'':' · отключён')+'</span>').join('');
+    line.hidden=connected===players.length;
     if(line.dataset.content!==value){line.dataset.content=value;line.innerHTML=value;}
   }
   function showDisconnectBanner(){

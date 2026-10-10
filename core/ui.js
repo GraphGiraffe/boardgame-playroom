@@ -144,7 +144,7 @@
       e.participants=`<div class="players-panels opponent-hands">${state.players.map((_,i)=>i===viewer?'':playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
-    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
+    const slots=elementNames.filter(name=>e[name]&&!((self||surface==='table')&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
     return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''} data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 

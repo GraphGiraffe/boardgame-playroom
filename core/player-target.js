@@ -4,7 +4,7 @@
     constructor({actions,commit,root=()=>document}={}){
       if(typeof actions!=='function'||typeof commit!=='function')throw Error('PlayerTarget requires actions/commit');
       this.actions=actions;this.commit=commit;this.root=root;this.active=null;this.menu=null;
-      this.outside=event=>{if(!event.target.closest?.('[data-player-target],.player-target-menu'))this.cancel();};
+      this.outside=event=>{if(!event.target.closest?.('[data-player-target],[data-player-panel-target],.player-target-menu'))this.cancel();};
       this.keys=event=>{if(this.menu&&['ArrowDown','ArrowUp','Home','End'].includes(event.key)){const buttons=[...this.menu.querySelectorAll('button')],i=buttons.indexOf(this.document.activeElement);event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(i+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}if(event.key==='Escape'&&this.active!==null){event.preventDefault();this.cancel(true);}};
       const doc=this.root()?.ownerDocument||globalThis.document;this.document=doc;doc?.addEventListener('click',this.outside);doc?.addEventListener('keydown',this.keys);
     }

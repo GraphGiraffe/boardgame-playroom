@@ -36,13 +36,13 @@ function serveSavedGames() {
 test('The hub navigation remains available on phones and desktop', {timeout:60000}, async t => {
   const browser = await chromium.launch({headless:true, executablePath:executablePath(), args:['--no-sandbox','--disable-background-networking']});
   try {
-    for (const width of [320,390,1440]) await t.test(`navigation at ${width}px`, async () => {
-      const mobile=width<500, context=await browser.newContext({viewport:{width,height:mobile?740:900},hasTouch:mobile,isMobile:mobile});
+    for (const [width,height] of [[320,740],[390,740],[740,390],[768,1024],[1024,768],[1440,900]]) await t.test(`navigation at ${width}px`, async () => {
+      const mobile=width<=760, context=await browser.newContext({viewport:{width,height},hasTouch:mobile,isMobile:mobile});
       const page=await context.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
       const press=async locator=>mobile?locator.tap():locator.click();
       try {
         await page.goto(url);
-        if(width===390&&process.env.PLAYROOM_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'playroom-v0.6-hub-phone.png')});
+        const capture=async name=>{if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${name}-${width}x${height}.png`)});}};await capture('hub');
         const nav=page.locator('.side-nav');
         assert.equal(await nav.isVisible(),true);
         assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Как играть']);
@@ -52,10 +52,11 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         assert.equal(await nav.evaluate(e=>getComputedStyle(e).position),mobile?'fixed':'static');
         await press(nav.locator('[data-command=sessions]'));
         await page.locator('.saved-games-list').waitFor();
-        assert.equal(await page.locator('.saved-empty').isVisible(),true);
-        await press(nav.locator('[data-command=help]')); await page.locator('.help-grid').waitFor();
+        assert.equal(await page.locator('.saved-empty').isVisible(),true);await capture('sessions');
+        await press(nav.locator('[data-command=help]')); await page.locator('.help-grid').waitFor();await capture('help');
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
+        for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}
         await press(page.locator('[data-filter=cards]')); assert.equal(await page.locator('.game-tile').count(),2);
         await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),5);
         if(mobile){

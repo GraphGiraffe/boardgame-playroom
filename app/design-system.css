@@ -175,3 +175,48 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout .player-panel .mini-hand:not(.is-open)>*:first-child{margin-left:0!important}
 .app-game-layout .opponent-hand .player-badges{min-height:0;align-content:start}
 .app-game-layout .opponent-hand .player-info{padding-bottom:2px}
+
+/* Public surfaces have no personal rail; all visible hands keep their full height. */
+.app-game-layout .player-panel .mini-hand.is-open>.public-card{height:40px!important;min-height:40px!important;width:28px!important;min-width:28px!important}
+.app-game-layout[data-layout-mode="phone-portrait"] .layout-participants,.app-game-layout[data-layout-mode="tablet"] .layout-participants{max-height:none}
+.app-game-layout[data-layout-mode="phone-portrait"] .player-panel.opponent-hand{flex:1 1 0}
+.app-game-layout[data-surface="table"][data-layout-mode="phone-portrait"] .player-panel.opponent-hand{flex-basis:calc(50% - 6px)}
+.app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"],.app-game-layout[data-surface="table"][data-layout-mode="desktop"]{grid-template-columns:minmax(140px,24%) minmax(0,1fr)!important;grid-template-areas:"status field" "participants field" "auxiliary field"!important}
+.app-game-layout[data-surface="table"] .layout-status{flex-wrap:wrap}
+
+.app-game-layout .player-panel .mini-hand:not(.is-open)>*{height:40px!important;min-height:40px!important}
+
+.settings-details{margin:10px 0;color:var(--green);font-size:13px}.settings-details summary{cursor:pointer;min-height:32px;display:list-item;padding:6px 0}.settings-details .lead{font-size:12px}
+
+@media(max-width:370px){.app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-badges{min-height:26px}}
+
+.app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"]{grid-template-columns:minmax(200px,28%) minmax(0,1fr)!important}
+
+/* Horizontal player cards divide space explicitly; their hands cannot size the label. */
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex:0 0 85px;width:85px;min-width:0}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .mini-hand{flex:1 1 0;width:0;min-width:32px}
+.app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex-basis:100px;width:100px}
+
+.app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"] .layout-participants{scrollbar-gutter:stable}
+@media(max-width:370px){
+ .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-info{display:grid;grid-template-columns:26px minmax(0,1fr);gap:2px 5px}
+ .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-details{display:contents}
+ .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-details strong{grid-column:2;grid-row:1}
+ .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-token small,.app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-badges{grid-column:1 / -1}
+}
+
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.settings-grid .field{min-width:0}.settings-grid select{width:100%;min-width:0}
+
+.app-game-layout[data-layout-mode="phone-landscape"] .players-panels.opponent-hands{align-items:stretch}.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand{width:100%}
+
+/* Replay reserves space for the field, not unavailable move controls. */
+.scene.replaying .layout-actions{display:none!important}
+.scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles{height:76px;min-height:76px}
+.scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles>button{flex-basis:36px!important;width:36px!important;min-width:36px!important;height:63px!important}
+.scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles .domino-half{width:20px}
+
+.scene.replaying .player-panel .mini-hand:not(.is-open){display:none!important}
+#app .history-panel .history-controls{margin-top:0;gap:6px}
+#app .history-panel .replay-badge{flex:none;white-space:nowrap;padding:4px;font-size:9px}
+
+.network-presence[hidden]{display:none!important}

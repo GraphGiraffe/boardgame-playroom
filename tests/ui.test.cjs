@@ -192,6 +192,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
       await page.locator('#setting-sound').check();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
+      await page.getByText('Проверить звук',{exact:true}).click();
       await page.locator('#sound-preview').selectOption('uno|uno.call');
       await page.locator('[data-command=sound-preview]').click();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
@@ -367,7 +368,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     for(const [width,height] of sizes)for(const spec of variants)await t.test(`${spec.name} at ${width}×${height}`,async()=>{
       const {page,context,errors}=await open(spec,{width,height});
       try{
-        if(process.env.PLAYROOM_CAPTURE_DIR&&width===740&&['uno-4-open','durak'].includes(spec.name))await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`playroom-v0.11-${spec.name}-landscape.png`)});
+        if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||width===740&&['uno-4-open','durak'].includes(spec.name)))await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`playroom-v0.11-${spec.name}-${width}x${height}.png`)});
         assert.deepEqual(await visibleTable(page,spec.game),[]);await playOne(page,spec.game);assert.deepEqual(errors,[]);
       }finally{await context.close();}
     });

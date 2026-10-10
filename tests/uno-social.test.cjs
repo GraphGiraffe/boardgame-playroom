@@ -80,6 +80,8 @@ async function accuse(page, target) {
   const token = page.locator(`.player-token[data-player-target="${target}"]`);
   const panel=page.locator(`.player-panel[data-player-index="${target}"]`);
   await panel.locator(".mini-hand").click();
+  await panel.locator(".mini-hand").click();assert.equal(await page.locator('.player-target-menu').count(),0,'repeated hand tap closes player actions');
+  await panel.locator(".mini-hand").click();
   assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
   const button = page.locator('.player-target-menu button');
   await button.waitFor({state:'visible'});

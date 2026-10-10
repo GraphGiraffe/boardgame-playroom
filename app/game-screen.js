@@ -25,8 +25,7 @@
   }
 
   function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>История</strong><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div>
-      <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
+    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
@@ -81,8 +80,8 @@
       const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
     }
-    field.style.zoom='1';field.style.width=width+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
-    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
+    field.style.zoom='1';field.style.width=Math.min(width,520)+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
+    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(['desktop','tablet'].includes(stage.dataset.layoutMode)?1.4:1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
   }
   const replayFitters=new WeakMap();
@@ -93,10 +92,10 @@
       if(scene){
         const Observer=scene.ownerDocument.defaultView.ResizeObserver;
         const observer=Observer?new Observer(()=>layoutScene(host)):null;
-        replayFitters.set(host,{scene,observer});observer?.observe(scene);
+        replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitHand(stage);fitField(stage);root.PlayroomHandOverflow?.sync?.(host);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage)stage.style.zoom='1';
   }
   return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
