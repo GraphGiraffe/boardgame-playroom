@@ -13,7 +13,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
     const page=await browser.newPage({viewport:{width,height},hasTouch:touch,isMobile:touch});
     try{
       await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-      for(const file of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css'])await page.addStyleTag({content:source(file)});
+      for(const file of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:source(file)});
       for(const file of ['core/ui.js','core/player-target.js','core/motion.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:source(file)});
       const session=new Session(Core,'uno',{seed:123,mode:'pass',preset:'classic',players:[{name:'А'},{name:'Б'}]});
       const authority=new Authority(session),audience=authority.connect(0);
@@ -81,7 +81,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   try{
     await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-    for(const file of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css'])await page.addStyleTag({content:source(file)});
+    for(const file of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:source(file)});
     for(const file of ['core/ui.js','core/player-target.js','core/motion.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:source(file)});
     const session=new Session(Core,'uno',{seed:123,mode:'pass',preset:'classic',unoMode:'manual',players:[{name:'Игрок А'},{name:'Игрок Б'}],openHands:false});
     const authority=new Authority(session);
@@ -100,6 +100,12 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     },{snapshot,snapshots,def});
     const shell=page.locator('.table-shell.network-game');
     assert.equal(await shell.count(),1);
+    assert.equal(await shell.getAttribute('data-viewer'),String(snapshot.viewer));
+    assert.equal(await shell.getAttribute('data-revision'),String(snapshot.revision));
+    const commands=await shell.locator('.table-tools > button').evaluateAll(nodes=>nodes.map(n=>n.dataset.command));
+    assert.deepEqual(commands.slice(-2),['rules','settings'],'Help and settings retain the right edge');
+    assert.equal(await shell.locator('.table-tools button svg[data-ui-icon]').count(),commands.length);
+
     assert.equal(await shell.locator('.player-strip .player-token').count(),2);
     assert.equal(await shell.locator('.scene .opponent-hand').count(),1);
     assert.equal(await shell.locator('.player-strip').isVisible(),true,'Player details must be visible, not just in the DOM');
@@ -115,12 +121,12 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     await shell.locator('.history-panel').waitFor();
     assert.equal(await shell.locator('.history-controls').count(),1);
     assert.equal(await shell.locator('.scene [data-action]').count(),0,'History is read-only');
-    await shell.locator('.history-panel [data-command=history-close]').click();
+    await shell.locator('.table-heading [data-command=history-close]').click();
     assert.equal(await page.evaluate(()=>window.localClicks),0,'Network interactions must not reach the local Session click handler');
     assert.equal(await shell.locator('.history-panel').count(),0);
     await page.setViewportSize({width:740,height:390});
     assert.equal(await shell.locator('.player-strip .player-token').count(),2);
-    assert.equal(await shell.locator('.uno-bottom-dock').count(),1);
+    assert.equal(await shell.locator('.game-action-bar').count(),1);
     await page.evaluate(()=>game.destroy());
     // Table mode is read-only and must not inherit a player's own hand.
     await page.evaluate(({snapshot,def})=>{

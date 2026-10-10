@@ -89,3 +89,8 @@ flowchart TB
 - [`ACOUSTIC-PAIRING.md`](ACOUSTIC-PAIRING.md) — акустический канал.
 - [`QR-PAIRING-AND-RESUME.md`](QR-PAIRING-AND-RESUME.md) — требования RC6 и ручная приёмка.
 - [`PlayRoom_Roadmap_and_Agent_Handoff_2026-10-08.md`](PlayRoom_Roadmap_and_Agent_Handoff_2026-10-08.md) — **план, не описание завершённой реализации**.
+
+- [UI-DESIGN-SYSTEM](UI-DESIGN-SYSTEM.md): элементы, иконки, постоянные позиции, состояния и взаимодействие.
+- [TESTING](TESTING.md): подблоки, выбор по изменениям, аудит избыточных проверок.
+
+- [Игровые элементы и компоновка API 2](GAME-ELEMENTS-API.md).

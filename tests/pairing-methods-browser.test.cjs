@@ -6,8 +6,8 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
   const context=await browser.newContext({viewport}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><button id="network-pair-button">Хост</button><button id="network-join-button">Гость</button><div id="app"></div><div id="modal-root"></div></body></html>');
-  for(const css of ['app/styles.css','app/lobby.css'])await page.addStyleTag({content:read(css)});
-  for(const script of ['app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
+  for(const css of ['app/styles.css','app/lobby.css','app/design-system.css'])await page.addStyleTag({content:read(css)});
+  for(const script of ['core/ui.js','app/game-screen.js','app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
   await page.addScriptTag({content:`
     globalThis.__testState={microphone:${microphone},share:${share},standalone:${standalone},candidate:${candidate},addresses:${JSON.stringify(addresses)}};
     const original=globalThis.PlayroomAcousticPairing;
@@ -24,7 +24,7 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
       createClientPeer:async()=>({answer:__signal('answer'),pc:{addEventListener(){}},waitOpen:()=>new Promise(()=>{}),close(){}}),serve:()=>()=>{}};
     globalThis.PlayroomMultiplayer={ResumeStore:class{load(){return null}},SwitchableConnection:class{constructor(c){this.c=c}snapshot(){return {}}dispatch(){}close(){}}};
     globalThis.PlayroomAppBridge={room:()=>({id:'room-1'}),roomService:{connection:()=>({participantId:'user',close(){},snapshot(){return {}}})},
-      modalHead:title=>'<header class="modal-head"><h2>'+title+'</h2><button class="icon-btn" data-command="close-modal">×</button></header>',
+      modalHead:PlayroomGameScreen.modalHead,
       openModal(html){document.querySelector('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal" role="dialog">'+html+'</section></div>'},
       closeModal(){document.querySelector('#modal-root').innerHTML=''},toast(message){globalThis.__toast=message},renderLobby(){}};
   `});

@@ -104,15 +104,15 @@
       '<label class="field"><span>Сетевое соединение</span><select id="acoustic-'+role+'-address" aria-label="Сетевое соединение">'+
       '<option value="all" '+(preferred<0?'selected':'')+'>Все соединения (автоматически)</option>'+
       soundCandidateOptions(items,preferred)+'<option value="manual">Ввести IPv4 вручную</option></select></label>'+
-      '<button type="button" class="btn secondary pairing-scan-address" data-net-scan="'+role+'" title="Обновить обнаруженные сетевые адреса" aria-label="Обновить обнаруженные сетевые адреса">↻</button></div>'+
+      '<button type="button" class="btn secondary pairing-scan-address" data-net-scan="'+role+'" title="Обновить обнаруженные сетевые адреса" aria-label="Обновить обнаруженные сетевые адреса">'+root.PlayroomGameScreen.icon('reset')+'</button></div>'+
       '<div class="pairing-inline-row"><div id="acoustic-'+role+'-manual-row" class="pairing-manual-row" hidden>'+
       '<input id="acoustic-'+role+'-manual" inputmode="decimal" aria-label="IPv4 вручную" placeholder="Например: 192.168.1.100" autocomplete="off" disabled>'+
-      '<button class="btn secondary pairing-icon-action" id="acoustic-'+role+'-save" type="button" data-net-save-ip="'+role+'" title="Сохранить IP" aria-label="Сохранить введённый IP">💾</button></div>'+
+      '<button class="btn secondary pairing-icon-action" id="acoustic-'+role+'-save" type="button" data-net-save-ip="'+role+'" title="Сохранить IP" aria-label="Сохранить введённый IP">'+root.PlayroomGameScreen.icon('save')+'</button></div>'+
       '</div>'+
       '<p class="pairing-network-mode" id="acoustic-'+role+'-mode" role="status"></p></div>'};
   }
   function soundSettings(role){
-    return '<details class="pairing-sound-settings"><summary>⚙ Скорость звука</summary><div class="pairing-sound-fields">'+
+    return '<details class="pairing-sound-settings"><summary>'+root.PlayroomGameScreen.icon('settings')+' Скорость звука</summary><div class="pairing-sound-fields">'+
       '<label class="field"><span>Скорость передачи</span><select id="acoustic-'+role+'-protocol"><option value="fastest">Fastest</option><option value="fast">Fast</option><option value="normal">Normal</option></select></label>'+
       '</div></details>';
   }
@@ -161,7 +161,7 @@
   }
   async function scanSoundAddresses(role,signal){
     const generation=++scanGenerations[role],button=document.querySelector('[data-net-scan="'+role+'"]');
-    if(button){button.disabled=true;button.textContent='↻ …';}
+    if(button){button.disabled=true;button.innerHTML=root.PlayroomGameScreen.icon('reset')+' …';}
     try{
       const discovered=await Acoustic.probeAddresses({timeout:2500});
       if(scanGenerations[role]!==generation)return;
@@ -173,7 +173,7 @@
     }finally{
       if(scanGenerations[role]===generation){
         const current=document.querySelector('[data-net-scan="'+role+'"]');
-        if(current){current.disabled=false;current.textContent='↻';}
+        if(current){current.disabled=false;current.innerHTML=root.PlayroomGameScreen.icon('reset');}
       }
     }
   }
@@ -289,13 +289,13 @@
   function pairingMethod(key,title,icon,content,availability){
     const enabled=availability.available;
     return '<details class="pairing-method" data-pairing-method="'+key+'" data-pairing-available="'+enabled+'" '+(enabled?'open':'')+'>'+
-      '<summary><span class="pairing-method-icon" aria-hidden="true">'+icon+'</span><span class="pairing-method-title">'+title+'</span>'+
-      '<span class="pairing-method-reason" '+(enabled?'hidden':'')+'>'+esc(availability.reason)+'</span><span class="pairing-chevron" aria-hidden="true">⌄</span></summary>'+
+      '<summary><span class="pairing-method-icon" aria-hidden="true">'+root.PlayroomGameScreen.icon(icon)+'</span><span class="pairing-method-title">'+title+'</span>'+
+      '<span class="pairing-method-reason" '+(enabled?'hidden':'')+'>'+esc(availability.reason)+'</span><span class="pairing-chevron" aria-hidden="true">'+root.PlayroomGameScreen.icon('chevron')+'</span></summary>'+
       '<div class="pairing-method-body">'+content+'</div></details>';
   }
   function pairingMethods(stage,contents,token){
     const states=methodAvailability(stage,token),sequence=[
-      ['share','Поделиться','↗'],['sound','Звук','♫'],['qr','QR','▦'],['text','Текст','≡']
+      ['share','Поделиться','share'],['sound','Звук','sound'],['qr','QR','qr'],['text','Текст','text']
     ];
     const active=sequence.filter(([key])=>states[key].available),inactive=sequence.filter(([key])=>!states[key].available);
     const render=items=>items.map(([key,name,icon])=>pairingMethod(key,name,icon,contents[key],states[key])).join('');
@@ -345,7 +345,7 @@
       ['Текст','Скопируйте ссылку и передайте собеседнику. Полученное приглашение или ответ можно вставить в отдельное поле и подтвердить.']
     ];
     const details=sections.map(([name,message])=>'<section><h3>'+name+'</h3><p>'+esc(message)+'</p></section>').join('');
-    const ipHelp=stage!=='client-join'?'<section><h3>Сетевой адрес и формат</h3><p>«Все соединения» всегда отправляет PR2 — полный SDP со всеми маршрутами (в том числе mDNS и IPv6), которые WebRTC разрешил браузеру обнаружить. Браузер проверит маршруты сам. Выбор конкретного IPv4 отправляет короткий PR3. По умолчанию предпочитаем 192.168.0.0/16, затем 10.0.0.0/8 и 172.16.0.0/12 из действующих UDP host-кандидатов; если таких адресов нет — «Все соединения». Найденные дополнительно и сохранённые адреса предлагаются только для явного выбора, потому что не доказано, что они принадлежат текущему ICE-сеансу. Ручной IP действует сразу и сохраняется в список только кнопкой 💾. Если нет пригодного UDP host-кандидата, PR3 построить нельзя: выберите PR2. TEST-NET и служебные IPv4 запрещены.</p>'+
+    const ipHelp=stage!=='client-join'?'<section><h3>Сетевой адрес и формат</h3><p>«Все соединения» всегда отправляет PR2 — полный SDP со всеми маршрутами (в том числе mDNS и IPv6), которые WebRTC разрешил браузеру обнаружить. Браузер проверит маршруты сам. Выбор конкретного IPv4 отправляет короткий PR3. По умолчанию предпочитаем 192.168.0.0/16, затем 10.0.0.0/8 и 172.16.0.0/12 из действующих UDP host-кандидатов; если таких адресов нет — «Все соединения». Найденные дополнительно и сохранённые адреса предлагаются только для явного выбора, потому что не доказано, что они принадлежат текущему ICE-сеансу. Ручной IP действует сразу и сохраняется в список только кнопкой '+root.PlayroomGameScreen.icon('save')+'. Если нет пригодного UDP host-кандидата, PR3 построить нельзя: выберите PR2. TEST-NET и служебные IPv4 запрещены.</p>'+
       '<p id="acoustic-'+role+'-hint"></p><p id="acoustic-'+role+'-discovery"></p><p id="acoustic-'+role+'-pair-status"></p></section>':'';
     const access='<section><h3>Почему способ недоступен?</h3><p>Это зависит от безопасного HTTPS/PWA origin, системного обмена, микрофона, динамика и сетевого адреса. Свёрнутый метод можно открыть, чтобы изменить его настройки.</p>'+captureNotice()+
       (location.protocol==='content:'?'<p>Здесь открыт Android content://: браузер может ограничивать IP, микрофон и системный обмен. HTTPS/PWA даёт больше возможностей.</p>':'')+'</section>';
@@ -397,8 +397,8 @@
   function scanControls(role){
     return '<div class="qr-capture-controls">'+
       '<div class="pairing-actions">'+
-      '<button class="btn pairing-compact-button" type="button" data-net-qr-camera="'+role+'" '+(Scanner?.scan?'':'disabled')+'>📷 Камера</button>'+
-      '<button class="btn secondary pairing-compact-button" type="button" data-net-qr-gallery="'+role+'" '+(Scanner?.scan?'':'disabled')+'>🖼 Галерея</button>'+
+      '<button class="btn pairing-compact-button" type="button" data-net-qr-camera="'+role+'" '+(Scanner?.scan?'':'disabled')+'>'+root.PlayroomGameScreen.icon('camera')+' Камера</button>'+
+      '<button class="btn secondary pairing-compact-button" type="button" data-net-qr-gallery="'+role+'" '+(Scanner?.scan?'':'disabled')+'>'+root.PlayroomGameScreen.icon('image')+' Галерея</button>'+
       '</div>'+
       '<input id="net-'+role+'-qr-camera" data-net-qr-file="'+role+'" type="file" accept="image/*" capture="environment" hidden>'+
       '<input id="net-'+role+'-qr-gallery" data-net-qr-file="'+role+'" type="file" accept="image/*" hidden>'+
@@ -544,15 +544,15 @@
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
       hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
       const network=initialNetworkChoice('host',hostPeer.offer);offerToken=network.token;
-      const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.(offerToken)?'':'disabled')+'>↗ Поделиться</button>';
+      const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.(offerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+' Поделиться</button>';
       const sound='<div class="pairing-actions">'+
-        '<button class="btn pairing-compact-button" id="net-host-acoustic" type="button" '+captureDisabled()+' title="Передать звуком и слушать ответ">🔊 + 🎙 Передать и слушать</button>'+
-        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-send" type="button" title="Отправить сигнал через динамик">🔊 Передать</button>'+
-        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-listen" type="button" '+captureDisabled()+' title="Принять звуковой ответ">🎙 Слушать</button></div>'+soundSettings('host');
+        '<button class="btn pairing-compact-button" id="net-host-acoustic" type="button" '+captureDisabled()+' title="Передать звуком и слушать ответ">'+root.PlayroomGameScreen.icon('sound')+' + '+root.PlayroomGameScreen.icon('mic')+' Передать и слушать</button>'+
+        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-send" type="button" title="Отправить сигнал через динамик">'+root.PlayroomGameScreen.icon('sound')+' Передать</button>'+
+        '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-listen" type="button" '+captureDisabled()+' title="Принять звуковой ответ">'+root.PlayroomGameScreen.icon('mic')+' Слушать</button></div>'+soundSettings('host');
       const qr=pairingQr('net-host-token')+'<div class="pairing-divider-label">Получить QR-ответ</div>'+scanControls('host');
       const text=pairingText(offerToken,'net-host-token')+
         '<form id="net-host-answer"><label class="field"><span>Ответ игрока</span><textarea name="answer" rows="2" placeholder="Вставьте ответ или ссылку ХОД"></textarea></label>'+
-        '<button class="btn secondary pairing-compact-button" type="submit">↘ Принять ответ</button></form>';
+        '<button class="btn secondary pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('connect')+' Принять ответ</button></form>';
       b.openModal(pairingHeader('Подключить устройство','host','host-offer')+
         network.html+pairingMethods('host-offer',{share,sound,qr,text},offerToken)+pairingFooter());
       syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
@@ -578,10 +578,10 @@
   function showJoin(){
     closeClient();const b=bridge();
     const share='<p class="pairing-brief-status" role="status">Ожидаем приглашение через системное меню.</p>';
-    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-listen" type="button" '+(microphoneReady()?'':captureDisabled()||'disabled')+'>🎙 Слушать приглашение</button>';
+    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-listen" type="button" '+(microphoneReady()?'':captureDisabled()||'disabled')+'>'+root.PlayroomGameScreen.icon('mic')+' Слушать приглашение</button>';
     const qr=scanControls('client');
     const text='<form id="net-client-offer"><label class="field"><span>Приглашение</span><textarea name="offer" rows="3" required placeholder="Ссылка или код приглашения"></textarea></label>'+
-      '<button class="btn pairing-compact-button" type="submit">↘ Принять приглашение</button></form>';
+      '<button class="btn pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('connect')+' Принять приглашение</button></form>';
     b.openModal(pairingHeader('Присоединиться к комнате','client','client-join')+
       pairingMethods('client-join',{share,sound,qr,text})+pairingFooter());
   }
@@ -593,8 +593,8 @@
     closeClient();clientPeer=await W.createClientPeer(signal);
     const network=initialNetworkChoice('client',clientPeer.answer);answerToken=network.token;
     const b=bridge();
-    const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.(answerToken)?'':'disabled')+'>↗ Поделиться ответом</button>';
-    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-send" type="button">🔊 Передать ответ</button>'+soundSettings('client');
+    const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.(answerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+' Поделиться ответом</button>';
+    const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-send" type="button">'+root.PlayroomGameScreen.icon('sound')+' Передать ответ</button>'+soundSettings('client');
     const qr=pairingQr('net-client-token');
     const text=pairingText(answerToken,'net-client-token');
     b.openModal(pairingHeader('Ответ для хоста','client','client-answer')+

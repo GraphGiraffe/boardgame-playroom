@@ -13,7 +13,7 @@
   function mount(client,definition,{surface,readOnly=false,onExit=null}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     let selected=null,connected=true,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
-    let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
     const stopMotion=()=>{animationTicket++;transitionActive=false;flow.cancel();};
@@ -50,7 +50,7 @@
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
-        historyHTML,historyResult:finished&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        historyHTML,readOnly,historyResult:live.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':finished&&!readOnly?'<button class="text-btn" data-command="result">Результаты</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
@@ -75,12 +75,15 @@
       const historyPanel=app.querySelector('.history-panel');
       if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot&&historyRequested===null?'false':'true');
       HandOverflow.sync(app);
-      GameScreen.fitReplayScene(app);
+      GameScreen.layoutScene(app);
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
     }
     function show(content){
+      dialogReturnCommand=document.activeElement?.dataset?.command;
       dialogOpen=true;input.cancel();playerTargets?.cancel();app.inert=true;
-      modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Информация"><button class="text-btn" data-command="close-modal">Закрыть ${GameScreen.icon('close')}</button>${content}</section></div>`;
+      const template=document.createElement('template');template.innerHTML=content;
+      const heading=template.content.querySelector('h2'),title=heading?.textContent||'Информация';if(heading?.closest('.modal-head'))heading.closest('.modal-head').remove();else heading?.remove();
+      modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${GameScreen.esc(title)}">${GameScreen.modalHead(title)}${template.innerHTML}</section></div>`;
       ownedDialog=modal.firstElementChild;
       modal.querySelector('button')?.focus();
     }
@@ -90,7 +93,7 @@
       if(ownedDialog?.parentNode===modal){ownedDialog.remove();if(!modal.children.length)app.inert=false;}
       ownedDialog=null;dialogOpen=false;pendingAction=null;
     }
-    function close(){clearDialog();render();}
+    function close(){const command=dialogReturnCommand;clearDialog();render();if(command)app.querySelector('[data-command="'+command+'"]')?.focus();}
     async function submit(action,confirmed=false){
       if(!usable())return;
       if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>Подтверждение действия</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||'Подтвердить')}</button>`);return;}
@@ -119,7 +122,7 @@
       stopScrub();stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historyRequested=null;historySnapshot=null;render();
       try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
     }
-    function closeHistory(){historyTicket++;stopScrub();stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;historyRequested=null;selected=null;render();}
+    function closeHistory(){if(readOnly&&onExit){onExit();return;}historyTicket++;stopScrub();stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;historyRequested=null;selected=null;render();}
     async function stepHistory(delta){stopScrub();stopReplay();try{await viewHistory((historyRequested??historyIndex??historyCount())+delta);}catch(error){toast(error.message);}}
     async function playStep(){
       if(!historyOpen||destroyed||document.hidden){stopReplay();render();return;}

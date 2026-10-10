@@ -34,9 +34,9 @@ async function clickMove(page,game){
   else {await page.locator('.hand-track .is-playable').first().click();const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
 }
 function installableCounter(version='0.1.0',step=1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:1,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:1,viewApi:2,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
     'rules.js':`(function(E){E.register({id:'qa-counter',name:'Счётчик',version:'${version}',min:2,max:2,presets:[{id:'classic',label:'Основной'}],rules:['Добавляйте очки по очереди.'],create(s){s.data={count:0};},legal(){return [{type:'add',label:'Добавить'}];},apply(s,actor){s.data.count+=${step};s.turn=(actor+1)%s.players.length;E.event(s,'Добавлено '+${step},actor,'move');}});})(globalThis.TabletopCore);`,
-    'view.js':`globalThis.PlayroomViews.register('qa-counter',(s,v,actions)=>'<div class="game-scene qa-counter-scene" data-view-version="${version}"><output class="qa-count">'+s.data.count+'</output>'+globalThis.PlayroomViews.helpers.actionBar(actions)+'</div>');`,
+    'view.js':`globalThis.PlayroomViews.register('qa-counter',(s,v,actions)=>({api:2,family:'board',className:'qa-counter-scene',elements:{field:'<div data-view-version="${version}"><output class="qa-count">'+s.data.count+'</output></div>',actions:globalThis.PlayroomViews.helpers.actionBar(actions)}}));`,
     'styles.css':`.qa-counter-scene{display:flex;justify-content:center;align-items:center}.qa-count{font-size:48px;color:${step===1?'#245440':'#a44238'}}`
   }};
 }
@@ -82,7 +82,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
     await t.test('Update keeps old saves on exact rules and new games use the latest version',async()=>{
       await openManager();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();assert.equal(await page.locator('.pack-entry').count(),2);
       assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),true);await close();await page.reload();
-      await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
+      await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
       await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.locator('input[value=pass]').check();await page.locator('button[type=submit]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
       await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),2);await close();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);
@@ -92,7 +92,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
       await page.evaluate(()=>localStorage.removeItem('playroom.packs.v1'));await page.reload();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);assert.match(await page.locator('.saved-games-list').innerText(),/нужен пак qa-counter версии 0\.2\.0/i);assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw);
       await page.locator('.saved-game [data-command=packs]').first().click();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();await close();
-      await page.locator('.saved-game [data-resume-id]').click();assert.equal(await page.locator('.qa-count').innerText(),'10');assert.equal(await page.locator('.qa-counter-scene').getAttribute('data-view-version'),'0.2.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(164, 66, 56)');
+      await page.locator('.saved-game [data-resume-id]').click();assert.equal(await page.locator('.qa-count').innerText(),'10');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.2.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(164, 66, 56)');
     });
     await t.test('A broken optional view cannot trap the hub after reload or prevent removal',async()=>{
       await page.locator('.table-heading [data-command=home]').click();await openManager();

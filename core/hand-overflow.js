@@ -1,11 +1,12 @@
 /* Reusable hand overflow affordances for combined, local and projected views. */
 (function(root,factory){
   'use strict';
-  const api=factory();
+  const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
   root.PlayroomHandOverflow=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
+  const UI=root.TabletopUI||(typeof module==='object'&&module.exports?require('./ui.js'):null);
   const selector='.own-hand .hand-track';
   function update(track){
     const hand=track?.closest?.('.own-hand');if(!hand)return;
@@ -25,8 +26,8 @@
         const controls=doc.createElement('div');controls.className='hand-scroll-controls';
         controls.setAttribute('role','group');controls.setAttribute('aria-label','Прокрутка руки');
         controls.innerHTML='<span class="hand-scroll-hint">Листайте колёсиком</span>'+
-          '<button type="button" data-hand-scroll="left" aria-label="Прокрутить руку влево" title="Предыдущие карты">‹</button>'+
-          '<button type="button" data-hand-scroll="right" aria-label="Прокрутить руку вправо" title="Следующие карты">›</button>';
+          '<button type="button" data-hand-scroll="left" aria-label="Прокрутить руку влево" title="Предыдущие карты">'+UI.icon('prev')+'</button>'+
+          '<button type="button" data-hand-scroll="right" aria-label="Прокрутить руку вправо" title="Следующие карты">'+UI.icon('next')+'</button>';
         hand.appendChild(controls);
       }
       const prev=hand.querySelector?.('[data-hand-scroll="left"]'),next=hand.querySelector?.('[data-hand-scroll="right"]');

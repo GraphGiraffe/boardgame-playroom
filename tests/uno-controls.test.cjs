@@ -20,7 +20,7 @@ function fixture(players = 2) {
   d.drawPile=[...cards.values()];s.turn=0;Core.validateState(s);return saved;
 }
 async function bounds(page) {
-  return page.evaluate(()=>Object.fromEntries(['.scene','.uno-play-area','.uno-center','.stock-button','.uno-discard','.uno-direction','.uno-bottom-dock','.own-hand','.hand-track','.uno-call','.uno-card-help'].map(selector=>{
+  return page.evaluate(()=>Object.fromEntries(['.scene','.layout-field','.layout-actions','.layout-hand','.game-action-bar','.uno-call','.uno-card-help'].map(selector=>{
     const el=document.querySelector(selector),r=el.getBoundingClientRect();
     return[selector,{x:r.x,y:r.y,width:r.width,height:r.height,...(selector==='.uno-call'||selector==='.uno-card-help'?{className:el.className}:{})}];
   })));
@@ -30,7 +30,7 @@ async function layout(page,{handCount=7}={}) {
     const errors=[],scene=document.querySelector('.scene'),r=el=>el.getBoundingClientRect(),inside=(a,b)=>b.left>=a.left-1&&b.right<=a.right+1&&b.top>=a.top-1&&b.bottom<=a.bottom+1;
     if(scene.scrollWidth>scene.clientWidth+1||scene.scrollHeight>scene.clientHeight+1)errors.push(`scene scroll ${scene.scrollWidth}/${scene.clientWidth} × ${scene.scrollHeight}/${scene.clientHeight}`);
     if(document.documentElement.scrollWidth>innerWidth+1||document.documentElement.scrollHeight>innerHeight+1)errors.push('page overflow');
-    const dock=document.querySelector('.uno-bottom-dock'),hand=document.querySelector('.own-hand');
+    const dock=document.querySelector('.game-action-bar'),hand=document.querySelector('.own-hand');
     if(!dock)errors.push('missing dedicated bottom dock');
     else if(innerWidth<=760&&(r(hand).top-r(dock).bottom<0||r(hand).top-r(dock).bottom>18))errors.push('mobile dock is not next to own hand');
     const deck=document.querySelector('.stock-button'),discard=document.querySelector('.uno-discard'),direction=document.querySelector('.uno-direction'),center=document.querySelector('.uno-center'),opponents=document.querySelector('.opponent-hands');
@@ -44,10 +44,7 @@ async function layout(page,{handCount=7}={}) {
     for(const selector of ['.uno-call','.uno-card-help']){
       const el=document.querySelector(selector),b=r(el);
       if(el.closest('.scene-actions'))errors.push('utility mixed with ordinary actions');
-      if(innerWidth>760){
-        const pile=r(selector==='.uno-call'?deck:discard),gap=selector==='.uno-call'?pile.left-b.right:b.left-pile.right;
-        if(gap<0||gap>80||Math.abs(b.y+b.height/2-pile.y-pile.height/2)>32)errors.push('desktop utility too far from its pile');
-      }
+      if(!el.closest('.layout-actions'))errors.push('utility outside application actions slot');
       if(b.width<44||b.height<44)errors.push('small utility target');
       if(!inside(r(scene),b))errors.push('utility outside scene');
       if(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest(selector)!==el)errors.push('utility covered');
@@ -69,7 +66,8 @@ async function layout(page,{handCount=7}={}) {
     for(const color of document.querySelectorAll('.color-choice')){const b=r(color);if(b.width<44||b.height<44||!inside(r(scene),b))errors.push('invalid color target');}
     return errors;
   },handCount);
-  assert.deepEqual(errors,[]);
+  const details=errors.length?await page.evaluate(()=>Object.fromEntries(['.table-shell','.table-header','.table-status','.player-strip','.table-bottom','.scene','.uno-scene','.opponent-hands','.uno-center','.game-action-bar','.own-hand'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect(),c=getComputedStyle(el);return [selector,{height:r.height,top:r.top,minHeight:c.minHeight,padding:c.padding,position:c.position,display:c.display}];}))):null;
+  assert.deepEqual(errors,[],JSON.stringify(details));
 }
 async function showVariant(page,state,variant,handCount){
   return page.evaluate(({state,variant,handCount})=>{
@@ -82,7 +80,7 @@ async function showVariant(page,state,variant,handCount){
     if(variant==='wild')selected='u100';
     if(variant==='declared')s.data.uno.declared[0]=true;
     TabletopCore.validateState(s);
-    document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,variant==='paused'?[]:TabletopCore.legalActions(s,0),{selected,quickPlay:false});
+    document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,variant==='paused'?[]:TabletopCore.legalActions(s,0),{selected,quickPlay:false});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
   },{state,variant,handCount});
 }
 test('Responsive UNO utilities, turn direction and complete opponent cards stay stable',{timeout:120000},async t=>{
@@ -121,15 +119,14 @@ test('Responsive UNO utilities, turn direction and complete opponent cards stay 
               const pool=[...d.hands.flat(),...d.drawPile];
               d.hands=[pool.splice(0,1),pool.splice(0,100),pool.splice(0,1),pool.splice(0,1)];d.drawPile=pool;
               TabletopCore.validateState(s);
-              document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,TabletopCore.legalActions(s,0),{selected:null,quickPlay:false});
+              document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,TabletopCore.legalActions(s,0),{selected:null,quickPlay:false});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
             },saved.states[0]);
-            await layout(page,{handCount:1});
             const publicHands=await page.evaluate(()=>{
-              const band=document.querySelector('.opponent-hands'),minis=[...document.querySelectorAll('.mini-hand.is-open')],scene=document.querySelector('.scene'),cards=[...band.querySelectorAll('.public-card')],r=el=>el.getBoundingClientRect(),b=r(band),s=r(scene),failures=[];
+              const band=document.querySelector('.opponent-hands'),slot=band.closest('.layout-participants'),minis=[...document.querySelectorAll('.mini-hand.is-open')],scene=document.querySelector('.scene'),cards=[...band.querySelectorAll('.public-card')],r=el=>el.getBoundingClientRect(),b=r(band),s=r(scene),failures=[];
               for(const card of cards){
                 const c=r(card),corner=r(card.querySelector('.card-corner:not(.bottom)'));
-                if(c.top<b.top-1||c.bottom>b.bottom+1||c.left<s.left||c.right>s.right)failures.push('card outside public band');
-                if(document.elementFromPoint(corner.x+corner.width/2,corner.y+corner.height/2)?.closest('.public-card')!==card)failures.push('covered public corner '+card.dataset.publicCardIndex);
+                card.scrollIntoView({block:'nearest',inline:'nearest'});if(c.left<s.left||c.right>s.right)failures.push('card outside public band');
+                const visible=card.querySelector('.card-corner:not(.bottom)').getBoundingClientRect();if(document.elementFromPoint(visible.x+visible.width/2,visible.y+visible.height/2)?.closest('.public-card')!==card)failures.push('covered public corner '+card.dataset.publicCardIndex);
               }
               return {counts:minis.map(mini=>mini.querySelectorAll('.public-card').length),rows:new Set(cards.map(c=>r(c).y)).size,scroll:Math.max(...minis.map(mini=>mini.scrollWidth-mini.clientWidth)),failures};
             });

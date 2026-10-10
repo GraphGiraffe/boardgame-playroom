@@ -164,7 +164,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.locator('.history-controls [data-command=replay-prev]').click();
     await client.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
     assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
-    await client.locator('.history-panel [data-command=history-close]').click();
+    await client.locator('.table-heading [data-command=history-close]').click();
     assert.equal(await client.locator('.history-panel').count(),0);
 
     const identity=await client.evaluate(()=>{
@@ -224,7 +224,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('[data-command=sessions]').click();
     await host.locator('[data-network-history]').first().click();
     await host.locator('.table-shell.network-game .history-panel').waitFor();
-    await host.locator('.table-shell.network-game [data-command=home]').first().click();
+    await host.locator('.table-shell.network-game .table-heading [data-command=history-close]').first().click();
     await host.locator('[data-network-continue]').first().click();
     await host.locator('.table-shell.network-game').waitFor({timeout:10000});
     assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),0,
