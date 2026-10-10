@@ -148,7 +148,10 @@
     configure(roomId,hostId,changes={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       if(changes.name!==undefined)room.name=normalizeRoomName(changes.name);
-      if(changes.transportMode!==undefined){if(!['hotseat','network'].includes(changes.transportMode))throw Error('Неизвестный режим');room.transportMode=changes.transportMode;}
+      if(changes.transportMode!==undefined){if(!['hotseat','network'].includes(changes.transportMode))throw Error('Неизвестный режим');if(changes.transportMode==='hotseat'){
+        const host=this._participant(room,hostId);
+        if(!host.seatId){const seat=room.seats.find(s=>!s.participantId)||room.seats.find(s=>room.participants.find(p=>p.id===s.participantId)?.bot);if(!seat)throw Error('Освободите игровое место для хоста');if(seat.participantId)room.participants=room.participants.filter(p=>p.id!==seat.participantId);seat.closed=false;seat.participantId=host.id;host.seatId=seat.id;host.role='player';room.hostMode='player';}
+      }room.transportMode=changes.transportMode;}
       if(changes.firstPlayerMode!==undefined){if(!['rules','random','assigned'].includes(changes.firstPlayerMode))throw Error('Неизвестный первый ход');room.firstPlayerMode=changes.firstPlayerMode;}
       if(changes.firstParticipantId!==undefined){if(!room.participants.some(p=>p.id===changes.firstParticipantId&&p.seatId))throw Error('Первый игрок должен занять место');room.firstParticipantId=changes.firstParticipantId;}
       if(changes.hostMode!==undefined){if(!['player','table'].includes(changes.hostMode))throw Error('Неизвестная роль');room.hostMode=changes.hostMode;const host=this._participant(room,hostId);if(changes.hostMode==='table'){for(const seat of room.seats)if(seat.participantId===hostId)seat.participantId=null;host.seatId=null;host.role='table';}else host.role='spectator';}
@@ -157,23 +160,39 @@
     _resetRoomReady(room){for(const p of room.participants)p.ready=!!p.bot;room.lobbyRevision++;this._touch(room);}
     setLocalSeat(roomId,hostId,seatId,{kind='bot',nickname='Бот'}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
-      const seat=room.seats.find(s=>s.id===seatId);if(!seat||!['bot','human','empty'].includes(kind))throw Error('Некорректное место');
+      const seat=room.seats.find(s=>s.id===seatId);if(!seat||!['bot','human','empty','closed'].includes(kind))throw Error('Некорректное место');
       const old=room.participants.find(p=>p.id===seat.participantId);
       if(old?.isHost){if(kind!=='human')throw Error('Сначала переместите хоста или выберите общий стол');old.nickname=normalizeName(nickname);this._resetRoomReady(room);return this.snapshot(roomId);}
       if(old&&!old.local&&!old.bot)throw Error('Сначала переместите подключённого игрока');
-      if(kind==='empty'){if(old)room.participants=room.participants.filter(p=>p.id!==old.id);seat.participantId=null;}
+      seat.closed=kind==='closed';
+      if(kind==='empty'||kind==='closed'){if(old)room.participants=room.participants.filter(p=>p.id!==old.id);seat.participantId=null;}
       else{if(kind==='human'&&room.transportMode==='network')throw Error('В сетевом режиме игрок подключается с устройства');const person=old||{id:this.idFactory(),isHost:false,joinedAt:this.clock()};Object.assign(person,{nickname:normalizeName(nickname),local:true,bot:kind==='bot',connected:true,role:'player',seatId:seat.id,ready:kind==='bot'});if(!old)room.participants.push(person);seat.participantId=person.id;}
       this._resetRoomReady(room);return this.snapshot(roomId);
     }
     moveParticipant(roomId,hostId,participantId,seatId){
-      const room=this._room(roomId);this._lobby(room);this._host(room,hostId);const p=this._participant(room,participantId),old=room.seats.find(s=>s.participantId===p.id),next=room.seats.find(s=>s.id===seatId);
-      if(seatId!==null&&!next)throw Error('Место не найдено');
-      const other=room.participants.find(person=>person.id===next?.participantId);
+      const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      const p=this._participant(room,participantId),old=room.seats.find(s=>s.participantId===p.id),next=room.seats.find(s=>s.id===seatId);
+      if(next?.closed)throw Error('Это место закрыто.');
+      if(seatId!==null&&seatId!=='table'&&!next)throw Error('Место не найдено');
+      if(!next&&room.transportMode==='hotseat')throw Error('В Offline доступны только игровые места');
+      if(!next&&p.bot)throw Error('Боты занимают только игровые места');
+      const oldRole=p.role,other=room.participants.find(person=>seatId==='table'?person.role==='table':person.id===next?.participantId);
+      if(other?.bot&&!old)throw Error('Сначала освободите место бота');
+      if(other?.id===p.id)return this.snapshot(roomId);
       if(old)old.participantId=other?.id||null;
-      if(other){other.seatId=old?.id||null;other.role=old?'player':other.isHost?'table':'spectator';}
-      if(next)next.participantId=p.id;p.seatId=next?.id||null;p.role=next?'player':p.isHost?'table':'spectator';
-      if(p.isHost)room.hostMode=next?'player':'table';
+      if(other){other.seatId=old?.id||null;other.role=old?'player':oldRole==='table'?'table':'spectator';}
+      if(next)next.participantId=p.id;p.seatId=next?.id||null;p.role=next?'player':seatId==='table'?'table':'spectator';
+      const host=room.participants.find(person=>person.isHost);room.hostMode=host.role==='player'?'player':'table';
       this._resetRoomReady(room);return this.snapshot(roomId);
+    }
+    claimTable(roomId,participantId){
+      const room=this._room(roomId);this._lobby(room);const p=this._participant(room,participantId);this._editable(p);
+      if(room.transportMode==='hotseat')throw Error('Стол доступен только в Online');
+      if(p.bot)throw Error('Бот не может быть устройством Стола');
+      if(room.participants.some(person=>person.role==='table'&&person.id!==p.id))throw Error('Стол уже занят');
+      for(const seat of room.seats)if(seat.participantId===p.id)seat.participantId=null;
+      p.seatId=null;p.role='table';p.ready=false;if(p.isHost)room.hostMode='table';
+      this._resetRoomReady(room);this._emit(room,'table-changed',p.nickname+' показывает общий Стол.',{participantId});return this.snapshot(roomId);
     }
     preview(roomId){const room=this._room(roomId);return {id:room.id,code:room.code,name:room.name,game:clone(room.game),rules:clone(room.rules),rulesRevision:room.rulesRevision,hostMode:room.hostMode,phase:room.phase,players:room.participants.filter(p=>p.role==='player').length,constraints:clone(room.constraints)};}
     join(roomId,{id=this.idFactory(),nickname}={}){
@@ -194,19 +213,19 @@
     }
     claimSeat(roomId,participantId,seatId){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);this._editable(participant);
-      if(participant.role==='table')throw Error('Устройство Стола не занимает игровое место.');
       const seat=room.seats.find(item=>item.id===seatId);if(!seat)throw Error('Место не найдено.');
+      if(seat.closed)throw Error('Это место закрыто.');
       if(seat.participantId&&seat.participantId!==participantId)throw Error('Это место уже занято.');
       for(const item of room.seats)if(item.participantId===participantId)item.participantId=null;
-      seat.participantId=participantId;participant.seatId=seat.id;participant.role='player';participant.ready=false;
+      seat.participantId=participantId;participant.seatId=seat.id;participant.role='player';participant.ready=false;if(participant.isHost)room.hostMode='player';
       room.lobbyRevision++;this._touch(room);this._emit(room,'seat-changed',participant.nickname+' занял '+seat.color.label.toLowerCase()+' слот.',{participantId,seatId});
       return this.snapshot(roomId);
     }
     becomeSpectator(roomId,participantId){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);this._editable(participant);
-      if(participant.role==='table')return this.snapshot(roomId);
+      if(room.transportMode==='hotseat')throw Error('Зрители доступны только в Online');
       for(const seat of room.seats)if(seat.participantId===participantId)seat.participantId=null;
-      participant.seatId=null;participant.role='spectator';participant.ready=false;
+      participant.seatId=null;participant.role='spectator';participant.ready=false;if(participant.isHost)room.hostMode='table';
       room.lobbyRevision++;this._touch(room);this._emit(room,'became-spectator',participant.nickname+' теперь зритель.',{participantId});
       return this.snapshot(roomId);
     }
@@ -459,6 +478,7 @@
           let state;
           if(command.type==='rename')state=this.rename(roomId,participantId,command.nickname);
           else if(command.type==='claim-seat')state=this.claimSeat(roomId,participantId,command.seatId);
+          else if(command.type==='claim-table')state=this.claimTable(roomId,participantId);
           else if(command.type==='spectator')state=this.becomeSpectator(roomId,participantId);
           else if(command.type==='ready')state=this.setReady(roomId,participantId,command.ready);
           else throw Error('Эта команда комнаты недоступна.');

@@ -78,12 +78,14 @@ async function accuse(page, target) {
   // GameScreen uses a common two-tap player target, not a legacy modal.
   const previous = (await state(page)).move;
   const token = page.locator(`.player-token[data-player-target="${target}"]`);
-  await token.click();
+  const panel=page.locator(`.player-panel[data-player-index="${target}"]`);
+  await panel.locator(".mini-hand").click();
   assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
   const button = page.locator('.player-target-menu button');
   await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
   assert.equal(await token.getAttribute('aria-expanded'),'true');
+  const box=await button.boundingBox(),card=await panel.boundingBox();assert(box.x>=card.x&&box.y>=card.y&&box.x+box.width<=card.x+card.width+1&&box.y+box.height<=card.y+card.height+1,'player action stays inside its card');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
   assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
@@ -131,7 +133,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
         await page.locator('[data-start=uno]').click();
         await page.locator('[data-command=room-rules]').click();
         assert.equal(await page.locator('[name=option-unoMode]').inputValue(),'manual');await page.locator('[name=option-unoMode]').selectOption(mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
-        await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-kind="seat-3"]').selectOption('human');
+        await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'human',nickname:'Игрок'});b.renderLobby();});
         await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=option-unoMode]').inputValue(),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await page.locator('[data-command=lobby-start]').click();
         const saved = await read(page);

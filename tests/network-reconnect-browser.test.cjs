@@ -108,7 +108,7 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
   try{
     await profile(host,'Хост');await profile(client,'Гость');
     await host.locator('[data-start="uno"]').click();
-    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');
+    await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
     await host.locator('[data-room-title]').fill('Возвратный стол');
     await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();

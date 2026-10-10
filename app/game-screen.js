@@ -41,7 +41,7 @@
     if(!state?.players)throw Error('Projected game state required');
     const caption=esc(replay?'':footerText||'');
     if(beforeFooter)scene=scene.replace('<!--self-controls-->',beforeFooter);
-    return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle)}</p></div></div>
+    return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML},
         ...(!readOnly?[{attrs:'data-command="pause"',label:pause?'Продолжить':'Пауза',name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
@@ -55,6 +55,11 @@
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
   function fitHand(stage){
+    for(const mini of stage.querySelectorAll('.player-panel .mini-hand:not(.is-open)')){
+      const count=mini.children.length;if(!count)continue;
+      const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+      mini.style.setProperty('--mini-step',(count>1?Math.max(0,Math.min(32,(available-28)/(count-1))):32)+'px');
+    }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
       track.style.removeProperty('--fan-peek');
       const win=track.ownerDocument.defaultView,baseline=parseFloat(win.getComputedStyle(track).getPropertyValue('--fan-peek'))||28;
@@ -64,6 +69,8 @@
         const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
         peek=Math.max(peek,Math.min(box.width,Math.ceil(marker.right-box.left+2)));
       }
+      const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
+      if(count>1&&card){const width=card.getBoundingClientRect().width,style=win.getComputedStyle(track),available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);peek=Math.max(peek,Math.min(width,(available-width)/(count-1)));}
       if(peek>baseline)track.style.setProperty('--fan-peek',peek+'px');
     }
   }

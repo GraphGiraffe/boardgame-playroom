@@ -15,11 +15,13 @@
       const actions=this.available(this.active),host=this.root();
       const trigger=host?.querySelector(`[data-player-target="${this.active}"]`);
       if(!actions.length){this.cancel();return;}if(!host){return;}if(!trigger){this.cancel();return;}
-      this.menu?.remove();trigger.setAttribute('aria-expanded','true');
+      this.menu?.remove();for(const node of host.querySelectorAll(`[data-player-target="${this.active}"]`))node.setAttribute('aria-expanded','true');
       const menu=trigger.ownerDocument.createElement('div');menu.className='player-target-menu';menu.setAttribute('role','menu');
       actions.forEach(action=>{const button=trigger.ownerDocument.createElement('button');button.type='button';button.className='scene-button';button.setAttribute('role','menuitem');button.textContent=action.targetPrompt||action.label||'Выполнить';button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();const current=this.available(this.active).find(a=>JSON.stringify(a)===JSON.stringify(action));this.cancel();if(current)this.commit(current);});menu.appendChild(button);});
-      trigger.ownerDocument.body.appendChild(menu);this.menu=menu;menu.querySelector('button')?.focus();
+      const panel=trigger.closest?.('.player-panel');
+      (panel||trigger.ownerDocument.body).appendChild(menu);this.menu=menu;menu.querySelector('button')?.focus();
       const box=menu.getBoundingClientRect(),anchor=trigger.getBoundingClientRect(),win=trigger.ownerDocument.defaultView;
+      if(panel){menu.style.position='absolute';menu.style.right='6px';menu.style.bottom='6px';return;}
       menu.style.left=Math.max(8,Math.min(anchor.left,win.innerWidth-box.width-8))+'px';menu.style.top=Math.max(8,Math.min(anchor.bottom+4,win.innerHeight-box.height-8))+'px';
     }
     cancel(focus=false){const target=this.active;this.menu?.remove();this.menu=null;this.active=null;for(const node of this.root()?.querySelectorAll('[data-player-target]')||[])node.setAttribute('aria-expanded','false');if(focus&&target!==null)this.root()?.querySelector(`[data-player-target="${target}"]`)?.focus();}

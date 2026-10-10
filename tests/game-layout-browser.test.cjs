@@ -16,8 +16,9 @@ test('all packs share player panels and preserve geometry across reported screen
   await page.setViewportSize({width,height});
   await page.evaluate(({game,replay})=>{
    const E=TabletopCore;let state=E.createGame(game,{seed:17,preset:'classic',players:Array.from({length:['durak','checkers'].includes(game)?2:4},(_,i)=>({name:['Иван','Мика','Тео','Луна'][i],bot:i>0}))});
-   if(['domino','checkers','snakes'].includes(game))for(let i=0;i<14&&state.status!=='finished';i++)state=E.applyAction(state,state.turn,E.botAction(state));
-   const viewer=0,projected=E.project(state,viewer),actions=replay?[]:E.legalActions(state,viewer);
+   if(['domino','snakes'].includes(game))for(let i=0;i<14&&state.status!=='finished';i++)state=E.applyAction(state,state.turn,E.botAction(state));
+   if(game==='checkers')state.turn=1;
+   const viewer=game==='checkers'?1:0,projected=E.project(state,viewer),actions=replay?[]:E.legalActions(state,viewer);
    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:E.get(game).name,subtitle:'За столом с ботами · Основные правила игры',state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions,{selected:null}),turnText:'Ходит '+state.players[state.turn].name,turnExtra:'Ход '+state.move,footerText:'Последнее действие',replay,historyHTML:replay?PlayroomGameScreen.historyMarkup({index:state.move,count:state.move,caption:'Последнее действие'}):''});
    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
   },{game,replay});
@@ -33,11 +34,15 @@ test('all packs share player panels and preserve geometry across reported screen
    for(const node of document.querySelectorAll('.layout-hand .domino-tile')){const r=node.getBoundingClientRect();if(Math.abs(r.width/r.height-48/84)>.025)errors.push('domino aspect');}
    const n=document.querySelectorAll('.player-panel').length;if(n!==document.querySelectorAll('.player-info').length||n<2)errors.push('players missing');
    if(document.querySelector('.player-strip,.table-bottom,.auto-saved,.snakes-legend,.checker-guide'))errors.push('duplicate chrome');
-   for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width<44||r.height<44||!within(r,{left:0,top:0,right:innerWidth,bottom:innerHeight}))errors.push('toolbar target '+node.dataset.command+' '+JSON.stringify({w:r.width,h:r.height,x:r.x,y:r.y}));}
+   for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(!r.width&&!r.height)continue;if(r.width<44||r.height<44||!within(r,{left:0,top:0,right:innerWidth,bottom:innerHeight}))errors.push('toolbar target '+node.dataset.command+' '+JSON.stringify({w:r.width,h:r.height,x:r.x,y:r.y}));}
+   for(const hand of document.querySelectorAll('.player-panel .mini-hand')){if(hand.scrollHeight>hand.clientHeight+1)errors.push('opponent vertical scroll');if(!hand.classList.contains('is-open')){const cards=[...hand.children],steps=cards.slice(1).map((c,i)=>c.getBoundingClientRect().left-cards[i].getBoundingClientRect().left);if(steps.some(x=>Math.abs(x-steps[0])>1))errors.push('uneven opponent hand spacing');const info=hand.parentElement.querySelector('.player-info');if(info&&hand.getBoundingClientRect().top-info.getBoundingClientRect().bottom>6)errors.push('gap between info and hand');}}
+   if(document.querySelector('.table-title p')?.textContent.includes('За столом с ботами'))errors.push('redundant mode subtitle');
+   for(const piece of document.querySelectorAll('.checker-piece.owner-1.is-playable'))if(getComputedStyle(piece).outlineColor!=='rgb(255, 220, 147)')errors.push('dark checker lacks contrasting outline');
+   const self=stage.querySelector('.layout-self'),hand=self?.querySelector('.layout-hand'),info=self?.querySelector('.self-player');if(hand&&info&&info.getBoundingClientRect().top<hand.getBoundingClientRect().bottom-1)errors.push('self info above hand');
    return {errors,mode:stage.dataset.layoutMode,width:scene.clientWidth,height:scene.clientHeight};
   });
   assert.deepEqual(result.errors,[]);assert.equal(result.mode,UI.selectLayout(result.width,result.height));
-  if(process.env.PLAYROOM_CAPTURE_DIR&&!replay&&capture<13){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${String(++capture).padStart(2,'0')}-${game}.png`)});}
+  if(process.env.PLAYROOM_CAPTURE_DIR&&!replay&&(capture<13||width===390&&height===740)){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${String(++capture).padStart(2,'0')}-${game}.png`)});}
  });
  await context.close();
  }finally{await browser.close();}

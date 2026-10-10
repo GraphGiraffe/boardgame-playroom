@@ -30,7 +30,7 @@ for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: s
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="'+game+'"]').click();
-    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await host.locator('[data-room-option=firstParticipantId]').selectOption({index:1});const seatedGuest=!['durak','checkers'].includes(game);
+    await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});const seatedGuest=!['durak','checkers'].includes(game);
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();

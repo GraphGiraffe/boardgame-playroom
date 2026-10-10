@@ -52,7 +52,7 @@
 .pairing-method-icon{display:grid;place-items:center;flex:none;width:29px;height:29px;border-radius:10px;background:#e5ebdc;color:#36674f;font-size:21px;font-weight:850;line-height:1}
 .pairing-method-title{flex:none;font-size:14px}
 .pairing-method-reason{margin-left:auto;max-width:48%;font-size:10px;font-weight:650;text-align:right;color:#98715b;line-height:1.25}
-.pairing-chevron{margin-left:auto;line-height:1;font-size:19px;transition:transform .15s}
+.pairing-chevron{margin-left:auto;line-height:1;font-size:19px;transition:transform .15s;border:0;opacity:1;transform:none}
 .pairing-method>summary:has(.pairing-method-reason:not([hidden])) .pairing-chevron{margin-left:0}
 .pairing-method[open]>.pairing-method-body{border-top:1px solid var(--line);padding:10px 12px 12px}
 .pairing-method[open]>.pairing-method-body>:first-child{margin-top:0}
@@ -105,3 +105,45 @@
 .pairing-qr.pairing-qr-legacy{max-width:348px}
 .pairing-qr.pairing-qr-legacy svg{width:min(100%,322px)}
 @media(max-width:520px){.pairing-qr.pairing-qr-legacy{max-width:100%}.pairing-qr.pairing-qr-legacy svg{width:min(100%,310px)}}
+
+/* Room controls use the same single-column geometry for host and guest. */
+.room-setup-modal .lobby-seats{grid-template-columns:minmax(0,1fr)}
+.room-setup-modal .lobby-seat-row{display:grid;grid-template-columns:minmax(0,1fr) 92px;align-items:center;gap:6px;min-height:76px;position:relative}
+.room-setup-modal .lobby-seat{width:100%;height:76px;min-height:76px;margin:0;overflow:hidden}
+.room-setup-modal .slot-edit{display:flex;gap:4px;grid-column:2;grid-row:1;justify-content:flex-end}
+.room-setup-modal .lobby-seat-row>.icon-btn{grid-column:2;justify-self:end}
+.room-setup-modal .first-player-mark{position:absolute;left:8px;top:3px;pointer-events:none;width:18px;height:18px}
+.room-setup-modal .lobby-header{flex-wrap:nowrap;gap:6px;padding:10px;border-radius:16px;box-shadow:none}
+.room-setup-modal .lobby-title{order:initial;flex:1;min-width:0}
+.room-setup-modal .lobby-title h1{font-size:18px;line-height:1.2;letter-spacing:0}
+.room-setup-modal [data-room-title]{width:100%;min-width:0;font:inherit;font-weight:850;color:inherit;background:transparent;border:1px solid transparent;border-radius:5px;padding:3px 0}
+.room-setup-modal [data-room-title]:focus{border-color:var(--green);outline:1px solid var(--green)}
+.room-setup-modal .lobby-code{display:block;font-size:11px;font-style:normal;margin-top:3px}
+.room-setup-modal .room-options{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+/* Segmented transport switch: both labels are inside one pill. */
+.room-setup-modal .room-options .room-transport{position:relative;display:grid;grid-template-columns:1fr 1fr;align-items:center;width:min(100%,260px);min-height:48px;margin-inline:auto;background:var(--green);border-radius:24px;padding:4px;gap:0;font-size:16px;font-weight:750;color:var(--paper);isolation:isolate}
+.room-setup-modal .room-transport:before{content:'';position:absolute;left:4px;top:4px;bottom:4px;width:calc(50% - 4px);border-radius:22px;background:var(--paper);transition:transform .15s;z-index:-1}
+.room-setup-modal .room-transport:has(input:checked):before{transform:translateX(100%)}
+.room-setup-modal .room-transport>span{text-align:center;pointer-events:none;line-height:40px}
+.room-setup-modal .room-transport>span:first-of-type{color:var(--green)}
+.room-setup-modal .room-transport:has(input:checked)>span:first-of-type{color:var(--paper)}
+.room-setup-modal .room-transport:has(input:checked)>span:last-of-type{color:var(--green)}
+.room-setup-modal .room-transport input[type=checkbox]{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;margin:0;padding:0;cursor:pointer}
+.room-setup-modal .room-transport:has(input:focus-visible){outline:3px solid var(--green);outline-offset:3px}
+.room-setup-modal .room-transport:has(input:disabled){opacity:.5}
+@media(prefers-reduced-motion:reduce){.room-setup-modal .room-transport:before{transition:none}}
+.room-choice-list{display:grid;gap:8px}.room-choice-list>button{width:100%;min-height:48px;text-align:left;display:block;padding:12px;border:1px solid var(--line);border-radius:12px;color:var(--ink);background:var(--paper)}
+.room-choice-list>button small{display:block;color:var(--muted);margin-top:4px}
+.room-setup-modal .lobby-primary .icon-btn{width:48px;height:48px}
+.room-setup-modal .lobby-primary [data-command=lobby-start]{background:var(--green);color:var(--paper)}
+.room-setup-modal .lobby-primary [aria-pressed=true]{background:var(--green);color:var(--paper)}
+.slot-delete{width:44px;min-width:44px;display:flex;align-items:center;justify-content:center}
+.lobby-public-places{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:14px}
+.lobby-table-slot h2{font-size:16px;margin:0 0 10px}.lobby-table-slot .lobby-seat{height:76px}
+.lobby-observers[data-room-drop]{min-height:76px;border-radius:12px}
+[data-room-drag]{touch-action:none;user-select:none;cursor:grab}
+[data-room-drag]>.lobby-seat:disabled{pointer-events:none}
+.room-drag-source{opacity:.45}.room-drop-active{outline:2px solid var(--green);outline-offset:2px}
+.room-drag-ghost{position:fixed;z-index:100;pointer-events:none;padding:10px;background:var(--paper);border:2px solid var(--green);border-radius:12px;box-shadow:0 5px 20px #20352d33;opacity:.9}
+.room-drag-ghost .slot-edit{display:none}
+#room-rules-form [hidden]{display:none}
