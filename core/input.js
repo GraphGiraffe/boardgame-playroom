@@ -155,6 +155,7 @@
     }
     function pointerMove(event) {
       const s = active;
+      if(!s&&event.pointerType==='mouse'){previewDown({target:event.target,isPrimary:event.isPrimary,pointerType:'mouse',button:0});return;}
       if (!s || event.pointerId !== s.id) return;
       s.x = event.clientX; s.y = event.clientY;
       const dx = s.x - s.startX, dy = s.y - s.startY;

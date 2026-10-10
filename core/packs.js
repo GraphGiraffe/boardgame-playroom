@@ -37,6 +37,7 @@
     if(!record(bundle)||bundle.format!==FORMAT||bundle.formatVersion!==1||!record(bundle.manifest)||!record(bundle.files))throw Error('Неподдерживаемый формат пакета');
     const m=bundle.manifest;
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error('Некорректные id или версия пакета');
+    if(m.viewApi!==2)throw Error('Пакет требует API интерфейса 2; обновите пак');
     if(m.engineApi!==1||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error('У пакета отсутствует название');
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error('Слишком много файлов в пакете');
@@ -61,6 +62,7 @@
   }
   function styles(bundle){
     const css=bundle.files['styles.css'];
+    if(/(?:#app\b|\.(?:table-shell|table-header|player-strip|game-layout-slot|app-game-layout|own-hand|hand-track|opponent-hands|scene-actions)(?![-\w]))/.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('Компоновка общих элементов принадлежит приложению');
     if(/@import\b|expression\s*\(/i.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('CSS пакета не должен загружать внешние стили');
     return css.replace(/url\(\s*(?:(['"])(.*?)\1|([^)]*))\s*\)/gis,(_,quote,quoted,plain)=>{
       const url=(quoted??plain).trim();if(url.startsWith('#'))return `url("${url}")`;

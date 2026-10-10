@@ -41,7 +41,7 @@
       if (!list.length) return '<div class="pack-empty"><strong>Пока нет игр</strong><p>Выберите файл пака, чтобы добавить правила, оформление и звуки игры. Подключение к интернету не нужно.</p></div>';
       return `<ul class="pack-list">${list.map(item=>{
         const count = references(item.id,item.version).length;
-        return `<li class="pack-entry" data-pack-id="${esc(item.id)}" data-pack-version="${esc(item.version)}"><div><strong>${esc(title(item.manifest))}</strong><p>${esc(item.id)} · ${esc(item.version)}${item.active?' · выбранная версия':''}</p>${count?`<small>${count} сохранённых партий используют эту версию</small>`:''}</div><button class="text-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" ${count?'disabled':''} aria-label="Удалить ${esc(title(item.manifest))}, версия ${esc(item.version)}" ${count?'title="Сначала завершите работу с сохранениями этой версии"':''}>Удалить</button></li>`;
+        return `<li class="pack-entry" data-pack-id="${esc(item.id)}" data-pack-version="${esc(item.version)}"><div><strong>${esc(title(item.manifest))}</strong><p>${esc(item.id)} · ${esc(item.version)}${item.active?' · выбранная версия':''}</p>${count?`<small>${count} сохранённых партий используют эту версию</small>`:''}</div><button class="icon-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" ${count?'disabled':''} aria-label="Удалить ${esc(title(item.manifest))}, версия ${esc(item.version)}" ${count?'title="Сначала завершите работу с сохранениями этой версии"':''}>${root.PlayroomGameScreen.icon('trash')}</button></li>`;
       }).join('')}</ul>`;
     }
     function previewMarkup() {

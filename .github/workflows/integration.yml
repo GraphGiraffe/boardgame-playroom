@@ -15,10 +15,10 @@ jobs:
     steps:
       - name: Require explicit companion access and immutable ref
         env:
-          PACKS_TOKEN: ${{ secrets.PLAYROOM_PAKS_READ_TOKEN }}
+          PACKS_KEY: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           PACKS_REF: ${{ inputs.packs_ref }}
         run: |
-          test -n "$PACKS_TOKEN" || { echo '::error::Set PLAYROOM_PAKS_READ_TOKEN with read access to the private companion repository'; exit 1; }
+          test -n "$PACKS_KEY" || { echo '::error::Set PLAYROOM_PAKS_READ_KEY with a read-only deploy key for the private companion repository'; exit 1; }
           [[ "$PACKS_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Use a full commit SHA'; exit 1; }
       - uses: actions/checkout@v4
         with:
@@ -28,7 +28,7 @@ jobs:
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
           ref: ${{ inputs.packs_ref }}
-          token: ${{ secrets.PLAYROOM_PAKS_READ_TOKEN }}
+          ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false
       - uses: actions/setup-node@v4

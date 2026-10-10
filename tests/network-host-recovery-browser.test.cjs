@@ -188,7 +188,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.locator('.table-shell.network-game .history-panel').waitFor();
         assert.equal(await host.locator('.table-shell.network-game .scene [data-action]:not([disabled])').count(),0,
           'read-only archives must not expose legal actions');
-        await host.locator('.table-shell.network-game [data-command=home]').first().click();
+        await host.locator('.table-shell.network-game .table-heading [data-command=history-close]').first().click();
         await host.locator('[data-network-continue]').first().click();
         await host.locator('.table-shell.network-game').waitFor({timeout:15000});
         assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);

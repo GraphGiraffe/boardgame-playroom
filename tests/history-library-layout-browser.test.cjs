@@ -16,6 +16,11 @@ test('complete local and projected replay scenes fit beside reachable history co
         const scene=document.querySelector('.scene.replaying'),stage=scene.firstElementChild,s=scene.getBoundingClientRect(),r=stage.getBoundingClientRect(),panel=document.querySelector('.history-panel').getBoundingClientRect();
         return {overflow:document.documentElement.scrollHeight-innerHeight,stageHeight:r.height,sceneHeight:scene.clientHeight,left:r.left,right:r.right,sceneLeft:s.left,sceneRight:s.right,panelBottom:panel.bottom,height:innerHeight,zoom:stage.style.zoom,parts:[...document.querySelectorAll('.table-header,.player-strip,.history-panel')].map(e=>({name:e.className,height:e.getBoundingClientRect().height}))};});
         assert.ok(box.overflow<=2,'history must fit the viewport '+JSON.stringify(box));assert.ok(box.stageHeight<=box.sceneHeight+2,'the complete board must fit '+JSON.stringify(box));assert.ok(box.left>=box.sceneLeft-2&&box.right<=box.sceneRight+2,'board must fit horizontally');assert.ok(box.panelBottom<=box.height,'history controls must remain visible');
+        const positions=await page.evaluate(()=>{const header=document.querySelector('.table-header').getBoundingClientRect(),settings=document.querySelector('.table-tools [data-command=settings]').getBoundingClientRect(),help=document.querySelector('.table-tools [data-command=rules]').getBoundingClientRect(),back=document.querySelector('.table-heading [data-command=history-close]').getBoundingClientRect();return {header:header.height,settingsX:settings.x,helpX:help.x,settingsY:settings.y,helpY:help.y,backX:back.x,backY:back.y,target:settings.width};});
+        assert.ok(positions.settingsX>positions.helpX&&Math.abs(positions.settingsY-positions.helpY)<=1,'Help and settings must stay at the right edge on one row');
+        assert.ok(positions.backX<positions.helpX&&Math.abs(positions.backY-positions.settingsY)<=1,'History return stays at the left of the same header');
+        assert.ok(positions.header<=52&&positions.target>=44,'A horizontal header must retain reachable icon buttons');
+
       }
       await fits();
       if(width===390&&game==='checkers'){await page.setViewportSize({width:740,height:390});await fits();await page.setViewportSize({width,height});await fits();}

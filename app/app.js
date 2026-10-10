@@ -108,9 +108,13 @@
     interruptAction();input?.cancel();playerTargets?.cancel();feedback.clear();cancelBot(); latestPacks(); const games = E.GAMES.filter(g=>filter==='all'||catalog[g.id]?.category===filter);
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">⚄</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p3</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.15-p3</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
-      <div class="topbar-tools"><button class="icon-btn pack-hub-button" data-command="packs" aria-label="Паки игр" title="Паки игр">${icon('layers')}</button><span class="status"><i class="dot"></i>${playerProfile?.name?esc(playerProfile.name)+' · ':''}Всё готово к игре</span><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран" title="Полный экран">${icon('full')}</button><button class="icon-btn" data-command="settings" aria-label="Настройки">${icon('settings')}</button></div></header>
+      <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
+        {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
+        {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
+        {attrs:'data-command="help"',label:'Как играть',name:'help'}
+      ])}</div></header>
       ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
       ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}</p>`:''}
       ${session?`<section class="resume-banner"><div><strong>${session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт'} · ${esc(meta(session.game).name)}</strong><p>${session.current.status==='finished'?'Результат и вся история ходов сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'} · сохранено на устройстве`}</p></div><button class="btn" data-command="resume">${session.current.status==='finished'?'Посмотреть':'Продолжить'} ${icon('arrow')}</button></section>`:''}
@@ -241,7 +245,7 @@
     });
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     HandOverflow.sync($('#app'));
-    GameScreen.fitReplayScene($('#app'));
+    GameScreen.layoutScene($('#app'));
     feedback.refresh();playerTargets?.refresh();
     if(gate!==null)showGate();
     scheduleBot();
@@ -265,13 +269,13 @@
     $('[data-command="replay-play"]').innerHTML=icon('play');
     $('[data-command="replay-play"]').setAttribute('aria-label','Воспроизвести повтор');
     $('.player-strip').innerHTML=playersMarkup(projected);
-    GameScreen.fitReplayScene($('#app'));
+    GameScreen.layoutScene($('#app'));
   }
   function showGate() {
     if($('.handoff'))return;
     const player=session.current.players[gate];
     $('.table-shell').inert=true;
-    $('#app').insertAdjacentHTML('beforeend',`<section class="handoff" role="dialog" aria-modal="true" aria-label="Передача хода"><div class="handoff-content"><div class="handoff-art" aria-hidden="true"><span>✦</span><span>✦</span></div><span class="eyebrow muted">ПЕРЕДАЙТЕ УСТРОЙСТВО</span><h2>${esc(player.name)}, ваш ход</h2><p>Карты закрыты. Убедитесь, что телефон<br>у нужного игрока, и откройте свою руку.</p><button class="btn" data-command="unlock">Я ${esc(player.name)} · открыть ${icon('eye')}</button><button class="text-btn" data-command="home">Вернуться к играм</button></div></section>`);
+    $('#app').insertAdjacentHTML('beforeend',`<section class="handoff" role="dialog" aria-modal="true" aria-label="Передача хода"><div class="handoff-content"><div class="handoff-art" aria-hidden="true"><span>✦</span><span>✦</span></div><span class="eyebrow muted">ПЕРЕДАЙТЕ УСТРОЙСТВО</span><h2>${esc(player.name)}, ваш ход</h2><p>Карты закрыты. Убедитесь, что телефон<br>у нужного игрока, и откройте свою руку.</p><button class="btn" data-command="unlock">Я ${esc(player.name)} · открыть ${icon('eye')}</button></div>${GameScreen.iconButton('data-command="home"','Вернуться к играм','back',{className:'handoff-nav'})}</section>`);
     $('.handoff .btn')?.focus();
   }
   function render(animate=false) { screen==='hub'?renderHub():screen==='lobby'?renderLobby():renderTable(animate); }
@@ -312,7 +316,11 @@
     } catch(error){toast(error.message||'Это действие сейчас недоступно');}
   }
   function openModal(content,className='',{keepAudio=false}={}) {
-    interruptAction();stopReplay(!keepAudio);input?.cancel();cancelBot();if(screen==='table')renderTable();cancelBot();modalReturn=document.activeElement;modalBack=null;$('#app').inert=true;
+    const focused=document.activeElement;interruptAction();stopReplay(!keepAudio);input?.cancel();cancelBot();if(screen==='table')renderTable();cancelBot();modalReturn=focused?.isConnected?focused:focused?.dataset?.command?$('#app [data-command="'+focused.dataset.command+'"]'):focused;modalBack=null;$('#app').inert=true;
+    const template=document.createElement('template');template.innerHTML=content;
+    if(!template.content.querySelector('.modal-head')){
+      const title=template.content.querySelector('h2');if(title){const text=title.textContent;title.remove();content=GameScreen.modalHead(text)+template.innerHTML;}
+    }
     $('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${content}</section></div>`;
     const heading=$('.modal h2'); if(heading){heading.id='dialog-title';$('.modal').setAttribute('aria-labelledby','dialog-title');}
     $('.modal button,.modal input,.modal select')?.focus();
@@ -324,7 +332,7 @@
     stopSounds();$('#modal-root').innerHTML='';$('#app').inert=false;modalReturn?.focus?.();scheduleBot();
     window.dispatchEvent(new Event('playroom:game-options'));
   }
-  const modalHead = title => `<header class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" data-command="close-modal" aria-label="Закрыть">${icon('close')}</button></header>`;
+  const modalHead = GameScreen.modalHead;
   function setup(gameId,draft=null) {
     activatePack(gameId);
     const g=meta(gameId); if(!g){packUI?.open();return;} const presets=g.presets?.length?g.presets:[{id:'default',label:'Классический'}];

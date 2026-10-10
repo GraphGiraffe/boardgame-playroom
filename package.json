@@ -22,7 +22,8 @@
     "test:pairing": "node scripts/codex/test.cjs pairing",
     "test:layout": "node scripts/codex/test.cjs layout",
     "test:smoke": "node scripts/codex/test.cjs smoke",
-    "test:rtc": "node scripts/codex/test.cjs rtc"
+    "test:rtc": "node scripts/codex/test.cjs rtc",
+    "test:changed": "node scripts/codex/test.cjs --changed"
   },
   "devDependencies": {
     "playwright-core": "1.63.0"

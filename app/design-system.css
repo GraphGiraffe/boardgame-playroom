@@ -1,0 +1,51 @@
+/* Application components. Game-pack artwork keeps its own renderer and geometry. */
+:root{--ui-target:46px;--ui-icon:22px;--ui-gap:8px;--ui-control-radius:15px;--ui-panel-radius:25px;--ui-focus:#356951;--ui-danger:#aa4936}
+:is(#app,#modal-root) .icon-btn{width:var(--ui-target);min-width:var(--ui-target);height:var(--ui-target);padding:0;border-radius:var(--ui-control-radius);flex-shrink:0}
+svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-align:middle}
+.ui-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:var(--ui-gap);flex-shrink:0}
+:is(#app,#modal-root) button:focus-visible,:is(#app,#modal-root) input:focus-visible,:is(#app,#modal-root) select:focus-visible{outline:3px solid var(--ui-focus);outline-offset:3px}
+:is(#app,#modal-root) .icon-btn:disabled{opacity:.43;cursor:default}
+#modal-root .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
+#modal-root .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--ui-target);padding-bottom:12px;margin-bottom:16px}
+#modal-root .modal-head h2{min-width:0;overflow-wrap:anywhere;margin:0}
+#modal-root .modal-head .icon-btn{margin-left:auto}
+.shared-modal-backdrop{position:fixed;inset:0;background:#20352d66;backdrop-filter:blur(7px);padding:16px;display:flex;align-items:center;justify-content:center;z-index:50;overflow:auto}
+#modal-root .shared-modal-backdrop .modal{background:var(--paper);width:min(100%,600px);max-width:600px}
+.pairing-method-icon svg,.pairing-chevron svg{width:22px;height:22px}
+.pairing-method[open] .pairing-chevron svg{transform:rotate(180deg)}
+.pairing-compact-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}
+.little-dice svg{width:36px;height:36px}
+@media(max-width:760px){:root{--ui-target:44px}.topbar-tools .status{display:none}}
+@media(max-width:420px){.topbar-tools{gap:4px}.topbar .mobile-brand{font-size:24px;gap:6px}.topbar{gap:6px}}
+@media(prefers-reduced-motion:reduce){.ui-toolbar *,.modal-head *{transition:none!important}}
+/* Navigation keeps the same screen edge in portrait and landscape. */
+#app .table-shell:has(.table-header){display:flex;flex-direction:column}
+#app .table-shell .table-header{display:flex;flex-wrap:nowrap;align-items:center;flex:0 0 auto}
+#app .table-shell .table-heading{display:flex;flex:1 1 0;min-width:0}
+#app .table-shell .table-title{min-width:0}
+#app .table-shell .table-title h1,#app .table-shell .table-title p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .table-shell .table-header .table-tools{display:flex;position:static;align-items:center;justify-content:flex-end;gap:var(--ui-gap);width:auto;height:auto;min-height:0}
+#app .table-shell .table-header .table-tools .icon-btn{width:var(--ui-target);min-width:var(--ui-target);height:var(--ui-target)}
+
+#app .table-shell .scene{flex:1;height:auto;min-height:0}
+@media(max-height:550px) and (orientation:landscape){#app .table-shell .table-status{flex-direction:row;align-items:center;justify-content:space-between;min-height:30px;padding:4px 8px}#app .table-shell .table-bottom{display:flex;min-height:44px;flex:0 0 auto}#app .table-shell .table-bottom>.text-btn{width:auto;min-width:44px;margin-left:auto;white-space:nowrap}}
+
+.handoff .handoff-nav{position:absolute;top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left))}
+
+@media(max-height:550px) and (orientation:landscape){#app .table-shell:not(:has(.history-panel)) .player-strip{display:none}#app .table-shell .table-bottom .pass-device-bar{flex:1;min-width:0}#app .table-shell .table-bottom .pass-device-bar .btn{width:auto;min-width:44px;font-size:11px}}
+
+/* In short landscape, game status and actions share a compact rail below navigation. */
+@media(orientation:landscape) and (max-height:540px){
+ #app .table-shell:has(.table-header):not(:has(.history-panel)){display:grid;grid-template-columns:112px minmax(0,1fr);grid-template-rows:44px minmax(0,1fr) auto;gap:4px 8px}
+ #app .table-shell .table-header{grid-column:1/-1;grid-row:1;min-width:0}
+ #app .table-shell:not(:has(.history-panel)) .table-status{grid-column:1;grid-row:2;flex-direction:column;justify-content:center;align-items:flex-start;gap:6px;min-height:0}
+ #app .table-shell:not(:has(.history-panel)) .scene{grid-column:2;grid-row:2/-1;width:100%;height:100%}
+ #app .table-shell:not(:has(.history-panel)) .table-bottom{grid-column:1;grid-row:3;display:flex;flex-direction:column;gap:4px;min-width:0}
+ #app .table-shell .table-bottom .pass-device-bar{flex:none;width:100%}
+ #app .table-shell .table-bottom .pass-device-bar .btn{width:100%}
+ #app .table-shell .table-bottom>.text-btn{width:100%;margin:0}
+}
+
+@media(orientation:landscape) and (max-height:540px){#app .scene .game-scene>.own-hand{margin-top:0!important;max-height:100%!important}#app .scene .game-scene>.own-hand .hand-heading:not(:has(.hand-tools)){display:none}}
+
+@media(orientation:landscape) and (max-height:300px){#app .scene .own-hand .hand-track.is-fan{--fan-row-step:16px!important}}

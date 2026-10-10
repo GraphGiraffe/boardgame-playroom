@@ -63,7 +63,7 @@ index.html
 - `renderTable()` вызывает `E.project(state,shownViewer)`, вычисляет `activeActions` и передаёт всё в `PlayroomGameScreen.render({...})`. Конкретная игровая сцена приходит из `PlayroomViews.render(projected,viewer,actions,{selected,flipped,quickPlay})`.
 - `app/network-ui.js:startHostGame` / `startClientGame` создают `SessionClient` и `SharedViews.mount(...)`. `app/shared-views.js` сам вызывает тот же `GameScreen.render` и renderer экспортированного view-пака. **Не создавать отдельную HTML-сцену специально для сети.**
 - `app/game-screen.js` — общий каркас: шапка, панель игроков, стол, игровые кнопки, история, footer, результат; `core/ui.js` даёт общие элементы руки и интерфейса, `core/hand-overflow.js` следит за скрытым краем скроллируемых карт.
-- `GameScreen.fitReplayScene(app)` подгоняет целиком read-only сцену в доступный viewport без знания игры: фиксирует измеряемую ширину, затем пропорционально масштабирует снимок по обоим измерениям. Локальный `renderTable`/scrub и сетевой `SharedViews.render` используют один helper; `ResizeObserver` обновляет подгонку при изменении размеров. История занимает один viewport, её описание/счётчик не дублируются в статусе и footer; живые сцены не масштабируются. Регрессия: `history-library-layout-browser.test.cjs`, все пять паков, локальные/проецируемые кадры, 320/390 px, landscape/desktop и поворот.
+- Компоновка API 2: `TabletopUI.composeScene` создаёт общие области, `GameScreen.layoutScene(app)` выбирает режим и подгоняет только поле. ResizeObserver обновляет геометрию при повороте; руки, действия и навигация имеют самостоятельные размеры. Контракт и breaking migration всех пяти паков: [GAME-ELEMENTS-API](GAME-ELEMENTS-API.md).
 - Карточки локальных и сетевых партий строятся одним шаблоном в `savedGamesMarkup`: общий формат действий/версии/времени, одинаковые кнопки-иконки с `aria-label` и `title`. `data-history-id` открывает локальную партию сразу в истории, `data-network-history` сохраняет прежний приватный сетевой архив; продолжение и удаление используют прежние сохранения и проверки.
 - `app/shared-views.js` монтирует input, target-selection, feedback, историю/анимацию. `setConnected(false)` выключает взаимодействие и прекращает эффекты. Подробнее: [MULTIVIEW](MULTIVIEW.md).
 
@@ -147,3 +147,7 @@ flowchart TD
 - История/дедупликация/новая проекция → `core/session.js`, `core/authority.js` и [игровой цикл](DEVELOPER-GAMEPLAY.md).
 
 **Тестирование:** [DEVELOPER-WORKFLOW.md](DEVELOPER-WORKFLOW.md); критически важны `tests/network-main-app.test.cjs`, `tests/network-same-origin.test.cjs`, `tests/network-reconnect-browser.test.cjs` и `tests/game-screen.test.cjs`.
+
+## Общий дизайн и постоянные позиции
+
+Нормативное описание прикладных компонентов, собственных SVG-иконок, постоянных позиций и взаимодействия: [UI-DESIGN-SYSTEM](UI-DESIGN-SYSTEM.md). `GameScreen.iconButton/toolbar/modalHead` используются хабом, комнатой, столом и окнами. `app/design-system.css` задаёт общие токены, состояния и размеры. Сценарии проверки и выбор подблоков: [TESTING](TESTING.md).
