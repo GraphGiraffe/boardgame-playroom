@@ -12,7 +12,7 @@
   }
   function mount(client,definition,{surface,readOnly=false,onExit=null}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
-    let selected=null,connected=true,historyOpen=false,historyIndex=null,historySnapshot=null,historyTicket=0;
+    let selected=null,connected=true,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
@@ -27,6 +27,7 @@
     const usable=()=>!readOnly&&connected&&!client.pending&&!transitionActive&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
+    const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
     const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
     function fitReplayScene(){
       if(!historyOpen||destroyed)return;
@@ -59,8 +60,8 @@
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
-      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer}):'';
-      app.innerHTML=GameScreen.render({
+      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer}):'';
+      const markup=GameScreen.render({
         network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
@@ -70,9 +71,25 @@
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':finished&&!readOnly?'<button class="text-btn" data-command="result">Результаты</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
+      if(historyOpen&&app.querySelector('.network-game .history-panel')){
+        // Keep the actual range element, its focus and native pointer gesture.
+        // Only read-only frame content and control labels change during replay.
+        const template=document.createElement('template');template.innerHTML=markup;
+        app.querySelector('.network-game').dataset.revision=String(live.revision);
+        const sceneNode=app.querySelector('.scene');sceneNode.setAttribute('aria-busy',String(!!transitionActive));sceneNode.dataset.animationSpeed=flow.pace().mode;
+        for(const selector of ['.scene','.player-strip','.table-status','.table-bottom','.history-caption']){
+          app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
+        }
+        app.querySelector('.replay-badge').textContent=template.content.querySelector('.replay-badge').textContent;
+        const range=app.querySelector('#replay-range');range.max=String(historyCount());range.value=String(historyRequested??historyIndex??historyCount());
+        for(const command of ['replay-prev','replay-play','replay-next']){
+          const selector='[data-command="'+command+'"]',button=app.querySelector(selector),next=template.content.querySelector(selector);
+          button.disabled=next.disabled;button.innerHTML=next.innerHTML;button.setAttribute('aria-label',next.getAttribute('aria-label'));
+        }
+      }else app.innerHTML=markup;
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       const historyPanel=app.querySelector('.history-panel');
-      if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot?'false':'true');
+      if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot&&historyRequested===null?'false':'true');
       HandOverflow.sync(app);
       if(historyOpen){fitReplayScene();root.requestAnimationFrame?.(()=>fitReplayScene());}
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
@@ -106,17 +123,20 @@
     async function viewHistory(index){
       if(!historyOpen||!client.snapshot)return;
       const pos=Math.min(Math.max(0,index),historyCount()),ticket=++historyTicket;
-      const result=await client.history(pos);
+      historyRequested=pos;app.querySelector('.history-panel')?.setAttribute('aria-busy','true');
+      let result;
+      try{result=await client.history(pos);}catch(error){if(ticket!==historyTicket||!historyOpen||destroyed)return;historyRequested=null;render();throw error;}
       if(ticket!==historyTicket||!historyOpen||destroyed)return;
-      if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.revision>client.snapshot.revision)throw Error('Некорректная история.');
+      historyRequested=null;
+      if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.revision>client.snapshot.revision){render();throw Error('Некорректная история.');}
       historyIndex=pos;historySnapshot=result;render();
     }
     async function openHistory(index=historyCount()){
-      stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historySnapshot=null;render();
+      stopScrub();stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historyRequested=null;historySnapshot=null;render();
       try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
     }
-    function closeHistory(){historyTicket++;stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;selected=null;render();}
-    async function stepHistory(delta){stopReplay();try{await viewHistory((historyIndex??historyCount())+delta);}catch(error){toast(error.message);}}
+    function closeHistory(){historyTicket++;stopScrub();stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;historyRequested=null;selected=null;render();}
+    async function stepHistory(delta){stopScrub();stopReplay();try{await viewHistory((historyRequested??historyIndex??historyCount())+delta);}catch(error){toast(error.message);}}
     async function playStep(){
       if(!historyOpen||destroyed||document.hidden){stopReplay();render();return;}
       if((historyIndex??0)>=historyCount()){stopReplay();render();return;}
@@ -150,6 +170,7 @@
         case 'replay-prev':await stepHistory(-1);break;
         case 'replay-next':await stepHistory(1);break;
         case 'replay-play':
+          stopScrub();historyTicket++;historyRequested=null;
           if(replayTimer){stopReplay();render();break;}
           if(!historyOpen)break;
           if(historyIndex>=historyCount())await viewHistory(0);
@@ -175,18 +196,19 @@
     function historySliderInput(event){
       if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
       event.stopPropagation();
-      // Keep pointer capture while dragging: show the requested frame index,
-      // but do not rebuild the whole board until change / pointer release.
-      // Invalidate a pending frame opened before the gesture: it must not
-      // replace the slider DOM while the user is still dragging.
+      // Coalesce fast input into one request per animation frame. Immediately
+      // invalidate older RPCs; only the newest allowed frame may be shown.
       historyTicket++;
-      stopReplay();
+      stopReplay();historyRequested=Number(event.target.value);
       app.querySelector('.replay-badge')?.replaceChildren(document.createTextNode(event.target.value+' / '+historyCount()));
+      if(scrubFrame===null)scrubFrame=root.requestAnimationFrame(()=>{
+        scrubFrame=null;void viewHistory(historyRequested).catch(error=>toast(error.message));
+      });
     }
     function historySliderChange(event){
       if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
       event.stopPropagation();
-      app.querySelector('.history-panel')?.setAttribute('aria-busy','true');
+      stopScrub();stopReplay();
       void viewHistory(Number(event.target.value)).catch(error=>toast(error.message));
     }
     function keydown(event){
@@ -231,7 +253,7 @@
     const onOptions=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){stopReplay();stopMotion();}};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;clearDialog();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+      destroy(){destroyed=true;clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);
