@@ -39,56 +39,11 @@ function manager(saved){
   return {instance,raw:()=>raw};
 }
 
-// Legacy bootstrap must never discard saved conflicting game code without an
-// explicit permission check against live saved-game references.
-test('bundled conflict remains available while a saved game needs that exact version',()=>{
-  const current=bundle('current'),old=bundle('old');
-  const saved={format:'playroom-packs',formatVersion:1,packs:[old],active:{demo:'1.0.0'},removed:[]};
-  const retained=manager(saved);
-  retained.instance.bootstrap([current]);
-  assert.match(retained.instance.warnings.join(' '),/для совместимости партий/i);
-  assert.match(retained.instance.exportPack('demo','1.0.0'),/old/);
-  const explicit=manager(saved);
-  explicit.instance.bootstrap([current],{preserveSavedConflict:()=>true});
-  assert.match(explicit.instance.exportPack('demo','1.0.0'),/old/);
+test('incompatible and conflicting saved packs are isolated without executing their code',()=>{
+  const current=bundle('current'),old=bundle('old'),legacy=bundle('legacy');legacy.manifest.viewApi=1;legacy.files['rules.js']='throw Error("MUST NEVER EXECUTE")';
+  const repo=manager({format:'playroom-packs',formatVersion:1,packs:[old,legacy],active:{demo:'1.0.0'},removed:[]});
+  repo.instance.bootstrap([current]);assert.equal(repo.instance.list().length,1);assert.equal(repo.instance.quarantined.length,2);assert.match(repo.instance.exportPack('demo','1.0.0'),/current/);
+  const saved=JSON.parse(repo.raw());assert.equal(saved.quarantined.length,2);
+  const reloaded=manager(saved);reloaded.instance.bootstrap([current]);assert.equal(reloaded.instance.quarantined.length,2);reloaded.instance.discardQuarantine(0);assert.equal(reloaded.instance.quarantined.length,1);reloaded.instance.discardQuarantine();assert.equal(JSON.parse(reloaded.raw()).quarantined.length,0);
 });
-
-test('reconcile releases obsolete conflict, restores bundled game and updates persisted bytes',()=>{
-  const current=bundle('current'),old=bundle('old');
-  const saved={format:'playroom-packs',formatVersion:1,packs:[old],active:{demo:'1.0.0'},removed:[]};
-  const repo=manager(saved);
-  repo.instance.bootstrap([current]);
-  let dependent=true;
-  const library={references:(game,version)=>dependent&&game==='demo'&&version==='1.0.0'?['game-1']:[]};
-  delete require.cache[require.resolve('../app/pack-manager.js')];
-  const previousPacks=globalThis.TabletopPacks;
-  try{globalThis.TabletopPacks=null;require('../app/pack-manager.js');}
-  finally{globalThis.TabletopPacks=previousPacks;}
-  globalThis.PlayroomPackLoadError=repo.instance.warnings.join(' ');
-  globalThis.PlayroomPackManager.reconcile(repo.instance,library,[current]);
-  assert.match(repo.instance.exportPack('demo','1.0.0'),/old/);
-  assert.match(globalThis.PlayroomPackLoadError,/для совместимости партий/i);
-
-  dependent=false; // The last matching saved game was removed.
-  globalThis.PlayroomPackManager.reconcile(repo.instance,library,[current]);
-  assert.equal(globalThis.PlayroomPackLoadError,'');
-  assert.deepEqual(repo.instance.warnings,[]);
-  assert.match(repo.instance.exportPack('demo','1.0.0'),/current/);
-  assert.doesNotMatch(repo.raw(),/old/);
-  assert.match(repo.raw(),/current/);
-  // A new page loads the same corrected version, not the abandoned archive.
-  const reloaded=manager(JSON.parse(repo.raw()));
-  reloaded.instance.bootstrap([current]);
-  assert.match(reloaded.instance.exportPack('demo','1.0.0'),/current/);
-});
-
-test('reconcile handles absent managers and does not mutate unrelated pack data',()=>{
-  const {reconcile}=globalThis.PlayroomPackManager;
-  assert.deepEqual(reconcile(null,null,[]),[]);
-  const current=bundle('current');
-  const repo=manager({format:'playroom-packs',formatVersion:1,packs:[],active:{},removed:[]});
-  repo.instance.bootstrap([current]);
-  const before=repo.instance.exportPack('demo','1.0.0');
-  reconcile(repo.instance,{references:()=>[]},[current]);
-  assert.equal(repo.instance.exportPack('demo','1.0.0'),before);
-});
+test('explicit builtin restore clears only builtin deletion markers',()=>{const repo=manager({format:'playroom-packs',formatVersion:1,packs:[],active:{},removed:['demo@1.0.0','other@1.0.0']});repo.instance.bootstrap([bundle('current')]);assert.equal(repo.instance.list().length,0);repo.instance.bootstrap([bundle('current')],{restoreBuiltins:true});assert.equal(repo.instance.list().length,1);assert.deepEqual(JSON.parse(repo.raw()).removed,['other@1.0.0']);});

@@ -181,8 +181,8 @@ test('manual UNO controls are constant and accusations use public player context
       const actions = actionsIn(html);
       assert.ok(actions.some(a => a.type === 'declare-uno'));
       assert.ok(!actions.some(a => a.type === 'accuse-uno'), 'accusations must not become automatic action buttons');
-      for (const target of state.players.keys()) assert.equal(html.includes(`data-accuse-player="${target}"`), target !== viewer);
-      assert.doesNotMatch(html, /class="uno-declared"/, 'one card alone is not a public declaration');
+      for (const target of state.players.keys()) assert.equal(html.includes(`data-player-target="${target}"`), target !== viewer);
+      assert.doesNotMatch(html, /class="player-status-badge">UNO!/, 'one card alone is not a public declaration');
     }
   }
   state.data.uno.pending = 0;
@@ -190,16 +190,16 @@ test('manual UNO controls are constant and accusations use public player context
   state.data.uno.pending = null;
   assert.equal(render(state, 1), pending, 'catch-window changes must not provide visual clues');
   state.data.uno.declared[0] = true;
-  assert.match(render(state, 1), /class="uno-declared"/);
-  assert.match(render(state, 1), /data-accuse-player="0"/, 'already declared players still allow a mistaken accusation');
-  assert.match(render(state, 0), /class="hand-tools"><span class="uno-declared"/);
+  assert.match(render(state, 1), /class="player-status-badge">UNO!/);
+  assert.match(render(state, 1), /data-player-target="0"/, 'already declared players still allow a mistaken accusation');
+  assert.match(render(state, 0), /class="player-status-badge">UNO!/);
   const wild = state.data.drawPile.splice(state.data.drawPile.findIndex(c => c.value === 'wild'), 1)[0];
   state.data.hands[0].push(wild); state.data.uno.declared[0] = false;
   assert.equal(callButton(render(state, 0, wild.id)), originalCall, 'colour choice retains the same call button');
   state.data.uno.mode = 'auto';
-  assert.doesNotMatch(render(state, 0), /uno-call|data-accuse-player|uno-manual-hint/);
+  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/);
   delete state.data.uno;
-  assert.doesNotMatch(render(state, 0), /uno-call|data-accuse-player|uno-manual-hint/, 'legacy games keep automatic mode');
+  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/, 'legacy games keep automatic mode');
   vm.runInContext(fs.readFileSync(path.join(root, 'packs/uno/manifest.js'), 'utf8'), sandbox);
   const setting = sandbox.PlayroomCatalog.uno.settings.find(item => item.key === 'unoMode');
   assert.equal(setting.default, 'manual');
@@ -226,7 +226,7 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
   for (const preset of ['classic', 'quick']) {
     const state = make('snakes', preset, 4), html = render(state);
     assert.equal((html.match(/class="snakes-cell /g) || []).length, state.data.finish);
-    assert.equal((html.match(/data-entity="token-/g) || []).length, 4);
+    assert.equal((html.match(/class="player-panel /g)||[]).length,4);assert.doesNotMatch(html,/snakes-legend|snakes-scores/);
   }
   for (const game of games) assert.match(V.cover(game), /^<svg .*viewBox="0 0 300 180"/);
 });

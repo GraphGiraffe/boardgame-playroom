@@ -1,55 +1,29 @@
-(function(root,factory){
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPlayerTarget=api;})(typeof globalThis==='undefined'?this:globalThis,function(){
   'use strict';
-  const API=factory();
-  if(typeof module==='object'&&module.exports)module.exports=API;
-  root.PlayroomPlayerTarget=API;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
-  'use strict';
-  // Target/confirmation is local UI state, not a gameplay command. The caller
-  // always rechecks the current legal action before sending the second tap.
   class PlayerTarget {
-    constructor({actions,commit,root=()=>document,clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},duration=2000}={}){
-      if(typeof actions!=='function'||typeof commit!=='function'||typeof root!=='function')throw Error('PlayerTarget requires actions/commit/root');
-      this.actions=actions;this.commit=commit;this.root=root;this.clock=clock;this.duration=duration;
-      this.active=null;this.timer=null;
+    constructor({actions,commit,root=()=>document}={}){
+      if(typeof actions!=='function'||typeof commit!=='function')throw Error('PlayerTarget requires actions/commit');
+      this.actions=actions;this.commit=commit;this.root=root;this.active=null;this.menu=null;
+      this.outside=event=>{if(!event.target.closest?.('[data-player-target],.player-target-menu'))this.cancel();};
+      this.keys=event=>{if(this.menu&&['ArrowDown','ArrowUp','Home','End'].includes(event.key)){const buttons=[...this.menu.querySelectorAll('button')],i=buttons.indexOf(this.document.activeElement);event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(i+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}if(event.key==='Escape'&&this.active!==null){event.preventDefault();this.cancel(true);}};
+      const doc=this.root()?.ownerDocument||globalThis.document;this.document=doc;doc?.addEventListener('click',this.outside);doc?.addEventListener('keydown',this.keys);
     }
-    available(target){return this.actions().find(action=>action.target===target&&typeof action.type==='string')||null;}
-    tap(target){
-      const action=this.available(target);
-      if(!action)return false;
-      if(this.active?.target===target){
-        this.cancel();this.commit(action);return true;
-      }
-      this.cancel();this.active={target,label:action.targetPrompt||action.label||'Подтвердить'};
-      this.timer=this.clock.setTimeout(()=>this.cancel(),this.duration);
-      this.refresh();return true;
-    }
+    available(target){return this.actions().filter(a=>a.target===target&&a.targetKind==='player');}
+    tap(target){if(this.active===target){this.cancel();return false;}this.cancel();if(!this.available(target).length)return false;this.active=target;this.refresh();return true;}
     refresh(){
-      if(this.active&&!this.available(this.active.target)){this.cancel();return;}
-      const root=this.root();if(!root)return;
-      for(const node of root.querySelectorAll('.is-player-targeted'))node.classList.remove('is-player-targeted');
-      for(const node of root.querySelectorAll('.player-target-confirm'))node.remove();
-      const active=this.active;if(!active)return;
-      if(!this.available(active.target)){this.cancel();return;}
-      for(const node of root.querySelectorAll('[data-accuse-player]'))if(Number(node.dataset.accusePlayer)===active.target){
-        node.classList.add('is-player-targeted');
-      }
-      const hand=[...root.querySelectorAll('.opponent-hand[data-accuse-player]')].find(el=>Number(el.dataset.accusePlayer)===active.target);
-      if(hand){
-        const button=root.ownerDocument.createElement('button');
-        button.type='button';button.className='player-target-confirm';button.dataset.playerConfirm=String(active.target);
-        button.textContent=active.label;button.setAttribute('aria-label',active.label+' — подтвердить действие');
-        hand.appendChild(button);
-      }
+      if(this.active===null)return;
+      const actions=this.available(this.active),host=this.root();
+      const trigger=host?.querySelector(`[data-player-target="${this.active}"]`);
+      if(!actions.length){this.cancel();return;}if(!host){return;}if(!trigger){this.cancel();return;}
+      this.menu?.remove();trigger.setAttribute('aria-expanded','true');
+      const menu=trigger.ownerDocument.createElement('div');menu.className='player-target-menu';menu.setAttribute('role','menu');
+      actions.forEach(action=>{const button=trigger.ownerDocument.createElement('button');button.type='button';button.className='scene-button';button.setAttribute('role','menuitem');button.textContent=action.targetPrompt||action.label||'Выполнить';button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();const current=this.available(this.active).find(a=>JSON.stringify(a)===JSON.stringify(action));this.cancel();if(current)this.commit(current);});menu.appendChild(button);});
+      trigger.ownerDocument.body.appendChild(menu);this.menu=menu;menu.querySelector('button')?.focus();
+      const box=menu.getBoundingClientRect(),anchor=trigger.getBoundingClientRect(),win=trigger.ownerDocument.defaultView;
+      menu.style.left=Math.max(8,Math.min(anchor.left,win.innerWidth-box.width-8))+'px';menu.style.top=Math.max(8,Math.min(anchor.bottom+4,win.innerHeight-box.height-8))+'px';
     }
-    cancel(){
-      if(this.timer!==null)this.clock.clearTimeout(this.timer);
-      this.timer=null;this.active=null;
-      const root=this.root();if(!root)return;
-      for(const node of root.querySelectorAll('.is-player-targeted'))node.classList.remove('is-player-targeted');
-      for(const node of root.querySelectorAll('.player-target-confirm'))node.remove();
-    }
-    destroy(){this.cancel();}
+    cancel(focus=false){const target=this.active;this.menu?.remove();this.menu=null;this.active=null;for(const node of this.root()?.querySelectorAll('[data-player-target]')||[])node.setAttribute('aria-expanded','false');if(focus&&target!==null)this.root()?.querySelector(`[data-player-target="${target}"]`)?.focus();}
+    destroy(){this.cancel();this.document?.removeEventListener('click',this.outside);this.document?.removeEventListener('keydown',this.keys);}
   }
   return PlayerTarget;
 });

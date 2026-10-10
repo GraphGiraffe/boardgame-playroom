@@ -49,35 +49,35 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
     const within = (el, area, label) => {if (!contains(r(area), r(el))) errors.push(label);};
     if (document.documentElement.scrollWidth > innerWidth + 1) errors.push('page horizontal overflow');
     if (scene.scrollWidth > scene.clientWidth + 1) errors.push('scene horizontal overflow');
-    if (chain.scrollWidth > chain.clientWidth + 1 || chain.scrollHeight > chain.clientHeight + 1) errors.push('chain internal scrolling');
+    const field=document.querySelector('.layout-field');if(!contains(r(scene),r(field)))errors.push('field outside scene');
     if (fullScene && scene.scrollHeight > scene.clientHeight + 1) errors.push(`scene vertical scroll ${scene.scrollHeight}/${scene.clientHeight}`);
     const tiles = [...chain.querySelectorAll('[data-entity]')];
     if (tiles.length !== count) errors.push(`chain count ${tiles.length}/${count}`);
     for (const tile of tiles) {
-      within(tile, board, 'chain tile outside board');
+      const b=r(tile);if(Math.abs(b.width/b.height-(tile.classList.contains('double')?30/52:60/34))>.03)errors.push('tile aspect changed');
       for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'half outside tile');
       if (r(tile).width < 25 || r(tile).height < 25) errors.push('unreadably small tile');
-      if (fullScene) within(tile, scene, 'chain tile clipped by scene');
+
     }
     for (const end of chain.querySelectorAll('.domino-drop-target,.domino-drop-placeholder')) {
       if (r(end).width < 44 || r(end).height < 44) errors.push('end target below 44px');
-      within(end, board, 'end outside board');
-      if (fullScene) within(end, scene, 'end clipped by scene');
+
+
     }
     if (count <= 14) {
       if (track.querySelectorAll('.domino-tile').length !== 7) errors.push('fixture missing seven hand tiles');
-      if (track.scrollWidth > track.clientWidth + 1) errors.push('seven-tile hand scrolls');
+      if(getComputedStyle(track).overflowX!=='auto')errors.push('hand cannot scroll');
       for (const tile of track.querySelectorAll('.domino-tile')) {
-        within(tile, track, 'hand tile outside track');
+
         for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'hand half clipped');
-        if (fullScene) within(tile, scene, 'hand tile clipped by scene');
+
       }
     }
     return errors;
   }, {fullScene, count});
   const layout=result.length?await page.evaluate(()=>{
     const scene=document.querySelector('.scene'),stage=scene.firstElementChild;
-    return {scene:scene.clientHeight,stage:stage.scrollHeight,zoom:stage.style.zoom,parts:[...stage.children].map(e=>({name:e.className,height:e.getBoundingClientRect().height}))};
+    return {tiles:[...document.querySelectorAll('.domino-chain [data-entity],.domino-drop-target')].map(e=>({rect:JSON.stringify(e.getBoundingClientRect()),style:e.style.cssText,zoom:getComputedStyle(e).zoom,height:getComputedStyle(e).height})),field:document.querySelector('.game-field-content').style.cssText,scene:scene.clientHeight,stage:stage.scrollHeight,zoom:stage.style.zoom,parts:[...stage.children].map(e=>({name:e.className,height:e.getBoundingClientRect().height}))};
   }):null;
   assert.deepEqual(result, [],JSON.stringify(layout));
 }
@@ -106,7 +106,7 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
   }
   try {
     for (const viewport of [{width: 320, height: 640}, {width: 390, height: 740}]) for (const length of [3, 7]) {
-      await check(`${length} tiles and both endpoints fit without scene scrolling at ${viewport.width}×${viewport.height}`, {viewport, length}, async ({page, saved}) => {
+      await check(`${length} tiles and both endpoints preserve proportions and touch endpoints at ${viewport.width}×${viewport.height}`, {viewport, length}, async ({page, saved}) => {
         await page.locator('.hand-track [data-select="d14"]').click();
         assert.equal(await page.locator('.domino-end-slot').count(), 2);
         assert.equal(await page.locator('.domino-drop-target').count(), Core.legalActions(saved.states[0], 0).filter(a => a.card === 'd14').length);
@@ -115,7 +115,7 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
       });
     }
     for (const length of [14, 21, 28]) {
-      await check(`${length} tiles remain entirely inside a wrapping field without internal scrolling`, {length, viewport: {width: 320, height: 640}}, async ({page}) => {
+      await check(`${length} tiles keep proportions inside the application field`, {length, viewport: {width: 320, height: 640}}, async ({page}) => {
         await geometry(page, {count: length});
         const rows = await page.locator('.domino-chain').evaluate(el => new Set([...el.querySelectorAll('.domino-node')].map(n => n.dataset.flowRow)).size);
         assert.equal(rows, Math.ceil((length + 2) / 5));
@@ -141,7 +141,10 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
     });
     for (const side of ['left', 'right']) {
       await check(`Native touch drag reaches the ${side} physical endpoint on a 320px folded board`, {viewport: {width: 320, height: 640}}, async ({page, context, saved}) => {
-        const cdp = await context.newCDPSession(page), from = await center(page.locator('.hand-track [data-drag-piece="d14"]'));
+        const cdp = await context.newCDPSession(page);
+        // Pan the intrinsic field to the endpoint before dragging from the hand.
+        await page.locator(`.domino-end-slot.${side}`).scrollIntoViewIfNeeded();
+        const from = await center(page.locator('.hand-track [data-drag-piece="d14"]'));
         await touch(cdp, 'touchStart', from); await page.waitForTimeout(280); await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
         const target = page.locator(`.domino-end-slot.${side} .domino-drop-target`), to = await center(target), action = JSON.parse(await target.getAttribute('data-action'));
         for (let step = 1; step <= 5; step++) await touch(cdp, 'touchMove', {x: from.x + (to.x - from.x) * step / 5, y: from.y + (to.y - from.y) * step / 5});

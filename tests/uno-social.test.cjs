@@ -77,20 +77,18 @@ async function play(page, id, move) {
 async function accuse(page, target) {
   // GameScreen uses a common two-tap player target, not a legacy modal.
   const previous = (await state(page)).move;
-  const token = page.locator(`.player-token[data-accuse-player="${target}"]`);
+  const token = page.locator(`.player-token[data-player-target="${target}"]`);
   await token.click();
   assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
-  const button = page.locator(`.player-target-confirm[data-player-confirm="${target}"]`);
+  const button = page.locator('.player-target-menu button');
   await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
-  assert.equal(await token.evaluate(el=>el.classList.contains('is-player-targeted')),true);
-  const hand=page.locator(`.opponent-hand[data-accuse-player="${target}"]`);
-  assert.equal(await hand.evaluate(el=>el.classList.contains('is-player-targeted')),true);
+  assert.equal(await token.getAttribute('aria-expanded'),'true');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
   assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
   await button.click();
-  assert.equal(await page.locator('.player-target-confirm').count(),0);
+  assert.equal(await page.locator('.player-target-menu').count(),0);
   return appearance;
 }
 const ids = hand => hand.map(card => card.id);
@@ -131,15 +129,11 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       for (const mode of ['manual', 'auto']) {
         const {page} = await open();
         await page.locator('[data-start=uno]').click();
-        assert.equal(await page.locator('[name=option-unoMode]').inputValue(), 'manual');
-        await page.locator('[name=option-unoMode]').selectOption(mode);
-        await page.locator('[name=players]').selectOption('3');
-        await page.locator('input[value=pass]').check();
-        await page.locator('[data-rules=uno]').click();
-        await page.locator('.modal [data-command=close-modal]').first().click();
-        assert.equal(await page.locator('[name=option-unoMode]').inputValue(), mode);
-        assert.equal(await page.locator('[name=players]').inputValue(), '3');
-        await page.locator('button[type=submit]').click();
+        await page.locator('[data-command=room-rules]').click();
+        assert.equal(await page.locator('[name=option-unoMode]').inputValue(),'manual');await page.locator('[name=option-unoMode]').selectOption(mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-kind="seat-3"]').selectOption('human');
+        await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=option-unoMode]').inputValue(),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-command=lobby-start]').click();
         const saved = await read(page);
         assert.equal(saved.options.unoMode, mode);
         assert.equal(saved.states[0].data.uno.mode, mode);
@@ -157,7 +151,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.deepEqual(after.data.hands.map(ids), saved.states[0].data.hands.map(ids));
       assert.equal(after.turn, 0); assert.equal(after.data.uno.declared[0], false);
       assert.match(after.events.at(-1).text, /UNO/i);
-      assert.equal((await page.locator('.event-latest').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
       assert.equal(await (await action(page, 'declare-uno')).getAttribute('class'), beforeClass);
       await play(page, saved.states[0].data.hands[0][0].id, 2);
       assert.equal((await state(page)).data.hands[0].length, 1);
@@ -190,7 +184,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await resume(page); await play(page, saved.states[0].data.hands[0][0].id, 1);
       assert.equal((await state(page)).data.hands[0].length, 2);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal((await page.locator('[data-command=pass-device]').innerText()).trim(), 'Передать устройство');
+      assert.equal(await page.locator('[data-command=pass-device]').getAttribute('aria-label'), 'Передать устройство');
       assert.deepEqual(await visibleHandIds(page), ids(saved.states[0].data.hands[0].slice(1)));
     });
 
@@ -203,7 +197,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal(after.turn, 1); assert.equal(after.data.uno.pending, null);
       assert.equal(after.data.drawPile.length, saved.states[0].data.drawPile.length - 2);
       assert.equal(await page.locator('.modal,.handoff').count(), 0);
-      assert.equal((await page.locator('.event-latest').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
     });
 
     await check('Opponent menu permits a wrong accusation with no correctness hint and penalizes the caller', async open => {
@@ -284,7 +278,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
         const saved = fixture({unoMode: 'auto'});
         if (legacy) { delete saved.options.unoMode; delete saved.states[0].data.uno; }
         const {page} = await open(saved); await resume(page);
-        assert.equal(await page.locator('[data-accuse-player]').count(), 0);
+        assert.equal(await page.locator('[data-player-target]').count(), 0);
         assert.equal(await page.locator('.scene [data-action]').evaluateAll(nodes =>
           nodes.some(node => JSON.parse(node.dataset.action).type === 'declare-uno')), false);
         await play(page, saved.states[0].data.hands[0][0].id, 1);

@@ -40,6 +40,8 @@
     text:'<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
     chevron:'<path d="m6 9 6 6 6-6"/>',
     dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 7h.01M17 7h.01M12 12h.01M7 17h.01M17 17h.01"/>',
+    first:'<circle cx="12" cy="12" r="9"/><path d="m10 8 2-1v10m-3 0h6"/>',
+    room:'<path d="M3 21V3h13v18M7 12h.01M16 7h5v14H3"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
   }[name] || '')+'</svg>';
   const actionAttr = action => `data-action="${esc(JSON.stringify(action))}"`;
@@ -66,6 +68,23 @@
       }).join('');
       return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} карт${open?', открытая рука':''}">${pieces}</div></div>`;
     }).join('')}</div>`;
+  }
+  function playerContent(state, viewer, cardRender, options={}) {
+    return state.players.map((person,index)=>{
+      const cards=state.data.hands?.[index],open=cards?.some(card=>!card.hidden);
+      const visible=cards?(open?cards:cards.slice(0,5)):[];
+      const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?back(options.kind||'card'):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
+      return {handHTML,scoreLabel:options.scoreLabel||'очки',...(cards?{handCount:cards.length}:{}),open:!!open,badges:options.badges?.(index,person)||[],color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+    });
+  }
+  function playerPanel(state,index,viewer,content={},actions=[]) {
+    const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
+    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge">${esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
+    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
+      <${target?'button':'div'} class="player-info player-token ${state.turn===index?'active':''}" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Действия игрока ${esc(person.name)}"`:''}>
+      <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''}>${esc(person.name.slice(0,1))}</span><span class="player-details"><strong>${esc(person.name)}${own?' · вы':''}</strong><small>${person.bot?'Бот':'Игрок'} · ${esc(content.scoreLabel||'очки')}: ${Number.isFinite(person.score)?person.score:0}${content.colorLabel?' · '+esc(content.colorLabel):''}</small><span class="player-badges">${state.turn===index?'<span class="turn-badge">Ходит</span>':''}${content.handCount!==undefined?`<span>${content.handCount} ${esc(content.countLabel||'в руке')}</span>`:''}${badges}</span></span></${target?'button':'div'}>
+      ${own?'<!--self-controls-->':''}${!own&&content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</article>`;
   }
   function hand(content, count, hint='Подсвеченные карты можно разыграть', extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles';
@@ -103,17 +122,31 @@
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end=''})=>`<div class="game-action-bar"><div data-action-position="start">${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end">${end}</div></div>`;
-  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,opponents,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary']);
-  function composeScene(value,{surface='combined'}={}) {
+  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
     const className=typeof value.className==='string'?value.className:'';
-    const slots=elementNames.filter(name=>value.elements[name]).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${value.elements[name]}</div>`:value.elements[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}</div>`;
+    const e={...value.elements},content=value.playerContent;
+    if(content!==undefined&&(!Array.isArray(content)||content.some(p=>!p||typeof p!=='object'||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&!Array.isArray(p.badges)))))throw Error('Invalid player content');
+    if(value.fieldGroups!==undefined){
+      const groups=value.fieldGroups;
+      if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');
+      e.field=`<div class="game-field-groups">${['stock','play'].filter(k=>groups[k]).map(k=>`<section class="field-group field-group-${k}" data-field-group="${k}">${groups[k]}</section>`).join('')}</div>`;
+    }
+    const unified=!!state?.players;
+    let self='';
+    if(unified){
+      e.participants=`<div class="players-panels opponent-hands">${state.players.map((_,i)=>i===viewer?'':playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
+      if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
+    }
+    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''} data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
+
   function createRegistry() {
     const packs = new Map();
     return {
@@ -127,7 +160,7 @@
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return '<p class="scene-hint">Этот игровой пакет не загружен.</p>';return composeScene(render(state,viewer,surface==='table'?[]:actions,ui),{surface}); }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return '<p class="scene-hint">Этот игровой пакет не загружен.</p>';return composeScene(render(state,viewer,surface==='table'?[]:actions,ui),{surface,state,viewer,actions}); }
         catch (_) { return '<p class="scene-hint" role="alert">Не удалось показать игру. Вернитесь к списку игр и обновите этот пак.</p>'; }
       },
       cover(id){

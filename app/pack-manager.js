@@ -50,7 +50,10 @@
       return `<section class="pack-preview" aria-label="Предпросмотр пака"><span class="eyebrow">ПАК ГОТОВ К УСТАНОВКЕ</span><h3>${esc(title(manifest))}</h3><p>${esc(manifest.id)} · версия ${esc(manifest.version)}</p>${manifest.description||manifest.tagline?`<p>${esc(manifest.description||manifest.tagline)}</p>`:''}${manifest.author?`<p>Автор: ${esc(typeof manifest.author==='string'?manifest.author:manifest.author.name||'Не указан')}</p>`:''}<p class="pack-trust">Пак содержит код, который запускается на этом устройстве. Устанавливайте его, только если доверяете автору.</p>${known?'<p>Сохранённые партии продолжат использовать прежнюю версию.</p>':''}<div class="modal-foot"><button class="btn secondary" data-pack-cancel>Отмена</button><button class="btn" data-pack-install>${known?'Установить / обновить':'Установить'}</button></div></section>`;
     }
     function open() {
-      openModal(`${modalHead('Паки игр')}<p class="lead">Добавляйте игры и обновляйте их независимо от приложения. Прежние версии остаются для ваших партий.</p><label class="btn pack-file">Выбрать файл пака<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="Выбрать файл пака"></label><p class="pack-format">Формат: .playroom-pack.json</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}`,'pack-manager-modal');
+      openModal(`${modalHead('Паки игр')}<p class="lead">Добавляйте игры и обновляйте их независимо от приложения. Прежние версии остаются для ваших партий.</p><label class="btn pack-file">Выбрать файл пака<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="Выбрать файл пака"></label><p class="pack-format">Формат: .playroom-pack.json</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<button class="btn secondary" data-pack-restore>Восстановить встроенные игры</button>${quarantineMarkup()}`,'pack-manager-modal');
+    }
+    function quarantineMarkup(){
+      const entries=manager.quarantined||[];return entries.length?`<section class="pack-quarantine"><h3>Несовместимые паки</h3>${entries.map((item,i)=>`<div class="pack-version"><span>${esc(item.bundle?.manifest?.name||item.bundle?.manifest?.id||'Пак')} · ${esc(item.bundle?.manifest?.version||'')}<small>${esc(item.reason)}</small></span><button class="icon-btn" data-pack-quarantine="${i}" aria-label="Удалить несовместимый пак">${root.PlayroomGameScreen.icon('trash')}</button></div>`).join('')}<button class="btn secondary" data-pack-quarantine="all">Удалить все несовместимые паки</button></section>`:'';
     }
     async function read(file) {
       const ticket=++reading;pending=null;message='';
@@ -79,7 +82,10 @@
     }
     document.addEventListener('change',event=>{if(event.target.id==='pack-file')void read(event.target.files?.[0]);});
     document.addEventListener('click',event=>{
-      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove]');if(!button||button.disabled)return;
+      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm]');if(!button||button.disabled)return;
+      if(button.hasAttribute('data-pack-restore')){try{manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open();}catch(error){message=error.message;open();}return;}
+      if(button.hasAttribute('data-pack-quarantine')){openModal(`${modalHead('Удалить несовместимые паки?')}<p>Сохранённые партии останутся на устройстве.</p><button class="btn coral" data-pack-quarantine-confirm="${esc(button.dataset.packQuarantine)}">Удалить</button>`);return;}
+      if(button.hasAttribute('data-pack-quarantine-confirm')){try{manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open();}catch(error){message=error.message;open();}return;}
       if(button.hasAttribute('data-pack-install'))install();
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';open();}
       else remove(button.dataset.packRemove,button.dataset.packVersion);

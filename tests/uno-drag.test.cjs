@@ -23,7 +23,7 @@ const source=(page,id='u1')=>page.locator(`.hand-track .uno-card[data-entity="ca
 const drop=page=>page.locator('.uno-discard [data-drop-piece]').first();
 async function state(page){return page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current);}
 async function expectMove(page,n){await page.waitForFunction(n=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===n,n);await page.locator('.scene[aria-busy="false"]').waitFor({state:'visible'});}
-async function center(locator){return locator.evaluate(el=>{const b=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const f of [.5,.12,.88]){const p={x:b.x+b.width*f,y:b.y+b.height*fy},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('Element has no reachable point in its visible card strip');});}
+async function center(locator){await locator.scrollIntoViewIfNeeded();return locator.evaluate(el=>{const b=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const f of [.5,.12,.88]){const p={x:b.x+b.width*f,y:b.y+b.height*fy},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('Element has no reachable point in its visible card strip');});}
 async function touch(cdp,type,point){await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'||type==='touchCancel'?[]:[{...point,radiusX:4,radiusY:4,force:1}]});}
 async function tap(cdp,locator){await touch(cdp,'touchStart',await center(locator));await touch(cdp,'touchEnd');}
 async function mouseDrag(page,id='u1',{hold=true,outside=false,escape=false}={}){

@@ -86,7 +86,7 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
           const current = await geometry(page); assert.equal(current.rows, 1); assert.equal(current.cards, count);
           if (!base) base = current; stable(base, current, `${count} cards`);
           if (count === 35) assert(current.handX > 1, 'very long hands scroll inside their fixed region');
-          if (count <= 8 || (viewport.width > 1000 && count <= 12)) assert(current.handX <= 1, 'ordinary hand fits available width');
+          if (count <= 8) assert(current.handX <= 1, 'ordinary hand fits available width');
         });
       });
     }

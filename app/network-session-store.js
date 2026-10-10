@@ -138,6 +138,24 @@
         };
       });
     }
+    async setControl(entry){
+      const {sessionId,previousControlRevision,paused,controlRevision,viewer,commandId,signature,receipt}=entry;
+      if(!isId(sessionId)||typeof paused!=='boolean'||!Number.isSafeInteger(previousControlRevision)||previousControlRevision<0||!Number.isSafeInteger(controlRevision)||controlRevision<previousControlRevision||controlRevision>previousControlRevision+1||!Number.isInteger(viewer)||viewer<0||!isId(commandId)||typeof signature!=='string'||!receipt?.control||!receipt.ok||receipt.commandId!==commandId||receipt.controlRevision!==controlRevision)throw Error('Некорректная пауза');
+      await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('sessions'),request=store.get(sessionId);
+        request.onsuccess=()=>{const record=request.result;if(!record||(record.controlRevision||0)!==previousControlRevision){abort(Error('Пауза уже изменена'));return;}
+          const controls=record.controlReceipts||[];
+          if(controls.length>=20000){abort(Error('Лимит команд паузы'));return;}
+          store.put({...record,paused,controlRevision,controlReceipts:[...controls,{viewer,commandId,signature,receipt}],updatedAt:Date.now()});};
+      });
+    }
+    async remove(sessionId){
+      if(!isId(sessionId))throw Error('Некорректная партия');
+      await this.transaction(['sessions','steps','receipts'],'readwrite',tx=>{
+        tx.objectStore('sessions').delete(sessionId);
+        for(const name of ['steps','receipts']){const request=tx.objectStore(name).index('sessionId').openCursor(sessionId);request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};}
+      });
+    }
     async load(sessionId,engine,Session){
       if(!isId(sessionId))throw Error('Некорректный идентификатор сетевой партии.');
       const stored=await this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{
@@ -180,12 +198,20 @@
       }
       if(accepted.size!==record.revision)
         throw Error('Неполный журнал подтверждений ходов. Данные не удалены.');
+      const controls=record.controlReceipts||[],controlRevision=record.controlRevision||0;
+      if(!Array.isArray(controls)||controls.length>20000||!Number.isSafeInteger(controlRevision)||controlRevision<0||(record.paused!==undefined&&typeof record.paused!=='boolean'))throw Error('Повреждена пауза');
+      const controlKeys=new Set();let previousControl=0;
+      for(const row of controls){const key=row?.viewer+':'+row?.commandId,r=row?.receipt;
+        if(!Number.isInteger(row?.viewer)||row.viewer<0||row.viewer>=record.initial.states[0].players.length||!isId(row.commandId)||typeof row.signature!=='string'||!r?.control||!r.ok||r.commandId!==row.commandId||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision||!Number.isSafeInteger(r.controlRevision)||r.controlRevision<previousControl||r.controlRevision>previousControl+1||controlKeys.has(key))throw Error('Повреждены подтверждения паузы');
+        previousControl=r.controlRevision;controlKeys.add(key);
+      }
+      if(previousControl!==controlRevision)throw Error('Несогласованная пауза');
       const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
         states:[...record.initial.states,...steps.map(step=>step.state)]};
-       return {room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
+       return {paused:!!record.paused,controlRevision:record.controlRevision||0,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
          packDigest:record.packDigest||null,
         session:Session.restore(engine,saved),
-        receipts:clone(stored.receipts||[]),sessionId,revision:record.revision};
+        receipts:clone([...(stored.receipts||[]),...(record.controlReceipts||[])]),sessionId,revision:record.revision};
     }
     async list(){
       return this.transaction(['sessions'],'readonly',(tx,done)=>{

@@ -100,3 +100,6 @@
 /* The regular game hint and scroll controls share the hand-heading's right edge.
    When scroll is available, show the actionable controls instead of overlapping. */
 @media (hover:hover) and (pointer:fine){.own-hand.hand-overflow .hand-heading>span{visibility:hidden}}
+
+/* A selected or keyboard preview keeps subsequent rank corners reachable. */
+.hand-track.is-fan .hand-fan-row>.hand-card:is(.is-selected,:focus,.is-hand-preview) ~ .hand-card:not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(calc(var(--fan-card-width) - var(--fan-peek)))}

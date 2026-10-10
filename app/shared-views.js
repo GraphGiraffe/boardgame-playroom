@@ -24,7 +24,7 @@
     const drawNotice=document.getElementById('toast');
     let toastTimer;
     const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;drawNotice.classList.add('show');toastTimer=setTimeout(()=>{drawNotice.textContent='';drawNotice.classList.remove('show');},4000);};
-    const usable=()=>!readOnly&&connected&&!client.pending&&!transitionActive&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
+    const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
@@ -48,10 +48,10 @@
         network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'Сетевая партия · '+(s.viewer<0?'Общий стол':'За столом вместе'),
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
-        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':turn?`Ходит ${turn.name}`:'Ожидание хода',
+        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
-        historyHTML,readOnly,historyResult:live.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
-        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':finished&&!readOnly?'<button class="text-btn" data-command="result">Результаты</button>':'',
+        historyHTML,readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
       if(historyOpen&&app.querySelector('.network-game .history-panel')){
@@ -60,7 +60,7 @@
         const template=document.createElement('template');template.innerHTML=markup;
         app.querySelector('.network-game').dataset.revision=String(live.revision);
         const sceneNode=app.querySelector('.scene');sceneNode.setAttribute('aria-busy',String(!!transitionActive));sceneNode.dataset.animationSpeed=flow.pace().mode;
-        for(const selector of ['.scene','.player-strip','.table-status','.table-bottom','.history-caption']){
+        for(const selector of ['.scene','.table-status','.history-caption']){
           app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
         }
         app.querySelector('.replay-badge').textContent=template.content.querySelector('.replay-badge').textContent;
@@ -131,6 +131,8 @@
       if(replayTimer)replayTimer=setTimeout(playStep,650);
     }
     async function action(command){
+      if(command==='room'){root.PlayroomNetworkLibrary?.openRoom?.();return;}
+      if(command==='pause'){if(!readOnly&&connected&&!client.pending&&!historyOpen&&client.snapshot?.viewer>=0){const receipt=await client.send({type:'session-pause',paused:!client.snapshot.paused,expectedControlRevision:client.snapshot.controlRevision||0});if(!receipt.ok)toast(receipt.message);render();}return;}
       switch(command){
         case 'close-modal':close();break;
         case 'confirm-action':{
@@ -169,13 +171,13 @@
       // Network controls use exactly the same DOM contract as local play, but
       // must NEVER be delivered to app.js's local Session handlers.
       event.stopPropagation();
-      const target=event.target.closest('button,[data-accuse-player],[data-command],[data-action],[data-select]');
+      const target=event.target.closest('button,[data-player-target],[data-command],[data-action],[data-select]');
       if(!target||target.disabled)return;
       const command=target.dataset.command;
       if(command){void action(command).catch(e=>toast(e.message));return;}
-      const accused=event.target.closest('[data-accuse-player]');
+      const accused=event.target.closest('[data-player-target]');
       if(accused&&usable()){
-        playerTargets.tap(Number(accused.dataset.accusePlayer));
+        playerTargets.tap(Number(accused.dataset.playerTarget));
         return;
       }
       input.handleClick(event);
@@ -200,7 +202,7 @@
     }
     function keydown(event){
       if(dialogOpen&&event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return;}
-      if(event.target.matches?.('[data-accuse-player]')&&event.target.closest('.network-game')&&['Enter',' '].includes(event.key)){
+      if(event.target.matches?.('[data-player-target]')&&event.target.closest('.network-game')&&['Enter',' '].includes(event.key)){
         event.preventDefault();event.stopPropagation();click({target:event.target,stopPropagation(){}});return;
       }
       if(!event.target.closest?.('.table-shell.network-game'))return;

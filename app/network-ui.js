@@ -422,7 +422,8 @@
       toast('QR: '+(error?.message||String(error)));
     }
   }
-  function closeClient(){clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
+  function closeClient(){
+    clientSetupShown=false;clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
   function closePendingHostPeer(){
     stopHostAudio();hostServeClose?.();hostServeClose=null;
     hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;
@@ -484,12 +485,13 @@
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     if(gameShell&&hostAuthority&&!document.getElementById('network-pair-button')){
-      const tools=gameShell.querySelector('.table-header')||gameShell;
+      const tools=gameShell.querySelector('.table-tools')||gameShell.querySelector('.table-header')||gameShell;
       const btn=document.createElement('button');btn.id='network-pair-button';btn.className='btn secondary';
-      btn.type='button';btn.textContent='Подключить / вернуть игрока';tools.appendChild(btn);
+      btn.type='button';btn.className='icon-btn';btn.setAttribute('aria-label','Подключить устройство');btn.innerHTML=root.PlayroomGameScreen.icon('connect');tools.prepend(btn);
     }
     const room=b.room?.(),lobby=$('.lobby-shell');
-    if(room&&lobby){
+    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label','Комната');node.innerHTML=root.PlayroomGameScreen.icon('room');tools.prepend(node);}
+    if(room&&room.transportMode!=='hotseat'&&lobby){
       ensureHostSubscription(room);
       const card=lobby.querySelector('.lobby-grid .lobby-card');
       if(card&&room.ownerId===b.participantId?.()&&!document.getElementById('network-pair-button')){const actions=card.querySelector('.lobby-actions');if(actions){const btn=document.createElement('button');btn.className='btn';btn.id='network-pair-button';btn.type='button';btn.textContent='Подключить устройство';actions.prepend(btn);}}
@@ -566,7 +568,7 @@
     stopHostAudio();
     connectedHostPeers.push({peer,switchable:sw,serveClose,roomConnection});
     hostPeer=null;hostSwitch=null;hostServeClose=null;hostRoomConnection=null;
-    bridge().closeModal(true);toast('Устройство подключено. Теперь войдите в комнату на нём.');
+    bridge().closeModal(true);if(bridge().room()?.phase==='lobby')bridge().renderLobby();toast('Устройство подключено. Теперь войдите в комнату на нём.');
   }
   function signalFromInput(value,expected){
     const token=Pairing.extract(value)||(/^(?:PR2|PR3)\./.test(value.trim())?value.trim():null);
@@ -681,6 +683,7 @@
       if(snapshot?.kind==='lobby'){
         clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;
         if(clientGameClient){
+          clientSetupShown=false;
           clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;
           clientMount?.destroy?.();clientMount=null;
           clientGameClient.close({keepTransport:true});clientGameClient=null;
@@ -694,7 +697,7 @@
     clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;
     clientMount?.destroy?.();clientMount=null;
     clientGameClient?.close({keepTransport:true});clientGameClient=null;
-    clientWaitingForLobby=waiting;
+    clientWaitingForLobby=waiting;clientSetupShown=false;
     attachClientLobbyListener();renderClientLobby();
   }
   function exitClientGame({finished=false}={}){
@@ -724,7 +727,7 @@
     if(roomId)b.rollbackHostedRoom?.(roomId);
     b.showHub();
   }
-  function leaveHostRoom(roomId){
+  function leaveHostRoom(roomId,{preserveRoom=false}={}){
     if(hostRoomId&&hostRoomId!==roomId)throw Error('Комната хоста изменена.');
     // Remove the live room only after releasing its subscriptions, RTC leases
     // and authority. IndexedDB journals and private recovery rights stay intact.
@@ -735,15 +738,18 @@
     if(roomId){
       const service=bridge().roomService;
       for(const participant of service.snapshot(roomId).participants)
-        if(!participant.isHost&&participant.connected)service.setConnected(roomId,participant.id,false);
-      service.discardRecovery(roomId);
+        if(!participant.isHost&&!participant.bot&&!participant.local&&participant.connected)service.setConnected(roomId,participant.id,false);
+      if(!preserveRoom)service.discardRecovery(roomId);
     }
     hostRoomId=null;hostStarted=false;
   }
-  function renderClientLobby(){
+  let clientSetupShown=false;
+  function renderClientLobby(force=false){
+    if(clientSetupShown&&!force&&!document.querySelector('.room-setup-modal .lobby-shell'))return;
+    clientSetupShown=true;
     if(!clientRoom)return;const room=clientRoom,me=participant(room,clientParticipantId),app=document.getElementById('app');
     app.inert=!!document.getElementById('modal-root').children.length;
-    app.innerHTML=PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby});
+    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
@@ -752,10 +758,10 @@
     if(hostStarted)return;hostStarted=true;
     const b=bridge();let persisted=false;
     try{
-      const occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:false};});
+      const occupied=room.seats.filter(s=>s.participantId).sort((a,c)=>a.index-c.index),players=occupied.map(seat=>{const p=participant(room,seat.participantId);return {name:p.nickname,bot:!!p.bot};});
       if(players.length<room.constraints.min)throw Error('Недостаточно игроков для запуска.');
       b.packs.activate(room.game.id,room.game.version);
-      const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,...(room.rules.options||{})});
+      const session=new Session(root.TabletopCore,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,firstPlayerMode:room.firstPlayerMode||'random',firstPlayer:occupied.findIndex(seat=>seat.participantId===room.firstParticipantId),...(room.rules.options||{})});
       // Do not publish the first playable snapshot until the private initial
       // state and room recovery capability have reached durable storage.
       const sessionId=root.crypto?.randomUUID?.()||'network-'+room.id+'-'+Date.now();
@@ -767,16 +773,16 @@
       b.roomService.setResumeDurability(room.id,credentials=>hostSessionStore.rotateResumeToken({sessionId,...credentials}));
       hostAuthority=new Authority(session,{sessionId,persistence:{
         commit:entry=>hostSessionStore.commit(entry),
-        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry),setControl:entry=>hostSessionStore.setControl(entry)
       }});
       for(const item of connectedHostPeers){
         const viewer=occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
-        if(viewer>=0)item.switchable.set(hostAuthority.connect(viewer));
+        item.switchable.set(hostAuthority.connect(viewer));
       }
       const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
       const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       const definition=b.packs.exportView(room.game.id,room.game.version);b.closeModal(true);document.getElementById('app').inert=false;
-      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined',onExit:exitHostGame});hostMount.render();renderPresence();notifyPresence(room);
+      hostMount=Shared.mount(hostGameClient,definition,{surface:hostViewer<0?'table':'combined',onExit:exitHostGame});hostMount.render();hostAuthority.scheduleBot({onError:error=>toast(error.message)});renderPresence();notifyPresence(room);
     }catch(error){
       hostGameClient?.close?.();hostGameClient=null;
       hostAuthority?.dispose?.();hostAuthority=null;
@@ -874,9 +880,9 @@
         throw Error('Состав игроков не соответствует сохранённой партии.');
       const viewer=room.hostMode==='table'?-1:occupied.findIndex(seat=>seat.participantId===profile.id);
       if(room.hostMode==='player'&&viewer<0)throw Error('Место игрока-хоста не найдено.');
-      authority=new Authority(saved.session,{sessionId,restoredReceipts:saved.receipts,persistence:{
+      authority=new Authority(saved.session,{sessionId,restoredReceipts:saved.receipts,paused:saved.paused,controlRevision:saved.controlRevision,persistence:{
         commit:entry=>hostSessionStore.commit(entry),
-        recordReceipt:entry=>hostSessionStore.recordReceipt(entry)
+        recordReceipt:entry=>hostSessionStore.recordReceipt(entry),setControl:entry=>hostSessionStore.setControl(entry)
       }});
       const definition=b.packs.exportView(room.game.id,room.game.version);
       // An exclusive Web Lock prevents a second tab from serving the same game.
@@ -894,7 +900,7 @@
       hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       b.closeModal(true);document.getElementById('app').inert=false;
       hostMount=Shared.mount(hostGameClient,definition,{surface:viewer<0?'table':'combined',onExit:exitHostGame});
-      hostMount.render();renderPresence();
+      hostMount.render();hostAuthority.scheduleBot({onError:error=>toast(error.message)});renderPresence();
       toast('Сетевая партия восстановлена. Предложите гостям новый QR для возвращения на прежние места.');
     }catch(error){
       pendingRelease?.();
@@ -937,7 +943,12 @@
   async function listNetworkArchives(){
     const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
     if(responses.every(x=>x.status==='rejected'))throw Error('Сетевые архивы недоступны.');
-    return responses.flatMap(x=>x.status==='fulfilled'?x.value:[]);
+    return responses.flatMap(x=>x.status==='fulfilled'?x.value:[]).map(item=>{let missingPack=false;try{if(!bridge().packs.list().some(p=>p.id===item.game&&p.version===item.packVersion))throw Error('Missing pack');}catch(_){missingPack=true;}return {...item,missingPack};});
+  }
+  async function removeNetworkArchive(key){
+    if(hostStarted||hostAuthority||clientGameClient||archiveMount)throw Error('Сначала выйдите из активной партии или истории.');
+    if(key.startsWith('client:')){const entries=await clientHistoryStore.list(),entry=entries.find(e=>e.id===key.slice(7));await clientHistoryStore.remove(key.slice(7));if(entry&&!entries.some(e=>e.id!==entry.id&&e.roomId===entry.roomId))resumeStore.remove(entry.roomId);}
+    else{if(!hostSessionStore)throw Error('Архив недоступен');const release=await hostSessionStore.acquireHostLock(key);try{await hostSessionStore.remove(key);}finally{release();}}
   }
   async function openClientHistory(key){
     if(hostStarted||hostAuthority||clientGameClient||bridge().room?.())return toast('Сначала закройте действующую сетевую партию.');
@@ -1016,6 +1027,8 @@
     if(target.dataset.netSeat)return roomCommand({type:'claim-seat',seatId:target.dataset.netSeat});
     if(target.dataset.netAction==='ready'){const me=participant(clientRoom,clientParticipantId);return roomCommand({type:'ready',ready:!me?.ready});}
     if(target.dataset.netAction==='spectator')return roomCommand({type:'spectator'});
+    if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
+    if(target.dataset.netAction==='collapse'){bridge().closeModal(true);return;}
     if(target.dataset.netAction==='leave'){closeClient();bridge().showHub();return;}
     if(target.dataset.netAction==='rules')return bridge().openModal(bridge().modalHead(clientRoom.game.name+' · правила')+PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{}));
     if(target.dataset.netAction==='help')return bridge().openModal(bridge().modalHead('Комната · справка')+PlayroomLobbyView.helpMarkup(clientRoom));
@@ -1056,7 +1069,7 @@
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({list:listNetworkArchives,
-    inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
+    openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}

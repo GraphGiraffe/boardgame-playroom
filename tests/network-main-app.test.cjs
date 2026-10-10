@@ -29,9 +29,9 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="uno"]').click();
-    await host.locator('#setup-form input[name=mode][value=network-player]').check();
-    await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
-    await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
+    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');
+    await host.locator('[data-room-title]').fill('Тестовая комната');
+    await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
     // Every ICE candidate supplied by the browser is visible in the IP selector;
     // manual choice remains available for browsers that hide interfaces behind mDNS.
@@ -139,8 +139,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     // second shell. Opponent hands are visible without exposing hidden faces.
     for(const page of [host,client]){
       assert.equal(await page.locator('.table-shell.network-game .table-header').count(),1);
-      assert.equal(await page.locator('.table-shell.network-game .player-strip .player-token').count(),2);
-      assert.equal(await page.locator('.table-shell.network-game .player-strip').isVisible(),true);
+      assert.equal(await page.locator('.table-shell.network-game .player-panel .player-token').count(),2);
+      assert.equal(await page.locator('.table-shell.network-game .layout-participants').isVisible(),true);
       assert.equal(await page.locator('.table-shell.network-game .scene .opponent-hand').count(),1);
       assert.equal(await page.locator('.table-shell.network-game .scene .own-hand').count(),1);
       assert.equal(await page.locator('.table-tools [data-command=history] svg').count(),1);
@@ -199,7 +199,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       await host.locator('.lobby-shell').waitFor();
       await client.locator('[data-net-action=ready]:not(:disabled)').waitFor();
       assert.equal(await client.locator('.shared-modal-backdrop').count(),0,'Host transition must remove the guest result dialog');
-      assert.equal(await client.locator('#app').evaluate(e=>e.inert),false);
+      assert.equal(await client.locator('#app').evaluate(e=>e.inert),true);
       await host.locator('[data-command=lobby-ready]').click();
       await client.locator('[data-net-action=ready]').click();
       await host.locator('[data-command=lobby-start]:not(:disabled)').click();

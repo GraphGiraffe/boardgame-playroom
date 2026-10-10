@@ -23,6 +23,13 @@
   }
   class ClientHistory {
     constructor({indexedDB=globalThis.indexedDB,name=DB}={}){this.indexedDB=indexedDB;this.name=name;this.database=null;this.opening=null;}
+    async remove(key){
+      if(typeof key!=='string'||!key)throw Error('Некорректный архив');
+      await this.tx(['matches','frames'],'readwrite',tx=>{
+        tx.objectStore('matches').delete(key);const request=tx.objectStore('frames').index('id').openCursor(key);
+        request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};
+      });
+    }
     async open(){
       if(this.database)return this.database;
       if(this.opening)return this.opening;

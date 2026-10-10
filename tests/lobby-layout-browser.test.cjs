@@ -11,7 +11,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
       const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
       try{
         await page.goto(server.url);await page.locator('#profile-form input').fill('Иван');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
-        await page.locator('[data-start=uno]').click();await page.locator('[name=mode][value=network-player]').check();await page.locator('[name=roomName]').fill('Комната Иван');await page.locator('#setup-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-start=uno]').click();await page.locator('[data-room-option=transportMode]').selectOption('network');await page.locator('[data-room-kind="seat-2"]').selectOption('empty');await page.locator('[data-room-title]').fill('Комната Иван');await page.locator('[data-room-title]').press('Tab');
         await page.locator('.lobby-shell').waitFor();
         await page.evaluate(()=>{
           const b=PlayroomAppBridge,r=b.room();
@@ -19,14 +19,14 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           b.roomService.join(r.id,{id:'layout-observer',nickname:'Зритель Анна'});b.renderLobby();
         });
         const lobby=page.locator('.lobby-shell');
-        assert.equal(await lobby.locator('input').count(),0,'nickname must not be inline');
+        assert.equal(await lobby.locator('#lobby-name-form').count(),0,'profile belongs in settings');
         assert.equal(await lobby.locator('.lobby-rules-summary,.lobby-rule-grid,.lobby-participants').count(),0,'no duplicate panels');
         assert.equal(await lobby.locator('[data-participant-id]').count(),3);
         assert.equal(await lobby.locator('[data-participant-id="layout-player"]').count(),1);
         assert.equal(await lobby.locator('.lobby-observer[data-participant-id="layout-observer"]').count(),1);
         assert.equal(await lobby.locator('.lobby-seat-row[data-participant-id="layout-player"]').count(),1);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
-        const header=lobby.locator('.lobby-header'),back=header.locator('[data-command=lobby-leave]'),settings=header.locator('[data-command=settings]');
+        const header=lobby.locator('.lobby-header'),back=header.locator('[data-command=close-modal]'),settings=header.locator('[data-command=settings]');
         assert((await back.boundingBox()).x<(await settings.boundingBox()).x);
         for(const button of await lobby.locator('.icon-btn').all()){
           assert(await button.getAttribute('aria-label'),'icons need accessible labels');
@@ -40,11 +40,11 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await settings.click();await page.locator('#lobby-nickname-form input').fill('Иван новый');await page.locator('#lobby-nickname-form').evaluate(f=>f.requestSubmit());
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).participants.find(p=>p.isHost).nickname),'Иван новый');
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Иван','room nickname must not overwrite profile');
-        await page.locator('.modal [data-command=close-modal]').click();await lobby.locator('[data-command=lobby-ready]').click();
+        await page.locator('.room-setup-modal').waitFor();await lobby.locator('[data-command=lobby-ready]').click();
         await settings.click();assert.equal(await page.locator('#lobby-nickname-form input').isDisabled(),true);await page.locator('.modal [data-command=close-modal]').click();
         await lobby.locator('[data-command=lobby-ready]').click();await lobby.locator('[data-kick-participant="layout-observer"]').click();assert.equal(await lobby.locator('[data-participant-id="layout-observer"]').count(),0);
-        await back.click();await page.locator('.game-grid').waitFor();
-        await page.locator('[data-start=uno]').click();await page.locator('[name=mode][value=network-table]').check();await page.locator('#setup-form').evaluate(f=>f.requestSubmit());
+        await lobby.locator('[data-command=lobby-leave]').click();await page.locator('.game-grid').waitFor();
+        await page.locator('[data-start=uno]').click();await page.locator('[data-room-option=transportMode]').selectOption('network');await page.locator('[data-room-kind="seat-2"]').selectOption('empty');await page.locator('[data-room-option=hostMode]').selectOption('table');
         assert.equal(await page.locator('.lobby-seat-row[data-participant-id]').count(),0);
         assert.equal(await page.locator('.lobby-observer[data-participant-id]').count(),1,'table host appears once with public viewers');
         assert.equal(await page.locator('[data-command=lobby-ready]').count(),0,'table host does not claim readiness as a player');

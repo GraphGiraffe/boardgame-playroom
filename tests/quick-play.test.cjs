@@ -37,6 +37,7 @@ async function readyMove(page, move) {
   assert.equal((await current(page)).move, move, 'one physical gesture commits only one action');
 }
 async function point(locator) {
+  await locator.scrollIntoViewIfNeeded();
   return locator.evaluate(el => {
     const r = el.getBoundingClientRect();
     for (const fy of [.2, .5, .8]) for (const fx of [.2, .5, .8]) {
