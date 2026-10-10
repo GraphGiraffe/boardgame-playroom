@@ -31,6 +31,7 @@
     rules:'<path d="M4 3h12a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3Zm0 15a3 3 0 0 1 3-3h12M8 7h7M8 10h7"/>',
     edit:'<path d="m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-3-3L5 16Zm0 0h16"/>',
     connect:'<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M12 7v6M9 10h6M11 17h2"/>',
+    trophy:'<path d="M8 3h8v6a4 4 0 0 1-8 0ZM8 5H4v2a4 4 0 0 0 4 4m8-6h4v2a4 4 0 0 1-4 4m-4 2v5m-4 3h8m-6-3h4v3"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
   }[name] || '')+'</svg>';
   // The same markup is used with a trusted local Session and with the
@@ -42,8 +43,8 @@
       return `<div class="player-token ${state.turn===i?'active':''}" ${target?`data-accuse-player="${i}" role="button" tabindex="0" aria-label="Действия игрока ${esc(person.name)}"`:''}><span class="avatar p${i}">${esc(person.name.slice(0,1))}</span><span>${esc(person.name)}${i===viewer&&person.name!=='Вы'?' · вы':''}<small>${person.bot?'Бот':'Игрок'}${Number.isFinite(person.score)?' · '+esc(scoreLabel)+': '+person.score:''}${badge}</small></span></div>`;
     }).join('');
   }
-  function historyMarkup({index,count,caption='',playing=false}={}){
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>Каждый ход на месте</strong><span class="replay-badge">${index} / ${count}</span><button class="text-btn" data-command="history-close">К игре ${icon('close')}</button></div>
+  function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
+    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>История</strong><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span><button class="icon-btn" data-command="history-close" aria-label="${readOnly?'Закрыть историю':'Вернуться к игре'}" title="${readOnly?'Закрыть историю':'Вернуться к игре'}">${icon('back')}</button></div>
       <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
@@ -55,11 +56,11 @@
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
-    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge}={}){
+    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false}={}){
     if(!state?.players)throw Error('Projected game state required');
     const caption=esc(footerText||'Выберите доступное действие на столе');
     return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading"><button class="icon-btn" data-command="home" aria-label="К играм" title="${network?'Покинуть сетевую партию':'В хаб, с сохранением партии'}">${icon('back')}</button><div class="table-title"><h1>${esc(gameName)}</h1><p>${esc(subtitle)}</p></div></div>
-      <div class="table-tools">${showSettings?`<button class="icon-btn desktop-tool" data-command="settings" aria-label="Настройки">${icon('settings')}</button>`:''}<button class="icon-btn" data-command="rules" aria-label="Правила игры">${icon('help')}</button><button class="icon-btn ${historyHTML?'active':''}" data-command="history" aria-label="История ходов">${icon('history')}</button><button class="icon-btn" data-command="fullscreen" aria-label="Полный экран">${icon('full')}</button></div></header>
+      <div class="table-tools">${showSettings?`<button class="icon-btn desktop-tool" data-command="settings" aria-label="Настройки">${icon('settings')}</button>`:''}<button class="icon-btn" data-command="rules" aria-label="Правила игры">${icon('help')}</button><button class="icon-btn ${historyHTML?'active':''}" data-command="history" aria-label="История ходов" aria-pressed="${!!historyHTML}">${icon('history')}</button>${historyHTML&&historyResult?`<button class="icon-btn" data-command="result" aria-label="Результаты партии" title="Результаты партии">${icon('trophy')}</button>`:''}<button class="icon-btn" data-command="fullscreen" aria-label="Полный экран">${icon('full')}</button></div></header>
       <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc(turnExtra)}</span></div>
       <div class="player-strip" aria-label="Игроки">${playersMarkup(state,viewer,actions,{scoreLabel,playerBadge})}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="Игровой стол" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
@@ -67,5 +68,24 @@
       ${beforeFooter}
       <footer class="table-bottom"><span class="event-latest" title="${esc(footerTitle)}">${caption}</span>${saved!==null?`<span class="auto-saved">${icon(saved?'check':'save')}${saved?'Сохранено':'Не сохранено'}</span>`:''}${footerExtra}<button class="text-btn" data-command="${esc(footerAction.command)}">${esc(footerAction.label)} ${icon(footerAction.icon)}</button></footer></main>`;
   }
-  return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render});
+  const replayFitters=new WeakMap();
+  function fitReplayScene(host){
+    const scene=host.querySelector('.scene.replaying'),previous=replayFitters.get(host);
+    if(previous?.scene!==scene){
+      previous?.observer?.disconnect();replayFitters.delete(host);
+      if(scene){
+        const Observer=scene.ownerDocument.defaultView.ResizeObserver;
+        const observer=Observer?new Observer(()=>fitReplayScene(host)):null;
+        replayFitters.set(host,{scene,observer});observer?.observe(scene);
+      }
+    }
+    const stage=scene?.firstElementChild;if(!stage)return;
+    const width=scene.clientWidth-4,height=scene.clientHeight-4;if(width<=0||height<=0)return;
+    // Measure at the available width, then scale the entire pack snapshot.
+    // Expanding width inversely to zoom would enlarge square boards again.
+    stage.style.zoom='1';stage.style.width=width+'px';stage.style.minHeight='0';stage.style.height='auto';
+    const bounds=stage.getBoundingClientRect();
+    stage.style.zoom=String(Math.min(1,width/Math.max(stage.scrollWidth,bounds.width,1),height/Math.max(stage.scrollHeight,bounds.height,1)));
+  }
+  return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,fitReplayScene});
 });

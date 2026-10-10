@@ -131,3 +131,25 @@
 html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body:has(#app .handoff),html:has(#app .lobby-countdown),body:has(#app .lobby-countdown){overflow:hidden;overscroll-behavior:none}
 .modal-backdrop,.shared-modal-backdrop{overscroll-behavior:none}
 .modal,.handoff,.lobby-countdown{overscroll-behavior:contain}
+
+/* Replay belongs to the application: one viewport and one proportional stage. */
+#app .table-shell:has(.history-panel){display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;gap:6px;padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom))}
+#app .table-shell:has(.history-panel) .table-status,#app .table-shell:has(.history-panel) .table-bottom{display:none}
+#app .table-shell:has(.history-panel) .table-header{display:flex;flex-wrap:nowrap}
+#app .table-shell:has(.history-panel) .table-tools{display:flex;align-items:center}
+#app .table-shell:has(.history-panel) .player-strip{display:flex;position:static;max-width:none;gap:4px;flex-wrap:nowrap;overflow:hidden}
+#app .table-shell:has(.history-panel) .player-token{min-width:0;min-height:32px;padding:2px 6px;gap:5px}
+#app .table-shell:has(.history-panel) .player-token>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .scene.replaying{flex:1;height:auto;min-height:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;border-radius:18px}
+#app .scene.replaying> :first-child{flex:none;transform-origin:top center}
+#app .table-shell .history-panel{position:static;align-self:stretch;margin:0;max-height:none;overflow:visible;padding:7px 10px;border-radius:16px;box-shadow:none}
+#app .history-head{justify-content:flex-start;min-height:28px}
+#app .history-head .replay-badge{margin-left:auto}
+#app .history-head .icon-btn{width:44px;min-width:44px;height:44px;border-radius:12px}
+#app .history-controls{margin-top:4px;gap:6px}
+#app .history-controls .icon-btn{width:44px;min-width:44px;height:44px}
+#app .history-controls input{min-height:44px}
+#app .history-caption{margin:4px 0 0;line-height:1.3;min-height:0;max-height:2.6em;overflow:auto}
+@media(max-height:550px){#app .table-shell:has(.history-panel) .player-token small{display:none}#app .history-head{float:right;margin-left:8px}#app .history-controls{margin-top:0}#app .history-head strong{display:none}#app .history-caption{clear:both}}
+
+#app .scene.replaying .scene-actions,#app .scene.replaying .own-hand:has(.empty-hand),#app .scene.replaying .opponent-hand[data-hand-count="0"]{display:none}

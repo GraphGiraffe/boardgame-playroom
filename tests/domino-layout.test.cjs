@@ -75,7 +75,11 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
     }
     return errors;
   }, {fullScene, count});
-  assert.deepEqual(result, []);
+  const layout=result.length?await page.evaluate(()=>{
+    const scene=document.querySelector('.scene'),stage=scene.firstElementChild;
+    return {scene:scene.clientHeight,stage:stage.scrollHeight,zoom:stage.style.zoom,parts:[...stage.children].map(e=>({name:e.className,height:e.getBoundingClientRect().height}))};
+  }):null;
+  assert.deepEqual(result, [],JSON.stringify(layout));
 }
 
 test('Domino snake field keeps the complete chain, real endpoints and seven hand tiles readable on phones', {timeout: 120000}, async t => {
