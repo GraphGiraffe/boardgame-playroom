@@ -71,6 +71,8 @@
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
+      const historyPanel=app.querySelector('.history-panel');
+      if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot?'false':'true');
       HandOverflow.sync(app);
       if(historyOpen){fitReplayScene();root.requestAnimationFrame?.(()=>fitReplayScene());}
       renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
@@ -168,12 +170,16 @@
       event.stopPropagation();
       // Keep pointer capture while dragging: show the requested frame index,
       // but do not rebuild the whole board until change / pointer release.
+      // Invalidate a pending frame opened before the gesture: it must not
+      // replace the slider DOM while the user is still dragging.
+      historyTicket++;
       stopReplay();
       app.querySelector('.replay-badge')?.replaceChildren(document.createTextNode(event.target.value+' / '+historyCount()));
     }
     function historySliderChange(event){
       if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
       event.stopPropagation();
+      app.querySelector('.history-panel')?.setAttribute('aria-busy','true');
       void viewHistory(Number(event.target.value)).catch(error=>toast(error.message));
     }
     function keydown(event){

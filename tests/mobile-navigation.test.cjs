@@ -173,11 +173,14 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       }
       assert.equal(completed.current.status,'finished');
       const finalStates=completed.export().states;
+      // Browser localStorage on file:// is not durable across navigation.
+      // Check reload and saved-game recovery on a stable PWA-like HTTP origin.
+      const hosted=url.startsWith('file:')?await serveSavedGames():null;
       const context=await browser.newContext({viewport:{width:320,height:740},hasTouch:true,isMobile:true});
       const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
       const current=()=>page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
       try{
-        await page.goto(url);
+        await page.goto(hosted?.url||url);
         await page.evaluate(saved=>{
           localStorage.clear();
           localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));
@@ -215,7 +218,10 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
           await page.reload();
         }
         assert.deepEqual(await current(),expected);assert.deepEqual(errors,[]);
-      }finally{await context.close();}
+      }finally{
+        await context.close();
+        if(hosted)await new Promise(resolve=>hosted.server.close(resolve));
+      }
     });
   } finally { await browser.close(); }
 });

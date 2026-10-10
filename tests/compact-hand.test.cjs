@@ -4,10 +4,12 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
 require('../packs/durak/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
+const root=path.resolve(__dirname,'..');
 
 function fixture(long = false) {
   const saved = new Session(Core, 'uno', {seed: 17, mode: 'pass', preset: 'classic', openHands: true, unoMode: 'manual',
@@ -111,6 +113,8 @@ async function expectMove(page, n) {
 }
 
 test('Compact card hands preserve readable previews and each game’s play controls', {timeout: 120000}, async t => {
+  // The 24-card reload must have persistent storage on both navigations.
+  const hosted=url.startsWith('file:')?await serveBrowserFixture(root):null;
   const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
     await t.test(name, async () => {
@@ -118,7 +122,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
       await context.addInitScript(saved => {if(sessionStorage.getItem('compact-seeded'))return;sessionStorage.setItem('compact-seeded','1');localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, options.saved || fixture(options.long));
       const page = await context.newPage(), errors = []; page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
       try {
-        await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click();
+        await page.goto(hosted?.url||url); await page.locator('.resume-banner [data-command=resume]').click();
         if (await page.locator('.handoff [data-command=unlock]').count()) await page.locator('.handoff [data-command=unlock]').click();
         await page.locator('.own-hand [data-hand-preview]').first().waitFor({state: 'visible'});
         await run({page, context}); assert.deepEqual(errors, []);
@@ -316,5 +320,8 @@ test('Compact card hands preserve readable previews and each game’s play contr
         s = await state(page); Core.validateState(s); assert.equal(s.data.table.length,0); assert.equal(s.data.discard.length,pairCount*2);
       });
     }
-  } finally {await browser.close();}
+  } finally {
+    await browser.close();
+    await hosted?.close();
+  }
 });

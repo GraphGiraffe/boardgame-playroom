@@ -109,6 +109,9 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           const guest=guests[0];
           await guest.locator('.table-tools [data-command=history]').click();
           await guest.locator('#replay-range').waitFor();
+          // The slider appears before the initial remote frame has loaded.
+          // Wait for that RPC before exercising a user drag/release.
+          await guest.locator('.history-panel[aria-busy="false"]').waitFor({timeout:15000});
           // The input event is fired while a finger is DRAGGING, not released.
           // The old app-level #replay-range handler once repainted a local
           // Checkers session into this UNO game at exactly this moment.
@@ -125,7 +128,10 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           });
           assert.equal(during.inNetwork,true);
           assert.equal(during.title?.trim(),'UNO','local Checkers cannot render while scrubbing the guest UNO replay');
-          await guest.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
+          await guest.waitForFunction(()=>{
+            const panel=document.querySelector('.history-panel[aria-busy="false"]');
+            return panel?.querySelector('.replay-badge')?.textContent?.trim().startsWith('0 /');
+          });
           assert.equal((await guest.locator('.table-title h1').innerText()).trim(),'UNO');
           const fit=await guest.evaluate(()=>{
             const scene=document.querySelector('.table-shell.network-game .scene.replaying'),stage=scene?.firstElementChild;
