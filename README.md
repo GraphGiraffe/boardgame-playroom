@@ -77,6 +77,8 @@ npm test
 
 Тесты находят Chrome/Chromium в PATH либо браузер, установленный Playwright; явный путь задаётся `CHROME_BIN`. `bash scripts/codex/setup.sh` подготавливает зависимости и браузер. Для уже установленного вне проекта Playwright можно указать `PLAYWRIGHT_MODULE`. Проверка автономной сборки использует `PLAYROOM_URL=file:///absolute/path/to/dist/playroom-all-games.html`.
 
+`npm test` объединяет сценарии в семь крупных блоков. Отдельный блок запускается через `npm run test:core`, `test:input`, `test:games`, `test:ui`, `test:storage`, `test:network` или `test:pairing`. Общий вывод содержит сводку, подробные логи — в `dist/test-results/`; состав и наборы CI описаны в [DEVELOPER-WORKFLOW](docs/DEVELOPER-WORKFLOW.md#крупные-блоки-тестов).
+
 CI этого репозитория запускает те же `scripts/codex/setup.sh` и `check.sh`: базовую сборку, синтаксис и независимые проверки приложения. Он не получает доступ к соседнему приватному репозиторию. Полный совместный прогон выполняется с обоими checkout; результат конкретного релиза описан в [отчёте](docs/qa-report.md).
 
 ## Codex Cloud
