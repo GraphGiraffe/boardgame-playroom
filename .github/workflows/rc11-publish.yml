@@ -1,0 +1,187 @@
+name: Publish Playroom 0.15.0-rc.11
+on:
+  push:
+    branches: [release/publish-v0.15.0-rc.11]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: playroom-rc11-publisher-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prerelease:
+    if: github.ref == 'refs/heads/release/publish-v0.15.0-rc.11'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Require reviewed source and release-only metadata
+        run: |
+          set -euo pipefail
+          git -C app merge-base --is-ancestor 8e4c31631b4394927f18f77efe67a0c5f86cd68a "$GITHUB_SHA"
+          python3 - <<'PYCODE'
+          import subprocess
+          actual=set(subprocess.check_output(['git','-C','app','diff','--name-only','8e4c31631b4394927f18f77efe67a0c5f86cd68a','HEAD'],text=True).splitlines())
+          allowed={'.github/workflows/rc11-publish.yml','docs/RC11-TEST.md','package.json','package-lock.json','sw.js','README.md','CHANGELOG.md','AGENTS.md','docs/UNIFIED-TABLE-RC11.md'}
+          assert actual <= allowed, actual - allowed
+          PYCODE
+          node -e "let p=require('./app/package.json'),l=require('./app/package-lock.json');if(p.version!=='0.15.0-rc.11'||l.version!==p.version||l.packages[''].version!==p.version)process.exit(1)"
+          grep -F 'playroom-pwa-v0.15.0-rc.11' app/sw.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: GraphGiraffe/boardgame-playroom-paks
+          ref: 43b7b4e7e93de039b1df8b535acfb81d3ca4fb37
+          ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
+          path: companion
+          persist-credentials: false
+      - name: Prepare app with pinned source packs
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Full application and pack checks
+        timeout-minutes: 15
+        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Build testable all-games pre-release
+        run: |
+          rm -rf app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/prerelease
+          for item in app/vendor/qrcode.js app/vendor/jsqr.js app/vendor/LICENSE.qrcode app/vendor/LICENSE.jsqr app/qr-scanner.js; do
+            test -s "app/dist/prerelease/pwa/$item" || { echo "::error::Offline QR asset not bundled: $item"; exit 1; }
+          done
+          (
+            cd app/dist/prerelease/pwa
+            zip -q -r ../playroom-pwa-0.15.0-rc.11.zip .
+          )
+          cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
+          printf '%s\n'             'Playroom 0.15.0-rc.11'             "App head: ${GITHUB_SHA}"             'Packs: API 2 source 43b7b4e7e93de039b1df8b535acfb81d3ca4fb37; UNO 0.4.0, other games 0.3.0.'             'RC11 provides unified player cards and hands, proportion-preserving fields, common rooms, first-player selection and durable network pause/bots for all five packs. API 1 is unsupported. Preserve the existing HTTPS/PWA origin. LAN-02/03 remain partial; physical Android PWA acceptance is pending.'             > app/dist/prerelease/README-TEST.txt
+
+      - name: Repack final vendored PWA and refresh internal checksums
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,zipfile
+          root=Path('app/dist/prerelease')
+          pwa=root/'pwa'
+          vendor=pwa/'app/vendor/qrcode.js'
+          assert vendor.stat().st_size>100, 'Vendored QR script missing'
+          for name in ('app/acoustic-pairing.js','app/vendor/ggwave.js','app/vendor/LICENSE.ggwave','app/vendor/jsqr.js','app/vendor/qrcode.js','app/vendor/LICENSE.jsqr','app/vendor/LICENSE.qrcode','app/qr-scanner.js'):
+              target=pwa/name
+              assert target.is_file() and target.stat().st_size>100, f'Missing acoustic asset: {name}'
+          standalone=(root/'playroom-all-games.html').read_text(encoding='utf-8')
+          assert 'ggwave_factory' in standalone and 'PlayroomAcousticPairing' in standalone
+          assert 'isUnspecifiedAddress' in standalone and 'microphoneIssue' in standalone and 'net-host-acoustic-send' in standalone
+          assert 'PlayroomQRScanner' in standalone and 'ResumeStore' in standalone and 'qr-capture-controls' in standalone, 'RC11 QR/resume missing from final HTML'
+          assert 'PlayroomNetworkSessionStore' in standalone and 'fingerprintPack' in standalone and 'restoreRecovery' in standalone, 'LAN-01 missing from final HTML'
+          assert (pwa/'app/network-session-store.js').stat().st_size > 1000, 'LAN-01 module missing from PWA'
+          assert (pwa/'app/network-client-history.js').stat().st_size > 1000, 'RC11 client history module missing from PWA'
+          assert 'PlayroomNetworkClientHistory' in standalone, 'RC11 client history missing from all-games HTML'
+          assert 'pairing-method' in standalone and 'playroom.acoustic-known-addresses.v1' in standalone, 'RC11 pairing selector missing from HTML'
+          assert 'app/network-client-history.js' in (pwa/'sw.js').read_text(encoding='utf-8'), 'RC11 PWA offline history module not precached'
+          assert 'playroom-pwa-v0.15.0-rc.11' in (pwa/'sw.js').read_text(encoding='utf-8'), 'Wrong PWA version/cache'
+          import json
+          bundles=json.loads((pwa/'installed-packs.js').read_text().split('globalThis.PlayroomInstalledPacks = ',1)[1].strip().removesuffix(';'))
+          assert {b['manifest']['id']:b['manifest']['version'] for b in bundles} == {'uno':'0.4.0','domino':'0.3.0','durak':'0.3.0','checkers':'0.3.0','snakes':'0.3.0'}
+          assert all(b['manifest']['viewApi']==2 for b in bundles)
+          assert 'PR3.' in standalone and 'allCandidates' in standalone
+          assert 'statsAddresses' in standalone and 'playroom.acoustic-known-addresses.v1' in standalone
+          for path in (pwa/'app/qr.js',pwa/'sw.js'):
+              text=path.read_text(encoding='utf-8')
+              assert 'app/vendor/qrcode.js' in text, f'{path}: offline QR generator not referenced'
+          with zipfile.ZipFile(root/'playroom-pwa.zip','w',compression=zipfile.ZIP_DEFLATED) as z:
+              for path in sorted(pwa.rglob('*')):
+                  if path.is_file():
+                      z.write(path,'playroom-pwa/'+path.relative_to(pwa).as_posix())
+          paths=[root/name for name in ('playroom.html','playroom-source.zip','tabletop-core.zip','playroom-all-games.html','playroom-pwa.zip')]
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in sorted(paths)),encoding='ascii')
+          PY
+          cp app/docs/RC11-TEST.md app/dist/prerelease/RC11-TEST.md
+          unzip -tq app/dist/prerelease/playroom-pwa-0.15.0-rc.11.zip
+          unzip -tq app/dist/prerelease/playroom-pwa.zip
+      - name: Smoke test the final single-file HTML
+        working-directory: app
+        timeout-minutes: 3
+        run: |
+          PLAYROOM_URL="file://$GITHUB_WORKSPACE/app/dist/prerelease/playroom-all-games.html" node --test --test-concurrency=1 tests/network-main-app.test.cjs
+      - name: Smoke test the final installable PWA
+        working-directory: app
+        timeout-minutes: 4
+        run: |
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory dist/prerelease/pwa >/tmp/playroom-rc11-pwa.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          sleep 1
+          PLAYROOM_URL=http://127.0.0.1:4174/ node --test --test-concurrency=1 tests/network-main-app.test.cjs
+          curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
+          curl --fail http://127.0.0.1:4174/app/vendor/qrcode.js >/dev/null
+          curl --fail http://127.0.0.1:4174/app/vendor/jsqr.js >/dev/null
+          unzip -Z1 dist/prerelease/playroom-pwa-0.15.0-rc.11.zip | grep -F 'app/vendor/qrcode.js' >/dev/null
+          unzip -Z1 dist/prerelease/playroom-pwa-0.15.0-rc.11.zip | grep -F 'app/vendor/jsqr.js' >/dev/null
+          unzip -p dist/prerelease/playroom-pwa-0.15.0-rc.11.zip '*app/qr.js' | grep -F 'app/vendor/qrcode.js' >/dev/null
+      - name: Assemble and verify final release assets
+        run: |
+          mkdir -p release/bundle
+          cp app/dist/prerelease/playroom-all-games.html release/playroom-0.15.0-rc.11.html
+          cp app/dist/prerelease/playroom-pwa-0.15.0-rc.11.zip release/playroom-pwa-0.15.0-rc.11.zip
+          cp app/dist/prerelease/playroom.html app/dist/prerelease/playroom-all-games.html app/dist/prerelease/playroom-source.zip app/dist/prerelease/tabletop-core.zip app/dist/prerelease/playroom-pwa.zip app/dist/prerelease/playroom-pwa-0.15.0-rc.11.zip app/dist/prerelease/SHA256SUMS app/dist/prerelease/CHANGELOG.md app/dist/prerelease/RC11-TEST.md app/dist/prerelease/README-TEST.txt release/bundle/
+          (cd release/bundle && sha256sum -c SHA256SUMS && zip -q -r ../playroom-0.15.0-rc.11-bundle.zip .)
+          (cd release && sha256sum playroom-0.15.0-rc.11.html playroom-0.15.0-rc.11-bundle.zip playroom-pwa-0.15.0-rc.11.zip > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+          unzip -tq release/playroom-0.15.0-rc.11-bundle.zip
+          cp app/docs/RC11-TEST.md release-notes.md
+          printf '\n## CI provenance\n\nVerified release commit: `%s`\n\nPinned game pack source: `%s` from `%s`; API 2 sources pinned and jointly checked.\n\nValidation and release run: https://github.com/%s/actions/runs/%s\n' "$GITHUB_SHA" '43b7b4e7e93de039b1df8b535acfb81d3ca4fb37' 'GraphGiraffe/boardgame-playroom-paks' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-0.15.0-rc.11
+          path: app/dist/prerelease/
+          retention-days: 30
+
+      - name: Publish GitHub Pre-release after successful acceptance tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.15.0-rc.11
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists; verifying it without overwriting assets."
+          else
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Tag already exists without a release; refusing to retarget it."
+              exit 1
+            fi
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Playroom 0.15.0-rc.11" \
+              --notes-file release-notes.md \
+              --prerelease \
+              "release/playroom-0.15.0-rc.11.html#Playroom rc.11 — all-games standalone HTML" \
+              "release/playroom-0.15.0-rc.11-bundle.zip#Playroom rc.11 — complete bundle" \
+              "release/playroom-pwa-0.15.0-rc.11.zip#Playroom rc.11 — installable HTTPS PWA" \
+              "release/SHA256SUMS.txt#SHA-256 checksums"
+          fi
+      - name: Verify published tag, exact commit, pre-release flag and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.15.0-rc.11
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,tagName,isPrerelease,name,targetCommitish,assets > release-view.json
+          python3 - <<'PY'
+          import json,os
+          release=json.load(open('release-view.json',encoding='utf-8'))
+          assert release['tagName']=='v0.15.0-rc.11',release
+          assert release['isPrerelease'] is True,release
+          assert release['targetCommitish']==os.environ['GITHUB_SHA'],release
+          names={a['name'] for a in release['assets']}
+          wanted={'playroom-0.15.0-rc.11.html','playroom-0.15.0-rc.11-bundle.zip','playroom-pwa-0.15.0-rc.11.zip','SHA256SUMS.txt'}
+          assert wanted <= names,(wanted,names)
+          print('Published verified Pre-release:',release['url'])
+          PY
