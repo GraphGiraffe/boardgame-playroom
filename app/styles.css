@@ -17,7 +17,7 @@
 @media(max-width:370px){.table-header{gap:6px}.table-title h1{font-size:15px}.table-heading{gap:7px;flex-basis:122px}.table-title p{font-size:9px}.table-header .table-tools .icon-btn{min-width:32px;width:32px;height:40px}.table-tools{gap:3px}}
 .score-row span{min-width:0;overflow-wrap:anywhere}.score-row strong{flex-shrink:0;margin-left:8px}
 @media(max-width:760px){.table-header .icon-btn,.table-header .table-tools .icon-btn{min-width:44px;width:44px;height:44px}.table-heading{flex-basis:140px}}
-@media(max-width:420px){.table-tools [data-command=fullscreen]{display:none}.table-heading{flex-basis:120px}}
+@media(max-width:420px){.table-heading{flex-basis:120px}}
 .card-help-list{list-style:none;padding:0;margin:14px 0;display:grid;gap:12px}.card-help-list li{padding:12px 14px;border:1px solid #d9dfc9;border-radius:14px;background:#f4f5e8}.card-help-list strong{font-size:13px}.card-help-list p{margin:5px 0 0;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
 
 .pass-device-bar{flex-shrink:0;display:flex;justify-content:center;min-height:44px}.pass-device-bar .btn{min-height:44px;padding:7px 18px;font-size:12px}.player-token[data-accuse-player]{cursor:pointer}.player-token[data-accuse-player]:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
@@ -84,42 +84,6 @@
 
 .result-menu{width:100%;margin-top:12px}
 
-/* Short landscape screens reserve their height for the table, with a side rail. */
-@media (orientation:landscape) and (max-height:540px) {
- #app .table-shell:has(.table-header){--table-rail:132px;display:grid;grid-template-columns:var(--table-rail) minmax(0,1fr);grid-template-rows:44px 92px minmax(40px,1fr) 44px;width:100%;max-width:none;height:100dvh;min-height:0;gap:4px 8px;padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));overflow:hidden}
- #app .table-shell .table-header,#app .table-shell .table-bottom{display:contents}
- #app .table-shell .table-heading{grid-column:1;grid-row:1;min-width:0;gap:5px;align-self:start}
- #app .table-shell .table-title{min-width:0;max-width:none}
- #app .table-shell .table-title h1{font-size:14px;line-height:1.2;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal}
- #app .table-shell .table-title p{display:none}
- #app .table-shell .table-tools{grid-column:1;grid-row:2;display:grid;grid-template-columns:44px 44px;gap:4px;justify-content:start;align-content:start}
- #app .table-shell .table-header .icon-btn{display:inline-grid;width:44px;min-width:44px;height:44px;min-height:44px;border-radius:12px}
- #app .table-shell .table-status{grid-column:1;grid-row:3;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;min-height:0;min-width:0;width:100%;padding:7px;gap:6px;border-radius:12px}
- #app .table-shell .turn-label{font-size:11px;line-height:1.3;gap:6px;min-width:0;overflow-wrap:anywhere}
- #app .table-shell .turn-light{width:7px;height:7px;flex-shrink:0;box-shadow:0 0 0 3px #365f4a10}
- #app .table-shell .turn-extra{display:block;text-align:left;font-size:9px;line-height:1.3}
- #app .table-shell .player-strip,#app .table-shell .event-latest,#app .table-shell .auto-saved{display:none}
- #app .table-shell .scene{grid-column:2;grid-row:1/-1;min-width:0;min-height:0;width:100%;height:100%;border-radius:18px;container-type:size;overflow:hidden}
- #app .table-shell .table-bottom>.text-btn{grid-column:1;grid-row:4;align-self:end;justify-content:center;min-width:0;width:100%;height:44px;min-height:44px;padding:4px;border:1px solid var(--line);border-radius:12px;font-size:11px;white-space:normal}
- #app .table-shell:has(.pass-device-bar){grid-template-rows:44px 92px minmax(24px,1fr) 44px 44px}
- #app .table-shell .pass-device-bar{grid-column:1;grid-row:4;min-width:0;padding:0;display:flex}
- #app .table-shell .pass-device-bar .btn{width:100%;min-width:0;min-height:44px;padding:3px 5px;font-size:10px;line-height:1.2;gap:4px}
- #app .table-shell:has(.pass-device-bar) .table-bottom>.text-btn{grid-row:5}
- #app .table-shell:has(.history-panel){grid-template-columns:var(--table-rail) minmax(0,1fr);grid-template-rows:44px 92px minmax(40px,1fr) 44px}
- #app .table-shell .history-panel{position:relative;inset:auto;grid-column:2;grid-row:1/-1;z-index:4;align-self:end;margin:8px;padding:8px;max-height:100%;overflow:auto}
- #app .table-shell:has(.history-panel) .pass-device-bar{display:none}
- #app .table-shell:has(.history-panel) .table-bottom>.text-btn{grid-row:4}
- .modal-backdrop{padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
- .modal{max-height:calc(100dvh - 16px);padding:18px}
- .handoff{padding:10px}.handoff-content{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:4px 16px;max-width:530px}.handoff-art{grid-column:1;grid-row:1/4;height:110px;margin:0}.handoff-art span{width:53px;height:78px;font-size:30px}.handoff h2{font-size:24px;margin:4px 0}.handoff p{font-size:12px;margin:4px 0}.handoff .btn{grid-column:2;margin:6px 0;min-height:44px}
-}
-@media (orientation:landscape) and (max-height:540px) and (max-width:640px){#app .table-shell:has(.table-header){--table-rail:112px}}
-@media (orientation:landscape) and (max-height:320px){
- #app .table-shell:has(.pass-device-bar) .turn-extra{display:none}
- #app .table-shell:has(.pass-device-bar) .table-status{padding:2px 5px;gap:0}
- #app .table-shell:has(.pass-device-bar) .turn-label{font-size:10px;line-height:1.1;gap:4px}
-}
-
 /* PWA pairing */
 .pairing-fallback{margin-top:14px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:#f7f5ee}.pairing-fallback summary{cursor:pointer;font-weight:800}.pairing-fallback textarea{overflow-wrap:anywhere;white-space:pre-wrap}.toast{white-space:normal;overflow-wrap:anywhere;word-break:break-word;text-align:left}.toast.show{pointer-events:auto}@media(max-width:600px){.toast{left:12px;right:12px;max-width:none;width:auto;transform:translateY(20px);padding:12px 14px;font-size:12px}.toast.show{transform:translateY(0)}}
 
@@ -131,90 +95,3 @@
 html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body:has(#app .handoff),html:has(#app .lobby-countdown),body:has(#app .lobby-countdown){overflow:hidden;overscroll-behavior:none}
 .modal-backdrop,.shared-modal-backdrop{overscroll-behavior:none}
 .modal,.handoff,.lobby-countdown{overscroll-behavior:contain}
-
-/* Replay belongs to the application: one viewport and one proportional stage. */
-#app .table-shell:has(.history-panel){display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;gap:6px;padding-top:6px;padding-bottom:max(6px,env(safe-area-inset-bottom))}
-#app .table-shell:has(.history-panel) .table-status,#app .table-shell:has(.history-panel) .table-bottom{display:none}
-#app .table-shell:has(.history-panel) .table-header{display:flex;flex-wrap:nowrap}
-#app .table-shell:has(.history-panel) .table-tools{display:flex;align-items:center}
-#app .table-shell:has(.history-panel) .player-strip{display:flex;position:static;max-width:none;gap:4px;flex-wrap:nowrap;overflow:hidden}
-#app .table-shell:has(.history-panel) .player-token{min-width:0;min-height:32px;padding:2px 6px;gap:5px}
-#app .table-shell:has(.history-panel) .player-token>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#app .scene.replaying{flex:1;height:auto;min-height:0;overflow:hidden;display:flex;align-items:flex-start;justify-content:center;border-radius:18px}
-#app .scene.replaying> :first-child{flex:none;transform-origin:top center}
-#app .table-shell .history-panel{position:static;align-self:stretch;margin:0;max-height:none;overflow:visible;padding:7px 10px;border-radius:16px;box-shadow:none}
-#app .history-head{justify-content:flex-start;min-height:28px}
-#app .history-head .replay-badge{margin-left:auto}
-#app .history-head .icon-btn{width:44px;min-width:44px;height:44px;border-radius:12px}
-#app .history-controls{margin-top:4px;gap:6px}
-#app .history-controls .icon-btn{width:44px;min-width:44px;height:44px}
-#app .history-controls input{min-height:44px}
-#app .history-caption{margin:4px 0 0;line-height:1.3;min-height:0;max-height:2.6em;overflow:auto}
-@media(max-height:550px){#app .table-shell:has(.history-panel) .player-token small{display:none}#app .history-head{float:right;margin-left:8px}#app .history-controls{margin-top:0}#app .history-head strong{display:none}#app .history-caption{clear:both}}
-
-#app .scene.replaying .scene-actions,#app .scene.replaying .own-hand:has(.empty-hand),#app .scene.replaying .opponent-hand[data-hand-count="0"]{display:none}
-
-/* Game elements API 2: placement belongs to the application, not a pack. */
-.app-game-layout[data-view-api="2"]{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto minmax(0,1fr) auto auto auto!important;grid-template-areas:"participants" "status" "field" "actions" "hand" "auxiliary"!important;height:100%!important;min-height:0!important;width:100%;padding:8px!important;gap:6px!important;align-content:stretch!important;align-items:stretch!important;container-type:size}
-.game-layout-slot{min-width:0;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
-.layout-participants{grid-area:participants}.layout-status{grid-area:status}.layout-field{grid-area:field;overflow:visible;flex-direction:column}.layout-actions{grid-area:actions;min-height:44px}.layout-hand{grid-area:hand;display:block}.layout-auxiliary{grid-area:auxiliary;font-size:11px}
-.app-game-layout .layout-participants>.opponent-hands{width:100%;margin:0;max-height:70px;min-height:0}
-.app-game-layout .layout-status>.scene-meta{margin:0}
-.app-game-layout .layout-hand>.own-hand{width:100%;margin:0!important;max-height:100%!important}
-.app-game-layout .layout-actions>.scene-actions{width:100%;margin:0;min-height:44px;justify-content:center}
-.app-game-layout .layout-field>*{min-height:0!important;max-height:100%;max-width:100%;margin:0;flex:1}
-.app-game-layout .layout-field>[class$="board-wrap"]{width:min(100%,100cqh);height:100%;aspect-ratio:var(--field-aspect,1);display:flex;align-items:center;justify-content:center;flex:0 1 auto;padding:0}
-.app-game-layout .layout-field>[class$="board-wrap"]>[class$="board"]{height:auto!important;width:min(100%,100cqh)!important;max-height:100%;aspect-ratio:var(--field-aspect,1)}
-.app-game-layout .layout-auxiliary .scene-meta{margin:0}
-@media(max-width:760px){.app-game-layout[data-view-api="2"]{padding:5px!important;gap:4px!important}.app-game-layout .layout-participants>.opponent-hands{max-height:55px}.app-game-layout .layout-hand .hand-heading>span{display:none}}
-
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout[data-view-api="2"]{grid-template-columns:minmax(0,1fr) minmax(150px,38%)!important;grid-template-rows:auto auto minmax(0,1fr) auto!important;grid-template-areas:"participants hand" "status hand" "field hand" "actions hand"!important;padding:4px!important;gap:4px 8px!important}}
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout[data-layout-family="board"]{grid-template-columns:minmax(0,1fr) minmax(150px,30%)!important;grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"field status" "field auxiliary" "field actions"!important}}
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout[data-layout-family="cards"] .layout-auxiliary{display:none}}
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout .layout-hand{display:flex!important;align-items:center}.app-game-layout .layout-hand .hand-heading:not(:has(.hand-tools)){display:none}.app-game-layout .layout-hand .hand-track.is-fan{min-height:0;height:auto;max-height:100%;padding:12px 4px 7px;overflow-y:auto}}
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout .layout-hand .hand-fan-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--fan-peek,30px),1fr))!important;grid-auto-rows:var(--fan-row-step,28px);height:auto;min-width:0;width:100%;padding:0 calc(var(--fan-card-width) - var(--fan-peek,30px)) calc(var(--fan-card-height) - var(--fan-row-step,28px)) 0}}
-@media(orientation:landscape) and (max-height:550px){ .app-game-layout .layout-participants>.opponent-hands{max-height:48px}.app-game-layout .layout-auxiliary{flex-direction:column}}
-
-@media(min-width:761px) and (min-height:551px){.app-game-layout[data-view-api="2"],.app-game-layout[data-view-api="2"]{padding:12px!important;gap:8px!important}.app-game-layout .layout-hand,.app-game-layout .layout-hand{width:min(100%,1000px);justify-self:center}.app-game-layout[data-layout-family="board"],.app-game-layout[data-layout-family="board"]{grid-template-columns:minmax(0,1fr) 180px!important;grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"field status" "field auxiliary" "field actions"!important}}
-
-.app-game-layout .layout-field{container-type:size}.app-game-layout .layout-field>[class$="board-wrap"]{width:min(100cqw,100cqh)!important;height:min(100cqw,100cqh)}
-/* Card artwork supplies its intrinsic face; the application owns the hand fan. */
-.app-game-layout .layout-hand .hand-track.is-fan{--fan-card-width:64px;--fan-card-height:91px;--fan-peek:28px;--fan-lift:9px;height:117px;min-height:117px;padding:17px 6px 9px}
-.app-game-layout .layout-hand .hand-track.is-long-hand{--fan-peek:34px}
-.app-game-layout .layout-hand .hand-card{width:var(--fan-card-width)!important;min-width:var(--fan-card-width)!important;height:var(--fan-card-height)!important}
-.app-game-layout .layout-field .game-field-content{--field-scale:1;transform-origin:top left}
-.app-game-layout .layout-field .game-field-content :is([data-action],[data-drop-select],[data-drop-piece],[data-hit-target]):not([data-grid-cell]){min-width:calc(44px / var(--field-scale));min-height:calc(44px / var(--field-scale))}
-@media(orientation:landscape) and (max-height:550px){.app-game-layout .layout-hand .hand-track.is-fan{height:auto;min-height:0;max-height:100%;padding:12px 4px 7px}.app-game-layout .layout-hand .hand-card{--fan-card-width:60px;--fan-card-height:88px}}
-.app-game-layout .layout-field .game-field-content{flex:none;max-height:none}
-.app-game-layout .game-field-content>[class$="board-wrap"]{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:0}
-.app-game-layout .game-field-content>[class$="board-wrap"]>[class$="board"]{width:100%!important;height:100%!important;max-width:none;max-height:none;aspect-ratio:var(--field-aspect,1)}
-.app-game-layout .layout-participants>.opponent-hands{max-height:none;align-items:flex-start;gap:8px}
-.app-game-layout .layout-participants .is-open-hand{--public-card-width:28px;--public-card-height:40px;--public-reserve:42px;--public-peek:16px;--public-row-step:16px}
-.app-game-layout .layout-participants .opponent-label{margin-bottom:3px;font-size:10px}
-.app-game-layout .layout-hand .hand-heading{height:20px;min-height:20px;margin-bottom:0}
-.app-game-layout .layout-hand .hand-track.is-long-hand{--fan-peek:40px}
-.app-game-layout[data-view-api="2"]{position:absolute!important;inset:0;width:auto!important;height:auto!important}
-#app .app-game-layout .game-field-content .card-corner small{font-size:calc(12px / var(--field-scale,1))!important}
-.app-game-layout .game-action-bar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:8px;align-items:center;width:100%;min-height:44px}
-.app-game-layout .game-action-bar [data-action-position]{position:static;display:flex;align-items:center;justify-content:center;min-height:44px;margin:0}
-.app-game-layout .game-action-bar [data-action-position="start"]{grid-column:1;grid-row:1}
-.app-game-layout .game-action-bar [data-action-position="primary"]{grid-column:2;grid-row:1;flex-wrap:wrap;gap:6px}
-.app-game-layout .game-action-bar [data-action-position="end"]{grid-column:3;grid-row:1}
-@media(orientation:landscape) and (max-height:550px){.app-game-layout .layout-hand .hand-card{--fan-card-width:64px;--fan-card-height:91px}}
-.app-game-layout .layout-actions button{position:relative!important;inset:auto!important;margin:0!important;min-width:44px;min-height:44px}
-.app-game-layout .layout-participants{max-height:min(160px,40cqh);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;align-items:flex-start}
-
-.app-game-layout .layout-participants>.opponent-hands{max-height:none!important}
-.app-game-layout .layout-hand .hand-track.is-tiles{display:grid;grid-template-columns:repeat(var(--hand-columns),minmax(32px,1fr));gap:3px;padding:13px 2px;overflow-x:auto;align-items:center;height:88px;min-height:88px}
-.app-game-layout .layout-hand .hand-track.is-tiles>button{width:100%!important;min-width:0!important;height:62px!important;min-height:0}
-#app .table-shell .table-status{height:38px;min-height:38px;overflow:hidden;flex:0 0 38px}
-
-.app-game-layout .layout-auxiliary{flex-direction:column;overflow-wrap:anywhere}.app-game-layout .layout-auxiliary>*{max-width:100%;min-width:0}.app-game-layout .layout-auxiliary .scene-meta{flex-wrap:wrap;justify-content:center}
-.app-game-layout .layout-hand .hand-track.is-tiles:before,.app-game-layout .layout-hand .hand-track.is-tiles:after{content:none}
-
-#app .table-shell .player-strip{min-height:44px;flex-shrink:0}
-
-@media(orientation:landscape) and (max-height:550px){.app-game-layout .layout-hand .hand-track.is-tiles:not(.is-long-hand){grid-template-columns:repeat(auto-fit,minmax(32px,1fr));grid-auto-rows:62px;height:auto;min-height:0;max-height:100%;width:100%}}
-.app-game-layout .layout-status>*{max-width:100%;min-width:0;flex-wrap:wrap}
-
-.app-game-layout .layout-hand .hand-track.is-tiles.is-long-hand{grid-template-columns:repeat(var(--hand-columns),44px)}

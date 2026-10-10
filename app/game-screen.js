@@ -21,12 +21,9 @@
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
   function playersMarkup(state,viewer,actions=[],{scoreLabel='очки',playerBadge=()=>''}={}){
-    return state.players.map((person,i)=>{
-      let badge='';try{const value=playerBadge(state,i);if(typeof value==='string')badge=esc(value);else if(value&&typeof value.label==='string'){const tone=['success','warning','danger'].includes(value.tone)?value.tone:'warning';badge=`<span class="player-status-badge tone-${tone}">${esc(value.label)}</span>`;}}catch(_){}
-      const target=actions.some(a=>a.target===i);
-      return `<div class="player-token ${state.turn===i?'active':''}" ${target?`data-accuse-player="${i}" role="button" tabindex="0" aria-label="Действия игрока ${esc(person.name)}"`:''}><span class="avatar p${i}">${esc(person.name.slice(0,1))}</span><span>${esc(person.name)}${i===viewer&&person.name!=='Вы'?' · вы':''}<small>${person.bot?'Бот':'Игрок'}${Number.isFinite(person.score)?' · '+esc(scoreLabel)+': '+person.score:''}${badge}</small></span></div>`;
-    }).join('');
+    return state.players.map((_,i)=>UI.playerPanel(state,i,viewer,{scoreLabel,badges:[playerBadge(state,i)].filter(Boolean)},actions)).join('');
   }
+
   function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
     return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-head"><strong>История</strong><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div>
       <div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
@@ -40,21 +37,35 @@
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
-    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false}={}){
+    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true}={}){
     if(!state?.players)throw Error('Projected game state required');
-    const caption=esc(footerText||'Выберите доступное действие на столе');
+    const caption=esc(replay?'':footerText||'');
+    if(beforeFooter)scene=scene.replace('<!--self-controls-->',beforeFooter);
     return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle)}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML},
-        ...(historyHTML&&historyResult?[{attrs:'data-command="result"',label:'Результаты партии',name:'trophy'}]:[]),
+        ...(!readOnly?[{attrs:'data-command="pause"',label:pause?'Продолжить':'Пауза',name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
+        ...(historyResult||(!network&&state.status==='finished')?[{attrs:'data-command="result"',label:'Результаты',name:'trophy'}]:[]),
         {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
         {attrs:'data-command="rules"',label:'Правила игры',name:'help'}
       ],{showSettings})}</div></header>
-      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc(turnExtra)}</span></div>
-      <div class="player-strip" aria-label="Игроки">${playersMarkup(state,viewer,actions,{scoreLabel,playerBadge})}</div>
+      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc(turnExtra)}</span>${caption?`<span class="status-event" title="${esc(footerTitle)}">${caption}</span>`:''}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="Игровой стол" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
       ${historyHTML}
-      <footer class="table-bottom">${beforeFooter}<span class="event-latest" title="${esc(footerTitle)}">${caption}</span>${saved!==null?`<span class="auto-saved">${icon(saved?'check':'save')}${saved?'Сохранено':'Не сохранено'}</span>`:''}${footerExtra}<button class="text-btn" data-command="${esc(footerAction.command)}">${esc(footerAction.label)} ${icon(footerAction.icon)}</button></footer></main>`;
+      ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
+  }
+  function fitHand(stage){
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
+      track.style.removeProperty('--fan-peek');
+      const win=track.ownerDocument.defaultView,baseline=parseFloat(win.getComputedStyle(track).getPropertyValue('--fan-peek'))||28;
+      let peek=baseline;
+      for(const card of track.querySelectorAll('.hand-card')){
+        const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
+        const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
+        peek=Math.max(peek,Math.min(box.width,Math.ceil(marker.right-box.left+2)));
+      }
+      if(peek>baseline)track.style.setProperty('--fan-peek',peek+'px');
+    }
   }
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
@@ -64,7 +75,7 @@
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
     }
     field.style.zoom='1';field.style.width=width+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
-    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.min(1,width/Math.max(field.scrollWidth,r.width,1),height/natural);
+    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
   }
   const replayFitters=new WeakMap();
@@ -78,7 +89,7 @@
         replayFitters.set(host,{scene,observer});observer?.observe(scene);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(win.innerWidth,win.innerHeight);fitField(stage);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitHand(stage);fitField(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage)stage.style.zoom='1';
   }
   return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});

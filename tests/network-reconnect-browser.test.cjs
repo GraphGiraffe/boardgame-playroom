@@ -108,9 +108,9 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
   try{
     await profile(host,'Хост');await profile(client,'Гость');
     await host.locator('[data-start="uno"]').click();
-    await host.locator('#setup-form input[name=mode][value=network-player]').check();
-    await host.locator('#setup-form input[name=roomName]').fill('Возвратный стол');
-    await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
+    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');
+    await host.locator('[data-room-title]').fill('Возвратный стол');
+    await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();
     await host.locator('#network-pair-button').click();
     await pair(host,client);

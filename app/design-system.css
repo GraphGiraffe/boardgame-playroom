@@ -18,34 +18,119 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 @media(max-width:760px){:root{--ui-target:44px}.topbar-tools .status{display:none}}
 @media(max-width:420px){.topbar-tools{gap:4px}.topbar .mobile-brand{font-size:24px;gap:6px}.topbar{gap:6px}}
 @media(prefers-reduced-motion:reduce){.ui-toolbar *,.modal-head *{transition:none!important}}
-/* Navigation keeps the same screen edge in portrait and landscape. */
-#app .table-shell:has(.table-header){display:flex;flex-direction:column}
-#app .table-shell .table-header{display:flex;flex-wrap:nowrap;align-items:center;flex:0 0 auto}
-#app .table-shell .table-heading{display:flex;flex:1 1 0;min-width:0}
-#app .table-shell .table-title{min-width:0}
-#app .table-shell .table-title h1,#app .table-shell .table-title p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#app .table-shell .table-header .table-tools{display:flex;position:static;align-items:center;justify-content:flex-end;gap:var(--ui-gap);width:auto;height:auto;min-height:0}
-#app .table-shell .table-header .table-tools .icon-btn{width:var(--ui-target);min-width:var(--ui-target);height:var(--ui-target)}
+/* Common game shell and app-owned elements API2 layout. */
+#app .table-shell:has(.table-header){display:flex;flex-direction:column;height:100dvh;min-height:0;overflow:hidden;gap:6px;padding:8px;max-width:1700px}
+#app .table-shell .table-header{display:flex;align-items:center;flex-wrap:wrap;flex:none;gap:5px}
+#app .table-heading{flex:1 1 100px;min-width:0;gap:8px}
+#app .table-title{min-width:0}
+#app .table-title h1{font-size:18px;margin:0}
+#app .table-title p{display:block;white-space:normal;overflow-wrap:anywhere;margin:2px 0 0;font-size:10px}
+#app .table-tools{position:static;display:flex;flex-wrap:wrap;gap:4px;max-width:100%;height:auto}
+#app .table-header .icon-btn{width:44px;min-width:44px;height:44px}
+#app .table-status{display:flex;flex-wrap:wrap;flex:none;min-height:30px;padding:5px 9px;gap:4px 12px}
+#app .table-status .status-event{font-size:11px;color:#687761;flex:1 1 150px;text-align:right}
+#app .table-shell .scene{flex:1;min-height:0;height:auto;width:100%;grid-area:auto;overflow:hidden;border-radius:18px}
+#app .table-shell .history-panel{position:static;inset:auto;flex:none;margin:0;padding:7px 10px;overflow:auto;max-height:25dvh}
+#app .history-caption{margin:5px 0 0;min-height:0}
+#app .history-controls{margin-top:4px}
+#app .table-extra{flex:none}
+.app-game-layout[data-view-api="2"]{position:absolute!important;inset:0;display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto minmax(0,1fr) auto auto!important;grid-template-areas:"participants" "status" "field" "self" "auxiliary"!important;padding:6px!important;gap:6px!important;min-height:0!important;width:100%!important;height:100%!important;container-type:size;align-items:stretch!important;align-content:stretch!important}
+.game-layout-slot{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;position:relative}
+.layout-participants{grid-area:participants;max-height:30cqh;overflow:auto;overscroll-behavior:contain;align-items:start}
+.layout-status{grid-area:status}.layout-status>.scene-meta{margin:0;flex-wrap:wrap}
+.layout-field{grid-area:field;container-type:size;overflow:auto;overscroll-behavior:contain;display:flex;align-items:center;justify-content:center}
+.layout-self{grid-area:self;min-width:0;min-height:0;display:flex;flex-direction:column;gap:4px;max-height:55cqh;overflow:auto;overscroll-behavior:contain;background:#f7f7ed88;border-radius:14px;padding:4px}
+.layout-actions,.layout-hand{flex:none;min-width:0;min-height:0;width:100%;grid-area:auto}
+.layout-hand{display:block}.layout-actions>*,.layout-hand>.own-hand{width:100%;margin:0!important;max-height:none!important}
+.layout-actions .scene-actions{min-height:44px;flex-wrap:wrap;justify-content:center;margin:0}
+.layout-auxiliary{grid-area:auxiliary;font-size:11px}
+.game-field-content{flex:none;min-width:0;max-width:100%;transform-origin:center}
+.app-game-layout[data-layout-family="board"] .game-field-content{aspect-ratio:var(--field-aspect,1)}
+.game-field-content>[class$="board-wrap"]{display:flex;width:100%;height:100%;padding:0!important;margin:0!important;max-width:none!important;max-height:none!important;flex:none;align-items:center;justify-content:center}
+.game-field-content>[class$="board-wrap"]>[class$="board"]{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;aspect-ratio:1}
+.players-panels.opponent-hands{display:flex;flex-wrap:wrap;width:100%;max-height:none;gap:6px;justify-content:center;margin:0;align-items:stretch}
+.app-game-layout .player-panel.opponent-hand{display:flex;flex:1 1 120px;max-width:300px;min-width:0;flex-direction:column;align-items:stretch;background:#f7f7ed88;border:1px solid #d6dfc7;border-radius:12px;padding:3px;overflow:hidden}
+.player-panel.is-turn{border-color:#638658}
+.player-info.player-token{display:flex;width:100%;text-align:left;min-height:44px;gap:6px;padding:4px;font-size:11px;align-items:center;border-radius:9px;background:transparent;border:0;color:inherit}
+.player-info .avatar{flex:none;width:26px;height:26px;min-width:26px}
+.player-details{min-width:0;flex:1}.player-details strong{display:block;overflow-wrap:anywhere;font-size:11px}.player-token small{display:block!important;font-size:9px;white-space:normal;color:#687761}
+.player-badges{display:flex;gap:4px;flex-wrap:wrap;font-size:9px}.turn-badge{font-weight:750;color:#356951}
+.player-status-badge{background:#e4ead8;border-radius:5px;padding:0 3px}
+.app-game-layout .player-panel .mini-hand{display:flex!important;align-items:center;justify-content:safe center;gap:0;max-width:100%;overflow:auto;height:42px;min-height:42px;margin:0!important;padding:2px 8px!important;overscroll-behavior:contain;white-space:nowrap}
+.player-panel .mini-hand>*{position:relative!important;transform:none!important;flex:0 0 auto!important;width:28px!important;min-width:28px!important;height:40px!important;margin-left:-8px!important;grid-area:auto!important}
+.player-panel .mini-hand .public-card>*{width:28px!important;min-width:28px!important;height:40px!important;pointer-events:none}
+.player-panel .mini-hand .piece-back{border-width:2px!important;border-radius:5px!important}
+.self-player{flex:none;display:block;min-width:0}.self-player .player-info{padding:0 4px}
+.player-target-menu{position:fixed;z-index:80;display:flex;flex-direction:column;gap:5px;padding:6px;border:1px solid #a9bd94;background:var(--paper);border-radius:12px;box-shadow:0 6px 18px #20352d33;max-width:calc(100vw - 16px)}
+.app-game-layout .is-playable{outline:1px solid #638658!important;outline-offset:2px}
+.app-game-layout .is-selected{outline:2px solid #d3aa45!important;outline-offset:3px}
+.app-game-layout .checker-piece.movable:after{content:none!important}
+.app-game-layout .layout-hand .hand-track.is-fan{--fan-card-width:64px;--fan-card-height:91px;--fan-peek:28px;--fan-lift:7px;height:113px;min-height:113px;padding:12px 6px 9px;overflow:auto}
+.app-game-layout .layout-hand .hand-card{width:var(--fan-card-width)!important;min-width:var(--fan-card-width)!important;height:var(--fan-card-height)!important;flex:none}
+.app-game-layout .layout-hand .hand-fan-row{justify-content:center;max-width:100%}
+.app-game-layout .layout-hand .hand-heading{display:none}
+.app-game-layout .layout-hand .hand-track.is-tiles{display:flex!important;justify-content:center;gap:6px;height:102px;min-height:102px;padding:5px;overflow:auto}
+.app-game-layout .layout-hand .hand-track.is-tiles>button{flex:0 0 48px!important;width:48px!important;min-width:48px!important;height:84px!important;aspect-ratio:4/7}
+.app-game-layout .layout-hand .hand-track.is-tiles:before,.app-game-layout .layout-hand .hand-track.is-tiles:after{content:none}
+.app-game-layout .game-action-bar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:4px;align-items:center;width:100%}
+.app-game-layout [data-action-position]{position:static!important;min-height:44px;display:flex;justify-content:center;align-items:center}
+.app-game-layout [data-action-position="primary"]{flex-wrap:wrap;gap:4px}
+.app-game-layout .layout-actions button{position:relative!important;inset:auto!important;margin:0!important;min-width:44px;min-height:44px}
+.game-field-groups{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:8px;min-height:150px}
+.app-game-layout .field-group-stock{display:flex;flex-direction:column;gap:9px;min-height:140px}
+.app-game-layout .field-group-play{min-width:0;margin:0}
 
-#app .table-shell .scene{flex:1;height:auto;min-height:0}
-@media(max-height:550px) and (orientation:landscape){#app .table-shell .table-status{flex-direction:row;align-items:center;justify-content:space-between;min-height:30px;padding:4px 8px}#app .table-shell .table-bottom{display:flex;min-height:44px;flex:0 0 auto}#app .table-shell .table-bottom>.text-btn{width:auto;min-width:44px;margin-left:auto;white-space:nowrap}}
+
+
+
 
 .handoff .handoff-nav{position:absolute;top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left))}
+@media(max-width:400px){.app-game-layout .player-panel.opponent-hand{flex-basis:95px}.player-details strong{font-size:10px}#app .table-tools{gap:3px}#app .table-title h1{font-size:16px}}
+/* Container dimensions also cover split-screen desktop and replay. */
+.app-game-layout[data-layout-mode="phone-landscape"]{grid-template-columns:minmax(120px,24%) minmax(0,1fr) minmax(140px,32%)!important;grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"status field self" "participants field self" "auxiliary field self"!important}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-participants{max-height:none;overflow:auto}
+.app-game-layout[data-layout-mode="phone-landscape"] .players-panels{flex-direction:column;flex-wrap:nowrap}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand{flex:none;max-width:none;flex-direction:row;align-items:center}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .mini-hand{flex:1;min-width:25px;height:44px}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex:1;min-width:75px}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-self{max-height:none;overflow:auto}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-track.is-fan{height:auto;min-height:113px;max-height:none}
+@media(max-height:550px) and (orientation:landscape){#app .table-status{min-height:26px;padding:3px 7px}#app .table-status .status-event{font-size:10px}#app .table-title p{font-size:9px}#app .table-shell .history-panel{max-height:26dvh}}
 
-@media(max-height:550px) and (orientation:landscape){#app .table-shell:not(:has(.history-panel)) .player-strip{display:none}#app .table-shell .table-bottom .pass-device-bar{flex:1;min-width:0}#app .table-shell .table-bottom .pass-device-bar .btn{width:auto;min-width:44px;font-size:11px}}
+.room-setup-modal{width:min(100%,680px)!important;max-width:680px!important;padding:14px!important}
+.room-setup-modal .lobby-shell{height:auto;min-height:0;display:block;padding:0;background:transparent;overflow:visible}
+.room-setup-modal .lobby-wrap{width:100%;max-width:none;margin:0;padding:0}.room-setup-modal .lobby-header{position:sticky;top:0;background:var(--paper);z-index:2}
+.room-setup-modal .lobby-card{padding:8px;margin:0;box-shadow:none}.room-options{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px}.room-options label{flex:1 1 120px;font-size:11px;display:flex;flex-direction:column;gap:4px}
+.room-options select,.slot-edit input,.slot-edit select{max-width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:inherit}
+.slot-edit{display:flex;gap:4px;align-items:center;min-width:0}.slot-edit input{width:100px}.slot-edit select{width:86px}.slot-edit .icon-btn{width:44px;min-width:44px}
+.room-setup-modal .lobby-seat-row{flex-wrap:wrap;position:relative;gap:4px}.room-setup-modal .lobby-seat{flex:1 1 180px;min-width:0}.first-player-mark{display:inline-flex;color:var(--green)}
 
-/* In short landscape, game status and actions share a compact rail below navigation. */
-@media(orientation:landscape) and (max-height:540px){
- #app .table-shell:has(.table-header):not(:has(.history-panel)){display:grid;grid-template-columns:112px minmax(0,1fr);grid-template-rows:44px minmax(0,1fr) auto;gap:4px 8px}
- #app .table-shell .table-header{grid-column:1/-1;grid-row:1;min-width:0}
- #app .table-shell:not(:has(.history-panel)) .table-status{grid-column:1;grid-row:2;flex-direction:column;justify-content:center;align-items:flex-start;gap:6px;min-height:0}
- #app .table-shell:not(:has(.history-panel)) .scene{grid-column:2;grid-row:2/-1;width:100%;height:100%}
- #app .table-shell:not(:has(.history-panel)) .table-bottom{grid-column:1;grid-row:3;display:flex;flex-direction:column;gap:4px;min-width:0}
- #app .table-shell .table-bottom .pass-device-bar{flex:none;width:100%}
- #app .table-shell .table-bottom .pass-device-bar .btn{width:100%}
- #app .table-shell .table-bottom>.text-btn{width:100%;margin:0}
-}
 
-@media(orientation:landscape) and (max-height:540px){#app .scene .game-scene>.own-hand{margin-top:0!important;max-height:100%!important}#app .scene .game-scene>.own-hand .hand-heading:not(:has(.hand-tools)){display:none}}
 
-@media(orientation:landscape) and (max-height:300px){#app .scene .own-hand .hand-track.is-fan{--fan-row-step:16px!important}}
+.app-game-layout .layout-hand .hand-fan-row{display:grid!important;grid-template-columns:repeat(calc(var(--fan-count) - 1),var(--fan-peek)) var(--fan-card-width)!important;grid-auto-rows:auto!important;width:max-content!important;min-width:0!important;max-width:none!important;height:var(--fan-card-height)!important;padding:0!important;margin-inline:auto;gap:0!important}
+.app-game-layout .layout-hand .hand-track.is-fan{overflow-x:auto!important;overflow-y:hidden!important}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-track.is-fan{--fan-peek:28px;--fan-card-width:54px;--fan-card-height:77px;height:98px!important;min-height:98px!important;padding:12px 4px 9px}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-card{--fan-card-width:54px!important;--fan-card-height:77px!important}
+.toast.show{pointer-events:none}
+
+.app-game-layout[data-layout-mode="desktop"]{grid-template-columns:220px minmax(0,1fr) minmax(260px,30%)!important;grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"status field self" "participants field self" "auxiliary field self"!important}.app-game-layout[data-layout-mode="desktop"] .layout-participants{max-height:none}.app-game-layout[data-layout-mode="desktop"] .players-panels{flex-direction:column;flex-wrap:nowrap}.app-game-layout[data-layout-mode="desktop"] .layout-self{max-height:none}.app-game-layout[data-layout-mode="desktop"] .player-panel.opponent-hand{flex:none}
+.app-game-layout .layout-hand .hand-track.is-tiles{justify-content:safe center}
+
+.app-game-layout[data-layout-family="cards"] .game-field-content :is([data-action],[data-drop-piece],[data-drop-select],[data-hit-target]){min-width:calc(45px / var(--field-scale,1));min-height:calc(45px / var(--field-scale,1))}
+.app-game-layout .player-panel .mini-hand>*{min-height:40px!important}
+.app-game-layout [data-action-position="primary"]>*{max-width:100%;min-width:0}
+.app-game-layout[data-layout-family="cards"]:not([data-layout-mode="phone-landscape"]) .layout-actions:has(.game-action-bar){min-height:44px}
+
+.self-player{display:flex;align-items:center;gap:4px}.self-player .player-info{flex:1;min-width:0}.self-player>.icon-btn{flex:none}
+
+.player-badges{min-height:20px;align-content:start}
+.player-details strong{line-height:13px}.player-token small{line-height:12px}.player-badges{line-height:12px;min-height:24px}
+
+.opponent-hand .player-info{min-height:72px}.self-player .player-info{min-height:56px}
+.app-game-layout .layout-field{align-items:safe center;justify-content:safe center}
+
+/* A changing event or turn name cannot resize the table during an action. */
+#app .table-status{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:16px 14px;gap:2px 12px;height:44px;min-height:44px;align-items:center}
+#app .table-status .turn-label,#app .table-status .turn-extra{min-width:0;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .table-status .status-event{grid-column:1 / -1;min-width:0;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+@media(max-height:550px) and (orientation:landscape){#app .table-status{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-rows:18px;height:26px;min-height:26px}#app .table-status .status-event{grid-column:auto;text-align:right}}

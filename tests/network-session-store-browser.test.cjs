@@ -29,7 +29,7 @@ test('LAN-01 persists initial session, full history and atomic receipts across h
         const room={id:'r-test',name:'Browser test',game:{id:session.game,version:session.packVersion}};
         await store.create({sessionId:'session-test',room,session});
         const authority=new SessionAuthority(session,{sessionId:'session-test',persistence:{
-          commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)
+          commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry),setControl:entry=>store.setControl(entry)
         }});
         const actor0=authority.connect(0),actor1=authority.connect(1),pub=authority.connect(-1);
         const command0=PlayroomProtocol.command(actor0.snapshot(),{type:'tick'},'cmd-0');
@@ -37,6 +37,7 @@ test('LAN-01 persists initial session, full history and atomic receipts across h
         const duplicate=await actor0.dispatch(command0);
         const command1=PlayroomProtocol.command(actor1.snapshot(),{type:'tick'},'cmd-1');
         const b=await actor1.dispatch(command1);
+        const pause=PlayroomProtocol.command(actor1.snapshot(),{type:'session-pause',paused:true,expectedControlRevision:0},'pause-1');const paused=await actor1.dispatch(pause);if(!paused.ok)throw Error(paused.code);
         const publicText=JSON.stringify(pub.snapshot());
         authority.dispose();store.close();
         return {a:a.ok,b:b.ok,duplicate:duplicate.duplicate,revision:session.current.move,publicText};
@@ -55,7 +56,7 @@ test('LAN-01 persists initial session, full history and atomic receipts across h
           loaded=await store.load('session-test',E,TabletopSession),listed=await store.list();
         const out={revision:loaded.revision,states:loaded.session.states.length,events:loaded.session.current.events.length,
           counter:loaded.session.current.data.counter,secret:loaded.session.current.data.secret,receipts:loaded.receipts.length,
-          list:listed.length,version:loaded.session.packVersion};
+          list:listed.length,version:loaded.session.packVersion,paused:loaded.paused,controlRevision:loaded.controlRevision};
         const next=loaded.session.prepare(0,{type:'tick'});
         let duplicateRejected=false;
         try{await store.commit({sessionId:'session-test',previousRevision:2,nextState:next,viewer:0,
@@ -63,10 +64,14 @@ test('LAN-01 persists initial session, full history and atomic receipts across h
         catch(_){duplicateRejected=true;}
         out.duplicateRejected=duplicateRejected;
         out.remainingRevision=(await store.load('session-test',E,TabletopSession)).revision;
+        await store.create({sessionId:'neighbor',room:{id:'other-room',name:'Neighbor',game:{id:'network-store-fixture',version:'0.1.0'}},session:new TabletopSession(E,'network-store-fixture',{players:[{name:'X'},{name:'Y'}]})});
+        await store.remove('session-test');out.remaining=(await store.list()).map(x=>x.sessionId);
+        const db=await store.open();out.deletedRows=await new Promise((resolve,reject)=>{const tx=db.transaction(['steps','receipts'],'readonly'),a=tx.objectStore('steps').index('sessionId').count('session-test'),b=tx.objectStore('receipts').index('sessionId').count('session-test');tx.oncomplete=()=>resolve(a.result+b.result);tx.onabort=()=>reject(tx.error);});
+        out.neighborRevision=(await store.load('neighbor',E,TabletopSession)).revision;
         store.close();return out;
       });
       assert.deepEqual(restored,{revision:2,states:3,events:3,counter:2,secret:'KEEP-PRIVATE',
-        receipts:2,list:1,version:'0.1.0',duplicateRejected:true,remainingRevision:2});
+        receipts:3,list:1,version:'0.1.0',paused:true,controlRevision:1,duplicateRejected:true,remainingRevision:2,remaining:['neighbor'],deletedRows:0,neighborRevision:0});
     }finally{await context.close();await browser.close();await close();}
   });
 

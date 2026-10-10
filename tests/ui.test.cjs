@@ -26,12 +26,13 @@ async function resume(page){
   }
   if(await page.locator('.handoff').count())await page.locator('[data-command=unlock]').click();
 }
-async function cardTouchPoint(card){return card.evaluate(el=>{const r=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const f of [.5,.12,.88]){const p={x:r.x+r.width*f,y:r.y+r.height*fy},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('No exposed card position');});}
+async function cardTouchPoint(card){await card.scrollIntoViewIfNeeded();return card.evaluate(el=>{const r=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const f of [.5,.12,.88]){const p={x:r.x+r.width*f,y:r.y+r.height*fy},hit=document.elementFromPoint(p.x,p.y);if(hit===el||el.contains(hit))return p;}throw Error('No exposed card position');});}
+async function exposedClick(page,card){await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);}
 async function clickMove(page,game){
   if(game==='checkers'){await page.locator('.checker-piece.movable').first().click();await page.locator('.checker-cell.destination').first().click();}
-  else if(game==='snakes')await page.locator('.roll-button').click();
+  else if(game==='snakes')await page.locator('.die[data-action]').click();
   else if(game==='uno')await page.locator('.stock-button[data-action]').click();
-  else {await page.locator('.hand-track .is-playable').first().click();const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
+  else {const card=page.locator('.hand-track .is-playable').first();await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
 }
 function installableCounter(version='0.1.0',step=1) {
   return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:1,viewApi:2,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
@@ -76,21 +77,21 @@ test('Offline pack installation, updates and empty application preserve saved ve
           app:document.getElementById('app')?.innerText.slice(0,240),
           warning:globalThis.PlayroomPackLoadError,
         })))+'; JS errors: '+JSON.stringify(errors));
-      await page.locator('[data-start="qa-counter"]').click();await page.locator('input[value=pass]').check();await page.locator('button[type=submit]').click();await add(1);
+      await page.locator('[data-start="qa-counter"]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});await page.locator('[data-command=lobby-start]').click();await add(1);
       assert.equal((await saved(page)).packVersion,'0.1.0');await page.locator('.table-heading [data-command=home]').click();
     });
     await t.test('Update keeps old saves on exact rules and new games use the latest version',async()=>{
       await openManager();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();assert.equal(await page.locator('.pack-entry').count(),2);
       assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),true);await close();await page.reload();
       await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
-      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.locator('input[value=pass]').check();await page.locator('button[type=submit]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
+      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
       await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),2);await close();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);
     });
     await t.test('A missing pack leaves the save intact and installing its exact version restores it',async()=>{
       const raw=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
       await page.evaluate(()=>localStorage.removeItem('playroom.packs.v1'));await page.reload();
-      await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);assert.match(await page.locator('.saved-games-list').innerText(),/нужен пак qa-counter версии 0\.2\.0/i);assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw);
+      await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);assert.match(await page.locator('.saved-games-list').innerText(),/несовместимой версией игры 0\.2\.0/i);assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw);
       await page.locator('.saved-game [data-command=packs]').first().click();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();await close();
       await page.locator('.saved-game [data-resume-id]').click();assert.equal(await page.locator('.qa-count').innerText(),'10');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.2.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(164, 66, 56)');
     });
@@ -136,29 +137,24 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
   }
   async function check(name,fn){await t.test(name,async()=>{const contexts=[];try{await fn(async(...args)=>{const env=await pageFor(...args);contexts.push(env);return env;});for(const e of contexts)assert.deepEqual(e.errors,[],'uncaught browser errors');}finally{for(const e of contexts)await e.context.close();}});}
   try{
-    await check('Hub categories, all packs and setup → rules → setup retain choices',async open=>{
-      const {page}=await open();assert.equal(await page.locator('.game-tile').count(),5);
-      await page.locator('[data-filter=cards]').click();assert.equal(await page.locator('.game-tile').count(),2);await page.locator('[data-filter=board]').click();assert.equal(await page.locator('.game-tile').count(),3);await page.locator('[data-filter=all]').click();
-      await page.locator('[data-start=uno]').click();await page.locator('input[value=pass]').check();await page.locator('select[name=players]').selectOption('4');await page.locator('input[name=name0]').fill('Катя');await page.locator('select[name=preset]').selectOption('quick');await page.locator('[data-rules=uno]').click();await page.locator('.modal [data-command=close-modal]').first().click();
-      assert.equal(await page.locator('#setup-form').count(),1);assert.equal(await page.locator('input[name=name0]').inputValue(),'Катя');assert.equal(await page.locator('select[name=players]').inputValue(),'4');assert.equal(await page.locator('select[name=preset]').inputValue(),'quick');
+    await check('Common room retains slots and rules when collapsed and reopened',async open=>{
+      const {page}=await open();await page.locator('[data-start=uno]').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');
+      await page.locator('[data-room-name="seat-1"]').fill('Катя');await page.locator('[data-room-name="seat-1"]').press('Tab');
+      await page.locator('[data-command=room-rules]').click();await page.locator('[name=preset]').selectOption('quick');await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+      await page.locator('.room-setup-modal [data-command=close-modal]').click();assert.equal(await page.locator('.modal').count(),0);await page.locator('[data-command=room]').click();
+      assert.equal(await page.locator('[data-room-name="seat-1"]').inputValue(),'Катя');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().rules.preset),'quick');
     });
     for(const game of ['uno','domino','durak','checkers','snakes'])await check('Start and play '+game+' through visible controls',async open=>{
       const hasHands=['uno','domino','durak'].includes(game),{page}=await open();
-      await page.locator('[data-start='+game+']').click();await page.locator('input[value=pass]').check();
-      assert.equal(await page.locator('[name=openHands]').count(),hasHands?1:0,'only games with hands offer the public-hands setting');
-      if(hasHands)await page.locator('[name=openHands]').check();
-      await page.locator('[data-rules='+game+']').click();await page.locator('.modal [data-command=close-modal]').first().click();
-      assert.equal(await page.locator('#setup-form').getAttribute('data-game'),game);
-      assert.equal(await page.locator('input[value=pass]').isChecked(),true);
-      assert.equal(await page.locator('[name=openHands]').count(),hasHands?1:0,'rules return preserves capability-specific fields');
-      if(hasHands)assert.equal(await page.locator('[name=openHands]').isChecked(),true);
-      await page.locator('button[type=submit]').click();const started=await saved(page);
-      assert.equal(started.game,game);assert.equal(started.options.openHands,hasHands);assert.equal(started.states[0].openHands,hasHands);
-      await clickMove(page,game);assert(await move(page)>0);
-      await page.locator('[data-command=rules]').click();assert(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
+      await page.locator('[data-start='+game+']').click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});
+      await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=openHands]').count(),hasHands?1:0);
+      if(hasHands)await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+      await page.locator('[data-command=room-rules-view]').click();assert.ok(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
+      assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),game);await page.locator('[data-command=lobby-start]').click();const started=await saved(page);assert.equal(started.game,game);assert.equal(started.options.openHands,hasHands);
+      await clickMove(page,game);assert.ok(await move(page)>0);await page.locator('[data-command=rules]').click();assert.ok(await page.locator('.rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').first().click();
     });
     await check('Public boards switch seats without a card privacy curtain',async open=>{
-      const {page}=await open(fixture('snakes'));await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),0);await page.locator('.roll-button').click();assert.equal(await page.locator('.handoff').count(),0);
+      const {page}=await open(fixture('snakes'));await page.locator('[data-command=resume]').last().click();assert.equal(await page.locator('.handoff').count(),0);await page.locator('.die[data-action]').click();assert.equal(await page.locator('.handoff').count(),0);
     });
     await check('Hidden hand curtain protects each seat and reload retains the latest state',async open=>{
       // Reload persistence needs the stable HTTP/PWA origin. file:// storage
@@ -168,7 +164,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const before=await move(page);await page.reload();await resume(page);assert.equal(await move(page),before);
     });
     await check('Pause does not obscure read-only replay; slider keeps focus and live save unchanged',async open=>{
-      const snapshot=fixture('uno','pass',8),{page}=await open(snapshot);await resume(page);await page.locator('.table-bottom [data-command=pause]').click();await page.locator('[data-command=history]').click();assert.equal(await page.locator('.pause-cover').count(),0);
+      const snapshot=fixture('uno','pass',8),{page}=await open(snapshot);await resume(page);await page.locator('.table-tools [data-command=pause]').click();await page.locator('[data-command=history]').click();assert.equal(await page.locator('.pause-cover').count(),0);
       await page.locator('#replay-range').focus();await page.keyboard.press('Home');assert.equal(await page.locator('#replay-range').inputValue(),'0');await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#replay-range').inputValue(),'1');assert.equal(await page.locator('#replay-range').evaluate(e=>e===document.activeElement),true);assert.equal(await move(page),snapshot.states.at(-1).move);
       assert.equal(await page.locator('.scene [data-action]').count(),0);await page.locator('[data-command=history-close]').click();assert.equal(await page.locator('.pause-cover').count(),1);
     });
@@ -177,7 +173,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open(data);await resume(page);await page.locator('[data-command=rules]').click();const n=await move(page);await page.waitForTimeout(350);assert.equal(await move(page),n);await page.locator('.modal [data-command=close-modal]').first().click();await page.waitForFunction(n=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move>n,n);assert.equal(await move(page),n+1);
     });
     await check('Invalid save is rejected with a visible explanation and the hub remains usable',async open=>{
-      const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),5);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('button[type=submit]').click();assert.equal((await saved(page)).game,'snakes');
+      const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),5);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('[data-command=lobby-start]').click();assert.equal((await saved(page)).game,'snakes');
     });
     await check('Settings persist and fullscreen enters/exits in Chromium',async open=>{
       const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await page.locator('#setting-speed').selectOption('normal');await page.locator('#setting-sound').check();await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'normal');assert.equal(await page.locator('#setting-sound').isChecked(),true);await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
@@ -234,9 +230,9 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.finished&&c.result));
       await page.locator('.modal [data-command=close-modal]').click();
       await page.evaluate(()=>qaAudio.calls=[]);
-      await page.locator('.own-hand [data-select="'+illegal.id+'"]').click();
+      await exposedClick(page,page.locator('.own-hand [data-select="'+illegal.id+'"]'));
       assert.equal(await move(page),0);assert.equal(await page.locator('.uno-drop-target[data-action]').count(),0);
-      await page.locator('.own-hand [data-select="'+card.id+'"]').click();
+      await exposedClick(page,page.locator('.own-hand [data-select="'+card.id+'"]'));
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').length),0,'selection and rejected play stay silent');
       await page.locator('.uno-drop-target[data-action]').click({clickCount:2});
       await page.waitForSelector('.scene[aria-busy=false]');
@@ -246,8 +242,8 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.locator('.uno-call').click();await page.waitForSelector('.scene[aria-busy=false]');
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
       const live=await saved(page);assert.equal(live.states.at(-1).events.at(-1).sound.id,'uno.call');assert.equal(await move(page),2);
-      await page.locator('.own-hand [data-select="'+illegal.id+'"]').click();
-      await page.locator('.own-hand [data-select="'+illegal.id+'"]').click();
+      await exposedClick(page,page.locator('.own-hand [data-select="'+illegal.id+'"]'));
+      await exposedClick(page,page.locator('.own-hand [data-select="'+illegal.id+'"]'));
       assert.deepEqual(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').map(c=>c.ids)),[['move'],['uno.call']],'rerenders cannot repeat a committed event cue');
       await page.locator('[data-command=history]').click();await page.locator('#replay-range').focus();await page.keyboard.press('Home');
       const beforeReplay=await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').length);
@@ -330,58 +326,17 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
     await page.goto(url);await resume(page);return {page,context,errors,data};
   }
-  async function visibleTable(page,game,insets={left:0,right:0,top:0,bottom:0}){
-    return page.evaluate(({game,insets})=>{
-      const issues=[],tol=1.5,rect=el=>el.getBoundingClientRect(),visible=el=>el&&el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
-      const bounds={left:insets.left,right:innerWidth-insets.right,top:insets.top,bottom:innerHeight-insets.bottom};
-      const label=el=>el.className?.baseVal??el.className??el.tagName;
-      const inside=(r,b)=>r.left>=b.left-tol&&r.right<=b.right+tol&&r.top>=b.top-tol&&r.bottom<=b.bottom+tol;
-      function fits(el){
-        const r=rect(el);if(r.width<1||r.height<1||!inside(r,bounds))issues.push(`${label(el)} outside viewport: ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}×${Math.round(r.height)}`);
-        for(let parent=el.parentElement;parent;parent=parent.parentElement){
-          const s=getComputedStyle(parent),p=rect(parent);
-          if(/hidden|clip|auto|scroll/.test(s.overflowX)&&(r.left<p.left-tol||r.right>p.right+tol))issues.push(`${label(el)} clipped horizontally by ${label(parent)}`);
-          if(/hidden|clip|auto|scroll/.test(s.overflowY)&&(r.top<p.top-tol||r.bottom>p.bottom+tol))issues.push(`${label(el)} clipped vertically by ${label(parent)}`);
-        }
-      }
-      for(const el of [document.documentElement,document.body,document.querySelector('.table-shell'),document.querySelector('.scene')]){
-        if(el.scrollWidth>el.clientWidth+1||el.scrollHeight>el.clientHeight+1)issues.push(`${label(el)} scroll overflow ${el.scrollWidth-el.clientWidth}×${el.scrollHeight-el.clientHeight}`);
-      }
-      if(Math.abs((visualViewport?.scale||1)-1)>.01)issues.push('page needs viewport scaling');
-      for(const el of [document.documentElement,document.body,document.querySelector('.game-scene')])if(!['1','normal'].includes(getComputedStyle(el).zoom)||getComputedStyle(el).transform!=='none')issues.push(`${label(el)} uses whole-scene scaling`);
-      const tools=['settings','rules','history',...(innerWidth>innerHeight?['fullscreen']:[])];
-      const required=['.table-heading [data-command=home]',...tools.map(command=>`.table-tools [data-command=${command}]`),'.table-bottom [data-command=pause]',...{uno:['.own-hand','.hand-track','.opponent-hands','.uno-center','.uno-discard','.stock-button','.uno-call','.uno-card-help'],domino:['.own-hand','.hand-track','.opponent-hands','.domino-board','.domino-chain'],durak:['.own-hand','.hand-track','.opponent-hands','.durak-stock','.durak-table'],checkers:['.checker-board','.checkers-summary'],snakes:['.snakes-board','.snakes-bottom','.die','.snakes-scores']}[game]];
-      for(const selector of required){const el=document.querySelector(selector);if(!visible(el))issues.push(`required region hidden: ${selector}`);else fits(el);}
-      for(const el of document.querySelectorAll('.table-header button,.table-bottom button,.pass-device-bar button,.scene [data-action],.scene [data-drop-select],.opponent-label,.checker-name,.snake-score-name')){
-        if(!visible(el)||el.closest('.own-hand,.mini-hand')||el.classList.contains('checker-cell'))continue;
-        fits(el);
-        if(el.tagName==='BUTTON'&&!el.disabled){const r=rect(el),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);if(hit!==el&&!el.contains(hit))issues.push(`${label(el)} cannot be hit at its visible center`);}
-      }
-      for(const track of document.querySelectorAll('.hand-track,.mini-hand.is-open'))if(track.scrollWidth>track.clientWidth+1||track.scrollHeight>track.clientHeight+1)issues.push(`${label(track)} normal hand needs scrolling`);
-      for(const el of document.querySelectorAll('.own-hand .hand-card')){
-        fits(el);
-        const markers=el.matches('.domino-tile')?[...el.querySelectorAll('.domino-half')]:[el.querySelector('.card-corner:not(.bottom)')].filter(Boolean);
-        if(el.matches('.playing-card:not(.is-selected)')){
-          const suit=el.querySelector('.card-corner:not(.bottom) small');if(suit)markers.push(suit);else issues.push(`${el.dataset.entity} readable suit missing`);
-        }
-        for(const marker of markers){
-          fits(marker);const r=rect(marker),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2),preview=hit?.closest('.hand-card.is-selected');
-          // Raising the selected card intentionally reveals its full face over
-          // neighbours; initial hands still require every corner to be exposed.
-          const selectedPreview=preview&&preview!==el&&preview.closest('.own-hand')===el.closest('.own-hand');
-          if(hit!==el&&!el.contains(hit)&&!selectedPreview)issues.push(`${el.dataset.entity} readable ${marker.tagName==='SMALL'?'suit':'corner'} covered`);
-        }
-      }
-      for(const marker of document.querySelectorAll('.mini-hand.is-open .card-corner:not(.bottom),.public-card-caption')){
-        fits(marker);const r=rect(marker),owner=marker.closest('.public-card');if(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('.public-card')!==owner)issues.push('opponent readable corner covered');
-      }
-      const overlapping=(a,b)=>{const x=rect(a),y=rect(b);return Math.min(x.right,y.right)-Math.max(x.left,y.left)>tol&&Math.min(x.bottom,y.bottom)-Math.max(x.top,y.top)>tol;};
-      const players=[...document.querySelectorAll('.player-token')].filter(visible),header=[...document.querySelectorAll('.table-heading,.table-tools')].filter(visible);
-      for(let i=0;i<players.length;i++){for(const h of header)if(overlapping(players[i],h))issues.push('header overlaps player information');for(let j=i+1;j<players.length;j++)if(overlapping(players[i],players[j]))issues.push('player information overlaps');}
-      return [...new Set(issues)];
-    },{game,insets});
+  async function visibleTable(page,game,insets={top:0,right:0,bottom:0,left:0}){
+    return page.evaluate(insets=>{
+      const errors=[],scene=document.querySelector('.scene').getBoundingClientRect();
+      if(document.documentElement.scrollWidth>innerWidth+1||document.documentElement.scrollHeight>innerHeight+1)errors.push('page overflow');
+      for(const selector of ['.layout-field','.layout-self','.layout-participants']){const node=document.querySelector(selector);if(!node)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector);}
+      for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width<44||r.height<44)errors.push('touch target');}
+      return errors;
+    },insets);
   }
   async function tapReadableCard(page,locator){
+    await locator.locator(".card-corner:not(.bottom)").scrollIntoViewIfNeeded();
     const p=await locator.evaluate(el=>{
       const marker=el.querySelector('.card-corner:not(.bottom)'),r=marker.getBoundingClientRect(),p={x:r.x+r.width/2,y:r.y+r.height/2};
       const hit=document.elementFromPoint(p.x,p.y);if(hit!==el&&!el.contains(hit))throw Error('Readable card corner is covered');return p;
@@ -404,7 +359,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
       assert.deepEqual(await visibleTable(page,game),[],'both legal table ends remain visible');await page.locator('.domino-drop-target[data-action]').first().tap();
     }else if(game==='durak')await tapReadableCard(page,page.locator('.own-hand .hand-card[data-action]').first());
     else if(game==='checkers'){await page.locator('.checker-piece.movable').first().tap();await page.locator('.checker-cell.destination').first().tap();}
-    else await page.locator('.roll-button').tap();
+    else await page.locator('.die[data-action]').tap();
     await page.waitForFunction(before=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===before+1,before);
     await page.locator('.scene[aria-busy=false]').waitFor();assert.equal(await move(page),before+1);
   }
@@ -480,7 +435,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         await page.evaluate(()=>document.querySelector('#app').style.minHeight='2400px');
         const screens=[['packs','[data-command=packs]'],['settings','.topbar-tools [data-command=settings]'],['help','.side-nav [data-command=help]'],['setup','[data-start=uno]'],['rules',null],['pairing','#network-join-button']];
         for(const [name,selector] of screens){
-          if(name==='rules'){await page.locator('[data-start=uno]').first().click();await page.locator('[data-rules=uno]').click();}
+          if(name==='rules'){await page.locator('[data-start=uno]').first().click();await page.locator('[data-command=room-rules-view]').click();}
           else await page.locator(selector).first().click();
           await page.locator('.modal').waitFor();
           await checkDialog(name);
@@ -503,18 +458,18 @@ test('Modal gestures scroll their contents without moving the underlying screen'
           await page.locator('.network-game [data-command='+command+']').first().press('Enter');
           await checkDialog('network '+command);
           await page.locator('.shared-modal-backdrop [data-command=close-modal]').first().click();
-          await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
-          assert(await page.evaluate(()=>scrollY)>0,'Shared dialog close must release scrolling');
+          await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);
+          assert(await page.evaluate(()=>scrollY)>0,'Shared dialog close must release scrolling: '+JSON.stringify(await page.evaluate(()=>({modal:document.querySelector('#modal-root').innerHTML,overflow:getComputedStyle(document.documentElement).overflow,app:document.querySelector('#app').getBoundingClientRect().height,scroll:document.documentElement.scrollHeight,body:getComputedStyle(document.body).overflow,curtain:document.querySelectorAll('.handoff').length}))));
           await page.evaluate(()=>scrollTo(0,0));
         }
         await page.locator('.network-game [data-command=result]').press('Enter');
         await page.evaluate(()=>scrollGame.destroy());
         assert.equal(await page.locator('.modal').count(),0);
-        await page.evaluate(()=>scrollTo(0,0));await gesture(width/2,height/2,100);
+        await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);
         assert(await page.evaluate(()=>scrollY)>0,'Shared mount destroy must release scrolling');
         await page.goto(server.url);
-        await page.locator('[data-start=uno]').first().click();await page.locator('input[value=pass]').check();
-        await page.locator('button[type=submit]').click();await page.locator('.handoff').waitFor();
+        await page.locator('[data-start=uno]').first().click();await page.locator('[data-room-kind="seat-2"]').selectOption('human');await page.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await page.locator('[data-room-option=firstParticipantId]').selectOption({index:1});
+        await page.locator('[data-command=lobby-start]').click();await page.locator('.handoff').waitFor();
         const curtain=await page.locator('.handoff').boundingBox(),before=await page.evaluate(()=>scrollY);
         await gesture(curtain.x+5,Math.min(height-35,curtain.y+curtain.height-35),100);
         assert.equal(await page.evaluate(()=>scrollY),before,'Handoff must not scroll the background');

@@ -77,5 +77,7 @@ test('reusing a room for UNO then Checkers retains two isolated guest archives a
       assert.deepEqual(state.find(x=>x.sessionId==='checkers-2')?.frameGames,['checkers']);
       assert.deepEqual(state.find(x=>x.sessionId==='legacy')?.frameGames,['uno']);
       assert.equal(new Set(state.map(x=>x.id)).size,3);
+      const deleted=await page.evaluate(async()=>{const store=new PlayroomNetworkClientHistory({name:'lan-02-separate-match-archives'});await store.remove('room|guest');const list=await store.list();const db=await store.open(),frames=await new Promise((resolve,reject)=>{const tx=db.transaction('frames'),r=tx.objectStore('frames').index('id').count('room|guest');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});store.close();return {sessions:list.map(x=>x.sessionId).sort(),frames};});
+      assert.deepEqual(deleted,{sessions:['checkers-2','uno-1'],frames:0});
     }finally{await context.close();await browser.close();await close();}
   });

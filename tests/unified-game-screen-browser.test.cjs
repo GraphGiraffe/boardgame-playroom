@@ -106,9 +106,9 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.deepEqual(commands.slice(-2),['rules','settings'],'Help and settings retain the right edge');
     assert.equal(await shell.locator('.table-tools button svg[data-ui-icon]').count(),commands.length);
 
-    assert.equal(await shell.locator('.player-strip .player-token').count(),2);
+    assert.equal(await shell.locator('.player-panel .player-token').count(),2);
     assert.equal(await shell.locator('.scene .opponent-hand').count(),1);
-    assert.equal(await shell.locator('.player-strip').isVisible(),true,'Player details must be visible, not just in the DOM');
+    assert.equal(await shell.locator('.layout-participants').isVisible(),true,'Player details must be visible, not just in the DOM');
     assert.equal(await shell.locator('.scene .opponent-hand').isVisible(),true,'Opponent hand must be visible');
     assert.equal(await shell.locator('.scene .own-hand').count(),1);
     assert.equal(await shell.locator('.scene .opponent-hand .uno-art-face').count(),0);
@@ -125,7 +125,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.equal(await page.evaluate(()=>window.localClicks),0,'Network interactions must not reach the local Session click handler');
     assert.equal(await shell.locator('.history-panel').count(),0);
     await page.setViewportSize({width:740,height:390});
-    assert.equal(await shell.locator('.player-strip .player-token').count(),2);
+    assert.equal(await shell.locator('.player-panel .player-token').count(),2);
     assert.equal(await shell.locator('.game-action-bar').count(),1);
     await page.evaluate(()=>game.destroy());
     // Table mode is read-only and must not inherit a player's own hand.

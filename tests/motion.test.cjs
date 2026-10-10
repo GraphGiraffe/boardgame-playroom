@@ -58,7 +58,7 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
                 if (game === 'checkers') {
                   document.querySelector('.checker-piece.movable').click();
                   action = document.querySelector('.checker-cell.destination');
-                } else if (game === 'snakes') action = document.querySelector('.roll-button');
+                } else if (game === 'snakes') action = document.querySelector('.die[data-action]');
                 else {
                   action = visibleCard();
                   // Preview metadata may coexist with a one-tap action; match input priority.

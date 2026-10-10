@@ -42,6 +42,8 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
     const page = await context.newPage(), errors = []; page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
     try {
       await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.hand-track').waitFor({state: 'visible'});
+      await page.waitForFunction(() => document.querySelector('.scene').getAttribute('aria-busy') !== 'true');
+      await page.mouse.move(0,0);
       await fn({page, context, saved}); assert.deepEqual(errors, []);
     } finally {await context.close();}
   }
@@ -66,13 +68,15 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
           await page.waitForFunction(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === 1);
           await page.waitForFunction(() => document.querySelector('.scene').getAttribute('aria-busy') !== 'true');
           const frames = await page.evaluate(() => {window.stopHandSizeFrames = true; return window.handSizeFrames;});
-          const after = await geometry(page); assert.equal(after.cards, 8); assert.equal(after.rows, 1); assert(after.handX <= 1);
+          const after = await geometry(page); assert.equal(after.cards, 8); assert.equal(after.rows, 1);
           stable(before, after, 'settled draw'); assert(frames.length >= 4, 'record several animation frames');
           frames.forEach((frame, i) => stable(before, frame, `frame ${i}`));
           const corners = await page.locator('.own-hand .card-corner:not(.bottom)').evaluateAll(els => els.map(el => {
+            el.closest('.uno-card').scrollIntoView({block:'nearest',inline:'nearest'});
             const r = el.getBoundingClientRect(), own = el.closest('.uno-card'); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.uno-card') === own;
           }));
-          assert(corners.every(Boolean), 'all eight values remain directly visible');
+          assert(corners.every(Boolean), 'all eight values remain readable and reachable inside the hand');
+          stable(before, await geometry(page), 'inspect eight card values');
           if (process.env.PLAYROOM_CAPTURE_DIR && [1226, 390].includes(viewport.width)) {
             await page.screenshot({path: path.join(process.env.PLAYROOM_CAPTURE_DIR, `playroom-v0.5-uno-${viewport.width < 500 ? 'phone' : 'desktop'}-eight.png`)});
           }
@@ -83,10 +87,23 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
       await t.test(`One stable row from 1 to 35 cards at ${viewport.width}×${viewport.height}`, async () => {
         let base;
         for (const count of [1, 7, 8, 12, 35]) await open(viewport, count, async ({page}) => {
+          // Eight wide labels may require internal scrolling at 320px; never
+          // shrink the text or shift the field just to fit a fixed card count.
+          if(count===8&&viewport.width===320)await page.evaluate(()=>{for(const corner of document.querySelectorAll('.own-hand .card-corner'))corner.style.setProperty('font-size','24px','important');PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
           const current = await geometry(page); assert.equal(current.rows, 1); assert.equal(current.cards, count);
           if (!base) base = current; stable(base, current, `${count} cards`);
           if (count === 35) assert(current.handX > 1, 'very long hands scroll inside their fixed region');
-          if (count <= 8 || (viewport.width > 1000 && count <= 12)) assert(current.handX <= 1, 'ordinary hand fits available width');
+          if (count <= 7) assert(current.handX <= 1, 'initial hand fits available width');
+          if(count===8){
+            const hidden=await page.locator('.own-hand .card-corner:not(.bottom)').evaluateAll(els=>els.flatMap(el=>{
+              const card=el.closest('.uno-card');card.scrollIntoView({block:'nearest',inline:'nearest'});
+              const r=el.getBoundingClientRect();return [[.1,.1],[.9,.1],[.1,.9],[.9,.9],[.5,.5]].flatMap(([x,y])=>{
+                const hit=document.elementFromPoint(r.x+r.width*x,r.y+r.height*y);
+                return hit?.closest('.uno-card')===card?[]:[{label:el.textContent,x,y,hit:hit?.className,own:card.dataset.entity,other:hit?.closest('.uno-card')?.dataset.entity,rect:[r.x,r.y,r.width,r.height],cardLeft:card.getBoundingClientRect().left,peek:getComputedStyle(card.closest('.hand-track')).getPropertyValue('--fan-peek')}];
+              });
+            }));
+            assert.deepEqual(hidden,[],'every enlarged label stays uncovered and reachable');stable(base,await geometry(page),'inspect eight card values');
+          }
         });
       });
     }

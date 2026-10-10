@@ -4,10 +4,10 @@ const Screen=require('../app/game-screen.js');
 const projected={game:'uno',turn:1,move:5,players:[{name:'Первый',bot:false,score:9},{name:'Второй',bot:false,score:4}],data:{hands:[[{hidden:true}],[{hidden:true}]]}};
 test('player targeting is exposed only for allowed actions',()=>{
   const safe=Screen.playersMarkup(projected,0,[],{scoreLabel:'очки'});
-  assert.ok(!safe.includes('data-accuse-player'));
-  const allowed=Screen.playersMarkup(projected,0,[{type:'accuse-uno',target:1}],{scoreLabel:'очки'});
-  assert.ok(allowed.includes('data-accuse-player="1"'));
-  assert.ok(!allowed.includes('data-accuse-player="0"'));
+  assert.ok(!safe.includes('data-player-target'));
+  const allowed=Screen.playersMarkup(projected,0,[{type:'accuse-uno',target:1,targetKind:'player'}],{scoreLabel:'очки'});
+  assert.ok(allowed.includes('data-player-target="1"'));
+  assert.ok(!allowed.includes('data-player-target="0"'));
 });
 
 test('shared result screen shows wins, losses, public spectator and hot seat names without leaking game state',()=>{

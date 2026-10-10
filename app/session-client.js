@@ -10,9 +10,10 @@
     accept(snapshot){
       if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==1||!Number.isSafeInteger(snapshot.revision))return false;
       if(this.snapshot&&(snapshot.sessionId!==this.snapshot.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error('Исполнитель изменился. Откройте новую ссылку.');
-      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||snapshot.viewer!==this.snapshot.viewer||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
+      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||snapshot.viewer!==this.snapshot.viewer||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
+      if((snapshot.paused!==undefined&&typeof snapshot.paused!=='boolean')||(snapshot.controlRevision!==undefined&&(!Number.isSafeInteger(snapshot.controlRevision)||snapshot.controlRevision<0)))return false;
       const initial=!this.snapshot;
-      if(!initial&&snapshot.revision===this.snapshot.revision)return false;
+      if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0))return false;
       this.epoch=snapshot.authorityEpoch;this.snapshot=P.freeze(P.clone(snapshot));
       if(!initial){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});

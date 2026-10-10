@@ -76,14 +76,14 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         // must never repaint the incoming UNO network session.
         if(mode==='network-player'){
           await guests[0].locator('[data-start="checkers"]').click();
-          await guests[0].locator('#setup-form').evaluate(f=>f.requestSubmit());
+          await guests[0].locator('[data-command=lobby-start]').click();
           await guests[0].locator('.table-shell:not(.network-game)').waitFor();
           assert.match(await guests[0].locator('.table-title h1').innerText(),/Шашки/);
         }
         await host.locator('[data-start="uno"]').click();
-        await host.locator(`#setup-form input[name=mode][value=${mode}]`).check();
-        await host.locator('#setup-form input[name=roomName]').fill('Продолжение LAN-01');
-        await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
+        await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-kind="seat-2"]').selectOption('empty');if(mode==='network-table')await host.locator('[data-room-option=hostMode]').selectOption('table');
+        await host.locator('[data-room-title]').fill('Продолжение LAN-01');
+        await host.locator('[data-room-title]').press('Tab');
         await host.locator('.lobby-shell').waitFor();
         for(const [guestIndex,guest] of guests.entries()){
           await pair(host,guest,{shareHandoff:mode==='network-player'&&guestIndex===0});

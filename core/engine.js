@@ -128,7 +128,13 @@
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error('Неизвестный набор правил');
     const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || `Игрок ${i + 1}`).slice(0, 40), bot: !!p.bot, score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
-    pack.create(state, options);
+    const startMode=options.firstPlayerMode||'rules';
+    if(!['rules','random','assigned'].includes(startMode))throw Error('Неизвестный способ выбора первого игрока');
+    const firstPlayer=startMode==='random'?Math.floor(random(state)*players.length):startMode==='assigned'?options.firstPlayer:null;
+    if(firstPlayer!==null&&(!Number.isInteger(firstPlayer)||firstPlayer<0||firstPlayer>=players.length))throw Error('Выберите первого игрока');
+    pack.create(state,{...options,resolvedFirstPlayer:firstPlayer});
+    state.firstPlayer=state.turn;
+    state.firstPlayerMode=startMode;
     event(state, `${pack.name}: партия началась`, null, 'start');
     return state;
   }
@@ -145,7 +151,7 @@
   }
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error('Не задано действие');
-    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error('Этот ход сейчас недоступен');
     const next = clone(state);
     next.move++;
@@ -177,7 +183,7 @@
     const actions = reactions(state, actor);
     if (!actions.length) return null;
     const chosen = forState(state).botReaction?.(state, actor, actions);
-    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation', 'targetPrompt'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
+    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
   }
   // Optional generic components for custom packs: multiple named decks, hands,
   // boards and counters can coexist; visibility is explicit per zone/item.

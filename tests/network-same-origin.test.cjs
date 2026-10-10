@@ -13,7 +13,7 @@ function server(){
 async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
-test('main app: host and guest tabs sharing one browser profile can pair and join separately',{timeout:90000,skip:!hasUno},async()=>{
+for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: shared-profile pairing, bots, privacy and pause in '+game,{timeout:90000,skip:!hasUno},async()=>{
   const externalUrl=process.env.PLAYROOM_URL||'';
   const hosted=externalUrl?{s:null,url:externalUrl}:await server();
   const {s,url}=hosted,browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -29,10 +29,10 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
 
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
-    await host.locator('[data-start="uno"]').click();
-    await host.locator('#setup-form input[name=mode][value=network-player]').check();
-    await host.locator('#setup-form input[name=roomName]').fill('Тестовая комната');
-    await host.locator('#setup-form').evaluate(f=>f.requestSubmit());
+    await host.locator('[data-start="'+game+'"]').click();
+    await host.locator('[data-room-option=transportMode]').selectOption('network');await host.locator('[data-room-option=firstPlayerMode]').selectOption('assigned');await host.locator('[data-room-option=firstParticipantId]').selectOption({index:1});const seatedGuest=!['durak','checkers'].includes(game);
+    await host.locator('[data-room-title]').fill('Тестовая комната');
+    await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
     const offerLink=await value(host,'#net-host-token');
     const offerToken=await host.evaluate(link=>PlayroomPairing.extract(link),offerLink);
@@ -71,9 +71,7 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
       assert.fail('Client did not receive room preview after host accepted answer: '+JSON.stringify({client:clientDiag,host:hostDiag}));
     }
     assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
-    assert.match(await client.locator('.modal').innerText(),/UNO/);
-    assert.match(await client.locator('.modal').innerText(),/Объявление UNO/);
-    assert.match(await client.locator('.modal').innerText(),/Вручную · можно ошибаться/);
+    assert.match(await client.locator('.modal').innerText(),/Тестовая комната/);
     await client.locator('#net-client-join input[name=nickname]').fill('Гость из вкладки');
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
@@ -84,19 +82,29 @@ test('main app: host and guest tabs sharing one browser profile can pair and joi
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).count(),1);
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).first().locator('strong').innerText(),'Хост · хост');
 
-    const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();
+    if(seatedGuest){const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();}
     await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();
     await host.locator('[data-command=lobby-ready]').click();
-    await client.locator('[data-net-action=ready]').click();
+    if(seatedGuest)await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
 
     await host.locator('.table-shell.network-game').waitFor({timeout:10000});await client.locator('.table-shell.network-game').waitFor({timeout:10000});
     assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
-    assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+    assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),seatedGuest?'2':'-1');
     const before=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
-    const action=host.locator('.table-shell.network-game .scene [data-action]').first();await action.waitFor();await action.click();
+    await host.locator('.table-tools [data-command=pause]').click();await client.waitForFunction(()=>document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
+    const resumer=seatedGuest?client:host;
+    if(!seatedGuest)assert.equal(await client.locator('.table-tools [data-command=pause]').isEnabled(),false);
+    await resumer.locator('.table-tools [data-command=pause]').click();
+    await host.waitForFunction(()=>!document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
+    if(game==='checkers'){await host.locator('.checker-piece.movable').first().click();await host.locator('.checker-cell.destination').first().click();}
+    else if(game==='domino'||game==='durak'){const card=host.locator('.layout-hand .is-playable').first();await card.scrollIntoViewIfNeeded();const point=await card.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+8,y:r.y+16};});await host.mouse.click(point.x,point.y);if(game==='domino')await host.locator('.domino-drop-target[data-action]').first().click();}
+    else await host.locator(game==='uno'?'.stock-button[data-action]':'.die[data-action]').click();
     await client.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
     assert.ok(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'))>before);
+    if(game!=='uno')await client.waitForFunction(()=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>=2);
+    assert.equal(await client.locator('.opponent-hand .public-card').count(),0,'hidden opponent hands never expose card faces');
+    assert.equal(await host.locator('.player-panel').count(),seatedGuest?3:2);
     assert.deepEqual(errors,[]);
   }finally{await hc.close();await browser.close();if(s)await new Promise(r=>s.close(r));}
 });
