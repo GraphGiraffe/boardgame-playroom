@@ -173,18 +173,27 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       }
       assert.equal(completed.current.status,'finished');
       const finalStates=completed.export().states;
+      // Browser localStorage on file:// is not durable across navigation.
+      // Check reload and saved-game recovery on a stable PWA-like HTTP origin.
+      const hosted=url.startsWith('file:')?await serveSavedGames():null;
       const context=await browser.newContext({viewport:{width:320,height:740},hasTouch:true,isMobile:true});
       const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
       const current=()=>page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
       try{
-        await page.goto(url);
+        await page.goto(hosted?.url||url);
         await page.evaluate(saved=>{
           localStorage.clear();
           localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));
           localStorage.setItem('playroom.session.v1',saved);
         },JSON.stringify(penultimate));
         await page.reload();
-        await page.locator('.resume-banner [data-command=resume]').tap();
+        // Resume via the persisted library entry, not the optional hero banner.
+        // The saved-game record and the finished replay are still asserted.
+        await page.locator('.side-nav [data-command=sessions]').tap();
+        await page.locator('.saved-games-list').waitFor();
+        const pending=page.locator('.saved-game[data-session-id] [data-resume-id]');
+        assert.equal(await pending.count(),1,'the unfinished local game remains in the saved library after reload');
+        await pending.first().tap();
         await page.locator('.roll-button').tap();await page.locator('.result-modal').waitFor();
         const expected=await current();assert.deepEqual(expected.states,finalStates,'the visible final move reaches the expected finished result');
         const menu=page.locator('.result-modal [data-command=home]');
@@ -198,7 +207,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         for(let visit=0;visit<2;visit++){
           await page.locator('.side-nav [data-command=sessions]').tap();await page.locator('.saved-games-list').waitFor();
           const row=page.locator('.saved-game[data-session-id]');assert.equal(await row.count(),1);
-          assert.equal((await row.locator('.saved-status .pill').innerText()).trim(),'Завершена');
+          assert.equal((await row.locator('.saved-status .pill').innerText()).trim(),'Локальная · Завершена', 'The unified library identifies both save origin and completed status');
           assert.match(await row.locator('[data-resume-id]').innerText(),/Просмотреть/);
           await row.locator('[data-resume-id]').tap();await page.locator('#replay-range').waitFor();
           assert.equal(await page.locator('#replay-range').inputValue(),String(expected.states.length-1));
@@ -209,7 +218,10 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
           await page.reload();
         }
         assert.deepEqual(await current(),expected);assert.deepEqual(errors,[]);
-      }finally{await context.close();}
+      }finally{
+        await context.close();
+        if(hosted)await new Promise(resolve=>hosted.server.close(resolve));
+      }
     });
   } finally { await browser.close(); }
 });
