@@ -183,7 +183,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await page.locator('#setting-speed').selectOption('normal');await page.locator('#setting-sound').check();await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'normal');assert.equal(await page.locator('#setting-sound').isChecked(),true);await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
     });
     await check('Sound starts muted; real offline UNO preview, volume and mute survive reload',async open=>{
-      const {page}=await open(fixture('uno'),{width:390,height:844},{},true);
+      const {page}=await open(fixture('uno'),{width:390,height:844},{},true,storageUrl);
       await resume(page);await clickMove(page,'uno');await page.waitForSelector('.scene[aria-busy=false]');
       assert.equal(await move(page),1);
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='play'||c.method==='sequence').length),0,'muted actions never enter playback');
