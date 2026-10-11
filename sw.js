@@ -1,7 +1,8 @@
 'use strict';
 // API 2 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Published RC9 remains immutable.
-const CACHE='playroom-pwa-v0.15.0-rc.14';
+const CACHE='playroom-pwa-v0.15.0-rc.15';
+const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
@@ -29,8 +30,29 @@ async function handoffPairing(token){
   return true;
 }
 
+async function validAsset(path,response){
+  if(!response.ok||response.redirected)return false;
+  const type=response.headers.get('content-type')||'';
+  if(/\.(js|css)$/.test(path)&&type.includes('text/html'))return false;
+  if(INTEGRITY?.[path]){
+    const hash=await crypto.subtle.digest('SHA-256',await response.clone().arrayBuffer());
+    return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('')===INTEGRITY[path];
+  }
+  return true;
+}
 self.addEventListener('install',event=>{
-  event.waitUntil((async()=>{const cache=await caches.open(CACHE);await Promise.allSettled(CORE.map(async url=>{const response=await fetch(url,{cache:'reload'});if(response.ok)await cache.put(url,response);}));await self.skipWaiting();})());
+  event.waitUntil((async()=>{
+    // Fetch and verify the complete shell before writing or activating it.
+    const entries=await Promise.all(CORE.filter(path=>path!=='./').map(async path=>{
+      const response=await fetch(path,{cache:'reload'});
+      if(!await validAsset(path,response))throw Error('Incomplete application update: '+path);
+      return [path,response];
+    }));
+    const cache=await caches.open(CACHE);
+    await Promise.all(entries.map(([path,response])=>cache.put(path,response)));
+    // A waiting update never replaces an in-use shell or interrupts a room.
+    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:'0.15.0-rc.15'});
+  })());
 });
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE&&key.startsWith('playroom-pwa-'))await caches.delete(key);await self.clients.claim();})()));
 self.addEventListener('fetch',event=>{
@@ -43,10 +65,12 @@ self.addEventListener('fetch',event=>{
       if(pairToken&&await handoffPairing(pairToken)){
         return new Response('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ХОД</title><body style="font-family:system-ui;padding:2rem">Приглашение передано в открытый ХОД. Это окно можно закрыть.</body>',{headers:{'Content-Type':'text/html; charset=utf-8'}});
       }
-      try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open(CACHE);cache.put('./index.html',response.clone());}return response;}
+      try{const response=await fetch(event.request);if(await validAsset('./index.html',response)){const cache=await caches.open(CACHE);await cache.put('./index.html',response.clone());return response;}
+        if(response.redirected||!response.ok)return response;
+        return await (await caches.open(CACHE)).match('./index.html')||response;}
       catch(_){return await caches.match('./index.html')||await caches.match('./');}
     })());
     return;
   }
-  event.respondWith((async()=>{const cached=await caches.match(event.request,{ignoreSearch:true});if(cached)return cached;try{const response=await fetch(event.request);if(response.ok){const cache=await caches.open(CACHE);cache.put(event.request,response.clone());}return response;}catch(_){return Response.error();}})());
+  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request,{ignoreSearch:true});if(cached)return cached;try{const response=await fetch(event.request);if(await validAsset('./'+url.pathname.slice(new URL('./',self.location.href).pathname.length),response)){await cache.put(event.request,response.clone());}return response;}catch(_){return Response.error();}})());
 });

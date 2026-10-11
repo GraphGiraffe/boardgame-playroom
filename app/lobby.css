@@ -142,7 +142,7 @@
 .lobby-table-slot h2{font-size:16px;margin:0 0 10px}.lobby-table-slot .lobby-seat{height:76px}
 .lobby-observers[data-room-drop]{min-height:76px;border-radius:12px}
 [data-room-drag]{touch-action:none;user-select:none;cursor:grab}
-[data-room-drag]>.lobby-seat:disabled{pointer-events:none}
+.slot-edit,.slot-edit button{touch-action:pan-y}
 .room-drag-source{opacity:.45}.room-drop-active{outline:2px solid var(--green);outline-offset:2px}
 .room-drag-ghost{position:fixed;z-index:100;pointer-events:none;padding:10px;background:var(--paper);border:2px solid var(--green);border-radius:12px;box-shadow:0 5px 20px #20352d33;opacity:.9}
 .room-drag-ghost .slot-edit{display:none}

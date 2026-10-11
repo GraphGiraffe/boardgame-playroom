@@ -83,3 +83,34 @@ with tempfile.TemporaryDirectory() as d:
 `;
  execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
 });
+
+test('incomplete or login-page shell never installs; verified update waits for existing clients',async()=>{
+ const vm=require('node:vm'),crypto=require('node:crypto');
+ const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
+ for(const failure of ['missing','login','corrupt',null]){
+  const listeners={},writes=[],messages=[];let waits;
+  const body='public javascript',hash=crypto.createHash('sha256').update(body).digest('hex');
+  const self={location:{href:'https://example.test/sw.js',origin:'https://example.test'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>[{postMessage:m=>messages.push(m)}]},skipWaiting:()=>{throw Error('must not replace active room');}};
+  const sandbox={self,URL,Response,Uint8Array,crypto:crypto.webcrypto,fetch:async path=>new Response(path==='./app/app.js'&&failure==='corrupt'?'wrong version':body,{status:path==='./app/app.js'&&failure==='missing'?503:200,headers:{'content-type':path==='./app/app.js'&&failure==='login'?'text/html':'text/javascript'}}),caches:{open:async()=>({put:async path=>writes.push(path)})}};
+  vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),sandbox);
+  listeners.install({waitUntil:p=>waits=p});
+  if(failure){await assert.rejects(waits,/Incomplete/);assert.equal(writes.length,0);assert.equal(messages.length,0);}
+  else{await waits;assert(writes.includes('./app/app.js'));assert.equal(messages[0].kind,'playroom-update-ready');}
+ }
+});
+
+test('built PWA uses content-addressed scripts and styles despite old ignoreSearch caches',()=>{
+ const {execFileSync}=require('node:child_process');
+ execFileSync('python3',['-c',`import build, hashlib, json, re
+items=dict(build.pwa_runtime_items())
+html=items['index.html'].decode()
+worker=items['sw.js'].decode()
+refs=re.findall(r'(?:src|href)="([^"]+\\.(?:js|css))"',html)
+assert len(refs)>30
+for ref in refs:
+ assert re.search(r'\\.[a-f0-9]{16}\\.(js|css)$',ref),ref
+ assert hashlib.sha256(items[ref]).hexdigest()[:16] in ref
+ assert "'./"+ref+"'" in worker
+ assert './'+ref in json.loads(re.search(r'const INTEGRITY=(.*?);',worker).group(1))
+`],{cwd:root,stdio:'pipe'});
+});

@@ -284,7 +284,7 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 #modal-root .modal>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 10px 14px;scrollbar-gutter:stable}
 #modal-root .modal-body>.lobby-shell{padding:0;min-height:0}
 .room-transport{min-height:44px!important;height:44px!important}
-.room-transport span{padding-block:8px!important}
+.room-setup-modal .room-transport>span{display:flex;align-items:center;justify-content:center;height:36px;line-height:1.2;padding:0!important}
 .resume-actions{display:flex;align-items:center;gap:8px;flex:none}
 .resume-primary{background:var(--green);color:var(--paper)}
 .resume-banner strong{display:block}.resume-banner .pill{margin-bottom:5px}
@@ -304,3 +304,14 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .scene.replaying .layout-hand .hand-track.is-fan{--fan-card-width:52px;--fan-card-height:76px;--fan-peek:24px;--fan-row-step:46px}
 
 .scene.replaying .app-game-layout .player-panel .mini-hand>*:first-child{margin-left:0!important}
+
+/* Shared interactive object, independent of private hands and replay controls. */
+.app-game-layout:has(>.layout-shared){grid-template-rows:auto auto minmax(0,1fr) auto auto auto!important;grid-template-areas:"participants" "status" "field" "shared" "self" "auxiliary"!important}
+.layout-shared{grid-area:shared;min-width:0;display:flex;align-items:center;justify-content:center}
+.app-game-layout:is([data-layout-mode="phone-landscape"],[data-layout-mode="desktop"]):has(>.layout-shared){grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"status field shared" "participants field self" "auxiliary field self"!important}
+.lobby-actions:has(.lobby-stop){flex-wrap:wrap}
+.lobby-actions .lobby-stop{flex:1 0 100%;white-space:normal}
+/* Seven starting tiles fit without hiding either end; narrow hands wrap. */
+.app-game-layout .layout-hand .hand-track.is-tiles:not(.is-long-hand){display:flex!important;flex-wrap:wrap;gap:4px;justify-content:center;height:auto!important;min-height:0!important;max-height:none!important;padding:10px 2px;overflow:visible}
+.app-game-layout .layout-hand .hand-track.is-tiles:not(.is-long-hand)>button{flex:0 1 calc((100% - (var(--hand-columns) - 1)*4px)/var(--hand-columns))!important;width:auto!important;min-width:44px!important;max-width:48px;height:auto!important;aspect-ratio:4/7}
+.app-game-layout .layout-hand .hand-track.is-tiles.is-long-hand{justify-content:safe center}

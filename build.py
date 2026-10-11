@@ -292,6 +292,29 @@ def pwa_runtime_items(packs=()):
         items.append((path.relative_to(ROOT).as_posix(), path.read_bytes()))
     items.append(("installed-packs.js", installed_script(list(packs)).encode("utf-8")))
     items.extend(generated_icons())
+    # Old workers match cached asset URLs with ignoreSearch=True. A query
+    # version cannot prevent a new document from loading an old script.
+    # Keep canonical files for portable consumers; the PWA document and worker
+    # use content-addressed paths so an RC14 controller cannot mix builds.
+    document = dict(items)["index.html"].decode("utf-8")
+    urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
+    aliases = {name: str(Path(name).with_name(Path(name).stem + "." + hashlib.sha256(content).hexdigest()[:16] + Path(name).suffix))
+               for name, content in items if name in urls}
+    for name, alias in aliases.items():
+        document = document.replace('"' + name + '"', '"' + alias + '"')
+    originals = dict(items)
+    items = [(name, document.encode("utf-8") if name == "index.html" else content) for name, content in items]
+    worker = originals["sw.js"].decode("utf-8")
+    for name, alias in aliases.items():
+        worker = worker.replace("'./" + name + "'", "'./" + alias + "'")
+    items = [(name, worker.encode("utf-8") if name == "sw.js" else content) for name, content in items]
+    items.extend((alias, originals[name]) for name, alias in aliases.items())
+    # Private Pages packaging may preserve its own manifest; all executable
+    # public assets and the document are checked against this exact build.
+    integrity = {"./" + name: hashlib.sha256(content).hexdigest() for name, content in items
+                 if name not in {"sw.js", "manifest.webmanifest"}}
+    items = [(name, content.replace(b"const INTEGRITY=null;", ("const INTEGRITY=" + json.dumps(integrity, separators=(",", ":")) + ";").encode())
+              if name == "sw.js" else content) for name, content in items]
     return items
 
 

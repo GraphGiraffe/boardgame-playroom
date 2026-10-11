@@ -78,3 +78,22 @@ test('disk-committed move never receives a false rollback notice if live commit 
     assert.equal((await d.a.dispatch(command)).code,'CLOSED');
   }finally{d.authority.dispose();}
 });
+
+ test('stop waits for an accepted move to persist and fences subsequent commands',async()=>{
+  let release;const gate=new Promise(resolve=>{release=resolve;});
+  const d=setup({commit:()=>gate}),controls=[];
+  // Use the same persistence boundary as the durable host store.
+  d.authority.dispose();
+  const authority=new Authority(d.session,{sessionId:'stop-race',persistence:{
+    async commit(v){await gate;d.commits.push(v);},async recordReceipt(){},
+    async setControl(v){controls.push(v);}
+  }}),a=authority.connect(0),b=authority.connect(1);
+  try{
+    const move=a.dispatch(cmd(a)),stop=authority.stopForLobby();
+    assert.equal(authority.stopForLobby(),stop);assert.equal(controls.length,0);
+    release();assert.equal((await move).ok,true);await stop;
+    assert.equal(d.session.current.move,1);assert.equal(controls.length,1);
+    assert.equal(a.snapshot().paused,true);assert.equal((await b.dispatch(cmd(b,'late'))).code,'PAUSED');
+    assert.equal(d.session.current.status,'playing');assert.equal(d.session.current.winner,null);
+  }finally{authority.dispose();}
+});

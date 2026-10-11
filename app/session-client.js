@@ -4,7 +4,7 @@
   const uid=()=>globalThis.crypto?.randomUUID?.()||`client-${Date.now()}-${++sequence}`;
   class SessionClient {
     constructor(transport,{onEffect=()=>{}}={}){
-      this.transport=transport;this.snapshot=null;this.pending=null;this.listeners=new Set();this.onEffect=onEffect;this.lastEvent=0;this.lastEffectRevision=-1;this.epoch=null;this.closed=false;
+      this.transport=transport;this.snapshot=null;this.pending=null;this.deliveryError=null;this.inFlight=null;this.listeners=new Set();this.onEffect=onEffect;this.lastEvent=0;this.lastEffectRevision=-1;this.epoch=null;this.closed=false;
       this.unsubscribe=transport.subscribe?.(s=>this.accept(s));
     }
     accept(snapshot){
@@ -27,14 +27,25 @@
     async refresh(){const snapshot=await this.transport.snapshot();this.accept(snapshot);return this.snapshot;}
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
     async send(action){if(this.closed||!this.snapshot)throw Error('Нет подключения.');if(this.pending)throw Error('Предыдущая команда ещё не подтверждена.');this.pending=P.command(this.snapshot,action,uid());return this.retry();}
-    async retry(){
-      if(!this.pending)throw Error('Нет команды для повтора.');
-      const command=this.pending;
-      // Keep the identical envelope on transport failure, even if a newer snapshot arrives.
-      const receipt=await this.transport.dispatch(P.clone(command));
-      if(receipt.commandId!==command.commandId)throw Error('Некорректное подтверждение.');
-      if(receipt.snapshot)this.accept(receipt.snapshot);
-      this.pending=null;for(const listener of this.listeners)listener(this.snapshot);return receipt;
+    retry(){
+      if(this.inFlight)return this.inFlight;
+      if(!this.pending)return Promise.reject(Error('Нет команды для повтора.'));
+      const command=this.pending;this.deliveryError=null;
+      this.inFlight=Promise.resolve().then(async()=>{
+        let receipt;
+        try{
+          for(let attempt=0;attempt<2;attempt++){
+            try{receipt=await this.transport.dispatch(P.clone(command));break;}
+            catch(error){if(this.closed||attempt===1)throw error;}
+          }
+          if(receipt.commandId!==command.commandId)throw Error('Некорректное подтверждение.');
+          this.pending=null;
+          if(receipt.snapshot)this.accept(receipt.snapshot);
+          return receipt;
+        }catch(error){this.deliveryError=error.message;throw error;}
+        finally{this.inFlight=null;for(const listener of this.listeners)listener(this.snapshot);}
+      });
+      return this.inFlight;
     }
     history(index){return this.transport.history(index);}
     presentationReady(snapshot=this.snapshot){

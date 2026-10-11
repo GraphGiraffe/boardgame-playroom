@@ -150,9 +150,16 @@
     return [...(actor === state.turn ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
   }
   // Packs describe a public reaction window; clocks and transport stay in the app.
-  function reactionWindow(state) {
-    const value = forState(state).reactionWindow?.(state);
-    if (value == null) return null;
+  function reactionWindows(state) {
+    const pack=forState(state),legacy=pack.reactionWindow?.(state);
+    const values=pack.reactionWindows ? pack.reactionWindows(state) : legacy?[legacy]:[];
+    if(!Array.isArray(values)||values.length>state.players.length)throw Error('Некорректные окна реакции пака');
+    const result=values.map(value=>validateReactionWindow(state,value));
+    if(new Set(result.map(w=>w.id)).size!==result.length)throw Error('Повтор окна реакции');
+    return result;
+  }
+  function reactionWindow(state) { return reactionWindows(state)[0]||null; }
+  function validateReactionWindow(state,value) {
     const int = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
     if (!value || typeof value.id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id) ||
         !int(value.owner, 0, state.players.length - 1) || !int(value.revision, 0, state.move) ||
@@ -166,6 +173,7 @@
     if (value == null) return null;
     if (!value || !['answer','challenge','advance','independent'].includes(value.kind) ||
         (value.ignore !== undefined && typeof value.ignore !== 'boolean') ||
+        (value.independent !== undefined && typeof value.independent !== 'boolean') ||
         (value.episode !== undefined && (!Number.isSafeInteger(value.episode) || value.episode < 0))) throw Error('Некорректная реакция пака');
     return clone(value);
   }
@@ -231,7 +239,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionControl, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;
