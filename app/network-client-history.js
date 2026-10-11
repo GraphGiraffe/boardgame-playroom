@@ -81,7 +81,7 @@
             game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),
             role:'client',revision:last,finished:frame.revision>=last?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
             players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64)),
-            participants:Array.isArray(participants)?participants.map(p=>({nickname:String(p.nickname||p.name||'').slice(0,64),role:['player','spectator','table'].includes(p.role)?p.role:'player',bot:!!p.bot,local:!!p.local,isHost:!!p.isHost})):old?.participants||[]});
+            participants:Array.isArray(participants)?participants.map(p=>({...id(p.id)?{id:p.id}:{},nickname:String(p.nickname||p.name||'').slice(0,64),role:['player','spectator','table'].includes(p.role)?p.role:'player',bot:!!p.bot,local:!!p.local,isHost:!!p.isHost})):old?.participants||[]});
           tx.objectStore('frames').put({id:key,revision:frame.revision,frame});
         };
       });

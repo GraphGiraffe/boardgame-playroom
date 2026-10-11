@@ -179,7 +179,7 @@
       person.nickname=normalizeName(nickname);room.lobbyRevision++;this._touch(room);
       this._emit(room,'participant-renamed',person.nickname+' изменил имя.',{participantId:person.id});return this.snapshot(roomId);
     }
-    restoreHotSeatLobby(value,{hostId}={}){
+    restoreHotSeatLobby(value,{hostId,active=false}={}){
       const room=clone(value);
       if(!room||room.transportMode!=='hotseat'||room.ownerId!==hostId||!Array.isArray(room.seats)||!Array.isArray(room.participants)||!room.participants.some(p=>p.id===hostId&&p.isHost))throw Error('Нет сохранённого лобби Offline.');
       this._constraints(room.constraints);normalizeRoomName(room.name);
@@ -190,7 +190,7 @@
         if(!p||occupied.has(p.id)||p.seatId!==seat.id||p.role!=='player')throw Error('Повреждены игровые места.');occupied.add(p.id);
       }
       const old=this.rooms.get(room.id);if(old&&old.ownerId!==hostId)throw Error('Комната принадлежит другому хосту.');
-      room.phase='lobby';room.countdownEndsAt=null;delete room.recovery;
+      room.phase=active?'playing':'lobby';room.countdownEndsAt=null;delete room.recovery;
       for(const p of room.participants){p.ready=!!p.bot;p.connected=true;delete p.replacement;}
       this.rooms.set(room.id,room);this._touch(room);return this.snapshot(room.id);
     }
@@ -288,7 +288,7 @@
       this._touch(room);this._emit(room,'game-changed','Хост выбрал '+room.game.name+'. Проверьте игру и подтвердите готовность снова.',{gameId:game.id});
       return this.snapshot(roomId);
     }
-    returnToLobby(roomId,hostId){
+    returnToLobby(roomId,hostId,{stopped=false}={}){
       const room=this._room(roomId);this._host(room,hostId);
       if(room.phase!=='playing')throw Error('Комната не находится в игре.');
       // The caller must verify that the authoritative match is FINISHED.
@@ -297,7 +297,7 @@
       delete room.recovery;
       for(const seat of room.seats){delete seat.playerIndex;delete seat.previousParticipant;}
       for(const p of room.participants){p.ready=!!p.bot;delete p.replacement;}
-      this._touch(room);this._emit(room,'new-match-lobby','Партия завершена. Выберите следующую игру и подтвердите готовность.');
+      this._touch(room);this._emit(room,stopped?'match-stopped':'new-match-lobby',stopped?'Партия сохранена для продолжения.':'Партия завершена. Выберите следующую игру и подтвердите готовность.');
       return this.snapshot(roomId);
     }
     setReady(roomId,participantId,ready){

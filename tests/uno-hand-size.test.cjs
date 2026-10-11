@@ -43,7 +43,12 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
     try {
       await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.hand-track').waitFor({state: 'visible'});
       await page.waitForFunction(() => document.querySelector('.scene').getAttribute('aria-busy') !== 'true');
+      // Entering the table may put the old menu pointer over a card. Hover
+      // spreads its neighbours for 150 ms; measure the resting hand only
+      // after leaving it. Exercise this explicitly instead of relying on CI speed.
+      if(!mobile&&count>1)await page.locator('.hand-track .hand-card').first().hover({position:{x:5,y:20}});
       await page.mouse.move(0,0);
+      await page.waitForFunction(()=>[...document.querySelectorAll('.hand-track .hand-card')].every(card=>{const transform=getComputedStyle(card).transform;return transform==='none'||transform==='matrix(1, 0, 0, 1, 0, 0)';}));
       await fn({page, context, saved}); assert.deepEqual(errors, []);
     } finally {await context.close();}
   }
@@ -93,7 +98,7 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
           const current = await geometry(page); assert.equal(current.rows, 1); assert.equal(current.cards, count);
           if (!base) base = current; stable(base, current, `${count} cards`);
           if (count === 35) assert(current.handX > 1, 'very long hands scroll inside their fixed region');
-          if (count <= 7) assert(current.handX <= 1, 'initial hand fits available width');
+          if (count <= 7) assert(current.handX <= 1, `initial hand fits available width: ${count} cards, overflow ${current.handX}`);
           if(count===8){
             const hidden=await page.locator('.own-hand .card-corner:not(.bottom)').evaluateAll(els=>els.flatMap(el=>{
               const card=el.closest('.uno-card');card.scrollIntoView({block:'nearest',inline:'nearest'});

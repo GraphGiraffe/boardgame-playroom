@@ -64,7 +64,7 @@ test('accusations arriving after a declaration are neutral even with fresh comma
 test('wrong count or wrong player penalizes only the first accuser in one episode',()=>{
   let s=accuse(fixture(),1,0);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[0].length,2);assert.match(s.events.at(-2).text,/2 карт/);
   s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});s=accuse(s,1,2);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[2].length,1);assert.equal(s.data.uno.pending,0);assert.match(s.events.at(-2).text,/P0/);
-  const penalized=s;s=accuse(s,2,0);assert.equal(s,penalized);assert.equal(s.data.hands[0].length,1);assert.equal(s.data.hands[2].length,1);
+  const penalized=s;s=accuse(s,2,0);assert.notEqual(s,penalized);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[2].length,1);assert.equal(accuse(s,1,0),s);
 });
 
 test('the next normal draw closes the window; a late accusation retains the drawn-card restriction',()=>{
@@ -222,4 +222,13 @@ test('disconnect suspends protected reactions and reconnect grants a fresh ackno
     authority.setViewerConnected(0,true);assert.equal(clients[0].snapshot().reactionWindow.suspended,false);clock.advance(9999);assert.equal(authority.revision,1);
     clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(2999);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);
   }finally{authority.dispose();}
+});
+
+test('accusations against different targets are independent; duplicates share one penalty per target',()=>{
+  let s=fixture([['u1','u3'],['u5','u7'],['u26','u28'],['u30','u32']]);
+  s=accuse(s,0,1);assert.equal(s.data.hands[0].length,4);
+  assert.equal(accuse(s,2,1),s);
+  s=accuse(s,0,2);assert.equal(s.data.hands[0].length,6);
+  s=accuse(s,0,3);assert.equal(s.data.hands[0].length,8);
+  assert.deepEqual(s.data.uno.penalties,[1,2,3]);
 });

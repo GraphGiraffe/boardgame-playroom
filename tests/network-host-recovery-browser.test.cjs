@@ -264,6 +264,9 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           await guests[0].evaluate(()=>{window.confirm=()=>true;});
           await guests[0].locator('.table-shell.network-game .table-header [data-command=home]').click();
           await guests[0].locator('.game-grid').waitFor({timeout:10000});
+          assert.equal(await guests[0].evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
+          await guests[0].locator('[data-net-action=room]').click();
+          await guests[0].locator('[data-net-action=leave]').click();
           await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length>=1);
         }
         // An unfinished match can also be parked and restored in the same page.
@@ -272,6 +275,9 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.evaluate(()=>{window.confirm=()=>true;});
         await host.locator('.table-shell.network-game .table-header [data-command=home]').click();
         await host.locator('.game-grid').waitFor({timeout:10000});
+        assert(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId));
+        await host.locator('[data-command=room]').click();
+        await host.locator('[data-command=lobby-leave]').click();
         assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId),null);
         await host.locator('[data-command=sessions]').click();
         await host.locator('[data-network-continue]').first().click();

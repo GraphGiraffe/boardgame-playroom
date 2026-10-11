@@ -1,6 +1,6 @@
 /* The remote client uses the exact GameScreen markup and styles from app/styles.css.
    Only the transport-specific modal and retry control need adapter styling. */
-.shared-modal-backdrop{position:fixed;inset:0;z-index:900;background:#14251ca6;display:grid;place-items:center;padding:14px}
+.shared-modal-backdrop{position:fixed;inset:0;z-index:50;background:#14251ca6;display:grid;place-items:center;padding:14px}
 .shared-modal-backdrop .modal{max-width:560px;max-height:80dvh;overflow:auto;box-sizing:border-box;background:#f8f5e9}
 #app .network-game .network-retry{min-height:44px;flex-shrink:0}
 @media(prefers-reduced-motion:reduce){.shared-modal-backdrop *{animation:none!important;transition:none!important}}

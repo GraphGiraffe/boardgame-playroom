@@ -18,10 +18,47 @@
     return ordered.map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
   const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"','Закрыть','close')}<h2>${esc(title)}</h2></header>`;
+  function modalContent(content){
+    const template=root.document.createElement('template');template.innerHTML=content;
+    const head=template.content.querySelector('.modal-head');
+    const header=head?.outerHTML||'';head?.remove();
+    return header+'<div class="modal-body">'+template.innerHTML+'</div>';
+  }
+  function updateModal(modal,content){
+    const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
+    const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
+    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0));
+    const top=anchor?.getBoundingClientRect().top;
+    const key=n=>n.nodeType===1?(n.id||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
+    function patch(parent,next){
+      const old=[...parent.childNodes],used=new Set();let previous=null;
+      for(const fresh of [...next.childNodes]){
+        const k=key(fresh);let node=old.find(n=>!used.has(n)&&n.nodeType===fresh.nodeType&&n.nodeName===fresh.nodeName&&key(n)===k);
+        if(!node)node=fresh.cloneNode(true);else{
+          used.add(node);
+          if(node.nodeType===3){if(node.textContent!==fresh.textContent)node.textContent=fresh.textContent;}
+          else if(node.nodeType===1){
+            const focused=node===node.ownerDocument.activeElement;
+            for(const a of [...node.attributes])if(!fresh.hasAttribute(a.name)&&!(focused&&a.name==='value'))node.removeAttribute(a.name);
+            for(const a of fresh.attributes)if(!(focused&&a.name==='value')&&node.getAttribute(a.name)!==a.value)node.setAttribute(a.name,a.value);
+            if(!focused&&'value' in node&&node.tagName==='INPUT')node.value=fresh.value;
+            patch(node,fresh);
+          }
+        }
+        const at=previous?previous.nextSibling:parent.firstChild;if(node!==at)parent.insertBefore(node,at);previous=node;
+      }
+      for(const n of old)if(!used.has(n)&&n.parentNode===parent)n.remove();
+    }
+    patch(modal,template.content);
+    if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
+  }
+  function resumeCard({title,detail,network=false,connected=true,action='data-command="resume"',leave=''}){
+    return `<section class="resume-banner ${network?'network-resume-card':''}"><div><span class="pill">${network?'Сетевая':'Локальная'}</span><strong>${esc(title)}</strong><p>${esc(detail)}</p></div><div class="resume-actions">${leave?iconButton(leave,'Покинуть комнату','exit'):''}${iconButton(action,connected?'Продолжить':'Подключиться снова',connected?'play':'reset',{className:'resume-primary'})}</div></section>`;
+  }
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
   function playersMarkup(state,viewer,actions=[],{scoreLabel='очки',playerBadge=()=>''}={}){
-    return state.players.map((_,i)=>UI.playerPanel(state,i,viewer,{scoreLabel,badges:[playerBadge(state,i)].filter(Boolean)},actions)).join('');
+    return [...UI.seatOrder(state.players.length,viewer),...(viewer>=0&&viewer<state.players.length?[viewer]:[])].map(i=>UI.playerPanel(state,i,viewer,{scoreLabel,badges:[playerBadge(state,i)].filter(Boolean)},actions)).join('');
   }
 
   function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
@@ -32,7 +69,7 @@
     const winner=state.winner,person=winner==null?null:state.players[winner];
     const title=winner===null?'Ничья!':viewer<0?`${person?.name||'Игрок'} побеждает`:winner===viewer?'Победа!':'Поражение';
     const scores=state.players.map((player,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
-    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="home">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
+    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
@@ -57,7 +94,7 @@
     for(const mini of stage.querySelectorAll('.player-panel .mini-hand')){
       const count=mini.children.length;if(!count)continue;
       const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-28)/(count-1))):32)+'px');
+      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.getBoundingClientRect().width)/(count-1))):32)+'px');
     }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
       track.style.removeProperty('--fan-peek');
@@ -98,5 +135,5 @@
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage)stage.style.zoom='1';
   }
-  return Object.freeze({icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({modalContent,updateModal,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
 });

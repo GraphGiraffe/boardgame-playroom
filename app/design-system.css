@@ -214,7 +214,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles>button{flex-basis:36px!important;width:36px!important;min-width:36px!important;height:63px!important}
 .scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles .domino-half{width:20px}
 
-.scene.replaying .player-panel .mini-hand:not(.is-open){display:none!important}
+.scene.replaying .player-panel .mini-hand{height:32px;min-height:32px}
 #app .history-panel .history-controls{margin-top:0;gap:6px}
 #app .history-panel .replay-badge{flex:none;white-space:nowrap;padding:4px;font-size:9px}
 
@@ -275,3 +275,32 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .history-viewer select{max-width:100%;min-width:0;min-height:36px;padding:5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);font:inherit}
 .saved-participant{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;margin-right:8px}
 .saved-participant .participant-role svg{width:16px;height:16px}
+
+.player-status-icon{display:inline-flex;font-size:14px;line-height:1;vertical-align:middle;align-items:center;justify-content:center;width:1em;height:1em}.player-status-icon svg{width:1em;height:1em}
+
+/* RC14: the header is outside the single scroll viewport for every dialog. */
+#modal-root .modal{display:flex;flex-direction:column;overflow:hidden;padding:14px;min-height:0}
+#modal-root .modal>.modal-head{position:relative;top:auto;flex:none;margin:0;padding:10px 10px 14px;background:var(--paper);z-index:2}
+#modal-root .modal>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 10px 14px;scrollbar-gutter:stable}
+#modal-root .modal-body>.lobby-shell{padding:0;min-height:0}
+.room-transport{min-height:44px!important;height:44px!important}
+.room-transport span{padding-block:8px!important}
+.resume-actions{display:flex;align-items:center;gap:8px;flex:none}
+.resume-primary{background:var(--green);color:var(--paper)}
+.resume-banner strong{display:block}.resume-banner .pill{margin-bottom:5px}
+#network-join-button{display:flex;margin-inline:auto}
+.scene.replaying .layout-hand .hand-card{width:52px!important;min-width:52px!important;height:76px!important}
+.scene.replaying .layout-hand .hand-track{min-height:92px;height:92px}
+
+.saved-self{font-weight:800}
+
+#app{isolation:isolate}
+.player-target-menu{z-index:45}
+#modal-root .modal>.app-notice{flex:none}
+
+.scene.replaying .app-game-layout .player-panel .mini-hand{height:40px;min-height:40px;padding:2px!important}
+.scene.replaying .app-game-layout .player-panel .mini-hand>*{width:24px!important;min-width:24px!important;flex-basis:24px!important;height:34px!important;min-height:34px!important;max-height:34px;margin-left:calc(var(--mini-step,24px) - 24px)!important}
+.scene.replaying .app-game-layout .player-panel .mini-hand .public-card>*{width:24px!important;min-width:24px!important;height:34px!important;min-height:34px!important}
+.scene.replaying .layout-hand .hand-track.is-fan{--fan-card-width:52px;--fan-card-height:76px;--fan-peek:24px;--fan-row-step:46px}
+
+.scene.replaying .app-game-layout .player-panel .mini-hand>*:first-child{margin-left:0!important}

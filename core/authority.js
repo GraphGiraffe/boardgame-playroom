@@ -20,7 +20,7 @@
       const receipts=new Map();
       if(!Array.isArray(restoredReceipts))throw Error('Invalid restored receipts');
       for(const row of restoredReceipts){
-        if(!Number.isInteger(row?.viewer)||row.viewer<0||row.viewer>=session.current.players.length||
+        if(!Number.isInteger(row?.viewer)||(row.viewer<0&&!(row.viewer===-1&&row.receipt?.host===true&&row.receipt?.control===true))||row.viewer>=session.current.players.length||
             typeof row.commandId!=='string'||!row.commandId||typeof row.signature!=='string'||
             row.receipt?.commandId!==row.commandId||typeof row.receipt?.ok!=='boolean')
           throw Error('Invalid restored receipt');
@@ -107,7 +107,7 @@
       if(control?.ignore)return 'REACTION_IGNORED';
       if(control?.episode!==undefined&&action.episode!==control.episode)return 'BAD_COMMAND';
       const window=this._syncReactionWindow();
-      if(!window||!control||!['challenge','advance'].includes(control.kind))return null;
+      if(!window||!control||!['challenge','advance'].includes(control.kind)||control.kind==='challenge'&&control.target!==undefined&&control.target!==window.descriptor.owner)return null;
       const delay=r.session.current.players[actor]?.bot?window.descriptor.botMs:window.descriptor.humanMs;
       if(window.readyAt===null||this._now()<window.readyAt+delay)return control.kind==='challenge'?'REACTION_IGNORED':'REACTION_WAIT';
       return null;
@@ -206,7 +206,7 @@
       r.busy=true;
       try{
         const controlRevision=r.controlRevision+(r.paused===command.action.paused?0:1);
-        const receipt={ok:true,code:'OK',control:true,commandId:command.commandId,revision:this.revision,controlRevision};
+        const receipt={ok:true,code:'OK',control:true,commandId:command.commandId,revision:this.revision,controlRevision,...(binding.host?{host:true}:{})};
         if(r.persistence)await r.persistence.setControl({sessionId:r.sessionId,previousControlRevision:r.controlRevision,paused:command.action.paused,controlRevision,viewer:binding.viewer,commandId:command.commandId,signature,receipt});
         r.paused=command.action.paused;r.controlRevision=controlRevision;
         if(r.reaction){if(r.reactionTimer!==null)r.clock.clearTimeout(r.reactionTimer);if(r.reactionOpenTimer!==null)r.clock.clearTimeout(r.reactionOpenTimer);r.reactionTimer=null;r.reactionOpenTimer=null;r.reaction.readyAt=null;r.reaction.createdAt=this._now();r.reactionRevision++;}
@@ -214,6 +214,13 @@
         this.cancelBot();this._publish();
         return freeze({...receipt,snapshot:this._snapshot(binding.viewer)});
       }catch(_){return reject('STORAGE_ERROR');}finally{r.busy=false;if(!r.paused&&r.persistence)this.scheduleBot();}
+    }
+    async stopForLobby(){
+      const r=records.get(this);if(r.disposed||r.busy)throw Error('Дождитесь завершения текущего действия.');
+      const command=P.command(this._snapshot(-1),{type:'session-pause',paused:true,expectedControlRevision:r.controlRevision},uid());
+      const receipt=await this._pause({viewer:-1,host:true},command,canonical(command),`host:${command.commandId}`,code=>({ok:false,code,message:text[code]}));
+      if(!receipt.ok)throw Error(receipt.message||'Не удалось сохранить партию.');
+      return receipt;
     }
     async actBotAsync(actor,action){
       const r=records.get(this);

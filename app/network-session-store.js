@@ -140,7 +140,7 @@
     }
     async setControl(entry){
       const {sessionId,previousControlRevision,paused,controlRevision,viewer,commandId,signature,receipt}=entry;
-      if(!isId(sessionId)||typeof paused!=='boolean'||!Number.isSafeInteger(previousControlRevision)||previousControlRevision<0||!Number.isSafeInteger(controlRevision)||controlRevision<previousControlRevision||controlRevision>previousControlRevision+1||!Number.isInteger(viewer)||viewer<0||!isId(commandId)||typeof signature!=='string'||!receipt?.control||!receipt.ok||receipt.commandId!==commandId||receipt.controlRevision!==controlRevision)throw Error('Некорректная пауза');
+      if(!isId(sessionId)||typeof paused!=='boolean'||!Number.isSafeInteger(previousControlRevision)||previousControlRevision<0||!Number.isSafeInteger(controlRevision)||controlRevision<previousControlRevision||controlRevision>previousControlRevision+1||!Number.isInteger(viewer)||(viewer<0&&!(viewer===-1&&receipt?.host===true))||!isId(commandId)||typeof signature!=='string'||!receipt?.control||!receipt.ok||receipt.commandId!==commandId||receipt.controlRevision!==controlRevision)throw Error('Некорректная пауза');
       await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
         const store=tx.objectStore('sessions'),request=store.get(sessionId);
         request.onsuccess=()=>{const record=request.result;if(!record||(record.controlRevision||0)!==previousControlRevision){abort(Error('Пауза уже изменена'));return;}
@@ -218,7 +218,7 @@
       if(!Array.isArray(controls)||controls.length>20000||!Number.isSafeInteger(controlRevision)||controlRevision<0||(record.paused!==undefined&&typeof record.paused!=='boolean'))throw Error('Повреждена пауза');
       const controlKeys=new Set();let previousControl=0;
       for(const row of controls){const key=row?.viewer+':'+row?.commandId,r=row?.receipt;
-        if(!Number.isInteger(row?.viewer)||row.viewer<0||row.viewer>=record.initial.states[0].players.length||!isId(row.commandId)||typeof row.signature!=='string'||!r?.control||!r.ok||r.commandId!==row.commandId||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision||!Number.isSafeInteger(r.controlRevision)||r.controlRevision<previousControl||r.controlRevision>previousControl+1||controlKeys.has(key))throw Error('Повреждены подтверждения паузы');
+        if(!Number.isInteger(row?.viewer)||(row.viewer<0&&!(row.viewer===-1&&r?.host===true))||row.viewer>=record.initial.states[0].players.length||!isId(row.commandId)||typeof row.signature!=='string'||!r?.control||!r.ok||r.commandId!==row.commandId||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision||!Number.isSafeInteger(r.controlRevision)||r.controlRevision<previousControl||r.controlRevision>previousControl+1||controlKeys.has(key))throw Error('Повреждены подтверждения паузы');
         previousControl=r.controlRevision;controlKeys.add(key);
       }
       if(previousControl!==controlRevision)throw Error('Несогласованная пауза');
