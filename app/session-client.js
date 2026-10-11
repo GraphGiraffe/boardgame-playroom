@@ -34,7 +34,7 @@
       const receipt=await this.transport.dispatch(P.clone(command));
       if(receipt.commandId!==command.commandId)throw Error('Некорректное подтверждение.');
       if(receipt.snapshot)this.accept(receipt.snapshot);
-      this.pending=null;return receipt;
+      this.pending=null;for(const listener of this.listeners)listener(this.snapshot);return receipt;
     }
     history(index){return this.transport.history(index);}
     presentationReady(snapshot=this.snapshot){

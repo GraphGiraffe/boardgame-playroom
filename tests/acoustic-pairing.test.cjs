@@ -202,7 +202,7 @@ test('bundled ggwave encodes short audio payload without network dependencies',a
 test('failed first audio module initialization is retryable and playback resumes audio before async Wasm loading',async()=>{
   const priorFactory=globalThis.ggwave_factory,priorContext=globalThis.AudioContext;
   const calls=[];let attempts=0;
-  const gg={getDefaultParameters:()=>({}),init:()=>42,free:()=>{},
+  const gg={getDefaultParameters:()=>({}),init:()=>0,free:id=>calls.push('free:'+id),
     ProtocolId:{GGWAVE_PROTOCOL_AUDIBLE_FASTEST:7},encode:()=>new Float32Array([0,0.1,0.1,0])};
   class FakeAudioContext{
     constructor(){this.sampleRate=48000;this.destination={};}
@@ -216,6 +216,7 @@ test('failed first audio module initialization is retryable and playback resumes
   try{
     await assert.rejects(A.play('test'),/temporary Wasm startup/);
     await A.play('test');
+    assert(calls.includes('free:0'),'the valid zero handle must be released');
     assert.equal(attempts,2,'the first rejected Wasm promise must not be permanently cached');
     assert.equal(calls.filter(x=>x==='resume').length,2);
     assert.equal(calls.filter(x=>x==='close').length,2);
@@ -223,4 +224,27 @@ test('failed first audio module initialization is retryable and playback resumes
     if(priorFactory===undefined)delete globalThis.ggwave_factory;else globalThis.ggwave_factory=priorFactory;
     if(priorContext===undefined)delete globalThis.AudioContext;else globalThis.AudioContext=priorContext;
   }
+});
+
+
+test('fresh acoustic module plays and listens on first call with real Wasm and releases resources',async()=>{
+  const vm=require('node:vm'),fs=require('node:fs'),calls=[];
+  class Context {
+    constructor(){this.sampleRate=48000;this.destination={};}
+    async resume(){calls.push('resume');}
+    async close(){calls.push('close');}
+    createBuffer(){return {copyToChannel(){}};}
+    createBufferSource(){return {connect(){},start(){calls.push('play');queueMicrotask(()=>this.onended());},stop(){}};}
+    createMediaStreamSource(){return {connect(){},disconnect(){}};}
+    createScriptProcessor(){return {connect(){calls.push('listen');},disconnect(){}};}
+  }
+  const factory=require('../app/vendor/ggwave.js'),sandbox={TextEncoder,TextDecoder,Uint8Array,Int8Array,Float32Array,DOMException,AudioContext:Context,ggwave_factory:factory,isSecureContext:true,location:{protocol:'https:'},navigator:{mediaDevices:{async getUserMedia(){return {getTracks:()=>[{stop(){calls.push('stop-track');}}]};}}}};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../app/acoustic-pairing.js'),'utf8'),sandbox);
+  await sandbox.PlayroomAcousticPairing.play(A.pack(signal()));
+  const listener=await sandbox.PlayroomAcousticPairing.listen(()=>{});listener.stop();
+  assert.equal(calls.filter(c=>c==='play').length,1);assert.equal(calls.filter(c=>c==='listen').length,1);assert.equal(calls.filter(c=>c==='close').length,2);assert(calls.includes('stop-track'));
+  let ready;sandbox.ggwave_factory=()=>new Promise(resolve=>ready=resolve);
+  vm.runInNewContext(fs.readFileSync(require.resolve('../app/acoustic-pairing.js'),'utf8'),sandbox);
+  const controller=new AbortController(),pending=sandbox.PlayroomAcousticPairing.listen(()=>{},{signal:controller.signal});controller.abort();const real=await factory();ready(real);
+  await assert.rejects(pending,{name:'AbortError'});assert.equal(calls.filter(c=>c==='listen').length,1,'closed dialog cannot start microphone');assert.equal(calls.filter(c=>c==='close').length,3);
 });

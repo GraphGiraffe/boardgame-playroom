@@ -257,17 +257,17 @@
     const parameters=gg.getDefaultParameters();
     parameters.sampleRateInp=context.sampleRate;parameters.sampleRateOut=context.sampleRate;
     const instance=gg.init(parameters);
-    if(!instance)throw Error('Не удалось запустить звуковой модуль.');
+    if(!Number.isInteger(instance)||instance<0)throw Error('Не удалось запустить звуковой модуль.');
     return instance;
   }
-  async function play(message,{protocol='fastest',volume=12}={}){
+  async function play(message,{protocol='fastest',volume=12,signal}={}){
     const context=audioContext();
     let gg=null,instance=null;
     try{
       // Android playback must establish AudioContext user activation before
       // asynchronous ggwave Wasm preparation consumes the initial tap.
       const loading=moduleInstance();
-      await context.resume();gg=await loading;instance=setup(gg,context);
+      await context.resume();gg=await loading;signal?.throwIfAborted();instance=setup(gg,context);
       const protocolId=gg.ProtocolId[protocols[protocol]];
       if(protocolId===undefined)throw Error('Неизвестный звуковой протокол.');
       const waveform=gg.encode(instance,message,protocolId,volume);
@@ -276,27 +276,33 @@
       const buffer=context.createBuffer(1,pcm.length,context.sampleRate);buffer.copyToChannel(pcm,0);
       await new Promise((resolve,reject)=>{
         const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
-        source.onended=resolve;
-        try{source.start();}catch(error){reject(error);}
+        const abort=()=>{try{source.stop();}catch(_){}reject(new DOMException('Cancelled','AbortError'));};
+        signal?.addEventListener('abort',abort,{once:true});
+        source.onended=()=>{signal?.removeEventListener('abort',abort);resolve();};
+        if(signal?.aborted){abort();return;}
+        try{source.start();}catch(error){signal?.removeEventListener('abort',abort);reject(error);}
       });
-    }finally{if(instance)gg.free(instance);await context.close();}
+    }finally{if(instance!==null)gg.free(instance);await context.close();}
   }
-  async function listen(onPacket){
+  async function listen(onPacket,{signal}={}){
     if(typeof onPacket!=='function')throw Error('Нужен обработчик звукового приглашения.');
     const issue=microphoneIssue();if(issue)throw Error(issue);
-    const gg=await moduleInstance(),context=audioContext();
+    const context=audioContext(),loading=moduleInstance();
+    let gg=null;
     let instance=null,stream=null,source=null,processor=null,closed=false;
     const stop=()=>{
-      if(closed)return;closed=true;
+      if(closed)return;closed=true;signal?.removeEventListener('abort',stop);
       try{processor?.disconnect();source?.disconnect();}catch(_){}
       stream?.getTracks().forEach(track=>track.stop());
-      if(instance)gg.free(instance);
+      if(instance!==null)gg.free(instance);
       context.close().catch(()=>{});
     };
     try{
-      await context.resume();
+      await context.resume();gg=await loading;signal?.throwIfAborted();
       try{stream=await root.navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}catch(error){throw explainMicrophoneError(error);}
+      if(signal?.aborted){stream.getTracks().forEach(track=>track.stop());signal.throwIfAborted();}
       instance=setup(gg,context);
+      signal?.addEventListener('abort',stop,{once:true});
       if(!context.createScriptProcessor)throw Error('Этот браузер не поддерживает звуковой приём.');
       source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(1024,1,1);
       processor.onaudioprocess=event=>{

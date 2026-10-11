@@ -87,7 +87,7 @@
       dialogOpen=true;input.cancel();playerTargets?.cancel();app.inert=true;
       const template=document.createElement('template');template.innerHTML=content;
       const heading=template.content.querySelector('h2'),title=heading?.textContent||'Информация';if(heading?.closest('.modal-head'))heading.closest('.modal-head').remove();else heading?.remove();
-      modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${GameScreen.esc(title)}">${GameScreen.modalHead(title)}${template.innerHTML}</section></div>`;
+      modal.innerHTML=`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${GameScreen.esc(title)}">${GameScreen.modalContent(GameScreen.modalHead(title)+template.innerHTML)}</section></div>`;
       ownedDialog=modal.firstElementChild;
       modal.querySelector('button')?.focus();
     }
@@ -167,7 +167,7 @@
           if(onExit)onExit();
           else root.location.reload();
           break;
-        case 'settings':show('<h2>Настройки</h2><button class="btn secondary" data-command="rules">Правила игры</button><button class="btn secondary" data-command="fullscreen">На весь экран</button><button class="btn secondary" data-command="preferences">Настройки устройства</button>');break;
+        case 'settings':root.PlayroomNetworkLibrary?.showSettings?.({sharedRules:true});break;
         case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;
         case 'rules':case 'card-help':show('<h2>Правила игры</h2>'+pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join(''));break;
         case 'fullscreen':
@@ -190,6 +190,7 @@
       }
     }
     function click(event){
+      if(event.target.closest('[data-shared-rules]')){event.stopImmediatePropagation();root.PlayroomAppBridge?.closeModal?.(true);void action('rules');return;}
       if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
       // Network controls use exactly the same DOM contract as local play, but
       // must NEVER be delivered to app.js's local Session handlers.
@@ -285,6 +286,8 @@
         void drain();
       }).catch(error=>{if(!destroyed&&ticket===animationTicket){toast(error.message);stopMotion();shownLive=client.snapshot;render();}});
     }
+    const modalObserver=new MutationObserver(()=>{if(destroyed)return;if(modal.children.length){input.cancel();playerTargets.cancel();}else if(!dialogOpen)render();});
+    modalObserver.observe(modal,{childList:true});
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);
     document.addEventListener('input',historySliderInput,true);
@@ -294,7 +297,7 @@
     const onOptions=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){stopReplay();flow.cancel();}else if(!draining)render();};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){presentedWindow=null;playerTargets.cancel();flow.cancel();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+      destroy(){destroyed=true;modalObserver.disconnect();clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

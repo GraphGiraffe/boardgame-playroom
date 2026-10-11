@@ -52,11 +52,34 @@ test('offline pairing UI provides speaker-only mode and explains blocked microph
   const ui=fs.readFileSync(path.join(root,'app/network-ui.js'),'utf8');
   const acoustic=fs.readFileSync(path.join(root,'app/acoustic-pairing.js'),'utf8');
   assert.match(ui,/id="net-host-acoustic-send"/,'speaker-only invitation must be offered');
-  assert.match(ui,/async function sendHostSoundOnly\(\)/);
-  assert.match(ui,/await Acoustic\.play\(message,\{protocol\}\)/);
+  assert.match(ui,/async function sendHostSoundOnly\(signal\)/);
+  assert.match(ui,/await Acoustic\.play\(message,\{protocol,signal\}\)/);
   assert.match(ui,/captureDisabled\(\)/,'capture buttons are disabled for unsupported origins');
   assert.match(ui,/captureNotice\(\)/,'show an actionable microphone warning');
   assert.match(ui,/id="net-client-acoustic-listen"/);
   assert.match(acoustic,/function microphoneIssue\(/);
   assert.match(acoustic,/function explainMicrophoneError\(/);
+});
+
+test('private Pages packaging removes PWA prefix and preserves access files',()=>{
+ const {execFileSync}=require('node:child_process');
+ const code=`import importlib.util, tempfile
+from pathlib import Path
+from zipfile import ZipFile
+spec=importlib.util.spec_from_file_location('pages','scripts/package-pages.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+with tempfile.TemporaryDirectory() as d:
+ p=Path(d)
+ with ZipFile(p/'public.zip','w') as z:
+  for n in ['index.html','sw.js','app/app.js','manifest.webmanifest']: z.writestr('playroom-pwa/'+n,n)
+ with ZipFile(p/'private.zip','w') as z:
+  for n in ['_worker.js','_routes.json','manifest.webmanifest']: z.writestr(n,'private-'+n)
+ m.package(p/'public.zip',p/'private.zip',p/'out.zip')
+ with ZipFile(p/'out.zip') as z:
+  assert 'index.html' in z.namelist()
+  assert not any(n.startswith('playroom-pwa/') for n in z.namelist())
+  assert z.read('_worker.js')==b'private-_worker.js'
+  assert z.read('manifest.webmanifest')==b'private-manifest.webmanifest'
+`;
+ execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
 });

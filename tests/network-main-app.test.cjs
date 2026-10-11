@@ -128,6 +128,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
 
     const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();
     await host.locator('.lobby-person').filter({hasText:'Клиент'}).waitFor();
+    if(await client.locator('.shared-modal-backdrop [data-command=rematch]').count())await client.locator('.shared-modal-backdrop [data-command=rematch]').click();
     await host.locator('[data-command=lobby-ready]').click();
     await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
@@ -152,10 +153,21 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),1);
       assert.equal(await page.locator('.opponent-hand .uno-art-face').count(),0,'Opponent private card faces must stay hidden');
     }
+    for(const page of [host,client]){
+      await page.locator('.table-tools [data-command=settings]').click();
+      for(const selector of ['#setting-sound','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
+      assert.equal(await page.locator('#setting-auto-pass').count(),0,'hotseat option does not apply to network');
+      await page.locator('.modal [data-shared-rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
+    }
     const menuIdentity=await client.evaluate(()=>({id:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length}));
     await client.locator('.table-heading [data-command=home]').click();
     await client.locator('.game-grid').waitFor();
     assert.equal(await client.evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
+    assert.equal(await client.locator('.network-resume-card .pill').innerText(),'Сетевая');
+    assert.equal(await client.locator('#network-return-button').innerText(),'');
+    assert.equal(await client.locator('.network-resume-card [data-net-action=leave-active]').count(),1);
+    await client.locator('[data-command=sessions]').click();await client.locator('.saved-self').first().waitFor();assert.equal(await client.locator('.saved-self').first().innerText(),'Клиент');await client.locator('.side-nav [data-command=home]').click();
+
     const before=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
     const action=host.locator('.table-shell.network-game .scene [data-action]').first();await action.waitFor();await action.click();
     await host.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
@@ -220,8 +232,14 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       }
       await host.locator('.shared-modal-backdrop [data-command=rematch]').click();
       await host.locator('.lobby-shell').waitFor();
+      if(exit!=='guest'){
+        assert.equal(await client.locator('.shared-modal-backdrop').count(),1,'Host transition leaves guest results open');
+        await client.locator('.shared-modal-backdrop [data-command=result-replay]').click();await client.locator('.history-panel').waitFor();
+        await client.locator('[data-command=history-close]').click();await client.locator('[data-command=result]').click();
+        await client.locator('.shared-modal-backdrop [data-command=rematch]').click();
+      }
       await client.locator('[data-net-action=ready]:not(:disabled)').waitFor();
-      assert.equal(await client.locator('.shared-modal-backdrop').count(),0,'Host transition must remove the guest result dialog');
+      assert.equal(await client.locator('.shared-modal-backdrop').count(),0,'Guest explicitly returns to lobby');
       assert.equal(await client.locator('#app').evaluate(e=>e.inert),true);
       await host.locator('[data-command=lobby-ready]').click();
       await client.locator('[data-net-action=ready]').click();
@@ -243,6 +261,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(id=>PlayroomNetworkLibrary.continue(id),archiveId);
     assert.match(await host.locator('#toast').innerText(),/Сначала покиньте текущую комнату/,
       'an active lobby must still prevent restoring a second room');
+    if(await client.locator('.shared-modal-backdrop [data-command=rematch]').count())await client.locator('.shared-modal-backdrop [data-command=rematch]').click();
     await host.locator('[data-command=lobby-ready]').click();
     await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not(:disabled)').click();
@@ -257,6 +276,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('.table-header [data-command=home]').click();
     await host.locator('.game-grid').waitFor();
     await host.locator('[data-command=sessions]').click();
+    assert.equal(await host.locator('.saved-self').first().innerText(),'Хост');
     assert.equal(await host.locator(`[data-network-continue="${archiveId}"]`).isDisabled(),true,'Completed matches cannot continue');
     await host.locator(`[data-network-history="${archiveId}"]`).click();
     await host.locator('.table-shell.network-game .history-panel').waitFor();
@@ -268,7 +288,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('[data-command=room]').click();
     await host.locator('.lobby-header [data-command=close-modal]').click();
     assert.equal(await host.locator('.network-game').count(),1);
-    await host.locator('[data-command=room]').click();await host.locator('[data-command=lobby-leave]').click();
+    await host.locator('[data-command=room]').click();await host.locator('[data-net-action=stop-match]').click();
+    await host.locator('.lobby-shell [data-command=lobby-start]').waitFor();await client.locator('.lobby-shell').waitFor();
+    assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),1,'Stop keeps RTC room peers');
+    assert.equal((await host.evaluate(async id=>(await PlayroomNetworkLibrary.list()).find(x=>x.sessionId===id),parked.id)).finished,false);
+    await host.locator('[data-command=lobby-leave]').click();
     await host.locator('[data-command=sessions]').click();
     await host.locator(`[data-network-continue="${parked.id}"]`).click();
     await host.locator('.room-setup-modal .lobby-shell').waitFor({timeout:10000});

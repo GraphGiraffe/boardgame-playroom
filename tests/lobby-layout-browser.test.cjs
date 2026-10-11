@@ -27,8 +27,8 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           b.roomService.join(r.id,{id:'layout-player',nickname:'Мария'});b.roomService.claimSeat(r.id,'layout-player','seat-2');
           b.roomService.join(r.id,{id:'layout-observer',nickname:'Зритель Анна'});b.renderLobby();
         });
-        const lobby=page.locator('.lobby-shell');
-        const toggle=await lobby.locator('[data-room-option=transportMode]').boundingBox();assert(toggle.width>=180);assert.equal(toggle.height,48);assert.match(await lobby.locator(".room-transport").innerText(),/Offline\s+Online/);assert.equal(await lobby.locator('.room-options option[value=network]').count(),0);
+        const lobby=page.locator('.room-setup-modal');
+        const toggle=await lobby.locator('[data-room-option=transportMode]').boundingBox();assert(toggle.width>=180);assert.equal(toggle.height,44);assert.match(await lobby.locator(".room-transport").innerText(),/Локальная\s+Сетевая/);assert.equal(await lobby.locator('.room-options option[value=network]').count(),0);
         assert.equal(await lobby.locator('#lobby-name-form').count(),0,'profile belongs in settings');
         assert.equal(await lobby.locator('.lobby-rules-summary,.lobby-rule-grid,.lobby-participants').count(),0,'no duplicate panels');
         assert.equal(await lobby.locator('[data-participant-id]').count(),3);
@@ -45,6 +45,15 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         assert.equal(await lobby.locator('#network-pair-button').locator('..').locator('h2').innerText(),'Игровые места');
         assert.equal(await lobby.locator('[data-command=room-rules]').locator('..').locator('[data-command=room-rules-view]').count(),1);
         if(process.env.PLAYROOM_CAPTURE_DIR){await page.evaluate(()=>{const toast=document.querySelector('#toast');toast.textContent='';toast.classList.remove('show');});fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`room-host-${width}.png`),fullPage:false,animations:'disabled'});}
+        assert.deepEqual(await page.evaluate(()=>{
+          const b=PlayroomAppBridge,r=b.room(),body=document.querySelector('.modal-body'),title=document.querySelector('[data-room-title]'),header=document.querySelector('.modal-head');
+          body.scrollTop=Math.min(100,body.scrollHeight-body.clientHeight);const scroll=body.scrollTop,headTop=header.getBoundingClientRect().top;
+          title.focus({preventScroll:true});const saved=title.value;title.value='Неоконченный ввод';title.setSelectionRange(3,7);
+          b.roomService.setReady(r.id,'layout-player',true);b.renderLobby();
+          const result={sameBody:body===document.querySelector('.modal-body'),sameFocus:document.activeElement===title,value:title.value,selection:[title.selectionStart,title.selectionEnd],scrollStable:Math.abs(body.scrollTop-scroll)<1,headerStable:header.getBoundingClientRect().top===headTop,bodyBelowHeader:body.getBoundingClientRect().top>=header.getBoundingClientRect().bottom};
+          title.value=saved;title.blur();b.roomService.setReady(r.id,'layout-player',false);b.renderLobby();body.scrollTop=0;return result;
+        }),{sameBody:true,sameFocus:true,value:'Неоконченный ввод',selection:[3,7],scrollStable:true,headerStable:true,bodyBelowHeader:true});
+        await page.evaluate(()=>{window.dragEvents=[];for(const kind of ['pointerup','pointercancel'])document.addEventListener(kind,e=>dragEvents.push({kind,type:e.pointerType,x:e.clientX,y:e.clientY,drop:document.querySelector('.room-drop-active')?.dataset.roomDrop}),true);});
         const hostId=await page.evaluate(()=>PlayroomAppBridge.room().ownerId);
         const drag=async(from,to)=>{
           await from.scrollIntoViewIfNeeded();const a=await from.boundingBox(),start={x:a.x+Math.min(40,a.width/2),y:a.y+a.height/2};
@@ -52,20 +61,21 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           const move=async point=>{if(cdp)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point]});else await page.mouse.move(point.x,point.y);await page.waitForTimeout(25);};
           if(cdp){await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});await page.waitForTimeout(300);}else{await page.mouse.move(start.x,start.y);await page.mouse.down();}
           await move({x:start.x+12,y:start.y});await page.locator('.room-drag-ghost').waitFor();
-          for(let i=0;i<80;i++){const b=await to.boundingBox(),dialog=await page.locator('.room-setup-modal').boundingBox(),y=b.y+b.height/2;if(y>dialog.y+100&&y<dialog.y+dialog.height-35){await move({x:b.x+b.width/2,y});if(await page.locator('.room-drop-active').getAttribute('data-room-drop').catch(()=>null)===await to.getAttribute('data-room-drop'))break;}await move({x:dialog.x+40,y:y<dialog.y+100?dialog.y+10:dialog.y+dialog.height-10});}
+          for(let i=0;i<80;i++){const b=await to.boundingBox(),dialog=await page.locator('.room-setup-modal .modal-body').boundingBox(),y=b.y+b.height/2;if(y>dialog.y+100&&y<dialog.y+dialog.height-35){await move({x:b.x+b.width/2,y});if(await page.locator('.room-drop-active').getAttribute('data-room-drop').catch(()=>null)===await to.getAttribute('data-room-drop'))break;}await move({x:dialog.x+40,y:y<dialog.y+100?dialog.y+10:dialog.y+dialog.height-10});}
           assert.equal(await page.evaluate(()=>document.querySelector('.room-drop-active')?.dataset.roomDrop),await to.getAttribute('data-room-drop'),'visible drop target before release');
           if(cdp){await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();}else await page.mouse.up();await page.waitForTimeout(40);
         };
         await drag(lobby.locator('[data-room-drag="'+hostId+'"]').first(),lobby.locator('[data-room-drop=spectator]'));
 
-        assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.isHost).role),'spectator');
+        await page.waitForFunction(()=>PlayroomAppBridge.room().participants.find(p=>p.isHost).role==='spectator').catch(async error=>{throw Error(error.message+' '+JSON.stringify(await page.evaluate(()=>({events:dragEvents,notice:document.querySelector('#toast')?.textContent}))));});
+        assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.isHost).role),'spectator',JSON.stringify(await page.evaluate(()=>({events:dragEvents,notice:document.querySelector('#toast')?.textContent}))));
         await lobby.locator('[data-lobby-seat="seat-3"]').click();
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.isHost).length),1);
         assert.equal(await lobby.locator('[data-participant-id]').count(),3,'no phantom player');
         await lobby.locator('[data-command=room-rules]').click();
         await page.locator('[data-rules=uno]').click();await page.getByRole('button',{name:'Понятно',exact:true}).click();
         await page.locator('.room-setup-modal').waitFor();
-        await lobby.locator('[data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или Offline-игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
+        await lobby.locator('[data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или локального игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
         await lobby.locator('[data-command=room-rules-view]').click();assert.equal(await page.locator('.modal .lobby-rule-grid').count(),1);assert(await page.locator('.modal .rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').click();
         await settings.click();await page.locator('#lobby-nickname-form input').fill('Иван новый');await page.locator('#lobby-nickname-form').evaluate(f=>f.requestSubmit());
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).participants.find(p=>p.isHost).nickname),'Иван новый');

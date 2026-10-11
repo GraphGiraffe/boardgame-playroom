@@ -418,15 +418,21 @@ test('Modal gestures scroll their contents without moving the underlying screen'
       const checkDialog=async(name)=>{
         await page.evaluate(()=>scrollTo(0,120));
         const before=await page.evaluate(()=>({y:scrollY,top:document.querySelector('#app').getBoundingClientRect().top}));
-        const dialog=page.locator('.modal,.lobby-countdown'),box=await dialog.boundingBox();
+        const dialog=page.locator('.modal,.lobby-countdown'),box=await dialog.boundingBox(),scroller=await dialog.locator('.modal-body').count()?dialog.locator('.modal-body'):dialog;
         const x=box.x+box.width/2,y=Math.min(box.y+box.height-40,height-35);
-        await dialog.evaluate(e=>e.scrollTop=0);
-        const overflow=await dialog.evaluate(e=>e.scrollHeight-e.clientHeight);
+        assert(await dialog.evaluate(e=>{
+          const head=e.querySelector('.modal-head'),body=e.querySelector('.modal-body');if(!head||!body)return true;
+          const h=head.getBoundingClientRect(),b=body.getBoundingClientRect(),layer=document.createElement('div');layer.className='playroom-motion-layer';layer.style.pointerEvents='auto';document.body.appendChild(layer);
+          const visible=e.contains(document.elementFromPoint(h.x+h.width/2,h.y+h.height/2));layer.remove();return visible&&b.top>=h.bottom-1;
+        }),`${name}: header must stay above body and game animations`);
+
+        await scroller.evaluate(e=>e.scrollTop=0);
+        const overflow=await scroller.evaluate(e=>e.scrollHeight-e.clientHeight);
         await gesture(x,y,100);
-        if(overflow>2)assert(await dialog.evaluate(e=>e.scrollTop)>0,`${name}: content must scroll`);
+        if(overflow>2)assert(await scroller.evaluate(e=>e.scrollTop)>0,`${name}: content must scroll`);
         // Both limits, short dialogs and the backdrop must consume gestures.
-        await dialog.evaluate(e=>e.scrollTop=e.scrollHeight);await gesture(x,y,100);
-        await dialog.evaluate(e=>e.scrollTop=0);await gesture(x,Math.max(box.y+40,125),-100);
+        await scroller.evaluate(e=>e.scrollTop=e.scrollHeight);await gesture(x,y,100);
+        await scroller.evaluate(e=>e.scrollTop=0);await gesture(x,Math.max(box.y+40,125),-100);
         await gesture(3,height/2,100);
         assert.deepEqual(await page.evaluate(()=>({y:scrollY,top:document.querySelector('#app').getBoundingClientRect().top})),before,`${name}: background moved`);
       };
@@ -456,7 +462,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         },{snapshot,def});
         for(const command of ['rules','result']){
           // Keyboard activation isolates modal scrolling from table footer layout.
-          if(command==='rules'){await page.locator('.network-game [data-command=settings]').first().click();await page.locator('.shared-modal-backdrop [data-command=rules]').click();}else await page.locator('.network-game [data-command='+command+']').first().press('Enter');
+          if(command==='rules'){await page.locator('.network-game [data-command=settings]').first().click();await page.locator('.modal [data-shared-rules]').click();}else await page.locator('.network-game [data-command='+command+']').first().press('Enter');
           await checkDialog('network '+command);
           await page.locator('.shared-modal-backdrop [data-command=close-modal]').first().click();
           await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);

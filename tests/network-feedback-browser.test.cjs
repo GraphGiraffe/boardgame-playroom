@@ -205,3 +205,21 @@ test('owner history freezes the reaction window, resume acknowledges the new con
     await page.evaluate(()=>qaGame.destroy());
   }finally{authority.dispose();await page.close();await browser.close();}
 });
+
+test('external modal closing restores projected legal actions without another network update',{timeout:30000},async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});const page=await fixture(browser);
+ try{
+  const a=new Authority(seed()),snapshot=a.connect(0).snapshot();
+  await page.evaluate(({snapshot,definition})=>{
+   window.sent=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'})};
+   window.client={snapshot,pending:null,subscribe(){return()=>{};},async send(a){sent.push(a);return {ok:true};}};
+   document.querySelector('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal">Окно</section></div>';
+   window.mount=PlayroomSharedViews.mount(client,definition);mount.render();
+  },{snapshot,definition});
+  assert.equal(await page.locator('.hand-card.is-playable').count(),0);
+  await page.evaluate(()=>document.querySelector('#modal-root').replaceChildren());
+  await page.waitForFunction(()=>document.querySelector('[data-action]:not(:disabled)'));
+  await page.locator('[data-action]:not(:disabled)').first().click();
+  await page.waitForFunction(()=>sent.length===1);
+ }finally{await browser.close();}
+});

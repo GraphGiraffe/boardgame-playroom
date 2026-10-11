@@ -288,7 +288,7 @@
       this._touch(room);this._emit(room,'game-changed','Хост выбрал '+room.game.name+'. Проверьте игру и подтвердите готовность снова.',{gameId:game.id});
       return this.snapshot(roomId);
     }
-    returnToLobby(roomId,hostId){
+    returnToLobby(roomId,hostId,{stopped=false}={}){
       const room=this._room(roomId);this._host(room,hostId);
       if(room.phase!=='playing')throw Error('Комната не находится в игре.');
       // The caller must verify that the authoritative match is FINISHED.
@@ -297,7 +297,7 @@
       delete room.recovery;
       for(const seat of room.seats){delete seat.playerIndex;delete seat.previousParticipant;}
       for(const p of room.participants){p.ready=!!p.bot;delete p.replacement;}
-      this._touch(room);this._emit(room,'new-match-lobby','Партия завершена. Выберите следующую игру и подтвердите готовность.');
+      this._touch(room);this._emit(room,stopped?'match-stopped':'new-match-lobby',stopped?'Партия сохранена для продолжения.':'Партия завершена. Выберите следующую игру и подтвердите готовность.');
       return this.snapshot(roomId);
     }
     setReady(roomId,participantId,ready){

@@ -6,6 +6,14 @@
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
+  const pendingAudio=new Map();
+  async function runAudio(button,operation){
+    if(pendingAudio.has(button.id))return;
+    const controller=new AbortController(),label=button.innerHTML;pendingAudio.set(button.id,controller);
+    button.disabled=true;button.setAttribute('aria-busy','true');button.textContent='Подготовка…';
+    try{await operation(controller.signal);}catch(error){if(error.name!=='AbortError')toast(error.message);}
+    finally{if(pendingAudio.get(button.id)===controller)pendingAudio.delete(button.id);if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy');button.innerHTML=label;}}
+  }
   const pairingQrGenerations=new Map();
   const connectedHostPeers=[];
   const resumeStore=new M.ResumeStore();
@@ -256,35 +264,35 @@
     return {message:token.slice(Pairing.COMPACT_PREFIX.length),
       protocol:document.getElementById('acoustic-'+role+'-protocol')?.value||'fastest'};
   }
-  async function listenHostAnswer(){
+  async function listenHostAnswer(signal){
     if(!hostPeer)throw Error('Сначала создайте приглашение.');
     stopHostAudio();
     hostAudioListener=await Acoustic.listen(packet=>{
       if(packet.kind!=='answer')return;
       stopHostAudio();
       acceptAnswerSignal(Pairing.decode(Pairing.COMPACT_PREFIX+packet.message).signal).catch(error=>toast(error.message));
-    });
+    },{signal});
     pairingProgress('Слушаем ответ клиента…');
   }
-  async function sendHostSoundOnly(){
+  async function sendHostSoundOnly(signal){
     if(!hostPeer)throw Error('Сначала создайте приглашение.');
     const {message,protocol}=sendSoundToken('host');
-    await Acoustic.play(message,{protocol});
+    await Acoustic.play(message,{protocol,signal});
     pairingProgress('Приглашение передано. Ожидаем ответ клиента.');
   }
-  async function listenGuestSound(){
+  async function listenGuestSound(signal){
     stopClientAudio();
     clientAudioListener=await Acoustic.listen(packet=>{
       if(packet.kind!=='offer')return;
       stopClientAudio();
       createClientAnswer(Pairing.decode(Pairing.COMPACT_PREFIX+packet.message).signal,{acoustic:true}).catch(error=>toast(error.message));
-    });
+    },{signal});
     pairingProgress('Слушаем приглашение…');
   }
-  async function sendGuestSound(){
+  async function sendGuestSound(signal){
     if(!clientPeer?.answer)throw Error('Сначала примите приглашение.');
     const {message,protocol}=sendSoundToken('client');
-    await Acoustic.play(message,{protocol});
+    await Acoustic.play(message,{protocol,signal});
     pairingProgress('Ответ передан. Подключаемся…');
   }
   function captureNotice(){
@@ -526,6 +534,7 @@
     shell.appendChild(wrap);
   }
   function ensureButtons(){
+    for(const [id,controller] of pendingAudio)if(!document.getElementById(id)){controller.abort();pendingAudio.delete(id);}
     // Close microphone immediately when the pairing dialog is dismissed.
     if(hostAudioListener&&!document.getElementById('net-host-acoustic-listen'))stopHostAudio();
     if(clientAudioListener&&!document.getElementById('net-client-acoustic-listen'))stopClientAudio();
@@ -533,7 +542,13 @@
     const intro=$('.intro');
     if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML='<button class="btn secondary" id="network-join-button" type="button">Присоединиться к комнате</button>';intro.appendChild(wrap);}
 
-    if(hasActiveRoom()&&networkInMenu&&!document.getElementById('network-return-button')){const parent=intro||document.querySelector('.hub-main');if(parent){const btn=document.createElement('button');btn.id='network-return-button';btn.className='btn';btn.dataset.netAction='return-game';btn.textContent='Вернуться в партию';parent.appendChild(btn);}}
+    if(hasActiveRoom()&&networkInMenu){
+      const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
+      if(parent){const markup=root.PlayroomGameScreen.resumeCard({title:room?.game?.name||'Комната',detail:(room?.name||'')+' · '+(connected?'Соединение активно':'Связь потеряна'),network:true,connected,action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
+        const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+connected+':'+(room?.name||'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);document.querySelector('.network-resume-card').dataset.renderKey=key;}
+      }
+    }
+
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent='Установить ХОД';intro.querySelector('.lobby-actions')?.appendChild(btn);}
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
@@ -585,7 +600,7 @@
     // transport switches to the host-authority game projection.
     const served={
       snapshot:()=>switchable.snapshot(),
-      history:index=>switchable.history(index),
+      history:index=>{if(switchable.completedHistory){if(!Number.isSafeInteger(index)||!switchable.completedHistory[index])throw Error('Некорректный ход истории.');return switchable.completedHistory[index];}return switchable.history(index);},
       subscribe:listener=>switchable.subscribe(listener),
       presentationReady:message=>switchable.presentationReady(message),
       dispatch:async command=>{
@@ -757,6 +772,7 @@
     clientUnsub?.();clientUnsub=clientTransport.subscribe(snapshot=>{
       if(snapshot?.kind==='lobby'){
         clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;
+        if(clientGameClient?.snapshot?.state?.status==='finished'&&!clientWaitingForLobby)return;
         if(clientGameClient){
           clientSetupShown=false;
           clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;
@@ -779,14 +795,16 @@
     if(finished){clientToLobby({waiting:clientRoom?.phase!=='lobby'});return;}
     parkNetworkView();
   }
-  function exitHostGame({finished=false}={}){
+  function exitHostGame({finished=false,stopped=false}={}){
     const b=bridge(),roomId=hostRoomId;
-    if(finished&&roomId&&hostGameClient?.snapshot?.state?.status==='finished'){
+    if(roomId&&(stopped||finished&&hostGameClient?.snapshot?.state?.status==='finished')){
       // A completed game remains in its immutable SessionStore journal.
       // Rebind existing RTC channels to room (instead of a new QR pairing).
-      b.roomService.returnToLobby(roomId,b.participantId());
-      for(const item of connectedHostPeers)if(item.roomConnection?.participantId)
+      b.roomService.returnToLobby(roomId,b.participantId(),{stopped});
+      for(const item of connectedHostPeers)if(item.roomConnection?.participantId){
+        if(!stopped){const connection=item.switchable.current;item.switchable.completedHistory=Array.from({length:hostGameClient.snapshot.historyLength},(_,i)=>connection.history(i));}
         item.switchable?.set(item.roomConnection);
+      }
       hostMount?.destroy?.();hostMount=null;
       hostGameClient?.close?.();hostGameClient=null;
       hostAuthority?.dispose?.();hostAuthority=null;
@@ -861,7 +879,7 @@
       for(const person of roomPresence(room).participants)if(person.playerIndex>=0)hostAuthority.setViewerConnected?.(person.playerIndex,person.connected);
       for(const item of connectedHostPeers){
         const viewer=occupied.find(seat=>seat.participantId===item.roomConnection?.participantId)?.playerIndex??occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
-        item.switchable.set(hostAuthority.connect(viewer));
+        item.switchable.completedHistory=null;item.switchable.set(hostAuthority.connect(viewer));
       }
       const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
       const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
@@ -1092,10 +1110,10 @@
     if(target.id==='network-pair-button')return hostInvite();
     if(target.dataset.netScan){const role=target.dataset.netScan,signal=role==='host'?hostPeer?.offer:clientPeer?.answer;if(signal)return scanSoundAddresses(role,signal);return;}
     if(target.dataset.netSaveIp)return saveManualIp(target.dataset.netSaveIp);
-    if(target.id==='net-host-acoustic-send')return sendHostSoundOnly().catch(error=>toast(error.message));
-    if(target.id==='net-host-acoustic-listen')return listenHostAnswer().catch(error=>{stopHostAudio();toast(error.message);});
-    if(target.id==='net-client-acoustic-listen')return listenGuestSound().catch(error=>{stopClientAudio();toast(error.message);});
-    if(target.id==='net-client-acoustic-send')return sendGuestSound().catch(error=>toast(error.message));
+    if(target.id==='net-host-acoustic-send')return runAudio(target,sendHostSoundOnly);
+    if(target.id==='net-host-acoustic-listen')return runAudio(target,listenHostAnswer);
+    if(target.id==='net-client-acoustic-listen')return runAudio(target,listenGuestSound);
+    if(target.id==='net-client-acoustic-send')return runAudio(target,sendGuestSound);
     if(target.id==='pwa-install-button'){PWA?.install?.().catch(error=>toast(error.message));return;}
     if(target.dataset.netShare){sharePair(target.dataset.netShare);return;}
     if(target.dataset.netCopy)return copy(target.dataset.netCopy);
@@ -1108,6 +1126,8 @@
     if(target.dataset.netAction==='dismiss-room'){bridge().closeModal();return;}
     if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
     if(target.dataset.netAction==='collapse'){bridge().closeModal(true);return;}
+    if(target.dataset.netAction==='stop-match'){if(!hostAuthority||!root.confirm('Сохранить партию и вернуть всех в лобби? Её можно будет продолжить из «Моих партий».'))return;void hostAuthority.stopForLobby().then(()=>exitHostGame({stopped:true})).catch(error=>toast(error.message));return;}
+    if(target.dataset.netAction==='leave-active'){if(!root.confirm('Покинуть комнату? Соединение будет закрыто. Партия сохранится.'))return;if(clientRoom)closeClient();else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();return;}
     if(target.dataset.netAction==='leave'){if(!root.confirm('Покинуть комнату? Соединение будет закрыто. Партия сохранится.'))return;closeClient();networkInMenu=false;bridge().showHub();return;}
     if(target.dataset.netAction==='rules')return bridge().openModal(bridge().modalHead(clientRoom.game.name+' · правила')+PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{}));
     if(target.dataset.netAction==='help')return bridge().openModal(bridge().modalHead('Комната · справка')+PlayroomLobbyView.helpMarkup(clientRoom));
@@ -1148,7 +1168,7 @@
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({list:listNetworkArchives,playerMetadata,hasActiveRoom,
-    leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
+    showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
