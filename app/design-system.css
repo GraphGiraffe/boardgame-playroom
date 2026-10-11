@@ -50,11 +50,12 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .game-field-content>[class$="board-wrap"]>[class$="board"]{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;aspect-ratio:1}
 .players-panels.opponent-hands{display:flex;flex-wrap:wrap;width:100%;max-height:none;gap:6px;justify-content:center;margin:0;align-items:stretch}
 .app-game-layout .player-panel.opponent-hand{display:flex;flex:1 1 120px;max-width:300px;min-width:0;flex-direction:column;align-items:stretch;background:#f7f7ed88;border:1px solid #d6dfc7;border-radius:12px;padding:3px;overflow:hidden}
-.player-panel.is-turn{border-color:#638658}
+.app-game-layout .self-player{background:#f7f7ed88;border:1px solid #d6dfc7;border-radius:12px;padding:3px}
+.app-game-layout .player-panel.is-turn{background:#dfedcb;border-color:#638658;box-shadow:inset 0 0 0 1px #638658}
 .player-info.player-token{display:flex;width:100%;text-align:left;min-height:44px;gap:6px;padding:4px;font-size:11px;align-items:center;border-radius:9px;background:transparent;border:0;color:inherit}
 .player-info .avatar{flex:none;width:26px;height:26px;min-width:26px}
 .player-details{min-width:0;flex:1}.player-details strong{display:block;overflow-wrap:anywhere;font-size:11px}.player-token small{display:block!important;font-size:9px;white-space:normal;color:#687761}
-.player-badges{display:flex;gap:4px;flex-wrap:wrap;font-size:9px}.turn-badge{font-weight:750;color:#356951}
+.player-badges{display:flex;gap:4px;flex-wrap:wrap;font-size:9px}
 .player-status-badge{background:#e4ead8;border-radius:5px;padding:0 3px}
 .app-game-layout .player-panel .mini-hand{display:flex!important;align-items:center;justify-content:safe center;gap:0;max-width:100%;overflow:auto;height:42px;min-height:42px;margin:0!important;padding:2px 8px!important;overscroll-behavior:contain;white-space:nowrap}
 .player-panel .mini-hand>*{position:relative!important;transform:none!important;flex:0 0 auto!important;width:28px!important;min-width:28px!important;height:40px!important;margin-left:-8px!important;grid-area:auto!important}
@@ -187,8 +188,6 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout .player-panel .mini-hand:not(.is-open)>*{height:40px!important;min-height:40px!important}
 
 .settings-details{margin:10px 0;color:var(--green);font-size:13px}.settings-details summary{cursor:pointer;min-height:32px;display:list-item;padding:6px 0}.settings-details .lead{font-size:12px}
-
-@media(max-width:370px){.app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-badges{min-height:26px}}
 
 .app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"]{grid-template-columns:minmax(200px,28%) minmax(0,1fr)!important}
 

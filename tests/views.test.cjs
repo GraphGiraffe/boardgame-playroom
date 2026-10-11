@@ -234,6 +234,20 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
 
 test('all source packs provide only API 2 elements with application-owned placement',()=>{
   for(const game of games){const state=make(game),view=V.get(game).render(E.project(state,state.turn),state.turn,E.legalActions(state),{selected:null});assert.equal(view.api,2);assert.ok(['cards','board'].includes(view.family));assert.equal(typeof view.elements.field,'string');assert.ok(view.elements.field.length);assert.doesNotMatch(Object.values(view.elements).join(''),/class="game-scene/);assert.match(V.render(E.project(state,state.turn),state.turn,[],{}),/data-view-api="2"/);}
+  for(const game of games){
+    const state=make(game,'classic',E.get(game).max);
+    for(const turn of state.players.keys())for(const viewer of [-1,...state.players.keys()]){
+      state.turn=turn;
+      const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)" data-player-index="(\d+)"([^>]*)>/g)];
+      assert.equal(panels.length,state.players.length,game);
+      assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
+      for(const [,classes,index,attrs]of panels){
+        assert.equal(classes.includes('is-turn'),Number(index)===turn,`${game}: only the current player is highlighted`);
+        assert.equal(attrs.includes('aria-current="true"'),Number(index)===turn,`${game}: accessible current player follows turn changes`);
+        assert.equal(classes.includes('self-player'),Number(index)===viewer,`${game}: own card uses the same turn state`);
+      }
+    }
+  }
 });
 
 
