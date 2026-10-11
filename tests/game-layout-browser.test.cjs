@@ -14,16 +14,17 @@ test('all packs share player panels and preserve geometry across reported screen
  let capture=0;
  for(const [width,height,game,surface]of cases)for(const replay of [false,true])await t.test(`${game} ${surface||'combined'} ${width}x${height} ${replay?'replay':'live'}`,async()=>{
   await page.setViewportSize({width,height});
-  await page.evaluate(({game,replay,surface})=>{
+  const turn=await page.evaluate(({game,replay,surface})=>{
    const E=TabletopCore;let state=E.createGame(game,{seed:17,preset:'classic',openHands:surface==='open',players:Array.from({length:['durak','checkers'].includes(game)?2:4},(_,i)=>({name:['Иван','Мика','Тео','Луна'][i],bot:i>0}))});
    if(['domino','snakes'].includes(game))for(let i=0;i<14&&state.status!=='finished';i++)state=E.applyAction(state,state.turn,E.botAction(state));
    if(game==='checkers')state.turn=1;
    const viewer=surface==='table'?-1:game==='checkers'?1:0,projected=E.project(state,viewer),actions=replay?[]:E.legalActions(state,viewer);
    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:E.get(game).name,subtitle:'За столом с ботами · Основные правила игры',state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions,{selected:null,surface:['table','player'].includes(surface)?surface:'combined'}),turnText:'Ходит '+state.players[state.turn].name,turnExtra:'Ход '+state.move,footerText:'Последнее действие',replay,historyHTML:replay?PlayroomGameScreen.historyMarkup({index:state.move,count:state.move,caption:'Последнее действие'}):''});
    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+   return state.turn;
   },{game,replay,surface});
   await page.waitForTimeout(25);
-  const result=await page.evaluate(()=>{
+  const result=await page.evaluate(turn=>{
    const stage=document.querySelector('.app-game-layout'),scene=document.querySelector('.scene'),s=scene.getBoundingClientRect(),errors=[];
    if(!stage)return {errors:['missing scene']};
    const within=(r,b)=>r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1;
@@ -34,6 +35,10 @@ test('all packs share player panels and preserve geometry across reported screen
    for(const node of document.querySelectorAll('.layout-hand .domino-tile')){const r=node.getBoundingClientRect();if(Math.abs(r.width/r.height-48/84)>.025)errors.push('domino aspect');}
    const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow');for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?30/52:60/34;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
    const n=document.querySelectorAll('.player-panel').length;if(n!==document.querySelectorAll('.player-info').length||n<2)errors.push('players missing');
+   const active=stage.querySelectorAll('.player-panel.is-turn'),inactive=stage.querySelector('.player-panel:not(.is-turn)');
+   if(active.length!==1||Number(active[0]?.dataset.playerIndex)!==turn||active[0]?.getAttribute('aria-current')!=='true'||stage.querySelectorAll('.player-panel[aria-current="true"]').length!==1)errors.push('incorrect active player');
+   if(active.length===1&&inactive){const current=getComputedStyle(active[0]),idle=getComputedStyle(inactive);if(current.backgroundColor===idle.backgroundColor||current.borderTopColor===idle.borderTopColor||parseFloat(current.borderTopWidth)<1)errors.push('active card lacks background or border highlight');if(current.borderTopWidth!==idle.borderTopWidth)errors.push('turn highlight changes card geometry');}
+   if(stage.querySelector('.turn-badge'))errors.push('redundant turn badge');
    if(stage.dataset.surface==='table'&&stage.querySelector('.layout-hand,.layout-actions,.layout-self'))errors.push('personal controls on table');
    if(document.querySelector('.player-strip,.table-bottom,.auto-saved,.snakes-legend,.checker-guide'))errors.push('duplicate chrome');
    for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(!r.width&&!r.height)continue;if(r.width<44||r.height<44||!within(r,{left:0,top:0,right:innerWidth,bottom:innerHeight}))errors.push('toolbar target '+node.dataset.command+' '+JSON.stringify({w:r.width,h:r.height,x:r.x,y:r.y}));}
@@ -42,7 +47,7 @@ test('all packs share player panels and preserve geometry across reported screen
    for(const piece of document.querySelectorAll('.checker-piece.owner-1.is-playable'))if(getComputedStyle(piece).outlineColor!=='rgb(255, 220, 147)')errors.push('dark checker lacks contrasting outline');
    const self=stage.querySelector('.layout-self'),hand=self?.querySelector('.layout-hand'),info=self?.querySelector('.self-player');if(hand&&info&&info.getBoundingClientRect().top<hand.getBoundingClientRect().bottom-1)errors.push('self info above hand');
    return {errors,mode:stage.dataset.layoutMode,width:scene.clientWidth,height:scene.clientHeight};
-  });
+  },turn);
   assert.deepEqual(result.errors,[]);assert.equal(result.mode,UI.selectLayout(result.width,result.height));
   if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||!replay&&(capture<13||width===390&&height===740))){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,process.env.PLAYROOM_CAPTURE_ALL?`${game}-${surface||'combined'}-${width}x${height}-${replay?'history':'live'}.png`:`${String(++capture).padStart(2,'0')}-${game}.png`)});}
  });
