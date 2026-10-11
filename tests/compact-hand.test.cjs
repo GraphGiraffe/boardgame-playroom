@@ -129,8 +129,12 @@ test('Compact card hands preserve readable previews and each game’s play contr
   try {
     for (const viewport of [{width: 320, height: 640}, {width: 390, height: 740}, {width: 1280, height: 900}]) {
       await check(`All seven card corners fit without scrolling at ${viewport.width}×${viewport.height}`, {viewport, touch: viewport.width < 500}, async ({page}) => {
+        // Resume can leave the desktop pointer over a card in the new screen.
+        // Its deliberate hover preview shifts neighbours; measure the resting
+        // hand here, and exercise hover/keyboard expansion in its own case below.
+        await page.mouse.move(1,1);
         const dimensions = await page.locator('.hand-track').evaluate(el => ({width: el.clientWidth, scroll: el.scrollWidth, count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length}));
-        assert.equal(dimensions.count, 7); assert.equal(dimensions.rows, 1); assert(dimensions.scroll <= dimensions.width + 1);
+        assert.equal(dimensions.count, 7); assert.equal(dimensions.rows, 1); assert(dimensions.scroll <= dimensions.width + 1,JSON.stringify(dimensions));
         for (const id of ['u1', 'u26', 'u100', 'u3', 'u27', 'u4', 'u2']) await exposedPoint(card(page, id));
         const scene = await page.locator('.scene').evaluate(el => ({height: el.clientHeight, scroll: el.scrollHeight}));
         assert(scene.scroll <= scene.height + 1, `initial seven-card scene needs no vertical scroll: ${JSON.stringify(scene)}`);
