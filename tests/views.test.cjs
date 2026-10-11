@@ -51,6 +51,26 @@ test('standalone UI shares source and target policies without browser or game de
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
+  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0">0<\/span>/);
+  assert.match(H.countBadge(7,'Рука',{hand:true}),/piece-count is-hand/);
+  assert.doesNotMatch(H.hand([],0),/piece-count/);
+  for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));
+  for(const [person,network,role,status] of [
+    [{},false,'player','neutral'],[{bot:true,connected:true},true,'bot','neutral'],
+    [{local:true,connected:true},true,'player','neutral'],[{connected:false},true,'player','neutral'],
+    [{connected:true},false,'player','neutral'],[{connected:true},true,'player','online'],
+    [{connected:false,hasConnected:true},true,'player','offline'],
+    [{connected:false,joinedAt:1,isHost:true},true,'host','offline'],
+    [{role:'spectator',connected:true},true,'eye','online'],[{role:'table',isHost:true,connected:true},true,'grid','online']
+  ]) {const html=H.participantIcon(person,{network});assert.match(html,new RegExp('data-participant-role="'+role+'"'));assert.match(html,new RegExp('data-connection="'+status+'"'));}
+  const both=H.playerPanel({players:[{name:'A <&',score:9}],turn:0},0,0,{counters:[{kind:'wins',value:3},{kind:'points',value:9,label:'Очки <&'}]});
+  assert.match(both,/data-score-kind="points"[^>]*aria-label="Очки &lt;&amp;: 9"/);
+  assert.match(both,/is-wins[^>]*data-score-kind="wins"/);assert(both.indexOf('data-score-kind="points"')<both.indexOf('data-score-kind="wins"'));
+  assert.doesNotMatch(both,/>Игрок|>Бот|очки:|победы:/);
+  for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:2,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
+
+  const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
+  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/mini-hand/);
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
@@ -263,6 +283,19 @@ test('player hands render every hidden piece and score units agree with the rule
         assert.equal(content.open,false);
         if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
       }
+    }
+    for(const viewer of [-1,0,1]){
+      const html=viewer<0?V.render(E.project(state,viewer),viewer,[],{surface:'table'}):render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel [\s\S]*?<\/article>/g)].map(m=>m[0]);
+      for(const panel of panels){
+        const index=Number(panel.match(/data-player-index="(\d+)"/)[1]),counts=[...panel.matchAll(/data-piece-count="(\d+)"/g)];
+        assert.deepEqual(counts.map(m=>Number(m[1])),state.data.hands?[state.data.hands[index].length]:[],`${game}: exactly one count in each player card`);
+        assert.doesNotMatch(panel,/>\d+ в руке</,`${game}: no repeated textual hand count`);
+      }
+      const own=html.match(/<section class="own-hand"[\s\S]*?<div class="hand-track/);
+      if(state.data.hands&&viewer>=0){assert(own);assert.doesNotMatch(own[0],/piece-count/);}
+      else assert.equal(own,null,`${game}: no personal hand count on the table or without a hand`);
+      if(['uno','durak'].includes(game))assert.match(html,new RegExp(`class="piece-count is-corner" data-piece-count="${state.data.drawPile.length}"`));
+      assert.doesNotMatch(html,/pile-count/);
     }
   }
   const state=make('durak'),html=render(state);

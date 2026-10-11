@@ -135,6 +135,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('.table-shell.network-game').waitFor({timeout:10000});await client.locator('.table-shell.network-game').waitFor({timeout:10000});
     assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+    const iconHandle=await host.locator('.player-panel [data-participant-role=host]').elementHandle();
+    await host.waitForTimeout(800);assert(await iconHandle.evaluate(node=>node.isConnected),'unchanged presence must preserve the role node and avoid a DOM observer loop');
     // Network mode MUST use the local bot/hot-seat GameScreen, not a compact
     // second shell. Opponent hands are visible without exposing hidden faces.
     for(const page of [host,client]){
@@ -231,5 +233,5 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       'leaving the lobby must close its old RTC connections');
 
     assert.deepEqual(errors,[]);
-  }finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
+  }catch(error){console.error('Network UI page errors',JSON.stringify(errors));throw error;}finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
 });

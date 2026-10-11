@@ -39,10 +39,28 @@ test('all packs share player panels and preserve geometry across reported screen
    if(active.length!==1||Number(active[0]?.dataset.playerIndex)!==turn||active[0]?.getAttribute('aria-current')!=='true'||stage.querySelectorAll('.player-panel[aria-current="true"]').length!==1)errors.push('incorrect active player');
    if(active.length===1&&inactive){const current=getComputedStyle(active[0]),idle=getComputedStyle(inactive);if(current.backgroundColor===idle.backgroundColor||current.borderTopColor===idle.borderTopColor||parseFloat(current.borderTopWidth)<1)errors.push('active card lacks background or border highlight');if(current.borderTopWidth!==idle.borderTopWidth)errors.push('turn highlight changes card geometry');}
    if(stage.querySelector('.turn-badge'))errors.push('redundant turn badge');
+   for(const badge of stage.querySelectorAll('.piece-count')){
+    const r=badge.getBoundingClientRect(),parent=badge.classList.contains('is-hand')?badge.closest('.player-info'):badge.parentElement,p=parent.getBoundingClientRect();
+    if(!within(r,p)||r.height<14||badge.textContent.trim()!==badge.dataset.pieceCount)errors.push('count badge clipped or unreadable: '+parent.className+' '+JSON.stringify({count:badge.dataset.pieceCount,x:r.x,y:r.y,w:r.width,h:r.height,p:{x:p.x,y:p.y,w:p.width,h:p.height}}));
+    if(badge.classList.contains('is-corner')){if(Math.abs(r.left-p.left)>1||Math.abs(r.top-p.top)>1)errors.push('stock count is not top-left');}
+    else if(!badge.classList.contains('is-hand')||!badge.closest('.player-info'))errors.push('hand count is not inside player info');
+    if(badge.classList.contains('is-hand')){const style=getComputedStyle(badge);if(Math.abs(parseFloat(style.width)/parseFloat(style.height)-13/18)>.01||style.transform==='none')errors.push('hand count card shape');}
+   }
+   for(const panel of stage.querySelectorAll('.player-panel')){const count=panel.dataset.handCount,index=panel.dataset.playerIndex,own=panel.classList.contains('self-player'),badge=panel.querySelector('.player-info .piece-count.is-hand');if(count!==undefined&&badge?.dataset.pieceCount!==count)errors.push('missing or incorrect hand count for '+index);if(panel.querySelectorAll('.piece-count.is-hand').length!==(count!==undefined?1:0))errors.push('duplicate or missing hand count');}
+   for(const panel of stage.querySelectorAll('.player-panel')){
+    const heading=panel.querySelector('.player-heading'),role=heading?.querySelector('.participant-role'),name=heading?.querySelector('strong'),scores=panel.querySelector('.player-scores');
+    if(!role||!name||!scores)errors.push('missing compact metadata');else{
+     const r=role.getBoundingClientRect(),n=name.getBoundingClientRect(),b=scores.getBoundingClientRect();
+     if(r.right>n.left+1||b.top<heading.getBoundingClientRect().bottom-1||!within(heading.getBoundingClientRect(),panel.getBoundingClientRect()))errors.push('metadata placement');
+     if(getComputedStyle(role).color!==getComputedStyle(name).color)errors.push('local role must use text color');
+     if(panel.querySelector('.player-info').textContent.match(/Бот|Игрок|очки:|победы:/))errors.push('redundant role or score label');
+    }
+   }
+   if(stage.querySelector('.own-hand>.piece-count,.player-hand>.piece-count'))errors.push('hand count duplicated above hand');
    if(stage.dataset.surface==='table'&&stage.querySelector('.layout-hand,.layout-actions,.layout-self'))errors.push('personal controls on table');
    if(document.querySelector('.player-strip,.table-bottom,.auto-saved,.snakes-legend,.checker-guide'))errors.push('duplicate chrome');
    for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(!r.width&&!r.height)continue;if(r.width<44||r.height<44||!within(r,{left:0,top:0,right:innerWidth,bottom:innerHeight}))errors.push('toolbar target '+node.dataset.command+' '+JSON.stringify({w:r.width,h:r.height,x:r.x,y:r.y}));}
-   for(const hand of document.querySelectorAll('.player-panel .mini-hand')){if(!hand.getClientRects().length)continue;if(hand.scrollHeight>hand.clientHeight+1)errors.push('opponent vertical scroll');if(!hand.classList.contains('is-open')){const miniBox=hand.getBoundingClientRect(),first=hand.firstElementChild?.getBoundingClientRect(),last=hand.lastElementChild?.getBoundingClientRect();if(first&&last&&(first.left<miniBox.left-1||last.right>miniBox.right+1))errors.push('closed hand clipped horizontally');const cards=[...hand.children],steps=cards.slice(1).map((c,i)=>c.getBoundingClientRect().left-cards[i].getBoundingClientRect().left);if(steps.some(x=>Math.abs(x-steps[0])>1))errors.push('uneven opponent hand spacing');const info=hand.parentElement.querySelector('.player-info');if(info&&hand.getBoundingClientRect().top-info.getBoundingClientRect().bottom>6)errors.push('gap between info and hand');}}
+   for(const hand of document.querySelectorAll('.player-panel .mini-hand')){if(!hand.getClientRects().length)continue;if(hand.scrollHeight>hand.clientHeight+1)errors.push('opponent vertical scroll');if(!hand.classList.contains('is-open')){const miniBox=hand.getBoundingClientRect(),first=hand.firstElementChild?.getBoundingClientRect(),last=hand.lastElementChild?.getBoundingClientRect();if(first&&last&&(first.left<miniBox.left-1||last.right>miniBox.right+1))errors.push('closed hand clipped horizontally');const cards=[...hand.children],steps=cards.slice(1).map((c,i)=>c.getBoundingClientRect().left-cards[i].getBoundingClientRect().left);if(steps.some(x=>Math.abs(x-steps[0])>1))errors.push('uneven opponent hand spacing');const wrap=hand.closest('.player-hand'),info=hand.closest('.player-panel').querySelector('.player-info');if(info&&wrap&&wrap.getBoundingClientRect().top-info.getBoundingClientRect().bottom>6)errors.push('gap between info and hand');}}
    if(document.querySelector('.table-title p')?.textContent.includes('За столом с ботами'))errors.push('redundant mode subtitle');
    for(const piece of document.querySelectorAll('.checker-piece.owner-1.is-playable'))if(getComputedStyle(piece).outlineColor!=='rgb(255, 220, 147)')errors.push('dark checker lacks contrasting outline');
    const self=stage.querySelector('.layout-self'),hand=self?.querySelector('.layout-hand'),info=self?.querySelector('.self-player');if(hand&&info&&info.getBoundingClientRect().top<hand.getBoundingClientRect().bottom-1)errors.push('self info above hand');
@@ -50,6 +68,19 @@ test('all packs share player panels and preserve geometry across reported screen
   },turn);
   assert.deepEqual(result.errors,[]);assert.equal(result.mode,UI.selectLayout(result.width,result.height));
   if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||!replay&&(capture<13||width===390&&height===740))){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,process.env.PLAYROOM_CAPTURE_ALL?`${game}-${surface||'combined'}-${width}x${height}-${replay?'history':'live'}.png`:`${String(++capture).padStart(2,'0')}-${game}.png`)});}
+ });
+ await t.test('two counters and long names remain inside narrow player cards',async()=>{
+  for(const width of [320,390,740]){
+   await page.setViewportSize({width,height:width===740?390:740});
+   await page.evaluate(()=>{
+    const state={game:'uno',turn:0,move:0,players:Array.from({length:4},(_,i)=>({name:'Александр '+i,bot:i>0,score:99})),data:{}};
+    const descriptor={api:2,family:'cards',elements:{field:'<div>Поле</div>'},playerContent:state.players.map(()=>({counters:[{kind:'points',value:99},{kind:'wins',value:12}]}))};
+    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'UNO',state,viewer:0,actions:[],scene:TabletopUI.composeScene(descriptor,{state,viewer:0}),turnText:'Ваш ход'});
+    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+   });
+   const result=await page.evaluate(()=>[...document.querySelectorAll('.player-panel')].map(p=>{const b=p.getBoundingClientRect();return [...p.querySelectorAll('.participant-role,strong,.player-score')].every(n=>{const r=n.getBoundingClientRect();return r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1;})&&p.querySelectorAll('.player-score').length===2;}));
+   assert(result.every(Boolean),'long names and both counters fit at '+width);
+  }
  });
  await context.close();
  }finally{await browser.close();}

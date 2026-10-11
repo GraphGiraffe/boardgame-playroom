@@ -20,6 +20,9 @@
     close:'<path d="m6 6 12 12M6 18 18 6"/>',
     trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
     seatType:'<rect x="5" y="3" width="14" height="9" rx="2"/><path d="M4 12v5h16v-5M6 17v4M18 17v4"/>',
+    player:'<circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/>',
+    bot:'<rect x="4" y="7" width="16" height="14" rx="3"/><path d="M12 3v4M2 12v5M22 12v5M9 17h6"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
+    host:'<path d="m3 6 4 4 5-6 5 6 4-4-2 13H5ZM5 16h14"/>',
     people:'<circle cx="9" cy="7" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
@@ -55,6 +58,10 @@
     const small=variant==='compact' && typeof compact==='string' && compact.length>0;
     return `<svg class="piece-art" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" data-art-variant="${small?'compact':'main'}"><foreignObject width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" class="piece-artboard" style="width:${width}px;height:${height}px">${small?compact:main}</div></foreignObject></svg>`;
   }
+  function countBadge(count,label='Количество',{corner=false,hand=false}={}) {
+    if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid piece count');
+    return `<span class="piece-count${corner?' is-corner':''}${hand?' is-hand':''}${hand&&count>=100?' is-long-count':''}" data-piece-count="${count}" aria-label="${esc(label)}: ${count}">${count}</span>`;
+  }
   const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="Закрытая карта">${art({main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99})}</span>`;
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
@@ -70,22 +77,38 @@
       return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} карт${open?', открытая рука':''}">${pieces}</div></div>`;
     }).join('')}</div>`;
   }
+  function participantIcon(person={}, {network=false}={}) {
+    const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.isHost?'host':'player';
+    const status=network&&!person.bot&&!person.local&&typeof person.connected==='boolean'&&(person.connected||person.hasConnected||Number.isFinite(person.joinedAt))?(person.connected?'online':'offline'):'neutral';
+    const label=({grid:'Стол',eye:'Зритель',bot:'Бот',host:'Хост',player:'Игрок'})[role]+(person.isHost&&['grid','eye'].includes(role)?' · хост':'')+(status==='online'?' · в сети':status==='offline'?' · нет связи':'');
+    return `<span class="participant-role is-${status}" data-participant-role="${role}" data-connection="${status}" role="img" aria-label="${esc(label)}" title="${esc(label)}">${icon(role)}${person.isHost&&['grid','eye'].includes(role)?icon('host'):''}</span>`;
+  }
+  function validCounters(counters) {
+    return Array.isArray(counters)&&counters.length<=2&&counters.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&['points','wins'].includes(c.kind)&&Number.isSafeInteger(c.value)&&c.value>=0&&(c.label===undefined||typeof c.label==='string'))&&new Set(counters.map(c=>c.kind)).size===counters.length;
+  }
+  function scoreBadge(counter) {
+    if(!validCounters([counter]))throw Error('Invalid player counters');
+    const label=counter.label||(counter.kind==='wins'?'Победы':'Очки');
+    return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.value}</span>`;
+  }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{
       const cards=state.data.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
       const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?back(options.kind||'card'):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
-      return {handHTML,scoreLabel:options.scoreLabel||'очки',countLabel:options.countLabel||'в руке',...(cards?{handCount:cards.length}:{}),open:!!open,badges:options.badges?.(index,person)||[],color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+      return {handHTML,...(options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||'очки',countLabel:options.countLabel||'в руке',...(cards?{handCount:cards.length}:{}),open:!!open,badges:options.badges?.(index,person)||[],color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const badges=(content.badges||[]).map(b=>`<span class="player-status-badge">${esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const counters=content.counters??[{kind:content.scoreLabel==='победы'?'wins':'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
+    if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
     return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
       <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Действия игрока ${esc(person.name)}"`:''}>
-      <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''}>${esc(person.name.slice(0,1))}</span><span class="player-details"><strong>${esc(person.name)}${own?' · вы':''}</strong><small>${person.bot?'Бот':'Игрок'} · ${esc(content.scoreLabel||'очки')}: ${Number.isFinite(person.score)?person.score:0}${content.colorLabel?' · '+esc(content.colorLabel):''}</small><span class="player-badges">${content.handCount!==undefined?`<span>${content.handCount} ${esc(content.countLabel||'в руке')}</span>`:''}${badges}</span></span></${target?'button':'div'}>
-      ${own?'<!--self-controls-->':''}${!own&&content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</article>`;
+      <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''} aria-hidden="true">${esc(person.name.slice(0,1))}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own?' · вы':''}</strong></span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,`Рука ${person.name} (${content.countLabel||'в руке'})`,{hand:true}):''}${[...counters].sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
+      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
   }
   function hand(content, count, hint='Подсвеченные карты можно разыграть', extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles';
@@ -93,7 +116,7 @@
     if(fan){
       body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
     }
-    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
+    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука</strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
   }
   function source(id, actions, selected, options = {}) {
     const key = options.key || 'card', value = String(id);
@@ -123,7 +146,7 @@
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end=''})=>`<div class="game-action-bar"><div data-action-position="start">${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end">${end}</div></div>`;
-  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary']);
   function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
@@ -133,7 +156,7 @@
     const className=typeof value.className==='string'?value.className:'';
     if(surface==='table')actions=[];
     const e={...value.elements},content=value.playerContent;
-    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string')))))))throw Error('Invalid player content');
+    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string')))))))throw Error('Invalid player content');
     if(value.fieldGroups!==undefined){
       const groups=value.fieldGroups;
       if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');

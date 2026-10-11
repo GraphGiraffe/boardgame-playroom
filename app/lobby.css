@@ -147,3 +147,8 @@
 .room-drag-ghost{position:fixed;z-index:100;pointer-events:none;padding:10px;background:var(--paper);border:2px solid var(--green);border-radius:12px;box-shadow:0 5px 20px #20352d33;opacity:.9}
 .room-drag-ghost .slot-edit{display:none}
 #room-rules-form [hidden]{display:none}
+
+.lobby-seat strong,.lobby-observer strong{display:flex;align-items:center;gap:6px;min-width:0}
+.lobby-seat .participant-name,.lobby-observer .participant-name{min-width:0;overflow-wrap:anywhere}
+.lobby-seat .participant-role svg,.lobby-observer .participant-role svg{width:18px;height:18px}
+.lobby-observer>span:first-child{flex:1;min-width:0;color:var(--ink)}

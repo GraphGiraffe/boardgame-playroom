@@ -117,7 +117,9 @@
       if(message?.kind==='room-presence' && typeof message.roomId==='string' &&
           Number.isSafeInteger(message.revision) && Array.isArray(message.participants) &&
           message.participants.length<=32 && message.participants.every(p=>
-            typeof p?.id==='string'&&typeof p?.nickname==='string'&&typeof p?.connected==='boolean')){
+            typeof p?.id==='string'&&typeof p?.nickname==='string'&&typeof p?.connected==='boolean'&&
+            (p.playerIndex===undefined||(Number.isSafeInteger(p.playerIndex)&&p.playerIndex>=-1&&p.playerIndex<32))&&
+            ['bot','local','isHost','hasConnected'].every(k=>p[k]===undefined||typeof p[k]==='boolean'))){
         if(!latestPresence||message.roomId!==latestPresence.roomId||message.revision>latestPresence.revision){
           latestPresence=clone(message);
           for(const listener of presenceListeners)listener(clone(latestPresence));

@@ -24,7 +24,8 @@ test('RTC presence is isolated from game snapshots and ignores out-of-order stat
     channel.emit('message',p(5,true));assert.equal(seen.length,1,'same-revision status is a duplicate');
     channel.emit('message',{kind:'room-presence',roomId:'room-test',revision:6,
       participants:[{id:'x',nickname:'X',connected:'yes'}]});assert.equal(seen.length,1,'invalid connection flag rejected');
-    channel.emit('message',p(6,true));assert.equal(seen.length,2);assert.equal(seen[1].participants[0].connected,true);
+    for(const extra of [{playerIndex:1.5},{playerIndex:32},{bot:'yes'},{local:'yes'},{hasConnected:'yes'}]){channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],...extra}]});assert.equal(seen.length,1,'invalid role metadata rejected');}
+    channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],playerIndex:1,hasConnected:true,local:false,bot:false}]});assert.equal(seen.length,2);assert.equal(seen[1].participants[0].connected,true);
     seen[1].participants[0].nickname='TAMPER';
     client.subscribePresence(s=>{assert.equal(s.participants[0].nickname,'Игрок & ко');})();
   }finally{client.close();}
