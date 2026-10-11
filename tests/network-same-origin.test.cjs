@@ -80,8 +80,9 @@ for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: s
     assert.ok(identity&&hostIdentity);
     assert.notEqual(identity,hostIdentity,'The guest must not be treated as the host');
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).count(),1);
-    assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).first().locator('strong').innerText(),'Хост · хост');
+    assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).first().locator('strong').innerText(),'Хост');
 
+    assert.equal(await host.locator('.lobby-person [data-participant-role=host].is-online').count(),1,'host role is an icon, not repeated name text');
     await client.locator('[data-net-action=table]').click();await client.locator('.lobby-table-slot [data-participant-id]').waitFor();
     if(seatedGuest){const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();}
     await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();

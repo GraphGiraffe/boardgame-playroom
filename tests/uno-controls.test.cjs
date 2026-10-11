@@ -100,7 +100,7 @@ test('Responsive UNO utilities, turn direction and complete opponent cards stay 
             await showVariant(page,saved.states[0],variant,handCount);
             const mode=variant==='closed'?'closed':'open',current=await bounds(page);
             if(!baselines[mode])baselines[mode]=current;
-            if(!['wild','declared'].includes(variant))for(const [selector,rect] of Object.entries(current))for(const [axis,value] of Object.entries(rect))if(typeof value==='number')assert(Math.abs(value-baselines[mode][selector][axis])<=1,`table or dock shifts for ${handCount} cards / ${variant}: ${selector} ${axis}`);
+            if(!['wild','declared'].includes(variant))for(const [selector,rect] of Object.entries(current))for(const [axis,value] of Object.entries(rect))if(typeof value==='number')assert(Math.abs(value-baselines[mode][selector][axis])<=1,`table or dock shifts for ${handCount} cards / ${variant}: ${selector} ${axis}: ${value} / ${baselines[mode][selector][axis]}`);
             await layout(page,{handCount});
             assert.deepEqual(await page.locator('.opponent-hand[data-player-index]').evaluateAll(els=>els.map(el=>el.dataset.playerIndex)),order,'player positions must not reorder with turn direction');
             assert.equal(await page.locator('.uno-direction').getAttribute('data-direction'),variant==='reverse'?'-1':'1');

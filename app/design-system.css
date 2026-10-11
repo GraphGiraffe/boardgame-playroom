@@ -197,12 +197,6 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex-basis:100px;width:100px}
 
 .app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"] .layout-participants{scrollbar-gutter:stable}
-@media(max-width:370px){
- .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-info{display:grid;grid-template-columns:26px minmax(0,1fr);gap:2px 5px}
- .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-details{display:contents}
- .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-details strong{grid-column:2;grid-row:1}
- .app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-token small,.app-game-layout[data-layout-mode="phone-portrait"] .players-panels:has(>:nth-child(3)) .player-badges{grid-column:1 / -1}
-}
 
 .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.settings-grid .field{min-width:0}.settings-grid select{width:100%;min-width:0}
 
@@ -220,9 +214,27 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 .network-presence[hidden]{display:none!important}
 
-/* Shared count badges sit above hands, outside their scrolling contents. */
+/* The hand scrolls independently of the player metadata and counters. */
 .app-game-layout .player-hand{display:flex;flex:none;flex-direction:column;gap:4px;min-width:0}
-.app-game-layout .player-hand>.piece-count{align-self:center}
-.app-game-layout .own-hand>.piece-count{display:table;margin:0 auto 4px}
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-hand{flex:1 1 0;min-width:32px}
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-hand .mini-hand{flex:none;width:100%;min-width:0}
+
+/* Compact public player metadata is owned by the application. */
+.app-game-layout .player-panel .player-info{display:flex;gap:6px;align-items:center;min-height:0;padding:3px 4px;border-radius:7px;width:100%;box-sizing:border-box}
+.app-game-layout .self-player .player-info{min-height:44px}
+.app-game-layout .player-details{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px;text-align:left}
+.app-game-layout .player-heading{display:flex;align-items:center;gap:4px;min-width:0;width:100%}
+.app-game-layout .player-heading strong{flex:1;min-width:0;font-size:11px;line-height:1.25;overflow-wrap:anywhere}
+.app-game-layout .player-scores{display:flex;flex:none;gap:3px;align-items:center}
+.app-game-layout .player-side{font-size:10px;line-height:1.2;color:var(--muted)}
+.app-game-layout .player-badges{display:flex;flex-wrap:wrap;gap:3px;min-width:0}
+.app-game-layout .player-panel .player-hand{gap:3px}
+
+.app-game-layout .player-data{display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-width:0}
+.app-game-layout .player-data .player-badges{display:contents}
+.app-game-layout .player-data .player-side{font-size:9px}
+.app-game-layout .player-panel .avatar{width:26px;height:26px;min-width:26px;flex:none;border-radius:9px;font-size:13px}
+
+@media(max-width:370px){.app-game-layout[data-layout-mode="phone-portrait"] .player-panel.opponent-hand .player-info{padding-inline:0}}
+
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{padding-inline:0}

@@ -194,6 +194,8 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
         await host.waitForFunction(count=>document.querySelectorAll('.network-presence .network-person.offline').length===count,guestCount);
+        assert.equal(await host.locator('.player-panel .participant-role.is-offline').count(),guestCount,'disconnected players have coral role icons');
+        assert.equal(await host.locator('.player-panel [data-participant-role=host].is-online').count(),mode==='network-table'?0:1);
         for(let index=0;index<guests.length;index++){
           const guest=guests[index];await guest.reload();await guest.locator('#network-join-button').waitFor();
           await pair(host,guest);
@@ -205,6 +207,8 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.equal(Number(await guest.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         }
         await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length===0);
+        assert.equal(await host.locator('.player-panel .participant-role.is-offline').count(),0,'reconnected icons clear offline status');
+        for(const guest of guests){await guest.waitForFunction(()=>document.querySelectorAll('.player-panel .participant-role.is-online').length>=2);assert.equal(await guest.locator('.player-panel [data-participant-role=bot].is-online').count(),0);}
         const room=await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id));
         assert.equal(room.participants.filter(p=>!p.isHost).length,guestCount);
         assert.deepEqual(room.seats.map(s=>s.participantId),expected.seats);

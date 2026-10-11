@@ -69,7 +69,7 @@
         peek=Math.max(peek,Math.min(box.width,Math.ceil(marker.right-box.left+2)));
       }
       const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
-      if(count>1&&card){const width=card.getBoundingClientRect().width,style=win.getComputedStyle(track),available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);peek=Math.max(peek,Math.min(width,(available-width)/(count-1)));}
+      if(count>1&&card){const width=card.getBoundingClientRect().width,style=win.getComputedStyle(track),available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);peek=Math.max(peek,Math.min(width,(available-width-2)/(count-1)));}
       if(peek>baseline)track.style.setProperty('--fan-peek',peek+'px');
     }
   }

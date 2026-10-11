@@ -436,8 +436,9 @@
     }
   }
   function roomPresence(room){
+    const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
     return {kind:'room-presence',roomId:room.id,revision:room.revision,participants:room.participants
-      .map(p=>({id:p.id,nickname:p.nickname,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost}))};
+      .map(p=>({id:p.id,nickname:p.nickname,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost,bot:!!p.bot,local:!!p.local,hasConnected:Number.isFinite(p.joinedAt),playerIndex:occupied.findIndex(s=>s.participantId===p.id)}))};
   }
   function notifyPresence(room){
     if(room?.phase!=='playing')return;
@@ -453,6 +454,19 @@
     if(hostAuthority&&hostRoomId){try{data=roomPresence(bridge().roomService.snapshot(hostRoomId));}catch(_){}}
     else if(clientGameClient&&clientPresence?.roomId===clientRoom?.id)data=clientPresence;
     if(!data)return;
+    const lost=clientPeer&&['disconnected','failed','closed'].includes(clientPeer.pc.connectionState);
+    for(const p of data.participants){
+      if(!Number.isSafeInteger(p.playerIndex)||p.playerIndex<0)continue;
+      const panel=shell.querySelector(`.player-panel[data-player-index="${p.playerIndex}"]`),role=panel?.querySelector('.participant-role');
+      if(!role)continue;
+      const connected=lost&&(p.isHost||p.id===clientParticipantId)?false:p.connected;
+      const signature=JSON.stringify([p.role,!!p.bot,!!p.local,!!p.isHost,!!p.hasConnected,connected]);
+      if(role.dataset.presence===signature)continue;
+      const template=document.createElement('template');
+      template.innerHTML=root.TabletopUI.helpers.participantIcon({...p,connected},{network:true});
+      const next=template.content.firstElementChild;next.dataset.presence=signature;
+      role.replaceWith(next);
+    }
     const status=shell.querySelector('.table-status');if(!status)return;
     let line=shell.querySelector('.network-presence');
     if(!line){line=document.createElement('div');line.className='network-presence';line.setAttribute('role','status');line.setAttribute('aria-live','polite');status.after(line);}
@@ -611,7 +625,7 @@
       const state=currentPeer.pc.connectionState;
       if(['failed','disconnected','closed'].includes(state)){
         reconnectStatus='Если связь сама не восстановится, используйте новый QR хоста.';
-        clientMount?.setConnected(false);showDisconnectBanner();
+        clientMount?.setConnected(false);showDisconnectBanner();renderPresence();
       }else if(state==='connected'){
         clientMount?.setConnected(true);reconnectStatus='';
         document.getElementById('network-reconnect-button')?.closest('.network-reconnect-banner')?.remove();
