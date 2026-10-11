@@ -219,3 +219,10 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 #app .history-panel .replay-badge{flex:none;white-space:nowrap;padding:4px;font-size:9px}
 
 .network-presence[hidden]{display:none!important}
+
+/* Shared count badges sit above hands, outside their scrolling contents. */
+.app-game-layout .player-hand{display:flex;flex:none;flex-direction:column;gap:4px;min-width:0}
+.app-game-layout .player-hand>.piece-count{align-self:center}
+.app-game-layout .own-hand>.piece-count{display:table;margin:0 auto 4px}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-hand{flex:1 1 0;min-width:32px}
+.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-hand .mini-hand{flex:none;width:100%;min-width:0}

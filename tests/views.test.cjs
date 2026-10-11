@@ -51,6 +51,10 @@ test('standalone UI shares source and target policies without browser or game de
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
+  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0">0<\/span>/);
+  for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));
+  const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
+  assert.match(empty,/data-piece-count="0"/);assert.doesNotMatch(empty,/mini-hand/);
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
@@ -263,6 +267,19 @@ test('player hands render every hidden piece and score units agree with the rule
         assert.equal(content.open,false);
         if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
       }
+    }
+    for(const viewer of [-1,0,1]){
+      const html=viewer<0?V.render(E.project(state,viewer),viewer,[],{surface:'table'}):render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel [\s\S]*?<\/article>/g)].map(m=>m[0]);
+      for(const panel of panels){
+        const index=Number(panel.match(/data-player-index="(\d+)"/)[1]),counts=[...panel.matchAll(/data-piece-count="(\d+)"/g)];
+        assert.deepEqual(counts.map(m=>Number(m[1])),state.data.hands&&index!==viewer?[state.data.hands[index].length]:[],`${game}: exactly one count per opponent hand`);
+        assert.doesNotMatch(panel,/>\d+ в руке</,`${game}: no repeated textual hand count`);
+      }
+      const own=html.match(/<section class="own-hand"[\s\S]*?<div class="hand-track/);
+      if(state.data.hands&&viewer>=0)assert.match(own?.[0]||'',new RegExp(`data-piece-count="${state.data.hands[viewer].length}"`));
+      else assert.equal(own,null,`${game}: no personal hand count on the table or without a hand`);
+      if(['uno','durak'].includes(game))assert.match(html,new RegExp(`class="piece-count is-corner" data-piece-count="${state.data.drawPile.length}"`));
+      assert.doesNotMatch(html,/pile-count/);
     }
   }
   const state=make('durak'),html=render(state);

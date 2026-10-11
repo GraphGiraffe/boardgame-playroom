@@ -55,6 +55,10 @@
     const small=variant==='compact' && typeof compact==='string' && compact.length>0;
     return `<svg class="piece-art" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" data-art-variant="${small?'compact':'main'}"><foreignObject width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" class="piece-artboard" style="width:${width}px;height:${height}px">${small?compact:main}</div></foreignObject></svg>`;
   }
+  function countBadge(count,label='Количество',{corner=false}={}) {
+    if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid piece count');
+    return `<span class="piece-count${corner?' is-corner':''}" data-piece-count="${count}" aria-label="${esc(label)}: ${count}">${count}</span>`;
+  }
   const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="Закрытая карта">${art({main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99})}</span>`;
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
@@ -84,8 +88,8 @@
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
     return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
       <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Действия игрока ${esc(person.name)}"`:''}>
-      <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''}>${esc(person.name.slice(0,1))}</span><span class="player-details"><strong>${esc(person.name)}${own?' · вы':''}</strong><small>${person.bot?'Бот':'Игрок'} · ${esc(content.scoreLabel||'очки')}: ${Number.isFinite(person.score)?person.score:0}${content.colorLabel?' · '+esc(content.colorLabel):''}</small><span class="player-badges">${content.handCount!==undefined?`<span>${content.handCount} ${esc(content.countLabel||'в руке')}</span>`:''}${badges}</span></span></${target?'button':'div'}>
-      ${own?'<!--self-controls-->':''}${!own&&content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</article>`;
+      <span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''}>${esc(person.name.slice(0,1))}</span><span class="player-details"><strong>${esc(person.name)}${own?' · вы':''}</strong><small>${person.bot?'Бот':'Игрок'} · ${esc(content.scoreLabel||'очки')}: ${Number.isFinite(person.score)?person.score:0}${content.colorLabel?' · '+esc(content.colorLabel):''}</small><span class="player-badges">${badges}</span></span></${target?'button':'div'}>
+      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${countBadge(content.handCount,`Рука ${person.name} (${content.countLabel||'в руке'})`)}${content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
   }
   function hand(content, count, hint='Подсвеченные карты можно разыграть', extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles';
@@ -93,7 +97,7 @@
     if(fan){
       body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
     }
-    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука <span>${count}</span></strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
+    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука</strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div>${countBadge(count,'Ваша рука')}<div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
   }
   function source(id, actions, selected, options = {}) {
     const key = options.key || 'card', value = String(id);
@@ -123,7 +127,7 @@
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end=''})=>`<div class="game-action-bar"><div data-action-position="start">${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end">${end}</div></div>`;
-  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary']);
   function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
