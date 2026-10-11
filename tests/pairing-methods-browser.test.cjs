@@ -11,7 +11,7 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
   await page.addScriptTag({content:`
     globalThis.__testState={microphone:${microphone},share:${share},standalone:${standalone},candidate:${candidate},addresses:${JSON.stringify(addresses)}};
     const original=globalThis.PlayroomAcousticPairing;
-    globalThis.PlayroomAcousticPairing={...original,microphoneIssue:()=>__testState.microphone?null:'Микрофон заблокирован.',probeAddresses:async()=>[]};
+    globalThis.PlayroomAcousticPairing={...original,microphoneIssue:()=>__testState.microphone?null:'Микрофон заблокирован.',probeAddresses:async()=>[],play:async()=>{__testState.sent=(__testState.sent||0)+1},listen:async()=>{__testState.listened=(__testState.listened||0)+1;return {stop(){}}}};
     globalThis.PlayroomQRScanner={scan:async()=>{throw Error('unneeded scan')}};
     globalThis.ggwave_factory=async()=>({});
     globalThis.PlayroomPWA={secure:__testState.standalone,standalone:__testState.standalone,canShare:()=>__testState.share,canInstall:()=>false,
@@ -36,7 +36,7 @@ const methodState=page=>page.evaluate(()=>({
   available:[...document.querySelectorAll('.pairing-methods-available>.pairing-method')].map(e=>({name:e.dataset.pairingMethod,open:e.open})),
   unavailable:[...document.querySelectorAll('.pairing-methods-unavailable-items>.pairing-method')].map(e=>({name:e.dataset.pairingMethod,open:e.open})),
   unavailableExpanded:document.querySelector('.pairing-methods-unavailable')?.open,
-  helpOpen:document.querySelector('.pairing-help')?.open
+  helpOpen:!!document.querySelector('.pairing-help-inline[open]')
 }));
 test('join on content://-like unsupported capture: QR/Text first, blocked Share/Sound collapsed, help on demand', {timeout:25000},async()=>{
   const browser=await chromium.launch(browserOptions),f=await fixture(browser);
@@ -45,17 +45,21 @@ test('join on content://-like unsupported capture: QR/Text first, blocked Share/
     assert.deepEqual(await methodState(f.page),{available:[{name:'qr',open:true},{name:'text',open:true}],
       unavailable:[{name:'share',open:false},{name:'sound',open:false}],unavailableExpanded:false,helpOpen:false});
     assert.equal(await f.page.locator('#net-client-offer').isVisible(),true);
-    assert.equal(await f.page.locator('.pairing-help-popover').isVisible(),false);
-    await f.page.locator('.pairing-help>summary').click();
-    assert.equal(await f.page.locator('.pairing-help-popover').isVisible(),true);
-    assert.match(await f.page.locator('.pairing-help-popover').innerText(),/PR3.*PR2/s);
-    assert.match(await f.page.locator('.pairing-help-popover').innerText(),/Микрофон заблокирован/);
+    assert.equal(await f.page.locator('.pairing-help-popover,.modal-head .pairing-help').count(),0);
+    await f.page.locator('[data-pairing-help=qr]>summary').click();
+    assert.match(await f.page.locator('#pairing-help-qr').innerText(),/PR3.*PR2/s);
+    assert.equal(await f.page.locator('#pairing-help-text').isVisible(),false);
+    const help=await f.page.locator('#pairing-help-qr').boundingBox();assert(help.x>=0&&help.x+help.width<=390);
+    await f.page.locator('.pairing-methods-unavailable>summary').click();
+    await f.page.locator('[data-pairing-method=sound]>summary').click();
+    await f.page.locator('[data-pairing-help=sound]>summary').click();
+    assert.match(await f.page.locator('#pairing-help-sound').innerText(),/Микрофон заблокирован/);
     const modal=await f.page.locator('.modal').boundingBox();assert.ok(modal.width<400);
     if(process.env.PLAYROOM_CAPTURE_DIR)await f.page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'pairing-join-mobile.png')});
     assert.equal(f.errors.length,0,f.errors.join('\n'));
   }finally{await f.context.close();await browser.close();}
 });
-test('host QR precedes scan buttons; saved manual IP keeps send-only sound under unavailable methods', {timeout:25000},async()=>{
+test('host QR precedes scan buttons; selected IPv4 enables sending without microphone', {timeout:25000},async()=>{
   const browser=await chromium.launch(browserOptions),f=await fixture(browser,{candidate:false,microphone:false});
   try{
     await f.page.locator('#network-pair-button').click();
@@ -80,14 +84,16 @@ test('host QR precedes scan buttons; saved manual IP keeps send-only sound under
     // swallowed when a formerly unavailable sound block changes groups.
     assert.match(await f.page.evaluate(()=>globalThis.__toast||''),/IP добавлен|Браузер не разрешает сохранять адрес/);
     const after=await methodState(f.page);
-    // PR3 enables speaker-only transmission, but Sound is not a complete
-    // available method when the microphone is blocked.
-    assert.deepEqual(after.available.map(x=>x.name),['qr','text']);
-    assert.deepEqual(after.unavailable.map(x=>x.name),['share','sound']);
+    // Sending and listening are independent methods within one sound block.
+    assert.deepEqual(after.available.map(x=>x.name),['sound','qr','text']);
+    assert.deepEqual(after.unavailable.map(x=>x.name),['share']);
     assert.equal(after.unavailableExpanded,false);
     assert.match(await f.page.locator('#net-host-token').inputValue(),/PR3\./);
     assert.equal(await f.page.locator('#net-host-acoustic-send').isEnabled(),true);
     assert.equal(await f.page.locator('#net-host-acoustic-listen').isEnabled(),false);
+    assert.equal(await f.page.locator('#net-host-acoustic').count(),0);
+    const boxes=await Promise.all(['#net-host-acoustic-send','#net-host-acoustic-listen'].map(sel=>f.page.locator(sel).boundingBox()));assert(Math.abs(boxes[0].y-boxes[1].y)<1&&Math.abs(boxes[0].width-boxes[1].width)<1);
+    await f.page.locator('#net-host-acoustic-send').click();assert.equal(await f.page.evaluate(()=>__testState.sent),1);assert.equal(await f.page.evaluate(()=>__testState.listened||0),0);
     if(process.env.PLAYROOM_CAPTURE_DIR)await f.page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'pairing-host-mobile.png')});
     assert.equal(f.errors.length,0,f.errors.join('\n'));
   }finally{await f.context.close();await browser.close();}

@@ -41,7 +41,8 @@
           const session = this.Session.restore(this.engine, JSON.parse(record.raw));
           return {id:record.id, active:record.active, game:session.game, createdAt:session.createdAt,
             updatedAt:session.updatedAt, mode:session.options.mode, preset:session.options.presetLabel, packVersion:session.packVersion || this.version(JSON.parse(record.raw)),
-            players:session.current.players.map(p => p.name), move:session.current.move,
+            players:session.current.players.map(p => p.name),
+            participants:session.options.lobbyConfig?.participants||session.current.players.map(p=>({nickname:p.name,bot:!!p.bot,local:true,role:'player'})), move:session.current.move,
             finished:session.current.status === 'finished',
             result:session.current.status === 'finished' ? (session.current.winner == null ? 'Ничья' : 'Победитель: ' + session.current.players[session.current.winner]?.name) : ''};
         } catch (_) {

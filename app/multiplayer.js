@@ -98,6 +98,7 @@
     _participant(room,participantId){const participant=room.participants.find(item=>item.id===participantId);if(!participant)throw Error('Участник не найден.');return participant;}
     _host(room,participantId){if(room.ownerId!==participantId)throw Error('Это действие доступно только хосту.');}
     _lobby(room){if(room.phase!=='lobby')throw Error('Состав комнаты уже нельзя менять.');}
+    _newMatch(room){if(room.recovery)throw Error('При продолжении сохраняются правила и игровые места. Для смены участника используйте замену.');}
     _editable(participant){if(participant.ready)throw Error('Сначала снимите готовность.');}
     _touch(room){room.revision++;room.updatedAt=this.clock();}
     _emit(room,type,textValue,extra={}){
@@ -147,6 +148,7 @@
     startHotSeat(roomId,hostId){const room=this._room(roomId);this._host(room,hostId);this._lobby(room);if(room.transportMode!=='hotseat'||!this.canStart(roomId))throw Error('Недостаточно игроков');room.phase='playing';this._touch(room);return this.snapshot(roomId);}
     configure(roomId,hostId,changes={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      if(Object.keys(changes).some(key=>key!=='name'))this._newMatch(room);
       if(changes.name!==undefined)room.name=normalizeRoomName(changes.name);
       if(changes.transportMode!==undefined){if(!['hotseat','network'].includes(changes.transportMode))throw Error('Неизвестный режим');if(changes.transportMode==='hotseat'){
         const host=this._participant(room,hostId);
@@ -160,6 +162,7 @@
     _resetRoomReady(room){for(const p of room.participants)p.ready=!!p.bot;room.lobbyRevision++;this._touch(room);}
     setLocalSeat(roomId,hostId,seatId,{kind='bot',nickname='Бот'}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      this._newMatch(room);
       const seat=room.seats.find(s=>s.id===seatId);if(!seat||!['bot','human','empty','closed'].includes(kind))throw Error('Некорректное место');
       const old=room.participants.find(p=>p.id===seat.participantId);
       if(old?.isHost){if(kind!=='human')throw Error('Сначала переместите хоста или выберите общий стол');old.nickname=normalizeName(nickname);this._resetRoomReady(room);return this.snapshot(roomId);}
@@ -169,8 +172,31 @@
       else{if(kind==='human'&&room.transportMode==='network')throw Error('В сетевом режиме игрок подключается с устройства');const person=old||{id:this.idFactory(),isHost:false,joinedAt:this.clock()};Object.assign(person,{nickname:normalizeName(nickname),local:true,bot:kind==='bot',connected:true,role:'player',seatId:seat.id,ready:kind==='bot'});if(!old)room.participants.push(person);seat.participantId=person.id;}
       this._resetRoomReady(room);return this.snapshot(roomId);
     }
+    renameLocalSeat(roomId,hostId,seatId,nickname){
+      const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      const seat=room.seats.find(item=>item.id===seatId),person=room.participants.find(item=>item.id===seat?.participantId);
+      if(!person||(!person.bot&&!(room.transportMode==='hotseat'&&(person.local||person.isHost))))throw Error('Имя сетевого игрока меняет сам игрок.');
+      person.nickname=normalizeName(nickname);room.lobbyRevision++;this._touch(room);
+      this._emit(room,'participant-renamed',person.nickname+' изменил имя.',{participantId:person.id});return this.snapshot(roomId);
+    }
+    restoreHotSeatLobby(value,{hostId}={}){
+      const room=clone(value);
+      if(!room||room.transportMode!=='hotseat'||room.ownerId!==hostId||!Array.isArray(room.seats)||!Array.isArray(room.participants)||!room.participants.some(p=>p.id===hostId&&p.isHost))throw Error('Нет сохранённого лобби Offline.');
+      this._constraints(room.constraints);normalizeRoomName(room.name);
+      const ids=new Set(room.participants.map(p=>p.id)),occupied=new Set();
+      if(ids.size!==room.participants.length)throw Error('Повреждён состав комнаты.');
+      for(const seat of room.seats)if(seat.participantId){
+        const p=room.participants.find(person=>person.id===seat.participantId);
+        if(!p||occupied.has(p.id)||p.seatId!==seat.id||p.role!=='player')throw Error('Повреждены игровые места.');occupied.add(p.id);
+      }
+      const old=this.rooms.get(room.id);if(old&&old.ownerId!==hostId)throw Error('Комната принадлежит другому хосту.');
+      room.phase='lobby';room.countdownEndsAt=null;delete room.recovery;
+      for(const p of room.participants){p.ready=!!p.bot;p.connected=true;delete p.replacement;}
+      this.rooms.set(room.id,room);this._touch(room);return this.snapshot(room.id);
+    }
     moveParticipant(roomId,hostId,participantId,seatId){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      this._newMatch(room);
       const p=this._participant(room,participantId),old=room.seats.find(s=>s.participantId===p.id),next=room.seats.find(s=>s.id===seatId);
       if(next?.closed)throw Error('Это место закрыто.');
       if(seatId!==null&&seatId!=='table'&&!next)throw Error('Место не найдено');
@@ -187,6 +213,7 @@
     }
     claimTable(roomId,participantId){
       const room=this._room(roomId);this._lobby(room);const p=this._participant(room,participantId);this._editable(p);
+      if(room.recovery&&p.seatId)throw Error('Сохранённое игровое место освобождает хост для замены.');
       if(room.transportMode==='hotseat')throw Error('Стол доступен только в Online');
       if(p.bot)throw Error('Бот не может быть устройством Стола');
       if(room.participants.some(person=>person.role==='table'&&person.id!==p.id))throw Error('Стол уже занят');
@@ -216,13 +243,27 @@
       const seat=room.seats.find(item=>item.id===seatId);if(!seat)throw Error('Место не найдено.');
       if(seat.closed)throw Error('Это место закрыто.');
       if(seat.participantId&&seat.participantId!==participantId)throw Error('Это место уже занято.');
+      if(room.recovery){
+        if(participant.seatId&&participant.seatId!==seat.id)throw Error('При продолжении сохраняется ваше игровое место.');
+        if(!Number.isInteger(seat.playerIndex))throw Error('Это место не участвовало в сохранённой партии.');
+        if(seat.participantId===participantId)return this.snapshot(roomId);
+        if(seat.previousParticipant)participant.replacement={previousName:seat.previousParticipant.nickname,previousId:seat.previousParticipant.id,accepted:false,atRevision:room.recovery.revision};
+      }
       for(const item of room.seats)if(item.participantId===participantId)item.participantId=null;
       seat.participantId=participantId;participant.seatId=seat.id;participant.role='player';participant.ready=false;if(participant.isHost)room.hostMode='player';
       room.lobbyRevision++;this._touch(room);this._emit(room,'seat-changed',participant.nickname+' занял '+seat.color.label.toLowerCase()+' слот.',{participantId,seatId});
       return this.snapshot(roomId);
     }
+    acceptReplacement(roomId,participantId){
+      const room=this._room(roomId);this._lobby(room);const p=this._participant(room,participantId);
+      if(!room.recovery||!p.seatId||!p.replacement)throw Error('Нет места для подтверждения замены.');
+      if(p.replacement.accepted)return this.snapshot(roomId);
+      p.replacement.accepted=true;room.lobbyRevision++;this._touch(room);
+      this._emit(room,'replacement-accepted',p.nickname+' продолжит за '+p.replacement.previousName+'.',{participantId,seatId:p.seatId});return this.snapshot(roomId);
+    }
     becomeSpectator(roomId,participantId){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);this._editable(participant);
+      if(room.recovery&&participant.seatId)throw Error('Сохранённое игровое место освобождает хост для замены.');
       if(room.transportMode==='hotseat')throw Error('Зрители доступны только в Online');
       for(const seat of room.seats)if(seat.participantId===participantId)seat.participantId=null;
       participant.seatId=null;participant.role='spectator';participant.ready=false;if(participant.isHost)room.hostMode='table';
@@ -231,6 +272,7 @@
     }
     changeGame(roomId,hostId,{game,rules={},constraints}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
+      this._newMatch(room);
       if(!game?.id||!game?.name||!game?.version)throw Error('Выберите установленный пак игры.');
       const next=this._constraints(constraints);
       const occupied=room.seats.filter(seat=>seat.participantId);
@@ -252,19 +294,23 @@
       // The caller must verify that the authoritative match is FINISHED.
       // It remains in its immutable per-session IndexedDB journal.
       room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
-      for(const p of room.participants)p.ready=!!p.bot;
+      delete room.recovery;
+      for(const seat of room.seats){delete seat.playerIndex;delete seat.previousParticipant;}
+      for(const p of room.participants){p.ready=!!p.bot;delete p.replacement;}
       this._touch(room);this._emit(room,'new-match-lobby','Партия завершена. Выберите следующую игру и подтвердите готовность.');
       return this.snapshot(roomId);
     }
     setReady(roomId,participantId,ready){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);
       if(participant.role!=='player'||!participant.seatId)throw Error('Сначала выберите игровое место.');
+      if(ready&&participant.replacement&&!participant.replacement.accepted)throw Error('Сначала подтвердите принятие места на замену.');
       participant.ready=!!ready;room.lobbyRevision++;this._touch(room);
       this._emit(room,'ready-changed',participant.nickname+(participant.ready?' готов.':' больше не готов.'),{participantId,ready:participant.ready});
       return this.snapshot(roomId);
     }
     updateRules(roomId,participantId,rules){
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
+      this._newMatch(room);
       room.rules=clone(rules||{});room.rulesRevision++;room.lobbyRevision++;
       for(const participant of room.participants)participant.ready=!!participant.bot;
       this._touch(room);this._emit(room,'rules-changed','Хост изменил правила. Проверьте их и подтвердите готовность заново.',{rulesRevision:room.rulesRevision});
@@ -274,9 +320,10 @@
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
       if(targetId===room.ownerId)throw Error('Хост не может кикнуть себя.');
       const target=this._participant(room,targetId);
-      for(const seat of room.seats)if(seat.participantId===targetId)seat.participantId=null;
+      for(const seat of room.seats)if(seat.participantId===targetId){if(room.recovery)seat.previousParticipant={id:target.id,nickname:target.nickname};seat.participantId=null;}
       room.participants=room.participants.filter(item=>item.id!==targetId);
       this.resumeTokens.delete(this._key(roomId,targetId));this.connectionLeases.delete(this._key(roomId,targetId));
+      this.resumeFallbacks.delete(this._key(roomId,targetId));this.pendingResumes.delete(this._key(roomId,targetId));
       room.lobbyRevision++;this._touch(room);this._emit(room,'participant-kicked',target.nickname+' исключён из комнаты.',{participantId:targetId});
       return this.snapshot(roomId);
     }
@@ -333,7 +380,7 @@
     }
     exportRecovery(roomId){
       const room=this._room(roomId);
-      if(room.phase!=='playing')throw Error('Сохранять можно только начатую комнату.');
+      if(room.phase!=='playing'&&!room.recovery)throw Error('Сохранять можно только начатую комнату.');
       const tokens=room.participants.filter(p=>!p.isHost&&!p.bot&&!p.local).map(p=>{
         const key=this._key(roomId,p.id),fallback=this.resumeFallbacks.get(key);
         return {participantId:p.id,token:this.resumeTokens.get(key),
@@ -342,11 +389,11 @@
       if(tokens.some(p=>!resumeTokenValid(p.token)))throw Error('Участник без права переподключения.');
       return {version:1,room:clone(room),tokens};
     }
-    restoreRecovery(value,{hostId}={}){
+    restoreRecovery(value,{hostId,collect=false,sessionId=null,revision=0}={}){
       if(value?.version!==1||!value.room||!Array.isArray(value.tokens))throw Error('Нет сохранённого состава комнаты.');
       const room=clone(value.room),tokens=value.tokens;
       if(typeof hostId!=='string'||room.ownerId!==hostId||typeof room.id!=='string'||!room.id||
-          room.phase!=='playing'||!ROOM_CODE.test(room.code)||!['player','table'].includes(room.hostMode)||
+          (room.phase!=='playing'&&!(['lobby','starting'].includes(room.phase)&&room.recovery))||!ROOM_CODE.test(room.code)||!['player','table'].includes(room.hostMode)||
           !Array.isArray(room.participants)||!Array.isArray(room.seats)||room.participants.length<1||
           this.rooms.has(room.id))throw Error('Сохранённая комната несовместима или занята.');
       this._constraints(room.constraints);
@@ -381,8 +428,20 @@
               entry.previousExpiresAt<0||entry.previousToken===entry.token)throw Error('Повреждена история прав переподключения.');
         }
       }
+      if(collect){
+        if(typeof sessionId!=='string'||!sessionId||!Number.isSafeInteger(revision)||revision<0)throw Error('Нет сохранённой партии для продолжения.');
+        const seats=room.seats.filter(s=>s.participantId||Number.isInteger(s.playerIndex)).sort((a,b)=>a.index-b.index);
+        seats.forEach((seat,index)=>{if(!Number.isInteger(seat.playerIndex))seat.playerIndex=index;});
+        if(seats.some((seat,index)=>seat.playerIndex!==index))throw Error('Повреждена связь игровых мест с партией.');
+        room.participants=room.participants.filter(p=>p.isHost||p.role==='player');
+        room.phase='lobby';room.countdownEndsAt=null;room.recovery={sessionId,revision};
+        for(const p of room.participants)p.ready=!!p.bot;
+        for(const seat of room.seats)if(!Number.isInteger(seat.playerIndex))seat.closed=true;
+        room.lobbyRevision++;this._touch(room);
+      }
       this.rooms.set(room.id,room);
       for(const entry of tokens){
+        if(!room.participants.some(p=>p.id===entry.participantId))continue;
         const key=this._key(room.id,entry.participantId);
         this.resumeTokens.set(key,entry.token);
         if(entry.previousToken && entry.previousExpiresAt>this.clock())
@@ -418,7 +477,8 @@
     canStart(roomId){
       const room=this._room(roomId);if(room.phase!=='lobby'||!this._validCount(room))return false;
       const players=room.participants.filter(item=>item.role==='player'&&item.seatId);
-      return (room.firstPlayerMode!=='assigned'||players.some(p=>p.id===room.firstParticipantId))&&players.length>0&&players.every(item=>(item.bot||room.transportMode==='hotseat'||item.ready)&&item.connected);
+      if(room.recovery&&room.seats.some(seat=>Number.isInteger(seat.playerIndex)&&!seat.participantId))return false;
+      return (room.recovery||room.firstPlayerMode!=='assigned'||players.some(p=>p.id===room.firstParticipantId))&&players.length>0&&players.every(item=>(item.bot||room.transportMode==='hotseat'||item.ready)&&item.connected&&(!item.replacement||item.replacement.accepted));
     }
     beginCountdown(roomId,participantId,{seconds=3}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
@@ -481,6 +541,7 @@
           else if(command.type==='claim-table')state=this.claimTable(roomId,participantId);
           else if(command.type==='spectator')state=this.becomeSpectator(roomId,participantId);
           else if(command.type==='ready')state=this.setReady(roomId,participantId,command.ready);
+          else if(command.type==='accept-replacement')state=this.acceptReplacement(roomId,participantId);
           else throw Error('Эта команда комнаты недоступна.');
           return {ok:true,snapshot:{kind:'lobby',room:state,participantId}};
         },
@@ -503,6 +564,7 @@
     snapshot(){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.snapshot();}
     dispatch(value){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.dispatch(value);}
     history(value){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.history(value);}
+    presentationReady(value){if(!this.current)throw Error('Соединение ещё не готово.');return this.current.presentationReady?.(value)||{ok:false};}
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
     close(){this.unsubscribe?.();this.current?.close?.();this.listeners.clear();this.current=null;}
   }

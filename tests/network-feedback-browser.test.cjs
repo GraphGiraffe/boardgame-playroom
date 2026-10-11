@@ -46,7 +46,7 @@ test('network player popover keeps geometry and commits only explicit legal acti
     await page.evaluate(()=>qaGame.destroy());
   }finally{await page.close();await browser.close();}
 });
-test('projected notices and cues play once; finish shows per-player results and history option',{timeout:40000},async()=>{
+test('projected actions stay in status, cues play once; finish shows per-player results and history option',{timeout:40000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);try{
     const s=seed(),authority=new Authority(s),a=authority.connect(0),initial=a.snapshot();
@@ -69,7 +69,9 @@ test('projected notices and cues play once; finish shows per-player results and 
     assert.equal(announced.kind,'false-uno');
     announced.notice={title:'Иван: UNO! слишком рано',detail:'За ранний выкрик штрафа нет',tone:'warning'};
     await page.evaluate(next=>qaClient.emit(next),projected);
-    assert.match(await page.locator('.game-notice').innerText(),/UNO! слишком рано/);
+    await page.waitForFunction(()=>document.querySelector('.status-event')?.textContent.includes('UNO'));
+    assert.equal(await page.locator('.game-notice').count(),0,'Routine action never covers the hand');
+    assert.match(await page.locator('.status-event').innerText(),/UNO/);
     assert.deepEqual(await page.evaluate(()=>qaAudio),[{ids:['uno.call'],pack:'uno'}]);
     await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
@@ -139,4 +141,67 @@ test('network turn uses shared quick-play and pacing, animates a new revision on
     assert.equal(await page.locator('.network-game .scene').getAttribute('data-animation-speed'),'instant');
     await page.evaluate(()=>qaGame.destroy());
   }finally{await page.close();await browser.close();}
+});
+
+
+test('rapid remote revisions queue every authorized frame including backfill; history autoplay uses the same motion route', {timeout:40000}, async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),page=await fixture(browser);
+  const session=seed(),authority=new Authority(session),owner=authority.connect(0),other=authority.connect(1),initial=owner.snapshot(),snapshots=[];
+  try{
+    for(const type of ['draw','pass','draw','pass']){const c=session.current.turn===0?owner:other;assert(c.dispatch(P.command(c.snapshot(),c.snapshot().actions.find(a=>a.type===type),'queue-'+snapshots.length)).ok);snapshots.push(owner.snapshot());}
+    const history=Array.from({length:5},(_,i)=>owner.history(i)),hidden=session.current.data.hands[1][0].id;
+    assert(!JSON.stringify(history).includes('"id":"'+hidden+'"'));
+    await page.evaluate(({initial,history,definition})=>{
+      window.qaFrames=[];window.qaReleases=[];window.qaSounds=[];window.qaHistory=[];window.qaCancel=0;window.qaSubmitted=[];
+      window.PlayroomMotion={capture(context){return context;},play(shot,options){qaFrames.push({revision:Number(document.querySelector('.network-game').dataset.revision),type:shot.action.type,draws:options.draws});return new Promise(resolve=>qaReleases.push(resolve));},cancel(){qaCancel++;for(const done of qaReleases.splice(0))done();}};
+      window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'fast'}),audio:{registerPack(){},play(ids){qaSounds.push(...ids);},stop(){}}};
+      const listeners=new Set();window.qaClient={snapshot:initial,pending:null,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async send(action){qaSubmitted.push(action);return {ok:true};},async history(index){qaHistory.push(index);return history[index];},emit(next){this.snapshot=next;for(const fn of listeners)fn(next);}};
+      window.qaGame=PlayroomSharedViews.mount(qaClient,definition);qaGame.render();
+    },{initial,history,definition});
+    await page.evaluate(snapshots=>{qaClient.emit(snapshots[2]);qaClient.emit(snapshots[3]);},snapshots);
+    for(let revision=1;revision<=4;revision++){
+      await page.waitForFunction(n=>qaFrames.length===n,revision);assert.equal(await page.locator('.network-game').getAttribute('data-revision'),String(revision));
+      assert.equal(await page.locator('.scene [data-action]:enabled').count(),0,'No action while presentation is behind');
+      assert.match(await page.locator('.status-event').innerText(),new RegExp(history[revision].events.at(-1).text));
+      await page.evaluate(()=>qaReleases.shift()());
+    }
+    await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
+    assert.deepEqual(await page.evaluate(()=>qaFrames.map(f=>f.revision)),[1,2,3,4]);assert.deepEqual(await page.evaluate(()=>qaHistory),[1,2]);
+    assert.equal(await page.evaluate(()=>qaCancel),0,'New packets do not cancel an active animation');
+    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify']);
+    await page.evaluate(next=>qaClient.emit(next),snapshots[3]);assert.equal(await page.evaluate(()=>qaFrames.length),4);
+    await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history');
+    assert.equal(await page.locator('.status-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
+    await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>qaFrames.length===5);
+    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify'],'Explicit history stays silent');
+    await page.locator('#replay-range').evaluate(el=>{el.value='3';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    await page.waitForFunction(()=>document.querySelector('#replay-range').value==='3'&&document.querySelector('.scene').getAttribute('aria-busy')==='false');
+    assert.equal(await page.evaluate(()=>qaFrames.length),5,'Manual history scrub is immediate, without a new flight');
+    await page.evaluate(()=>qaGame.destroy());
+  }finally{authority.dispose();await page.close();await browser.close();}
+});
+
+test('owner history freezes the reaction window, resume acknowledges the new control revision, and live roster does not rewrite history', {timeout:40000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),page=await fixture(browser);
+  const authority=new Authority(seed()),initial=authority.connect(0).snapshot();
+  try{
+    await page.evaluate(({initial,definition})=>{
+      initial=structuredClone(initial);initial.reactionWindow={id:'qa-window',owner:0,revision:0,humanMs:1000,botMs:3000,fallbackMs:10000,protected:true};
+      window.qaAcks=[];window.qaCommands=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'})};
+      window.PlayroomNetworkLibrary={playerMetadata(_session,index){return index===0?{name:'Замена',replacement:{previousName:'Иван'}}:null;}};
+      const history={...initial,kind:'history',actions:[],reactionWindow:null},listeners=new Set();
+      window.qaClient={snapshot:initial,pending:null,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async history(){return history;},async presentationReady(snapshot){qaAcks.push(snapshot.controlRevision||0);return {ok:true};},
+        async send(action){qaCommands.push(action);this.snapshot={...this.snapshot,paused:action.paused,controlRevision:(this.snapshot.controlRevision||0)+1};for(const fn of listeners)fn(this.snapshot);return {ok:true};}};
+      window.qaGame=PlayroomSharedViews.mount(qaClient,definition);qaGame.render();
+    },{initial,definition});
+    await page.waitForFunction(()=>qaAcks.length===1);assert.match(await page.locator('.layout-self .player-token').innerText(),/Замена/);
+    await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.evaluate(()=>qaClient.snapshot.paused),true);assert.match(await page.locator('.layout-self .player-token').innerText(),/Иван/);
+    await page.locator('[data-command="history-close"]').click();await page.waitForFunction(()=>!qaGame.historyOpen&&!qaClient.snapshot.paused&&qaAcks.length===2);
+    assert.deepEqual(await page.evaluate(()=>qaAcks),[0,2]);assert.deepEqual(await page.evaluate(()=>qaCommands.map(c=>c.paused)),[true,false]);
+    await page.evaluate(()=>qaGame.setConnected(false));await page.evaluate(()=>qaGame.setConnected(true));await page.waitForFunction(()=>qaAcks.length===3);
+    await page.locator('[data-command="pause"]').click();await page.waitForFunction(()=>qaClient.snapshot.paused);
+    await page.evaluate(()=>qaGame.openHistory(0));await page.locator('[data-command="history-close"]').click();await page.waitForFunction(()=>!qaGame.historyOpen);
+    assert.equal(await page.evaluate(()=>qaClient.snapshot.paused),true,'Closing history must preserve an existing manual pause');
+    await page.evaluate(()=>qaGame.destroy());
+  }finally{authority.dispose();await page.close();await browser.close();}
 });

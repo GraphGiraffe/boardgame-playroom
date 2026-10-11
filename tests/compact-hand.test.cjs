@@ -313,6 +313,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
         if (pairCount !== 6) return;
         const p = await exposedPoint(card(page,defense)); await page.touchscreen.tap(p.x,p.y); await expectMove(page,1);
         let s = await state(page); Core.validateState(s); assert.equal(s.data.table.at(-1).defense.id,defense); assert.equal(s.events.filter(e=>e.kind==='defend').length,1);
+        await page.locator('[data-command=pass-device]:not(:disabled)').tap();
         if (await page.locator('.handoff [data-command=unlock]').count()) await page.locator('.handoff [data-command=unlock]').tap();
         await assertDurakTableFit(page,pairCount,openHands,'after defense',ownCount-1);
         await page.locator('.scene-actions button').filter({hasText:/^Бито$/}).tap(); await expectMove(page,2);

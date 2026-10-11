@@ -289,3 +289,21 @@ test('legacy and unreadable saves survive new games; a deleted game cannot resur
   assert(library.list().some(record=>record.invalid),'unreadable data is preserved for explicit removal');
   assert(library.list().some(record=>record.id==='recovered'&&!record.invalid));
 });
+
+
+test('replacement metadata changes future snapshots without rewriting history and restores exactly',()=>{
+  const session=create({players:[{name:'First'},{name:'Old'}]});step(session);const old=session.current;
+  session.setPlayerMetadata(1,{name:'Replacement',bot:false});assert.equal(session.current,old);
+  step(session);assert.equal(session.current.players[1].name,'Replacement');assert.equal(session.states[1].players[1].name,'Old');
+  assert.deepEqual(session.current.playerChanges,[{index:1,name:'Replacement',bot:false}]);
+  step(session);assert.equal(session.current.playerChanges,undefined);
+  for(const compact of [true,false])assert.deepEqual(Session.restore(Core,JSON.parse(session.serialize({compact}))).current,session.current);
+  const bad=session.export();delete bad.states[2].playerChanges;assert.throws(()=>Session.restore(Core,bad));
+  for(const metadata of [{name:''},{name:'x'.repeat(41)},{bot:'yes'},{score:42},{}])assert.throws(()=>session.setPlayerMetadata(1,metadata));
+  assert.throws(()=>session.setPlayerMetadata(-1,{name:'No'}));
+});
+
+test('a prepared move cannot commit after its participant metadata changes',()=>{
+  const session=create(),candidate=session.prepare(0,{type:'advance'});session.setPlayerMetadata(0,{name:'New'});
+  assert.throws(()=>session.commitPrepared(candidate),/current/);assert.equal(session.current.move,0);step(session);assert.equal(session.current.players[0].name,'New');
+});

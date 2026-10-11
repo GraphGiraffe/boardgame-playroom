@@ -15,26 +15,26 @@
   function mount(client,definition,{surface,readOnly=false,onExit=null}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     let selected=null,connected=true,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
-    let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false;
+    let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false,historyPause=null;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
-    const stopMotion=()=>{animationTicket++;transitionActive=false;flow.cancel();};
+    let frames=[],draining=false,intake=Promise.resolve(),queuedRevision=shownLive?.revision??-1,presentedWindow=null;
+    const stopMotion=()=>{animationTicket++;transitionActive=false;draining=false;frames=[];queuedRevision=client.snapshot?.revision??-1;flow.cancel();};
     const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
     const feedback=new root.PlayroomGameFeedback({mount:()=>app.querySelector('.table-shell'),play:(ids,id)=>audio?.play?.(ids,id)});
     feedback.start(client.snapshot?.events||[]);
     let liveStatus=client.snapshot?.state?.status||'playing';
-    const drawNotice=document.getElementById('toast');
-    let toastTimer;
-    const toast=text=>{clearTimeout(toastTimer);drawNotice.textContent=text;drawNotice.classList.add('show');toastTimer=setTimeout(()=>{drawNotice.textContent='';drawNotice.classList.remove('show');},4000);};
-    const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
+    const toast=text=>root.PlayroomAppBridge?.toast?.(text);
+    const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!draining&&!frames.length&&shownLive?.revision===client.snapshot?.revision&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
-    const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;};
+    const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;if(historyOpen){flow.cancel();transitionActive=false;}};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
-    const eventText=s=>s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
+    const eventText=s=>s.revision===0?'Начальная расстановка':s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
     function render(){
       if(destroyed)return;
-      const live=client.snapshot,s=historyOpen&&historySnapshot?historySnapshot:live;
-      if(!s)return;
+      const live=client.snapshot,source=historyOpen&&historySnapshot?historySnapshot:shownLive||live;
+      if(!source)return;
+      const s=historyOpen||readOnly?source:{...source,state:{...source.state,players:source.state.players.map((player,index)=>({...player,...(root.PlayroomNetworkLibrary?.playerMetadata?.(source.sessionId,index)||{})}))}};
       if(s.packVersion!==pack.manifest.version||s.game!==pack.manifest.id)throw Error('Версия представления не совпадает с партией.');
       // A player uses the SAME combined scene as local bots/hot seat, not the reduced player surface.
       // The table is public, and only the server's projected state may be rendered.
@@ -47,12 +47,12 @@
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
       const markup=GameScreen.render({
-        network:true,revision:live.revision,gameName:pack.manifest.name,subtitle:'',
+        network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
-        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':turn?`Ходит ${turn.name}`:'Ожидание хода',
+        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':s.reactionWindow?.protected?'Ожидаем объявления':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
-        historyHTML,readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:s.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
@@ -60,9 +60,9 @@
         // Keep the actual range element, its focus and native pointer gesture.
         // Only read-only frame content and control labels change during replay.
         const template=document.createElement('template');template.innerHTML=markup;
-        app.querySelector('.network-game').dataset.revision=String(live.revision);
+        app.querySelector('.network-game').dataset.revision=String(s.revision);
         const sceneNode=app.querySelector('.scene');sceneNode.setAttribute('aria-busy',String(!!transitionActive));sceneNode.dataset.animationSpeed=flow.pace().mode;
-        for(const selector of ['.scene','.table-status','.history-caption']){
+        for(const selector of ['.scene','.table-status']){
           app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
         }
         app.querySelector('.replay-badge').textContent=template.content.querySelector('.replay-badge').textContent;
@@ -78,7 +78,9 @@
       if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot&&historyRequested===null?'false':'true');
       HandOverflow.sync(app);
       GameScreen.layoutScene(app);
-      renderedRevision=live.revision;feedback.refresh();playerTargets?.refresh();
+      const shell=app.querySelector('.network-game');if(shell)shell.dataset.mode=historyOpen?'history':'live';
+      renderedRevision=s.revision;feedback.refresh();playerTargets?.refresh();
+      if(!draining&&!historyOpen&&!transitionActive)void acknowledgePresentation();
     }
     function show(content){
       dialogReturnCommand=document.activeElement?.dataset?.command;
@@ -100,7 +102,7 @@
       if(!usable())return;
       if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>Подтверждение действия</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||'Подтвердить')}</button>`);return;}
       input.cancel();
-      try{const promise=client.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else toast(receipt.message);
+      try{const promise=client.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else if(!receipt.ignored)toast(receipt.message);
         // The authoritative snapshot already rendered the new scene; avoid
         // destroying its animation destination again on a delayed ACK.
         if(!transitionActive)render();}
@@ -109,7 +111,7 @@
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:usable,select(value){selected=value;render();},commit:submit});
     playerTargets=new root.PlayroomPlayerTarget({actions:()=>usable()?client.snapshot.actions:[],commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
     function result(){if(client.snapshot?.state?.status==='finished')show(GameScreen.resultMarkup({state:client.snapshot.state,viewer:client.snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',network:true}));}
-    async function viewHistory(index){
+    async function viewHistory(index,{animate=false}={}){
       if(!historyOpen||!client.snapshot)return;
       const pos=Math.min(Math.max(0,index),historyCount()),ticket=++historyTicket;
       historyRequested=pos;app.querySelector('.history-panel')?.setAttribute('aria-busy','true');
@@ -118,19 +120,38 @@
       if(ticket!==historyTicket||!historyOpen||destroyed)return;
       historyRequested=null;
       if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.revision>client.snapshot.revision){render();throw Error('Некорректная история.');}
-      historyIndex=pos;historySnapshot=result;render();
+      const change=animate?Flow.eventAction(historySnapshot,result):null,shot=change?flow.capture({actor:change.actor,action:change.action,viewer:result.viewer}):null;
+      historyIndex=pos;historySnapshot=result;transitionActive=!!shot;render();
+      if(shot)await flow.play(shot,{draws:result.effects||[]});
+      if(ticket!==historyTicket||!historyOpen||destroyed)return;transitionActive=false;render();
     }
     async function openHistory(index=historyCount()){
-      stopScrub();stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historyRequested=null;historySnapshot=null;render();
-      try{await viewHistory(historyIndex);}catch(error){historyOpen=false;toast(error.message);render();}
+      if(historyOpen||destroyed)return;
+      const live=client.snapshot,w=live?.reactionWindow;
+      if(!readOnly&&connected&&!live.paused&&w?.owner===live.viewer){
+        if(client.pending)return;
+        try{const receipt=await client.send({type:'session-pause',paused:true,expectedControlRevision:live.controlRevision||0});if(!receipt.ok){if(!receipt.ignored)toast(receipt.message);return;}historyPause=client.snapshot.controlRevision;}
+        catch(error){toast(error.message);return;}
+      }
+      presentedWindow=null;stopScrub();stopReplay();stopMotion();input.cancel();playerTargets.cancel();feedback.clear();historyOpen=true;historyIndex=index;historyRequested=null;historySnapshot=null;render();
+      try{await viewHistory(historyIndex);}catch(error){toast(error.message);await closeHistory();}
     }
-    function closeHistory(){if(readOnly&&onExit){onExit();return;}historyTicket++;stopScrub();stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;historyRequested=null;selected=null;render();}
+    async function closeHistory(){
+      if(!historyOpen)return;
+      if(readOnly&&onExit){onExit();return;}
+      historyTicket++;stopScrub();stopReplay();historyOpen=false;historySnapshot=null;historyIndex=null;historyRequested=null;selected=null;presentedWindow=null;
+      const pausedByHistory=historyPause;historyPause=null;
+      if(pausedByHistory!==null&&connected&&!client.pending&&client.snapshot.paused&&client.snapshot.controlRevision===pausedByHistory){
+        try{const receipt=await client.send({type:'session-pause',paused:false,expectedControlRevision:pausedByHistory});if(!receipt.ok&&!receipt.ignored)toast(receipt.message);}catch(error){toast(error.message);}
+      }
+      if(destroyed)return;stopMotion();shownLive=client.snapshot;queuedRevision=shownLive.revision;feedback.start(shownLive.events||[]);render();
+    }
     async function stepHistory(delta){stopScrub();stopReplay();try{await viewHistory((historyRequested??historyIndex??historyCount())+delta);}catch(error){toast(error.message);}}
     async function playStep(){
       if(!historyOpen||destroyed||document.hidden){stopReplay();render();return;}
       if((historyIndex??0)>=historyCount()){stopReplay();render();return;}
-      try{await viewHistory(historyIndex+1);}catch(error){stopReplay();toast(error.message);render();return;}
-      if(replayTimer)replayTimer=setTimeout(playStep,650);
+      try{await viewHistory(historyIndex+1,{animate:true});}catch(error){stopReplay();toast(error.message);render();return;}
+      if(replayTimer)replayTimer=setTimeout(playStep,Math.max(100,flow.pace().settle));
     }
     async function action(command){
       if(command==='room'){root.PlayroomNetworkLibrary?.openRoom?.();return;}
@@ -153,7 +174,7 @@
         case 'fullscreen':
           if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
         case 'retry':{
-          const receipt=await client.retry();toast(receipt.ok?'Ход подтверждён.':receipt.message);if(receipt.ok)selected=null;render();break;
+          const receipt=await client.retry();if(!receipt.ok&&!receipt.ignored)toast(receipt.message);if(receipt.ok)selected=null;render();break;
         }
         case 'history':historyOpen?closeHistory():await openHistory();break;
         case 'result':result();break;
@@ -166,7 +187,7 @@
           if(replayTimer){stopReplay();render();break;}
           if(!historyOpen)break;
           if(historyIndex>=historyCount())await viewHistory(0);
-          replayTimer=setTimeout(playStep,650);render();break;
+          replayTimer=setTimeout(playStep,Math.max(100,flow.pace().settle));render();break;
       }
     }
     function click(event){
@@ -215,38 +236,66 @@
         event.preventDefault();event.stopPropagation();void stepHistory(event.key==='ArrowLeft'?-1:1);
       }
     }
+    async function acknowledgePresentation(){
+      const s=shownLive,w=s?.reactionWindow;
+      if(!w||s.viewer!==w.owner||historyOpen||dialogOpen||document.hidden||!connected||s.paused||s.revision!==client.snapshot?.revision)return;
+      const key=s.sessionId+':'+s.authorityEpoch+':'+w.id+':'+(s.controlRevision||0);
+      if(presentedWindow===key)return;
+      presentedWindow=key;
+      try{const reply=await client.presentationReady?.(s);if(reply?.ok===false)presentedWindow=null;}
+      catch(_){presentedWindow=null;}
+    }
+    async function drain(){
+      if(draining||destroyed||historyOpen)return;
+      draining=true;const ticket=animationTicket;
+      while(frames.length&&ticket===animationTicket&&!destroyed&&!historyOpen){
+        const next=frames.shift(),previous=shownLive;
+        const change=Flow.eventAction(previous,next);
+        const shot=change&&connected&&!document.hidden&&!dialogOpen
+          ?flow.capture({actor:change.actor,action:change.action,viewer:next.viewer}):null;
+        shownLive=next;transitionActive=!!shot;
+        input.cancel();playerTargets.cancel();
+        feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{silent:!connected||document.hidden});
+        render();
+        if(shot)try{await flow.play(shot,{draws:(next.effects||[]).filter(effect=>effect.revision===next.revision)});}
+        catch(error){if(ticket===animationTicket)toast(error.message||'Анимация не воспроизведена');}
+        if(ticket!==animationTicket)return;
+        transitionActive=false;
+      }
+      if(ticket!==animationTicket||destroyed)return;
+      draining=false;render();
+      const nextStatus=shownLive?.state?.status||liveStatus;
+      if(liveStatus==='playing'&&nextStatus==='finished')result();
+      liveStatus=nextStatus;
+    }
     function subscribe(){
-      const live=client.snapshot,previous=shownLive,was=liveStatus;
-      // A new authoritative revision is the sole animation trigger. Never
-      // animate an ACK retry, history frame, resize or same-revision snapshot.
-      const change=Flow.eventAction(previous,live);
-      stopMotion();
-      const shot=change&&!historyOpen&&connected&&!document.hidden&&!dialogOpen
-        ?flow.capture({actor:change.actor,action:change.action,viewer:live.viewer}):null;
-      shownLive=live;liveStatus=live?.state?.status||liveStatus;
-      feedback.accept(live?.events||[],live?.cues||[],pack.manifest.id,{silent:historyOpen||!connected||document.hidden});
-      if(historyOpen){render();return;}
-      input.cancel();playerTargets.cancel();transitionActive=!!shot;render();
-      const after=()=>{if(was==='playing'&&liveStatus==='finished')result();};
-      if(!shot){after();return;}
-      const ticket=++animationTicket;
-      const draws=(live.effects||[]).filter(effect=>effect.revision===live.revision);
-      void flow.play(shot,{draws}).then(()=>{
-        if(destroyed||ticket!==animationTicket)return;
-        transitionActive=false;render();after();
-      }).catch(error=>{if(ticket!==animationTicket||destroyed)return;
-        transitionActive=false;render();toast(error.message||'Анимация не воспроизведена');after();});
+      const live=client.snapshot,ticket=animationTicket;
+      if(historyOpen){shownLive=live;queuedRevision=live.revision;render();return;}
+      // Intake is serial as history RPCs may complete after later snapshots.
+      // Keep every authorized projected revision; receipt/control updates never replay a move.
+      intake=intake.then(async()=>{
+        if(destroyed||ticket!==animationTicket||historyOpen)return;
+        if(live.revision<queuedRevision)return;
+        for(let revision=queuedRevision+1;revision<live.revision;revision++){
+          const frame=await client.history(revision);
+          if(destroyed||ticket!==animationTicket||historyOpen)return;
+          if(frame?.kind!=='history'||frame.revision!==revision||frame.viewer!==live.viewer||frame.sessionId!==live.sessionId||frame.authorityEpoch!==live.authorityEpoch)throw Error('Не удалось восстановить последовательность ходов.');
+          frames.push({...live,...frame,kind:'snapshot',actions:[],historyLength:live.historyLength});queuedRevision=revision;
+        }
+        frames.push(live);queuedRevision=live.revision;
+        void drain();
+      }).catch(error=>{if(!destroyed&&ticket===animationTicket){toast(error.message);stopMotion();shownLive=client.snapshot;render();}});
     }
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);
     document.addEventListener('input',historySliderInput,true);
     document.addEventListener('change',historySliderChange,true);
     document.addEventListener('keydown',keydown,true);
-    const resize=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('resize',resize);
-    const onOptions=()=>{stopMotion();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
-    const visibility=()=>{if(document.hidden){stopReplay();stopMotion();}};document.addEventListener('visibilitychange',visibility);
-    return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();clearTimeout(toastTimer);historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+    const resize=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('resize',resize);
+    const onOptions=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
+    const visibility=()=>{if(document.hidden){stopReplay();flow.cancel();}else if(!draining)render();};document.addEventListener('visibilitychange',visibility);
+    return {render,openHistory,setConnected(value){if(connected!==value){connected=value;if(!value){presentedWindow=null;playerTargets.cancel();flow.cancel();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
+      destroy(){destroyed=true;clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

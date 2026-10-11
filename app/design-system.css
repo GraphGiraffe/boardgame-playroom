@@ -8,7 +8,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 #modal-root .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
 #modal-root .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--ui-target);padding-bottom:12px;margin-bottom:16px}
 #modal-root .modal-head h2{min-width:0;overflow-wrap:anywhere;margin:0}
-#modal-root .modal-head .icon-btn{margin-left:auto}
+#modal-root .modal-head .icon-btn{margin-left:0;order:-1}
 .shared-modal-backdrop{position:fixed;inset:0;background:#20352d66;backdrop-filter:blur(7px);padding:16px;display:flex;align-items:center;justify-content:center;z-index:50;overflow:auto}
 #modal-root .shared-modal-backdrop .modal{background:var(--paper);width:min(100%,600px);max-width:600px}
 .pairing-method-icon svg,.pairing-chevron svg{width:22px;height:22px}
@@ -74,6 +74,12 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout .layout-hand .hand-track.is-tiles>button{flex:0 0 48px!important;width:48px!important;min-width:48px!important;height:84px!important;aspect-ratio:4/7}
 .app-game-layout .layout-hand .hand-track.is-tiles:before,.app-game-layout .layout-hand .hand-track.is-tiles:after{content:none}
 .app-game-layout .game-action-bar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:4px;align-items:center;width:100%}
+.app-game-layout .game-action-bar>[data-action-position]{grid-row:1}
+.app-game-layout .game-action-bar>[data-action-position="start"]{grid-column:1}
+.app-game-layout .game-action-bar>[data-action-position="primary"]{grid-column:2}
+.app-game-layout .game-action-bar>[data-action-position="end"]{grid-column:3}
+.app-game-layout .game-action-bar[data-exclusive="true"]>[data-action-position="primary"]{grid-column:1/-1}
+.app-game-layout .game-action-bar[data-exclusive="true"]>[inert]{visibility:hidden}
 .app-game-layout [data-action-position]{position:static!important;min-height:44px;display:flex;justify-content:center;align-items:center}
 .app-game-layout [data-action-position="primary"]{flex-wrap:wrap;gap:4px}
 .app-game-layout .layout-actions button{position:relative!important;inset:auto!important;margin:0!important;min-width:44px;min-height:44px}
@@ -151,7 +157,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout .player-panel .mini-hand{height:42px;min-height:42px;margin-top:0!important;display:grid!important;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-content:center;justify-content:normal;padding:2px!important;overflow:hidden}
 .app-game-layout .player-panel .mini-hand>*{margin:0!important;pointer-events:none;min-width:0!important}
 .app-game-layout .player-panel .mini-hand>*:last-child{justify-self:end}
-.app-game-layout .opponent-hand{justify-content:flex-start;gap:2px;align-self:start}
+.app-game-layout .opponent-hand{justify-content:flex-start;gap:2px;align-self:stretch}
 
 /* Public hands scroll only horizontally; closed hands fit the player card. */
 .app-game-layout .player-panel .mini-hand{height:44px;min-height:44px;box-sizing:border-box;overflow-y:hidden}
@@ -165,7 +171,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .layout-self:has(.layout-hand)>.layout-hand{order:2}
 .app-game-layout .layout-hand .hand-track.is-tiles{height:110px;min-height:110px;padding:12px 8px 10px;box-sizing:border-box;overflow-x:auto;overflow-y:hidden}
 .app-game-layout .layout-hand .hand-track.is-tiles>.is-selected{transform:translateY(-4px)}
-.app-game-layout .layout-actions:has(.scene-actions:empty){display:none}
+.app-game-layout:not([data-action-reserve="true"]) .layout-actions:has(.scene-actions:empty):not(:has(.pass-device-button)){display:none}
 
 .app-game-layout .player-panel .mini-hand.is-open>*:first-child{margin-left:0!important}
 .app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-track.is-fan{--fan-card-width:55px;--fan-card-height:78px;height:100px!important;min-height:100px!important}
@@ -238,3 +244,34 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 @media(max-width:370px){.app-game-layout[data-layout-mode="phone-portrait"] .player-panel.opponent-hand .player-info{padding-inline:0}}
 
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{padding-inline:0}
+
+/* Stable controls are part of the common scene contract, including empty rows. */
+.app-game-layout[data-action-reserve="true"] .layout-actions{min-height:44px;flex:none}
+.app-game-layout .layout-actions:has(.pass-device-button){display:flex;flex-direction:column;align-items:center;gap:4px}
+.app-game-layout .layout-actions>.pass-device-button{flex:none;min-height:44px}
+.pass-device-button.handoff-pending{animation:handoff-attention 1.5s ease-in-out infinite}
+@keyframes handoff-attention{50%{background:#dfedcb;box-shadow:0 0 0 3px #63865866}}
+@media(prefers-reduced-motion:reduce){.pass-device-button.handoff-pending{animation:none;outline:2px solid #638658;outline-offset:2px;background:#dfedcb}}
+.scene[data-animation-speed="instant"] .pass-device-button.handoff-pending{animation:none;outline:2px solid #638658;outline-offset:2px;background:#dfedcb}
+/* Keep the full selected-piece outline and a constant hand footprint. */
+.app-game-layout .layout-hand .hand-track.is-tiles{height:116px;min-height:116px;padding-top:15px;padding-bottom:15px}
+.app-game-layout .player-panel .mini-hand{align-items:center;min-height:46px;height:46px;padding:3px 4px!important}
+.app-game-layout .player-panel .mini-hand:not(.is-open)>*{flex:0 0 28px!important;margin-left:calc(var(--mini-step,28px) - 28px)!important}
+.app-game-layout .player-panel .mini-hand>*:last-child{justify-self:auto}
+.app-game-layout .player-panel .mini-hand.is-open{gap:0;overflow-y:hidden}
+.app-game-layout .player-panel .mini-hand.is-open>*{margin-left:calc(var(--mini-step,28px) - 28px)!important}
+.app-game-layout .player-panel .mini-hand.is-open>*:first-child{margin-left:0!important}
+:is(#app,#modal-root) .icon-btn{display:inline-flex;align-items:center;justify-content:center}
+:is(#app,#modal-root) .icon-btn svg[data-ui-icon]{display:block;margin:0}
+#app .table-tools{flex-wrap:nowrap}
+/* Notices occupy a row before the screen, never cover a hand or the field. */
+.app-notice,#toast.show{position:relative;z-index:auto;inset:auto;transform:none;width:auto;max-width:none;margin:6px 8px;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #c8b17c;border-radius:14px;background:#f4e8c9;color:var(--ink);box-shadow:none;pointer-events:auto;font-size:12px;line-height:1.4}
+.app-notice>span,#toast.show>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.app-notice .icon-btn,#toast.show .icon-btn{flex:none;width:36px;min-width:36px;height:36px}
+body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-height,72px))}
+#modal-root .modal>#toast.show{margin:0 0 16px;flex:none}
+
+.history-viewer{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 6px;font-size:11px;color:var(--muted)}
+.history-viewer select{max-width:100%;min-width:0;min-height:36px;padding:5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);font:inherit}
+.saved-participant{display:inline-flex;align-items:center;gap:4px;vertical-align:middle;margin-right:8px}
+.saved-participant .participant-role svg{width:16px;height:16px}

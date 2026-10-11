@@ -222,3 +222,50 @@ test('single table slot accepts any network participant and drag swaps preserve 
  const connection=rooms.connection(room.id);const joined=connection.dispatch({type:'join',id:'remote',nickname:'Тео'});const table=connection.dispatch({type:'claim-table'});assert.equal(table.snapshot.room.participants.find(p=>p.id===joined.snapshot.participantId).role,'table');
  rooms.claimSeat(room.id,joined.snapshot.participantId,'seat-3');rooms.becomeSpectator(room.id,'host');state=rooms.configure(room.id,'host',{transportMode:'hotseat'});assert.equal(state.participants.find(p=>p.id==='host').role,'player');assert.throws(()=>rooms.claimTable(room.id,'host'),/Online/);
 });
+
+test('local seat rename and cold lobby restore preserve identities, positions, options and bot readiness',()=>{
+  const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat',firstPlayerMode:'assigned',firstParticipantId:'host'});
+  rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Мика'});
+  rooms.setLocalSeat(room.id,'host','seat-4',{kind:'human',nickname:'Анна'});
+  const old=rooms.snapshot(room.id),bot=old.seats[1].participantId;
+  rooms.renameLocalSeat(room.id,'host','seat-2','Кира');rooms.renameLocalSeat(room.id,'host','seat-1','Иван новый');
+  let state=rooms.snapshot(room.id);
+  assert.equal(state.seats[1].participantId,bot);assert.equal(state.participants.find(p=>p.id===bot).ready,true);
+  assert.equal(state.participants.find(p=>p.id==='host').nickname,'Иван новый');assert.equal(state.firstParticipantId,'host');
+  assert.throws(()=>rooms.renameLocalSeat(room.id,bot,'seat-1','Подмена'),/хост/);
+  rooms.moveParticipant(room.id,'host','host','seat-4');state=rooms.snapshot(room.id);
+  const restored=service().restoreHotSeatLobby(state,{hostId:'host'});
+  assert.deepEqual(restored.seats,state.seats);assert.deepEqual(restored.rules,state.rules);assert.equal(restored.firstParticipantId,state.firstParticipantId);
+  assert.deepEqual(restored.participants.map(p=>[p.id,p.nickname,p.bot,p.seatId]),state.participants.map(p=>[p.id,p.nickname,p.bot,p.seatId]));
+  assert.equal(restored.participants.every(p=>p.ready===!!p.bot),true);
+  assert.throws(()=>service().restoreHotSeatLobby(state,{hostId:'other'}),/Offline/);
+});
+
+test('recovery lobby reserves stable seats, drops old observers and requires explicit replacement consent',()=>{
+  const {rooms,room}=createRoom();
+  rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Мика'});
+  const oldGuest=rooms.join(room.id,{id:'previous',nickname:'Мария'});rooms.claimSeat(room.id,'previous','seat-4');
+  rooms.join(room.id,{id:'old-watcher',nickname:'Зритель'});rooms.join(room.id,{id:'old-table',nickname:'Стол'});rooms.claimTable(room.id,'old-table');
+  rooms.setReady(room.id,'host',true);rooms.setReady(room.id,'previous',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);
+  const next=service(),restored=next.restoreRecovery(rooms.exportRecovery(room.id),{hostId:'host',collect:true,sessionId:'session-stable',revision:12});
+  assert.equal(restored.phase,'lobby');assert.deepEqual(restored.recovery,{sessionId:'session-stable',revision:12});
+  assert.deepEqual(restored.seats.filter(s=>Number.isInteger(s.playerIndex)).map(s=>[s.id,s.playerIndex]),[['seat-1',0],['seat-2',1],['seat-4',2]]);
+  assert.equal(restored.participants.some(p=>['old-watcher','old-table'].includes(p.id)),false);
+  assert.equal(restored.seats[2].closed,true);assert.equal(next.canStart(room.id),false);
+  for(const change of [()=>next.updateRules(room.id,'host',{}),()=>next.configure(room.id,'host',{firstPlayerMode:'random'}),()=>next.moveParticipant(room.id,'host','previous','seat-1'),()=>next.becomeSpectator(room.id,'previous'),()=>next.claimTable(room.id,'previous')])assert.throws(change,/сохраня|замен|освобождает/);
+  const oldLink=next.connection(room.id);const resumed=oldLink.dispatch({type:'resume',participantId:'previous',resumeToken:oldGuest.resumeToken});assert.equal(resumed.resumed,true);
+  next.kick(room.id,'host','previous');
+  assert.throws(()=>next.connection(room.id).dispatch({type:'resume',participantId:'previous',resumeToken:resumed.resumeToken}),/Участник|недействитель|переподключ/i);
+  assert.throws(()=>oldLink.dispatch({type:'ready',ready:true}),/подключ|Участник|исключ/i);
+  next.join(room.id,{id:'replacement',nickname:'Олег'});
+  assert.throws(()=>next.claimSeat(room.id,'replacement','seat-3'),/закрыто/);
+  let changed=next.claimSeat(room.id,'replacement','seat-4');
+  assert.equal(changed.seats[3].playerIndex,2);assert.equal(changed.participants.find(p=>p.id==='replacement').replacement.previousName,'Мария');
+  assert.throws(()=>next.setReady(room.id,'replacement',true),/подтвердите/);
+  next.acceptReplacement(room.id,'replacement');next.setReady(room.id,'replacement',true);next.setReady(room.id,'host',true);
+  assert.equal(next.canStart(room.id),true);
+  const saved=next.exportRecovery(room.id),again=service().restoreRecovery(saved,{hostId:'host',collect:true,sessionId:'session-stable',revision:12});
+  assert.equal(again.seats[3].participantId,'replacement');assert.equal(again.seats[3].playerIndex,2);
+  assert.equal(again.participants.find(p=>p.id==='replacement').replacement.accepted,true);
+  assert.equal(saved.tokens.some(t=>t.participantId==='previous'),false);
+});

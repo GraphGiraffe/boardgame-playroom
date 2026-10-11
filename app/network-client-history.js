@@ -66,7 +66,7 @@
       // play multiple games without overwriting (or mixing) the old replay.
       return [roomId,participantId,...(sessionId?[sessionId]:[])].map(encodeURIComponent).join('|');
     }
-    async save({roomId,participantId,roomName='',snapshot}){
+    async save({roomId,participantId,roomName='',participants=null,snapshot}){
       const frame=projectFrame(snapshot),key=ClientHistory.id(roomId,participantId,frame.sessionId);
       await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
         const matches=tx.objectStore('matches'),get=matches.get(key);
@@ -79,8 +79,9 @@
           const last=Math.max(frame.revision,old?.revision??0),now=Date.now();
           matches.put({id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
             game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),
-            role:'client',revision:last,createdAt:old?.createdAt||now,updatedAt:now,
-            players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64))});
+            role:'client',revision:last,finished:frame.revision>=last?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
+            players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64)),
+            participants:Array.isArray(participants)?participants.map(p=>({nickname:String(p.nickname||p.name||'').slice(0,64),role:['player','spectator','table'].includes(p.role)?p.role:'player',bot:!!p.bot,local:!!p.local,isHost:!!p.isHost})):old?.participants||[]});
           tx.objectStore('frames').put({id:key,revision:frame.revision,frame});
         };
       });

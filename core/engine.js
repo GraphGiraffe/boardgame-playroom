@@ -149,9 +149,30 @@
     if (!activePlayer(state, actor)) return [];
     return [...(actor === state.turn ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
   }
+  // Packs describe a public reaction window; clocks and transport stay in the app.
+  function reactionWindow(state) {
+    const value = forState(state).reactionWindow?.(state);
+    if (value == null) return null;
+    const int = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
+    if (!value || typeof value.id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id) ||
+        !int(value.owner, 0, state.players.length - 1) || !int(value.revision, 0, state.move) ||
+        !int(value.humanMs, 0, 60000) || !int(value.botMs, value.humanMs, 60000) ||
+        !int(value.fallbackMs, 0, 60000)) throw Error('Некорректное окно реакции пака');
+    return clone({id:value.id,owner:value.owner,revision:value.revision,humanMs:value.humanMs,botMs:value.botMs,fallbackMs:value.fallbackMs});
+  }
+  function reactionControl(state, actor, action) {
+    if (!activePlayer(state, actor) || !action || typeof action !== 'object') return null;
+    const value = forState(state).reactionControl?.(state, actor, action);
+    if (value == null) return null;
+    if (!value || !['answer','challenge','advance','independent'].includes(value.kind) ||
+        (value.ignore !== undefined && typeof value.ignore !== 'boolean') ||
+        (value.episode !== undefined && (!Number.isSafeInteger(value.episode) || value.episode < 0))) throw Error('Некорректная реакция пака');
+    return clone(value);
+  }
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error('Не задано действие');
-    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    if (reactionControl(state, actor, action)?.ignore) return state;
+    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error('Этот ход сейчас недоступен');
     const next = clone(state);
     next.move++;
@@ -210,7 +231,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionControl, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

@@ -33,7 +33,8 @@ test('all packs share player panels and preserve geometry across reported screen
    const board=document.querySelector('.checker-board,.snakes-board');if(board){const r=board.getBoundingClientRect();if(Math.abs(r.width-r.height)>1||r.width<80)errors.push('board geometry');}
    for(const node of document.querySelectorAll('.layout-hand .hand-card:not(.domino-tile)')){const r=node.getBoundingClientRect();if(Math.abs(r.width/r.height-64/91)>.025)errors.push('card aspect');}
    for(const node of document.querySelectorAll('.layout-hand .domino-tile')){const r=node.getBoundingClientRect();if(Math.abs(r.width/r.height-48/84)>.025)errors.push('domino aspect');}
-   const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow');for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?30/52:60/34;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
+   const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow');for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?4/7:7/4;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
+   for(const pip of document.querySelectorAll('.domino-art-face .pip')){const r=pip.getBoundingClientRect();if(Math.abs(r.width-r.height)>.2)errors.push('domino pip stretched');}
    const n=document.querySelectorAll('.player-panel').length;if(n!==document.querySelectorAll('.player-info').length||n<2)errors.push('players missing');
    const active=stage.querySelectorAll('.player-panel.is-turn'),inactive=stage.querySelector('.player-panel:not(.is-turn)');
    if(active.length!==1||Number(active[0]?.dataset.playerIndex)!==turn||active[0]?.getAttribute('aria-current')!=='true'||stage.querySelectorAll('.player-panel[aria-current="true"]').length!==1)errors.push('incorrect active player');
@@ -80,6 +81,17 @@ test('all packs share player panels and preserve geometry across reported screen
    });
    const result=await page.evaluate(()=>[...document.querySelectorAll('.player-panel')].map(p=>{const b=p.getBoundingClientRect();return [...p.querySelectorAll('.participant-role,strong,.player-score')].every(n=>{const r=n.getBoundingClientRect();return r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1;})&&p.querySelectorAll('.player-score').length===2;}));
    assert(result.every(Boolean),'long names and both counters fit at '+width);
+  }
+ });
+ await t.test('conditional action rows keep hand, metadata and field geometry unchanged',async()=>{
+  for(const game of ['durak','domino'])for(const [width,height] of [[390,740],[740,390]]){
+   await page.setViewportSize({width,height});
+   await page.evaluate(game=>{const E=TabletopCore,state=E.createGame(game,{seed:17,players:[{name:'A'},{name:'B'}]}),viewer=0,projected=E.project(state,viewer);document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game,state:projected,viewer,scene:PlayroomViews.render(projected,viewer,[],{}),turnText:'Ваш ход'});PlayroomGameScreen.layoutScene(document.querySelector('#app'));},game);
+   const measure=()=>page.evaluate(()=>Object.fromEntries(['.layout-field','.layout-hand','.self-player','.layout-actions'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [selector,[r.x,r.y,r.width,r.height]];})));
+   const before=await measure();
+   await page.evaluate(()=>{document.querySelector('.layout-actions .scene-actions').innerHTML='<button class="scene-button">Пропустить ход</button>';PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
+   const after=await measure();assert(before['.layout-actions'][3]>=44);
+   for(const selector of Object.keys(before))assert(before[selector].every((value,index)=>Math.abs(value-after[selector][index])<=1),game+' '+width+' '+selector+' moved');
   }
  });
  await context.close();

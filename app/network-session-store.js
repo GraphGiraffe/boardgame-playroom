@@ -82,7 +82,7 @@
       const timestamp=Date.now();
       const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
         game:session.game,packVersion:session.packVersion,packDigest,room:clone(room),
-        recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,createdAt:timestamp,updatedAt:timestamp};
+        recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,finished:session.current.status==='finished',createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
       return {sessionId,revision:0};
     }
@@ -105,7 +105,7 @@
           }
           tx.objectStore('steps').add({sessionId,revision:nextState.move,state:clone(nextState)});
           tx.objectStore('receipts').add({sessionId,viewer,commandId,signature,receipt:clone(receipt)});
-          sessions.put({...entry,revision:nextState.move,updatedAt:Math.max(Date.now(),entry.updatedAt)});
+          sessions.put({...entry,revision:nextState.move,finished:nextState.status==='finished',updatedAt:Math.max(Date.now(),entry.updatedAt)});
         };
       });
       return receipt;
@@ -147,6 +147,22 @@
           const controls=record.controlReceipts||[];
           if(controls.length>=20000){abort(Error('Лимит команд паузы'));return;}
           store.put({...record,paused,controlRevision,controlReceipts:[...controls,{viewer,commandId,signature,receipt}],updatedAt:Date.now()});};
+      });
+    }
+    async saveRoster({sessionId,room,recovery,revision}){
+      if(!isId(sessionId)||!isId(room?.id)||recovery?.version!==1||JSON.stringify(recovery.room)!==JSON.stringify(room)||!Array.isArray(recovery.tokens)||!Number.isSafeInteger(revision)||revision<0||room.recovery&&(room.recovery.sessionId!==sessionId||room.recovery.revision!==revision))throw Error('Некорректный состав восстанавливаемой комнаты.');
+      await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('sessions'),request=store.get(sessionId);
+        request.onsuccess=()=>{
+          const record=request.result;
+          if(!record||record.revision!==revision||record.roomId!==room.id||record.room.ownerId!==room.ownerId||record.game!==room.game?.id||record.packVersion!==room.game?.version){abort(Error('Состав не соответствует сохранённой партии.'));return;}
+          const next=clone(recovery),durable=new Map((record.recovery?.tokens||[]).map(token=>[token.participantId,token]));
+          // A captured roster may predate an in-flight credential rotation.
+          // Existing identities keep the latest atomically stored credential;
+          // explicit removals still revoke it, and new identities add theirs.
+          next.tokens=next.tokens.map(token=>clone(durable.get(token.participantId)||token));
+          store.put({...record,room:clone(room),recovery:next,updatedAt:Date.now()});
+        };
       });
     }
     async remove(sessionId){
@@ -218,8 +234,8 @@
         const request=tx.objectStore('sessions').getAll();
         request.onsuccess=()=>done(request.result.map(s=>({sessionId:s.sessionId,roomId:s.roomId,
           game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt,
-          name:s.room?.name||'',hostMode:s.room?.hostMode||'player',
-          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),role:'host'}))
+          name:s.room?.name||'',hostMode:s.room?.hostMode||'player',finished:!!s.finished,
+          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),participants:clone(s.room?.participants||[]),role:'host'}))
           .sort((a,b)=>b.updatedAt-a.updatedAt));
       });
     }

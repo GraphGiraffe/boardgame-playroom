@@ -4,6 +4,33 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
 const hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
 
+test('host archive keeps its original private viewer when an earlier recovery seat is vacant',
+  {timeout:45000,skip:!hasUno},async()=>{
+    const {server:listener,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+    const context=await browser.newContext({playroomProfile:false}),page=await context.newPage();
+    try{
+      await profile(page,'Хост второй',url);
+      const expected=await page.evaluate(async()=>{
+        const b=PlayroomAppBridge,host=b.profile(),pack=b.packs.list().find(p=>p.id==='uno');b.packs.activate(pack.id,pack.version);
+        let time=1000;const rooms=new PlayroomMultiplayer.RoomService({clock:()=>time});
+        const room=rooms.create({name:'Чужая рука скрыта',game:{id:'uno',name:'UNO',version:pack.version},host:{id:host.id,nickname:host.name},constraints:{min:2,max:2},rules:{preset:'classic'}});
+        rooms.moveParticipant(room.id,host.id,host.id,'seat-2');rooms.join(room.id,{id:'earlier-player',nickname:'Первый игрок'});rooms.claimSeat(room.id,'earlier-player','seat-1');
+        rooms.setReady(room.id,host.id,true);rooms.setReady(room.id,'earlier-player',true);rooms.beginCountdown(room.id,host.id);time=5000;rooms.tick(room.id);
+        const session=new TabletopSession(TabletopCore,'uno',{packVersion:pack.version,players:[{name:'Первый игрок'},{name:host.name}],seed:124,preset:'classic',openHands:false});
+        const store=new PlayroomNetworkSessionStore();await store.create({sessionId:'viewer-gap-regression',room:rooms.snapshot(room.id),session,recovery:rooms.exportRecovery(room.id),packDigest:await PlayroomNetworkSessionStore.fingerprintPack(b.packs,'uno',pack.version)});store.close();
+        return {entities:session.current.data.hands[1].map(card=>'card-'+card.id),other:session.current.data.hands[0].map(card=>'card-'+card.id)};
+      });
+      await page.locator('[data-command=sessions]').click();await page.locator('[data-network-continue="viewer-gap-regression"]').click();
+      await page.locator('.room-setup-modal .lobby-shell').waitFor();await page.locator('[data-kick-participant="earlier-player"]').click();
+      await page.waitForFunction(async()=>{const store=new PlayroomNetworkSessionStore();try{return (await store.load('viewer-gap-regression',TabletopCore,TabletopSession)).room.seats[0].participantId===null;}finally{store.close();}});
+      await page.locator('[data-command=lobby-leave]').click();await page.locator('[data-command=sessions]').click();
+      await page.locator('[data-network-history="viewer-gap-regression"]').click();await page.locator('.history-panel[aria-busy="false"]').waitFor();
+      assert.equal(await page.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+      const entities=await page.locator('.layout-hand [data-entity]').evaluateAll(nodes=>nodes.map(node=>node.dataset.entity));
+      assert.deepEqual(entities,expected.entities);assert(entities.every(id=>!expected.other.includes(id)),'the removed player private hand is never displayed');
+    }finally{await context.close();await browser.close();await new Promise(resolve=>listener.close(resolve));}
+  });
+
 function server(){
   const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'};
   const s=http.createServer((req,res)=>{
@@ -190,19 +217,27 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           'read-only archives must not expose legal actions');
         await host.locator('.table-shell.network-game .table-heading [data-command=history-close]').first().click();
         await host.locator('[data-network-continue]').first().click();
-        await host.locator('.table-shell.network-game').waitFor({timeout:15000});
-        assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
-        assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
-        await host.waitForFunction(count=>document.querySelectorAll('.network-presence .network-person.offline').length===count,guestCount);
-        assert.equal(await host.locator('.player-panel .participant-role.is-offline').count(),guestCount,'disconnected players have coral role icons');
-        assert.equal(await host.locator('.player-panel [data-participant-role=host].is-online').count(),mode==='network-table'?0:1);
+        await host.locator('.room-setup-modal .lobby-shell').waitFor({timeout:15000});
+        assert.equal(await host.locator('.table-shell.network-game').count(),0,'restoration waits in the lobby');
+        assert.equal(await host.locator('.lobby-seat-row .participant-role.is-offline').count(),guestCount,'reserved disconnected players have coral role icons');
+        assert.equal(await host.locator('[data-command=lobby-start]').isDisabled(),true);
+        assert.equal(await host.locator('[data-command=room-rules]').isDisabled(),true);
         for(let index=0;index<guests.length;index++){
           const guest=guests[index];await guest.reload();await guest.locator('#network-join-button').waitFor();
-          await pair(host,guest);
-          await guest.locator('.table-shell.network-game').waitFor({timeout:15000});
+          await pair(host,guest);await guest.locator('.room-setup-modal .lobby-shell').waitFor({timeout:15000});
           const after=await identity(guest);
           assert.equal(after.participantId,before[index].participantId,'resume returns the original participant');
           assert.notEqual(after.token,before[index].token,'the private resume capability must rotate');
+          assert.equal(await guest.locator('[data-net-action=accept-replacement]').count(),0,'ordinary reconnect does not require replacement consent');
+          await guest.locator('[data-net-action=ready]').click();
+        }
+        if(mode==='network-player')await host.locator('[data-command=lobby-ready]').click();
+        await host.locator('[data-command=lobby-start]:not([disabled])').click();
+        await host.locator('.table-shell.network-game').waitFor({timeout:15000});
+        assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
+        assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
+        for(let index=0;index<guests.length;index++){
+          const guest=guests[index];await guest.locator('.table-shell.network-game').waitFor({timeout:15000});
           assert.equal(await guest.locator('.table-shell.network-game').getAttribute('data-viewer'),String(mode==='network-player'?index+1:index));
           assert.equal(Number(await guest.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         }
@@ -240,9 +275,28 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId),null);
         await host.locator('[data-command=sessions]').click();
         await host.locator('[data-network-continue]').first().click();
-        await host.locator('.table-shell.network-game').waitFor({timeout:10000});
-        assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),parkedRevision);
-        assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),mode==='network-table'?'-1':'0');
+        await host.locator('.room-setup-modal .lobby-shell').waitFor({timeout:10000});
+        assert.equal(await host.evaluate(()=>PlayroomAppBridge.room().recovery.revision),parkedRevision);
+        assert.equal(await host.locator('[data-command=lobby-start]').isDisabled(),true);
+        if(mode==='network-player'){
+          await host.locator('[data-kick-participant="'+before[0].participantId+'"]').click();
+          const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});contexts.push(context);
+          const replacement=await context.newPage();replacement.on('pageerror',e=>errors.push('replacement '+e.message));await profile(replacement,'Замена',url);
+          await pair(host,replacement);await replacement.locator('#net-client-join').evaluate(f=>f.requestSubmit());
+          await replacement.locator('[data-net-seat="seat-2"]').click();
+          await replacement.locator('[data-net-action=accept-replacement]').waitFor();
+          assert.match(await replacement.locator('.replacement-consent').innerText(),/Гость 0/);
+          assert.equal(await replacement.locator('[data-net-action=ready]').isDisabled(),true);
+          assert.equal(await replacement.locator('.own-hand').count(),0,'replacement has no hand before consent and continuation');
+          await replacement.locator('[data-net-action=accept-replacement]').click();await replacement.locator('[data-net-action=ready]').click();
+          await host.locator('[data-command=lobby-ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();
+          await replacement.locator('.table-shell.network-game').waitFor({timeout:15000});
+          assert.equal(Number(await replacement.locator('.table-shell.network-game').getAttribute('data-revision')),parkedRevision);
+          assert.equal(await replacement.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+          assert.equal(await replacement.locator('.player-panel [data-player-replacement]').count(),1,'replacement is marked in the game');
+          const replaced=await host.evaluate(async id=>{const store=new PlayroomNetworkSessionStore(),record=await store.load(id,TabletopCore,TabletopSession);store.close();return {sessionId:record.sessionId,revision:record.revision,tokens:record.recovery.tokens.map(t=>t.participantId)};},expected.sessionId);
+          assert.equal(replaced.sessionId,expected.sessionId);assert.equal(replaced.revision,parkedRevision);assert.equal(replaced.tokens.includes(before[0].participantId),false);
+        }
         assert.deepEqual(errors,[]);
       }finally{
         await Promise.all(contexts.map(c=>c.close().catch(()=>{})));await browser.close();
