@@ -186,8 +186,15 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       TabletopCore.applyAction=(...args)=>{const next=apply(...args);TabletopCore.finish(next,args[1],'Тестовая партия завершена');return next;};
     });
     const ordinaryAction='.scene [data-action*=draw],.scene [data-action*=pass]';
+    // During presentation neither browser may expose an ordinary action yet.
+    // Wait for the eligible viewer instead of choosing from a transient count.
+    const ordinaryPlayer=()=>Promise.any([host,client].map(async page=>{
+      await page.waitForFunction(selector=>document.querySelector('.scene')?.getAttribute('aria-busy')!=='true'&&
+        [...document.querySelectorAll(selector)].some(node=>!node.disabled&&!node.closest('[inert]')&&node.getClientRects().length),ordinaryAction,{timeout:10000});
+      return page;
+    }));
     for(const exit of ['guest','host']){
-      const actor=await host.locator(ordinaryAction).count()?host:client;
+      const actor=await ordinaryPlayer();
       await actor.locator(ordinaryAction).first().click();
       await host.locator('.shared-modal-backdrop').waitFor();
       await client.locator('.shared-modal-backdrop').waitFor();
@@ -219,7 +226,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
 
     // A completed match remains available as history. A later unfinished
     // match must release this room and restore into its recovery lobby.
-    const lastActor=await host.locator(ordinaryAction).count()?host:client;
+    const lastActor=await ordinaryPlayer();
     await lastActor.locator(ordinaryAction).first().click();
     await host.locator('.shared-modal-backdrop [data-command=home]').click();
     await host.locator('.lobby-shell').waitFor();
