@@ -82,16 +82,16 @@ test('Domino selection and drag gestures through the real application', {timeout
   const browser = await chromium.launch({headless: true,
     executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
-  async function check(name, {mobile = false, longHand = false, empty = false} = {}, run) {
+  async function check(name, {mobile = false, longHand = false, empty = false, autoPass = false} = {}, run) {
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: mobile ? {width: 390, height: 844} : {width: 1280, height: 900},
         hasTouch: mobile, isMobile: mobile, reducedMotion: 'reduce'});
       const saved = fixture({longHand, empty});
-      await context.addInitScript(saved => {
+      await context.addInitScript(({saved,autoPass}) => {
         localStorage.clear();
-        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false}));
+        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false,autoPass}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
-      }, saved);
+      }, {saved,autoPass});
       const page = await context.newPage(), errors = [];
       page.setDefaultTimeout(5000);
       page.on('pageerror', error => errors.push(error.message));
@@ -206,7 +206,7 @@ test('Domino selection and drag gestures through the real application', {timeout
       assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
     });
 
-    await check('Fresh native tap immediately after a drop selects and plays the next player tile', {mobile: true}, async ({page, context}) => {
+    await check('Fresh native tap immediately after a drop selects and plays the next player tile', {mobile: true,autoPass:true}, async ({page, context}) => {
       const cdp = await context.newCDPSession(page);
       await touchDrag(page, cdp);
       await expectMove(page, 1);

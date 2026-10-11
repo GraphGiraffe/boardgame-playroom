@@ -37,7 +37,8 @@
     pace(){return timing(this.options(),this.reducedMotion());}
     capture(context){const pace=this.pace();return pace.duration&&this.motion?.capture?this.motion.capture(context):null;}
     play(snapshot,{draws=[]}={}){
-      return Promise.resolve(this.motion?.play(snapshot,{duration:this.pace().duration,draws}));
+      const pace=this.pace();
+      return Promise.resolve(this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws}));
     }
     cancel(){this.motion?.cancel?.();}
   }

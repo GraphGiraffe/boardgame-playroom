@@ -24,7 +24,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       const frames=session.states.map((_,i)=>audience.history(i)),snapshot=audience.snapshot();
       await page.evaluate(({snapshot,frames,def,readOnly})=>{
         window.qaAudio=[];window.qaFrames=frames;window.qaRequests=[];window.qaDelayed=false;
-        window.PlayroomAppBridge={audio:{registerPack(){},play(...args){qaAudio.push(args);}}};
+        window.PlayroomAppBridge={toast(text){document.querySelector('#toast').textContent=text;},audio:{registerPack(){},play(...args){qaAudio.push(args);}}};
         const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('History cannot send commands');},
           history(index){if(!qaDelayed)return Promise.resolve(qaFrames[index]);return new Promise((resolve,reject)=>qaRequests.push({index,resolve,reject}));}};
         window.qaClient=client;window.qaGame=PlayroomSharedViews.mount(client,def,{readOnly});qaGame.render();
@@ -32,6 +32,8 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       await page.evaluate(()=>qaGame.openHistory(4));
       await page.locator('#replay-range').evaluate(slider=>{window.qaSlider=slider;slider.focus();slider.value='0';slider.dispatchEvent(new Event('input',{bubbles:true}));});
       await page.waitForFunction(()=>document.querySelector('.turn-extra')?.textContent==='Ход 0 из 4');
+      assert.equal(await page.locator('.table-status .status-event').textContent(),'Начальная расстановка');
+      assert.equal(await page.locator('.history-panel .history-caption').count(),0,'History uses the shared top status caption');
       assert.equal(await page.evaluate(()=>qaSlider===document.querySelector('#replay-range')&&qaSlider===document.activeElement),true,'Input and focus must survive asynchronous rendering');
       const initialScene=await page.locator('.scene').innerHTML();
       const box=await page.locator('#replay-range').boundingBox(),y=box.y+box.height/2;

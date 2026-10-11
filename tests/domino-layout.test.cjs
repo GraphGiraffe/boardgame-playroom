@@ -54,7 +54,7 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
     const tiles = [...chain.querySelectorAll('[data-entity]')];
     if (tiles.length !== count) errors.push(`chain count ${tiles.length}/${count}`);
     for (const tile of tiles) {
-      const b=r(tile);if(Math.abs(b.width/b.height-(tile.classList.contains('double')?30/52:60/34))>.03)errors.push('tile aspect changed');
+      const b=r(tile);if(Math.abs(b.width/b.height-(tile.classList.contains('double')?4/7:7/4))>.03)errors.push('tile aspect changed');
       for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'half outside tile');
       if (r(tile).width < 25 || r(tile).height < 25) errors.push('unreadably small tile');
 

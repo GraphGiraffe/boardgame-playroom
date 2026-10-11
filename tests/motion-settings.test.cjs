@@ -8,7 +8,7 @@ const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
-require('../packs/uno/rules.js');
+for(const game of ['uno','checkers','snakes','durak','domino'])require('../packs/'+game+'/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
 const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"]';
 
@@ -182,6 +182,55 @@ test('Animation presets persist and stage real card flights before the next acto
       }
     });
 
+    await check('Manual Hotseat transfer is common to all packs and automatic transfer remains an explicit saved preference', async open => {
+      for(const game of ['uno','checkers','snakes','durak','domino']){
+        const candidate=new Session(Core,game,{seed:17,mode:'pass',preset:'classic',players:[{name:'Аня'},{name:'Борис'}]});
+        let action;
+        for(let i=0;i<30;i++){
+          action=Core.botAction(candidate.current);const next=Core.applyAction(candidate.current,candidate.current.turn,action);
+          if(next.turn!==candidate.current.turn&&next.status==='playing')break;
+          candidate.act(candidate.current.turn,action);
+        }
+        assert(action,game+' fixture has a turn action');
+        for(const automatic of [false,true]){
+          const saved=candidate.export(),before=saved.states.at(-1),{page}=await open({saved,settings:{animationSpeed:'instant',autoPass:automatic}});
+          await resume(page);
+          await page.evaluate(action=>{const button=document.createElement('button');button.dataset.action=JSON.stringify(action);document.querySelector('.scene').append(button);button.click();button.remove();},action);
+          await waitMove(page,before.move+1);await ready(page);
+          if(!automatic){
+            await page.locator('[data-command=pass-device]:not(:disabled)').waitFor();
+            assert.equal(await page.locator('.handoff').count(),0,game+' must wait for explicit transfer');
+            await page.locator('[data-command=pass-device]').click();
+          }
+          if(before.data.hands)await page.locator('.handoff').waitFor();
+          else await page.waitForFunction(()=>document.querySelector('[data-command=pass-device]')?.disabled===true);
+          assert.equal(await currentMove(page),before.move+1,'handoff is not a game action');
+        }
+      }
+      const {page}=await open();await page.locator('[data-command=settings]').click();
+      assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);
+      await page.locator('#setting-auto-pass').check();await page.reload();await page.locator('[data-command=settings]').click();
+      assert.equal(await page.locator('#setting-auto-pass').isChecked(),true);
+    });
+
+    await check('Manual Hotseat transfer preserves the full local UNO response window', async open => {
+      const saved=fixture(),state=saved.states[0];
+      saved.options.unoMode='manual';state.data.uno.mode='manual';
+      state.data.drawPile.push(...state.data.hands[0].splice(2));Core.validateState(state);
+      const {page}=await open({saved,settings:{animationSpeed:'instant',autoPass:false}});
+      await resume(page);await playHumanCard(page,saved);await waitMove(page,1);await ready(page);
+      const readyAt=await page.evaluate(()=>performance.now()),pass=page.locator('[data-command=pass-device]');
+      assert.equal(await pass.isDisabled(),true,'transfer cannot cut the UNO response window short');
+      assert.equal(await pass.evaluate(el=>el.classList.contains('handoff-pending')),false,'a protected transfer must not pulse');
+      await pass.dispatchEvent('click');
+      assert.equal(await page.locator('.handoff').count(),0,'even a direct command cannot transfer early');
+      await page.waitForFunction(()=>document.querySelector('[data-command=pass-device]')?.disabled===false);
+      assert(await page.evaluate(at=>performance.now()-at,readyAt)>=2800,'manual transfer waits three seconds after presentation');
+      assert.equal(await pass.evaluate(el=>el.classList.contains('handoff-pending')),true,'the ready transfer is highlighted');
+      assert.equal(await currentMove(page),1,'ending the response window does not append a move');
+      await pass.click();await page.locator('.handoff').waitFor();
+    });
+
     await check('Legacy motion booleans migrate and explicit preset values have a defined priority', async open => {
       for (const [settings, expected] of [
         [{}, 'normal'], [{motion: false}, 'instant'], [{motion: true}, 'normal'],
@@ -224,7 +273,7 @@ test('Animation presets persist and stage real card flights before the next acto
     });
 
     await check('Slow human play flies from the hand to discard before the privacy curtain appears', async open => {
-      const saved = fixture(), {page} = await open({saved, settings: {animationSpeed: 'slow'}});
+      const saved = fixture(), {page} = await open({saved, settings: {animationSpeed: 'slow',autoPass:true}});
       await resume(page); await observe(page);
       const source = await playHumanCard(page, saved);
       await page.locator(FLIGHT).waitFor({state: 'visible'});

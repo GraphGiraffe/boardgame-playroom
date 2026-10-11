@@ -75,6 +75,8 @@ async function play(page, id, move) {
   await moved(page, move);
 }
 async function accuse(page, target) {
+  // A human accusation is only actionable after the one-second protected window.
+  await page.waitForTimeout(1100);
   // GameScreen uses a common two-tap player target, not a legacy modal.
   const previous = (await state(page)).move;
   const token = page.locator(`.player-token[data-player-target="${target}"]`);
@@ -188,7 +190,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await resume(page); await play(page, saved.states[0].data.hands[0][0].id, 1);
       assert.equal((await state(page)).data.hands[0].length, 2);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal(await page.locator('[data-command=pass-device]').getAttribute('aria-label'), 'Передать устройство');
+      assert.equal(await page.locator('[data-command=pass-device]').getAttribute('aria-label'), 'Передать ход');
       assert.deepEqual(await visibleHandIds(page), ids(saved.states[0].data.hands[0].slice(1)));
     });
 
@@ -219,7 +221,6 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     });
 
     for (const [name, options, target] of [
-      ['Already declared opponent', {counts: [1, 2], turn: 1, declared: [true]}, 0],
       ['Late accusation after its window', {counts: [1, 2], turn: 1}, 0],
       ['Wrong opponent while another player has an open window', {counts: [1, 2, 2], turn: 1, pending: 0}, 2]
     ]) await check(`${name} gives two cards to the accuser`, async open => {
@@ -232,9 +233,17 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal(after.turn, 1);
     });
 
+    await check('Repeated declarations and accusations after declared UNO are neutral', async open => {
+      const {page}=await open(fixture({counts:[1,2],turn:1,declared:[true]}));await resume(page);
+      await accuse(page,0);await accuse(page,0);assert.equal((await state(page)).move,0);assert.equal((await state(page)).data.hands[1].length,2);
+      const other=await open(fixture({counts:[1,2],turn:0,pending:0}));await resume(other.page);
+      await (await action(other.page,'declare-uno')).click();await moved(other.page,1);
+      await (await action(other.page,'declare-uno')).click();assert.equal((await state(other.page)).move,1);
+    });
+
     await check('The next normal action closes the accusation window, even if it is only a draw', async open => {
       const saved = fixture({counts: [1, 2], turn: 1, pending: 0}), {page} = await open(saved);
-      await resume(page); await (await action(page, 'draw')).click(); await moved(page, 1);
+      await resume(page); await page.waitForTimeout(1100); await (await action(page, 'draw')).click(); await moved(page, 1);
       assert.equal((await state(page)).data.uno.pending, null);
       await accuse(page, 0); await moved(page, 2);
       const after = await state(page);
@@ -261,8 +270,9 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await page.reload(); await resume(page);
       assert.deepEqual(await read(page), before);
       assert.equal((await state(page)).data.uno.declared[0], true);
-      await accuse(page, 0); await moved(page, 3);
-      assert.equal((await state(page)).data.hands[1].length, 4, 'Restored declaration must reject a later accusation');
+      await accuse(page, 0);
+      assert.equal((await state(page)).move,2,'A late accusation does not append a move');
+      assert.equal((await state(page)).data.hands[1].length, 2, 'Restored declaration neutralizes a late accusation');
     });
 
     await check('Bots declare and catch through reactions even while it is the human normal turn', async open => {

@@ -47,6 +47,10 @@ async function layout(page,{handCount=7}={}) {
       if(!el.closest('.layout-actions'))errors.push('utility outside application actions slot');
       if(b.width<44||b.height<44)errors.push('small utility target');
       if(!inside(r(scene),b))errors.push('utility outside scene');
+      if(dock.dataset.exclusive==='true'){
+        if(!el.closest('[inert][aria-hidden="true"]')||getComputedStyle(el).visibility!=='hidden')errors.push('secondary control still active during choice');
+        continue;
+      }
       if(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest(selector)!==el)errors.push('utility covered');
       for(const other of document.querySelectorAll('.opponent-hands,.uno-center,.own-hand,.uno-actions')){
         const a=r(other);
@@ -63,7 +67,9 @@ async function layout(page,{handCount=7}={}) {
       if(b.top<r(scene).top||b.bottom>r(scene).bottom)errors.push('hand card clipped vertically');
       if(handCount<=7&&!inside(r(scene),corner))errors.push('card corner outside scene');
     }
-    for(const color of document.querySelectorAll('.color-choice')){const b=r(color);if(b.width<44||b.height<44||!inside(r(scene),b))errors.push('invalid color target');}
+    const colors=[...document.querySelectorAll('.color-choice')];
+    if(colors.length&&new Set(colors.map(el=>r(el).top)).size!==1)errors.push('color choice grows into multiple rows');
+    for(const color of colors){const b=r(color);if(b.width<44||b.height<44||!inside(r(scene),b)||!color.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)))errors.push('invalid color target');}
     return errors;
   },handCount);
   const details=errors.length?await page.evaluate(()=>Object.fromEntries(['.table-shell','.table-header','.table-status','.layout-participants','.scene','.uno-scene','.opponent-hands','.uno-center','.game-action-bar','.own-hand'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect(),c=getComputedStyle(el);return [selector,{height:r.height,top:r.top,minHeight:c.minHeight,padding:c.padding,position:c.position,display:c.display}];}))):null;
@@ -80,7 +86,13 @@ async function showVariant(page,state,variant,handCount){
     if(variant==='wild')selected='u100';
     if(variant==='declared')s.data.uno.declared[0]=true;
     TabletopCore.validateState(s);
-    document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,variant==='paused'?[]:TabletopCore.legalActions(s,0),{selected,quickPlay:false});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    const projected=TabletopCore.project(s,0),actions=variant==='paused'?[]:TabletopCore.legalActions(s,0),template=document.createElement('template');
+    // Keep application-owned Hotseat controls in every pack-state variant.
+    // A raw pack render omits that reserved row and is not the live layout.
+    template.innerHTML=PlayroomGameScreen.render({gameName:'UNO',state:projected,viewer:0,actions,
+      scene:PlayroomViews.render(projected,0,actions,{selected,quickPlay:false}),
+      beforeFooter:document.querySelector('.pass-device-button')?.outerHTML||''});
+    document.querySelector('.scene').innerHTML=template.content.querySelector('.scene').innerHTML;PlayroomGameScreen.layoutScene(document.querySelector('#app'));
   },{state,variant,handCount});
 }
 test('Responsive UNO utilities, turn direction and complete opponent cards stay stable',{timeout:120000},async t=>{
@@ -100,7 +112,7 @@ test('Responsive UNO utilities, turn direction and complete opponent cards stay 
             await showVariant(page,saved.states[0],variant,handCount);
             const mode=variant==='closed'?'closed':'open',current=await bounds(page);
             if(!baselines[mode])baselines[mode]=current;
-            if(!['wild','declared'].includes(variant))for(const [selector,rect] of Object.entries(current))for(const [axis,value] of Object.entries(rect))if(typeof value==='number')assert(Math.abs(value-baselines[mode][selector][axis])<=1,`table or dock shifts for ${handCount} cards / ${variant}: ${selector} ${axis}: ${value} / ${baselines[mode][selector][axis]}`);
+            for(const [selector,rect] of Object.entries(current))for(const [axis,value] of Object.entries(rect))if(typeof value==='number')assert(Math.abs(value-baselines[mode][selector][axis])<=1,`table or dock shifts for ${handCount} cards / ${variant}: ${selector} ${axis}: ${value} / ${baselines[mode][selector][axis]}`);
             await layout(page,{handCount});
             assert.deepEqual(await page.locator('.opponent-hand[data-player-index]').evaluateAll(els=>els.map(el=>el.dataset.playerIndex)),order,'player positions must not reorder with turn direction');
             assert.equal(await page.locator('.uno-direction').getAttribute('data-direction'),variant==='reverse'?'-1':'1');
@@ -108,7 +120,7 @@ test('Responsive UNO utilities, turn direction and complete opponent cards stay 
             if(variant==='paused')assert.equal(await page.locator('.uno-call').isEnabled(),false);
             if(variant==='wild')assert.equal(await page.locator('.color-choice').count(),4);
             if(players===4&&handCount===8&&variant==='closed'&&viewport.width===390){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'playroom-v0.7-uno-hidden-phone.png')});}
-            if(players===2&&handCount===8&&variant==='wild'&&viewport.width===320){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'playroom-v0.7-uno-wild-320.png')});}
+            if(players===2&&handCount===8&&variant==='wild'&&[320,390].includes(viewport.width)){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`playroom-v0.7-uno-wild-${viewport.width}.png`)});}
           }
           await showVariant(page,saved.states[0],'ordinary',8);
           const filename=players===2&&viewport.width===390?'playroom-v0.7-uno-phone.png':players===2&&viewport.width===1226?'playroom-v0.7-uno-desktop.png':players===4&&viewport.width===390?'playroom-v0.7-uno-four-phone.png':null;

@@ -20,6 +20,7 @@
     close:'<path d="m6 6 12 12M6 18 18 6"/>',
     trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
     seatType:'<rect x="5" y="3" width="14" height="9" rx="2"/><path d="M4 12v5h16v-5M6 17v4M18 17v4"/>',
+    replacement:'<path d="M4 7h15m-4-4 4 4-4 4M20 17H5m4-4-4 4 4 4"/>',
     player:'<circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/>',
     bot:'<rect x="4" y="7" width="16" height="14" rx="3"/><path d="M12 3v4M2 12v5M22 12v5M9 17h6"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
     host:'<path d="m3 6 4 4 5-6 5 6 4-4-2 13H5ZM5 16h14"/>',
@@ -28,7 +29,7 @@
     pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
     check:'<path d="m5 12 4 4L19 6"/>',
     hand:'<path d="M8 12V5a2 2 0 0 1 4 0v7-8a2 2 0 0 1 4 0v9-6a2 2 0 0 1 4 0v8c0 5-3 7-7 7-3 0-5-2-7-5l-3-4a2 2 0 0 1 3-3l2 2Z"/>',
-    layers:'<path d="m12 3 9 5-9 5-9-5Zm-9 10 9 5 9-5M3 18l9 5 9-5"/>',
+    layers:'<path d="m12 3 9 5-9 5-9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5"/>',
     sound:'<path d="m11 4-6 5H2v6h3l6 5Zm4 4a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
     reset:'<path d="M3 10a9 9 0 1 1 2 8M3 3v7h7"/>',
     save:'<path d="M5 3h12l4 4v14H3V3Zm3 0v6h8V3M7 21v-8h10v8"/>',
@@ -53,10 +54,12 @@
   const actionBar = (actions, hint) => `<div class="scene-actions">${actions.map(a => actionButton(a)).join('')}${!actions.length && hint ? `<span class="scene-hint">${esc(hint)}</span>` : ''}</div>`;
   // A canonical artboard scales as a whole, including typography and frame.
   // main/compact are trusted pack HTML; neither contains interaction handlers.
-  function art({main,compact,width=72,height=103}, variant='main') {
+  function art({main,compact,width=72,height=103,rotation=0}, variant='main') {
     if (typeof main !== 'string' || !Number.isFinite(width) || !Number.isFinite(height) || width<=0 || height<=0 || width>4096 || height>4096) throw Error('Invalid card artwork');
-    const small=variant==='compact' && typeof compact==='string' && compact.length>0;
-    return `<svg class="piece-art" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" data-art-variant="${small?'compact':'main'}"><foreignObject width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" class="piece-artboard" style="width:${width}px;height:${height}px">${small?compact:main}</div></foreignObject></svg>`;
+    if(![0,90,180,270].includes(rotation))throw Error('Invalid artwork rotation');
+    const small=variant==='compact' && typeof compact==='string' && compact.length>0,swap=rotation===90||rotation===270;
+    const transform=({0:'',90:`translate(${height} 0) rotate(90)`,180:`translate(${width} ${height}) rotate(180)`,270:`translate(0 ${width}) rotate(-90)`})[rotation];
+    return `<svg class="piece-art" viewBox="0 0 ${swap?height:width} ${swap?width:height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false" data-art-variant="${small?'compact':'main'}"><g${transform?` transform="${transform}"`:''}><foreignObject width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml" class="piece-artboard" style="width:${width}px;height:${height}px">${small?compact:main}</div></foreignObject></g></svg>`;
   }
   function countBadge(count,label='Количество',{corner=false,hand=false}={}) {
     if(!Number.isSafeInteger(count)||count<0)throw Error('Invalid piece count');
@@ -78,10 +81,11 @@
     }).join('')}</div>`;
   }
   function participantIcon(person={}, {network=false}={}) {
-    const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.isHost?'host':'player';
+    const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local?'hand':'player';
     const status=network&&!person.bot&&!person.local&&typeof person.connected==='boolean'&&(person.connected||person.hasConnected||Number.isFinite(person.joinedAt))?(person.connected?'online':'offline'):'neutral';
-    const label=({grid:'Стол',eye:'Зритель',bot:'Бот',host:'Хост',player:'Игрок'})[role]+(person.isHost&&['grid','eye'].includes(role)?' · хост':'')+(status==='online'?' · в сети':status==='offline'?' · нет связи':'');
-    return `<span class="participant-role is-${status}" data-participant-role="${role}" data-connection="${status}" role="img" aria-label="${esc(label)}" title="${esc(label)}">${icon(role)}${person.isHost&&['grid','eye'].includes(role)?icon('host'):''}</span>`;
+    const label=({grid:'Стол',eye:'Зритель',bot:'Бот',hand:'Hotseat',player:network?'Сетевой игрок':'Игрок'})[role]+(person.isHost?' · хост':'')+(status==='online'?' · в сети':status==='offline'?' · нет связи':'')+(person.replacement?' · игрок на замену':'');
+    const replacement=person.replacement?`Замена${person.replacement.previousName?' '+person.replacement.previousName:''}${person.replacement.accepted===false?' · ожидает подтверждения':''}`:'';
+    return `<span class="participant-role is-${status}" data-participant-role="${role}" data-connection="${status}" role="${replacement?'button':'img'}" aria-label="${esc(replacement?`${label} · ${replacement}`:label)}" title="${esc(replacement||label)}"${replacement?` tabindex="0" data-tooltip="${esc(replacement)}" data-player-replacement="true"`:''}>${icon(role)}${person.isHost?icon('host'):''}${person.replacement?icon('replacement'):''}</span>`;
   }
   function validCounters(counters) {
     return Array.isArray(counters)&&counters.length<=2&&counters.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&['points','wins'].includes(c.kind)&&Number.isSafeInteger(c.value)&&c.value>=0&&(c.label===undefined||typeof c.label==='string'))&&new Set(counters.map(c=>c.kind)).size===counters.length;
@@ -101,7 +105,7 @@
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
-    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge">${esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${esc(typeof b==='string'?b:b.label)}</span>`).join('');
     const counters=content.counters??[{kind:content.scoreLabel==='победы'?'wins':'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
@@ -145,17 +149,25 @@
     return source(card.id, actions, selected, {mode: 'immediate'});
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
-  const actionGroups=({start='',primary='',end=''})=>`<div class="game-action-bar"><div data-action-position="start">${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end">${end}</div></div>`;
+  const actionGroups=({start='',primary='',end='',exclusive=false})=>`<div class="game-action-bar"${exclusive?' data-exclusive="true"':''}><div data-action-position="start"${exclusive?' inert aria-hidden="true"':''}>${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end"${exclusive?' inert aria-hidden="true"':''}>${end}</div></div>`;
   const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary']);
+  function motionSequence(value){
+    if(value===undefined)return '';
+    const anchor=point=>point&&typeof point==='object'&&typeof point.anchor==='string'&&/^[\w-]{1,80}$/.test(point.anchor)&&(point.label===undefined||typeof point.label==='string');
+    if(!value||typeof value!=='object'||typeof value.trigger!=='string'||typeof value.entity!=='string'||!Number.isInteger(value.player)||value.player<0||typeof value.counter!=='string'||!anchor(value.origin)||!Array.isArray(value.steps)||value.steps.length>100||!value.steps.every(anchor)||(value.jump!==undefined&&!anchor(value.jump)))throw Error('Invalid motion sequence');
+    return ` data-motion-sequence="${esc(JSON.stringify(value))}"`;
+  }
   function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
+    if(value.actionReserve!==undefined&&typeof value.actionReserve!=='boolean')throw Error('Invalid action reserve');
     const className=typeof value.className==='string'?value.className:'';
     if(surface==='table')actions=[];
     const e={...value.elements},content=value.playerContent;
+    if(value.actionReserve&&surface!=='table'&&!e.actions)e.actions='<div class="scene-actions"></div>';
     if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string')))))))throw Error('Invalid player content');
     if(value.fieldGroups!==undefined){
       const groups=value.fieldGroups;
@@ -169,7 +181,7 @@
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!((self||surface==='table')&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''} data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function createRegistry() {

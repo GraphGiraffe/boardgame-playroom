@@ -135,7 +135,10 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('.table-shell.network-game').waitFor({timeout:10000});await client.locator('.table-shell.network-game').waitFor({timeout:10000});
     assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
-    const iconHandle=await host.locator('.player-panel [data-participant-role=host]').elementHandle();
+    const hostRole=host.locator('.player-panel [data-participant-role=player]:has(svg[data-ui-icon=host])');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),1,'Host retains the primary network-player icon');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown supplements the player role');
+    const iconHandle=await hostRole.elementHandle();
     await host.waitForTimeout(800);assert(await iconHandle.evaluate(node=>node.isConnected),'unchanged presence must preserve the role node and avoid a DOM observer loop');
     // Network mode MUST use the local bot/hot-seat GameScreen, not a compact
     // second shell. Opponent hands are visible without exposing hidden faces.
@@ -165,9 +168,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(await client.locator('.table-shell.network-game .scene [data-action]').count(),0,'History is read-only');
     await client.locator('.history-controls [data-command=replay-prev]').click();
     await client.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
-    assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
+    assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),0,'Replay displays the selected historical revision');
+    assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
     await client.locator('.table-heading [data-command=history-close]').click();
     assert.equal(await client.locator('.history-panel').count(),0);
+    assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Closing history restores the unchanged live revision');
 
     const identity=await client.evaluate(()=>{
       window.qaLiveRTC=qaRTCs.find(peer=>peer.connectionState==='connected');
@@ -180,9 +185,17 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       const apply=TabletopCore.applyAction;
       TabletopCore.applyAction=(...args)=>{const next=apply(...args);TabletopCore.finish(next,args[1],'Тестовая партия завершена');return next;};
     });
+    const ordinaryAction='.scene [data-action*=draw],.scene [data-action*=pass]';
+    // During presentation neither browser may expose an ordinary action yet.
+    // Wait for the eligible viewer instead of choosing from a transient count.
+    const ordinaryPlayer=()=>Promise.any([host,client].map(async page=>{
+      await page.waitForFunction(selector=>document.querySelector('.scene')?.getAttribute('aria-busy')!=='true'&&
+        [...document.querySelectorAll(selector)].some(node=>!node.disabled&&!node.closest('[inert]')&&node.getClientRects().length),ordinaryAction,{timeout:10000});
+      return page;
+    }));
     for(const exit of ['guest','host']){
-      const actor=await host.locator('.scene [data-action]').count()?host:client;
-      await actor.locator('.scene [data-action]').first().click();
+      const actor=await ordinaryPlayer();
+      await actor.locator(ordinaryAction).first().click();
       await host.locator('.shared-modal-backdrop').waitFor();
       await client.locator('.shared-modal-backdrop').waitFor();
       await client.locator('.shared-modal-backdrop [data-command=close-modal]').click();
@@ -211,10 +224,10 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
         peers:qaRTCs.length,state:qaLiveRTC.connectionState})),{...identity,state:'connected'});
     }
 
-    // Leave a completed match through its lobby, then continue a saved room
-    // without reloading. The app and network module must release the same room.
-    const lastActor=await host.locator('.scene [data-action]').count()?host:client;
-    await lastActor.locator('.scene [data-action]').first().click();
+    // A completed match remains available as history. A later unfinished
+    // match must release this room and restore into its recovery lobby.
+    const lastActor=await ordinaryPlayer();
+    await lastActor.locator(ordinaryAction).first().click();
     await host.locator('.shared-modal-backdrop [data-command=home]').click();
     await host.locator('.lobby-shell').waitFor();
     const archiveId=await host.evaluate(async()=>
@@ -222,15 +235,37 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(id=>PlayroomNetworkLibrary.continue(id),archiveId);
     assert.match(await host.locator('#toast').innerText(),/Сначала завершите текущую сетевую комнату/,
       'an active lobby must still prevent restoring a second room');
-    await host.locator('[data-command=lobby-leave]').click();
+    await host.locator('[data-command=lobby-ready]').click();
+    await client.locator('[data-net-action=ready]').click();
+    await host.locator('[data-command=lobby-start]:not(:disabled)').click();
+    await host.locator('.table-shell.network-game').waitFor();
+    await host.locator('.table-tools [data-command=pause]').click();
+    await host.waitForFunction(()=>document.querySelector('.table-status')?.textContent.includes('Пауза'));
+    const parked=await host.evaluate(async()=>{
+      const item=(await PlayroomNetworkLibrary.list()).find(item=>item.role==='host'&&!item.finished);
+      return {id:item.sessionId,revision:Number(document.querySelector('.network-game').dataset.revision)};
+    });
+    await host.evaluate(()=>{window.confirm=()=>true;});
+    await host.locator('.table-header [data-command=home]').click();
+    await host.locator('.game-grid').waitFor();
     await host.locator('[data-command=sessions]').click();
-    await host.locator('[data-network-history]').first().click();
+    assert.equal(await host.locator(`[data-network-continue="${archiveId}"]`).isDisabled(),true,'Completed matches cannot continue');
+    await host.locator(`[data-network-history="${archiveId}"]`).click();
     await host.locator('.table-shell.network-game .history-panel').waitFor();
     await host.locator('.table-shell.network-game .table-heading [data-command=history-close]').first().click();
-    await host.locator('[data-network-continue]').first().click();
-    await host.locator('.table-shell.network-game').waitFor({timeout:10000});
+    await host.locator(`[data-network-continue="${parked.id}"]`).click();
+    await host.locator('.room-setup-modal .lobby-shell').waitFor({timeout:10000});
+    assert.equal(await host.locator('.table-shell.network-game').count(),0,'Recovery waits for the original players in the lobby');
+    assert.equal(await host.locator('.lobby-person').filter({hasText:'Клиент'}).count(),1);
+    assert.equal(await host.locator('[data-command=lobby-start]').isDisabled(),true);
     assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),0,
       'leaving the lobby must close its old RTC connections');
+    const restored=await host.evaluate(async id=>{
+      const store=new PlayroomNetworkSessionStore();
+      try{const saved=await store.load(id,TabletopCore,TabletopSession);return {revision:saved.session.current.move,paused:saved.paused};}
+      finally{store.close();}
+    },parked.id);
+    assert.deepEqual(restored,{revision:parked.revision,paused:true},'Recovery preserves the paused revision');
 
     assert.deepEqual(errors,[]);
   }catch(error){console.error('Network UI page errors',JSON.stringify(errors));throw error;}finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}

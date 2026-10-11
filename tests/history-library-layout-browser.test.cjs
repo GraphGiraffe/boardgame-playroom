@@ -29,7 +29,7 @@ test('complete local and projected replay scenes fit beside reachable history co
         await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'history-checkers-390.png'),animations:'disabled'});
       }
       assert.equal(await page.locator('.history-panel .replay-badge:visible').count(),1);
-      assert.equal(await page.locator('.table-bottom:visible').count(),0,'event description must appear only in the history panel');
+      assert.equal(await page.locator('.table-bottom:visible').count(),0,'no duplicate event description below the board');
       await page.locator('#replay-range').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});await fits();
       await page.locator('[data-command=replay-next]').click();await fits();
       await page.evaluate(f=>{
@@ -67,7 +67,29 @@ test('saved games share icon controls and local history opens directly without a
     assert.equal(await page.locator('.scene [data-action]').count(),0);
     assert.equal(await page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move),fixture.states.at(-1).move);
     await page.locator('[data-command=history-close]').click();assert.equal(await page.locator('.scene.replaying').count(),0);
-    await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-command=sessions]').first().click();
+    await page.locator('.saved-games-list').waitFor();
     await page.locator('[data-session-id="qa-finished"] [data-history-id]').click();await page.locator('.history-panel').waitFor();assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
+  }finally{await context.close();await browser.close();await server.close();}
+});
+
+
+test('Hotseat library history chooses a player, preserves slider and leaves the active save untouched',{timeout:30000},async()=>{
+  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();
+  const history=new Session(Core,'uno',{seed:19,mode:'pass',players:[{name:'Анна'},{name:'Борис'}]});history.act(history.current.turn,Core.botAction(history.current));
+  const active=saved('checkers'),archive={...history.export(),libraryId:'qa-hotseat'};
+  try{
+    await context.addInitScript(({active,archive})=>{localStorage.setItem('playroom.session.v1',JSON.stringify(active));localStorage.setItem('playroom.paused.v1.qa-hotseat',JSON.stringify(archive));},{active,archive});
+    await page.goto(server.url);await page.locator('[data-command=sessions]').first().click();
+    const raw=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
+    await page.locator('[data-history-id="qa-hotseat"]').click();await page.locator('#history-viewer').selectOption('1');
+    assert.equal(await page.locator('.handoff').count(),0);assert.equal(await page.locator('.history-caption').count(),0);assert.equal(await page.locator('.scene [data-participant-role=hand]').count(),2,'Offline participants use the Hotseat role icon');
+    await page.locator('#replay-range').evaluate(el=>{window.qaLocalRange=el;el.focus();el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    assert.equal(await page.evaluate(()=>qaLocalRange===document.querySelector('#replay-range')&&qaLocalRange===document.activeElement),true);
+    assert.match(await page.locator('.table-status').innerText(),/Начальная расстановка/);
+    assert.equal(await page.locator('#history-viewer').inputValue(),'1');
+    await page.locator('[data-command=replay-next]').click();assert.equal(await page.locator('#history-viewer').inputValue(),'1');
+    await page.locator('[data-command=history-close]').click();await page.locator('.saved-games-list').waitFor();
+    assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw);
   }finally{await context.close();await browser.close();await server.close();}
 });

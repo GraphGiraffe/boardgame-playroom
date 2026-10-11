@@ -108,6 +108,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     await check('Mouse hold and immediate diagonal movement both commit exactly one move', {}, async ({page, saved}) => {
       let expected = saved.states[0];
       for (const hold of [true, false]) {
+        if(expected.move>0)await page.locator('[data-command=pass-device]:not(:disabled)').click();
         const action = Core.legalActions(expected)[0]; await mouseDrag(page, action.from, action.to, {hold});
         expected = Core.applyAction(expected, expected.turn, action); await expectMove(page, expected.move);
         assert.deepEqual((await state(page)).data, expected.data);

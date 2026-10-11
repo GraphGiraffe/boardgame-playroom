@@ -73,6 +73,7 @@
         if(message.method==='snapshot')result=connection.snapshot();
         else if(message.method==='dispatch')result=connection.dispatch(message.value);
         else if(message.method==='history')result=connection.history(message.value);
+        else if(message.method==='presentation-ready')result=connection.presentationReady?.(message.value)||{ok:false};
         else throw Error('Unknown request');
         result=await result;
         if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,result});debug.responses++;}
@@ -153,6 +154,7 @@
     };
     return Object.freeze({
       ready:()=>readyPromise,
+      presentationReady:value=>request('presentation-ready',value),
       snapshot:()=>request('snapshot'),
       dispatch:command=>request('dispatch',command),
       history:index=>request('history',index),

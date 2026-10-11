@@ -152,3 +152,34 @@
 .lobby-seat .participant-name,.lobby-observer .participant-name{min-width:0;overflow-wrap:anywhere}
 .lobby-seat .participant-role svg,.lobby-observer .participant-role svg{width:18px;height:18px}
 .lobby-observer>span:first-child{flex:1;min-width:0;color:var(--ink)}
+
+/* Public places share both heading and slot geometry. */
+.lobby-public-places{align-items:start}
+.lobby-public-places .lobby-section-head,.lobby-public-places .lobby-observers-head,.lobby-public-places h2{margin:0 0 9px;min-height:24px;font-size:16px;line-height:24px}
+.lobby-public-places .lobby-section-head h2{margin:0}
+.lobby-public-places .lobby-seat,.lobby-public-places .lobby-observer,.lobby-public-places .lobby-observer-slot{min-height:76px;height:76px;width:100%;box-sizing:border-box}
+.modal:has(.pairing-methods) .modal-head .icon-btn{order:-1;margin-left:0}
+.pairing-method-heading{display:flex;align-items:center;gap:6px;min-width:0}
+.pairing-method-heading>summary,.pairing-method-heading>.pairing-method-toggle{flex:1;min-width:0}
+.pairing-method-heading .icon-btn{flex:none;margin:4px}
+.pairing-help-inline{position:static;width:auto;max-width:100%;margin:0;padding:10px 12px;background:#eef2e7;border-top:1px solid var(--line);font-size:12px;line-height:1.5;overflow-wrap:anywhere;box-sizing:border-box}
+.pairing-help-inline[hidden]{display:none}
+.pairing-help-inline p{margin:0 0 6px}.pairing-help-inline p:last-child{margin-bottom:0}
+.pairing-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-items:stretch}
+.pairing-actions>.btn{width:100%;min-width:0;min-height:44px}
+.pairing-actions>.btn:only-child{grid-column:1/-1}
+
+/* Help buttons sit in each method header; their text expands in normal flow. */
+.pairing-method{position:relative}
+.pairing-method>summary{padding-right:88px}
+.pairing-method>.pairing-method-body>.pairing-help-inline{padding:0;border:0;margin:0;background:transparent}
+.pairing-help-inline>summary{list-style:none;display:grid;place-items:center;width:44px;height:44px;cursor:pointer;color:var(--green);border:1px solid var(--line);border-radius:12px;background:#eef2e7}
+.pairing-help-inline>summary::-webkit-details-marker{display:none}
+.pairing-help-inline>summary svg{width:20px;height:20px}
+.pairing-help-inline>summary:focus-visible{outline:3px solid var(--ui-focus);outline-offset:2px}
+.pairing-method>.pairing-method-body>.pairing-help-inline>summary{position:absolute;right:34px;top:2px}
+.pairing-method>.pairing-method-body>.pairing-help-inline .pairing-help-content{padding:9px;margin-bottom:10px;border:1px solid var(--line);border-radius:10px;background:#eef2e7}
+.pairing-method>summary>.pairing-chevron{position:absolute;right:10px;top:15px}
+.pairing-network-choice>.pairing-help-inline{padding:0;border:0;background:transparent}
+.pairing-network-choice>.pairing-help-inline>summary{margin-left:auto}
+.pairing-network-choice .pairing-help-content{padding-top:8px}

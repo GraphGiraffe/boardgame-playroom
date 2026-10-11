@@ -43,6 +43,10 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
             await page.goto(process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href);
             await page.locator('.resume-banner [data-command=resume]').click();
             for (let move = 0; move < 2; move++) {
+              const pass=page.locator('[data-command="pass-device"]');
+              if(await pass.count()&&await pass.isEnabled())await pass.click();
+              const unlock=page.locator('[data-command="unlock"]');
+              if(await unlock.count())await unlock.click();
               await page.locator('.scene[aria-busy="false"]').waitFor();
               const result = await page.evaluate(async ({ game, longHand }) => {
                 const visibleCard = () => {
@@ -68,7 +72,7 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
                   action ||= document.querySelector('.stock-button[data-action],.scene-actions [data-action],.hand-track [data-action]');
                 }
                 if (!action) throw Error(`No visible action in ${game}`);
-                const selectors = ['.scene', '.game-scene', '.checker-board', '.snakes-board', '.hand-track', '.domino-chain'];
+                const selectors = ['.scene', '.game-scene', '.layout-self', '.checker-board', '.snakes-board', '.hand-track', '.domino-chain'];
                 const snapshots = [];
                 function sample(time) {
                   const elements = {};
@@ -109,7 +113,7 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
                 }
                 // Hands/chains may deliberately scroll along X; their maximum
                 // range must follow content, never a flying card's transform.
-                for (const selector of ['.scene', '.hand-track', '.domino-chain']) {
+                for (const selector of ['.scene', '.layout-self', '.hand-track', '.domino-chain']) {
                   const box = frame.elements[selector]; if (!box) continue;
                   const before = result.snapshots[0].elements[selector] || { overflowX: 0, overflowY: 0 };
                   const after = result.snapshots.at(-1).elements[selector] || { overflowX: 0, overflowY: 0 };

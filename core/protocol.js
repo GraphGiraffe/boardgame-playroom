@@ -10,5 +10,7 @@
     try{return new TextEncoder().encode(JSON.stringify(command)).length<=16384;}catch(_){return false;}
   }
   function command(snapshot,action,commandId){return {protocolVersion:version,sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,commandId,expectedRevision:snapshot.revision,action:clone(action)};}
-  return {version,clone,freeze,canonical,validate,command};
+  function presentationReady(snapshot){return {protocolVersion:version,kind:'presentation-ready',sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,controlRevision:snapshot.controlRevision||0,revision:snapshot.reactionWindow?.revision??snapshot.revision,windowId:snapshot.reactionWindow?.id};}
+  function validatePresentationReady(message){return record(message)&&Object.keys(message).every(k=>['protocolVersion','kind','sessionId','authorityEpoch','controlRevision','revision','windowId'].includes(k))&&message.protocolVersion===version&&message.kind==='presentation-ready'&&id(message.sessionId)&&id(message.authorityEpoch)&&id(message.windowId)&&Number.isSafeInteger(message.controlRevision)&&message.controlRevision>=0&&Number.isSafeInteger(message.revision)&&message.revision>=0;}
+  return {version,clone,freeze,canonical,validate,command,presentationReady,validatePresentationReady};
 });

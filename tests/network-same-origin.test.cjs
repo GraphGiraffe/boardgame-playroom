@@ -82,7 +82,10 @@ for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: s
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).count(),1);
     assert.equal(await host.locator('.lobby-person').filter({hasText:'Хост'}).first().locator('strong').innerText(),'Хост');
 
-    assert.equal(await host.locator('.lobby-person [data-participant-role=host].is-online').count(),1,'host role is an icon, not repeated name text');
+    const hostRole=host.locator('.lobby-person [data-participant-role=player].is-online:has(svg[data-ui-icon=host])');
+    assert.equal(await hostRole.count(),1,'Host keeps the online player role');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),1,'Host retains the primary network-player icon');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown supplements the role without repeating the name');
     await client.locator('[data-net-action=table]').click();await client.locator('.lobby-table-slot [data-participant-id]').waitFor();
     if(seatedGuest){const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();}
     await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();

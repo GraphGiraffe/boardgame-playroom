@@ -57,10 +57,10 @@ test('standalone UI shares source and target policies without browser or game de
   for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));
   for(const [person,network,role,status] of [
     [{},false,'player','neutral'],[{bot:true,connected:true},true,'bot','neutral'],
-    [{local:true,connected:true},true,'player','neutral'],[{connected:false},true,'player','neutral'],
+    [{local:true,connected:true},true,'hand','neutral'],[{connected:false},true,'player','neutral'],
     [{connected:true},false,'player','neutral'],[{connected:true},true,'player','online'],
     [{connected:false,hasConnected:true},true,'player','offline'],
-    [{connected:false,joinedAt:1,isHost:true},true,'host','offline'],
+    [{connected:false,joinedAt:1,isHost:true},true,'player','offline'],
     [{role:'spectator',connected:true},true,'eye','online'],[{role:'table',isHost:true,connected:true},true,'grid','online']
   ]) {const html=H.participantIcon(person,{network});assert.match(html,new RegExp('data-participant-role="'+role+'"'));assert.match(html,new RegExp('data-connection="'+status+'"'));}
   const both=H.playerPanel({players:[{name:'A <&',score:9}],turn:0},0,0,{counters:[{kind:'wins',value:3},{kind:'points',value:9,label:'Очки <&'}]});
@@ -301,4 +301,27 @@ test('player hands render every hidden piece and score units agree with the rule
   const state=make('durak'),html=render(state);
   assert.doesNotMatch(html,/Время первого хода|Соперник выбирает карту/);
   assert.doesNotMatch(render(make('domino')),/Выберите первую костяшку|Коснитесь места на поле/);
+});
+
+
+test('scene reserves optional actions and validates generic motion route descriptors',()=>{
+  const UI=require('../core/ui.js'),state={turn:0,players:[{name:'A'},{name:'B'}]};
+  const descriptor={api:2,family:'board',actionReserve:true,elements:{field:'<div>Board</div>'}};
+  assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-action-reserve="true"/);
+  assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-game-element="actions"><div class="scene-actions"><\/div>/);
+  assert.doesNotMatch(UI.composeScene(descriptor,{state,viewer:-1,surface:'table'}),/data-game-element="actions"/);
+  assert.throws(()=>UI.composeScene({...descriptor,actionReserve:'yes'}));
+  assert.throws(()=>UI.composeScene({...descriptor,motionSequence:{trigger:'roll'}}));
+  const art=UI.art({main:'<i>Face</i>',width:48,height:84,rotation:270});
+  assert.match(art,/viewBox="0 0 84 48"/);assert.match(art,/translate\(0 48\) rotate\(-90\)/);
+  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="hand".*data-ui-icon="host".*data-ui-icon="replacement"/);
+});
+
+test('snakes routes describe every bounced step and retain landing before a link',()=>{
+  const state=make('snakes');state.data.positions[0]=31;state.data.lastMove={player:0,from:51,landing:54,to:31,roll:3};state.data.dice=3;
+  let html=render(state,0),route=JSON.parse(decode(html.match(/data-motion-sequence="([^"]+)"/)[1]));
+  assert.deepEqual(route.steps.map(x=>x.anchor),['cell-52','cell-53','cell-54']);assert.equal(route.jump.anchor,'cell-31');assert.match(html,/data-motion-lead="roll"/);assert.doesNotMatch(html,/Выпало/);
+  state.data.positions[0]=98;state.data.lastMove={player:0,from:98,landing:98,to:98,roll:4};state.data.dice=4;
+  html=render(state,0);route=JSON.parse(decode(html.match(/data-motion-sequence="([^"]+)"/)[1]));
+  assert.deepEqual(route.steps.map(x=>x.anchor),['cell-99','cell-100','cell-99','cell-98']);assert.equal(route.jump,undefined);
 });

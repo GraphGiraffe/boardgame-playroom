@@ -160,3 +160,43 @@ test('LAN-01 Web Lock rejects a second host tab and releases ownership after rel
       assert.equal(acquired,true);
     }finally{await context.close();await browser.close();await close();}
   });
+
+test('replacement roster commits atomically without changing the existing game journal',{timeout:30000},async()=>{
+  const {url,close}=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const context=await browser.newContext(),page=await context.newPage();
+  try{
+    await page.goto(url);await page.evaluate(fixture);
+    const result=await page.evaluate(async()=>{
+      let now=1000;const rooms=new PlayroomMultiplayer.RoomService({clock:()=>now});
+      const room=rooms.create({host:{id:'roster-host',nickname:'A'},name:'Roster',game:{id:'network-store-fixture',version:'0.1.0',name:'Fixture'},constraints:{min:2,max:4}});
+      rooms.join(room.id,{id:'old-player',nickname:'B'});rooms.claimSeat(room.id,'old-player','seat-4');rooms.setReady(room.id,'roster-host',true);rooms.setReady(room.id,'old-player',true);rooms.beginCountdown(room.id,'roster-host');now=5000;rooms.tick(room.id);
+      const store=new PlayroomNetworkSessionStore({name:'rc12-roster-test'}),session=new TabletopSession(TabletopCore,'network-store-fixture',{players:[{name:'A'},{name:'B'}]});
+      await store.create({sessionId:'roster-match',room:rooms.snapshot(room.id),session,recovery:rooms.exportRecovery(room.id),packDigest:'sha256:'+'b'.repeat(64)});
+      const authority=new SessionAuthority(session,{sessionId:'roster-match',persistence:{commit:row=>store.commit(row),recordReceipt:row=>store.recordReceipt(row)}}),client=authority.connect(0);
+      const receipt=await client.dispatch(PlayroomProtocol.command(client.snapshot(),{type:'tick'},'roster-move'));if(!receipt.ok)throw Error(receipt.code);authority.dispose();
+      const before=await store.load('roster-match',TabletopCore,TabletopSession),restored=new PlayroomMultiplayer.RoomService();
+      restored.restoreRecovery(before.recovery,{hostId:'roster-host',collect:true,sessionId:'roster-match',revision:1});restored.kick(room.id,'roster-host','old-player');restored.join(room.id,{id:'new-player',nickname:'C'});restored.claimSeat(room.id,'new-player','seat-4');restored.acceptReplacement(room.id,'new-player');
+      const payload={sessionId:'roster-match',room:restored.snapshot(room.id),recovery:restored.exportRecovery(room.id),revision:1};await store.saveRoster(payload);
+      const saved=await store.load('roster-match',TabletopCore,TabletopSession),rejected=[];
+      for(const mutate of [p=>p.revision=0,p=>p.room.ownerId='other',p=>p.recovery.room.ownerId='other',p=>p.recovery.room.game.version='wrong',p=>{p.room.recovery.revision=0;p.recovery.room.recovery.revision=0;}]){
+        const malformed=structuredClone(payload);mutate(malformed);try{await store.saveRoster(malformed);rejected.push(false);}catch(_){rejected.push(true);}
+      }
+      // A roster captured before a concurrent resume must not restore the old
+      // token after the rotation has durably completed.
+      const oldToken=payload.recovery.tokens.find(t=>t.participantId==='new-player').token;
+      const rotatedToken=(oldToken[0]==='a'?'b':'a')+oldToken.slice(1),expires=Date.now()+120000;
+      await store.rotateResumeToken({sessionId:'roster-match',participantId:'new-player',previousToken:oldToken,nextToken:rotatedToken,previousExpiresAt:expires});
+      await store.saveRoster(payload);
+      store.close();const disk=new PlayroomNetworkSessionStore({name:'rc12-roster-test'}),after=await disk.load('roster-match',TabletopCore,TabletopSession);
+      const nextRooms=new PlayroomMultiplayer.RoomService(),next=nextRooms.restoreRecovery(after.recovery,{hostId:'roster-host',collect:true,sessionId:'roster-match',revision:1});
+      const out={rejected,sameGame:JSON.stringify(after.session.states)===JSON.stringify(before.session.states)&&JSON.stringify(after.session.options)===JSON.stringify(before.session.options)&&after.session.createdAt===before.session.createdAt,sameReceipts:JSON.stringify(after.receipts)===JSON.stringify(before.receipts),stableIndex:next.seats[3].playerIndex,participant:next.seats[3].participantId,oldToken:after.recovery.tokens.some(t=>t.participantId==='old-player'),newToken:after.recovery.tokens.some(t=>t.participantId==='new-player'),replacement:next.participants.find(p=>p.id==='new-player').replacement.accepted,revision:after.revision,rosterUnchanged:JSON.stringify(saved.room)===JSON.stringify(after.room)};
+      const rotated=after.recovery.tokens.find(t=>t.participantId==='new-player');
+      out.rotationPreserved=rotated.token===rotatedToken&&rotated.previousToken===oldToken&&rotated.previousExpiresAt===expires;
+      nextRooms.kick(room.id,'roster-host','new-player');
+      await disk.saveRoster({sessionId:'roster-match',room:nextRooms.snapshot(room.id),recovery:nextRooms.exportRecovery(room.id),revision:1});
+      out.removalRevoked=!(await disk.load('roster-match',TabletopCore,TabletopSession)).recovery.tokens.some(t=>t.participantId==='new-player');
+      await disk.remove('roster-match');disk.close();return out;
+    });
+    assert.deepEqual(result,{rejected:[true,true,true,true,true],sameGame:true,sameReceipts:true,stableIndex:1,participant:'new-player',oldToken:false,newToken:true,replacement:true,revision:1,rosterUnchanged:true,rotationPreserved:true,removalRevoked:true});
+  }finally{await context.close();await browser.close();await close();}
+});

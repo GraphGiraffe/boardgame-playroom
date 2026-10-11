@@ -17,7 +17,7 @@
     if(showSettings)ordered.push({attrs:settingsAttrs,label:'Настройки',name:'settings'});
     return ordered.map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
-  const modalHead=title=>`<header class="modal-head ui-dialog-head"><h2>${esc(title)}</h2>${iconButton('data-command="close-modal"','Закрыть','close')}</header>`;
+  const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"','Закрыть','close')}<h2>${esc(title)}</h2></header>`;
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
   function playersMarkup(state,viewer,actions=[],{scoreLabel='очки',playerBadge=()=>''}={}){
@@ -25,21 +25,21 @@
   }
 
   function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div><p class="history-caption">${esc(caption||'Начальная расстановка. Все готовы!')}</p></section>`;
+    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div></section>`;
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
     const winner=state.winner,person=winner==null?null:state.players[winner];
     const title=winner===null?'Ничья!':viewer<0?`${person?.name||'Игрок'} побеждает`:winner===viewer?'Победа!':'Поражение';
     const scores=state.players.map((player,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
-    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="home">Вернуться в комнату</button>`:`<button class="btn" data-start="${esc(state.game)}">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
+    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="home">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
-    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true}={}){
+    footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption=''}={}){
     if(!state?.players)throw Error('Projected game state required');
-    const caption=esc(replay?'':footerText||'');
-    if(beforeFooter)scene=scene.replace('<!--self-controls-->',beforeFooter);
+    const caption=esc(replay?(historyCaption||footerText||'Начальная расстановка'):footerText||'');
+    if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
     return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML},
@@ -48,16 +48,16 @@
         {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
         {attrs:'data-command="rules"',label:'Правила игры',name:'help'}
       ],{showSettings})}</div></header>
-      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc(turnExtra)}</span>${caption?`<span class="status-event" title="${esc(footerTitle)}">${caption}</span>`:''}</div>
+      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc(turnExtra)}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||'Начальная расстановка'):footerTitle)}">${caption}</span>`:''}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="Игровой стол" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
   function fitHand(stage){
-    for(const mini of stage.querySelectorAll('.player-panel .mini-hand:not(.is-open)')){
+    for(const mini of stage.querySelectorAll('.player-panel .mini-hand')){
       const count=mini.children.length;if(!count)continue;
       const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-      mini.style.setProperty('--mini-step',(count>1?Math.max(0,Math.min(32,(available-28)/(count-1))):32)+'px');
+      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-28)/(count-1))):32)+'px');
     }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
       track.style.removeProperty('--fan-peek');

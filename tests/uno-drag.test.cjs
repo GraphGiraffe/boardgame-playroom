@@ -43,7 +43,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,options,run){await t.test(name,async()=>{
     const context=await browser.newContext({viewport:options.mobile?{width:390,height:844}:{width:1280,height:900},hasTouch:!!options.mobile,isMobile:!!options.mobile,reducedMotion:'reduce'});
-    const saved=fixture(options);await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+    const saved=fixture(options);await context.addInitScript(({saved,autoPass})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,autoPass}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,autoPass:!!options.autoPass});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(4500);page.on('pageerror',e=>errors.push(e.message));
     try{await page.goto(url);await page.locator('.resume-banner [data-command=resume]').click();await source(page).waitFor({state:'visible'});await run({page,context,saved});assert.deepEqual(errors,[]);}finally{await context.close();}
   });}
@@ -58,7 +58,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
       assert.equal((await state(page)).data.discard.at(-1).id,'u1');assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.equal((await state(page)).move,1);
     });
     await check('Upward mouse movement starts dragging without a hold; a normal click selects before discard commits',{},async({page})=>{
-      await mouseDrag(page,'u1',{hold:false});await expectMove(page,1);const p=await center(source(page,'u5'));await page.mouse.click(p.x,p.y);assert.equal((await state(page)).move,1);assert.equal(await drop(page).getAttribute('data-drop-piece'),'u5');await drop(page).click();await expectMove(page,2);assert.equal((await state(page)).data.discard.at(-1).id,'u5');
+      await mouseDrag(page,'u1',{hold:false});await expectMove(page,1);await page.locator('[data-command=pass-device]:not(:disabled)').click();const p=await center(source(page,'u5'));await page.mouse.click(p.x,p.y);assert.equal((await state(page)).move,1);assert.equal(await drop(page).getAttribute('data-drop-piece'),'u5');await drop(page).click();await expectMove(page,2);assert.equal((await state(page)).data.discard.at(-1).id,'u5');
     });
     await check('Wild drag to discard chooses a color before exactly one legal commit',{wildFirst:true},async({page})=>{
       await mouseDrag(page,'u100');assert.equal((await state(page)).move,0);await page.locator('.uno-color-picker').waitFor({state:'visible'});
@@ -72,7 +72,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
     await check('Illegal cards expose no drag source and cannot create a ghost or play',{},async({page})=>{
       const illegal=source(page,'u26');assert.equal(await illegal.getAttribute('data-drag-piece'),null);const p=await center(illegal);await page.mouse.move(p.x,p.y);await page.mouse.down();await page.waitForTimeout(240);await page.mouse.move(p.x,p.y-100);await page.mouse.up();assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.equal((await state(page)).move,0);
     });
-    await check('Touch drop then immediate fresh native tap selects; tapping discard plays the next card',{mobile:true},async({page,context})=>{
+    await check('Touch drop then immediate fresh native tap selects; tapping discard plays the next card',{mobile:true,autoPass:true},async({page,context})=>{
       const cdp=await context.newCDPSession(page);await touchDrag(page,cdp);await expectMove(page,1);const at=Date.now();await tap(cdp,source(page,'u5'));assert(Date.now()-at<400);await page.locator('.uno-drop-target[data-drop-piece="u5"]').waitFor({state:'visible'});assert.equal((await state(page)).move,1);await tap(cdp,drop(page));await expectMove(page,2);assert.equal((await state(page)).data.discard.at(-1).id,'u5');
     });
     await check('Horizontal touch swipes reach every card in a long single row without growing the table or playing',{mobile:true,longHand:true},async({page,context,saved})=>{
