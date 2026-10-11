@@ -325,3 +325,29 @@ test('snakes routes describe every bounced step and retain landing before a link
   html=render(state,0);route=JSON.parse(decode(html.match(/data-motion-sequence="([^"]+)"/)[1]));
   assert.deepEqual(route.steps.map(x=>x.anchor),['cell-99','cell-100','cell-99','cell-98']);assert.equal(route.jump,undefined);
 });
+
+
+test('relative seats keep indices, own hands and canonical spectator order',()=>{
+  const H=sandbox.TabletopUI.helpers;
+  for(const count of [2,3,4])for(let viewer=-1;viewer<count;viewer++){
+    const expected=viewer<0?Array.from({length:count},(_,i)=>i):Array.from({length:count-1},(_,i)=>(viewer+i+1)%count);
+    assert.deepEqual(Array.from(H.seatOrder(count,viewer)),expected);
+    const state=make('uno','classic',count),before=JSON.stringify(state),html=render(state,viewer);
+    const actual=[...html.matchAll(/<article[^>]*data-player-index="(\d+)"/g)].map(m=>Number(m[1]));
+    assert.deepEqual(actual,viewer<0?expected:[...expected,viewer]);assert.equal(JSON.stringify(state),before);
+  }
+});
+test('compact pack badges use numeric positions and mutually exclusive accessible roles',()=>{
+  const snakes=make('snakes');snakes.data.positions=[0,16];
+  const html=render(snakes);assert.match(html,/data-motion-counter="position">0<\/span>/);assert.match(html,/data-motion-counter="position">16<\/span>/);
+  const durak=make('durak');durak.data.taking=true;
+  const taken=render(durak);assert.match(taken,/data-ui-icon="takeCards"/);assert.doesNotMatch(taken,/data-ui-icon="shield"/);assert.match(taken,/aria-label="Берёт"/);
+  durak.data.taking=false;assert.match(render(durak),/data-ui-icon="shield"/);
+});
+
+test('source rule versions match the distributable pack manifests',()=>{
+  for(const game of games){
+    const manifest=JSON.parse(fs.readFileSync(path.join(root,'packs',game,'manifest.json'),'utf8'));
+    assert.equal(E.get(game).version,manifest.version,game+' registration must match its manifest');
+  }
+});

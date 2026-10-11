@@ -269,3 +269,16 @@ test('recovery lobby reserves stable seats, drops old observers and requires exp
   assert.equal(again.participants.find(p=>p.id==='replacement').replacement.accepted,true);
   assert.equal(saved.tokens.some(t=>t.participantId==='previous'),false);
 });
+
+
+test('active Offline lobby hydration preserves seats and locks configuration',()=>{
+  const {rooms,room}=createRoom();
+  rooms.configure(room.id,'host',{transportMode:'hotseat'});
+  rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Мика'});
+  const original=rooms.snapshot(room.id),restoredService=service();
+  const active=restoredService.restoreHotSeatLobby(original,{hostId:'host',active:true});
+  assert.equal(active.phase,'playing');assert.deepEqual(active.seats,original.seats);assert.equal(active.id,original.id);
+  assert.throws(()=>restoredService.setLocalSeat(active.id,'host','seat-2',{kind:'empty'}));
+  const rematch=restoredService.restoreHotSeatLobby(original,{hostId:'host'});
+  assert.equal(rematch.phase,'lobby');assert.deepEqual(rematch.rules,original.rules);
+});

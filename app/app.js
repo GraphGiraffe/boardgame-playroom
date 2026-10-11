@@ -209,6 +209,7 @@
     closeModal(true);render();
   }
   function resumeSession(id=sessionId,{history=false}={}) {
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату через лобби.');
     if(!id)return toast('Выберите игру — ваш стол появится здесь.');
     try {
       if(history){openLibraryHistory(id);return;}
@@ -218,12 +219,36 @@
         const next=library.open(id);library.activate(next,id);session=next;sessionId=id;storageOK=true;
       }
       if(!session)return;
-      activateSession();
+      activateSession();restoreSessionLobby();
       screen='table';historyOpen=false;replayIndex=null;selected=null;paused=false;awaitingPass=false;lastResult=null;missedFrom=null;
       viewer=isPass()&&!session.current.players[session.current.turn]?.bot?session.current.turn:session.current.players.findIndex(p=>!p.bot);gate=needsGate(session.current)?viewer:null;
       setLocalPaused(false);closeModal(true);render();
       if(session.current.status==='finished')openHistory();
     } catch(error) {toast('Не удалось открыть партию. '+error.message);}
+  }
+  function restoreSessionLobby(){
+    const saved=session.options.lobbyConfig,players=session.current.players;
+    let matches=false;
+    try{matches=saved&&Array.isArray(saved.seats)&&Array.isArray(saved.participants)&&saved.game?.id===session.game&&saved.game?.version===session.packVersion&&
+      saved.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index).every((seat,i)=>{
+        const p=saved.participants.find(p=>p.id===seat.participantId);return p&&p.nickname===players[i]?.name&&!!p.bot===!!players[i]?.bot;
+      })&&saved.seats.filter(s=>s.participantId).length===players.length;}catch(_){}
+    try{if(!matches)throw Error('Legacy lobby');room=roomService.restoreHotSeatLobby(saved,{hostId:playerProfile.id,active:true});}
+    catch(_){
+      // Legacy saves still open. Rebuild a locked view from the actual session.
+      const g=meta(session.game),host={id:playerProfile.id,nickname:playerProfile.name};
+      let draft=roomService.create({name:'Комната '+host.nickname,host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      draft=roomService.configure(draft.id,host.id,{transportMode:'hotseat'});
+      const hostIndex=Math.max(0,players.findIndex(p=>!p.bot));
+      if(hostIndex)draft=roomService.moveParticipant(draft.id,host.id,host.id,draft.seats[hostIndex].id);
+      for(let i=0;i<players.length;i++){
+        const player=players[i];
+        if(i===hostIndex)draft=roomService.renameLocalSeat(draft.id,host.id,draft.seats[i].id,player.name);
+        else draft=roomService.setLocalSeat(draft.id,host.id,draft.seats[i].id,{kind:player.bot?'bot':'human',nickname:player.name});
+      }
+      room=roomService.restoreHotSeatLobby(draft,{hostId:host.id,active:true});
+    }
+    lobbyParticipantId=room.ownerId;
   }
   function askDelete(id) {
     const entry=library.list().find(entry=>entry.id===id);if(!entry)return;
@@ -387,7 +412,7 @@
   }
   function closeModal(ignoreBack=false) {
     if($('#profile-form')&&!playerProfile?.name&&!ignoreBack)return;
-    if(!ignoreBack&&!modalBack&&$('#modal-root .room-setup-modal')){if($('#modal-root [data-net-action=leave]')){globalThis.PlayroomNetworkLibrary?.leaveClientRoom?.();closeModal(true);renderHub();}else leaveLobby();return;}
+
     const back=modalBack;modalBack=null;
     if(back&&!ignoreBack){back();return;}
     stopSounds();$('#modal-root').innerHTML='';placeNotice();$('#app').inert=false;modalReturn?.focus?.();scheduleBot();scheduleAutoPass();
@@ -401,6 +426,7 @@
   }
   new MutationObserver(ensureRoomButton).observe($('#app'),{subtree:true,childList:true});
   function setup(gameId,draft=null) {
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату через лобби.');
     if(room)leaveLobby();
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const preset=g.presets?.[0]||{id:'default',label:'Классический'};
@@ -619,7 +645,7 @@
     'lobby-spectator':becomeLobbySpectator,
     'lobby-table':()=>{try{room=roomService.claimTable(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(error.message);}},
     'lobby-start':startLobbyCountdown,
-    'lobby-leave':leaveLobby,
+    'lobby-leave':()=>{if(room?.transportMode==='network'&&room.phase==='playing'&&!confirm('Покинуть комнату? Соединения всех участников будут закрыты. Партия сохранится.'))return;leaveLobby();},
     'close-modal':closeModal,
     'room-rules-view':showRoomRules,
     'room-help':showRoomHelp,

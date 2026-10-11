@@ -36,7 +36,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         assert.equal(await lobby.locator('.lobby-observer[data-participant-id="layout-observer"]').count(),1);assert.equal(await lobby.locator('.lobby-observer-slot').count(),1,'one free spectator slot');
         assert.equal(await lobby.locator('.lobby-seat-row[data-participant-id="layout-player"]').count(),1);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
-        const header=lobby.locator('.lobby-header'),back=header.locator('[data-command=lobby-leave]'),settings=header.locator('[data-command=settings]');
+        const header=lobby.locator('.lobby-header'),back=header.locator('[data-command=close-modal]'),settings=header.locator('[data-command=settings]');
         assert((await back.boundingBox()).x<(await settings.boundingBox()).x);
         for(const button of await lobby.locator('.icon-btn').all()){
           assert(await button.getAttribute('aria-label'),'icons need accessible labels');

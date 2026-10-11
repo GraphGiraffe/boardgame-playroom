@@ -69,9 +69,17 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('[data-start=uno]'));await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=room-rules]').click();await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await press(page.locator('[data-command=lobby-start]'));await page.locator('.uno-scene').waitFor();assert.equal(await page.locator('.side-nav').count(),0);
         await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        await press(page.locator('.table-tools [data-command=room]'));
+        const restoredRoom=await page.evaluate(()=>PlayroomAppBridge.room());
+        assert.equal(restoredRoom.phase,'playing');
+        await press(page.locator('.lobby-header [data-command=close-modal]'));
+        assert.equal(await page.locator('.uno-scene').count(),1,'lobby dismissal returns to the game');
         // Persistent saves must survive without any test-only sessionStorage marker.
         await page.evaluate(()=>sessionStorage.clear());
         await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        await press(page.locator('.table-tools [data-command=room]'));
+        assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),restoredRoom.id);
+        await page.keyboard.press('Escape');assert.equal(await page.locator('.uno-scene').count(),1);
         assert.deepEqual(errors,[]);
       } finally { await context.close(); }
     });

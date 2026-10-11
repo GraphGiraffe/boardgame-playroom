@@ -12,9 +12,9 @@
     style.textContent=styles;
     return {manifest,catalog:catalog[manifest.id],rules:definition.rules||[],sounds:definition.sounds||{}};
   }
-  function mount(client,definition,{surface,readOnly=false,onExit=null}={}){
+  function mount(client,definition,{surface,readOnly=false,onExit=null,connected:initialConnected=true}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
-    let selected=null,connected=true,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
+    let selected=null,connected=initialConnected,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false,historyPause=null;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false;
@@ -54,7 +54,7 @@
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:s.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
-        footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'home',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
+        footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'rematch',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
       if(historyOpen&&app.querySelector('.network-game .history-panel')){
         // Keep the actual range element, its focus and native pointer gesture.
@@ -161,12 +161,11 @@
         case 'confirm-action':{
           const todo=pendingAction;close();if(todo)await submit(todo,true);break;
         }
+        case 'rematch':if(!readOnly&&client.snapshot?.state?.status==='finished')onExit?.({finished:true});break;
         case 'home':
           if(readOnly){onExit?.();break;}
-          if(client.snapshot?.state?.status==='finished'||root.confirm('Покинуть сетевую партию? Сохранение останется в «Моих партиях».')){
-            if(onExit)onExit({finished:client.snapshot?.state?.status==='finished'});
-            else root.location.reload();
-          }
+          if(onExit)onExit();
+          else root.location.reload();
           break;
         case 'settings':show('<h2>Настройки</h2><button class="btn secondary" data-command="rules">Правила игры</button><button class="btn secondary" data-command="fullscreen">На весь экран</button><button class="btn secondary" data-command="preferences">Настройки устройства</button>');break;
         case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;

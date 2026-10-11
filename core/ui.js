@@ -7,6 +7,9 @@
   'use strict';
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
+    sword:'<path d="m4 20 4-4m-3-3 6 6M8 16 19 5V3h-2L6 14"/>',
+    shield:'<path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6Z"/>',
+    takeCards:'<rect x="3" y="3" width="10" height="13" rx="2"/><path d="M7 3V1h10v12M13 17h8m-3-3 3 3-3 3"/>',
     grid:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
     history:'<path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/>',
     help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 17h.01"/>',
@@ -46,6 +49,7 @@
     chevron:'<path d="m6 9 6 6 6-6"/>',
     dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 7h.01M17 7h.01M12 12h.01M7 17h.01M17 17h.01"/>',
     first:'<circle cx="12" cy="12" r="9"/><path d="m10 8 2-1v10m-3 0h6"/>',
+    exit:'<path d="M10 4H3v16h7M10 12h11m-4-4 4 4-4 4"/>',
     room:'<path d="M3 21V3h13v18M7 12h.01M16 7h5v14H3"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
   }[name] || '')+'</svg>';
@@ -66,10 +70,15 @@
     return `<span class="piece-count${corner?' is-corner':''}${hand?' is-hand':''}${hand&&count>=100?' is-long-count':''}" data-piece-count="${count}" aria-label="${esc(label)}: ${count}">${count}</span>`;
   }
   const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="Закрытая карта">${art({main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99})}</span>`;
+  // Display indices only: game indices and private hands remain unchanged.
+  function seatOrder(count,viewer=-1){
+    const own=Number.isInteger(viewer)&&viewer>=0&&viewer<count;
+    return Array.from({length:own?count-1:count},(_,i)=>own?(viewer+i+1)%count:i);
+  }
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
-    return `<div class="opponent-hands">${state.players.map((p,i) => {
-      if(i===viewer)return '';
+    return `<div class="opponent-hands">${seatOrder(state.players.length,viewer).map(i => {
+      const p=state.players[i];
       const cards=state.data.hands[i]||[],open=cards.some(c=>!c.hidden),visible=open?cards:cards.slice(0,5);
       const attrs=options.playerAttrs?.(i,p)||'',badge=options.playerBadge?.(i,p)||'';
       const pieces=visible.map((c,index)=>{
@@ -105,7 +114,7 @@
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
-    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
     const counters=content.counters??[{kind:content.scoreLabel==='победы'?'wins':'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
@@ -150,7 +159,7 @@
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end='',exclusive=false})=>`<div class="game-action-bar"${exclusive?' data-exclusive="true"':''}><div data-action-position="start"${exclusive?' inert aria-hidden="true"':''}>${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end"${exclusive?' inert aria-hidden="true"':''}>${end}</div></div>`;
-  const helpers = {viewApi:2,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,seatOrder,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary']);
   function motionSequence(value){
@@ -168,7 +177,7 @@
     if(surface==='table')actions=[];
     const e={...value.elements},content=value.playerContent;
     if(value.actionReserve&&surface!=='table'&&!e.actions)e.actions='<div class="scene-actions"></div>';
-    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string')))))))throw Error('Invalid player content');
+    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.icon!==undefined&& !['sword','shield','takeCards'].includes(b.icon)))))))))throw Error('Invalid player content');
     if(value.fieldGroups!==undefined){
       const groups=value.fieldGroups;
       if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');
@@ -177,7 +186,7 @@
     const unified=!!state?.players;
     let self='';
     if(unified){
-      e.participants=`<div class="players-panels opponent-hands">${state.players.map((_,i)=>i===viewer?'':playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
+      e.participants=`<div class="players-panels opponent-hands">${seatOrder(state.players.length,viewer).map(i=>playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!((self||surface==='table')&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
