@@ -10,4 +10,4 @@
 @media(prefers-reduced-motion:reduce){.playroom-drag-ghost{will-change:auto}}
 
 /* All hand surfaces participate in manual scroll arbitration, including disabled pieces. */
-.own-hand .hand-track{touch-action:none!important}
+.layout-self,.own-hand .hand-track{touch-action:none!important}

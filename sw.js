@@ -1,7 +1,7 @@
 'use strict';
 // API 2 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Published RC9 remains immutable.
-const CACHE='playroom-pwa-v0.15.0-rc.16';
+const CACHE='playroom-pwa-v0.15.0-rc.17';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
@@ -51,7 +51,7 @@ self.addEventListener('install',event=>{
     const cache=await caches.open(CACHE);
     await Promise.all(entries.map(([path,response])=>cache.put(path,response)));
     // A waiting update never replaces an in-use shell or interrupts a room.
-    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:'0.15.0-rc.16'});
+    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:'0.15.0-rc.17'});
   })());
 });
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE&&key.startsWith('playroom-pwa-'))await caches.delete(key);await self.clients.claim();})()));
