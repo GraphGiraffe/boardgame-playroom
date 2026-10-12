@@ -69,6 +69,9 @@ test('standalone UI shares source and target policies without browser or game de
   assert.doesNotMatch(both,/>Игрок|>Бот|очки:|победы:/);
   for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:2,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
 
+  const pieces=H.playerPanel({players:[{name:'A',score:0}],turn:0},0,0,{counters:[{kind:'wins',value:0},{kind:'pieces',value:12,label:'Светлые шашки'}]});
+  assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*>12</);
+  assert.doesNotMatch(pieces,/>12 шашек</);
   const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
   assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/mini-hand/);
 });

@@ -99,11 +99,11 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return `<span class="participant-role is-${status}" data-participant-role="${role}" data-connection="${status}" role="${replacement?'button':'img'}" aria-label="${esc(replacement?`${label} · ${replacement}`:label)}" title="${esc(replacement||label)}"${replacement?` tabindex="0" data-tooltip="${esc(replacement)}" data-player-replacement="true"`:''}>${icon(role)}${person.isHost?icon('host'):''}${person.replacement?icon('replacement'):''}</span>`;
   }
   function validCounters(counters) {
-    return Array.isArray(counters)&&counters.length<=2&&counters.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&['points','wins'].includes(c.kind)&&Number.isSafeInteger(c.value)&&c.value>=0&&(c.label===undefined||typeof c.label==='string'))&&new Set(counters.map(c=>c.kind)).size===counters.length;
+    return Array.isArray(counters)&&counters.length<=3&&counters.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&['points','wins','pieces'].includes(c.kind)&&Number.isSafeInteger(c.value)&&c.value>=0&&(c.label===undefined||typeof c.label==='string'))&&new Set(counters.map(c=>c.kind)).size===counters.length;
   }
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
-    const label=counter.label||(counter.kind==='wins'?'Победы':'Очки');
+    const label=counter.label||(counter.kind==='wins'?'Победы':counter.kind==='pieces'?'Фишки':'Очки');
     return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.value}</span>`;
   }
   function playerContent(state, viewer, cardRender, options={}) {

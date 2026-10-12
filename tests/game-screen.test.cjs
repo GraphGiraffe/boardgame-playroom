@@ -20,3 +20,11 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.match(dialog,/Вернуться в комнату/);
   assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
 });
+
+test('local and network deletion share confirmation layout and preserve target routing',()=>{
+ for(const network of [false,true]){
+  const html=Screen.deleteConfirmation({name:'UNO <&',network,confirmAttrs:network?'data-delete-network-confirm="network-id"':'data-delete-confirm="local-id"'});
+  assert.match(html,/Удалить партию\?/);assert.match(html,/class="lead"/);assert.match(html,/class="modal-foot"/);assert.match(html,/>Оставить</);assert.match(html,/>Удалить</);assert.match(html,/UNO &lt;&amp;/);
+  assert.equal(html.includes('только на этом устройстве'),network);
+ }
+});

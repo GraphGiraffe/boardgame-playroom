@@ -93,3 +93,28 @@ test('Hotseat library history chooses a player, preserves slider and leaves the 
     assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw);
   }finally{await context.close();await browser.close();await server.close();}
 });
+
+test('local and network delete dialogs share controls and delete only their chosen record',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();
+ try{
+  await context.addInitScript(f=>{localStorage.setItem('playroom.session.v1',JSON.stringify({...f,libraryId:'delete-local'}));localStorage.setItem('playroom.paused.v1.keep-local',JSON.stringify({...f,libraryId:'keep-local'}));},saved('uno'));
+  page.setDefaultTimeout(5000);page.on('pageerror',e=>console.error('Delete dialog page error:',e.message));await page.goto(server.url);
+  await page.evaluate(()=>{window.deleteRows=['delete-network','keep-network'].map(id=>({id,sessionId:id,role:'client',game:'uno',packVersion:'0.4.6',revision:1,savedFrames:2,players:['Иван','Мика'],name:'Комната',updatedAt:Date.now()}));window.removed=[];
+   PlayroomNetworkLibrary={...PlayroomNetworkLibrary,list:async()=>deleteRows,remove:async id=>{removed.push(id);deleteRows=deleteRows.filter(r=>'client:'+r.id!==id);}};
+  });
+  await page.locator('[data-command=sessions]').first().click();await page.locator('[data-delete-id="client:delete-network"]').waitFor();
+  const geometry=[];
+  for(const [id,network] of [['delete-local',false],['client:delete-network',true]]){
+   await page.locator(`[data-delete-id="${id}"]`).click();
+   assert.equal(await page.locator('#modal-root h2').innerText(),'Удалить партию?');
+   assert.equal(await page.locator('#modal-root .lead').innerText().then(s=>s.includes('только на этом устройстве')),network);
+   geometry.push(await page.locator('#modal-root .modal-foot').evaluate(el=>[...el.children].map(b=>({width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height}))));
+   if(process.env.PLAYROOM_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,network?'delete-network.png':'delete-local.png')});
+   await page.getByRole('button',{name:'Оставить',exact:true}).click();assert.equal(await page.locator(`[data-delete-id="${id}"]`).count(),1);
+   await page.locator(`[data-delete-id="${id}"]`).click();await page.getByRole('button',{name:'Удалить',exact:true}).click();await page.locator(`[data-delete-id="${id}"]`).waitFor({state:'detached'});
+   assert.equal(await page.locator('[data-delete-id="keep-local"]').count(),1);assert.equal(await page.locator('[data-delete-id="client:keep-network"]').count(),1);
+  }
+  assert.deepEqual(geometry[0],geometry[1]);assert.deepEqual(await page.evaluate(()=>removed),['client:delete-network']);
+ }finally{await context.close();await browser.close();await server.close();}
+});
