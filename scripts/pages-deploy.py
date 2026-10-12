@@ -146,6 +146,18 @@ def run(args):
     previous = project.get('canonical_deployment', {}).get('id')
     report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation}
     if args.operation == 'preflight':
+        source = project.get('source') or {}
+        config = source.get('config') or {}
+        report.update(productionBranch=production, sourceType=source.get('type'),
+            gitProductionBuilds=config.get('production_deployments_enabled'),
+            gitPreviewBuilds=config.get('preview_deployment_setting'),
+            buildOutput=(project.get('build_config') or {}).get('destination_dir'),
+            status='preflight-started', deployments=[{
+                'id': d['id'], 'url': d['url'], 'environment': d.get('environment'),
+                'status': d.get('latest_stage', {}).get('status'), 'created': d.get('created_on')
+            } for d in pages.api(suffix='/deployments')[:10]])
+        args.report.write_text(json.dumps(report, indent=2)+'\n')
+        print(json.dumps(report))
         private = archive_files(io.BytesIO(base64.b64decode(required('PAGES_PRIVATE_WRAPPER_B64'), validate=True)))
         if set(private) != PRIVATE:
             raise ValueError('Invalid private wrapper archive')

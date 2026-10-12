@@ -57,3 +57,5 @@ python3 scripts/package-pages.py \
 ## Кандидат 0.16
 
 Перед стабильным выпуском выполнить [приёмку 0.16](RELEASE-0.16.md). Собирать RC из проверенного SHA с версией 0.16.0-rc.1 и публиковать как prerelease; не заменять стабильную 0.15 до приёмки. Новый workflow ручного деплоя станет доступен в Actions после попадания на default branch; Ready PR выполняет только проверку существующего сайта.
+
+До переноса нового Pages workflow на default branch используйте существующий **Release candidate build**: выберите ветку кандидата и operation `preflight`, `deploy` или `rollback`. Он вызывает тот же Pages workflow с того же SHA через workflow_call; `build` по-прежнему выполняет полную сборку RC. Автоматической публикации по push нет.

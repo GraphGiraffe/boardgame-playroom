@@ -1,5 +1,16 @@
 name: Protected Pages publication
 on:
+  workflow_call:
+    inputs:
+      operation:
+        type: string
+        required: true
+      release:
+        type: string
+        default: ''
+      deployment:
+        type: string
+        default: ''
   pull_request:
     branches: [dev, main]
     types: [ready_for_review]
@@ -57,6 +68,7 @@ jobs:
           DEPLOYMENT: ${{ inputs.deployment }}
         run: python3 scripts/pages-deploy.py "$OPERATION" --release "$RELEASE" --deployment "$DEPLOYMENT"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pages-deployment-report
           path: deploy-report.json

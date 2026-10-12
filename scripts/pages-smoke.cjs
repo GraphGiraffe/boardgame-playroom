@@ -10,7 +10,10 @@ async function main(){
  try{
   const context=await browser.newContext(),page=await context.newPage(),errors=[];
   page.on('pageerror',()=>errors.push('page-error'));
-  stage='login-page';await page.goto(url);const field=page.locator('input[name="password"]');await field.waitFor();
+  stage='login-page';const landing=await page.goto(url);const field=page.locator('input[name="password"]');
+  console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
+  if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge)){stage='unprotected-site';throw Error('Application available without authentication');}
+  await field.waitFor();
   stage='wrong-password';await field.fill('invalid-'+crypto.randomUUID());await page.locator('button[type="submit"]').click();await field.waitFor();
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);await page.locator('button[type="submit"]').click();

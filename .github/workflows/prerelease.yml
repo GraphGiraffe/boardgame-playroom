@@ -1,14 +1,27 @@
 name: Release candidate build
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Build candidate or manually operate the existing Pages project
+        type: choice
+        options: [build, preflight, deploy, rollback]
+        default: build
+      release:
+        description: Published release tag for Pages deployment
+        type: string
+      deployment:
+        description: Successful production deployment ID for rollback
+        type: string
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: multiplayer-prerelease-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: multiplayer-prerelease-${{ github.event.pull_request.number || github.ref }}-${{ inputs.operation || 'build' }}
+  cancel-in-progress: ${{ inputs.operation == 'build' || inputs.operation == '' }}
 jobs:
   prerelease:
+    if: inputs.operation == 'build' || inputs.operation == ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -47,3 +60,11 @@ jobs:
           name: playroom-release-candidate
           path: app/dist/prerelease/
           retention-days: 30
+  pages:
+    if: inputs.operation != 'build' && inputs.operation != ''
+    uses: ./.github/workflows/pages-deploy.yml
+    with:
+      operation: ${{ inputs.operation }}
+      release: ${{ inputs.release }}
+      deployment: ${{ inputs.deployment }}
+    secrets: inherit
