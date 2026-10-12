@@ -1,0 +1,49 @@
+# Выпуск приложения и коллекции
+
+Текущая стабильная пара: приложение 0.15.0 и паки 0.4.0. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы.
+
+## Подготовка
+
+1. Проверить чистоту рабочих деревьев, уникальные изменения веток и PR. Влить готовые исправления в dev обычными task PR. Сохранить полезные сведения старых планов в действующей документации.
+2. На release-ветках обновить package.json/package-lock.json/sw.js приложения, VERSION коллекции в build.py, README/CHANGELOG и release notes. Не переписывать индивидуальные паки ради версии коллекции.
+3. Сверить API, Roadmap, ограничения, инструкции и ссылки. Удалять устаревшие документы после переноса действующих требований; прошлое остаётся в Git/тегах.
+4. Провести самостоятельный check паков и полный совместный check приложения. Проверить точный SHA в CI PR; Ready запускает проверки, обычный push не делает этого.
+5. Подготовку объединить в dev. Выпуск провести отдельными PR dev → main, merge-коммитом; затем fast-forward dev до main. Зафиксировать main SHA паков в совместных workflow приложения перед окончательной проверкой приложения.
+
+## Сборка из окончательных main SHA
+
+При соседних каталогах playroom и playroom-paks:
+
+```sh
+# В репозитории паков
+python3 build.py --output-dir dist/release-0.4.0
+(cd dist/release-0.4.0 && sha256sum -c SHA256SUMS)
+# В репозитории приложения
+python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.15.0
+(cd dist/release-0.15.0 && sha256sum -c SHA256SUMS)
+```
+
+Публичные assets приложения: playroom.html, playroom-all-games.html, playroom-pwa.zip, playroom-source.zip, tabletop-core.zip, SHA256SUMS. Коллекция: пять versioned .playroom-pack.json, playroom-paks-0.4.0.zip, playroom-paks-source.zip, SHA256SUMS. Дополнительный provenance JSON фиксирует оба commit SHA, версии и выполненные проверки; при его добавлении пересчитать SHA256SUMS.
+
+Теги v0.15.0 и v0.4.0 должны указывать на проверенные main SHA. Создать GitHub Releases с prerelease=false, заметками и assets. Сначала можно загрузить draft и проверить все файлы, затем опубликовать. Не перемещать существующие теги и не заменять файлы выпущенной версии.
+
+Скачать assets через GitHub Release и выполнить sha256sum -c SHA256SUMS над скачанными байтами. Проверить имя/тег/target SHA/prerelease flag. Слияние PR или зелёный build сами по себе не являются публикацией.
+
+## Закрытый архив для Pages
+
+Публичный PWA ZIP не содержит контроля доступа. Для существующего защищённого проекта используется отдельная упаковка:
+
+```sh
+python3 scripts/package-pages.py \
+  --public dist/release-0.15.0/playroom-pwa.zip \
+  --protected-base /path/to/previous-private-pages.zip \
+  --output /path/to/private/playroom-pages-0.15.0-protected.zip
+```
+
+Скрипт сохраняет _worker.js, _routes.json и manifest.webmanifest из доверенной прежней обёртки и проверяет байты архива. Не печатать Worker/секреты и не загружать этот ZIP в публичный Release. Корень ZIP содержит index.html без дополнительного каталога. Сверить runtime с публичной сборкой, затем запустить существующие браузерные сценарии над извлечённым runtime. Локальная проверка static runtime не является проверкой авторизации живого Cloudflare.
+
+Публикация сайта выполняется отдельно на том же origin, чтобы не потерять доступ к сохранениям. Автоматизация описана в [DEPLOY-01](CLOUDFLARE-PAGES-DEPLOY-PLAN.md) и пока не реализована.
+
+## Завершение
+
+Сохранить локальную резервную Git bundle всех refs перед очисткой. После успешной публикации закрыть устаревшие PR, удалить завершённые worktree и task/release ветки локально и на origin. Оставить main/dev, теги и историю PR. Не удалять неперенесённую уникальную работу. Сообщить ссылки на оба релиза, приватный архив, SHA256 и фактические проверки.

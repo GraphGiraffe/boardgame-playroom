@@ -1,4 +1,4 @@
-name: Multiplayer pre-release
+name: Release candidate build
 on:
   workflow_dispatch:
 permissions:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
-          ref: 5eb21b7d2a2cf0fd21f1f7a48703557f44bee22c
+          ref: 5c8a172912bff583d92bb207dbbfe288b3bf002f
           ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false
@@ -36,14 +36,14 @@ jobs:
       - name: Full application and pack checks
         timeout-minutes: 15
         run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
-      - name: Build testable all-games pre-release
+      - name: Build tested all-games artifacts
         run: |
           rm -rf app/dist/prerelease
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/prerelease
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n'             'Playroom ui-api2-preview'             "App head: ${GITHUB_SHA}"             'Packs: API 2, pinned source commit 5eb21b7d2a2cf0fd21f1f7a48703557f44bee22c'             'For the PWA experiment, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+          printf '%s\n'             'Playroom release candidate'             "App head: ${GITHUB_SHA}"             'Packs: API 2, pinned source commit 5c8a172912bff583d92bb207dbbfe288b3bf002f'             'To run the PWA, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: playroom-ui-api2-preview
+          name: playroom-release-candidate
           path: app/dist/prerelease/
           retention-days: 30
