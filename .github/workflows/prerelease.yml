@@ -11,7 +11,7 @@ on:
         description: Published release tag for Pages deployment
         type: string
       deployment:
-        description: Successful production deployment ID for rollback
+        description: Protected production fallback ID for deploy, or target for rollback
         type: string
 permissions:
   contents: read

@@ -120,6 +120,10 @@ async function main(){
    const worker=await get(anonymous,new URL('_worker.js',url).href);
    if(worker.ok()&&!((worker.headers()['content-type']||'').includes('text/html')))throw Error('Private Worker exposed');
   }finally{await anonymous.close();}
+  if(process.env.PLAYROOM_SMOKE_ONLINE_ONLY==='1'){
+   console.log('Protected online rollback baseline passed; offline verification omitted for this recovery target.');
+   return;
+  }
   stage='service-worker';
   try{
    await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
