@@ -68,9 +68,9 @@ self.addEventListener('fetch',event=>{
       try{const response=await fetch(event.request);if(await validAsset('./index.html',response)){const cache=await caches.open(CACHE);await cache.put('./index.html',response.clone());return response;}
         if(response.redirected||!response.ok)return response;
         return await (await caches.open(CACHE)).match('./index.html')||response;}
-      catch(_){return await caches.match('./index.html')||await caches.match('./');}
+      catch(_){return await (await caches.open(CACHE)).match('./index.html')||Response.error();}
     })());
     return;
   }
-  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request,{ignoreSearch:true});if(cached)return cached;try{const response=await fetch(event.request);if(await validAsset('./'+url.pathname.slice(new URL('./',self.location.href).pathname.length),response)){await cache.put(event.request,response.clone());}return response;}catch(_){return Response.error();}})());
+  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request);if(cached)return cached;try{const response=await fetch(event.request);if(await validAsset('./'+url.pathname.slice(new URL('./',self.location.href).pathname.length),response)){await cache.put(event.request,response.clone());return response;}return Response.error();}catch(_){return Response.error();}})());
 });
