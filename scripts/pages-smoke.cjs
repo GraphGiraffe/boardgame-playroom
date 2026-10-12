@@ -48,10 +48,11 @@ async function main(){
   console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge)){stage='unprotected-site';throw Error('Application available without authentication');}
   await field.waitFor();
-  stage='wrong-password';await field.fill('invalid-'+crypto.randomUUID());await page.locator('button[type="submit"]').click();await field.waitFor();
+  stage='wrong-password';await field.fill('invalid-'+crypto.randomUUID());
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type="submit"]').click()]);await field.waitFor();
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);
-  const [login]=await Promise.all([page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/_auth'&&response.request().method()==='POST'),page.locator('button[type="submit"]').click()]);
+  const [login]=await Promise.all([page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/_auth'&&response.request().method()==='POST'),page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type="submit"]').click()]);
   if(login.status()!==303)throw Error('Password login rejected');
   const destination=new URL(login.headers().location||'',login.url());
   if(!login.headers().location||destination.origin!==origin)throw Error('Unexpected login redirect');
@@ -65,6 +66,7 @@ async function main(){
   const anonymous=await createContext();
   try{
    for(const ref of refs){
+    stage='runtime-asset-'+path.basename(ref);
     const target=new URL(ref,url).href,response=await get(context,target);
     if(!response.ok()){stage='runtime-asset-status-'+response.status();throw Error('Authenticated asset unavailable');}
     const bytes=await response.body(),hash=crypto.createHash('sha256').update(bytes).digest('hex');
@@ -106,5 +108,8 @@ async function main(){
   console.log('Protected runtime and offline smoke passed.');
  }finally{if(browser)await browser.close();await tunnel.close();}
 }
-if(require.main===module)main().catch(()=>{console.error('Protected Pages smoke failed at '+stage+'; credentials and browser state redacted.');process.exitCode=1;});
+if(require.main===module)main().catch(error=>{
+ const known=['Unexpected shell assets','Authenticated asset unavailable','Deployed bytes differ from verified archive','Unauthenticated asset access','Forged cookie accepted','Private Worker exposed','Password login rejected','Unexpected login redirect','Outdated lobby asset','Offline smoke failed'];
+ const reason=known.includes(error.message)?error.message:error.name==='TimeoutError'?'browser timeout':'check exception';
+ console.error('Protected Pages smoke failed at '+stage+' ('+reason+'); credentials and browser state redacted.');process.exitCode=1;});
 module.exports={main};
