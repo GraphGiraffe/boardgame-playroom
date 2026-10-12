@@ -47,7 +47,14 @@ async function main(){
   await field.waitFor();
   stage='wrong-password';await field.fill('invalid-'+crypto.randomUUID());await page.locator('button[type="submit"]').click();await field.waitFor();
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
-  stage='login';await field.fill(password);await page.locator('button[type="submit"]').click();
+  stage='login';await field.fill(password);
+  const [login]=await Promise.all([page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/_auth'&&response.request().method()==='POST'),page.locator('button[type="submit"]').click()]);
+  if(login.status()!==303)throw Error('Password login rejected');
+  const destination=new URL(login.headers().location||'',login.url());
+  if(!login.headers().location||destination.origin!==origin)throw Error('Unexpected login redirect');
+  // Playwright routes only the first request in a browser redirect chain.
+  // Start a fresh navigation so Access service headers reach the destination.
+  await page.goto(destination.href);
   try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
    const cookies=await context.cookies(url),response=await get(context,url,{Cookie:cookies.map(c=>c.name+'='+c.value).join('; '),'Cache-Control':'no-cache'}),html=await response.text();
    console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:cookies.length,hostCookies:cookies.filter(c=>c.name.startsWith('__Host-')).length,cookieBlocks,navigations,direct:{status:response.status(),scripts:(html.match(/<script\b[^>]*\bsrc=/g)||[]).length,cache:response.headers()['cf-cache-status']||null}}));
