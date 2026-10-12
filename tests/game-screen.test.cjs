@@ -28,3 +28,18 @@ test('local and network deletion share confirmation layout and preserve target r
   assert.equal(html.includes('только на этом устройстве'),network);
  }
 });
+
+
+test('the primary toolbar slot switches between room and results, including earlier replay frames',()=>{
+ for(const network of [false,true])for(const historyResult of [false,true]){
+  const html=Screen.render({state:{...projected,status:'playing'},viewer:0,network,historyResult,roomAction:{attrs:'data-command="room"'},historyHTML:historyResult?'<section class="history-panel"></section>':''});
+  const toolbar=html.split('class="table-tools ui-toolbar">')[1].split('</div></header>')[0];
+  assert.equal((toolbar.match(/data-game-primary=/g)||[]).length,1);
+  assert.match(toolbar,new RegExp('data-command="'+(historyResult?'result':'room')+'"'));
+  assert.doesNotMatch(toolbar,new RegExp('data-command="'+(historyResult?'room':'result')+'"'));
+  assert(toolbar.indexOf('data-game-primary')<toolbar.indexOf('data-command="history"'));
+ }
+ assert.match(Screen.addPlayerButton(),/Подключить игрока или устройство/);
+ assert.match(Screen.addPlayerButton(),/ui-icon-button/);
+ assert.match(Screen.addPlayerButton({disabled:true}),/ disabled/);
+});

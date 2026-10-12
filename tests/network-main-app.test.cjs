@@ -32,7 +32,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
-    await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
+    await host.locator('.lobby-shell').waitFor();const addPlayerIcon=await host.locator('#network-pair-button').innerHTML();await host.locator('#network-pair-button').click();
     // Every ICE candidate supplied by the browser is visible in the IP selector;
     // manual choice remains available for browsers that hide interfaces behind mDNS.
     await host.locator('[data-net-scan="host"]').waitFor();
@@ -213,16 +213,33 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
         [...document.querySelectorAll(selector)].some(node=>!node.disabled&&!node.closest('[inert]')&&node.getClientRects().length),ordinaryAction,{timeout:10000});
       return page;
     }));
+    assert.equal(await host.locator('.table-tools #network-pair-button').innerHTML(),addPlayerIcon);
+    assert.equal(await host.locator('.table-tools #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
     for(const exit of ['guest','host']){
+      const primaryPositions=await Promise.all([host,client].map(async page=>{
+        assert.equal(await page.locator('.table-tools [data-command=room]').count(),1);
+        assert.equal(await page.locator('.table-tools [data-command=result]').count(),0);
+        return page.locator('.table-tools [data-game-primary]').boundingBox();
+      }));
       const actor=await ordinaryPlayer();
       await actor.locator(ordinaryAction).first().click();
       await host.locator('.shared-modal-backdrop').waitFor();
       await client.locator('.shared-modal-backdrop').waitFor();
+      for(const [i,page] of [host,client].entries()){
+        assert.equal(await page.locator('.table-tools [data-command=room],.table-tools [data-net-action=room]').count(),0);
+        assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
+        const b=await page.locator('.table-tools [data-game-primary]').boundingBox();assert(Math.abs(b.x-primaryPositions[i].x)<1,'result must occupy room position');
+      }
       await client.locator('.shared-modal-backdrop [data-command=close-modal]').click();
       assert.equal(await client.locator('.shared-modal-backdrop').count(),0);
       await client.locator('[data-command=result]').click();
       await client.locator('.shared-modal-backdrop [data-command=result-replay]').click();
       await client.locator('.history-panel').waitFor();
+      await client.locator('#replay-range').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});
+      await client.waitForFunction(()=>document.querySelector('#replay-range').value==='0'&&document.querySelector('.history-panel').getAttribute('aria-busy')==='false');
+      assert.equal(await client.locator('.table-tools [data-command=result]').count(),1);
+      assert.equal(await client.locator('.table-tools [data-command=room],.table-tools [data-net-action=room]').count(),0);
+      if(process.env.PLAYROOM_CAPTURE_DIR&&exit==='guest')await client.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'network-finished-history.png')});
       await client.locator('[data-command=history-close]').click();
       await client.locator('[data-command=result]').click();
       if(exit==='guest'){

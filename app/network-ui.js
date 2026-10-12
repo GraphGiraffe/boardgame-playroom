@@ -554,15 +554,16 @@
     const gameShell=document.querySelector('.table-shell.network-game');
     if(gameShell&&hostAuthority&&!document.getElementById('network-pair-button')){
       const tools=gameShell.querySelector('.table-tools')||gameShell.querySelector('.table-header')||gameShell;
-      const btn=document.createElement('button');btn.id='network-pair-button';btn.className='btn secondary';
-      btn.type='button';btn.className='icon-btn';btn.setAttribute('aria-label','Подключить устройство');btn.innerHTML=root.PlayroomGameScreen.icon('connect');tools.prepend(btn);
+      const primary=tools.querySelector('[data-game-primary]');
+      if(primary)primary.insertAdjacentHTML('afterend',root.PlayroomGameScreen.addPlayerButton());
+      else tools.insertAdjacentHTML('afterbegin',root.PlayroomGameScreen.addPlayerButton());
     }
     const room=b.room?.(),lobby=$('.lobby-shell');
-    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label','Комната');node.innerHTML=root.PlayroomGameScreen.icon('room');tools.prepend(node);}
+    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.closest('.table-shell')&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label','Комната');node.innerHTML=root.PlayroomGameScreen.icon('room');tools.prepend(node);}
     if(room&&room.transportMode!=='hotseat'&&lobby){
       ensureHostSubscription(room);
       const card=lobby.querySelector('.lobby-grid .lobby-card');
-      if(card&&room.ownerId===b.participantId?.()&&!document.getElementById('network-pair-button')){const actions=card.querySelector('.lobby-actions');if(actions){const btn=document.createElement('button');btn.className='btn';btn.id='network-pair-button';btn.type='button';btn.textContent='Подключить устройство';actions.prepend(btn);}}
+      if(card&&room.ownerId===b.participantId?.()&&!document.getElementById('network-pair-button')){const actions=card.querySelector('.lobby-actions');if(actions){actions.insertAdjacentHTML('afterbegin',root.PlayroomGameScreen.addPlayerButton());}}
     }
   }
   function handleHostRoomState(state){

@@ -310,7 +310,7 @@
       turnText,turnExtra:replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`,
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
       scene:V.render(projected,shownViewer,actions,{selected,flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''),
-      historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:finished,pause:paused,readOnly:historyOrigin?.kind==='library',
+      historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
       beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"','Передать ход','arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
@@ -428,7 +428,7 @@
   const modalHead = GameScreen.modalHead;
   function ensureRoomButton(){
     const tools=$('#app .topbar-tools')||$('#app .table-tools');
-    if(!tools||!room||tools.querySelector('[data-command="room"]'))return;
+    if(!tools||tools.closest('.table-shell')||!room||tools.querySelector('[data-command="room"]'))return;
     const node=document.createElement('button');node.className='icon-btn';node.dataset.command='room';node.setAttribute('aria-label','Комната');node.title='Комната';node.innerHTML=icon('room');tools.prepend(node);
   }
   new MutationObserver(ensureRoomButton).observe($('#app'),{subtree:true,childList:true});

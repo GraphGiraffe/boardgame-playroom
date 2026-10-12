@@ -69,6 +69,16 @@ test('saved games share icon controls and local history opens directly without a
     await page.locator('[data-command=history-close]').click();assert.equal(await page.locator('.scene.replaying').count(),0);
     await page.locator('.saved-games-list').waitFor();
     await page.locator('[data-session-id="qa-finished"] [data-history-id]').click();await page.locator('.history-panel').waitFor();assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
+    await page.locator('#replay-range').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    for(const [width,height] of [[320,640],[390,740],[740,390]]){
+      await page.setViewportSize({width,height});
+      assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
+      assert.equal(await page.locator('.table-tools [data-command=room]').count(),0);
+      const box=await page.locator('.table-tools').boundingBox();assert(box.x>=0&&box.x+box.width<=width,'toolbar stays on screen');
+      if(process.env.PLAYROOM_CAPTURE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'local-finished-history-'+width+'.png')});
+    }
+    await page.locator('.table-tools [data-command=result]').click();assert.equal(await page.locator('.result-scores').count(),1);
+
   }finally{await context.close();await browser.close();await server.close();}
 });
 

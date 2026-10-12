@@ -52,7 +52,7 @@
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?'Ожидаем объявления':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
-        historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:s.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
+        historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,roomAction:!readOnly?{attrs:'data-command="room"'}:null,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         statusExtra:client.pending&&client.deliveryError?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'rematch',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
@@ -62,7 +62,7 @@
         const template=document.createElement('template');template.innerHTML=markup;
         app.querySelector('.network-game').dataset.revision=String(s.revision);
         const sceneNode=app.querySelector('.scene');sceneNode.setAttribute('aria-busy',String(!!transitionActive));sceneNode.dataset.animationSpeed=flow.pace().mode;
-        for(const selector of ['.scene','.table-status']){
+        for(const selector of ['.scene','.table-status','.table-tools']){
           app.querySelector(selector).replaceChildren(...template.content.querySelector(selector).childNodes);
         }
         app.querySelector('.replay-badge').textContent=template.content.querySelector('.replay-badge').textContent;
