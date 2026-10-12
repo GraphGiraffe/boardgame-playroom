@@ -27,8 +27,14 @@ async function main(){
  }
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
  try{
-  const context=await createContext(),page=await context.newPage(),errors=[];
+  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[];
   page.on('pageerror',()=>errors.push('page-error'));
+  page.on('response',response=>{
+   const target=new URL(response.url());
+   if(target.origin!==origin)return;
+   if(target.pathname==='/_auth')authStatuses.push(response.status());
+   if(['script','stylesheet'].includes(response.request().resourceType()))assetStatuses.push(response.status());
+  });
   stage='login-page';const landing=await page.goto(url);const field=page.locator('input[name="password"]');
   console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge)){stage='unprotected-site';throw Error('Application available without authentication');}
@@ -36,7 +42,10 @@ async function main(){
   stage='wrong-password';await field.fill('invalid-'+crypto.randomUUID());await page.locator('button[type="submit"]').click();await field.waitFor();
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);await page.locator('button[type="submit"]').click();
-  await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
+  try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
+   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length}));
+   throw error;
+  }
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
   if(!refs.length||refs.some(n=>!(/\.[a-f0-9]{16}\.(js|css)$/.test(n))))throw Error('Unexpected shell assets');
   const anonymous=await createContext();
@@ -60,7 +69,7 @@ async function main(){
    const worker=await get(anonymous,new URL('_worker.js',url).href);
    if(worker.ok()&&!((worker.headers()['content-type']||'').includes('text/html')))throw Error('Private Worker exposed');
   }finally{await anonymous.close();}
-  stage='service-worker';await page.evaluate(()=>navigator.serviceWorker.ready);await page.waitForFunction(()=>navigator.serviceWorker.controller);
+  stage='service-worker';await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration())?.active);await page.waitForFunction(()=>navigator.serviceWorker.controller);
   await page.evaluate(()=>localStorage.setItem('playroom-deploy-probe','preserved'));
   stage='offline';await context.unrouteAll({behavior:'wait'});await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
   if(await page.evaluate(()=>localStorage.getItem('playroom-deploy-probe'))!=='preserved'||errors.length)throw Error('Offline smoke failed');
