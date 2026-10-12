@@ -141,10 +141,11 @@ class Pages:
         return target
 
 
-def smoke(url, runtime=None):
+def smoke(url, runtime=None, online_only=False):
     env = dict(os.environ, PLAYROOM_DEPLOY_URL=url)
     if runtime:
         env['PLAYROOM_DEPLOY_DIR'] = str(runtime)
+    env['PLAYROOM_SMOKE_ONLINE_ONLY'] = '1' if online_only else '0'
     subprocess.run(['node', str(ROOT/'scripts/pages-smoke.cjs')], env=env, check=True)
 
 
@@ -199,8 +200,17 @@ def run(args):
     if not previous:
         raise ValueError('Existing production deployment required for rollback')
     # Never use an unprotected accidental Git build as an automatic fallback.
+    fallback = previous
+    limited_fallback = False
     if args.operation == 'deploy':
-        smoke(pages.production_target(previous)['url'])
+        if args.deployment and args.deployment != previous:
+            target = pages.production_target(args.deployment)
+            smoke(target['url'], online_only=True)
+            fallback = target['id']
+            limited_fallback = True
+            report.update(fallbackDeployment=fallback, fallbackScope='protected-online')
+        else:
+            smoke(pages.production_target(previous)['url'])
     repo = required('GITHUB_REPOSITORY')
     with tempfile.TemporaryDirectory(prefix='playroom-pages-') as tmp:
         tmp = Path(tmp)
@@ -247,8 +257,9 @@ def run(args):
                 raise ValueError('Production deployment was not confirmed')
             report.update(deployment=deployed['id'], status='published')
         except Exception:
-            pages.rollback(previous)
-            print('Production verification failed; previous deployment restored.')
+            pages.rollback(fallback)
+            smoke(expected, online_only=limited_fallback)
+            print('Production verification failed; protected fallback restored.')
             raise
     return report
 
