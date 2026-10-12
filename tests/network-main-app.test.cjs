@@ -190,6 +190,21 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.waitForFunction(()=>document.querySelector('.history-panel .replay-badge')?.textContent?.trim().startsWith('0 /'));
     assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),0,'Replay displays the selected historical revision');
     assert.equal(Number(await host.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Replay must not change the live revision');
+    // Wake-up resynchronizes live state without closing or advancing review.
+    await client.evaluate(()=>{
+      Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='recovering');
+    await client.evaluate(()=>{
+      Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='connected');
+    assert.equal(await client.locator('#replay-range').inputValue(),'0','Wake-up preserves selected history');
+    assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),0);
+    assert.match(await client.locator('.history-latest-hint').innerText(),/более поздние ходы/);
+    await client.waitForFunction(async()=>{const store=new PlayroomNetworkClientHistory();try{const rows=await store.list();return rows.some(r=>r.reviewedRevision===0&&r.presentedRevision>0&&r.receivedRevision>=r.presentedRevision);}finally{store.close();}});
     await client.locator('.table-heading [data-command=history-close]').click();
     assert.equal(await client.locator('.history-panel').count(),0);
     assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),latest,'Closing history restores the unchanged live revision');

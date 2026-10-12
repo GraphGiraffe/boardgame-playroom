@@ -137,16 +137,69 @@ with tempfile.TemporaryDirectory() as d:
 `],{cwd:root,stdio:'pipe'});
 });
 
+test('Pages deployment validates immutable archives, access routes and rollback targets',()=>{
+ const {execFileSync}=require('node:child_process');
+ execFileSync('python3',['-c',`import build, hashlib, importlib.util, io, json, tempfile, zipfile
+from pathlib import Path
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('pages', 'scripts/pages-deploy.py')
+pages=importlib.util.module_from_spec(spec);spec.loader.exec_module(pages)
+def archive(items):
+ buffer=io.BytesIO()
+ with zipfile.ZipFile(buffer,'w') as z:
+  for name,value in items.items():z.writestr(name,value)
+ return buffer.getvalue()
+def denied(call):
+ try:call()
+ except (ValueError, KeyError):return
+ raise AssertionError('Unsafe deployment accepted')
+with patch.object(build,'installed_script',return_value=json.dumps([{'id':n} for n in ['uno','domino','durak','checkers','snakes']])):
+ items=dict(build.pwa_runtime_items())
+private={'_worker.js':'private test worker', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
+with tempfile.TemporaryDirectory() as directory:
+ root=Path(directory);public=root/'playroom-pwa.zip';sums=root/'SHA256SUMS'
+ def package(files):
+  public.write_bytes(archive({'pwa/'+k:v for k,v in files.items()}))
+  sums.write_text(hashlib.sha256(public.read_bytes()).hexdigest()+'  playroom-pwa.zip\\n')
+ package(items)
+ result=pages.prepare(public,sums,archive(private),root/'valid')
+ assert result['files']==len(items)+2
+ assert (root/'valid/_worker.js').read_text()==private['_worker.js']
+ denied(lambda:pages.prepare(public,sums,archive(private),root/'valid'))
+ sums.write_text('0'*64+'  playroom-pwa.zip\\n')
+ denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
+ package(dict(items,**{'../escape':'bad'}))
+ denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
+ package(dict(items,**{'_worker.js':'leaked wrapper'}))
+ denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
+ asset=next(n for n in items if n.endswith('.js') and n!='sw.js')
+ package(dict(items,**{asset:b'corrupted'}))
+ denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
+ package(items)
+ for exclusion in ['/*','/index.html','/sw.js','/app/*']:
+  unsafe=dict(private,**{'_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':[exclusion]})})
+  denied(lambda:pages.prepare(public,sums,archive(unsafe),root/'bad'))
+for environment,status in [('preview','success'),('production','failure')]:
+ client=object.__new__(pages.Pages);calls=[]
+ def api(method='GET',suffix=''):
+  calls.append(method);return {'environment':environment,'latest_stage':{'status':status}}
+ client.api=api
+ denied(lambda:client.rollback('12345678-1234-1234-1234-123456789abc'))
+ assert calls==['GET']
+`],{cwd:root,stdio:'pipe'});
+});
+
 test('active worker rejects stale network assets and limits offline fallback and cleanup to its shell',async()=>{
  const vm=require('node:vm'),crypto=require('node:crypto'),listeners={},deleted=[];
  const expected='new stylesheet',hash=crypto.createHash('sha256').update(expected).digest('hex');
  const source=fs.readFileSync(path.join(root,'sw.js'),'utf8').replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/styles.css':hash})};`);
+ const currentCache=source.match(/const CACHE='([^']+)'/)[1];
  let network='old stylesheet',navigation=false,claimed=false;
  const cache={match:async key=>key==='./index.html'?new Response('current offline document'):undefined,put:async()=>{}};
  const self={location:{href:'https://example.test/game/sw.js',origin:'https://example.test'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{claim:async()=>{claimed=true;}}};
  vm.runInNewContext(source,{self,URL,Response,Uint8Array,crypto:crypto.webcrypto,
   fetch:async()=>{if(navigation)throw Error('offline');return new Response(network,{headers:{'content-type':'text/css'}});},
-  caches:{open:async name=>{assert.equal(name,'playroom-pwa-v0.15.0');return cache;},match:()=>{throw Error('must not search another build cache');},keys:async()=>['playroom-pwa-v0.14.0','playroom-pwa-v0.15.0','other-app'],delete:async key=>deleted.push(key)}});
+  caches:{open:async name=>{assert.equal(name,currentCache);return cache;},match:()=>{throw Error('must not search another build cache');},keys:async()=>['playroom-pwa-v0.14.0',currentCache,'other-app'],delete:async key=>deleted.push(key)}});
  let result;
  const request={method:'GET',url:'https://example.test/game/app/styles.css',mode:'cors'};
  listeners.fetch({request,respondWith:p=>result=p});assert.equal((await result).type,'error');

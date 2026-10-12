@@ -275,6 +275,22 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal((await state(page)).data.hands[1].length, 2, 'Restored declaration neutralizes a late accusation');
     });
 
+    await check('Declaring the last card against three bots never penalizes the declaring player', async open => {
+      const saved=fixture({counts:[2,2,2,2],mode:'solo'}),{page}=await open(saved);
+      await resume(page);await play(page,saved.states[0].data.hands[0][0].id,1);
+      assert.equal((await state(page)).data.hands[0].length,1);
+      await (await action(page,'declare-uno')).tap();
+      await page.waitForFunction(()=>{
+        const s=TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current;
+        return s.move>=5&&s.turn===0;
+      });
+      const current=await state(page);
+      assert.equal(current.data.uno.declared[0],true);
+      assert.equal(current.data.hands[0].length,1);
+      assert(!current.events.some(e=>e.player===0&&e.kind==='draw'),'Declaration must not draw penalty cards');
+      assert(current.events.some(e=>e.player===0&&e.kind==='uno'));
+    });
+
     await check('Bots declare and catch through reactions even while it is the human normal turn', async open => {
       for (const pending of [1, 0]) {
         const saved = fixture({counts: pending === 1 ? [2, 1] : [1, 2], mode: 'solo', turn: 0, pending}), {page} = await open(saved);

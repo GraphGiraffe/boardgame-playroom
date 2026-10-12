@@ -1,4 +1,4 @@
-# Сетевое взаимодействие 0.15
+# Сетевое взаимодействие · кандидат 0.16
 
 [Индекс](DEVELOPER-INDEX.md) · [pairing](DEVELOPER-PAIRING.md) · [durable storage](LAN-01-SESSION-STORE.md)
 
@@ -22,7 +22,7 @@ Snapshot/history содержат game, packVersion, sessionId, authorityEpoch, 
 
 - NetworkSessionStore хранит хостовый журнал, комнату, точную версию пака, receipts и приватные данные восстановления. Web Lock не допускает двух активных владельцев записи в одном origin.
 - ClientHistory хранит только разрешённые кадры в `playroom.network-client-history.v1`; ключ включает комнату, участника и Session. Последовательные матчи не смешиваются.
-- При подключении backfillClientHistory запрашивает history по ревизиям и проверяет Session, viewer, игру и версию. Разрыв прерывает догрузку; полученные кадры остаются, следующая попытка выполняется при новом подключении. Отдельные received/presented/reviewed cursors ещё не реализованы.
+- При подключении и восстановлении ClientHistory.backfill запрашивает только отсутствующие ревизии и проверяет Session, epoch, viewer, игру и версию. Смена канала прерывает догрузку, включая проверку после ответа RPC. receivedRevision отражает непрерывно сохранённый диапазон; presentedRevision — максимальную показанную live-позицию; reviewedRevision — выбранный исторический кадр. Последние два поля записываются после сохранения кадра, старые записи без полей читаются без миграции базы.
 - ResumeStore хранит приватное право вернуться на прежнее место. Токен выдаётся после RTC, проверяется и ротируется; он не входит в QR/публичный snapshot. Старый канал не сохраняет право управления после замены lease.
 - После полного перезапуска хоста можно восстановить сохранение на том же origin, но требуется заново установить WebRTC. Автоматического rendezvous/ICE restart без нового обмена приглашениями нет.
 
@@ -37,3 +37,9 @@ Snapshot/history содержат game, packVersion, sessionId, authorityEpoch, 
 Проверять по отдельности: обмен Offer/Answer → ICE/DataChannel → RPC → права viewer → legalActions → durable commit/ACK → клиентский pending → UI. HTTPS Pages только раздаёт приложение. Работа PR3 в одной LAN не гарантирует PR2/Auto, VPN, NAT или фоновые ограничения телефона.
 
 Тесты: network-main-app, network-resume, network-reconnect-browser, network-host-recovery-browser, network-client-history(-browser), network-next-match и network-store-integrity в `tests/`. Остатки LAN-02/03, квоты пауз, часы и будущий сервис перечислены в [Roadmap](ROADMAP.md).
+
+## Recovery в 0.16
+
+Recovery проверяет snapshot каждые 5 секунд в видимой вкладке и после visibilitychange. RPC сериализованы; ответ от прежнего поколения канала не включает ввод. Disconnected даёт 10 секунд на восстановление, затем предлагается новое приглашение; failed/closed предлагают его сразу. Ответ сверяется по Session, authorityEpoch, viewer, game и packVersion; pending повторяется с прежним commandId и подтверждается receipt. До сверки ввод закрыт. Новая сессия/роль не наследует pending старого места.
+
+При восстановлении Shared.mount.syncLive прекращает старые эффекты и показывает latest; открытая historyIndex сохраняется отдельно. Клиентский отчёт содержит состояния, timestamp, коды ошибок и типы ICE candidates без адресов, SDP или приватных прав. Браузерные тесты не заменяют матрицу физических устройств/сетей.

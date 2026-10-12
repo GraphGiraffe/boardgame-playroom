@@ -37,3 +37,12 @@ test('two failed deliveries expose retry state and manual retry keeps the origin
  const client=new Client({snapshot:a.snapshot,subscribe:a.subscribe,async dispatch(c){calls.push(c);if(fail)throw Error('connection timeout');return a.dispatch(c);}});
  try{await client.refresh();await assert.rejects(client.send({type:'increment'}),/timeout/);assert.equal(calls.length,2);assert(client.pending);assert.match(client.deliveryError,/timeout/);fail=false;assert((await client.retry()).ok);assert.equal(client.pending,null);assert.equal(client.deliveryError,null);assert.deepEqual(calls[0],calls[2]);assert.equal(authority.revision,1);}finally{client.close();authority.dispose();}
 });
+
+test('recovery reconciles a lost ACK with the original command and never plays it twice',async()=>{
+ const {authority,a}=make();let disconnected=true;const calls=[];
+ const client=new Client({snapshot:a.snapshot,async dispatch(c){calls.push(c.commandId);const result=await a.dispatch(c);if(disconnected)throw Error('ACK lost');return result;}});
+ try{await client.refresh();await assert.rejects(client.send({type:'increment'}));assert.equal(authority.revision,1);
+  disconnected=false;await client.reconcile(a.snapshot());assert.equal(authority.revision,1);assert.equal(new Set(calls).size,1);assert.equal(client.pending,null);
+  await assert.rejects(client.reconcile({...a.snapshot(),viewer:9}),/изменилось/);
+ }finally{client.close();authority.dispose();}
+});

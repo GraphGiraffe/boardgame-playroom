@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Manually deploy an immutable release to an existing protected Pages project."""
+import argparse
+import base64
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath
+import re
+import subprocess
+import tempfile
+import urllib.error
+import urllib.request
+from zipfile import ZipFile
+
+ROOT = Path(__file__).resolve().parents[1]
+WRANGLER = 'wrangler@4.149.0'
+PRIVATE = {'_worker.js', '_routes.json', 'manifest.webmanifest'}
+
+
+def required(name):
+    value = os.environ.get(name, '')
+    if not value:
+        raise ValueError(f'Missing protected configuration: {name}')
+    return value
+
+
+def archive_files(path):
+    with ZipFile(path) as archive:
+        infos = [i for i in archive.infolist() if not i.is_dir()]
+        if len(infos) > 300 or sum(i.file_size for i in infos) > 64 * 1024 * 1024:
+            raise ValueError('Archive exceeds deployment limits')
+        files = {}
+        for info in infos:
+            name = info.filename
+            if (not name or name.startswith('/') or '..' in PurePosixPath(name).parts
+                    or '\\' in name or name in files or (info.external_attr >> 16) & 0o170000 == 0o120000):
+                raise ValueError('Unsafe or duplicate archive path')
+            files[name] = archive.read(info)
+        return files
+
+
+def prepare(public, sums, wrapper, destination):
+    matches = re.findall(r'^([a-f0-9]{64})\s+\*?playroom-pwa\.zip$', Path(sums).read_text(), re.M)
+    if len(matches) != 1 or hashlib.sha256(Path(public).read_bytes()).hexdigest() != matches[0]:
+        raise ValueError('Release checksum mismatch')
+    raw = archive_files(public)
+    indexes = [n for n in raw if n == 'index.html' or n.endswith('/index.html')]
+    if len(indexes) != 1:
+        raise ValueError('Expected one PWA root')
+    prefix = indexes[0][:-len('index.html')]
+    if any(not n.startswith(prefix) for n in raw):
+        raise ValueError('Files outside PWA root')
+    files = {n[len(prefix):]: b for n, b in raw.items()}
+    if {'_worker.js', '_routes.json'} & files.keys():
+        raise ValueError('Private wrapper in public release')
+    worker = files['sw.js'].decode()
+    integrity = json.loads(re.search(r'const INTEGRITY=(.*?);', worker).group(1))
+    for name, digest in integrity.items():
+        if not name.startswith('./') or hashlib.sha256(files[name[2:]]).hexdigest() != digest:
+            raise ValueError('Runtime integrity mismatch')
+    refs = re.findall(r'(?:src|href)="([^"?#]+\.(?:js|css))"', files['index.html'].decode())
+    if not refs or any(not re.search(r'\.[a-f0-9]{16}\.(js|css)$', n) or n not in files or './'+n not in integrity for n in refs):
+        raise ValueError('Non-versioned or missing shell assets')
+    for name in refs:
+        if re.sub(r'\.[a-f0-9]{16}(?=\.(js|css)$)', '', name) in files:
+            raise ValueError('Duplicate canonical shell assets')
+    installed = next(files[n].decode() for n in refs if n.startswith('installed-packs.'))
+    if not {'uno', 'domino', 'durak', 'checkers', 'snakes'} <= set(re.findall(r'"id"\s*:\s*"([a-z-]+)"', installed)):
+        raise ValueError('Release must contain all five packs')
+    private = archive_files(io.BytesIO(wrapper))
+    if set(private) != PRIVATE or any(not v for v in private.values()):
+        raise ValueError('Private wrapper must contain exactly worker, routes and manifest')
+    routes = json.loads(private['_routes.json'])
+    if routes.get('version') != 1 or '/*' not in routes.get('include', []):
+        raise ValueError('Wrapper must protect the whole site')
+    # All executable assets must pass through the access worker.
+    import fnmatch
+    if any(fnmatch.fnmatchcase('/'+n, pattern) for n in [*refs, '', 'index.html', 'sw.js'] for pattern in routes.get('exclude', [])):
+        raise ValueError('Executable asset bypasses the access worker')
+    if destination.exists() and any(destination.iterdir()):
+        raise ValueError('Deployment destination must be empty')
+    destination.mkdir(parents=True, exist_ok=True)
+    files.update(private)
+    for name, content in files.items():
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    return {'sha256': matches[0], 'files': len(files), 'runtimeSha256': {n: hashlib.sha256(b).hexdigest() for n,b in files.items() if n not in PRIVATE}}
+
+
+class Pages:
+    def __init__(self):
+        account, project = required('CLOUDFLARE_ACCOUNT_ID'), required('CLOUDFLARE_PAGES_PROJECT')
+        if not re.fullmatch(r'[a-fA-F0-9]{32}', account) or not re.fullmatch(r'[a-z0-9][a-z0-9-]*', project):
+            raise ValueError('Invalid account or project')
+        self.project = project
+        self.base = f'https://api.cloudflare.com/client/v4/accounts/{account}/pages/projects/{project}'
+        self.token = required('CLOUDFLARE_API_TOKEN')
+
+    def api(self, method='GET', suffix=''):
+        request = urllib.request.Request(self.base+suffix, method=method,
+            headers={'Authorization': 'Bearer '+self.token, 'Content-Type': 'application/json'},
+            data=b'{}' if method == 'POST' else None)
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.load(response)
+        except urllib.error.HTTPError as error:
+            raise ValueError(f'Cloudflare request failed: HTTP {error.code}') from None
+        if not data.get('success'):
+            raise ValueError('Cloudflare rejected the operation')
+        return data['result']
+
+    def rollback(self, deployment):
+        if not re.fullmatch(r'[a-f0-9-]{36}', deployment):
+            raise ValueError('Invalid deployment ID')
+        target = self.api(suffix='/deployments/'+deployment)
+        if target.get('environment') != 'production' or target.get('latest_stage', {}).get('status') != 'success':
+            raise ValueError('Rollback requires a successful production deployment')
+        self.api('POST', '/deployments/'+deployment+'/rollback')
+        if self.api().get('canonical_deployment', {}).get('id') != deployment:
+            raise ValueError('Rollback was not confirmed')
+        return target
+
+
+def smoke(url, runtime=None):
+    env = dict(os.environ, PLAYROOM_DEPLOY_URL=url)
+    if runtime:
+        env['PLAYROOM_DEPLOY_DIR'] = str(runtime)
+    subprocess.run(['node', str(ROOT/'scripts/pages-smoke.cjs')], env=env, check=True)
+
+
+def run(args):
+    required('PAGES_SMOKE_PASSWORD')
+    pages = Pages()
+    project = pages.api()
+    production = required('CLOUDFLARE_PRODUCTION_BRANCH')
+    if project.get('production_branch') != production:
+        raise ValueError('Configured production branch differs from existing project')
+    origin = 'https://'+project['subdomain']
+    # Never create projects or infer a destination from a branch or screenshot.
+    expected = required('CLOUDFLARE_PAGES_ORIGIN').rstrip('/')
+    if expected != origin and expected not in ['https://'+d for d in project.get('domains', [])]:
+        raise ValueError('Configured origin does not belong to the existing project')
+    previous = project.get('canonical_deployment', {}).get('id')
+    report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation}
+    if args.operation == 'preflight':
+        private = archive_files(io.BytesIO(base64.b64decode(required('PAGES_PRIVATE_WRAPPER_B64'), validate=True)))
+        if set(private) != PRIVATE:
+            raise ValueError('Invalid private wrapper archive')
+        with tempfile.TemporaryDirectory(prefix='pages-wrapper-') as tmp:
+            worker = Path(tmp)/'_worker.js'
+            worker.write_bytes(private['_worker.js'])
+            subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(worker)], check=True)
+        smoke(expected)
+        report.update(status='preflight-passed', productionBranch=production)
+        return report
+    if args.operation == 'rollback':
+        target = pages.rollback(args.deployment)
+        smoke(target['url']);smoke(expected)
+        report.update(deployment=target['id'], status='rolled-back')
+        return report
+    if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-rc\.\d+)?', args.release or ''):
+        raise ValueError('Expected an immutable release tag')
+    if not previous:
+        raise ValueError('Existing production deployment required for rollback')
+    repo = required('GITHUB_REPOSITORY')
+    with tempfile.TemporaryDirectory(prefix='playroom-pages-') as tmp:
+        tmp = Path(tmp)
+        release = json.loads(subprocess.check_output(['gh', 'release', 'view', args.release, '--repo', repo, '--json', 'tagName,isDraft,targetCommitish']))
+        if release['isDraft'] or release['tagName'] != args.release:
+            raise ValueError('Release must already be published')
+        subprocess.run(['gh', 'release', 'download', args.release, '--repo', repo, '--pattern', 'playroom-pwa.zip', '--pattern', 'SHA256SUMS', '--dir', str(tmp)], check=True)
+        digest = prepare(tmp/'playroom-pwa.zip', tmp/'SHA256SUMS', base64.b64decode(required('PAGES_PRIVATE_WRAPPER_B64'), validate=True), tmp/'site')
+        subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(tmp/'site/_worker.js')], check=True)
+        sha = subprocess.check_output(['git', 'rev-list', '-n', '1', args.release], text=True).strip()
+        if not re.fullmatch(r'[a-f0-9]{40}', sha):
+            raise ValueError('Release tag does not resolve to a commit')
+        report.update(release=args.release, commit=sha, sha256=digest['sha256'])
+        run_id = required('GITHUB_RUN_ID')
+        preview_branch = 'verify-'+run_id
+        if preview_branch == production:
+            raise ValueError('Preview branch equals production branch')
+        def upload(branch):
+            subprocess.run(['npx', '--yes', WRANGLER, 'pages', 'deploy', str(tmp/'site'), '--project-name', pages.project,
+                '--branch', branch, '--commit-hash', sha, '--commit-message', args.release+' '+run_id], check=True)
+            deployments = pages.api(suffix='/deployments')
+            matches = [d for d in deployments if d.get('deployment_trigger', {}).get('metadata', {}).get('branch') == branch and
+                d.get('deployment_trigger', {}).get('metadata', {}).get('commit_hash') == sha]
+            if not matches:
+                raise ValueError('Uploaded deployment not found')
+            return max(matches, key=lambda d:d.get('created_on',''))
+        preview = upload(preview_branch)
+        if preview.get('environment') != 'preview':
+            raise ValueError('Expected preview deployment')
+        smoke(preview['url'], tmp/'site')
+        report['previewDeployment'] = preview['id']
+        if pages.api().get('canonical_deployment', {}).get('id') != previous:
+            raise ValueError('Production changed during preview; retry explicitly')
+        try:
+            deployed = upload(production)
+            if deployed.get('environment') != 'production':
+                raise ValueError('Expected production deployment')
+            smoke(deployed['url'], tmp/'site');smoke(expected, tmp/'site')
+            if pages.api().get('canonical_deployment', {}).get('id') != deployed['id']:
+                raise ValueError('Production deployment was not confirmed')
+            report.update(deployment=deployed['id'], status='published')
+        except Exception:
+            pages.rollback(previous)
+            print('Production verification failed; previous deployment restored.')
+            raise
+    return report
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('operation', choices=['deploy', 'rollback', 'preflight'])
+    parser.add_argument('--release')
+    parser.add_argument('--deployment')
+    parser.add_argument('--report', type=Path, default=Path('deploy-report.json'))
+    args = parser.parse_args()
+    try:
+        report = run(args)
+        args.report.write_text(json.dumps(report, indent=2)+'\n')
+        print(json.dumps(report))
+    except Exception as error:
+        # Never print raw provider responses, command environment or auth material.
+        print('Deployment failed: '+(str(error) if isinstance(error, ValueError) else type(error).__name__))
+        raise SystemExit(1)
