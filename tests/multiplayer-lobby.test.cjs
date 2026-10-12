@@ -220,7 +220,7 @@ test('single table slot accepts any network participant and drag swaps preserve 
  state=rooms.moveParticipant(room.id,'host','host','table');assert.equal(state.seats[0].participantId,'guest');assert.equal(state.participants.find(p=>p.id==='host').role,'table');assert.equal(state.participants.length,2);
  state=rooms.claimSeat(room.id,'host','seat-2');assert.equal(state.participants.filter(p=>p.role==='table').length,0);assert.equal(state.hostMode,'player');
  const connection=rooms.connection(room.id);const joined=connection.dispatch({type:'join',id:'remote',nickname:'Тео'});const table=connection.dispatch({type:'claim-table'});assert.equal(table.snapshot.room.participants.find(p=>p.id===joined.snapshot.participantId).role,'table');
- rooms.claimSeat(room.id,joined.snapshot.participantId,'seat-3');rooms.becomeSpectator(room.id,'host');state=rooms.configure(room.id,'host',{transportMode:'hotseat'});assert.equal(state.participants.find(p=>p.id==='host').role,'player');assert.throws(()=>rooms.claimTable(room.id,'host'),/Online/);
+ rooms.claimSeat(room.id,joined.snapshot.participantId,'seat-3');rooms.becomeSpectator(room.id,'host');state=rooms.configure(room.id,'host',{transportMode:'hotseat'});assert.equal(state.participants.find(p=>p.id==='host').role,'player');assert.throws(()=>rooms.claimTable(room.id,'host'),/сетевой игре/);
 });
 
 test('local seat rename and cold lobby restore preserve identities, positions, options and bot readiness',()=>{
@@ -238,7 +238,7 @@ test('local seat rename and cold lobby restore preserve identities, positions, o
   assert.deepEqual(restored.seats,state.seats);assert.deepEqual(restored.rules,state.rules);assert.equal(restored.firstParticipantId,state.firstParticipantId);
   assert.deepEqual(restored.participants.map(p=>[p.id,p.nickname,p.bot,p.seatId]),state.participants.map(p=>[p.id,p.nickname,p.bot,p.seatId]));
   assert.equal(restored.participants.every(p=>p.ready===!!p.bot),true);
-  assert.throws(()=>service().restoreHotSeatLobby(state,{hostId:'other'}),/Offline/);
+  assert.throws(()=>service().restoreHotSeatLobby(state,{hostId:'other'}),/локального лобби/);
 });
 
 test('recovery lobby reserves stable seats, drops old observers and requires explicit replacement consent',()=>{

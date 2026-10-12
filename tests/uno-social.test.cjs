@@ -221,7 +221,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     });
 
     for (const [name, options, target] of [
-      ['Late accusation after its window', {counts: [1, 2], turn: 1}, 0],
+      ['Accusation with two cards', {counts: [2, 2], turn: 1}, 0],
       ['Wrong opponent while another player has an open window', {counts: [1, 2, 2], turn: 1, pending: 0}, 2]
     ]) await check(`${name} gives two cards to the accuser`, async open => {
       const saved = fixture(options), {page} = await open(saved);
@@ -241,13 +241,13 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await (await action(other.page,'declare-uno')).click();assert.equal((await state(other.page)).move,1);
     });
 
-    await check('The next normal action closes the accusation window, even if it is only a draw', async open => {
+    await check('Another player drawing preserves the original accusation window', async open => {
       const saved = fixture({counts: [1, 2], turn: 1, pending: 0}), {page} = await open(saved);
       await resume(page); await page.waitForTimeout(1100); await (await action(page, 'draw')).click(); await moved(page, 1);
-      assert.equal((await state(page)).data.uno.pending, null);
+      assert.equal((await state(page)).data.uno.pending, 0);
       await accuse(page, 0); await moved(page, 2);
       const after = await state(page);
-      assert.equal(after.data.hands[0].length, 1); assert.equal(after.data.hands[1].length, 5);
+      assert.equal(after.data.hands[0].length, 3); assert.equal(after.data.hands[1].length, 3);
       assert.equal(after.turn, 1);
     });
 

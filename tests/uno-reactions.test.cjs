@@ -61,22 +61,25 @@ test('accusations arriving after a declaration are neutral even with fresh comma
   const s=declare(play(fixture(),0,'u1'),0);assert.equal(accuse(s,1,0),s);assert.equal(s.data.hands[1].length,2);assert.equal(s.data.uno.declared[0],true);
 });
 
-test('wrong count or wrong player penalizes only the first accuser in one episode',()=>{
-  let s=accuse(fixture(),1,0);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[0].length,2);assert.match(s.events.at(-2).text,/2 карт/);
-  s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});s=accuse(s,1,2);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[2].length,1);assert.equal(s.data.uno.pending,0);assert.match(s.events.at(-2).text,/P0/);
-  const penalized=s;s=accuse(s,2,0);assert.notEqual(s,penalized);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[2].length,1);assert.equal(accuse(s,1,0),s);
+test('wrong count is penalized once, while several one-card players are independent',()=>{
+  let s=accuse(fixture(),1,0);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[0].length,2);
+  assert.equal(accuse(s,1,0),s);
+  s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});
+  s=accuse(s,1,2);assert.equal(s.data.hands[2].length,3);assert.equal(s.data.hands[1].length,2);
+  s=accuse(s,1,0);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);
+  assert.equal(accuse(s,2,0),s);assert.equal(accuse(s,0,2),s);
 });
-
-test('the next normal draw closes the window; a late accusation retains the drawn-card restriction',()=>{
-  let s=play(fixture(),0,'u1');s=act(s,1,{type:'draw'});const drawn=s.data.drawn;assert(drawn);assert.equal(s.data.uno.pending,null);
-  s=accuse(s,1,0);assert.equal(s.data.hands[1].length,5);assert.equal(s.data.hands[0].length,1);assert.equal(s.data.drawn,drawn);assert.equal(s.turn,1);assert.match(s.events.at(-2).text,/окно обвинения уже закрыто/);
+test('another player drawing preserves the accusation and drawn-card restriction',()=>{
+  let s=play(fixture(),0,'u1');s=act(s,1,{type:'draw'});const drawn=s.data.drawn;assert(drawn);
+  s=accuse(s,1,0);assert.equal(s.data.hands[1].length,3);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.drawn,drawn);assert.equal(s.turn,1);
   assert(normal(s).every(a=>a.type==='pass'||a.card===drawn));assert(!normal(s).some(a=>a.type==='draw'));E.validateState(s);
 });
-
-test('next normal play replaces the old window; pass closes a pending window',()=>{
-  let s=play(fixture([['u1','u3'],['u5','u7'],['u26','u28']]),0,'u1');s=play(s,1,'u5');assert.equal(s.data.uno.pending,1);
-  s=accuse(s,2,0);assert.equal(s.data.hands[2].length,4);assert.equal(s.data.uno.pending,1);
-  s=fixture([['u1'],['u5','u7']],{pending:0,turn:1});s.data.drawn='u7';s=act(s,1,{type:'pass'});assert.equal(s.data.uno.pending,null);assert.equal(s.turn,0);
+test('ordinary play and pass preserve other players open situations',()=>{
+  let s=play(fixture([['u1','u3'],['u5','u7'],['u26','u28']]),0,'u1');s=play(s,1,'u5');
+  assert.deepEqual(s.data.uno.situations.map(w=>w.open),[true,true,false]);
+  const second=E.reactions(s,2).find(a=>a.target===1),first=E.reactions(s,2).find(a=>a.target===0);
+  s=act(s,2,first);s=act(s,2,second);assert.deepEqual(s.data.hands.map(h=>h.length),[3,3,2]);assert.equal(act(s,2,first),s);
+  s=fixture([['u1'],['u5','u7']],{pending:0,turn:1});s.data.drawn='u7';s=act(s,1,{type:'pass'});assert.equal(s.data.uno.pending,0);assert.equal(s.turn,0);
 });
 
 test('unrelated declarations leave the pending player catchable; repeated catches stay neutral',()=>{
@@ -231,4 +234,21 @@ test('accusations against different targets are independent; duplicates share on
   s=accuse(s,0,2);assert.equal(s.data.hands[0].length,6);
   s=accuse(s,0,3);assert.equal(s.data.hands[0].length,8);
   assert.deepEqual(s.data.uno.penalties,[1,2,3]);
+});
+
+test('simultaneous human windows have independent clocks and accept target-scoped reactions across revisions',()=>{
+  const {clock,authority,clients,send}=onlineFixture({bots:[false,false,false]});
+  try{
+    send(0,'play');clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(1000);
+    send(1,'play');assert.equal(clients[2].snapshot().reactionWindows.length,2);
+    const secondSnapshot=clients[1].snapshot();assert.equal(secondSnapshot.reactionWindow.owner,1);
+    clients[1].presentationReady(Protocol.presentationReady(secondSnapshot));
+    const snapshot=clients[2].snapshot();
+    const second=Protocol.command(snapshot,snapshot.actions.find(a=>a.type==='accuse-uno'&&a.target===1),'second-target');
+    clock.advance(999);assert.equal(send(2,'accuse-uno',1).ignored,true);
+    assert.equal(send(2,'accuse-uno',0).ok,true);assert.equal(clients[2].snapshot().reactionWindows.length,1);
+    clock.advance(1);assert.equal(clients[2].dispatch(second).ok,true);
+    assert.deepEqual(authority.connect(0).snapshot().state.data.hands[0].length,3);
+    const revision=authority.revision;assert.equal(clients[2].dispatch(second).duplicate,true);assert.equal(authority.revision,revision);
+  }finally{authority.dispose();}
 });

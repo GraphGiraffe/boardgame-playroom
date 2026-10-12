@@ -101,6 +101,7 @@
     noticeElement.innerHTML=`<span>${esc(message)}</span><button class="icon-btn" data-command="dismiss-notice" aria-label="Закрыть сообщение" title="Закрыть сообщение">${icon('close')}</button>`;noticeElement.classList.add('show');noticeElement.setAttribute('role','alert');placeNotice();
     const modal=noticeElement.closest('.modal');if(modal)modal.scrollTop=0;
   }
+  window.addEventListener('playroom-update-ready',()=>toast('Обновление готово. После окончания игры закройте все вкладки ХОД и откройте приложение снова. Сохранённые партии останутся.'));
   function save() {
     if (!session||historyOrigin?.kind==='library') return true;
     try { library.write(session,sessionId); storageOK = true; loadWarning=''; return true; }
@@ -171,7 +172,7 @@
       const count=network?Number(entry.revision)||0:Number(entry.move)||0;
       const summary=network?entry.name:(entry.mode==='pass'?'На одном устройстве':'С ботами')+' · '+(entry.preset||'Основной набор');
       const details=blocked?`<p>${entry.missingPack?'Партия создана с несовместимой версией игры '+esc(entry.packVersion)+'. Можно удалить её с устройства.':'Запись сохранена без изменений.'}</p>`:
-        `<p class="saved-players">${(entry.participants||entry.players?.map(nickname=>({nickname,role:'player',local:!network}))||[]).map(p=>`<span class="saved-participant">${globalThis.TabletopUI.helpers.participantIcon({...p,local:!network&&!p.bot||p.local},{network})}<span class="${network&&(entry.participantId&&p.id===entry.participantId||host&&p.isHost)?'saved-self':''}">${esc(p.nickname||p.name)}</span></span>`).join(' · ')}</p>${summary?`<p class="saved-summary">${esc(summary)}</p>`:''}${entry.result?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>${network&&!host&&entry.savedFrames<entry.revision+1?'<p>Часть истории ещё не загружена</p>':''}`;
+        `<p class="saved-players">${(entry.participants||entry.players?.map(nickname=>({nickname,role:'player',local:!network}))||[]).map(p=>`<span class="saved-participant">${globalThis.TabletopUI.helpers.participantIcon({...p,local:!network&&!p.bot||p.local},{network})}<span class="${(!network&&!p.bot||network&&(entry.participantId&&p.id===entry.participantId||host&&p.isHost||p.local&&!p.bot))?'saved-self':''}">${esc(p.nickname||p.name)}</span></span>`).join(' · ')}</p>${summary?`<p class="saved-summary">${esc(summary)}</p>`:''}${entry.result?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>${network&&!host&&entry.savedFrames<entry.revision+1?'<p>Часть истории ещё не загружена</p>':''}`;
       const history=network?`data-network-history="${esc(id)}"`:`data-history-id="${esc(id)}"`;
       const continuation=network?`data-network-continue="${esc(id)}"`:`data-resume-id="${esc(id)}"`;
       const label=network&&!host?'Присоединиться к партии':'Продолжить партию';
@@ -329,7 +330,7 @@
     if(slider){slider.value=String(replayIndex);$('#replay-range')?.replaceWith(slider);if(focused)slider.focus();}
   }
   function handoffDelay(){
-    const window=session&&E.reactionWindow?.(session.current);
+    const window=session&&E.reactionWindows(session.current).find(w=>w.owner===viewer);
     if(!window||window.owner!==viewer)return 0;
     return Math.max(0,(window.botMs||3000)-(Date.now()-(reactionShownAt?.id===window.id?reactionShownAt.at:Date.now())));
   }
@@ -351,10 +352,11 @@
   }
   function presentationReady(){
     if(!session||isReplay()||transition||paused)return;
-    const window=E.reactionWindow?.(session.current);if(!window)return;
-    if(reactionShownAt?.id!==window.id)reactionShownAt={id:window.id,at:Date.now()};
-    const client=localClient(window.owner),snapshot=client.snapshot();
-    if(client.presentationReady&&Protocol.presentationReady)client.presentationReady(Protocol.presentationReady(snapshot));
+    for(const window of E.reactionWindows(session.current)){
+      if(window.owner===viewer&&reactionShownAt?.id!==window.id)reactionShownAt={id:window.id,at:Date.now()};
+      const client=localClient(window.owner),snapshot=client.snapshot();
+      if(client.presentationReady&&Protocol.presentationReady)client.presentationReady(Protocol.presentationReady(snapshot));
+    }
   }
   function showGate() {
     if($('.handoff'))return;
@@ -599,6 +601,15 @@
     selected=null;historyOpen=true;replayIndex=next.states.length-1;closeModal(true);renderTable();
   }
   function closeHistory(){stopReplay();const origin=restoreHistoryOrigin();historyOpen=false;replayIndex=null;selected=null;setLocalPaused(paused);render();if(origin?.kind==='library')requestAnimationFrame(()=>window.scrollTo(0,origin.scrollY));}
+  function stopLocalMatch(){
+    if(!session||session.current.status!=='playing'||room?.transportMode!=='hotseat'||room.phase!=='playing')return;
+    if(!confirm('Сохранить партию и вернуться в лобби? Её можно будет продолжить из «Моих партий».'))return;
+    interruptAction();cancelBot();stopReplay();
+    if(!save())return;
+    setLocalPaused(true);gate=null;awaitingPass=false;
+    room=roomService.returnToLobby(room.id,lobbyParticipantId,{stopped:true});
+    screen='hub';closeModal(true);renderHub();renderLobby();
+  }
   function rematch(){
     if(!session||session.current.status!=='finished')return;
     const completed=session;if(historyOrigin){restoreHistoryOrigin();historyOpen=false;replayIndex=null;}
@@ -646,6 +657,7 @@
     'lobby-ready':toggleLobbyReady,
     'lobby-spectator':becomeLobbySpectator,
     'lobby-table':()=>{try{room=roomService.claimTable(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(error.message);}},
+    'stop-local-match':stopLocalMatch,
     'lobby-start':startLobbyCountdown,
     'lobby-leave':()=>{if(room?.transportMode==='network'&&room.phase==='playing'&&!confirm('Покинуть комнату? Соединения всех участников будут закрыты. Партия сохранится.'))return;leaveLobby();},
     'close-modal':closeModal,

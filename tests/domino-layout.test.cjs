@@ -66,7 +66,7 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
     }
     if (count <= 14) {
       if (track.querySelectorAll('.domino-tile').length !== 7) errors.push('fixture missing seven hand tiles');
-      if(getComputedStyle(track).overflowX!=='auto')errors.push('hand cannot scroll');
+      if(track.scrollWidth>track.clientWidth+1)errors.push('seven starting tiles require horizontal scroll');
       for (const tile of track.querySelectorAll('.domino-tile')) {
 
         for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'hand half clipped');

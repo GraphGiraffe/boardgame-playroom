@@ -186,7 +186,7 @@ test('owner history freezes the reaction window, resume acknowledges the new con
   const authority=new Authority(seed()),initial=authority.connect(0).snapshot();
   try{
     await page.evaluate(({initial,definition})=>{
-      initial=structuredClone(initial);initial.reactionWindow={id:'qa-window',owner:0,revision:0,humanMs:1000,botMs:3000,fallbackMs:10000,protected:true};
+      initial=structuredClone(initial);delete initial.reactionWindows;initial.reactionWindow={id:'qa-window',owner:0,revision:0,humanMs:1000,botMs:3000,fallbackMs:10000,protected:true};
       window.qaAcks=[];window.qaCommands=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'})};
       window.PlayroomNetworkLibrary={playerMetadata(_session,index){return index===0?{name:'Замена',replacement:{previousName:'Иван'}}:null;}};
       const history={...initial,kind:'history',actions:[],reactionWindow:null},listeners=new Set();

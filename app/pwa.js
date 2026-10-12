@@ -66,8 +66,8 @@
   root.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;root.dispatchEvent(new Event('playroom-install-available'));});
   root.addEventListener('appinstalled',()=>{installPrompt=null;root.dispatchEvent(new Event('playroom-installed'));});
   if('serviceWorker' in navigator&&secure){
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
-    navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);});
+    navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{});
+    navigator.serviceWorker.addEventListener('message',event=>{if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);if(event.data?.kind==='playroom-update-ready')root.dispatchEvent(new CustomEvent('playroom-update-ready',{detail:event.data}));});
   }
   if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>emitPair(tokenFromUrl(params?.targetURL||'')));
   const incoming=tokenFromUrl(location.href);if(incoming){emitPair(incoming);cleanUrl();}

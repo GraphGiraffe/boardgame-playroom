@@ -53,6 +53,16 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           const result={sameBody:body===document.querySelector('.modal-body'),sameFocus:document.activeElement===title,value:title.value,selection:[title.selectionStart,title.selectionEnd],scrollStable:Math.abs(body.scrollTop-scroll)<1,headerStable:header.getBoundingClientRect().top===headTop,bodyBelowHeader:body.getBoundingClientRect().top>=header.getBoundingClientRect().bottom};
           title.value=saved;title.blur();b.roomService.setReady(r.id,'layout-player',false);b.renderLobby();body.scrollTop=0;return result;
         }),{sameBody:true,sameFocus:true,value:'Неоконченный ввод',selection:[3,7],scrollStable:true,headerStable:true,bodyBelowHeader:true});
+        const centers=await lobby.locator('.room-transport').evaluate(node=>{const box=node.getBoundingClientRect();return [...node.querySelectorAll('span')].map(span=>{const r=document.createRange();r.selectNodeContents(span);const b=r.getBoundingClientRect();return Math.abs((b.top+b.bottom-box.top-box.bottom)/2);});});assert(centers.every(delta=>delta<3),'toggle text vertically centered');
+        if(width===320){
+          const control=lobby.locator('[data-room-cycle]').first();await control.scrollIntoViewIfNeeded();
+          const b=await control.boundingBox(),cdp=await context.newCDPSession(page),before=await lobby.locator('.modal-body').evaluate(n=>n.scrollTop);
+          await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+b.width/2,y:b.y+b.height/2}]});
+          for(let i=1;i<=6;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+b.width/2,y:b.y+b.height/2-i*12}]});
+          await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+          await page.waitForFunction(before=>document.querySelector('.modal-body').scrollTop>before+10,before);await cdp.detach();
+          assert.equal(await page.locator('.room-drag-ghost').count(),0);
+        }
         await page.evaluate(()=>{window.dragEvents=[];for(const kind of ['pointerup','pointercancel'])document.addEventListener(kind,e=>dragEvents.push({kind,type:e.pointerType,x:e.clientX,y:e.clientY,drop:document.querySelector('.room-drop-active')?.dataset.roomDrop}),true);});
         const hostId=await page.evaluate(()=>PlayroomAppBridge.room().ownerId);
         const drag=async(from,to)=>{
@@ -121,4 +131,20 @@ test('Finished Offline match restores its saved lobby and starts a separate clea
     const next=await page.evaluate(()=>{const raw=JSON.parse(localStorage.getItem('playroom.session.v1')),s=TabletopSession.restore(TabletopCore,raw);return {id:raw.libraryId,move:s.current.move,status:s.current.status,old:!!localStorage.getItem('playroom.paused.v1.qa-complete')};});
     assert.notEqual(next.id,'qa-complete');assert.equal(next.move,0);assert.equal(next.status,'playing');assert.equal(next.old,true);
   }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('local stop button saves unfinished hotseat party and retains lobby and device participants',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();page.setDefaultTimeout(5000);
+ try{
+  await page.goto(server.url);await page.locator('[data-start=domino]').click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Второй'});b.roomService.updateRules(r.id,r.ownerId,{...r.rules,openHands:true});b.renderLobby();});
+  const original=await page.evaluate(()=>{const r=PlayroomAppBridge.room();return {id:r.id,seats:r.seats,players:r.participants.map(p=>p.nickname),rules:r.rules};});
+  await page.locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();
+  await page.locator('[data-command=room]').click();page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Остановить и сохранить'}).click();
+  const stopped=await page.evaluate(()=>{const r=PlayroomAppBridge.room();return {id:r.id,seats:r.seats,players:r.participants.map(p=>p.nickname),rules:r.rules};});assert.deepEqual(stopped,original);
+  await page.locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-command=sessions]').click();
+  assert.equal(await page.locator('.saved-self').count(),2);assert.equal(await page.locator('.saved-status').first().innerText().then(t=>t.includes('На паузе')),true);
+  const saved=await page.evaluate(()=>TabletopSession.restore(PlayroomEngine,JSON.parse(localStorage.getItem('playroom.session.v1'))).current);assert.equal(saved.status,'playing');assert.equal(saved.winner,null);
+ }finally{await context.close();await browser.close();await server.close();}
 });

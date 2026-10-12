@@ -181,7 +181,7 @@
     }
     restoreHotSeatLobby(value,{hostId,active=false}={}){
       const room=clone(value);
-      if(!room||room.transportMode!=='hotseat'||room.ownerId!==hostId||!Array.isArray(room.seats)||!Array.isArray(room.participants)||!room.participants.some(p=>p.id===hostId&&p.isHost))throw Error('Нет сохранённого лобби Offline.');
+      if(!room||room.transportMode!=='hotseat'||room.ownerId!==hostId||!Array.isArray(room.seats)||!Array.isArray(room.participants)||!room.participants.some(p=>p.id===hostId&&p.isHost))throw Error('Нет сохранённого локального лобби.');
       this._constraints(room.constraints);normalizeRoomName(room.name);
       const ids=new Set(room.participants.map(p=>p.id)),occupied=new Set();
       if(ids.size!==room.participants.length)throw Error('Повреждён состав комнаты.');
@@ -200,7 +200,7 @@
       const p=this._participant(room,participantId),old=room.seats.find(s=>s.participantId===p.id),next=room.seats.find(s=>s.id===seatId);
       if(next?.closed)throw Error('Это место закрыто.');
       if(seatId!==null&&seatId!=='table'&&!next)throw Error('Место не найдено');
-      if(!next&&room.transportMode==='hotseat')throw Error('В Offline доступны только игровые места');
+      if(!next&&room.transportMode==='hotseat')throw Error('В локальной игре доступны только игровые места');
       if(!next&&p.bot)throw Error('Боты занимают только игровые места');
       const oldRole=p.role,other=room.participants.find(person=>seatId==='table'?person.role==='table':person.id===next?.participantId);
       if(other?.bot&&!old)throw Error('Сначала освободите место бота');
@@ -214,7 +214,7 @@
     claimTable(roomId,participantId){
       const room=this._room(roomId);this._lobby(room);const p=this._participant(room,participantId);this._editable(p);
       if(room.recovery&&p.seatId)throw Error('Сохранённое игровое место освобождает хост для замены.');
-      if(room.transportMode==='hotseat')throw Error('Стол доступен только в Online');
+      if(room.transportMode==='hotseat')throw Error('Стол доступен только в сетевой игре');
       if(p.bot)throw Error('Бот не может быть устройством Стола');
       if(room.participants.some(person=>person.role==='table'&&person.id!==p.id))throw Error('Стол уже занят');
       for(const seat of room.seats)if(seat.participantId===p.id)seat.participantId=null;
@@ -264,7 +264,7 @@
     becomeSpectator(roomId,participantId){
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);this._editable(participant);
       if(room.recovery&&participant.seatId)throw Error('Сохранённое игровое место освобождает хост для замены.');
-      if(room.transportMode==='hotseat')throw Error('Зрители доступны только в Online');
+      if(room.transportMode==='hotseat')throw Error('Зрители доступны только в сетевой игре');
       for(const seat of room.seats)if(seat.participantId===participantId)seat.participantId=null;
       participant.seatId=null;participant.role='spectator';participant.ready=false;if(participant.isHost)room.hostMode='table';
       room.lobbyRevision++;this._touch(room);this._emit(room,'became-spectator',participant.nickname+' теперь зритель.',{participantId});

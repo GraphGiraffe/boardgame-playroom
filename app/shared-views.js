@@ -50,10 +50,10 @@
         network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
-        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':s.reactionWindow?.protected?'Ожидаем объявления':turn?`Ходит ${turn.name}`:'Ожидание хода',
+        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?'Ожидаем объявления':turn?`Ходит ${turn.name}`:'Ожидание хода',
         turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:s.state.status==='finished'&&!readOnly,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
-        footerExtra:client.pending?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
+        statusExtra:client.pending&&client.deliveryError?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'rematch',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
       });
       if(historyOpen&&app.querySelector('.network-game .history-panel')){
@@ -127,7 +127,7 @@
     }
     async function openHistory(index=historyCount()){
       if(historyOpen||destroyed)return;
-      const live=client.snapshot,w=live?.reactionWindow;
+      const live=client.snapshot,w=(live?.reactionWindows||[live?.reactionWindow]).find(w=>w?.owner===live?.viewer);
       if(!readOnly&&connected&&!live.paused&&w?.owner===live.viewer){
         if(client.pending)return;
         try{const receipt=await client.send({type:'session-pause',paused:true,expectedControlRevision:live.controlRevision||0});if(!receipt.ok){if(!receipt.ignored)toast(receipt.message);return;}historyPause=client.snapshot.controlRevision;}
@@ -237,7 +237,7 @@
       }
     }
     async function acknowledgePresentation(){
-      const s=shownLive,w=s?.reactionWindow;
+      const s=shownLive,w=(s?.reactionWindows||[s?.reactionWindow]).find(w=>w?.owner===s?.viewer);
       if(!w||s.viewer!==w.owner||historyOpen||dialogOpen||document.hidden||!connected||s.paused||s.revision!==client.snapshot?.revision)return;
       const key=s.sessionId+':'+s.authorityEpoch+':'+w.id+':'+(s.controlRevision||0);
       if(presentedWindow===key)return;
