@@ -15,7 +15,11 @@ async function main(){
  }
  async function get(context,target,headers={}){
   if(new URL(target).origin!==origin)throw Error('Unexpected asset origin');
-  return context.request.get(target,{headers:{...headers,...accessHeaders},maxRedirects:0});
+  for(let attempt=0;;attempt++){
+   const response=await context.request.get(target,{headers:{...headers,...accessHeaders},maxRedirects:0});
+   if(![404,502,503,504].includes(response.status())||attempt===4)return response;
+   await new Promise(resolve=>setTimeout(resolve,2000*(attempt+1)));
+  }
  }
  const tunnel=await originProxy(origin);let browser;
  try{
@@ -33,7 +37,14 @@ async function main(){
    if(['script','stylesheet'].includes(response.request().resourceType()))assetStatuses.push(response.status());
    if(response.request().isNavigationRequest())navigations.push({status:response.status(),auth:target.pathname==='/_auth',cache:response.headers()['cf-cache-status']||null,redirect:response.headers().location?new URL(response.headers().location,response.url()).origin===origin:null});
   });
-  stage='login-page';const landing=await page.goto(url);const field=page.locator('input[name="password"]');
+  stage='login-page';let landing;
+  for(let attempt=0;;attempt++){
+   landing=await page.goto(url);
+   if(![404,502,503,504].includes(landing.status())||attempt===4)break;
+   console.log('Waiting for Pages propagation: HTTP '+landing.status());
+   await page.waitForTimeout(5000*(attempt+1));
+  }
+  const field=page.locator('input[name="password"]');
   console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge)){stage='unprotected-site';throw Error('Application available without authentication');}
   await field.waitFor();
