@@ -15,7 +15,8 @@ async function main(){
    if(new URL(route.request().url()).origin!==origin)return route.abort();
    try{
     // Do not forward credentials through redirects to a different origin.
-    const response=await route.fetch({headers:{...route.request().headers(),...accessHeaders},maxRedirects:0});
+    // headers() omits security headers such as Cookie; preserve browser auth.
+    const response=await route.fetch({headers:{...await route.request().allHeaders(),...accessHeaders},maxRedirects:0});
     await route.fulfill({response});
    }catch(_){await route.abort().catch(()=>{});}
   });
