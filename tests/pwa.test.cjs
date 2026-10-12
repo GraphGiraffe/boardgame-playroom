@@ -41,9 +41,12 @@ test('protected Pages browser authenticates its initial Service Worker script th
  try{
   proxy=await accessProxy('https://127.0.0.1:'+server.address().port,{clientId:'id',clientSecret:'secret',upstreamCA:fs.readFileSync(cert)});
   browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:proxy.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>','--ignore-certificate-errors-spki-list='+proxy.spki]});
-  const page=await browser.newPage();await page.goto('https://127.0.0.1:'+server.address().port+'/');
+  const context=await browser.newContext({ignoreHTTPSErrors:true});
+  const page=await context.newPage();await page.goto('https://127.0.0.1:'+server.address().port+'/');
   await page.waitForFunction(()=>document.body.dataset.worker==='ready');
   assert.ok(seen.some(entry=>entry.path==='/sw.js'&&entry.authorized),'browser must authenticate the Worker script');
+  const checked=await context.request.get('https://127.0.0.1:'+server.address().port+'/sw.js',{headers:{'CF-Access-Client-Id':'id','CF-Access-Client-Secret':'secret'}});
+  assert.equal(checked.status(),200,'API requests must accept the local bridge certificate');
   await assert.rejects(page.goto('https://forbidden.invalid/'));
  }finally{await browser?.close();await proxy?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });

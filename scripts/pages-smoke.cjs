@@ -12,7 +12,9 @@ async function main(){
  if(!!clientId!==!!clientSecret)throw Error('Incomplete Access credentials');
  const accessHeaders=clientId?{'CF-Access-Client-Id':clientId,'CF-Access-Client-Secret':clientSecret}:{};
  async function createContext(){
-  return browser.newContext({playroomProfile:false,extraHTTPHeaders:accessHeaders});
+  // Playwright's APIRequestContext also uses the local bridge certificate,
+  // while the bridge verifies the real Cloudflare certificate upstream.
+  return browser.newContext({playroomProfile:false,extraHTTPHeaders:accessHeaders,ignoreHTTPSErrors:!!clientId});
  }
  async function get(context,target,headers={}){
   if(new URL(target).origin!==origin)throw Error('Unexpected asset origin');
