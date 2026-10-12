@@ -3,6 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {chromium,executablePath}=require('./codex/browser.cjs');
 const {originProxy}=require('./pages-origin-proxy.cjs');
+const {accessProxy}=require('./pages-access-proxy.cjs');
 let stage='configuration';
 async function main(){
  const url=process.env.PLAYROOM_DEPLOY_URL,password=process.env.PAGES_SMOKE_PASSWORD,dir=process.env.PLAYROOM_DEPLOY_DIR;
@@ -21,9 +22,9 @@ async function main(){
    await new Promise(resolve=>setTimeout(resolve,2000*(attempt+1)));
   }
  }
- const tunnel=await originProxy(origin);let browser;
+ const tunnel=clientId?await accessProxy(origin,{clientId,clientSecret}):await originProxy(origin);let browser;
  try{
-  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>']});
+  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>',...(tunnel.spki?['--ignore-certificate-errors-spki-list='+tunnel.spki]:[])]});
   const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[];
   const workerFailures=[],workerResponses=[];
   context.on('response',response=>{if(response.request().serviceWorker()&&new URL(response.url()).origin===origin&&!response.ok())workerResponses.push({status:response.status(),path:new URL(response.url()).pathname.replace(/[^a-zA-Z0-9_./-]/g,'')});});
@@ -94,8 +95,7 @@ async function main(){
   }finally{await anonymous.close();}
   stage='service-worker';
   try{
-   await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration())?.active);
-   stage='service-worker-control';await page.waitForFunction(()=>navigator.serviceWorker.controller);
+   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
   }catch(error){
    const registration=await page.evaluate(async()=>{
     const r=await navigator.serviceWorker.getRegistration();

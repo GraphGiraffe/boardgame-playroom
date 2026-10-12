@@ -21,6 +21,33 @@ test('Pages origin proxy permits one TLS destination and denies other redirect h
  }finally{await proxy.close();await new Promise(resolve=>upstream.close(resolve));}
 });
 
+test('protected Pages browser authenticates its initial Service Worker script through a scoped TLS bridge',{timeout:30000},async()=>{
+ const https=require('node:https'),os=require('node:os'),crypto=require('node:crypto');
+ const {execFileSync}=require('node:child_process'),{accessProxy}=require('../scripts/pages-access-proxy.cjs');
+ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-access-test-'));
+ const key=path.join(directory,'key.pem'),cert=path.join(directory,'cert.pem');
+ execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=127.0.0.1','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
+ const seen=[];
+ const server=https.createServer({key:fs.readFileSync(key),cert:fs.readFileSync(cert)},(request,response)=>{
+  const authorized=request.headers['cf-access-client-id']==='id'&&request.headers['cf-access-client-secret']==='secret';
+  seen.push({path:request.url,authorized});
+  if(!authorized){response.writeHead(302,{location:'/login'}).end();return;}
+  if(request.url==='/sw.js')response.writeHead(200,{'content-type':'application/javascript'}).end("self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));");
+  else response.writeHead(200,{'content-type':'text/html'}).end("<script>navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).then(()=>document.body.dataset.worker='ready')</script><body></body>");
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ let proxy,browser;
+ try{
+  proxy=await accessProxy('https://127.0.0.1:'+server.address().port,{clientId:'id',clientSecret:'secret',upstreamCA:fs.readFileSync(cert)});
+  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:proxy.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>','--ignore-certificate-errors-spki-list='+proxy.spki]});
+  const page=await browser.newPage();await page.goto('https://127.0.0.1:'+server.address().port+'/');
+  await page.waitForFunction(()=>document.body.dataset.worker==='ready');
+  assert.ok(seen.some(entry=>entry.path==='/sw.js'&&entry.authorized),'browser must authenticate the Worker script');
+  await assert.rejects(page.goto('https://forbidden.invalid/'));
+ }finally{await browser?.close();await proxy?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
+});
+
 test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest'),'utf8'));
   assert.equal(manifest.display,'standalone');
