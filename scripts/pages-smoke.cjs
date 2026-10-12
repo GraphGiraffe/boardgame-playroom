@@ -28,7 +28,7 @@ async function main(){
  }
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
  try{
-  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[];
+  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[];
   const network=await context.newCDPSession(page);await network.send('Network.enable');
   network.on('Network.responseReceivedExtraInfo',event=>{
    for(const cookie of event.blockedCookies||[])cookieBlocks.push(...cookie.blockedReasons);
@@ -39,6 +39,7 @@ async function main(){
    if(target.origin!==origin)return;
    if(target.pathname==='/_auth')authStatuses.push(response.status());
    if(['script','stylesheet'].includes(response.request().resourceType()))assetStatuses.push(response.status());
+   if(response.request().isNavigationRequest())navigations.push({status:response.status(),auth:target.pathname==='/_auth',cache:response.headers()['cf-cache-status']||null,redirect:response.headers().location?new URL(response.headers().location,response.url()).origin===origin:null});
   });
   stage='login-page';const landing=await page.goto(url);const field=page.locator('input[name="password"]');
   console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
@@ -48,7 +49,8 @@ async function main(){
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);await page.locator('button[type="submit"]').click();
   try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
-   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:(await context.cookies(url)).length,cookieBlocks}));
+   const cookies=await context.cookies(url),response=await get(context,url,{Cookie:cookies.map(c=>c.name+'='+c.value).join('; '),'Cache-Control':'no-cache'}),html=await response.text();
+   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:cookies.length,hostCookies:cookies.filter(c=>c.name.startsWith('__Host-')).length,cookieBlocks,navigations,direct:{status:response.status(),scripts:(html.match(/<script\b[^>]*\bsrc=/g)||[]).length,cache:response.headers()['cf-cache-status']||null}}));
    throw error;
   }
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
