@@ -337,9 +337,9 @@ function packEnvironment(storage, viewsOverride) {
   return {core, views, catalog, store, manager};
 }
 function installFixture(version = '0.1.0', increment = 1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:1,stateVersion:1},files:{
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:1,viewApi:2,stateVersion:1},files:{
     'rules.js':`(function(root){const E=root.TabletopCore;E.register({id:'install-fixture',name:'Fixture',min:2,max:2,presets:[{id:'standard',label:'Standard'}],create(s){s.data={count:0};},legal(){return[{type:'advance',label:'Advance'}];},apply(s,actor){s.data.count+=${increment};s.turn=1-actor;E.event(s,'Moved',actor);},validateState(s){E.assertState(Number.isInteger(s.data.count)&&s.data.count>=0&&s.data.count%${increment}===0,'fixture');}});})(globalThis);`,
-    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>'<p>'+s.data.count+'</p>',()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
+    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:2,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
     'styles.css':'.fixture { background-image: url("assets/icon.svg"); }',
     'assets/icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1"/></svg>'
   }};
@@ -369,7 +369,7 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   manager.install(manager.prepare(installFixture('0.2.0',10)));
   assert.equal(core.get('install-fixture').version,'0.2.0');assert.equal(catalog['install-fixture'].playerBadge(),'0.2.0');
   oldSession.act(1,{type:'advance'});assert.equal(oldSession.current.data.count,2,'live old session still dispatches its own rules');
-  assert.equal(views.render(oldSession.current,0,[]),'<p>2</p>');
+  assert.equal(views.render(oldSession.current,0,[]),require('../core/ui.js').composeScene({api:2,family:'board',elements:{field:'<p>2</p>'}},{state:oldSession.current,viewer:0,actions:[]}));
   const saved=JSON.parse(oldSession.serialize());assert.equal(Session.packVersionOf(saved),'0.1.0');
   const reopened=Session.restore(core,saved);reopened.act(0,{type:'advance'});assert.equal(reopened.current.data.count,3);
   const fresh=new Session(core,'install-fixture');fresh.act(0,{type:'advance'});assert.equal(fresh.current.data.count,10);
@@ -380,8 +380,8 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   next.manager.activate('install-fixture');assert.equal(next.catalog['install-fixture'].playerBadge(),'0.2.0');
   assert.equal(JSON.parse(next.manager.exportPack('install-fixture','0.1.0')).manifest.version,'0.1.0');
   const collision=packEnvironment(store);collision.manager.bootstrap([installFixture('0.1.0',99),installFixture('0.2.0',10)]);
-  assert.equal(collision.manager.warnings.length,1);assert.match(collision.manager.warnings[0],/install-fixture@0\.1\.0/);
-  const preserved=Session.restore(collision.core,saved);preserved.act(preserved.current.turn,{type:'advance'});assert.equal(preserved.current.data.count,3,'saved release wins a same-version bundled collision');
+  assert.equal(collision.manager.warnings.length,1);assert.equal(collision.manager.quarantined.length,1);
+  assert.throws(()=>Session.restore(collision.core,saved),/несовместимо/);
   const schema=oldSession.export();schema.states[0].packStateVersion=0;assert.throws(()=>Session.restore(core,schema),/Сохранение/);
   const mixed=oldSession.export();mixed.states[1].packVersion='0.2.0';assert.throws(()=>Session.restore(core,mixed),/Сохранение/);
   const missing=oldSession.export();missing.packVersion=missing.options.packVersion='9.0.0';assert.throws(()=>Session.restore(core,missing),e=>e.code==='PACK_VERSION_MISSING'&&e.packVersion==='9.0.0');
@@ -414,8 +414,21 @@ test('removed bundled versions stay removed on restart and explicit reinstallati
   const next=packEnvironment(store);next.manager.bootstrap([old,update]);assert.equal(next.manager.list().length,0);
   next.manager.install(next.manager.prepare(old));assert.equal(next.manager.list().length,1);
   const reboot=packEnvironment(store);reboot.manager.bootstrap([old,update]);assert.deepEqual(reboot.manager.list().map(p=>p.version),['0.1.0']);
-  const broken=packEnvironment({get:()=>'{broken',set:()=>assert.fail('corrupt store must not be overwritten')});
-  assert.throws(()=>broken.manager.bootstrap([old]),/повреждено/);assert.equal(broken.core.GAMES.length,0);
+  let backup;const broken=packEnvironment({get:()=>'{broken',set:value=>{backup=JSON.parse(value);}});
+  broken.manager.bootstrap([old]);assert.equal(broken.core.GAMES.length,1);assert.deepEqual(backup.rawBackups,['{broken']);
   const unavailable=packEnvironment({get:()=>{throw Error('SecurityError');},set:()=>assert.fail('unreadable storage must not be overwritten')});
   unavailable.manager.bootstrap([old]);assert.equal(unavailable.manager.list().length,1);assert.equal(unavailable.manager.warnings.length,1);
+});
+
+test('first actor is deterministic, assigned inside each pack, and never rerolled by restore',()=>{const Session=require('../core/session.js');
+  for(const game of GAMES){for(const mode of ['rules','random','assigned']){
+    const options={players:[{name:'А'},{name:'Б'}],preset:game.presets[0].id,seed:71,firstPlayerMode:mode,firstPlayer:1};
+    const session=new Session(E,game.id,options),state=session.current;
+    assert.deepEqual(state,E.createGame(game.id,options));assert.equal(state.firstPlayer,state.turn);
+    if(mode==='assigned')assert.equal(state.turn,1);
+    if(game.id==='durak'){assert.equal(state.data.attacker,state.turn);assert.equal(state.data.defender,1-state.turn);}
+    if(game.id==='checkers'){assert.equal(state.data.lightPlayer,state.turn);assert.ok(state.data.board.slice(40).filter(Boolean).every(p=>p.owner===state.turn));}
+    E.validateState(state);assert.deepEqual(Session.restore(E,session.export()).current,state);
+  }}
+  assert.throws(()=>E.createGame('uno',{firstPlayerMode:'assigned',firstPlayer:42}));
 });

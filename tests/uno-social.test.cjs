@@ -3,7 +3,8 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 require('../packs/uno/rules.js');
@@ -74,12 +75,26 @@ async function play(page, id, move) {
   await moved(page, move);
 }
 async function accuse(page, target) {
-  await page.locator(`[data-accuse-player="${target}"]`).first().click();
-  const button = await action(page, 'accuse-uno', '.modal', {target});
+  // A human accusation is only actionable after the one-second protected window.
+  await page.waitForTimeout(1100);
+  // GameScreen uses a common two-tap player target, not a legacy modal.
+  const previous = (await state(page)).move;
+  const token = page.locator(`.player-token[data-player-target="${target}"]`);
+  const panel=page.locator(`.player-panel[data-player-index="${target}"]`);
+  await panel.locator(".mini-hand").click();
+  await panel.locator(".mini-hand").click();assert.equal(await page.locator('.player-target-menu').count(),0,'repeated hand tap closes player actions');
+  await panel.locator(".mini-hand").click();
+  assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
+  const button = page.locator('.player-target-menu button');
+  await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
+  assert.equal(await token.getAttribute('aria-expanded'),'true');
+  const box=await button.boundingBox(),card=await panel.boundingBox();assert(box.x>=card.x&&box.y>=card.y&&box.x+box.width<=card.x+card.width+1&&box.y+box.height<=card.y+card.height+1,'player action stays inside its card');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
+  assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
   await button.click();
+  assert.equal(await page.locator('.player-target-menu').count(),0);
   return appearance;
 }
 const ids = hand => hand.map(card => card.id);
@@ -88,8 +103,10 @@ async function visibleHandIds(page) {
 }
 
 test('Manual UNO declarations, accusations and device handoff through the real application', {timeout: 120000}, async t => {
+  const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(path.resolve(__dirname,'..'));
+  const testUrl=fixtureServer?.url||url;
   const browser = await chromium.launch({headless: true,
-    executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
+    executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
   async function open(saved = null) {
     const context = await browser.newContext({viewport: {width: 390, height: 844}, hasTouch: true, isMobile: true});
@@ -101,7 +118,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     }, saved);
     const page = await context.newPage(), errors = [];
     page.setDefaultTimeout(7000); page.on('pageerror', error => errors.push(error.message));
-    await page.goto(url);
+    await page.goto(testUrl);
     return {page, context, errors};
   }
   async function check(name, run) {
@@ -118,15 +135,11 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       for (const mode of ['manual', 'auto']) {
         const {page} = await open();
         await page.locator('[data-start=uno]').click();
-        assert.equal(await page.locator('[name=option-unoMode]').inputValue(), 'manual');
-        await page.locator('[name=option-unoMode]').selectOption(mode);
-        await page.locator('[name=players]').selectOption('3');
-        await page.locator('input[value=pass]').check();
-        await page.locator('[data-rules=uno]').click();
-        await page.locator('.modal [data-command=close-modal]').first().click();
-        assert.equal(await page.locator('[name=option-unoMode]').inputValue(), mode);
-        assert.equal(await page.locator('[name=players]').inputValue(), '3');
-        await page.locator('button[type=submit]').click();
+        await page.locator('[data-command=room-rules]').click();
+        assert.equal(await page.locator('[name=option-unoMode]').inputValue(),'manual');await page.locator('[name=option-unoMode]').selectOption(mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'human',nickname:'Игрок'});b.renderLobby();});
+        await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=option-unoMode]').inputValue(),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-command=lobby-start]').click();
         const saved = await read(page);
         assert.equal(saved.options.unoMode, mode);
         assert.equal(saved.states[0].data.uno.mode, mode);
@@ -144,7 +157,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.deepEqual(after.data.hands.map(ids), saved.states[0].data.hands.map(ids));
       assert.equal(after.turn, 0); assert.equal(after.data.uno.declared[0], false);
       assert.match(after.events.at(-1).text, /UNO/i);
-      assert.equal((await page.locator('.event-latest').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
       assert.equal(await (await action(page, 'declare-uno')).getAttribute('class'), beforeClass);
       await play(page, saved.states[0].data.hands[0][0].id, 2);
       assert.equal((await state(page)).data.hands[0].length, 1);
@@ -177,7 +190,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await resume(page); await play(page, saved.states[0].data.hands[0][0].id, 1);
       assert.equal((await state(page)).data.hands[0].length, 2);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal((await page.locator('[data-command=pass-device]').innerText()).trim(), 'Передать устройство');
+      assert.equal(await page.locator('[data-command=pass-device]').getAttribute('aria-label'), 'Передать ход');
       assert.deepEqual(await visibleHandIds(page), ids(saved.states[0].data.hands[0].slice(1)));
     });
 
@@ -190,7 +203,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal(after.turn, 1); assert.equal(after.data.uno.pending, null);
       assert.equal(after.data.drawPile.length, saved.states[0].data.drawPile.length - 2);
       assert.equal(await page.locator('.modal,.handoff').count(), 0);
-      assert.equal((await page.locator('.event-latest').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
     });
 
     await check('Opponent menu permits a wrong accusation with no correctness hint and penalizes the caller', async open => {
@@ -208,8 +221,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     });
 
     for (const [name, options, target] of [
-      ['Already declared opponent', {counts: [1, 2], turn: 1, declared: [true]}, 0],
-      ['Late accusation after its window', {counts: [1, 2], turn: 1}, 0],
+      ['Accusation with two cards', {counts: [2, 2], turn: 1}, 0],
       ['Wrong opponent while another player has an open window', {counts: [1, 2, 2], turn: 1, pending: 0}, 2]
     ]) await check(`${name} gives two cards to the accuser`, async open => {
       const saved = fixture(options), {page} = await open(saved);
@@ -221,13 +233,21 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal(after.turn, 1);
     });
 
-    await check('The next normal action closes the accusation window, even if it is only a draw', async open => {
+    await check('Repeated declarations and accusations after declared UNO are neutral', async open => {
+      const {page}=await open(fixture({counts:[1,2],turn:1,declared:[true]}));await resume(page);
+      await accuse(page,0);await accuse(page,0);assert.equal((await state(page)).move,0);assert.equal((await state(page)).data.hands[1].length,2);
+      const other=await open(fixture({counts:[1,2],turn:0,pending:0}));await resume(other.page);
+      await (await action(other.page,'declare-uno')).click();await moved(other.page,1);
+      await (await action(other.page,'declare-uno')).click();assert.equal((await state(other.page)).move,1);
+    });
+
+    await check('Another player drawing preserves the original accusation window', async open => {
       const saved = fixture({counts: [1, 2], turn: 1, pending: 0}), {page} = await open(saved);
-      await resume(page); await (await action(page, 'draw')).click(); await moved(page, 1);
-      assert.equal((await state(page)).data.uno.pending, null);
+      await resume(page); await page.waitForTimeout(1100); await (await action(page, 'draw')).click(); await moved(page, 1);
+      assert.equal((await state(page)).data.uno.pending, 0);
       await accuse(page, 0); await moved(page, 2);
       const after = await state(page);
-      assert.equal(after.data.hands[0].length, 1); assert.equal(after.data.hands[1].length, 5);
+      assert.equal(after.data.hands[0].length, 3); assert.equal(after.data.hands[1].length, 3);
       assert.equal(after.turn, 1);
     });
 
@@ -250,8 +270,9 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await page.reload(); await resume(page);
       assert.deepEqual(await read(page), before);
       assert.equal((await state(page)).data.uno.declared[0], true);
-      await accuse(page, 0); await moved(page, 3);
-      assert.equal((await state(page)).data.hands[1].length, 4, 'Restored declaration must reject a later accusation');
+      await accuse(page, 0);
+      assert.equal((await state(page)).move,2,'A late accusation does not append a move');
+      assert.equal((await state(page)).data.hands[1].length, 2, 'Restored declaration neutralizes a late accusation');
     });
 
     await check('Bots declare and catch through reactions even while it is the human normal turn', async open => {
@@ -271,12 +292,12 @@ test('Manual UNO declarations, accusations and device handoff through the real a
         const saved = fixture({unoMode: 'auto'});
         if (legacy) { delete saved.options.unoMode; delete saved.states[0].data.uno; }
         const {page} = await open(saved); await resume(page);
-        assert.equal(await page.locator('[data-accuse-player]').count(), 0);
+        assert.equal(await page.locator('[data-player-target]').count(), 0);
         assert.equal(await page.locator('.scene [data-action]').evaluateAll(nodes =>
           nodes.some(node => JSON.parse(node.dataset.action).type === 'declare-uno')), false);
         await play(page, saved.states[0].data.hands[0][0].id, 1);
         assert((await state(page)).events.some(event => /UNO!/.test(event.text)));
       }
     });
-  } finally { await browser.close(); }
+  } finally { await browser.close(); await fixtureServer?.close(); }
 });

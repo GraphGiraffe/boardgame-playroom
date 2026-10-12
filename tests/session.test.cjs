@@ -252,6 +252,28 @@ test('saved library preserves the active game if archiving or activation runs ou
   }
 });
 
+test('deleting an inactive archive keeps the other two sessions through a fresh Library instance', () => {
+  const Library = require('../app/library.js'), values = new Map();
+  const store = {get length(){return values.size;}, key:i=>[...values.keys()][i],
+    getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+  const library=new Library(()=>store,Core,Session);
+  const first=create({seed:'first'}), second=create({seed:'second'}), third=create({seed:'third'});
+  step(first);
+  library.activate(first,'first');library.activate(second,'second');library.activate(third,'third');
+  library.activate(library.open('second'),'second');
+  assert.deepEqual(library.list().map(record=>record.id).sort(),['first','second','third']);
+  library.remove('first');
+  assert.equal(library.current().id,'second');
+  assert.deepEqual(library.open('second').export(),second.export());
+  assert.deepEqual(library.open('third').export(),third.export());
+  const afterReload=new Library(()=>store,Core,Session);
+  assert.deepEqual(afterReload.list().map(record=>record.id).sort(),['second','third']);
+  assert.deepEqual(afterReload.current().session.export(),second.export());
+  afterReload.remove('second');
+  assert.throws(()=>afterReload.write(second,'second'),'A deleted active game cannot be revived by a stale pagehide');
+  assert.deepEqual(new Library(()=>store,Core,Session).list().map(record=>record.id),['third']);
+});
+
 test('legacy and unreadable saves survive new games; a deleted game cannot resurrect on pagehide', () => {
   const Library = require('../app/library.js'),values=new Map();
   const store={get length(){return values.size;},key:i=>[...values.keys()][i],getItem:key=>values.get(key)??null,
@@ -266,4 +288,22 @@ test('legacy and unreadable saves survive new games; a deleted game cannot resur
   store.setItem('playroom.session.v1','{broken');library.activate(next,'recovered');
   assert(library.list().some(record=>record.invalid),'unreadable data is preserved for explicit removal');
   assert(library.list().some(record=>record.id==='recovered'&&!record.invalid));
+});
+
+
+test('replacement metadata changes future snapshots without rewriting history and restores exactly',()=>{
+  const session=create({players:[{name:'First'},{name:'Old'}]});step(session);const old=session.current;
+  session.setPlayerMetadata(1,{name:'Replacement',bot:false});assert.equal(session.current,old);
+  step(session);assert.equal(session.current.players[1].name,'Replacement');assert.equal(session.states[1].players[1].name,'Old');
+  assert.deepEqual(session.current.playerChanges,[{index:1,name:'Replacement',bot:false}]);
+  step(session);assert.equal(session.current.playerChanges,undefined);
+  for(const compact of [true,false])assert.deepEqual(Session.restore(Core,JSON.parse(session.serialize({compact}))).current,session.current);
+  const bad=session.export();delete bad.states[2].playerChanges;assert.throws(()=>Session.restore(Core,bad));
+  for(const metadata of [{name:''},{name:'x'.repeat(41)},{bot:'yes'},{score:42},{}])assert.throws(()=>session.setPlayerMetadata(1,metadata));
+  assert.throws(()=>session.setPlayerMetadata(-1,{name:'No'}));
+});
+
+test('a prepared move cannot commit after its participant metadata changes',()=>{
+  const session=create(),candidate=session.prepare(0,{type:'advance'});session.setPlayerMetadata(0,{name:'New'});
+  assert.throws(()=>session.commitPrepared(candidate),/current/);assert.equal(session.current.move,0);step(session);assert.equal(session.current.players[0].name,'New');
 });

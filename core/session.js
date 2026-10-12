@@ -2,6 +2,7 @@
   'use strict';
   const clone = value => JSON.parse(JSON.stringify(value));
   const records = new WeakMap();
+  const preparedTransitions = new WeakMap();
   const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -120,22 +121,65 @@
     get createdAt() { return records.get(this).createdAt; }
     get updatedAt() { return records.get(this).updatedAt; }
     get current() { return this.states[this.states.length - 1]; }
-    act(actor, action) {
+    // Room membership is authority-owned. Install the replacement roster before
+    // the next real move, retaining historical players and event attribution.
+    setPlayerMetadata(index, metadata) {
+      if (!Number.isInteger(index) || index < 0 || index >= this.current.players.length || !isRecord(metadata) ||
+          !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot'].includes(key)) ||
+          (metadata.name !== undefined && (typeof metadata.name !== 'string' || !metadata.name.trim() || metadata.name.length > 40)) ||
+          (metadata.bot !== undefined && typeof metadata.bot !== 'boolean')) throw Error('Некорректные данные участника');
       const record = records.get(this);
-      const next = freeze(this.engine.applyAction(this.current, actor, action));
-      // The live state keeps the complete event stream. Older board snapshots
-      // only need their recent events, avoiding quadratic save-file growth.
-      const previous = this.current;
+      record.playerMetadata ||= {};
+      record.playerMetadata[index] = {...record.playerMetadata[index], ...clone(metadata)};
+      record.metadataRevision = (record.metadataRevision || 0) + 1;
+    }
+    // The candidate is not applied to the live session. A network host may
+    // persist it atomically with its command receipt before committing it.
+    prepare(actor, action) {
+      const previous = this.current, record = records.get(this), changes = [];
+      let input = previous;
+      for (const [key, metadata] of Object.entries(record.playerMetadata || {})) {
+        const index = Number(key), player = previous.players[index];
+        if (Object.keys(metadata).some(field => player[field] !== metadata[field])) changes.push({index,...metadata});
+      }
+      if (changes.length) {
+        input = clone(previous);
+        for (const {index,...metadata} of changes) Object.assign(input.players[index], metadata);
+      }
+      let next = this.engine.applyAction(input, actor, action);
+      if (next === input) next = previous;
+      else {
+        if (changes.length) next.playerChanges = changes;
+        else delete next.playerChanges;
+        freeze(next);
+      }
+      preparedTransitions.set(next, {session:this, previous, metadataRevision:record.metadataRevision || 0});
+      return next;
+    }
+    commitPrepared(next) {
+      const prepared = preparedTransitions.get(next);
+      if (!prepared || prepared.session !== this || prepared.previous !== this.current || prepared.metadataRevision !== (records.get(this).metadataRevision || 0))
+        throw new Error('Prepared transition is no longer current');
+      const record = records.get(this),previous = this.current;
+      preparedTransitions.delete(next);
+      if (next === previous) return previous;
+      // Only the live state keeps the complete event journal.
       if (previous.events?.length > 4) {
         const compacted = freeze({...previous, events: previous.events.slice(-4)});
         record.states = Object.freeze([...this.states.slice(0, -1), compacted, next]);
       } else {
         record.states = Object.freeze([...this.states, next]);
       }
-      if (record.saveCache) record.saveCache.states.push(encodeSnapshot(record.saveCache, next));
+      // Serialization is an optimization. A failed cache update must not
+      // invalidate a transition already committed to durable storage.
+      if (record.saveCache) {
+        try { record.saveCache.states.push(encodeSnapshot(record.saveCache, next)); }
+        catch (_) { record.saveCache = null; }
+      }
       record.updatedAt = Math.max(Date.now(), record.updatedAt);
       return next;
     }
+    act(actor, action) { return this.commitPrepared(this.prepare(actor, action)); }
     view(player, index = this.states.length - 1) {
       if (!Number.isInteger(index)) throw new Error('Номер снимка должен быть целым числом');
       const state = this.states[Math.max(0, Math.min(index, this.states.length - 1))];
@@ -182,8 +226,16 @@
           engine.validateState(state);
           if (state.game !== data.game || state.move !== index || state.preset !== initial.preset ||
               state.openHands !== initial.openHands || state.players.length !== initial.players.length ||
-              state.players.some((player, p) => player.name !== initial.players[p].name || player.bot !== initial.players[p].bot) ||
               (index > 0 && data.states[index - 1].status !== 'playing')) throw Error('Invalid timeline');
+          const prior = index ? data.states[index - 1].players : state.players, changes = state.playerChanges || [];
+          if (!Array.isArray(changes) || (!index && changes.length) || new Set(changes.map(change => change?.index)).size !== changes.length ||
+              changes.some(change => !isRecord(change) || !Number.isInteger(change.index) || change.index < 0 || change.index >= state.players.length ||
+                Object.keys(change).some(key => !['index','name','bot'].includes(key)) || Object.keys(change).length < 2 ||
+                (change.name !== undefined && (typeof change.name !== 'string' || !change.name.trim() || change.name.length > 40)) ||
+                (change.bot !== undefined && typeof change.bot !== 'boolean'))) throw Error('Invalid player changes');
+          const expected = prior.map(player => ({name:player.name,bot:player.bot}));
+          for (const {index:player,...metadata} of changes) Object.assign(expected[player], metadata);
+          if (state.players.some((player, p) => player.name !== expected[p].name || player.bot !== expected[p].bot)) throw Error('Undeclared player changes');
         }
         if ((options.preset !== undefined && options.preset !== initial.preset) ||
             Boolean(options.openHands) !== initial.openHands ||

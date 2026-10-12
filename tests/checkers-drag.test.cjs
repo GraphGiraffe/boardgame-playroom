@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/checkers/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
@@ -73,7 +73,7 @@ async function touchDrag(page, cdp, from, to, {hold = false, cancel = false} = {
 }
 
 test('Checkers drag/drop through the real application', {timeout: 120000}, async t => {
-  const browser = await chromium.launch({headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking']});
+  const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: options.mobile ? {width: 390, height: 844} : {width: 1280, height: 900},
@@ -108,6 +108,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     await check('Mouse hold and immediate diagonal movement both commit exactly one move', {}, async ({page, saved}) => {
       let expected = saved.states[0];
       for (const hold of [true, false]) {
+        if(expected.move>0)await page.locator('[data-command=pass-device]:not(:disabled)').click();
         const action = Core.legalActions(expected)[0]; await mouseDrag(page, action.from, action.to, {hold});
         expected = Core.applyAction(expected, expected.turn, action); await expectMove(page, expected.move);
         assert.deepEqual((await state(page)).data, expected.data);

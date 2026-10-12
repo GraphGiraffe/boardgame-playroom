@@ -126,19 +126,32 @@
       if (s.scrollAxis === 'y') s.track.scrollTop = s.scrollTop + s.startY - s.y;
       else s.track.scrollLeft = s.scrollLeft + s.startX - s.x;
     }
+    function scrollContainers(target) {
+      const panel=target?.closest?.('.layout-self'),hand=target?.closest?.('.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]');
+      const found={x:null,y:null};
+      for(let node=hand||panel;node;node=panel&&node!==panel?node.parentElement:null){
+        const style=root.getComputedStyle(node);
+        if(!found.x&&node.scrollWidth>node.clientWidth+1&&['auto','scroll'].includes(style.overflowX))found.x=node;
+        if(!found.y&&node.scrollHeight>node.clientHeight+1&&['auto','scroll'].includes(style.overflowY))found.y=node;
+      }
+      return {hand,panel,...found};
+    }
     function pointerDown(event) {
       // A new physical interaction must never inherit click suppression from
       // the previous drag, even when it follows immediately on a touch screen.
       suppress = null;
       if (active) { cancel(); suppress = null; return; }
       if (disposed || event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
-      const source = sourceAt(event.target);
-      if (!usable(source) || !canStart(source) || (event.pointerType === 'mouse' && !source.hasAttribute('data-drag-piece'))) return;
-      const track = source.closest('.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]');
-      const trackStyle = track ? root.getComputedStyle(track) : null;
-      const scrollableX = !!track && track.scrollWidth > track.clientWidth + 1 && ['auto','scroll'].includes(trackStyle.overflowX);
-      const scrollableY = !!track && track.scrollHeight > track.clientHeight + 1 && ['auto','scroll'].includes(trackStyle.overflowY);
-      const s = { source, drag: source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollableX, scrollableY, scrollAxis: null, scrollLeft: track?.scrollLeft || 0, scrollTop: track?.scrollTop || 0, timer: 0, ghost: null, hover: null };
+      const actionSource = sourceAt(event.target);
+      const scroll = scrollContainers(event.target),track=scroll.hand;
+      const source = actionSource || track || scroll.panel;
+      if (!source || source.closest('[inert]')) return;
+      const actionable = usable(actionSource) && canStart(actionSource);
+      const scrollOnly = !actionable;
+      if (event.pointerType === 'mouse' && (!actionable || !source.hasAttribute('data-drag-piece'))) return;
+      const scrollableX = !!scroll.x, scrollableY = !!scroll.y;
+      if (scrollOnly && !scrollableX && !scrollableY) return;
+      const s = { source, scrollOnly, drag: actionable && source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollX:scroll.x, scrollY:scroll.y, scrollableX, scrollableY, scrollAxis: null, scrollLeft: scroll.x?.scrollLeft || 0, scrollTop: scroll.y?.scrollTop || 0, timer: 0, ghost: null, hover: null };
       active = s;
       // Touch Events stay bound to their original touchstart node even after
       // pointer capture moves to <html>. select() may detach that node; keep
@@ -155,16 +168,17 @@
     }
     function pointerMove(event) {
       const s = active;
+      if(!s&&event.pointerType==='mouse'){previewDown({target:event.target,isPrimary:event.isPrimary,pointerType:'mouse',button:0});return;}
       if (!s || event.pointerId !== s.id) return;
       s.x = event.clientX; s.y = event.clientY;
       const dx = s.x - s.startX, dy = s.y - s.startY;
       if (s.phase === 'pending') {
         if (!s.touch && Math.hypot(dx, dy) >= 5) beginDrag(s);
         else if (s.touch && s.scrollableY && Math.abs(dy) > 7 && Math.abs(dy) > Math.abs(dx) * 1.1) {
-          s.phase = 'scrolling'; s.scrollAxis = 'y'; clearTimeout(s.timer); takeCapture(s);
+          s.phase = 'scrolling'; s.scrollAxis = 'y'; s.track=s.scrollY; clearTimeout(s.timer); clearPreview(); takeCapture(s);
         } else if (s.touch && (s.scrollableX || !s.drag) && Math.abs(dx) > 7 && Math.abs(dx) > Math.abs(dy) * 1.1) {
-          s.phase = 'scrolling'; s.scrollAxis = 'x'; clearTimeout(s.timer); takeCapture(s);
-        } else if (s.touch && ((!s.scrollableX && !s.scrollableY && Math.hypot(dx,dy)>10) || (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) * 1.1))) {
+          s.phase = 'scrolling'; s.scrollAxis = 'x'; s.track=s.scrollX; clearTimeout(s.timer); clearPreview(); takeCapture(s);
+        } else if (s.touch && !s.scrollOnly && ((!s.scrollableX && !s.scrollableY && Math.hypot(dx,dy)>10) || (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx) * 1.1))) {
           if (s.drag) beginDrag(s);
           else { s.phase = 'swiping'; takeCapture(s); }
         }

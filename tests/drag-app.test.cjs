@@ -3,7 +3,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
@@ -80,18 +80,18 @@ async function touchDrag(page, cdp, id = 'd12', side = 'right') {
 
 test('Domino selection and drag gestures through the real application', {timeout: 120000}, async t => {
   const browser = await chromium.launch({headless: true,
-    executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
+    executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
-  async function check(name, {mobile = false, longHand = false, empty = false} = {}, run) {
+  async function check(name, {mobile = false, longHand = false, empty = false, autoPass = false} = {}, run) {
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: mobile ? {width: 390, height: 844} : {width: 1280, height: 900},
         hasTouch: mobile, isMobile: mobile, reducedMotion: 'reduce'});
       const saved = fixture({longHand, empty});
-      await context.addInitScript(saved => {
+      await context.addInitScript(({saved,autoPass}) => {
         localStorage.clear();
-        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false}));
+        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false,autoPass}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
-      }, saved);
+      }, {saved,autoPass});
       const page = await context.newPage(), errors = [];
       page.setDefaultTimeout(5000);
       page.on('pageerror', error => errors.push(error.message));
@@ -206,7 +206,33 @@ test('Domino selection and drag gestures through the real application', {timeout
       assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
     });
 
-    await check('Fresh native tap immediately after a drop selects and plays the next player tile', {mobile: true}, async ({page, context}) => {
+    await check('Two-row landscape domino hand scrolls its outer player panel from every surface', {mobile:true}, async ({page,context})=>{
+      await page.setViewportSize({width:740,height:320});
+      const panel=page.locator('.layout-self'),cdp=await context.newCDPSession(page),before=await state(page);
+      assert(await panel.evaluate(el=>el.scrollHeight>el.clientHeight+30),'real player panel must overflow');
+      assert(await page.locator('.hand-track').evaluate(el=>el.scrollHeight<=el.clientHeight+1),'overflow belongs to outer panel');
+      for(const mode of ['playable','unavailable','gap','panel']){
+        await panel.evaluate(el=>el.scrollTop=0);
+        const p=await page.evaluate(mode=>{
+          const panel=document.querySelector('.layout-self'),track=panel.querySelector('.hand-track'),tile=track.querySelector('button'),r=tile.getBoundingClientRect(),b=panel.getBoundingClientRect();
+          if(mode==='unavailable'){tile.disabled=true;tile.setAttribute('aria-disabled','true');}
+          return mode==='panel'?{x:b.right-7,y:b.top+80}:mode==='gap'?{x:r.right+2,y:r.top+25}:{x:r.left+r.width/2,y:r.top+25};
+        },mode);
+        await touch(cdp,'touchStart',p);for(let n=1;n<=4;n++)await touch(cdp,'touchMove',{x:p.x,y:p.y-n*18});await touch(cdp,'touchEnd');
+        assert(await panel.evaluate(el=>el.scrollTop)>30,mode+' must scroll outer panel');
+        assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.deepEqual(await state(page),before);
+        await page.locator('.hand-track button').first().evaluate(el=>{el.disabled=false;el.removeAttribute('aria-disabled');});
+      }
+      const p=await panel.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.right-7,y:r.bottom-20};});
+      for(let i=0;i<4;i++){await touch(cdp,'touchStart',p);await touch(cdp,'touchMove',{x:p.x,y:p.y-90});await touch(cdp,'touchEnd');}
+      const bottom=await panel.evaluate(el=>el.scrollTop);assert(await panel.evaluate(el=>el.scrollTop>=el.scrollHeight-el.clientHeight-1),'last panel content is reachable by touch');
+      const card=await page.locator('.layout-self .self-player').boundingBox(),area=await panel.boundingBox();assert(card.y+card.height<=area.y+area.height+1,'player card is reachable');
+      if(process.env.PLAYROOM_CAPTURE_DIR){require('node:fs').mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'domino-panel-scrolled.png')});}
+      await touch(cdp,'touchStart',{x:p.x,y:p.y-90});await touch(cdp,'touchMove',p);await touch(cdp,'touchEnd');
+      assert(await panel.evaluate(el=>el.scrollTop)<bottom-50,'reverse gesture scrolls back');assert.deepEqual(await state(page),before);
+    });
+
+    await check('Fresh native tap immediately after a drop selects and plays the next player tile', {mobile: true,autoPass:true}, async ({page, context}) => {
       const cdp = await context.newCDPSession(page);
       await touchDrag(page, cdp);
       await expectMove(page, 1);

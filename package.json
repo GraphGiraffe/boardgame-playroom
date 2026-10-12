@@ -1,14 +1,34 @@
 {
   "name": "boardgame-playroom",
-  "version": "0.13.0",
+  "version": "0.15.0",
   "private": true,
-  "description": "Offline tabletop host and independent game-pack engine",
+  "description": "Browser tabletop app and independent game-pack engine",
   "scripts": {
     "build": "python3 build.py",
-    "test": "node --test --test-concurrency=1 tests/*.test.cjs",
-    "test:core-ui": "node --test --test-concurrency=1 tests/drag.test.cjs tests/motion-effects.test.cjs"
+    "test": "node scripts/codex/test.cjs all",
+    "test:core-ui": "node scripts/codex/test.cjs core-ui",
+    "setup": "bash scripts/codex/setup.sh",
+    "check": "bash scripts/codex/check.sh",
+    "check:full": "bash scripts/codex/check.sh --full",
+    "serve": "bash scripts/codex/serve.sh",
+    "prepare:dev": "python3 build.py --prepare-dev",
+    "test:app": "node scripts/codex/test.cjs app",
+    "test:core": "node scripts/codex/test.cjs core",
+    "test:input": "node scripts/codex/test.cjs input",
+    "test:games": "node scripts/codex/test.cjs games",
+    "test:ui": "node scripts/codex/test.cjs ui",
+    "test:storage": "node scripts/codex/test.cjs storage",
+    "test:network": "node scripts/codex/test.cjs network",
+    "test:pairing": "node scripts/codex/test.cjs pairing",
+    "test:layout": "node scripts/codex/test.cjs layout",
+    "test:smoke": "node scripts/codex/test.cjs smoke",
+    "test:rtc": "node scripts/codex/test.cjs rtc",
+    "test:changed": "node scripts/codex/test.cjs --changed"
   },
   "devDependencies": {
     "playwright-core": "1.63.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

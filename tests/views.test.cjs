@@ -1,5 +1,5 @@
 /* Run with Node 22+ and PLAYWRIGHT_MODULE pointing to installed playwright-core.
-   CHROME_PATH optionally overrides /usr/bin/google-chrome. No app/server required. */
+   CHROME_BIN optionally selects a browser; system or managed Chromium is the fallback. No app/server required. */
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
@@ -46,11 +46,34 @@ test('standalone UI shares source and target policies without browser or game de
   assert.match(H.target(id,many), /data-drop-select="card&quot;&lt;&amp;"/);
   assert.deepEqual(actionsIn(H.target(id,many)),[]);
   const first=UI.createRegistry(), second=UI.createRegistry();
-  first.register('example',()=>'<p>Ready</p>',()=>'<svg></svg>');
-  assert.equal(first.render({game:'example'},0,[]),'<p>Ready</p>');
+  first.register('example',()=>({api:2,family:'board',elements:{field:'<p>Ready</p>'}}),()=>'<svg></svg>');
+  assert.equal(first.render({game:'example'},0,[]),UI.composeScene({api:2,family:'board',elements:{field:'<p>Ready</p>'}}));
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
+  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0">0<\/span>/);
+  assert.match(H.countBadge(7,'Рука',{hand:true}),/piece-count is-hand/);
+  assert.doesNotMatch(H.hand([],0),/piece-count/);
+  for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));
+  for(const [person,network,role,status] of [
+    [{},false,'player','neutral'],[{bot:true,connected:true},true,'bot','neutral'],
+    [{local:true,connected:true},true,'hand','neutral'],[{connected:false},true,'player','neutral'],
+    [{connected:true},false,'player','neutral'],[{connected:true},true,'player','online'],
+    [{connected:false,hasConnected:true},true,'player','offline'],
+    [{connected:false,joinedAt:1,isHost:true},true,'player','offline'],
+    [{role:'spectator',connected:true},true,'eye','online'],[{role:'table',isHost:true,connected:true},true,'grid','online']
+  ]) {const html=H.participantIcon(person,{network});assert.match(html,new RegExp('data-participant-role="'+role+'"'));assert.match(html,new RegExp('data-connection="'+status+'"'));}
+  const both=H.playerPanel({players:[{name:'A <&',score:9}],turn:0},0,0,{counters:[{kind:'wins',value:3},{kind:'points',value:9,label:'Очки <&'}]});
+  assert.match(both,/data-score-kind="points"[^>]*aria-label="Очки &lt;&amp;: 9"/);
+  assert.match(both,/is-wins[^>]*data-score-kind="wins"/);assert(both.indexOf('data-score-kind="points"')<both.indexOf('data-score-kind="wins"'));
+  assert.doesNotMatch(both,/>Игрок|>Бот|очки:|победы:/);
+  for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:2,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
+
+  const pieces=H.playerPanel({players:[{name:'A',score:0}],turn:0},0,0,{counters:[{kind:'wins',value:0},{kind:'pieces',value:12,label:'Светлые шашки'}]});
+  assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*>12</);
+  assert.doesNotMatch(pieces,/>12 шашек</);
+  const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
+  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/mini-hand/);
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
@@ -181,8 +204,8 @@ test('manual UNO controls are constant and accusations use public player context
       const actions = actionsIn(html);
       assert.ok(actions.some(a => a.type === 'declare-uno'));
       assert.ok(!actions.some(a => a.type === 'accuse-uno'), 'accusations must not become automatic action buttons');
-      for (const target of state.players.keys()) assert.equal(html.includes(`data-accuse-player="${target}"`), target !== viewer);
-      assert.doesNotMatch(html, /class="uno-declared"/, 'one card alone is not a public declaration');
+      for (const target of state.players.keys()) assert.equal(html.includes(`data-player-target="${target}"`), target !== viewer);
+      assert.doesNotMatch(html, /class="player-status-badge">UNO!/, 'one card alone is not a public declaration');
     }
   }
   state.data.uno.pending = 0;
@@ -190,16 +213,16 @@ test('manual UNO controls are constant and accusations use public player context
   state.data.uno.pending = null;
   assert.equal(render(state, 1), pending, 'catch-window changes must not provide visual clues');
   state.data.uno.declared[0] = true;
-  assert.match(render(state, 1), /class="uno-declared"/);
-  assert.match(render(state, 1), /data-accuse-player="0"/, 'already declared players still allow a mistaken accusation');
-  assert.match(render(state, 0), /class="hand-tools"><span class="uno-declared"/);
+  assert.match(render(state, 1), /class="player-status-badge">UNO!/);
+  assert.match(render(state, 1), /data-player-target="0"/, 'already declared players still allow a mistaken accusation');
+  assert.match(render(state, 0), /class="player-status-badge">UNO!/);
   const wild = state.data.drawPile.splice(state.data.drawPile.findIndex(c => c.value === 'wild'), 1)[0];
   state.data.hands[0].push(wild); state.data.uno.declared[0] = false;
   assert.equal(callButton(render(state, 0, wild.id)), originalCall, 'colour choice retains the same call button');
   state.data.uno.mode = 'auto';
-  assert.doesNotMatch(render(state, 0), /uno-call|data-accuse-player|uno-manual-hint/);
+  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/);
   delete state.data.uno;
-  assert.doesNotMatch(render(state, 0), /uno-call|data-accuse-player|uno-manual-hint/, 'legacy games keep automatic mode');
+  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/, 'legacy games keep automatic mode');
   vm.runInContext(fs.readFileSync(path.join(root, 'packs/uno/manifest.js'), 'utf8'), sandbox);
   const setting = sandbox.PlayroomCatalog.uno.settings.find(item => item.key === 'unoMode');
   assert.equal(setting.default, 'manual');
@@ -226,203 +249,108 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
   for (const preset of ['classic', 'quick']) {
     const state = make('snakes', preset, 4), html = render(state);
     assert.equal((html.match(/class="snakes-cell /g) || []).length, state.data.finish);
-    assert.equal((html.match(/data-entity="token-/g) || []).length, 4);
+    assert.equal((html.match(/class="player-panel /g)||[]).length,4);assert.doesNotMatch(html,/snakes-legend|snakes-scores/);
   }
   for (const game of games) assert.match(V.cover(game), /^<svg .*viewBox="0 0 300 180"/);
 });
 
-function stressStates() {
-  const list = [];
-  for (const game of games) for (const preset of ['classic', 'quick']) for (const count of [2, ...(E.get(game).max === 4 ? [4] : [])]) {
-    const state = make(game, preset, count);
-    list.push({ id: `${game}-${preset}-${count}`, state });
-  }
-  const uno = make('uno', 'classic', 4);
-  uno.data.hands[0].push(...uno.data.drawPile.splice(0, 35));
-  uno.players.forEach(p => { p.name = 'ОченьДлинноеИмяИгрокаБезПробеловНаТелефоне'; });
-  uno.openHands = true;
-  list.push({ id: 'uno-long-open', state: uno, viewer: 0 });
-  const unoSelected = make('uno'), normal = E.legalActions(unoSelected).find(a => a.card && !a.color);
-  list.push({ id: 'uno-discard-normal-target', state: unoSelected, selected: normal.card });
-  const unoWild = make('uno'), wildIndex = unoWild.data.drawPile.findIndex(c => c.value === 'wild');
-  const wild = unoWild.data.drawPile.splice(wildIndex, 1)[0]; unoWild.data.hands[0].push(wild);
-  list.push({ id: 'uno-discard-wild-target', state: unoWild, viewer: 0, selected: wild.id });
-  const manual = clone(unoWild); manual.data.uno.mode = 'manual';
-  list.push({ id: 'uno-manual-wild-target', state: manual, viewer: 0, selected: wild.id });
-  const manualFour = clone(uno); manualFour.data.uno.mode = 'manual';
-  manualFour.data.drawPile.push(...manualFour.data.hands[1].splice(1)); manualFour.data.uno.declared[1] = true;
-  list.push({ id: 'uno-manual-four-public', state: manualFour, viewer: 0 });
-  const domino = make('domino');
-  domino.data.chain = [...domino.data.hands.flat(), ...domino.data.stock];
-  domino.data.hands = [[], []]; domino.data.stock = []; domino.status = 'finished';
-  list.push({ id: 'domino-long-chain', state: domino });
-  const opening = make('domino');
-  list.push({ id: 'domino-opening-preview', state: opening, selected: E.legalActions(opening).find(a => a.card).card });
-  let midgame = make('domino');
-  for (let step = 0; step < 70 && midgame.status === 'playing'; step++) {
-    const play = E.legalActions(midgame).find(a => a.card);
-    if (midgame.data.chain.length >= 10 && play) { list.push({ id: 'domino-long-chain-preview', state: midgame, selected: play.card }); break; }
-    midgame = E.applyAction(midgame, midgame.turn, E.botAction(midgame));
-  }
-  const durak = make('durak');
-  durak.turn = 0; durak.data.defender = 0; durak.data.attacker = 1;
-  durak.data.trump = { id: 'marker', suit: '♥', rank: 6 };
-  durak.data.table = Array.from({ length: 6 }, (_, i) => ({ attack: { id: `attack-${i}`, suit: '♠', rank: 6 + i }, defense: null }));
-  durak.data.hands[0] = [{ id: 'defense-card', suit: '♥', rank: 14 }];
-  list.push({ id: 'durak-full-table', state: durak, selected: 'defense-card' });
-  const checkers = make('checkers');
-  checkers.data.board = Array(64).fill(null);
-  checkers.data.board[35] = { id: 'moving', owner: 0, king: true };
-  checkers.data.board[26] = { id: 'captured', owner: 1, king: false };
-  checkers.data.board[28] = { id: 'target', owner: 1, king: false };
-  checkers.data.forced = 35; checkers.data.captured = [26];
-  list.push({ id: 'checkers-forced', state: checkers });
-  for (const preset of ['classic', 'quick']) for (const position of [1, 8, preset === 'classic' ? 100 : 64]) {
-    const state = make('snakes', preset, 4); state.data.positions.fill(position);
-    state.players.forEach(p => { p.name = 'ОченьДлинноеИмяИгрокаБезПробеловНаТелефоне'; });
-    list.push({ id: `snakes-${preset}-crowded-${position}`, state });
-  }
-  return list;
-}
 
-function publicHandStressStates() {
-  const list = [];
-  for (const [game, counts, players] of [
-    ['uno', [12, 24, 50, 100], [2, 4]],
-    ['durak', [24, 30], [2]],
-    ['domino', [14, 21], [2]]
-  ]) for (const count of counts) for (const playerCount of players) {
-    const state = make(game, 'classic', playerCount), d = state.data;
-    const stockKey = game === 'domino' ? 'stock' : 'drawPile';
-    const pool = [...d.hands.flat(), ...d[stockKey]];
-    // Keep the trump at the bottom of a remaining Durak stock. All fixtures
-    // redistribute the real pack rather than inventing extra card identities.
-    if (game === 'durak') pool.push(...pool.splice(pool.findIndex(c => c.id === d.trump.id), 1));
-    const otherCount = Math.min(game === 'durak' ? 6 : 7, Math.floor((pool.length - count) / (playerCount - 1)));
-    d.hands[1] = pool.splice(0, count);
-    for (let player = 0; player < playerCount; player++) if (player !== 1) d.hands[player] = pool.splice(0, otherCount);
-    if (game === 'durak' && pool.length) pool.unshift(...pool.splice(pool.findIndex(c => c.id === d.trump.id), 1));
-    d[stockKey] = pool;
-    state.openHands = true;
-    E.validateState(state);
-    list.push({
-      id: `${game}-public-${count}-${playerCount}`, state, viewer: 0, publicStress: true,
-      publicHands: d.hands.flatMap((hand, player) => player === 0 ? [] : [{
-        player, entities: hand.map(card => `${game === 'domino' ? 'tile' : 'card'}-${card.id}`),
-        labels: game === 'domino' ? hand.map(card => `${card.a}·${card.b}`) : null
-      }])
-    });
-  }
-  return list;
-}
-
-test('responsive component stress layouts: narrow phones, tablet, desktop, landscape and 200% zoom', async () => {
-  const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox', '--disable-background-networking'] });
-  const context = await browser.newContext({ reducedMotion: 'reduce', hasTouch: true });
-  const page = await context.newPage(), failures = [];
-  const css = ['app/styles.css', 'core/ui.css', 'core/input.css', 'core/motion.css', 'core/tooltips.css', ...games.map(g => `packs/${g}/styles.css`)].map(file => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
-  const fixtures = [...stressStates(), ...publicHandStressStates()];
-  const sizes = [[320, 568], [390, 844], [768, 1024], [1440, 900], [667, 375], [800, 600, 2], [320, 640], [390, 740]];
-  try {
-    for (const [width, height, zoom = 1] of sizes) {
-      await page.setViewportSize({ width, height });
-      for (const fixture of fixtures) {
-        const publicViewport = (width === 320 && height === 640) || (width === 390 && height === 740) || (width === 1440 && height === 900);
-        if (fixture.publicStress ? !publicViewport : (height === 640 || height === 740)) continue;
-        const html = render(fixture.state, fixture.viewer ?? fixture.state.turn, fixture.selected ?? null);
-        await page.setContent(`<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body style="zoom:${zoom}"><main class="table-shell" style="height:${height / zoom}px"><header ${fixture.publicStress ? 'class="table-header"' : ''} style="height:50px;flex-shrink:0"></header><section class="scene" aria-label="Игровая сцена">${html}</section><footer style="height:24px;flex-shrink:0"></footer></main></body></html>`);
-        const result = await page.evaluate(({ publicHands }) => {
-          const issues = [], scene = document.querySelector('.scene'), game = document.querySelector('.game-scene');
-          const tolerance = 2, rect = el => el.getBoundingClientRect();
-          if (document.documentElement.scrollWidth > innerWidth + tolerance) issues.push('page horizontal overflow');
-          if (scene.scrollWidth > scene.clientWidth + tolerance) issues.push(`scene horizontal overflow ${scene.scrollWidth}/${scene.clientWidth}`);
-          if (game.scrollWidth > game.clientWidth + tolerance) issues.push('game horizontal overflow');
-          if (publicHands) {
-            if (document.documentElement.scrollHeight > innerHeight + tolerance) issues.push('page vertical overflow');
-            if (scene.scrollHeight > scene.clientHeight + tolerance) issues.push(`scene vertical overflow ${scene.scrollHeight}/${scene.clientHeight}`);
-            const inside = (a, b) => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
-            for (const { player, entities: expected, labels } of publicHands) {
-              const hand = document.querySelector(`.opponent-hand[data-player-index="${player}"] .mini-hand.is-open`);
-              if (!hand) { issues.push(`missing public hand ${player}`); continue; }
-              if (hand.scrollWidth > hand.clientWidth + tolerance || hand.scrollHeight > hand.clientHeight + tolerance) issues.push(`public hand ${player} needs scroll ${hand.scrollWidth}×${hand.scrollHeight}/${hand.clientWidth}×${hand.clientHeight}`);
-              if (hand.scrollLeft || hand.scrollTop) issues.push(`public hand ${player} starts scrolled`);
-              const cards = [...hand.querySelectorAll('.public-card')];
-              const actual = cards.map(card => card.querySelector('[data-entity]')?.dataset.entity);
-              if (JSON.stringify(actual) !== JSON.stringify(expected)) issues.push(`public hand ${player} missing, duplicate or reordered cards`);
-              for (const [index, card] of cards.entries()) {
-                const entity = card.querySelector('[data-entity]'), id = entity?.dataset.entity || 'unknown';
-                const domino = entity?.classList.contains('domino-tile');
-                const markers = [...card.querySelectorAll(domino ? '.public-card-caption' : '.card-corner:not(.bottom)')];
-                if (markers.length !== 1) { issues.push(`${id}: missing readable value`); continue; }
-                if (domino && markers[0].textContent.replace(/\s/g, '') !== labels[index]) issues.push(`${id}: caption omits or changes tile values`);
-                for (const marker of markers) {
-                  const r = rect(marker), style = getComputedStyle(marker);
-                  if (r.width < 2 || r.height < 2 || style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) { issues.push(`${id}: value hidden`); continue; }
-                  if (Number.parseFloat(style.fontSize) < 9) issues.push(`${id}: value too small`);
-                  if (!inside(r, rect(hand)) || !inside(r, rect(scene)) || r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) issues.push(`${id}: value outside visible hand`);
-                  const insetX = Math.min(1.5, r.width / 4), insetY = Math.min(1.5, r.height / 4);
-                  for (const [x, y] of [[r.left + insetX, r.top + insetY], [r.right - insetX, r.top + insetY], [r.left + insetX, r.bottom - insetY], [r.right - insetX, r.bottom - insetY], [(r.left + r.right) / 2, (r.top + r.bottom) / 2]]) {
-                    if (document.elementFromPoint(x, y)?.closest('.public-card') !== card) { issues.push(`${id}: value covered at ${x.toFixed(1)},${y.toFixed(1)}`); break; }
-                  }
-                  if (!domino && entity.classList.contains('playing-card')) {
-                    const suit = marker.querySelector('small');
-                    if (!suit || getComputedStyle(suit).display === 'none' || rect(suit).height < 6) issues.push(`${id}: suit unreadable`);
-                  }
-                }
-              }
-            }
-          }
-          for (const el of document.querySelectorAll('[data-action],[data-drop-select],[data-accuse-player]')) {
-            const r = rect(el), minimum = el.classList.contains('checker-cell') ? 28 : 44;
-            if (r.width + tolerance < minimum || r.height + tolerance < minimum) issues.push(`small action ${el.className} ${r.width.toFixed(1)}×${r.height.toFixed(1)}`);
-            if (!el.getAttribute('aria-label') && !el.textContent.trim()) issues.push('unlabelled action');
-          }
-          const unoDrop = document.querySelector('.uno-drop-target');
-          if (unoDrop) {
-            if (unoDrop.querySelector('button')) issues.push('nested UNO target button');
-            const center = document.querySelector('.uno-center'), before = rect(center);
-            if (getComputedStyle(unoDrop).position !== 'absolute') issues.push('UNO target changes layout');
-            unoDrop.remove(); const after = rect(center);
-            if (Math.abs(before.width - after.width) > tolerance || Math.abs(before.height - after.height) > tolerance || Math.abs(before.x - after.x) > tolerance || Math.abs(before.y - after.y) > tolerance) issues.push('UNO discard target shifts the field');
-          }
-          for (const el of document.querySelectorAll('.own-hand .hand-card')) {
-            const r = rect(el), domino = el.classList.contains('domino-tile');
-            const minimum = domino ? [32, 60] : [56, 84];
-            if (r.width + tolerance < minimum[0] || r.height + tolerance < minimum[1]) issues.push('small hand card');
-            if (domino) for (const half of el.querySelectorAll('.domino-half')) {
-              const h = rect(half);
-              if (h.left < r.left || h.right > r.right || h.top < r.top || h.bottom > r.bottom) issues.push('clipped domino half');
-              for (const pip of half.querySelectorAll('.pip')) if (rect(pip).width < 3 || rect(pip).height < 3) issues.push('unreadable domino pip');
-            }
-          }
-          const drops = [...document.querySelectorAll('.domino-drop-target')].map(el => ({ el, before: rect(el) }));
-          for (const el of document.querySelectorAll('.hand-track,.domino-chain')) {
-            el.scrollLeft = el.scrollWidth;
-            const last = el.classList.contains('is-fan') ? el.querySelector('.hand-fan-row .hand-card:last-child') : el.lastElementChild;
-            if (last && rect(last).right > rect(el).right + tolerance) issues.push('last item unreachable by scroll');
-          }
-          for (const { el, before } of drops) {
-            const after = rect(el), board = rect(document.querySelector('.domino-board'));
-            if (Math.abs(before.x - after.x) > tolerance || Math.abs(before.y - after.y) > tolerance) issues.push('domino target moved with chain scroll');
-            if (after.left < board.left || after.right > board.right || after.top < board.top || after.bottom > board.bottom) issues.push('domino target outside board');
-          }
-          const board = document.querySelector('.snakes-board');
-          if (board) {
-            const b = rect(board), tokens = [...document.querySelectorAll('.snakes-tokens .snakes-token')];
-            for (const token of tokens) { const r = rect(token); if (r.left < b.left - 1 || r.right > b.right + 1 || r.top < b.top - 1 || r.bottom > b.bottom + 1) issues.push('token outside board'); }
-            for (let i = 0; i < tokens.length; i++) for (let j = i + 1; j < tokens.length; j++) {
-              const a = rect(tokens[i]), b = rect(tokens[j]);
-              if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) issues.push('tokens overlap');
-            }
-          }
-          const entities = [...document.querySelectorAll('[data-entity]')].map(el => el.dataset.entity);
-          if (new Set(entities).size !== entities.length) issues.push('duplicate animation entity');
-          return issues;
-        }, { publicHands: fixture.publicHands });
-        if (result.length) failures.push(`${fixture.id} ${width}×${height}@${zoom}: ${result.join(', ')}`);
+test('all source packs provide only API 2 elements with application-owned placement',()=>{
+  for(const game of games){const state=make(game),view=V.get(game).render(E.project(state,state.turn),state.turn,E.legalActions(state),{selected:null});assert.equal(view.api,2);assert.ok(['cards','board'].includes(view.family));assert.equal(typeof view.elements.field,'string');assert.ok(view.elements.field.length);assert.doesNotMatch(Object.values(view.elements).join(''),/class="game-scene/);assert.match(V.render(E.project(state,state.turn),state.turn,[],{}),/data-view-api="2"/);}
+  for(const game of games){
+    const state=make(game,'classic',E.get(game).max);
+    for(const turn of state.players.keys())for(const viewer of [-1,...state.players.keys()]){
+      state.turn=turn;
+      const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)" data-player-index="(\d+)"([^>]*)>/g)];
+      assert.equal(panels.length,state.players.length,game);
+      assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
+      for(const [,classes,index,attrs]of panels){
+        assert.equal(classes.includes('is-turn'),Number(index)===turn,`${game}: only the current player is highlighted`);
+        assert.equal(attrs.includes('aria-current="true"'),Number(index)===turn,`${game}: accessible current player follows turn changes`);
+        assert.equal(classes.includes('self-player'),Number(index)===viewer,`${game}: own card uses the same turn state`);
       }
     }
-    assert.deepEqual(failures, []);
-  } finally { await context.close(); await browser.close(); }
+  }
+});
+
+
+test('player hands render every hidden piece and score units agree with the rules',()=>{
+  for(const game of games){
+    const state=make(game),projected=E.project(state,0),descriptor=V.get(game).render(projected,0,E.legalActions(state,0),{selected:null});
+    assert.equal(descriptor.playerContent.length,state.players.length);
+    for(const [index,content]of descriptor.playerContent.entries()){
+      assert.equal(content.scoreLabel,E.get(game).scoreLabel);
+      if(state.data.hands&&index!==0){
+        assert.equal((content.handHTML.match(/class="piece-back /g)||[]).length,state.data.hands[index].length,game);
+        assert.equal(content.handCount,state.data.hands[index].length);
+        assert.equal(content.open,false);
+        if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
+      }
+    }
+    for(const viewer of [-1,0,1]){
+      const html=viewer<0?V.render(E.project(state,viewer),viewer,[],{surface:'table'}):render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel [\s\S]*?<\/article>/g)].map(m=>m[0]);
+      for(const panel of panels){
+        const index=Number(panel.match(/data-player-index="(\d+)"/)[1]),counts=[...panel.matchAll(/data-piece-count="(\d+)"/g)];
+        assert.deepEqual(counts.map(m=>Number(m[1])),state.data.hands?[state.data.hands[index].length]:[],`${game}: exactly one count in each player card`);
+        assert.doesNotMatch(panel,/>\d+ в руке</,`${game}: no repeated textual hand count`);
+      }
+      const own=html.match(/<section class="own-hand"[\s\S]*?<div class="hand-track/);
+      if(state.data.hands&&viewer>=0){assert(own);assert.doesNotMatch(own[0],/piece-count/);}
+      else assert.equal(own,null,`${game}: no personal hand count on the table or without a hand`);
+      if(['uno','durak'].includes(game))assert.match(html,new RegExp(`class="piece-count is-corner" data-piece-count="${state.data.drawPile.length}"`));
+      assert.doesNotMatch(html,/pile-count/);
+    }
+  }
+  const state=make('durak'),html=render(state);
+  assert.doesNotMatch(html,/Время первого хода|Соперник выбирает карту/);
+  assert.doesNotMatch(render(make('domino')),/Выберите первую костяшку|Коснитесь места на поле/);
+});
+
+
+test('scene reserves optional actions and validates generic motion route descriptors',()=>{
+  const UI=require('../core/ui.js'),state={turn:0,players:[{name:'A'},{name:'B'}]};
+  const descriptor={api:2,family:'board',actionReserve:true,elements:{field:'<div>Board</div>'}};
+  assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-action-reserve="true"/);
+  assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-game-element="actions"><div class="scene-actions"><\/div>/);
+  assert.doesNotMatch(UI.composeScene(descriptor,{state,viewer:-1,surface:'table'}),/data-game-element="actions"/);
+  assert.throws(()=>UI.composeScene({...descriptor,actionReserve:'yes'}));
+  assert.throws(()=>UI.composeScene({...descriptor,motionSequence:{trigger:'roll'}}));
+  const art=UI.art({main:'<i>Face</i>',width:48,height:84,rotation:270});
+  assert.match(art,/viewBox="0 0 84 48"/);assert.match(art,/translate\(0 48\) rotate\(-90\)/);
+  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="hand".*data-ui-icon="host".*data-ui-icon="replacement"/);
+});
+
+test('snakes routes describe every bounced step and retain landing before a link',()=>{
+  const state=make('snakes');state.data.positions[0]=31;state.data.lastMove={player:0,from:51,landing:54,to:31,roll:3};state.data.dice=3;
+  let html=render(state,0),route=JSON.parse(decode(html.match(/data-motion-sequence="([^"]+)"/)[1]));
+  assert.deepEqual(route.steps.map(x=>x.anchor),['cell-52','cell-53','cell-54']);assert.equal(route.jump.anchor,'cell-31');assert.match(html,/data-motion-lead="roll"/);assert.doesNotMatch(html,/Выпало/);
+  state.data.positions[0]=98;state.data.lastMove={player:0,from:98,landing:98,to:98,roll:4};state.data.dice=4;
+  html=render(state,0);route=JSON.parse(decode(html.match(/data-motion-sequence="([^"]+)"/)[1]));
+  assert.deepEqual(route.steps.map(x=>x.anchor),['cell-99','cell-100','cell-99','cell-98']);assert.equal(route.jump,undefined);
+});
+
+
+test('relative seats keep indices, own hands and canonical spectator order',()=>{
+  const H=sandbox.TabletopUI.helpers;
+  for(const count of [2,3,4])for(let viewer=-1;viewer<count;viewer++){
+    const expected=viewer<0?Array.from({length:count},(_,i)=>i):Array.from({length:count-1},(_,i)=>(viewer+i+1)%count);
+    assert.deepEqual(Array.from(H.seatOrder(count,viewer)),expected);
+    const state=make('uno','classic',count),before=JSON.stringify(state),html=render(state,viewer);
+    const actual=[...html.matchAll(/<article[^>]*data-player-index="(\d+)"/g)].map(m=>Number(m[1]));
+    assert.deepEqual(actual,viewer<0?expected:[...expected,viewer]);assert.equal(JSON.stringify(state),before);
+  }
+});
+test('compact pack badges use numeric positions and mutually exclusive accessible roles',()=>{
+  const snakes=make('snakes');snakes.data.positions=[0,16];
+  const html=render(snakes);assert.match(html,/data-motion-counter="position">0<\/span>/);assert.match(html,/data-motion-counter="position">16<\/span>/);
+  const durak=make('durak');durak.data.taking=true;
+  const taken=render(durak);assert.match(taken,/data-ui-icon="takeCards"/);assert.doesNotMatch(taken,/data-ui-icon="shield"/);assert.match(taken,/aria-label="Берёт"/);
+  durak.data.taking=false;assert.match(render(durak),/data-ui-icon="shield"/);
+});
+
+test('source rule versions match the distributable pack manifests',()=>{
+  for(const game of games){
+    const manifest=JSON.parse(fs.readFileSync(path.join(root,'packs',game,'manifest.json'),'utf8'));
+    assert.equal(E.get(game).version,manifest.version,game+' registration must match its manifest');
+  }
 });

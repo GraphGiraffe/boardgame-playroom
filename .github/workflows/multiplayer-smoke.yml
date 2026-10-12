@@ -1,0 +1,104 @@
+name: Multiplayer preview smoke
+on:
+  pull_request:
+    branches: [dev]
+    types: [ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: multiplayer-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: GraphGiraffe/boardgame-playroom-paks
+          ref: 5c8a172912bff583d92bb207dbbfe288b3bf002f
+          ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
+          path: companion
+          persist-credentials: false
+      - name: Prepare bundled games
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Shared components and pack actions
+        working-directory: app
+        timeout-minutes: 4
+        run: npm run test:layout
+      - name: Two-device release gate
+        working-directory: app
+        run: npm run test:smoke
+      - name: Build all-games preview
+        run: |
+          rm -rf app/dist/smoke
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/smoke
+          test -s app/dist/smoke/pwa/app/vendor/qrcode.js
+          test -s app/dist/smoke/pwa/app/vendor/jsqr.js
+          test -s app/dist/smoke/pwa/app/vendor/LICENSE.qrcode
+          test -s app/dist/smoke/pwa/app/vendor/LICENSE.jsqr
+          rm -f app/dist/smoke/playroom-pwa.zip
+          (
+            cd app/dist/smoke
+            zip -q -r playroom-pwa.zip pwa
+          )
+          # Test artifact for the exact app head and pinned API 2 pack sources.
+          cp app/dist/smoke/playroom-all-games.html app/dist/smoke/playroom-ui-api2-preview.html
+          cp app/dist/smoke/playroom-pwa.zip app/dist/smoke/playroom-pwa-ui-api2-preview.zip
+          cp app/CHANGELOG.md app/dist/smoke/CHANGELOG.md
+          printf '%s\n' 'Playroom UI API 2 preview' "App head: ${GITHUB_SHA}" \
+            'LAN acoustic pairing: audible ggwave Fastest/Fast/Normal and manual IPv4 fallback.' \
+            'QR / Share / paste remain fallback; physical Windows/Android and Safari acceptance pending.' \
+            'Browser regressions passed; physical two-device acceptance remains required before stable.' > app/dist/smoke/README-TEST.txt
+          (
+            cd app/dist/smoke
+            zip -q playroom-ui-api2-preview-bundle.zip playroom-ui-api2-preview.html playroom-pwa-ui-api2-preview.zip README-TEST.txt CHANGELOG.md
+            sha256sum playroom.html playroom-source.zip tabletop-core.zip playroom-all-games.html playroom-pwa.zip playroom-ui-api2-preview.html playroom-pwa-ui-api2-preview.zip playroom-ui-api2-preview-bundle.zip > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
+          unzip -tq app/dist/smoke/playroom-pwa.zip
+      - name: Validate built file preview
+        working-directory: app
+        env:
+          PLAYROOM_URL: file://${{ github.workspace }}/app/dist/smoke/playroom-all-games.html
+        run: npm run test:rtc
+      - name: Validate installable PWA preview
+        working-directory: app
+        run: |
+          python3 -m http.server 4174 --bind 127.0.0.1 --directory dist/smoke/pwa >/tmp/playroom-pwa.log 2>&1 &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          sleep 1
+          PLAYROOM_URL=http://127.0.0.1:4174/ npm run test:rtc
+          curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
+          curl --fail http://127.0.0.1:4174/app/vendor/qrcode.js >/dev/null
+          curl --fail http://127.0.0.1:4174/app/vendor/jsqr.js >/dev/null
+          rm -rf /tmp/playroom-pwa-zip && mkdir -p /tmp/playroom-pwa-zip
+          unzip -q dist/smoke/playroom-pwa.zip -d /tmp/playroom-pwa-zip
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/qrcode.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/ggwave.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/LICENSE.ggwave
+          grep -F "app/vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/app/qr.js >/dev/null
+          grep -F "app/vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/jsqr.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/qr-scanner.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/LICENSE.jsqr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-ui-api2-preview
+          path: app/dist/smoke/
+          retention-days: 30

@@ -1,0 +1,49 @@
+name: Release candidate build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: multiplayer-prerelease-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@v4
+        with:
+          repository: GraphGiraffe/boardgame-playroom-paks
+          ref: 5c8a172912bff583d92bb207dbbfe288b3bf002f
+          ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
+          path: companion
+          persist-credentials: false
+      - name: Prepare app with pinned source packs
+        run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Full application and pack checks
+        timeout-minutes: 15
+        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Build tested all-games artifacts
+        run: |
+          rm -rf app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/prerelease
+          cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
+          printf '%s\n'             'Playroom release candidate'             "App head: ${GITHUB_SHA}"             'Packs: API 2, pinned source commit 5c8a172912bff583d92bb207dbbfe288b3bf002f'             'To run the PWA, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playroom-release-candidate
+          path: app/dist/prerelease/
+          retention-days: 30

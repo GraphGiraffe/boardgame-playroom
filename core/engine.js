@@ -116,6 +116,7 @@
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
       assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1), 'видимость события');
       assertState(e.sound == null || (record(e.sound) && typeof e.sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(e.sound.id) && (e.sound.target == null || int(e.sound.target, 0, state.players.length - 1))), 'звук события');
+      assertState(e.notice == null || (record(e.notice) && typeof e.notice.title === 'string' && e.notice.title.length <= 120 && (e.notice.detail === undefined || (typeof e.notice.detail === 'string' && e.notice.detail.length <= 180)) && (e.notice.tone===undefined||['success','warning','danger'].includes(e.notice.tone))), 'объявление события');
       last = e.id;
     }
     if (pack.validateState) pack.validateState(state);
@@ -127,7 +128,13 @@
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error('Неизвестный набор правил');
     const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || `Игрок ${i + 1}`).slice(0, 40), bot: !!p.bot, score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
-    pack.create(state, options);
+    const startMode=options.firstPlayerMode||'rules';
+    if(!['rules','random','assigned'].includes(startMode))throw Error('Неизвестный способ выбора первого игрока');
+    const firstPlayer=startMode==='random'?Math.floor(random(state)*players.length):startMode==='assigned'?options.firstPlayer:null;
+    if(firstPlayer!==null&&(!Number.isInteger(firstPlayer)||firstPlayer<0||firstPlayer>=players.length))throw Error('Выберите первого игрока');
+    pack.create(state,{...options,resolvedFirstPlayer:firstPlayer});
+    state.firstPlayer=state.turn;
+    state.firstPlayerMode=startMode;
     event(state, `${pack.name}: партия началась`, null, 'start');
     return state;
   }
@@ -142,9 +149,38 @@
     if (!activePlayer(state, actor)) return [];
     return [...(actor === state.turn ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
   }
+  // Packs describe a public reaction window; clocks and transport stay in the app.
+  function reactionWindows(state) {
+    const pack=forState(state),legacy=pack.reactionWindow?.(state);
+    const values=pack.reactionWindows ? pack.reactionWindows(state) : legacy?[legacy]:[];
+    if(!Array.isArray(values)||values.length>state.players.length)throw Error('Некорректные окна реакции пака');
+    const result=values.map(value=>validateReactionWindow(state,value));
+    if(new Set(result.map(w=>w.id)).size!==result.length)throw Error('Повтор окна реакции');
+    return result;
+  }
+  function reactionWindow(state) { return reactionWindows(state)[0]||null; }
+  function validateReactionWindow(state,value) {
+    const int = (n, min, max) => Number.isSafeInteger(n) && n >= min && n <= max;
+    if (!value || typeof value.id !== 'string' || !/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id) ||
+        !int(value.owner, 0, state.players.length - 1) || !int(value.revision, 0, state.move) ||
+        !int(value.humanMs, 0, 60000) || !int(value.botMs, value.humanMs, 60000) ||
+        !int(value.fallbackMs, 0, 60000)) throw Error('Некорректное окно реакции пака');
+    return clone({id:value.id,owner:value.owner,revision:value.revision,humanMs:value.humanMs,botMs:value.botMs,fallbackMs:value.fallbackMs});
+  }
+  function reactionControl(state, actor, action) {
+    if (!activePlayer(state, actor) || !action || typeof action !== 'object') return null;
+    const value = forState(state).reactionControl?.(state, actor, action);
+    if (value == null) return null;
+    if (!value || !['answer','challenge','advance','independent'].includes(value.kind) ||
+        (value.ignore !== undefined && typeof value.ignore !== 'boolean') ||
+        (value.independent !== undefined && typeof value.independent !== 'boolean') ||
+        (value.episode !== undefined && (!Number.isSafeInteger(value.episode) || value.episode < 0))) throw Error('Некорректная реакция пака');
+    return clone(value);
+  }
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error('Не задано действие');
-    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation'].includes(k)).every(k => JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    if (reactionControl(state, actor, action)?.ignore) return state;
+    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error('Этот ход сейчас недоступен');
     const next = clone(state);
     next.move++;
@@ -176,7 +212,7 @@
     const actions = reactions(state, actor);
     if (!actions.length) return null;
     const chosen = forState(state).botReaction?.(state, actor, actions);
-    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
+    return chosen ? actions.find(candidate => Object.keys(candidate).filter(key => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(key)).every(key => JSON.stringify(candidate[key]) === JSON.stringify(chosen[key]))) || null : null;
   }
   // Optional generic components for custom packs: multiple named decks, hands,
   // boards and counters can coexist; visibility is explicit per zone/item.
@@ -203,7 +239,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

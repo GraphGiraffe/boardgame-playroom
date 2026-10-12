@@ -37,6 +37,7 @@
     if(!record(bundle)||bundle.format!==FORMAT||bundle.formatVersion!==1||!record(bundle.manifest)||!record(bundle.files))throw Error('Неподдерживаемый формат пакета');
     const m=bundle.manifest;
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error('Некорректные id или версия пакета');
+    if(m.viewApi!==2)throw Error('Пакет требует API интерфейса 2; обновите пак');
     if(m.engineApi!==1||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error('У пакета отсутствует название');
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error('Слишком много файлов в пакете');
@@ -61,6 +62,7 @@
   }
   function styles(bundle){
     const css=bundle.files['styles.css'];
+    if(/(?:#app\b|\.(?:table-shell|table-header|player-strip|game-layout-slot|app-game-layout|own-hand|hand-track|opponent-hands|scene-actions|piece-count|player-hand|player-panel|player-info|player-details|player-badges|mini-hand|hand-heading|hand-tools|opponent-hand|opponent-label|is-open-hand)(?![-\w]))/.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('Компоновка общих элементов принадлежит приложению');
     if(/@import\b|expression\s*\(/i.test(css.replace(/\/\*[\s\S]*?\*\//g,'')))throw Error('CSS пакета не должен загружать внешние стили');
     return css.replace(/url\(\s*(?:(['"])(.*?)\1|([^)]*))\s*\)/gis,(_,quote,quoted,plain)=>{
       const url=(quoted??plain).trim();if(url.startsWith('#'))return `url("${url}")`;
@@ -81,7 +83,7 @@
       const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version})};
       const deny=()=>{throw Error('Регистрация версий недоступна во время подготовки пакета');};
       scope.TabletopCore=scope.PlayroomEngine=Object.freeze({...this.engine,register:pack=>{if(rules||pack?.id!==m.id)throw Error('Пакет регистрирует неверную или повторную игру');rules=pack;return pack;},registerVersion:deny,activatePack:deny,unregisterVersion:deny});
-      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,register:(id,render,cover)=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Некорректный интерфейс пакета');view={render,cover};}});
+      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,register:(id,render,cover,options={})=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Некорректный интерфейс пакета');const surfaces=options?.surfaces||{};if(!record(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Некорректные представления пакета');view={render,cover,surfaces:{...surfaces}};}});
       scope.TabletopUI=Object.freeze({...this.views.helpers,helpers:this.views.helpers});
       for(const entry of ['rules.js','view.js','sounds.js']){
         if(bundle.files[entry]===undefined)continue;
@@ -103,7 +105,7 @@
       const item=version?this._items.get(key(id,version)):candidates[0];
       if(!item){const error=Error(`Нужен установленный пакет ${id}${version?' версии '+version:''}`);Object.assign(error,{code:'PACK_VERSION_MISSING',game:id,packVersion:version});throw error;}return item;
     }
-    _serialized(items=this._items,active=this._active,removed=this._removed){const text=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[...items.values()].map(item=>item.bundle),active:Object.fromEntries(active),removed:[...removed]});if(bytes(text)>MAX_TOTAL)throw Error('Библиотека пакетов слишком большая');return text;}
+    _serialized(items=this._items,active=this._active,removed=this._removed){const text=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[...items.values()].map(item=>item.bundle),active:Object.fromEntries(active),removed:[...removed],quarantined:this.quarantined||[],rawBackups:this.rawBackups||[]});if(bytes(text)>MAX_TOTAL)throw Error('Библиотека пакетов слишком большая');return text;}
     _style(id,css){
       if(!this.document?.createElement)return;
       let node=this._styles.get(id)||this.document.querySelector?.(`style[data-playroom-pack="${id}"]`);
@@ -118,12 +120,12 @@
       try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}
       const previousView=this.views.get(m.id),hadCatalog=Object.hasOwn(this.catalog,m.id),previousCatalog=this.catalog[m.id];
       const oldStyle=this._styles.get(m.id)||this.document?.querySelector?.(`style[data-playroom-pack="${m.id}"]`),previousCSS=oldStyle?.textContent??null;
-      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover);this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
+      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{surfaces:item.view.surfaces});this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
       catch(error){
         this.engine.unregisterVersion(m.id,m.version);
         if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});
         if(previousRules)this.engine.activatePack(previousRules);
-        if(previousView)this.views.register(m.id,previousView.render,previousView.cover);else this.views.remove(m.id);
+        if(previousView)this.views.register(m.id,previousView.render,previousView.cover,{surfaces:previousView.surfaces});else this.views.remove(m.id);
         if(hadCatalog)this.catalog[m.id]=previousCatalog;else delete this.catalog[m.id];
         this._style(m.id,previousCSS);throw error;
       }
@@ -142,6 +144,8 @@
       try{this.engine.registerVersion(item.rules,{replace:true});this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
     }
+    // Presentation-only payload: no rule execution, Session, or saved state.
+    exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}
     remove(id,version){
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);
@@ -156,17 +160,33 @@
       this._items=items;this._active=active;this._removed=removed;this._bundled.delete(k);this.engine.unregisterVersion(id,m.version);
       return result;
     }
-    bootstrap(bundles=[]){
+    discardQuarantine(index=null){
+      const previous=this.quarantined;
+      this.quarantined=index===null?[]:this.quarantined.filter((_,i)=>i!==index);
+      try{this.storage.set(this._serialized());}catch(error){this.quarantined=previous;throw error;}
+    }
+    bootstrap(bundles=[],options={}){
       if(!Array.isArray(bundles))throw Error('Некорректный встроенный каталог');
-      const sources=new Map(),bundled=new Set(),removed=new Set();
+      const sources=new Map(),bundled=new Set(),removed=new Set();this.warnings=[];this.quarantined=[];this.rawBackups=[];
       for(const input of bundles){const bundle=parse(input),k=key(bundle.manifest.id,bundle.manifest.version);sources.set(k,bundle);bundled.add(k);}
-      let saved=null,raw=null,readable=true;this.warnings=[];try{raw=this.storage.get();}catch(error){readable=false;this.warnings.push('Не удалось прочитать библиотеку пакетов: '+error.message);}
-      if(raw){try{if(bytes(raw)>MAX_TOTAL)throw Error();saved=JSON.parse(raw);if(saved.format!=='playroom-packs'||saved.formatVersion!==1||!Array.isArray(saved.packs)||!record(saved.active))throw Error();if(saved.removed!==undefined&&(!Array.isArray(saved.removed)||saved.removed.some(k=>typeof k!=='string'||!ID.test(k.split('@')[0])||!SEMVER.test(k.split('@')[1])||k.split('@').length!==2)))throw Error();for(const k of saved.removed||[])removed.add(k);for(const input of saved.packs){const bundle=parse(input),k=key(bundle.manifest.id,bundle.manifest.version),included=sources.get(k);if(included&&bundled.has(k)&&canonical(included)!==canonical(bundle))this.warnings.push('Встроенный пакет '+k+' отличается от сохранённой версии. Для совместимости партий используется сохранённая версия.');sources.set(k,bundle);}}catch(_){throw Error('Хранилище пакетов повреждено; исходные данные сохранены без изменений');}}
+      let saved=null,raw=null,readable=true;
+      try{raw=this.storage.get();}catch(error){readable=false;this.warnings.push('Не удалось прочитать библиотеку пакетов: '+error.message);}
+      if(raw){try{
+        if(bytes(raw)>MAX_TOTAL)throw Error('Размер');saved=JSON.parse(raw);
+        if(saved.format!=='playroom-packs'||saved.formatVersion!==1||!Array.isArray(saved.packs)||!record(saved.active))throw Error('Формат');
+        this.quarantined=Array.isArray(saved.quarantined)?saved.quarantined:[];this.rawBackups=Array.isArray(saved.rawBackups)?saved.rawBackups:[];
+        for(const k of saved.removed||[])if(typeof k==='string'&&ID.test(k.split('@')[0])&&SEMVER.test(k.split('@')[1]))removed.add(k);
+        for(const input of saved.packs){try{const bundle=parse(input),m=bundle.manifest,k=key(m.id,m.version),included=sources.get(k);
+          if(included&&canonical(included)!==canonical(bundle)){this.quarantined.push({bundle:input,reason:'Конфликт содержимого версии'});continue;}
+          sources.set(k,bundle);
+        }catch(error){this.quarantined.push({bundle:input,reason:error.message});}}
+      }catch(_){saved=null;this.rawBackups.push(raw);this.warnings.push('Повреждённые исходные данные сохранены отдельно. Встроенные игры доступны.');}}
+      if(options.restoreBuiltins)for(const k of bundled)removed.delete(k);
       for(const k of removed){sources.delete(k);bundled.delete(k);}
       const items=new Map(),active=new Map();
-      for(const [k,bundle]of sources){const token=this.prepare(bundle);items.set(k,prepared.get(token).compiled);}
+      for(const [k,bundle]of sources){try{const token=this.prepare(bundle);items.set(k,prepared.get(token).compiled);}catch(error){if(bundled.has(k))throw error;this.quarantined.push({bundle,reason:error.message});}}
       for(const item of items.values()){const m=item.bundle.manifest;if(!active.has(m.id)||compare(m.version,active.get(m.id))>0)active.set(m.id,m.version);}
-      for(const [id,version]of Object.entries(saved?.active||{}))if(items.has(key(id,version)))active.set(id,version);
+      if(this.quarantined.length)this.warnings.push('Несовместимых паков: '+this.quarantined.length+'. Они отключены и доступны для удаления.');
       try{if(readable)this.storage.set(this._serialized(items,active,removed));}catch(error){this.warnings.push('Не удалось сохранить библиотеку пакетов: '+error.message);}
       for(const item of items.values())this.engine.registerVersion(item.rules,{replace:true});
       this._items=items;this._bundled=bundled;this._removed=removed;this._active=active;

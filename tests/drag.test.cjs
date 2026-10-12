@@ -2,11 +2,11 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
 
 test('Pointer input preserves tap, touch scrolling and drag/drop across DOM replacement', { timeout: 90000 }, async t => {
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking'] });
+  const browser = await chromium.launch({ headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking'] });
   async function fixture() {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const page = await context.newPage();
@@ -99,11 +99,49 @@ test('Pointer input preserves tap, touch scrolling and drag/drop across DOM repl
       assert(await page.locator('.hand-track').evaluate(el=>el.scrollLeft)>60);assert.equal(await page.evaluate(()=>trace.selects.length),0);assert.equal(await page.evaluate(()=>trace.commits.length),0);
       const tap=await center(page.locator('.other'));await touch(cdp,'touchStart',tap);await touch(cdp,'touchEnd',tap);assert.equal(await page.evaluate(()=>trace.other),1);
     });
+    for(const mode of ['unavailable','disabled','other-turn','gap'])await check('Any hand surface scrolls without actions: '+mode,async(page,context)=>{
+      await page.setViewportSize({width:844,height:390});
+      await page.addStyleTag({content:'.board{height:100px}.hand-track{touch-action:none;padding-block:8px}.other{position:fixed;right:0;top:0}'});
+      await page.evaluate(mode=>{const el=document.querySelector('[data-select=p2]');
+        if(mode==='unavailable'){for(const a of [...el.attributes])if(a.name.startsWith('data-'))el.removeAttribute(a.name);el.setAttribute('aria-disabled','true');}
+        if(mode==='disabled')el.disabled=true;
+        if(mode==='other-turn')window.enabled=false;
+      },mode);
+      const cdp=await context.newCDPSession(page),p=mode==='gap'?await page.locator('.hand-track').evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.left+180,y:r.top+3};}):await center(page.locator('.piece').nth(2));
+      await touch(cdp,'touchStart',p);for(let n=1;n<=4;n++)await touch(cdp,'touchMove',{x:p.x-n*25,y:p.y});await touch(cdp,'touchEnd',p);
+      assert(await page.locator('.hand-track').evaluate(el=>el.scrollLeft)>60,mode+' must scroll');
+      assert.equal(await page.evaluate(()=>trace.selects.length+trace.commits.length),0);assert.equal(await page.locator('.playroom-drag-ghost').count(),0);
+    });
+    await check('Nested hand keeps separate scroll axes and scrolls the player panel during another turn',async(page,context)=>{
+      await page.setViewportSize({width:844,height:390});
+      await page.addStyleTag({content:'.board{height:30px}.layout-self{height:190px;width:350px;overflow-y:auto;margin:10px}.hand-track{margin:8px;height:96px}.panel-tail{height:200px}.other{position:fixed;right:5px;top:5px}'});
+      await page.evaluate(()=>{const hand=document.querySelector('.hand-track'),panel=document.createElement('section');panel.className='layout-self';hand.before(panel);panel.append(hand);panel.insertAdjacentHTML('beforeend','<div class="panel-tail">Player details</div>');window.enabled=false;});
+      const cdp=await context.newCDPSession(page),panel=page.locator('.layout-self'),track=page.locator('.hand-track');
+      let p=await center(page.locator('.piece').nth(2));await touch(cdp,'touchStart',p);for(let n=1;n<=4;n++)await touch(cdp,'touchMove',{x:p.x-n*25,y:p.y});await touch(cdp,'touchEnd',p);
+      assert(await track.evaluate(el=>el.scrollLeft)>60);assert.equal(await panel.evaluate(el=>el.scrollTop),0);
+      const x=await track.evaluate(el=>el.scrollLeft);p=await center(page.locator('.piece').nth(2));
+      await touch(cdp,'touchStart',p);for(let n=1;n<=4;n++)await touch(cdp,'touchMove',{x:p.x,y:p.y-n*20});await touch(cdp,'touchEnd',p);
+      assert(await panel.evaluate(el=>el.scrollTop)>50);assert.equal(await track.evaluate(el=>el.scrollLeft),x);
+      await panel.evaluate(el=>el.scrollTop=el.scrollHeight);const bottom=await panel.evaluate(el=>el.scrollTop);
+      p=await panel.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.right-20,y:r.bottom-30};});
+      await touch(cdp,'touchStart',p);await touch(cdp,'touchMove',{x:p.x,y:p.y-45});await touch(cdp,'touchEnd',p);
+      assert.equal(await panel.evaluate(el=>el.scrollTop),bottom);assert.equal(await page.evaluate(()=>scrollY),0);
+      await touch(cdp,'touchStart',{x:p.x,y:p.y-80});await touch(cdp,'touchMove',p);await touch(cdp,'touchEnd',p);
+      assert(await panel.evaluate(el=>el.scrollTop)<bottom-50);assert.equal(await page.evaluate(()=>trace.selects.length+trace.commits.length),0);
+    });
     async function verticalHand(page) {
       await page.setViewportSize({width:844,height:390});
       await page.addStyleTag({content:'.board{height:150px;padding:8px}.hand-track{display:grid;grid-template-columns:repeat(3,56px);grid-auto-rows:48px;align-items:start;align-content:start;gap:0 12px;height:115px;width:204px;margin:8px;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;scroll-snap-type:none}.other{position:fixed;right:10px;top:12px;margin:0}'});
       return locator=>locator.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+12};});
     }
+    await check('Unavailable landscape hand elements scroll vertically without enabling play',async(page,context)=>{
+      const point=await verticalHand(page),cdp=await context.newCDPSession(page);
+      for(const mode of ['disabled','unavailable','other-turn']){
+       await page.evaluate(mode=>{render();window.enabled=mode!=='other-turn';const el=document.querySelector('[data-select=p0]');if(mode==='disabled')el.disabled=true;if(mode==='unavailable'){for(const a of [...el.attributes])if(a.name.startsWith('data-'))el.removeAttribute(a.name);el.setAttribute('aria-disabled','true');}},mode);
+       const p=await point(page.locator('.piece').first());await touch(cdp,'touchStart',p);for(let n=1;n<=4;n++)await touch(cdp,'touchMove',{x:p.x,y:p.y-n*20});await touch(cdp,'touchEnd',p);
+       assert(await page.locator('.hand-track').evaluate(el=>el.scrollTop)>60,mode);assert.equal(await page.evaluate(()=>trace.selects.length+trace.commits.length),0);
+      }
+    });
     await check('Landscape vertical hands scroll on drag and swipe-only cards without playing; next touch stays native',async(page,context)=>{
       const point=await verticalHand(page),cdp=await context.newCDPSession(page);
       for(const drag of [true,false]){

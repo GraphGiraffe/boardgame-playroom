@@ -1,0 +1,43 @@
+name: Pinned app and packs integration
+on:
+  workflow_dispatch:
+    inputs:
+      packs_ref:
+        description: Exact 40-character SHA of boardgame-playroom-paks
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require explicit companion access and immutable ref
+        env:
+          PACKS_KEY: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
+          PACKS_REF: ${{ inputs.packs_ref }}
+        run: |
+          test -n "$PACKS_KEY" || { echo '::error::Set PLAYROOM_PAKS_READ_KEY with a read-only deploy key for the private companion repository'; exit 1; }
+          [[ "$PACKS_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::Use a full commit SHA'; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: GraphGiraffe/boardgame-playroom-paks
+          ref: ${{ inputs.packs_ref }}
+          ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
+          path: companion
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"

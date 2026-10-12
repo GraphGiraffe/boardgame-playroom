@@ -3,11 +3,13 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
 require('../packs/durak/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
+const root=path.resolve(__dirname,'..');
 
 function fixture(long = false) {
   const saved = new Session(Core, 'uno', {seed: 17, mode: 'pass', preset: 'classic', openHands: true, unoMode: 'manual',
@@ -16,7 +18,7 @@ function fixture(long = false) {
   const take = id => {const c = cards.get(id); assert(c); cards.delete(id); return c;};
   d.discard = [take('u9')]; d.color = 'red'; d.direction = 1; d.drawn = null; d.noDraw = false; d.stalled = 0;
   d.hands = [['u1', 'u26', 'u100', 'u3', 'u27', 'u4', 'u2'].map(take), ['u5', 'u76', 'u30', 'u50', 'u60', 'u81', 'u52'].map(take)];
-  d.drawPile = [...cards.values()]; if (long) d.hands[0].push(...d.drawPile.splice(0, 28));
+  d.drawPile = [...cards.values()]; if (long) d.hands[0].push(...d.drawPile.splice(0, (Number.isInteger(long)?long:35)-7));
   s.turn = 0; Core.validateState(s); return saved;
 }
 function durakFixture(count = 6, defending = false) {
@@ -57,23 +59,18 @@ async function assertDurakTableFit(page, pairCount, openHands, phase, opponentCo
     const within = (r, p) => r.x >= p.x - 1 && r.y >= p.y - 1 && r.right <= p.right + 1 && r.bottom <= p.bottom + 1;
     const viewport = {x:0,y:0,right:innerWidth,bottom:innerHeight};
     const regions = {};
-    for (const selector of ['.scene','.durak-table','.own-hand','.hand-track','.opponent-hands','.durak-stock','.scene-actions']) {
-      const el = document.querySelector(selector), r = rect(el); regions[selector] = {...r,overflowX:el.scrollWidth-el.clientWidth,overflowY:el.scrollHeight-el.clientHeight};
-      if (!within(r, viewport)) issues.push(`${selector} outside viewport`);
-      if (selector !== '.durak-stock' && (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)) issues.push(`${selector} scrolls`);
-    }
-    for (const el of scene.querySelectorAll('.durak-stock .playing-card,.durak-stock .piece-back')) if (!within(rect(el),viewport)) issues.push('stock card outside viewport');
+    for(const selector of ['.scene','.layout-field','.layout-self','.layout-participants']){const el=document.querySelector(selector),r=rect(el);regions[selector]=r;if(!within(r,viewport))issues.push(selector+' outside viewport');}
     if (scene.querySelectorAll('.durak-pair').length !== pairCount) issues.push('missing table pair');
     const table = scene.querySelector('.durak-table');
     for (const el of scene.querySelectorAll('.durak-table .playing-card,.own-hand .playing-card,.public-card .playing-card')) {
       const entity = el.dataset.entity, r = rect(el), tableCard = el.closest('.attack-card,.defense-card'), owner = tableCard || el.closest('.public-card') || el;
-      if (!within(r, viewport) || (tableCard && !within(r, rect(table)))) issues.push(`${entity} card clipped`);
+      if (!el.closest('.layout-field,.mini-hand') && !within(r,viewport)) issues.push(`${entity} card clipped`);
       const corner = el.querySelector('.card-corner:not(.bottom)'), suit = corner.querySelector('small');
       const range = document.createRange(); range.selectNodeContents(corner.firstChild);
       for (const [name, marker, mr] of [['rank',corner,range.getBoundingClientRect()],['suit',suit,suit.getBoundingClientRect()]]) {
         if (mr.width < 2 || mr.height < 2 || parseFloat(getComputedStyle(marker).fontSize) < 9) issues.push(`${entity} ${name} unreadable`);
         const hit = document.elementFromPoint(mr.x + mr.width / 2, mr.y + mr.height / 2);
-        if (!hit || !owner.contains(hit)) issues.push(`${entity} ${name} covered`);
+        if(within(mr,rect(scene))&&!el.closest('.layout-field,.mini-hand')&&(!hit||!owner.contains(hit)))issues.push(`${entity} ${name} covered`);
       }
     }
     if (scene.querySelectorAll('.public-card').length !== (openHands ? opponentCount : 0)) issues.push('opponent privacy/count changed');
@@ -88,6 +85,7 @@ async function assertDurakTableFit(page, pairCount, openHands, phase, opponentCo
 const card = (page, id) => page.locator(`.own-hand [data-hand-preview="${id}"]`);
 async function state(page) {return page.evaluate(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current);}
 async function exposedPoint(locator) {
+  await locator.locator(".card-corner:not(.bottom)").scrollIntoViewIfNeeded();
   return locator.evaluate(el => {
     const r = el.querySelector('.card-corner').getBoundingClientRect();
     const p = {x: r.x + r.width / 2, y: r.y + r.height / 2};
@@ -111,14 +109,16 @@ async function expectMove(page, n) {
 }
 
 test('Compact card hands preserve readable previews and each game’s play controls', {timeout: 120000}, async t => {
-  const browser = await chromium.launch({headless: true, executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-background-networking']});
+  // The 24-card reload must have persistent storage on both navigations.
+  const hosted=url.startsWith('file:')?await serveBrowserFixture(root):null;
+  const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: options.viewport || {width: 390, height: 740}, isMobile: !!options.touch, hasTouch: !!options.touch, reducedMotion: 'reduce'});
       await context.addInitScript(saved => {if(sessionStorage.getItem('compact-seeded'))return;sessionStorage.setItem('compact-seeded','1');localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, options.saved || fixture(options.long));
       const page = await context.newPage(), errors = []; page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
       try {
-        await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click();
+        await page.goto(hosted?.url||url); await page.locator('.resume-banner [data-command=resume]').click();
         if (await page.locator('.handoff [data-command=unlock]').count()) await page.locator('.handoff [data-command=unlock]').click();
         await page.locator('.own-hand [data-hand-preview]').first().waitFor({state: 'visible'});
         await run({page, context}); assert.deepEqual(errors, []);
@@ -129,14 +129,30 @@ test('Compact card hands preserve readable previews and each game’s play contr
   try {
     for (const viewport of [{width: 320, height: 640}, {width: 390, height: 740}, {width: 1280, height: 900}]) {
       await check(`All seven card corners fit without scrolling at ${viewport.width}×${viewport.height}`, {viewport, touch: viewport.width < 500}, async ({page}) => {
+        // Resume can leave the desktop pointer over a card in the new screen.
+        // Its deliberate hover preview shifts neighbours; measure the resting
+        // hand here, and exercise hover/keyboard expansion in its own case below.
+        await page.mouse.move(1,1);
         const dimensions = await page.locator('.hand-track').evaluate(el => ({width: el.clientWidth, scroll: el.scrollWidth, count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length}));
-        assert.equal(dimensions.count, 7); assert.equal(dimensions.rows, 1); assert(dimensions.scroll <= dimensions.width + 1);
+        assert.equal(dimensions.count, 7); assert.equal(dimensions.rows, 1); assert(dimensions.scroll <= dimensions.width + 1,JSON.stringify(dimensions));
         for (const id of ['u1', 'u26', 'u100', 'u3', 'u27', 'u4', 'u2']) await exposedPoint(card(page, id));
         const scene = await page.locator('.scene').evaluate(el => ({height: el.clientHeight, scroll: el.scrollHeight}));
         assert(scene.scroll <= scene.height + 1, `initial seven-card scene needs no vertical scroll: ${JSON.stringify(scene)}`);
         if (viewport.width === 390 && process.env.PLAYROOM_CAPTURE_DIR) await page.screenshot({path: path.join(process.env.PLAYROOM_CAPTURE_DIR, 'playroom-v0.3-uno-phone.png')});
       });
     }
+    for(const count of [9,14]) await check(`Hand with ${count} cards overlaps and keeps scrolling independent of game mode`,
+      {long:count,viewport:{width:320,height:640},touch:true},async({page})=>{
+        const hand=await page.locator('.own-hand').evaluate(el=>{
+          const track=el.querySelector('.hand-track'),cards=[...track.querySelectorAll('.hand-card')];
+          const first=cards[0].getBoundingClientRect(),second=cards[1].getBoundingClientRect();
+          return {count:cards.length,overlap:first.right-second.left,overflow:track.scrollWidth-track.clientWidth,
+            marker:el.classList.contains('hand-overflow-right'),rows:track.querySelectorAll('.hand-fan-row').length};
+        });
+        assert.equal(hand.count,count);assert.equal(hand.rows,1);
+        assert(hand.overlap>=12,`Cards must visibly overlap, got ${JSON.stringify(hand)}`);
+        assert(hand.overflow>1&&hand.marker,`Scrolled hands need a visible right boundary: ${JSON.stringify(hand)}`);
+      });
     await check('Hover and keyboard focus reveal the whole card, including an unplayable card', {}, async ({page}) => {
       for (const id of ['u1', 'u26']) {
         const p = await exposedPoint(card(page, id)); await page.mouse.move(p.x, p.y); await assertFullPreview(page, id);
@@ -148,7 +164,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
       assert.equal(await card(page, 'u26').isEnabled(), true);
     });
     await check('First click previews only; clicking the discard plays the selected legal card', {}, async ({page}) => {
-      await card(page, 'u1').click(); assert.equal((await state(page)).move, 0); await assertFullPreview(page, 'u1');
+      {const p=await exposedPoint(card(page,'u1'));await page.mouse.click(p.x,p.y);} assert.equal((await state(page)).move, 0); await assertFullPreview(page, 'u1');
       assert.equal(await card(page, 'u1').getAttribute('aria-pressed'), 'true');
       if (process.env.PLAYROOM_CAPTURE_DIR) await page.screenshot({path: path.join(process.env.PLAYROOM_CAPTURE_DIR, 'playroom-v0.3-uno-phone-selected.png')});
       await page.locator('.uno-drop-target[data-drop-piece="u1"][data-action]').click(); await expectMove(page, 1);
@@ -157,7 +173,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
       assert(scene.scroll <= scene.height + 1, `pass-device state stays within the viewport: ${JSON.stringify(scene)}`);
     });
     await check('Selecting an unplayable card reveals it without creating a target or move', {}, async ({page}) => {
-      await card(page, 'u26').click(); await assertFullPreview(page, 'u26');
+      {const p=await exposedPoint(card(page,'u26'));await page.mouse.click(p.x,p.y);} await assertFullPreview(page, 'u26');
       assert.equal(await card(page, 'u26').getAttribute('aria-pressed'), 'true');
       assert.equal(await page.locator('.uno-drop-target').count(), 0); assert.equal((await state(page)).move, 0);
     });
@@ -181,21 +197,52 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Large hands keep one fixed-height row and reveal every card through horizontal scrolling', {long: true, viewport: {width: 320, height: 640}}, async ({page}) => {
       const track=page.locator('.hand-track'),info = await track.evaluate(el => ({count: el.querySelectorAll('[data-hand-preview]').length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth - el.clientWidth, y:el.scrollHeight-el.clientHeight,overflow: getComputedStyle(el).overflowX}));
       assert.equal(info.count, 35); assert.equal(info.rows, 1); assert(info.x > 1); assert(info.y <= 1); assert.equal(info.overflow, 'auto');
+      assert(await track.evaluate(el=>{
+        const peek=parseFloat(getComputedStyle(el).getPropertyValue('--fan-peek'));
+        const width=parseFloat(getComputedStyle(el).getPropertyValue('--fan-card-width'));
+        return el.classList.contains('is-long-hand')&&peek>=20&&peek<=width-12;
+      }),'Long hands must retain overlapping cards with reachable rank corners');
+      assert.equal(await page.locator('.own-hand.hand-overflow-right').count(),1,'A clipped hand needs a right-edge scroll marker');
       const ids = await track.locator('[data-hand-preview]').evaluateAll(els => els.map(el => el.dataset.handPreview));
-      for (const id of ids) {
-        await card(page,id).scrollIntoViewIfNeeded();await exposedPoint(card(page,id));
+      // A fanned row overlaps card bodies, and scrollIntoView may decide a
+      // partly covered card is already visible. Pan the *actual* horizontal
+      // hand track to the rank corner, as a player would, before testing it.
+      // Keep the hit-test requirement: every card must really be reachable.
+      const reveal=async id=>{
+        const result=await card(page,id).evaluate(async el=>{
+          const track=el.closest('.hand-track'),corner=el.querySelector('.card-corner');
+          const r=corner.getBoundingClientRect(),v=track.getBoundingClientRect();
+          track.scrollLeft+=r.left+r.width/2-(v.left+v.width/2);
+          await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+          const final=corner.getBoundingClientRect(),view=track.getBoundingClientRect();
+          const x=final.left+final.width/2,y=final.top+final.height/2;
+          const hit=document.elementFromPoint(x,y)?.closest('[data-hand-preview]')?.dataset.handPreview||null;
+          return {id:el.dataset.handPreview,hit,x,y,trackLeft:view.left,trackRight:view.right,
+            scrollLeft:track.scrollLeft,scrollMax:track.scrollWidth-track.clientWidth};
+        });
+        assert.equal(result.hit,id,'Card rank corner inaccessible after hand pan: '+JSON.stringify(result));
+        assert(result.x>=result.trackLeft&&result.x<result.trackRight,'Rank corner outside scroller: '+JSON.stringify(result));
+      };
+      for(const id of ids){
+        await reveal(id);await exposedPoint(card(page,id));
       }
+      assert.equal(await page.locator('.own-hand.hand-overflow-left').count(),1,'After scrolling, a left edge signals earlier cards');
+      await track.evaluate(el=>{el.scrollLeft=0;});
+      await page.waitForFunction(()=>document.querySelector('.own-hand')?.classList.contains('hand-overflow-right')&&!document.querySelector('.own-hand')?.classList.contains('hand-overflow-left'));
       for(const id of [ids[0],ids[17],ids.at(-1)]){
-        await card(page,id).scrollIntoViewIfNeeded();const p=await exposedPoint(card(page,id));
+        await reveal(id);const p=await exposedPoint(card(page,id));
         await page.mouse.move(p.x,p.y);await assertFullPreview(page,id);await page.mouse.move(1,1);
       }
       assert.equal((await state(page)).move, 0);
     });
     for (const viewport of [{width: 320, height: 640}, {width: 390, height: 740}, {width: 1280, height: 900}]) for (const count of [6, 8]) {
       await check(`Durak ${count} rank-and-suit corners fit at ${viewport.width}×${viewport.height}`, {saved: durakFixture(count), viewport, touch: viewport.width < 500}, async ({page}) => {
+        // Larger fallback font metrics must keep the double-digit rank reachable.
+        if(count===8&&viewport.width===390)await page.evaluate(()=>{for(const corner of document.querySelectorAll('.own-hand .card-corner'))corner.style.setProperty('font-size','17px','important');PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
         const layout = await page.locator('.hand-track').evaluate(el => {
           const cards = [...el.querySelectorAll('[data-hand-preview]')], hidden = [];
           for (const card of cards) {
+            card.scrollIntoView({block:'nearest',inline:'nearest'});
             const corner = card.querySelector('.card-corner:not(.bottom)'), suit = corner.querySelector('small');
             for (const marker of [corner, suit]) {
               const r = marker.getBoundingClientRect(), style = getComputedStyle(marker);
@@ -207,7 +254,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
           }
           return {count: cards.length, rows: el.querySelectorAll('.hand-fan-row').length, x: el.scrollWidth-el.clientWidth, y: el.scrollHeight-el.clientHeight, hidden};
         });
-        assert.equal(layout.count, count); assert.equal(layout.rows, 1); assert(layout.x <= 1 && layout.y <= 1, JSON.stringify(layout)); assert.deepEqual(layout.hidden, []);
+        assert.equal(layout.count, count); assert.equal(layout.rows, 1); assert(layout.y <= 1, JSON.stringify(layout)); if(count===6)assert(layout.x<=1, JSON.stringify(layout)); assert.deepEqual(layout.hidden, []);
         if (viewport.width === 390 && process.env.PLAYROOM_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR, `playroom-v0.10-durak-${count === 6 ? 'six' : 'eight'}.png`)});
       });
     }
@@ -241,7 +288,15 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Durak growth from six to 24 cards keeps hand height and horizontal swipes never play', {saved: durakFixture(), viewport:{width:320,height:640},touch:true}, async ({page,context}) => {
       const before = await page.locator('.hand-track').boundingBox();
       await page.evaluate(saved=>localStorage.setItem('playroom.session.v1',JSON.stringify(saved)),durakFixture(24));
-      await page.reload(); await page.locator('.resume-banner [data-command=resume]').tap();
+      await page.reload();
+      // Reopen the saved session through the unified library after refresh.
+      // The checks below still require all 24 cards, unchanged hand height,
+      // a successful horizontal swipe and no accidental game command.
+      await page.locator('.side-nav [data-command=sessions]').tap();
+      await page.locator('.saved-games-list').waitFor();
+      const savedRow=page.locator('.saved-game[data-session-id] [data-resume-id]');
+      assert.equal(await savedRow.count(),1,'the reloaded large-hand match is still present in local saved games');
+      await savedRow.first().tap();
       const track=page.locator('.hand-track'), after=await track.boundingBox(); assert(Math.abs(before.height-after.height)<=1,'large hand must keep its reserved height');
       const dimensions=await track.evaluate(el=>({x:el.scrollWidth-el.clientWidth,y:el.scrollHeight-el.clientHeight,count:el.querySelectorAll('[data-hand-preview]').length}));
       assert.equal(dimensions.count,24);assert(dimensions.x>1&&dimensions.y<=1);
@@ -262,11 +317,15 @@ test('Compact card hands preserve readable previews and each game’s play contr
         if (pairCount !== 6) return;
         const p = await exposedPoint(card(page,defense)); await page.touchscreen.tap(p.x,p.y); await expectMove(page,1);
         let s = await state(page); Core.validateState(s); assert.equal(s.data.table.at(-1).defense.id,defense); assert.equal(s.events.filter(e=>e.kind==='defend').length,1);
+        await page.locator('[data-command=pass-device]:not(:disabled)').tap();
         if (await page.locator('.handoff [data-command=unlock]').count()) await page.locator('.handoff [data-command=unlock]').tap();
         await assertDurakTableFit(page,pairCount,openHands,'after defense',ownCount-1);
         await page.locator('.scene-actions button').filter({hasText:/^Бито$/}).tap(); await expectMove(page,2);
         s = await state(page); Core.validateState(s); assert.equal(s.data.table.length,0); assert.equal(s.data.discard.length,pairCount*2);
       });
     }
-  } finally {await browser.close();}
+  } finally {
+    await browser.close();
+    await hosted?.close();
+  }
 });

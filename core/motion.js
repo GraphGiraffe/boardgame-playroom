@@ -79,7 +79,7 @@
   function cancel() {
     if (running) running.finish();
   }
-  function play(snapshot, { duration = 500, draws } = {}) {
+  function play(snapshot, { duration = 500, settle = 160, draws } = {}) {
     cancel();
     duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
     if (!snapshot || !duration) return Promise.resolve();
@@ -88,6 +88,18 @@
     const entities = snapshot.entities instanceof Map ? snapshot.entities : new Map();
     const flights = [], used = new Set();
     const current = [...scene.querySelectorAll('[data-entity]')];
+    let sequence=null;
+    try { sequence=JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
+    if(sequence?.trigger!==snapshot.action?.type)sequence=null;
+    const anchorRect=point=>{
+      const anchor=[...scene.querySelectorAll('[data-motion-anchor]')].find(el=>el.dataset.motionAnchor===point.anchor);
+      return rectOf(anchor);
+    };
+    const routeEntity=sequence&&current.find(el=>el.dataset.entity===sequence.entity);
+    if(routeEntity&&anchorRect(sequence.origin)&&sequence.steps.every(anchorRect)&&(!sequence.jump||anchorRect(sequence.jump))){
+      const to=rectOf(routeEntity),origin=anchorRect(sequence.origin),from=entities.get(sequence.entity)?.rect||{x:origin.x+(origin.width-to.width)/2,y:origin.y+(origin.height-to.height)/2,width:to.width,height:to.height};
+      flights.push({el:routeEntity,from,to,kind:'route',sequence,duration:duration+sequence.steps.length*duration/4+(sequence.jump?settle+duration:0)});used.add(routeEntity);
+    }else sequence=null;
     const card = snapshot.action?.card;
     const publicNow = current.filter(publicEntity);
     const played = publicNow.filter(el => {
@@ -107,7 +119,7 @@
     }
     const handCards = current.filter(el => el.closest('.hand-track, .hand-cards, .hand-scroll') && !entities.get(el.dataset.entity)?.hand);
     const drawCues = draws === undefined && snapshot.action?.type === 'draw' ? [{ player: snapshot.viewer, count: handCards.length, from: 'stock' }] : draws || [];
-    const newHands = handOrigins(scene, snapshot.viewer), baseDelay = flights.length ? duration : 0;
+    const newHands = handOrigins(scene, snapshot.viewer), baseDelay = flights.length ? Math.max(...flights.map(f=>f.duration||duration)) : 0;
     let drawIndex = 0, ownIndex = 0;
     for (const cue of drawCues) {
       if (!Number.isInteger(cue.player) || !Number.isInteger(cue.count) || cue.count < 1) continue;
@@ -121,22 +133,25 @@
         flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: baseDelay + drawIndex++ * duration * .3 });
       }
     }
-    const die = snapshot.action?.type === 'roll' ? scene.querySelector('.die') : null;
+    const die = [...scene.querySelectorAll('[data-motion-lead]')].find(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el))||null;
     if (!flights.length && !die) return Promise.resolve();
     return new Promise(resolve => {
-      const animations = [], restore = [], layer = flights.length ? doc.createElement('div') : null;
+      const animations = [], restore = [], timers = [], resizeUpdates=[], finishUpdates=[], layer = doc.createElement('div');
       let ended = false, timer = 0;
       const show = entry => { if (!entry || entry.shown) return; entry.shown = true; entry.visibility ? entry.el.style.setProperty('visibility', entry.visibility, entry.priority) : entry.el.style.removeProperty('visibility'); };
       if (layer) { layer.className = 'playroom-motion-layer'; layer.setAttribute('aria-hidden', 'true'); doc.body.append(layer); }
       const run = { finish() {
-        if (ended) return; ended = true; clearTimeout(timer);
+        if (ended) return; ended = true; clearTimeout(timer);timers.forEach(clearTimeout);root.removeEventListener('resize',onResize);
         for (const animation of animations) animation.cancel();
         restore.forEach(show);
+        finishUpdates.forEach(update=>update());
         layer?.remove(); if (running === run) running = null; resolve();
       }};
+      const onResize=()=>resizeUpdates.forEach(update=>update());
+      root.addEventListener('resize',onResize);
       running = run;
       try {
-        for (const { el, from, to, kind, back, player, delay = 0, duration: flightDuration = duration } of flights) {
+        for (const { el, from, to, kind, back, player, sequence:route, delay = 0, duration: flightDuration = duration } of flights) {
           const mover = doc.createElement('div'); mover.className = 'playroom-motion-flight'; mover.dataset.motionKind = kind;
           mover.style.width = `${to.width}px`; mover.style.height = `${to.height}px`;
           let clone;
@@ -152,15 +167,43 @@
           if (entry) { restore.push(entry); el.style.setProperty('visibility', 'hidden', 'important'); }
           const sx = from.width / to.width, sy = from.height / to.height, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
           const transform = (x,y,xScale,yScale) => `translate3d(${x}px,${y}px,0) scale(${xScale},${yScale})`;
-          const frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
+          let frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
+          let routeFrames;
+          if(route){
+            routeFrames=()=>{
+              const box=rectOf(el)||to;
+              mover.style.width=`${box.width}px`;mover.style.height=`${box.height}px`;
+              // All cells use their live centres, including after a resize.
+              const at=point=>{const r=anchorRect(point)||box;return transform(r.x+(r.width-box.width)/2,r.y+(r.height-box.height)/2,1,1);};
+              const result=[{transform:at(route.origin),offset:0},{transform:at(route.origin),offset:duration/flightDuration}];
+              route.steps.forEach((point,index)=>result.push({transform:!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
+              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:transform(box.x,box.y,1,1),offset:1});}
+              return result;
+            };
+            frames=routeFrames();
+            const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===route.player);
+            const counter=[...(panel?.querySelectorAll('[data-motion-counter]')||[])].find(node=>node.dataset.motionCounter===route.counter),finalLabel=counter?.textContent;
+            const status=scene.closest('.table-shell')?.querySelector('.status-event'),finalStatus=status?.textContent,finalTitle=status?.getAttribute('title');
+            const highlighted=[...scene.querySelectorAll('.player-panel.is-turn')];highlighted.forEach(node=>{node.classList.remove('is-turn');node.removeAttribute('aria-current');});panel?.classList.add('is-turn');panel?.setAttribute('aria-current','true');
+            const label=point=>{if(counter&&point.label)counter.textContent=point.label;if(status&&point.label){status.textContent=point.label;status.title=point.label;}mover.dataset.motionAnchor=point.anchor;};
+            label(route.origin);
+            route.steps.forEach((point,index)=>timers.push(root.setTimeout(()=>label(point),duration+(index+1)*duration/4)));
+            if(route.jump)timers.push(root.setTimeout(()=>label(route.jump),flightDuration));
+            finishUpdates.push(()=>{if(counter)counter.textContent=finalLabel;if(status){status.textContent=finalStatus;status.setAttribute('title',finalTitle||'');}panel?.classList.remove('is-turn');panel?.removeAttribute('aria-current');highlighted.forEach(node=>{node.classList.add('is-turn');node.setAttribute('aria-current','true');});});
+          }
           if (back) { frames[0].opacity = 0; frames[1].opacity = 1; frames[2].opacity = 1; }
-          const animation = mover.animate(frames, { duration: flightDuration, delay, easing: 'cubic-bezier(.25,.55,.25,1)', fill: 'both' });
+          const animation = mover.animate(frames, { duration: flightDuration, delay, easing: route?'linear':'cubic-bezier(.25,.55,.25,1)', fill: 'both' });
+          if(routeFrames)resizeUpdates.push(()=>{clone=styledClone(el);clone.dataset.motionKind='route';mover.replaceChildren(clone);animation.effect.setKeyframes(routeFrames());});
           animation.finished.then(() => { show(entry); mover.remove(); }, () => {});
           animations.push(animation);
         }
         if (die) {
-          const base = root.getComputedStyle(die).transform;
-          animations.push(die.animate([{ transform: `${base === 'none' ? '' : base} rotate(-25deg) scale(.85)` }, { transform: `${base === 'none' ? '' : base} rotate(135deg) scale(1.08)`, offset: .45 }, { transform: base }], { duration, easing: 'ease-out' }));
+          const mover=doc.createElement('div'),box=rectOf(die),clone=styledClone(die);
+          mover.className='playroom-motion-flight';mover.dataset.motionKind='roll';mover.append(clone);layer.append(mover);
+          const position=()=>{const r=rectOf(die)||box;Object.assign(mover.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${r.width}px`,height:`${r.height}px`,transformOrigin:'center'});};position();resizeUpdates.push(position);
+          const entry={el:die,visibility:die.style.getPropertyValue('visibility'),priority:die.style.getPropertyPriority('visibility')};restore.push(entry);die.style.setProperty('visibility','hidden','important');
+          const animation=mover.animate([{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
+          animation.finished.then(()=>{show(entry);mover.remove();},()=>{});animations.push(animation);
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.

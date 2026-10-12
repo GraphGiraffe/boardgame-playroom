@@ -2,7 +2,7 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js');
-require('../packs/uno/rules.js');
+require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/rules.js'));
 const create=(count=2,mode='manual',seed=17,preset='classic')=>E.createGame('uno',{seed,preset,unoMode:mode,players:Array.from({length:count},(_,i)=>({name:`P${i}`,bot:true}))});
 function fixture(hands=[['u1','u3'],['u5','u7']],{pending=null,turn=0,mode='manual'}={}){
   const s=create(hands.length,mode),d=s.data,all=new Map([...d.hands.flat(),...d.drawPile,...d.discard].map(c=>[c.id,c]));
@@ -33,17 +33,17 @@ test('manual UNO offers declaration and every other accusation even with the wro
   s.status='finished';assert.deepEqual(E.reactions(s,0),[]);assert.equal(E.botReaction(s,0),null);
 });
 
-test('playing to one opens a public manual window without announcing automatically',()=>{
+test('playing to one opens an internal manual window without disclosing its pending hint',()=>{
   const before=fixture(),json=JSON.stringify(before);const s=play(before,0,'u1');
   assert.equal(JSON.stringify(before),json);assert.equal(s.turn,1);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[0],false);assert(!s.events.some(e=>e.kind==='uno'));
-  const projected=E.project(s,1);assert.deepEqual(projected.data.uno,{mode:'manual',declared:[false,false],pending:0});assert.deepEqual(projected.data.hands[0],[{hidden:true}]);
+  const projected=E.project(s,1);assert.equal(projected.data.uno.pending,undefined);assert.equal(projected.data.uno.episode,1);assert.deepEqual(projected.data.uno.declared,[false,false]);assert.deepEqual(projected.data.hands[0],[{hidden:true}]);
   E.validateState(s);
 });
 
 test('proper out-of-turn declaration closes own window; repeating does not draw cards',()=>{
   let s=play(fixture(),0,'u1');const before=inventory(s),turn=s.turn;s=declare(s,0);
   assert.equal(s.turn,turn);assert.equal(s.data.uno.pending,null);assert.equal(s.data.uno.declared[0],true);assert.equal(s.events.at(-1).kind,'uno');
-  s=declare(s,0);assert.equal(s.data.hands[0].length,1);assert.equal(s.events.at(-1).kind,'uno');assert.match(s.events.at(-1).text,/повтор/);assert.deepEqual(inventory(s),before);assert.equal(E.botReaction(s,0),null);
+  const declared=s;s=declare(s,0);assert.equal(s,declared);assert.equal(s.data.hands[0].length,1);assert.equal(s.events.at(-1).kind,'uno');assert.deepEqual(inventory(s),before);assert.equal(E.botReaction(s,0),null);
 });
 
 test('early declaration is logged without a penalty and does not reserve a later UNO',()=>{
@@ -57,31 +57,34 @@ test('a correct accusation draws exactly two for the target and preserves the or
   assert.equal(s.events.at(-2).kind,'uno-caught');assert.equal(s.events.at(-2).player,1);assert.equal(s.events.at(-2).target,0);assert.equal(s.events.at(-1).kind,'draw');assert.equal(s.events.at(-1).player,0);assert.deepEqual(inventory(s),all);E.validateState(s);
 });
 
-test('accusing an already declared player penalizes the accuser by two',()=>{
-  let s=declare(play(fixture(),0,'u1'),0);s=accuse(s,1,0);assert.equal(s.data.hands[0].length,1);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.uno.declared[0],true);assert.equal(s.events.at(-2).kind,'false-accusation');assert.match(s.events.at(-2).text,/уже объявил/);assert.equal(s.events.at(-1).player,1);
+test('accusations arriving after a declaration are neutral even with fresh commands',()=>{
+  const s=declare(play(fixture(),0,'u1'),0);assert.equal(accuse(s,1,0),s);assert.equal(s.data.hands[1].length,2);assert.equal(s.data.uno.declared[0],true);
 });
 
-test('wrong count or wrong player penalizes only the accuser, preserving another open window',()=>{
-  let s=accuse(fixture(),1,0);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[0].length,2);assert.match(s.events.at(-2).text,/2 карт/);
-  s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});s=accuse(s,1,2);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[2].length,1);assert.equal(s.data.uno.pending,0);assert.match(s.events.at(-2).text,/P0/);
-  s=accuse(s,2,0);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[2].length,1);assert.equal(s.data.uno.pending,null);
+test('wrong count is penalized once, while several one-card players are independent',()=>{
+  let s=accuse(fixture(),1,0);assert.equal(s.data.hands[1].length,4);assert.equal(s.data.hands[0].length,2);
+  assert.equal(accuse(s,1,0),s);
+  s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});
+  s=accuse(s,1,2);assert.equal(s.data.hands[2].length,3);assert.equal(s.data.hands[1].length,2);
+  s=accuse(s,1,0);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);
+  assert.equal(accuse(s,2,0),s);assert.equal(accuse(s,0,2),s);
 });
-
-test('the next normal draw closes the window; a late accusation retains the drawn-card restriction',()=>{
-  let s=play(fixture(),0,'u1');s=act(s,1,{type:'draw'});const drawn=s.data.drawn;assert(drawn);assert.equal(s.data.uno.pending,null);
-  s=accuse(s,1,0);assert.equal(s.data.hands[1].length,5);assert.equal(s.data.hands[0].length,1);assert.equal(s.data.drawn,drawn);assert.equal(s.turn,1);assert.match(s.events.at(-2).text,/окно обвинения уже закрыто/);
+test('another player drawing preserves the accusation and drawn-card restriction',()=>{
+  let s=play(fixture(),0,'u1');s=act(s,1,{type:'draw'});const drawn=s.data.drawn;assert(drawn);
+  s=accuse(s,1,0);assert.equal(s.data.hands[1].length,3);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.drawn,drawn);assert.equal(s.turn,1);
   assert(normal(s).every(a=>a.type==='pass'||a.card===drawn));assert(!normal(s).some(a=>a.type==='draw'));E.validateState(s);
 });
-
-test('next normal play replaces the old window; pass closes a pending window',()=>{
-  let s=play(fixture([['u1','u3'],['u5','u7'],['u26','u28']]),0,'u1');s=play(s,1,'u5');assert.equal(s.data.uno.pending,1);
-  s=accuse(s,2,0);assert.equal(s.data.hands[2].length,4);assert.equal(s.data.uno.pending,1);
-  s=fixture([['u1'],['u5','u7']],{pending:0,turn:1});s.data.drawn='u7';s=act(s,1,{type:'pass'});assert.equal(s.data.uno.pending,null);assert.equal(s.turn,0);
+test('ordinary play and pass preserve other players open situations',()=>{
+  let s=play(fixture([['u1','u3'],['u5','u7'],['u26','u28']]),0,'u1');s=play(s,1,'u5');
+  assert.deepEqual(s.data.uno.situations.map(w=>w.open),[true,true,false]);
+  const second=E.reactions(s,2).find(a=>a.target===1),first=E.reactions(s,2).find(a=>a.target===0);
+  s=act(s,2,first);s=act(s,2,second);assert.deepEqual(s.data.hands.map(h=>h.length),[3,3,2]);assert.equal(act(s,2,first),s);
+  s=fixture([['u1'],['u5','u7']],{pending:0,turn:1});s.data.drawn='u7';s=act(s,1,{type:'pass'});assert.equal(s.data.uno.pending,0);assert.equal(s.turn,0);
 });
 
-test('unrelated declarations leave the pending player catchable; repeated catches become false accusations',()=>{
+test('unrelated declarations leave the pending player catchable; repeated catches stay neutral',()=>{
   let s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});s=declare(s,2);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[2],true);s=declare(s,1);assert.equal(s.data.uno.pending,0);
-  s=accuse(s,1,0);const targetCount=s.data.hands[0].length;s=accuse(s,1,0);assert.equal(s.data.hands[0].length,targetCount);assert.equal(s.data.hands[1].length,4);assert.equal(s.events.at(-2).kind,'false-accusation');
+  s=accuse(s,1,0);const caught=s;s=accuse(s,1,0);assert.equal(s,caught);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);assert.equal(s.events.at(-2).kind,'uno-caught');
 });
 
 test('a penalty resets declaration and its own pending flag without touching another player drawn id',()=>{
@@ -123,4 +126,129 @@ test('36 complete manual games cover all player counts/presets and immutable Ses
     assert.deepEqual(Session.restore(E,JSON.parse(session.serialize())).current,session.current);games++;moves+=session.current.move;
   }
   t.diagnostic(JSON.stringify({games,moves,reactions}));
+});
+
+
+test('a captured reaction never attaches to a later ordinary episode; a new independent mistake may be penalized',()=>{
+  let s=fixture([['u1','u3'],['u5','u7'],['u26','u28']]);const old=E.reactions(s,1).find(a=>a.type==='accuse-uno'&&a.target===0);
+  s=accuse(s,1,0);const penalized=s;assert.equal(accuse(s,2,0),penalized);
+  s=play(s,0,'u1');assert.equal(act(s,1,old),s,'old episode stays a no-op after fresh game state');
+  s=accuse(s,2,1);assert.equal(s.events.at(-2).kind,'false-accusation');assert.equal(s.data.hands[2].length,4);
+});
+
+test('session no-op reactions do not add snapshots and resolved episodes survive restore',()=>{
+  const saved=new Session(E,'uno',{seed:17,unoMode:'manual',players:[{name:'P0'},{name:'P1'}]}).export();saved.states[0]=fixture();
+  const session=Session.restore(E,saved);session.act(0,{type:'play',card:'u1'});session.act(0,E.reactions(session.current,0)[0]);
+  const before=session.serialize(),count=session.states.length;session.act(0,E.reactions(session.current,0)[0]);session.act(1,E.reactions(session.current,1).find(a=>a.type==='accuse-uno'));
+  assert.equal(session.states.length,count);assert.equal(session.serialize(),before);
+  const restored=Session.restore(E,JSON.parse(before));assert.equal(restored.act(1,E.reactions(restored.current,1).find(a=>a.type==='accuse-uno')),restored.current);assert.equal(restored.states.length,count);
+});
+
+const Authority=require('../core/authority.js'),Protocol=require('../core/protocol.js');
+function manualClock(){let now=0,sequence=0;const tasks=new Map();return {now:()=>now,setTimeout(fn,ms){const id=++sequence;tasks.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>tasks.delete(id),advance(ms){const end=now+ms;for(let count=0;count<1000;count++){const next=[...tasks].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next){now=end;return;}now=next[1].at;tasks.delete(next[0]);next[1].fn();}throw Error('timer loop');}};}
+function onlineFixture({bots=[false,false],persistence=null}={}){
+  const state=fixture(bots.map((_,i)=>i===0?['u1','u3']:i===1?['u5','u7']:['u26','u28']));state.players.forEach((p,i)=>p.bot=bots[i]);
+  const saved=new Session(E,'uno',{seed:17,unoMode:'manual',players:state.players}).export();saved.states[0]=state;
+  const session=Session.restore(E,saved),clock=manualClock(),authority=new Authority(session,{sessionId:'reaction-session',authorityEpoch:'reaction-epoch',clock,persistence});const clients=bots.map((_,i)=>authority.connect(i));
+  let sequence=0;const send=(actor,type,target)=>{const c=clients[actor],action=c.snapshot().actions.find(a=>a.type===type&&(target===undefined||a.target===target))||(['draw','pass'].includes(type)?{type}:null);assert(action,type);return c.dispatch(Protocol.command(c.snapshot(),action,`reaction-${++sequence}`));};
+  return {session,clock,authority,clients,send};
+}
+test('online grace starts after only the owning viewer finishes; early accusation is neutral and advance waits one second',()=>{
+  const {clock,authority,clients,send}=onlineFixture();try{
+    assert(send(0,'play').ok);assert.equal(authority.revision,1);const ready=Protocol.presentationReady(clients[0].snapshot());
+    assert.equal(clients[1].presentationReady(ready).ignored,true);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,1);
+    clock.advance(2000);assert.equal(send(1,'draw').code,'REACTION_WAIT');assert(clients[0].presentationReady(ready).ok);
+    clock.advance(999);assert.equal(clients[1].snapshot().actions.some(a=>a.type==='draw'),false);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(send(1,'draw').code,'REACTION_WAIT');
+    clock.advance(1);assert.equal(send(1,'accuse-uno',0).ok,true);assert.equal(authority.revision,2);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,2);
+  }finally{authority.dispose();}
+});
+test('a timely declaration beats late/fresh accusations and protocol rejects forged presentation acknowledgements',()=>{
+  const {clock,authority,clients,send}=onlineFixture();try{
+    send(0,'play');const ready=Protocol.presentationReady(clients[0].snapshot());
+    for(const extra of [{authorityEpoch:'old'},{sessionId:'other'},{revision:0},{controlRevision:1},{windowId:'uno:other'},{actor:0}])assert.equal(clients[0].presentationReady({...ready,...extra}).ok,false);
+    assert(clients[0].presentationReady(ready).ok);clock.advance(600);assert(send(0,'declare-uno').ok);const revision=authority.revision;
+    assert.equal(send(0,'declare-uno').ignored,true);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,revision);
+  }finally{authority.dispose();}
+});
+test('bots wait three seconds after readiness and missing readiness has a bounded ten-second fallback',()=>{
+  for(const acknowledge of [true,false]){const {clock,authority,clients,send,session}=onlineFixture({bots:[false,true]});try{
+    send(0,'play');authority.scheduleBot({delay:10});if(acknowledge)clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
+    clock.advance((acknowledge?3000:13000)-1);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);assert.equal(session.current.events.at(-2).kind,'uno-caught');assert.equal(session.current.data.hands[0].length,3);
+  }finally{authority.dispose();}}
+});
+test('a resolved reaction remains neutral with a new command id, stale revision and durable receipt without an extra commit',async()=>{
+  const commits=[],receipts=[],persistence={async commit(e){commits.push(e);},async recordReceipt(e){receipts.push(e);}};
+  const {authority,clients,send}=onlineFixture({bots:[false,false,false],persistence});try{
+    const old=clients[2].snapshot(),captured=old.actions.find(a=>a.type==='accuse-uno'&&a.target===0);
+    assert((await send(1,'accuse-uno',0)).ok);assert.equal((await clients[2].dispatch(Protocol.command(old,captured,'second-accuser'))).ignored,true);
+    assert.equal((await send(2,'accuse-uno',0)).ignored,true);assert.equal(commits.length,1);assert.equal(receipts.length,2);assert.equal(authority.revision,1);
+  }finally{authority.dispose();}
+});
+
+
+test('cancelling local bot presentation prevents readiness or fallback from restarting hidden actions',()=>{
+  for(const acknowledge of [true,false]){const {clock,authority,clients,send}=onlineFixture({bots:[false,true]});try{
+    send(0,'play');authority.scheduleBot({delay:10});authority.cancelBot();
+    if(acknowledge)clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
+    clock.advance(20000);assert.equal(authority.revision,1);
+    authority.scheduleBot({delay:10});clock.advance(10);assert.equal(authority.revision,2);
+  }finally{authority.dispose();}}
+});
+
+test('pause freezes reaction protection and resuming requires a new presentation-ready acknowledgement',async()=>{
+  const {clock,authority,clients,send}=onlineFixture();try{
+    send(0,'play');const ready=Protocol.presentationReady(clients[0].snapshot());clients[0].presentationReady(ready);clock.advance(500);
+    const pause=paused=>clients[0].dispatch(Protocol.command(clients[0].snapshot(),{type:'session-pause',paused,expectedControlRevision:clients[0].snapshot().controlRevision},`pause-${paused}`));
+    assert((await pause(true)).ok);clock.advance(10000);assert((await pause(false)).ok);assert.equal(send(1,'accuse-uno',0).ignored,true);
+    assert.equal(clients[0].presentationReady(ready).ignored,true,'pre-pause ACK is stale');
+    clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(999);assert.equal(send(1,'accuse-uno',0).ignored,true);clock.advance(1);assert(send(1,'accuse-uno',0).ok);
+  }finally{authority.dispose();}
+});
+
+
+test('human deadline publishes permission changes without adding game or control revisions',async()=>{
+  const {clock,authority,clients,send}=onlineFixture(),Client=require('../app/session-client.js'),client=new Client(clients[1]);
+  try{await client.refresh();send(0,'play');const revision=authority.revision,control=client.snapshot.controlRevision;
+    assert.equal(client.snapshot.actions.some(a=>a.type==='draw'),false);
+    clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));const readyRevision=client.snapshot.reactionRevision;
+    clock.advance(1000);assert(client.snapshot.reactionRevision>readyRevision);assert(client.snapshot.actions.some(a=>a.type==='draw'));assert.equal(client.snapshot.reactionWindow.protected,false);
+    assert.equal(client.snapshot.revision,revision);assert.equal(client.snapshot.controlRevision,control);
+  }finally{client.close();authority.dispose();}
+});
+
+
+test('disconnect suspends protected reactions and reconnect grants a fresh acknowledged window',()=>{
+  const {clock,authority,clients,send}=onlineFixture({bots:[false,true]});try{
+    send(0,'play');authority.scheduleBot({delay:10});clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(1500);
+    authority.setViewerConnected(0,false);assert.equal(clients[1].snapshot().reactionWindow.suspended,true);clock.advance(30000);assert.equal(authority.revision,1);
+    assert.equal(clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot())).ignored,true);
+    authority.setViewerConnected(0,true);assert.equal(clients[0].snapshot().reactionWindow.suspended,false);clock.advance(9999);assert.equal(authority.revision,1);
+    clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(2999);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);
+  }finally{authority.dispose();}
+});
+
+test('accusations against different targets are independent; duplicates share one penalty per target',()=>{
+  let s=fixture([['u1','u3'],['u5','u7'],['u26','u28'],['u30','u32']]);
+  s=accuse(s,0,1);assert.equal(s.data.hands[0].length,4);
+  assert.equal(accuse(s,2,1),s);
+  s=accuse(s,0,2);assert.equal(s.data.hands[0].length,6);
+  s=accuse(s,0,3);assert.equal(s.data.hands[0].length,8);
+  assert.deepEqual(s.data.uno.penalties,[1,2,3]);
+});
+
+test('simultaneous human windows have independent clocks and accept target-scoped reactions across revisions',()=>{
+  const {clock,authority,clients,send}=onlineFixture({bots:[false,false,false]});
+  try{
+    send(0,'play');clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(1000);
+    send(1,'play');assert.equal(clients[2].snapshot().reactionWindows.length,2);
+    const secondSnapshot=clients[1].snapshot();assert.equal(secondSnapshot.reactionWindow.owner,1);
+    clients[1].presentationReady(Protocol.presentationReady(secondSnapshot));
+    const snapshot=clients[2].snapshot();
+    const second=Protocol.command(snapshot,snapshot.actions.find(a=>a.type==='accuse-uno'&&a.target===1),'second-target');
+    clock.advance(999);assert.equal(send(2,'accuse-uno',1).ignored,true);
+    assert.equal(send(2,'accuse-uno',0).ok,true);assert.equal(clients[2].snapshot().reactionWindows.length,1);
+    clock.advance(1);assert.equal(clients[2].dispatch(second).ok,true);
+    assert.deepEqual(authority.connect(0).snapshot().state.data.hands[0].length,3);
+    const revision=authority.revision;assert.equal(clients[2].dispatch(second).duplicate,true);assert.equal(authority.revision,revision);
+  }finally{authority.dispose();}
 });
