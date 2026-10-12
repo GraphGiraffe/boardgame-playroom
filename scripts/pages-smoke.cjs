@@ -28,7 +28,11 @@ async function main(){
  }
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
  try{
-  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[];
+  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[];
+  const network=await context.newCDPSession(page);await network.send('Network.enable');
+  network.on('Network.responseReceivedExtraInfo',event=>{
+   for(const cookie of event.blockedCookies||[])cookieBlocks.push(...cookie.blockedReasons);
+  });
   page.on('pageerror',()=>errors.push('page-error'));
   page.on('response',response=>{
    const target=new URL(response.url());
@@ -44,7 +48,7 @@ async function main(){
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);await page.locator('button[type="submit"]').click();
   try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
-   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length}));
+   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:(await context.cookies(url)).length,cookieBlocks}));
    throw error;
   }
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
