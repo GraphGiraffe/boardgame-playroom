@@ -18,7 +18,7 @@ on:
     inputs:
       operation:
         type: choice
-        options: [deploy, rollback, preflight]
+        options: [deploy, preview, rollback, preflight]
         default: deploy
         required: true
       release:

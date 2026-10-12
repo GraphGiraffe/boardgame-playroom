@@ -114,7 +114,7 @@ test('incomplete or login-page shell never installs; verified update waits for e
   vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),sandbox);
   listeners.install({waitUntil:p=>waits=p});
   if(failure){await assert.rejects(waits,/Incomplete/);assert.equal(writes.length,0);assert.equal(messages.length,0);}
-  else{await waits;assert(writes.includes('./app/app.js'));assert.equal(messages[0].kind,'playroom-update-ready');}
+  else{await waits;assert(writes.includes('./app/app.js'));assert.equal(messages[0].kind,'playroom-update-ready');assert.equal(messages[0].version,require('../package.json').version);}
  }
 });
 
@@ -249,6 +249,7 @@ for marker in ['previous','current']:
 print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  let deployed=0;
  const server=http.createServer((req,res)=>{
+  if(new URL(req.url,'http://localhost').pathname==='/index.html'){res.writeHead(308,{location:'/'});res.end();return;}
   const name=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html',data=snapshots[deployed][name];
   res.writeHead(data?200:404,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'application/octet-stream','cache-control':'no-store'});
   res.end(data?Buffer.from(data,'base64'):'missing');

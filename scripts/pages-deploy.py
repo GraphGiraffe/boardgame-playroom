@@ -199,7 +199,8 @@ def run(args):
     if not previous:
         raise ValueError('Existing production deployment required for rollback')
     # Never use an unprotected accidental Git build as an automatic fallback.
-    smoke(pages.production_target(previous)['url'])
+    if args.operation == 'deploy':
+        smoke(pages.production_target(previous)['url'])
     repo = required('GITHUB_REPOSITORY')
     with tempfile.TemporaryDirectory(prefix='playroom-pages-') as tmp:
         tmp = Path(tmp)
@@ -231,6 +232,9 @@ def run(args):
             raise ValueError('Expected preview deployment')
         smoke(preview['url'], tmp/'site')
         report['previewDeployment'] = preview['id']
+        if args.operation == 'preview':
+            report.update(status='preview-verified', previewUrl=preview['url'])
+            return report
         if pages.api().get('canonical_deployment', {}).get('id') != previous:
             raise ValueError('Production changed during preview; retry explicitly')
         pages.manual_uploads(project)
@@ -251,7 +255,7 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=['deploy', 'rollback', 'preflight'])
+    parser.add_argument('operation', choices=['deploy', 'preview', 'rollback', 'preflight'])
     parser.add_argument('--release')
     parser.add_argument('--deployment')
     parser.add_argument('--report', type=Path, default=Path('deploy-report.json'))

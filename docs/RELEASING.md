@@ -61,3 +61,7 @@ python3 scripts/package-pages.py \
 Для кандидата использовать `python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.16.0-rc.1`, затем проверить `SHA256SUMS` в этом каталоге. Закрытый архив собирать из его `playroom-pwa.zip` командой `scripts/package-pages.py`, с прежней доверенной приватной обёрткой и именем `playroom-pages-0.16.0-rc.1-protected.zip`. Версию коллекции 0.4.0 не перевыпускать при отсутствии изменений паков. Примеры стабильной 0.15 выше описывают уже опубликованную базу; новые RC не заменяют её assets.
 
 До переноса нового Pages workflow на default branch используйте существующий **Release candidate build**: выберите ветку кандидата и operation `preflight`, `deploy` или `rollback`. Он вызывает тот же Pages workflow с того же SHA через workflow_call; `build` по-прежнему выполняет полную сборку RC. Автоматической публикации по push нет.
+
+### Проверка отдельного защищённого preview
+
+`gh workflow run prerelease.yml --ref dev -f operation=preview -f release=v0.16.0-rc.1` проверяет архив опубликованного RC, приватную обёртку, вход, ресурсы и offline на отдельном deployment. Эта операция не переключает production и не отключает Git builds. `deploy` дополнительно требует рабочую защищённую точку отката.

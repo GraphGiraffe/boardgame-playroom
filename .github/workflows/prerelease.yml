@@ -5,7 +5,7 @@ on:
       operation:
         description: Build candidate or manually operate the existing Pages project
         type: choice
-        options: [build, preflight, deploy, rollback]
+        options: [build, preflight, preview, deploy, rollback]
         default: build
       release:
         description: Published release tag for Pages deployment

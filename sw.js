@@ -44,14 +44,16 @@ self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     // Fetch and verify the complete shell before writing or activating it.
     const entries=await Promise.all(CORE.filter(path=>path!=='./').map(async path=>{
-      const response=await fetch(path,{cache:'reload'});
+      // Pages canonicalizes index.html to /; fetch the document without a redirect
+      // but retain its build hash and offline cache key.
+      const response=await fetch(path==='./index.html'?'./':path,{cache:'reload'});
       if(!await validAsset(path,response))throw Error('Incomplete application update: '+path);
       return [path,response];
     }));
     const cache=await caches.open(CACHE);
     await Promise.all(entries.map(([path,response])=>cache.put(path,response)));
     // A waiting update never replaces an in-use shell or interrupts a room.
-    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:'0.15.0'});
+    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:CACHE.slice('playroom-pwa-v'.length).replace(/-[a-f0-9]{16}$/,'')});
   })());
 });
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE&&key.startsWith('playroom-pwa-'))await caches.delete(key);await self.clients.claim();})()));
