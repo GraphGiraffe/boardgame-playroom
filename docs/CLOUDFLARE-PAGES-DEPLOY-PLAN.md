@@ -4,7 +4,7 @@
 
 ## Конфигурация
 
-Используется существующий Pages-проект, прежний hostname и scope. Новый проект при обновлении не создаётся: сохранения привязаны к origin. Прямая Git-интеграция Cloudflare не нужна; публикацию запускает GitHub Actions вручную. Автоматические Cloudflare Git-сборки не должны параллельно перезаписывать production.
+Используется существующий Pages-проект, прежний hostname и scope. Новый проект при обновлении не создаётся: сохранения привязаны к origin. Прямая Git-интеграция Cloudflare не нужна; публикацию запускает GitHub Actions вручную. Перед переключением проверенного production или rollback pipeline выключает автоматические production/preview Git-сборки через Pages API и проверяет результат. Это исключает повторную публикацию незащищённого корня репозитория параллельным Git build.
 
 В GitHub → Settings → Secrets and variables → Actions:
 
@@ -28,7 +28,7 @@ Actions → **Protected Pages publication** → Run workflow:
 
 - `preflight`: проверить настройки и существующий защищённый сайт без публикации.
 - `deploy`, `release=v0.16.0-rc.1` (либо другой уже опубликованный tag): скачать `playroom-pwa.zip` и `SHA256SUMS`, проверить контрольную сумму, пути, наличие пяти паков, integrity и отсутствие дубликатов. Перед загрузкой проверить обёртку: неверный пароль, поддельная/просроченная cookie, чужой Origin, допустимый Origin:null и авторизованный доступ.
-- `rollback`, `deployment=<ID>`: вернуть существующий успешный production deployment и проверить его URL и основной origin. Preview и неуспешные deployments отклоняются.
+- `rollback`, `deployment=<ID>`: сначала проверить защиту существующего успешного production deployment, затем вернуть его и проверить основной origin. Preview и неуспешные deployments отклоняются.
 
 Публикация загружает preview, проверяет вход/защиту ресурсов, соответствие байтов ZIP и offline-запуск. Только после этого загружает production в тот же проект. Смена production другим процессом за время preview прерывает операцию. Провал проверки после production-загрузки вызывает возврат к прежнему успешному deployment; отказ самого Cloudflare rollback завершает workflow ошибкой, а не ложным успехом. Параллельные публикации этого workflow сериализованы.
 
@@ -41,3 +41,5 @@ Actions → **Protected Pages publication** → Run workflow:
 Rollback меняет серверный deployment. Уже установленная PWA применяет обратное обновление по тому же циклу; мгновенного удаления скачанного кеша нет. Истечение серверной cookie тоже не отзывает уже скачанные offline-копии. Это отдельная политика, не свойство password Worker.
 
 До переноса нового Pages workflow на default branch используйте существующий **Release candidate build**: выберите ветку кандидата и operation `preflight`, `deploy` или `rollback`. Он вызывает тот же Pages workflow с того же SHA через workflow_call; `build` по-прежнему выполняет полную сборку RC. Автоматической публикации по push нет.
+
+Перед обычным deploy проверяется защита предыдущего production: открытый ошибочный Git build не допускается как автоматическая точка отката. Сначала вручную выбрать и проверить прежний защищённый deployment через rollback.

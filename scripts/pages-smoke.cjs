@@ -8,7 +8,7 @@ async function main(){
  if(!url||!password||!url.startsWith('https://'))throw Error('Missing HTTPS deployment or protected password');
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
  try{
-  const context=await browser.newContext(),page=await context.newPage(),errors=[];
+  const context=await browser.newContext({playroomProfile:false}),page=await context.newPage(),errors=[];
   page.on('pageerror',()=>errors.push('page-error'));
   stage='login-page';const landing=await page.goto(url);const field=page.locator('input[name="password"]');
   console.log('Landing HTTP '+landing.status()+'; password form: '+await field.count());
@@ -20,7 +20,7 @@ async function main(){
   await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
   if(!refs.length||refs.some(n=>!(/\.[a-f0-9]{16}\.(js|css)$/.test(n))))throw Error('Unexpected shell assets');
-  const anonymous=await browser.newContext();
+  const anonymous=await browser.newContext({playroomProfile:false});
   try{
    for(const ref of refs){
     const target=new URL(ref,url).href,response=await context.request.get(target);

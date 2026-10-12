@@ -99,10 +99,10 @@ class Pages:
         self.base = f'https://api.cloudflare.com/client/v4/accounts/{account}/pages/projects/{project}'
         self.token = required('CLOUDFLARE_API_TOKEN')
 
-    def api(self, method='GET', suffix=''):
+    def api(self, method='GET', suffix='', payload=None):
         request = urllib.request.Request(self.base+suffix, method=method,
             headers={'Authorization': 'Bearer '+self.token, 'Content-Type': 'application/json'},
-            data=b'{}' if method == 'POST' else None)
+            data=json.dumps(payload).encode() if payload is not None else b'{}' if method == 'POST' else None)
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = json.load(response)
@@ -112,12 +112,29 @@ class Pages:
             raise ValueError('Cloudflare rejected the operation')
         return data['result']
 
-    def rollback(self, deployment):
+    def production_target(self, deployment):
         if not re.fullmatch(r'[a-f0-9-]{36}', deployment):
             raise ValueError('Invalid deployment ID')
         target = self.api(suffix='/deployments/'+deployment)
         if target.get('environment') != 'production' or target.get('latest_stage', {}).get('status') != 'success':
             raise ValueError('Rollback requires a successful production deployment')
+        return target
+
+    def manual_uploads(self, project):
+        source = project.get('source') or {}
+        if source.get('type') not in ('github', 'gitlab'):
+            return
+        config = source.get('config') or {}
+        if config.get('production_deployments_enabled') is False and config.get('preview_deployment_setting') == 'none':
+            return
+        self.api('PATCH', payload={'source': {'type': source['type'], 'config': {
+            'production_deployments_enabled': False, 'preview_deployment_setting': 'none'}}})
+        actual = self.api().get('source', {}).get('config', {})
+        if actual.get('production_deployments_enabled') is not False or actual.get('preview_deployment_setting') != 'none':
+            raise ValueError('Could not disable competing Git deployments')
+
+    def rollback(self, deployment):
+        target = self.production_target(deployment)
         self.api('POST', '/deployments/'+deployment+'/rollback')
         if self.api().get('canonical_deployment', {}).get('id') != deployment:
             raise ValueError('Rollback was not confirmed')
@@ -165,10 +182,14 @@ def run(args):
             worker = Path(tmp)/'_worker.js'
             worker.write_bytes(private['_worker.js'])
             subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(worker)], check=True)
-        smoke(expected)
-        report.update(status='preflight-passed', productionBranch=production)
+        target = pages.production_target(args.deployment) if args.deployment else None
+        smoke(target['url'] if target else expected)
+        report.update(status='preflight-passed', productionBranch=production, verifiedDeployment=target['id'] if target else previous)
         return report
     if args.operation == 'rollback':
+        target = pages.production_target(args.deployment)
+        smoke(target['url'])
+        pages.manual_uploads(project)
         target = pages.rollback(args.deployment)
         smoke(target['url']);smoke(expected)
         report.update(deployment=target['id'], status='rolled-back')
@@ -177,6 +198,8 @@ def run(args):
         raise ValueError('Expected an immutable release tag')
     if not previous:
         raise ValueError('Existing production deployment required for rollback')
+    # Never use an unprotected accidental Git build as an automatic fallback.
+    smoke(pages.production_target(previous)['url'])
     repo = required('GITHUB_REPOSITORY')
     with tempfile.TemporaryDirectory(prefix='playroom-pages-') as tmp:
         tmp = Path(tmp)
@@ -210,6 +233,7 @@ def run(args):
         report['previewDeployment'] = preview['id']
         if pages.api().get('canonical_deployment', {}).get('id') != previous:
             raise ValueError('Production changed during preview; retry explicitly')
+        pages.manual_uploads(project)
         try:
             deployed = upload(production)
             if deployed.get('environment') != 'production':
