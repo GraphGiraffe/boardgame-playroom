@@ -1,7 +1,7 @@
 'use strict';
 // API 2 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Published RC9 remains immutable.
-const CACHE='playroom-pwa-v0.15.0';
+const CACHE='playroom-pwa-v0.16.0-rc.1';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
@@ -44,14 +44,16 @@ self.addEventListener('install',event=>{
   event.waitUntil((async()=>{
     // Fetch and verify the complete shell before writing or activating it.
     const entries=await Promise.all(CORE.filter(path=>path!=='./').map(async path=>{
-      const response=await fetch(path,{cache:'reload'});
+      // Pages canonicalizes index.html to /; fetch the document without a redirect
+      // but retain its build hash and offline cache key.
+      const response=await fetch(path==='./index.html'?'./':path,{cache:'reload'});
       if(!await validAsset(path,response))throw Error('Incomplete application update: '+path);
       return [path,response];
     }));
     const cache=await caches.open(CACHE);
     await Promise.all(entries.map(([path,response])=>cache.put(path,response)));
     // A waiting update never replaces an in-use shell or interrupts a room.
-    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:'0.15.0'});
+    for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:CACHE.slice('playroom-pwa-v'.length).replace(/-[a-f0-9]{16}$/,'')});
   })());
 });
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE&&key.startsWith('playroom-pwa-'))await caches.delete(key);await self.clients.claim();})()));
@@ -68,9 +70,9 @@ self.addEventListener('fetch',event=>{
       try{const response=await fetch(event.request);if(await validAsset('./index.html',response)){const cache=await caches.open(CACHE);await cache.put('./index.html',response.clone());return response;}
         if(response.redirected||!response.ok)return response;
         return await (await caches.open(CACHE)).match('./index.html')||response;}
-      catch(_){return await caches.match('./index.html')||await caches.match('./');}
+      catch(_){return await (await caches.open(CACHE)).match('./index.html')||Response.error();}
     })());
     return;
   }
-  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request,{ignoreSearch:true});if(cached)return cached;try{const response=await fetch(event.request);if(await validAsset('./'+url.pathname.slice(new URL('./',self.location.href).pathname.length),response)){await cache.put(event.request,response.clone());}return response;}catch(_){return Response.error();}})());
+  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request);if(cached)return cached;try{const response=await fetch(event.request);if(await validAsset('./'+url.pathname.slice(new URL('./',self.location.href).pathname.length),response)){await cache.put(event.request,response.clone());return response;}return Response.error();}catch(_){return Response.error();}})());
 });

@@ -1,0 +1,77 @@
+name: Protected Pages publication
+on:
+  workflow_call:
+    inputs:
+      operation:
+        type: string
+        required: true
+      release:
+        type: string
+        default: ''
+      deployment:
+        type: string
+        default: ''
+  pull_request:
+    branches: [dev, main]
+    types: [ready_for_review]
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [deploy, preview, rollback, preflight]
+        default: deploy
+        required: true
+      release:
+        description: Published release tag (for deploy)
+        type: string
+      deployment:
+        description: Successful production deployment ID (for rollback)
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: protected-pages-production
+  cancel-in-progress: false
+jobs:
+  publish:
+    # PR readiness checks only inspect the existing site; publication is manual.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+      CLOUDFLARE_PRODUCTION_BRANCH: ${{ vars.CLOUDFLARE_PRODUCTION_BRANCH }}
+      CLOUDFLARE_PAGES_ORIGIN: ${{ vars.CLOUDFLARE_PAGES_ORIGIN }}
+      PAGES_PRIVATE_WRAPPER_B64: ${{ secrets.PAGES_PRIVATE_WRAPPER_B64 }}
+      PAGES_SMOKE_PASSWORD: ${{ secrets.PAGES_SMOKE_PASSWORD }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare browser
+        run: bash scripts/codex/setup.sh
+      - name: Verify and publish, or rollback
+        env:
+          OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'preflight' }}
+          RELEASE: ${{ inputs.release }}
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: python3 scripts/pages-deploy.py "$OPERATION" --release "$RELEASE" --deployment "$DEPLOYMENT"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pages-deployment-report
+          path: deploy-report.json
+          if-no-files-found: ignore

@@ -77,15 +77,52 @@
             abort(Error('Игровое место или партия изменились; старая история сохранена.'));return;
           }
           const last=Math.max(frame.revision,old?.revision??0),now=Date.now();
-          matches.put({id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
+          const keys=tx.objectStore('frames').index('id').getAllKeys(key);
+          keys.onsuccess=()=>{
+          const revisions=new Set(keys.result.map(k=>k[1]));revisions.add(frame.revision);
+          let receivedRevision=-1;while(revisions.has(receivedRevision+1))receivedRevision++;
+          matches.put({receivedRevision,presentedRevision:old?.presentedRevision??null,reviewedRevision:old?.reviewedRevision??null,id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
             game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),
             role:'client',revision:last,finished:frame.revision>=last?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
             players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64)),
             participants:Array.isArray(participants)?participants.map(p=>({...id(p.id)?{id:p.id}:{},nickname:String(p.nickname||p.name||'').slice(0,64),role:['player','spectator','table'].includes(p.role)?p.role:'player',bot:!!p.bot,local:!!p.local,isHost:!!p.isHost})):old?.participants||[]});
+          };
           tx.objectStore('frames').put({id:key,revision:frame.revision,frame});
         };
       });
       return key;
+    }
+    async progress(key,upTo){
+      if(!Number.isSafeInteger(upTo)||upTo<0)throw Error('Некорректная ревизия.');
+      return this.tx(['frames'],'readonly',(tx,done)=>{
+        const r=tx.objectStore('frames').index('id').getAllKeys(key);
+        r.onsuccess=()=>{const stored=new Set(r.result.map(k=>k[1])),missing=[];let receivedRevision=-1;
+          while(stored.has(receivedRevision+1))receivedRevision++;
+          for(let i=0;i<=upTo;i++)if(!stored.has(i))missing.push(i);
+          done({receivedRevision,missing});};
+      });
+    }
+    async mark(key,kind,revision){
+      if(!['presentedRevision','reviewedRevision'].includes(kind)||!Number.isSafeInteger(revision)||revision<0)throw Error('Некорректная позиция истории.');
+      return this.tx(['matches','frames'],'readwrite',(tx,done)=>{
+        const matches=tx.objectStore('matches'),r=matches.get(key);
+        r.onsuccess=()=>{if(!r.result)return;const row=r.result,frame=tx.objectStore('frames').get([key,revision]);
+          frame.onsuccess=()=>{if(!frame.result)return;
+            row[kind]=kind==='presentedRevision'?Math.max(row[kind]??-1,revision):revision;
+            matches.put(row);done(true);};};
+      });
+    }
+    async backfill({roomId,participantId,roomName='',snapshot,transport,isCurrent=()=>true}){
+      const key=ClientHistory.id(roomId,participantId,snapshot.sessionId);
+      const {missing}=await this.progress(key,snapshot.revision);
+      for(const revision of missing){
+        if(!isCurrent())break;
+        const frame=await transport.history(revision);
+        if(!isCurrent())break;
+        if(!valid(frame)||frame.kind!=='history'||frame.revision!==revision||
+          ['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>frame[k]!==snapshot[k]))throw Error('История другого подключения отклонена.');
+        await this.save({roomId,participantId,roomName,snapshot:frame});
+      }
     }
     async list(){return this.tx(['matches','frames'],'readonly',(tx,done)=>{
       const r=tx.objectStore('matches').getAll();r.onsuccess=()=>{
@@ -103,7 +140,9 @@
         match.onsuccess=()=>{data.match=match.result;};
         frames.onsuccess=()=>{data.frames=frames.result;};
         done(data);
-      }).then(data=>data.match?{...data.match,frames:data.frames.map(x=>x.frame).sort((a,b)=>a.revision-b.revision)}:null);
+      }).then(data=>{if(!data.match)return null;const frames=data.frames.map(x=>x.frame).sort((a,b)=>a.revision-b.revision);
+        let receivedRevision=-1;for(const frame of frames){if(frame.revision!==receivedRevision+1)break;receivedRevision++;}
+        return {...data.match,receivedRevision,presentedRevision:data.match.presentedRevision??null,reviewedRevision:data.match.reviewedRevision??null,frames};});
     }
     close(){this.database?.close();this.database=null;}
   }

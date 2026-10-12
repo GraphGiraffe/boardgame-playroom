@@ -294,8 +294,8 @@ def pwa_runtime_items(packs=()):
     items.extend(generated_icons())
     # Old workers match cached asset URLs with ignoreSearch=True. A query
     # version cannot prevent a new document from loading an old script.
-    # Keep canonical files for portable consumers; the PWA document and worker
-    # use content-addressed paths so an RC14 controller cannot mix builds.
+    # Ship only content-addressed shell assets. Canonical source paths remain
+    # in the source archive and standalone HTML, not in the deployment bundle.
     document = dict(items)["index.html"].decode("utf-8")
     urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
     aliases = {name: str(Path(name).with_name(Path(name).stem + "." + hashlib.sha256(content).hexdigest()[:16] + Path(name).suffix))
@@ -308,7 +308,16 @@ def pwa_runtime_items(packs=()):
     for name, alias in aliases.items():
         worker = worker.replace("'./" + name + "'", "'./" + alias + "'")
     items = [(name, worker.encode("utf-8") if name == "sw.js" else content) for name, content in items]
-    items.extend((alias, originals[name]) for name, alias in aliases.items())
+    items = [(aliases.get(name, name), content) for name, content in items]
+    # A rebuild of the same version must not write into the active worker cache.
+    # Include paths, bytes and worker code so every distinct shell is isolated.
+    build_hash = hashlib.sha256()
+    for name, content in sorted(items):
+        build_hash.update(name.encode() + b"\0" + hashlib.sha256(content).digest())
+    cache_id = build_hash.hexdigest()[:16]
+    items = [(name, re.sub(rb"(const CACHE='[^']+)(';)",
+                          lambda match: match[1] + b"-" + cache_id.encode() + match[2], content)
+              if name == "sw.js" else content) for name, content in items]
     # Private Pages packaging may preserve its own manifest; all executable
     # public assets and the document are checked against this exact build.
     integrity = {"./" + name: hashlib.sha256(content).hexdigest() for name, content in items
@@ -319,10 +328,20 @@ def pwa_runtime_items(packs=()):
 
 
 def write_directory(destination, items):
+    items = list(items)
     for name, content in items:
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    # Reusing an output directory must not retain canonical or old hashed assets.
+    # Limit cleanup to generated shell scripts/styles; preserve private wrappers.
+    current = {name for name, _ in items}
+    candidates = [*destination.glob("app/**/*.js"), *destination.glob("app/**/*.css"),
+                  *destination.glob("core/**/*.js"), *destination.glob("core/**/*.css"),
+                  *destination.glob("installed-packs*.js")]
+    for path in candidates:
+        if path.relative_to(destination).as_posix() not in current:
+            path.unlink()
 
 def write_zip(destination, items):
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:

@@ -5,6 +5,7 @@ The output is private. Never add it, the input wrapper, or its extracted files
 as public release assets. Passwords are neither read as configuration nor logged.
 """
 import argparse
+import re
 from pathlib import PurePosixPath, Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -24,7 +25,8 @@ def package(public, protected_base, output):
             if not relative or relative.startswith('/') or '..' in PurePosixPath(relative).parts or '\\' in relative or relative in files:
                 raise ValueError('Unsafe or duplicate archive path')
             files[relative] = source.read(name)
-        if not {'index.html', 'sw.js', 'app/app.js', 'manifest.webmanifest'} <= files.keys():
+        if not {'index.html', 'sw.js', 'manifest.webmanifest'} <= files.keys() or not any(
+                re.fullmatch(r'app/app(?:\.[a-f0-9]{16})?\.js', name) for name in files):
             raise ValueError('Incomplete PWA runtime')
         for name in ('_worker.js', '_routes.json', 'manifest.webmanifest'):
             files[name] = private.read(name)
