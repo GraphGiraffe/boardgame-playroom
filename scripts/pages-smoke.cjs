@@ -27,7 +27,7 @@ async function main(){
  const tunnel=clientId?await accessProxy(origin,{clientId,clientSecret}):await originProxy(origin);let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>',...(tunnel.spki?['--ignore-certificate-errors-spki-list='+tunnel.spki]:[])]});
-  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[],failedRequests=[];
+  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],badAssets=[],cookieBlocks=[],navigations=[],failedRequests=[];
   const workerFailures=[],workerResponses=[];
   context.on('response',response=>{if(response.request().serviceWorker()&&new URL(response.url()).origin===origin&&!response.ok())workerResponses.push({status:response.status(),path:new URL(response.url()).pathname.replace(/[^a-zA-Z0-9_./-]/g,'')});});
   const network=await context.newCDPSession(page);await network.send('Network.enable');
@@ -48,7 +48,10 @@ async function main(){
    const target=new URL(response.url());
    if(target.origin!==origin)return;
    if(target.pathname==='/_auth')authStatuses.push(response.status());
-   if(['script','stylesheet'].includes(response.request().resourceType()))assetStatuses.push(response.status());
+   if(['script','stylesheet'].includes(response.request().resourceType())){
+    assetStatuses.push(response.status());
+    if(response.status()>=400)badAssets.push({status:response.status(),path:target.pathname.replace(/[^a-zA-Z0-9_./-]/g,'')});
+   }
    if(response.request().isNavigationRequest())navigations.push({status:response.status(),auth:target.pathname==='/_auth',cache:response.headers()['cf-cache-status']||null,redirect:response.headers().location?new URL(response.headers().location,response.url()).origin===origin:null});
   });
   stage='login-page';let landing;
@@ -77,9 +80,20 @@ async function main(){
   if(login.status()!==303)throw Error('Password login rejected');
   const destination=new URL(login.headers().location||'',login.url());
   if(!login.headers().location||destination.origin!==origin)throw Error('Unexpected login redirect');
-  try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
+  try{
+   for(let attempt=0;;attempt++){
+    try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge,null,{timeout:10000});break;}
+    catch(error){
+     if(attempt===2||!assetStatuses.includes(404))throw error;
+     console.log('Waiting for Pages asset propagation: retry '+(attempt+1));
+     await page.waitForTimeout(5000*(attempt+1));
+     assetStatuses.length=0;badAssets.length=0;errors.length=0;
+     await page.reload({waitUntil:'domcontentloaded'});
+    }
+   }
+  }catch(error){
    const cookies=await context.cookies(url),response=await get(context,url,{Cookie:cookies.map(c=>c.name+'='+c.value).join('; '),'Cache-Control':'no-cache'}),html=await response.text();
-   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:cookies.length,hostCookies:cookies.filter(c=>c.name.startsWith('__Host-')).length,cookieBlocks,navigations,direct:{status:response.status(),scripts:(html.match(/<script\b[^>]*\bsrc=/g)||[]).length,cache:response.headers()['cf-cache-status']||null}}));
+   console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,badAssets:badAssets.slice(-20),pageErrors:errors.length,cookies:cookies.length,hostCookies:cookies.filter(c=>c.name.startsWith('__Host-')).length,cookieBlocks,navigations,direct:{status:response.status(),scripts:(html.match(/<script\b[^>]*\bsrc=/g)||[]).length,cache:response.headers()['cf-cache-status']||null}}));
    throw error;
   }
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
