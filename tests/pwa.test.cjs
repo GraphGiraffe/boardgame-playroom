@@ -2,6 +2,25 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..');
 
+test('Pages origin proxy permits one TLS destination and denies other redirect hosts and ports',async()=>{
+ const http=require('node:http'),net=require('node:net'),{originProxy}=require('../scripts/pages-origin-proxy.cjs');
+ const upstream=http.createServer((req,res)=>res.end('allowed-origin'));
+ await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
+ const authority='127.0.0.1:'+upstream.address().port,proxy=await originProxy('https://'+authority);
+ const connect=target=>new Promise((resolve,reject)=>{
+  const socket=net.connect(Number(new URL(proxy.server).port),'127.0.0.1');let output='',sent=false;
+  socket.setTimeout(5000,()=>socket.destroy(Error('Proxy test timed out')));socket.on('error',reject);
+  socket.on('connect',()=>socket.write('CONNECT '+target+' HTTP/1.1\r\nHost: '+target+'\r\n\r\n'));
+  socket.on('data',data=>{output+=data;if(!sent&&output.includes('200 Connection Established')){sent=true;socket.write('GET / HTTP/1.1\r\nHost: '+authority+'\r\nConnection: close\r\n\r\n');}});
+  socket.on('close',()=>resolve(output));
+ });
+ try{
+  assert.match(await connect(authority),/allowed-origin/);
+  assert.match(await connect('forbidden.invalid:443'),/^HTTP\/1.1 403/);
+  assert.match(await connect('127.0.0.1:1'),/^HTTP\/1.1 403/);
+ }finally{await proxy.close();await new Promise(resolve=>upstream.close(resolve));}
+});
+
 test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest'),'utf8'));
   assert.equal(manifest.display,'standalone');

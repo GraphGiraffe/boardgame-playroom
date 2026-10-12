@@ -2,6 +2,7 @@
 // No screenshots/traces/cookie dumps: this probe handles a private password.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {chromium,executablePath}=require('./codex/browser.cjs');
+const {originProxy}=require('./pages-origin-proxy.cjs');
 let stage='configuration';
 async function main(){
  const url=process.env.PLAYROOM_DEPLOY_URL,password=process.env.PAGES_SMOKE_PASSWORD,dir=process.env.PLAYROOM_DEPLOY_DIR;
@@ -10,24 +11,15 @@ async function main(){
  if(!!clientId!==!!clientSecret)throw Error('Incomplete Access credentials');
  const accessHeaders=clientId?{'CF-Access-Client-Id':clientId,'CF-Access-Client-Secret':clientSecret}:{};
  async function createContext(){
-  const context=await browser.newContext({playroomProfile:false});
-  if(clientId)await context.route('**/*',async route=>{
-   if(new URL(route.request().url()).origin!==origin)return route.abort();
-   try{
-    // Do not forward credentials through redirects to a different origin.
-    // headers() omits security headers such as Cookie; preserve browser auth.
-    const response=await route.fetch({headers:{...await route.request().allHeaders(),...accessHeaders},maxRedirects:0});
-    await route.fulfill({response});
-   }catch(_){await route.abort().catch(()=>{});}
-  });
-  return context;
+  return browser.newContext({playroomProfile:false,extraHTTPHeaders:accessHeaders});
  }
  async function get(context,target,headers={}){
   if(new URL(target).origin!==origin)throw Error('Unexpected asset origin');
   return context.request.get(target,{headers:{...headers,...accessHeaders},maxRedirects:0});
  }
- const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ const tunnel=await originProxy(origin);let browser;
  try{
+  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>']});
   const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[];
   const network=await context.newCDPSession(page);await network.send('Network.enable');
   network.on('Network.responseReceivedExtraInfo',event=>{
@@ -52,9 +44,6 @@ async function main(){
   if(login.status()!==303)throw Error('Password login rejected');
   const destination=new URL(login.headers().location||'',login.url());
   if(!login.headers().location||destination.origin!==origin)throw Error('Unexpected login redirect');
-  // Playwright routes only the first request in a browser redirect chain.
-  // Start a fresh navigation so Access service headers reach the destination.
-  await page.goto(destination.href);
   try{await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}catch(error){
    const cookies=await context.cookies(url),response=await get(context,url,{Cookie:cookies.map(c=>c.name+'='+c.value).join('; '),'Cache-Control':'no-cache'}),html=await response.text();
    console.log('Login diagnostics: '+JSON.stringify({authStatuses,passwordForm:await field.count(),scripts:await page.locator('script[src]').count(),assetStatuses,pageErrors:errors.length,cookies:cookies.length,hostCookies:cookies.filter(c=>c.name.startsWith('__Host-')).length,cookieBlocks,navigations,direct:{status:response.status(),scripts:(html.match(/<script\b[^>]*\bsrc=/g)||[]).length,cache:response.headers()['cf-cache-status']||null}}));
@@ -85,10 +74,10 @@ async function main(){
   }finally{await anonymous.close();}
   stage='service-worker';await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration())?.active);await page.waitForFunction(()=>navigator.serviceWorker.controller);
   await page.evaluate(()=>localStorage.setItem('playroom-deploy-probe','preserved'));
-  stage='offline';await context.unrouteAll({behavior:'wait'});await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
+  stage='offline';await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
   if(await page.evaluate(()=>localStorage.getItem('playroom-deploy-probe'))!=='preserved'||errors.length)throw Error('Offline smoke failed');
   console.log('Protected runtime and offline smoke passed.');
- }finally{await browser.close();}
+ }finally{if(browser)await browser.close();await tunnel.close();}
 }
 if(require.main===module)main().catch(()=>{console.error('Protected Pages smoke failed at '+stage+'; credentials and browser state redacted.');process.exitCode=1;});
 module.exports={main};
