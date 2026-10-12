@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const UI=require('../core/ui.js'),root=path.resolve(__dirname,'..'),sharedDir=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared'),read=f=>fs.readFileSync(f.startsWith('shared/')?path.join(sharedDir,path.basename(f)):path.join(root,f),'utf8');
+const UI=require('../core/ui.js'),root=path.resolve(__dirname,'..'),packsDir=path.join(root,'packs'),sharedDir=fs.existsSync(packsDir)?path.join(path.dirname(fs.realpathSync(packsDir)),'shared'):null,read=f=>fs.readFileSync(f.startsWith('shared/')?path.join(sharedDir,path.basename(f)):path.join(root,f),'utf8');
 const sourceSizes=[[590,1032,'snakes'],[1647,973,'snakes'],[1874,550,'durak'],[1397,543,'snakes'],[1055,692,'durak'],[1065,967,'snakes'],[687,538,'domino'],[1742,488,'domino'],[1609,481,'domino'],[832,1032,'domino'],[724,1032,'domino'],[737,1032,'checkers'],[898,1032,'checkers']];
 test('elements API rejects malformed content and geometry',()=>{for(const value of ['old',{api:1},{api:2,family:'cards',elements:{field:''}},{api:2,family:'board',elements:{field:'x',unknown:'x'}},{api:2,family:'board',fieldAspect:0,elements:{field:'x'}},{api:2,family:'cards',elements:{field:'x'},playerContent:[{handCount:-1}]}])assert.throws(()=>UI.composeScene(value));});
 test('all packs share player panels and preserve geometry across reported screens, replay and rotation',{timeout:180000,skip:!['uno','domino','durak','checkers','snakes'].every(id=>fs.existsSync(path.join(root,'packs',id,'rules.js')))},async t=>{
