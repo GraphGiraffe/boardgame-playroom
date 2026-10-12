@@ -25,7 +25,14 @@ async function main(){
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>']});
   const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[];
+  const workerFailures=[],workerResponses=[];
+  context.on('response',response=>{if(response.request().serviceWorker()&&new URL(response.url()).origin===origin&&!response.ok())workerResponses.push({status:response.status(),path:new URL(response.url()).pathname.replace(/[^a-zA-Z0-9_./-]/g,'')});});
   const network=await context.newCDPSession(page);await network.send('Network.enable');
+  network.on('ServiceWorker.workerErrorReported',event=>{
+   const value=event.errorMessage.errorMessage||'',asset=value.match(/Incomplete application update: ([a-zA-Z0-9_./-]+)/);
+   workerFailures.push({asset:asset?.[1]||null,fetch:/fetch/i.test(value),mime:/mime/i.test(value),redirect:/redirect/i.test(value),line:event.errorMessage.lineNumber});
+  });
+  await network.send('ServiceWorker.enable');
   network.on('Network.responseReceivedExtraInfo',event=>{
    for(const cookie of event.blockedCookies||[])cookieBlocks.push(...cookie.blockedReasons);
   });
@@ -99,7 +106,7 @@ async function main(){
     const response=await get(context,new URL(name,url).href),body=await response.body();
     assets.push({name:name||'root',status:response.status(),type:response.headers()['content-type'],redirect:!!response.headers().location,sha256:crypto.createHash('sha256').update(body).digest('hex')});
    }
-   console.log('Worker diagnostics: '+JSON.stringify({registration,assets}));
+   console.log('Worker diagnostics: '+JSON.stringify({registration,assets,workerFailures,workerResponses:workerResponses.slice(-20)}));
    throw error;
   }
   await page.evaluate(()=>localStorage.setItem('playroom-deploy-probe','preserved'));
