@@ -125,20 +125,28 @@ async function main(){
    return;
   }
   stage='service-worker';
-  try{
-   await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
-  }catch(error){
-   const registration=await page.evaluate(async()=>{
-    const r=await navigator.serviceWorker.getRegistration();
-    return {found:!!r,installing:r?.installing?.state,waiting:r?.waiting?.state,active:r?.active?.state,controlled:!!navigator.serviceWorker.controller};
-   });
-   const assets=[];
-   for(const name of ['sw.js','index.html','']){
-    const response=await get(context,new URL(name,url).href),body=await response.body();
-    assets.push({name:name||'root',status:response.status(),type:response.headers()['content-type'],redirect:!!response.headers().location,sha256:crypto.createHash('sha256').update(body).digest('hex')});
+  for(let attempt=0;;attempt++){
+   try{await page.waitForFunction(()=>!!navigator.serviceWorker.controller,null,{timeout:15000});break;}
+   catch(error){
+    if(attempt<3&&workerResponses.some(response=>response.status===404)){
+     console.log('Waiting for Pages worker assets: retry '+(attempt+1));
+     await page.waitForTimeout(10000*(attempt+1));
+     workerResponses.length=0;workerFailures.length=0;errors.length=0;
+     await page.reload({waitUntil:'domcontentloaded'});
+     continue;
+    }
+    const registration=await page.evaluate(async()=>{
+     const r=await navigator.serviceWorker.getRegistration();
+     return {found:!!r,installing:r?.installing?.state,waiting:r?.waiting?.state,active:r?.active?.state,controlled:!!navigator.serviceWorker.controller};
+    });
+    const assets=[];
+    for(const name of ['sw.js','index.html','']){
+     const response=await get(context,new URL(name,url).href),body=await response.body();
+     assets.push({name:name||'root',status:response.status(),type:response.headers()['content-type'],redirect:!!response.headers().location,sha256:crypto.createHash('sha256').update(body).digest('hex')});
+    }
+    console.log('Worker diagnostics: '+JSON.stringify({registration,assets,workerFailures,workerResponses:workerResponses.slice(-20)}));
+    throw error;
    }
-   console.log('Worker diagnostics: '+JSON.stringify({registration,assets,workerFailures,workerResponses:workerResponses.slice(-20)}));
-   throw error;
   }
   await page.evaluate(()=>localStorage.setItem('playroom-deploy-probe','preserved'));
   stage='offline';await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
