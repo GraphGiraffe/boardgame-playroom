@@ -375,11 +375,11 @@ test('Animation presets persist and stage real card flights before the next acto
       await resume(page); await playHumanCard(page, saved);
       await page.locator(FLIGHT).waitFor({state: 'visible'});
       await page.locator('.table-heading [data-command=home]').click();
-      assert.equal(await page.locator('.game-tile').count(), 5);
+      assert.equal(await page.locator('.game-tile').count(), 12);
       assert.equal(await page.locator('.playroom-motion-layer').count(), 0);
       await page.waitForTimeout(1850);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal(await page.locator('.game-tile').count(), 5);
+      assert.equal(await page.locator('.game-tile').count(), 12);
     });
   } finally { await browser.close(); await fixtureServer?.close(); }
 });

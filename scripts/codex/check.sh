@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
-usage() { printf '%s\n' 'Usage: bash scripts/codex/check.sh [--full [--packs-dir PATH]]' 'Default: independent app/core build and tests. --full: all five source packs and every test.'; }
+usage() { printf '%s\n' 'Usage: bash scripts/codex/check.sh [--full [--packs-dir PATH]]' 'Default: independent app/core build and tests. --full: all source packs and every test.'; }
 full=false packs_dir=''
 while (($#)); do
   case "$1" in
@@ -15,8 +15,8 @@ $full || [[ -z "$packs_dir" ]] || fail '--packs-dir is only meaningful together 
 require_runtime
 resolved_packs=''
 if $full; then
-  resolved_packs="$(find_packs "$packs_dir")" || fail 'Full checks require all five source packs. Pass --packs-dir /path/to/playroom-paks/packs.'
-  require_five_source_packs "$resolved_packs"
+  resolved_packs="$(find_packs "$packs_dir")" || fail 'Full checks require all twelve source packs. Pass --packs-dir /path/to/playroom-paks/packs.'
+  require_source_packs "$resolved_packs"
 fi
 cd -- "$playroom_root"
 node scripts/codex/browser.cjs >/dev/null

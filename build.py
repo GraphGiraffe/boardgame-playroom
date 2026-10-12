@@ -67,7 +67,7 @@ def validate_manifest(manifest, label):
     if not number_equals(manifest.get("viewApi"), 2):
         raise ValueError(f"Требуется viewApi 2: {label}")
     state = manifest.get("stateVersion")
-    if (not number_equals(manifest.get("engineApi"), 1) or type(state) not in (int, float)
+    if (manifest.get("engineApi") not in (1, 2) or type(state) not in (int, float)
             or not 1 <= state <= MAX_SAFE_INTEGER or int(state) != state):
         raise ValueError(f"Неподдерживаемый API/состояние пака: {label}")
     name = manifest.get("name")
@@ -195,6 +195,14 @@ def read_source_pack(manifest_path):
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             value = f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
         files[path.relative_to(pack).as_posix()] = value
+    if manifest.get("sharedUi"):
+        shared = pack.parent.parent / "shared"
+        files["view.js"] = (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
+        files["styles.css"] = (shared / "view-kit.css").read_text(encoding="utf-8") + "\n" + files["styles.css"]
+        for name in manifest.get("sharedAssets", []):
+            if not re.fullmatch(r"[a-z][a-z0-9-]*\.svg", name):
+                raise ValueError(f"Некорректное имя общего ресурса: {name}")
+            files[f"assets/shared/{name}"] = (shared / "assets" / name).read_text(encoding="utf-8")
     return validate_bundle({"format":"playroom-pack", "formatVersion":1, "manifest":manifest, "files":files}, pack.name)
 
 

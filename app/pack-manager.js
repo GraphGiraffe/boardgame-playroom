@@ -2,6 +2,29 @@
   'use strict';
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const STORAGE = 'playroom.packs.v1';
+  const DISPLAY_STORAGE = 'playroom.pack-display.v1';
+  const validId = value => typeof value === 'string' && /^[a-z0-9_-]{1,100}$/.test(value);
+  function displayPreferences() {
+    try {
+      const saved=JSON.parse(localStorage.getItem(DISPLAY_STORAGE)||'{}');
+      const clean=key=>Array.isArray(saved[key])?[...new Set(saved[key].filter(validId))]:[];
+      return {order:clean('order'),hidden:clean('hidden'),favorites:clean('favorites')};
+    } catch (_) { return {order:[],hidden:[],favorites:[]}; }
+  }
+  function storeDisplay(preferences) { localStorage.setItem(DISPLAY_STORAGE,JSON.stringify(preferences)); }
+  function ordered(ids,preferences=displayPreferences()) {
+    const sequence=[...new Set(ids)],original=new Map(sequence.map((id,index)=>[id,index]));
+    return sequence.sort((a,b)=>{
+      const ia=preferences.order.indexOf(a),ib=preferences.order.indexOf(b);
+      return (ia<0?preferences.order.length+original.get(a):ia)-(ib<0?preferences.order.length+original.get(b):ib);
+    });
+  }
+  function toggleFavorite(id) {
+    if(!validId(id))return;
+    const preferences=displayPreferences(),set=new Set(preferences.favorites);
+    if(set.has(id))set.delete(id);else set.add(id);
+    preferences.favorites=[...set];storeDisplay(preferences);
+  }
   root.PlayroomCatalog ||= {};
   if (root.TabletopPacks) {
     root.PlayroomPacks = new root.TabletopPacks({engine:root.TabletopCore,views:root.PlayroomViews,catalog:root.PlayroomCatalog,
@@ -37,11 +60,14 @@
       return [fatal,...visible].filter(Boolean).join(' ');
     }
     function listMarkup() {
-      const list = manager?.list() || [];
+      const source = manager?.list() || [],preferences=displayPreferences(),ids=ordered(source.filter(item=>item.active).map(item=>item.id),preferences);
+      const position=id=>ids.indexOf(id)<0?ids.length:ids.indexOf(id);
+      const list=source.slice().sort((a,b)=>position(a.id)-position(b.id)||Number(b.active)-Number(a.active));
       if (!list.length) return '<div class="pack-empty"><strong>Пока нет игр</strong><p>Выберите файл пака, чтобы добавить правила, оформление и звуки игры. Подключение к интернету не нужно.</p></div>';
       return `<ul class="pack-list">${list.map(item=>{
         const count = references(item.id,item.version).length;
-        return `<li class="pack-entry" data-pack-id="${esc(item.id)}" data-pack-version="${esc(item.version)}"><div><strong>${esc(title(item.manifest))}</strong><p>${esc(item.id)} · ${esc(item.version)}${item.active?' · выбранная версия':''}</p>${count?`<small>${count} сохранённых партий используют эту версию</small>`:''}</div><button class="icon-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" ${count?'disabled':''} aria-label="Удалить ${esc(title(item.manifest))}, версия ${esc(item.version)}" ${count?'title="Сначала завершите работу с сохранениями этой версии"':''}>${root.PlayroomGameScreen.icon('trash')}</button></li>`;
+        const controls=item.active?`<div class="pack-display-actions"><button type="button" data-pack-move="${esc(item.id)}" data-direction="-1" ${ids.indexOf(item.id)===0?'disabled':''} aria-label="Поднять ${esc(title(item.manifest))}">↑</button><button type="button" data-pack-move="${esc(item.id)}" data-direction="1" ${ids.indexOf(item.id)===ids.length-1?'disabled':''} aria-label="Опустить ${esc(title(item.manifest))}">↓</button><button type="button" data-pack-visibility="${esc(item.id)}" aria-pressed="${preferences.hidden.includes(item.id)}" aria-label="${preferences.hidden.includes(item.id)?'Показать':'Скрыть'} ${esc(title(item.manifest))}">${preferences.hidden.includes(item.id)?'Показать':'Скрыть'}</button><button type="button" data-pack-favorite="${esc(item.id)}" aria-pressed="${preferences.favorites.includes(item.id)}" aria-label="${preferences.favorites.includes(item.id)?'Убрать из избранного':'В избранное'} ${esc(title(item.manifest))}">${preferences.favorites.includes(item.id)?'★':'☆'}</button></div>`:'';
+        return `<li class="pack-entry" data-pack-id="${esc(item.id)}" data-pack-version="${esc(item.version)}"><div><strong>${esc(title(item.manifest))}</strong><p>${esc(item.id)} · ${esc(item.version)}${item.active?' · выбранная версия':''}</p>${count?`<small>${count} сохранённых партий используют эту версию</small>`:''}${controls}</div><button class="icon-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" ${count?'disabled':''} aria-label="Удалить ${esc(title(item.manifest))}, версия ${esc(item.version)}" ${count?'title="Сначала завершите работу с сохранениями этой версии"':''}>${root.PlayroomGameScreen.icon('trash')}</button></li>`;
       }).join('')}</ul>`;
     }
     function previewMarkup() {
@@ -82,7 +108,22 @@
     }
     document.addEventListener('change',event=>{if(event.target.id==='pack-file')void read(event.target.files?.[0]);});
     document.addEventListener('click',event=>{
-      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm]');if(!button||button.disabled)return;
+      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite]');if(!button||button.disabled)return;
+      if(button.hasAttribute('data-pack-move')||button.hasAttribute('data-pack-visibility')||button.hasAttribute('data-pack-favorite')){
+        try {
+          const id=button.dataset.packMove||button.dataset.packVisibility||button.dataset.packFavorite;
+          if(!manager.list().some(item=>item.id===id&&item.active))return;
+          if(button.hasAttribute('data-pack-favorite'))toggleFavorite(id);
+          else {
+            const preferences=displayPreferences();
+            if(button.hasAttribute('data-pack-visibility')){const hidden=new Set(preferences.hidden);if(hidden.has(id))hidden.delete(id);else hidden.add(id);preferences.hidden=[...hidden];}
+            else {const ids=ordered(manager.list().filter(item=>item.active).map(item=>item.id),preferences),at=ids.indexOf(id),to=at+Number(button.dataset.direction);if(to<0||to>=ids.length)return;[ids[at],ids[to]]=[ids[to],ids[at]];preferences.order=ids;}
+            storeDisplay(preferences);
+          }
+          onChange();open();
+        } catch(error) {message='Не удалось сохранить порядок игр. '+error.message;open();}
+        return;
+      }
       if(button.hasAttribute('data-pack-restore')){try{manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open();}catch(error){message=error.message;open();}return;}
       if(button.hasAttribute('data-pack-quarantine')){openModal(`${modalHead('Удалить несовместимые паки?')}<p>Сохранённые партии останутся на устройстве.</p><button class="btn coral" data-pack-quarantine-confirm="${esc(button.dataset.packQuarantine)}">Удалить</button>`);return;}
       if(button.hasAttribute('data-pack-quarantine-confirm')){try{manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open();}catch(error){message=error.message;open();}return;}
@@ -92,5 +133,5 @@
     });
     return {open(){pending=null;message=currentBootWarnings();open();}};
   }
-  root.PlayroomPackManager = {create,reconcile};
+  root.PlayroomPackManager = {create,reconcile,displayPreferences,ordered,toggleFavorite};
 })(globalThis);

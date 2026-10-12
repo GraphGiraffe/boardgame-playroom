@@ -31,4 +31,4 @@ node scripts/codex/browser.cjs --check || fail 'Browser could not start. If syst
 if [[ -n "$resolved_packs" ]]; then python3 build.py --prepare-dev --packs-dir "$resolved_packs"
 else python3 build.py --prepare-dev
 fi
-printf '%s\n' 'Setup complete. Run bash scripts/codex/check.sh, or add --full to check all five games.'
+printf '%s\n' 'Setup complete. Run bash scripts/codex/check.sh, or add --full to check all installed source games.'

@@ -7,10 +7,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
+const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/engine.js', ...games.map(g => `packs/${g}/rules.js`), 'core/ui.js', 'app/views.js', ...games.map(g => `packs/${g}/view.js`)]) {
-  vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
+for (const file of ['core/engine.js', ...games.map(g => `packs/${g}/rules.js`), 'core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+  vm.runInContext(fs.readFileSync(file==='shared/view-kit.js'?sharedKit:path.join(root, file), 'utf8'), sandbox, { filename: file });
 }
 const E = sandbox.TabletopCore, V = sandbox.PlayroomViews;
 const clone = value => JSON.parse(JSON.stringify(value));
