@@ -309,6 +309,7 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .app-game-layout:has(>.layout-shared){grid-template-rows:auto auto minmax(0,1fr) auto auto auto!important;grid-template-areas:"participants" "status" "field" "shared" "self" "auxiliary"!important}
 .layout-shared{grid-area:shared;min-width:0;display:flex;align-items:center;justify-content:center}
 .app-game-layout:is([data-layout-mode="phone-landscape"],[data-layout-mode="desktop"]):has(>.layout-shared){grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"status field shared" "participants field self" "auxiliary field self"!important}
+.app-game-layout:is([data-layout-mode="phone-landscape"],[data-layout-mode="desktop"]):has(>.layout-shared):not(:has(>.layout-status)){grid-template-areas:"participants field shared" "participants field self" "auxiliary field self"!important}
 .lobby-actions:has(.lobby-stop){flex-wrap:wrap}
 .lobby-actions .lobby-stop{flex:1 0 100%;white-space:normal}
 /* Seven starting tiles fit without hiding either end; narrow hands wrap. */

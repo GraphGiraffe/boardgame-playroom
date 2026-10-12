@@ -8,3 +8,6 @@
 .playroom-drag-ghost *{pointer-events:none!important}
 [data-drop-piece].playroom-drop-hover{outline:3px solid #d39739!important;outline-offset:4px;background-color:#e9e4b9!important;box-shadow:0 0 0 7px #d3973925!important}
 @media(prefers-reduced-motion:reduce){.playroom-drag-ghost{will-change:auto}}
+
+/* All hand surfaces participate in manual scroll arbitration, including disabled pieces. */
+.own-hand .hand-track{touch-action:none!important}

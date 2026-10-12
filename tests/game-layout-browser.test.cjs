@@ -37,6 +37,15 @@ test('all packs share player panels and preserve geometry across reported screen
    if(tiles){const box=tiles.getBoundingClientRect();if(tiles.scrollWidth>tiles.clientWidth+1)errors.push('starting tiles require horizontal scroll');for(const tile of tiles.children){const r=tile.getBoundingClientRect();if(!within(r,box))errors.push('starting tile clipped');}}
    const shared=stage.querySelector('.layout-shared'),field=stage.querySelector('.layout-field');
    if(shared&&field){const die=shared.querySelector('.die'),d=die?.getBoundingClientRect(),f=field.getBoundingClientRect();if(stage.querySelectorAll('.die').length!==1)errors.push('shared die duplicated');if(d){if(['phone-landscape','desktop'].includes(stage.dataset.layoutMode)){if(d.left<f.right-1)errors.push('die is not right of field');}else if(d.top<f.bottom-1)errors.push('die is not below field');}}
+   if(shared&&['phone-landscape','desktop'].includes(stage.dataset.layoutMode)){
+    const participants=stage.querySelector('.layout-participants'),first=participants?.querySelector('.player-panel');
+    if(first&&first.getBoundingClientRect().top>field.getBoundingClientRect().top+12)errors.push('shared object pushes opponents down');
+   }
+   if(stage.classList.contains('checkers-scene')){
+    if(stage.querySelector('.player-side,.player-status-badge'))errors.push('verbose checkers metadata');
+    for(const counter of stage.querySelectorAll('[data-score-kind="pieces"]')){const r=counter.getBoundingClientRect();if(Math.abs(r.width-r.height)>1)errors.push('pieces counter is not round');}
+    if(stage.querySelectorAll('[data-score-kind="pieces"]').length!==2)errors.push('missing piece counters');
+   }
    const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow');for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?4/7:7/4;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
    for(const pip of document.querySelectorAll('.domino-art-face .pip')){const r=pip.getBoundingClientRect();if(Math.abs(r.width-r.height)>.2)errors.push('domino pip stretched');}
    const n=document.querySelectorAll('.player-panel').length;if(n!==document.querySelectorAll('.player-info').length||n<2)errors.push('players missing');

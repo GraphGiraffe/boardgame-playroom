@@ -253,7 +253,7 @@
   }
   function askDelete(id) {
     const entry=library.list().find(entry=>entry.id===id);if(!entry)return;
-    openModal(`${modalHead('Удалить партию?')}<p class="lead">${esc(entry.invalid?'Это сохранение':meta(entry.game)?.name||entry.game)} и вся история этой партии будут удалены с устройства. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-delete-confirm="${esc(id)}">Удалить</button></div>`);
+    openModal(PlayroomGameScreen.deleteConfirmation({name:entry.invalid?'Это сохранение':meta(entry.game)?.name||entry.game,confirmAttrs:`data-delete-confirm="${esc(id)}"`}));
   }
   function refreshSavedGameRecovery(){
     try{
@@ -267,7 +267,10 @@
   async function deleteNetworkSession(id){
     try{await globalThis.PlayroomNetworkLibrary.remove(id);closeModal(true);await refreshNetworkSaved();}catch(error){toast(error.message);}
   }
-  function askDeleteNetwork(id){openModal(`${modalHead('Удалить сетевую партию?')}<p>Архив и история будут удалены только на этом устройстве. Другие партии останутся.</p><button class="btn coral" data-delete-network-confirm="${esc(id)}">Удалить</button>`);}
+  function askDeleteNetwork(id){
+    const entry=networkSaved.find(entry=>(entry.role==='client'?'client:'+entry.id:entry.sessionId)===id);if(!entry)return;
+    openModal(PlayroomGameScreen.deleteConfirmation({name:meta(entry.game)?.name||entry.game||'Это сохранение',network:true,confirmAttrs:`data-delete-network-confirm="${esc(id)}"`}));
+  }
   function deleteSession(id) {
     try {
       library.remove(id);
