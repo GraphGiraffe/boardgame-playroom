@@ -25,7 +25,7 @@ async function main(){
  const tunnel=clientId?await accessProxy(origin,{clientId,clientSecret}):await originProxy(origin);let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>',...(tunnel.spki?['--ignore-certificate-errors-spki-list='+tunnel.spki]:[])]});
-  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[];
+  const context=await createContext(),page=await context.newPage(),errors=[],authStatuses=[],assetStatuses=[],cookieBlocks=[],navigations=[],failedRequests=[];
   const workerFailures=[],workerResponses=[];
   context.on('response',response=>{if(response.request().serviceWorker()&&new URL(response.url()).origin===origin&&!response.ok())workerResponses.push({status:response.status(),path:new URL(response.url()).pathname.replace(/[^a-zA-Z0-9_./-]/g,'')});});
   const network=await context.newCDPSession(page);await network.send('Network.enable');
@@ -38,6 +38,10 @@ async function main(){
    for(const cookie of event.blockedCookies||[])cookieBlocks.push(...cookie.blockedReasons);
   });
   page.on('pageerror',()=>errors.push('page-error'));
+  page.on('requestfailed',request=>{
+   const target=new URL(request.url());
+   if(target.origin===origin)failedRequests.push({path:target.pathname.replace(/[^a-zA-Z0-9_./-]/g,''),type:request.resourceType(),reason:request.failure()?.errorText||null});
+  });
   page.on('response',response=>{
    const target=new URL(response.url());
    if(target.origin!==origin)return;
@@ -60,7 +64,14 @@ async function main(){
   await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type="submit"]').click()]);await field.waitFor();
   if(await page.evaluate(()=>!!globalThis.PlayroomAppBridge))throw Error('Wrong password granted access');
   stage='login';await field.fill(password);
-  const [login]=await Promise.all([page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/_auth'&&response.request().method()==='POST'),page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type="submit"]').click()]);
+  let login;
+  try{
+   [login]=await Promise.all([page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/_auth'&&response.request().method()==='POST'),page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type="submit"]').click()]);
+  }catch(error){
+   const cookies=await context.cookies(url).catch(()=>[]);
+   console.log('Login transition diagnostics: '+JSON.stringify({authStatuses,navigations:navigations.slice(-8),failedRequests:failedRequests.slice(-8),cookieBlocks:cookieBlocks.slice(-8),cookies:cookies.length,hostCookies:cookies.filter(cookie=>cookie.name.startsWith('__Host-')).length,passwordForm:await field.count().catch(()=>null),pageErrors:errors.length}));
+   throw error;
+  }
   if(login.status()!==303)throw Error('Password login rejected');
   const destination=new URL(login.headers().location||'',login.url());
   if(!login.headers().location||destination.origin!==origin)throw Error('Unexpected login redirect');
