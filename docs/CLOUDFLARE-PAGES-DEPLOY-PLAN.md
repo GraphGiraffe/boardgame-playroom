@@ -13,12 +13,16 @@
 | Secret | CLOUDFLARE_API_TOKEN | Cloudflare API token: Account → Cloudflare Pages → Edit, только нужный аккаунт |
 | Secret | PAGES_PRIVATE_WRAPPER_B64 | Base64 ZIP ровно из `_worker.js`, `_routes.json`, `manifest.webmanifest` существующей доверенной защиты |
 | Secret | PAGES_SMOKE_PASSWORD | Текущий пароль входа на сайт для браузерной проверки |
+| Secret | CF_ACCESS_CLIENT_ID | Client ID сервисного токена, если preview/deployment URLs защищены Cloudflare Access |
+| Secret | CF_ACCESS_CLIENT_SECRET | Client Secret того же токена; политика Access приложения: Service Auth → Include → Service Token |
 | Variable | CLOUDFLARE_ACCOUNT_ID | Account ID существующего Pages-проекта |
 | Variable | CLOUDFLARE_PAGES_PROJECT | Имя проекта |
 | Variable | CLOUDFLARE_PRODUCTION_BRANCH | Точное значение Production branch в Cloudflare; не угадывать по ветке GitHub |
 | Variable | CLOUDFLARE_PAGES_ORIGIN | Полный прежний HTTPS origin без завершающего `/` |
 
 Worker, пароль, cookie, токен и закрытый ZIP не публикуются в Git или Release. Публичные assets содержат только обычную PWA. Все credentials передаются через окружение; отчёт содержит лишь release/SHA, origin и deployment ID.
+
+Cloudflare Access и пароль приватного Worker проверяются отдельно. Сервисный токен разрешает CI пройти внешний Access; проверки неверного пароля и ресурсов без cookie приложения сохраняются. Заголовки Access отправляются только на точный проверяемый origin и не следуют за перенаправлением на другой адрес. Перед offline-проверкой сетевой перехват снимается. Существующие политики Access не отключаются.
 
 ## Запуск
 

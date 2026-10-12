@@ -47,6 +47,8 @@ jobs:
       CLOUDFLARE_PAGES_ORIGIN: ${{ vars.CLOUDFLARE_PAGES_ORIGIN }}
       PAGES_PRIVATE_WRAPPER_B64: ${{ secrets.PAGES_PRIVATE_WRAPPER_B64 }}
       PAGES_SMOKE_PASSWORD: ${{ secrets.PAGES_SMOKE_PASSWORD }}
+      CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+      CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
