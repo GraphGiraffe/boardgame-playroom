@@ -50,21 +50,21 @@ async function main(){
    throw error;
   }
   stage='runtime-assets';const refs=await page.evaluate(()=>[...document.querySelectorAll('script[src],link[rel=stylesheet]')].map(e=>e.getAttribute('src')||e.getAttribute('href')));
-  if(!refs.length||refs.some(n=>!(/\.[a-f0-9]{16}\.(js|css)$/.test(n))))throw Error('Unexpected shell assets');
+  if(!refs.length||refs.some(n=>!(/\.[a-f0-9]{16}\.(js|css)$/.test(n)))){stage='runtime-asset-names';throw Error('Unexpected shell assets');}
   const anonymous=await createContext();
   try{
    for(const ref of refs){
     const target=new URL(ref,url).href,response=await get(context,target);
-    if(!response.ok())throw Error('Authenticated asset unavailable');
+    if(!response.ok()){stage='runtime-asset-status-'+response.status();throw Error('Authenticated asset unavailable');}
     const bytes=await response.body(),hash=crypto.createHash('sha256').update(bytes).digest('hex');
     if(/lobby-view\.[a-f0-9]+\.js$/.test(ref)){
       const source=bytes.toString('utf8'),translated=source.includes('>Локальная<')&&source.includes('>Сетевая<');
       console.log('Live lobby labels: '+(translated?'Russian':'outdated')+'; asset '+ref);
       if(!translated)throw Error('Outdated lobby asset');
     }
-    if(dir&&hash!==crypto.createHash('sha256').update(fs.readFileSync(path.join(dir,ref))).digest('hex'))throw Error('Deployed bytes differ from verified archive');
+    if(dir&&hash!==crypto.createHash('sha256').update(fs.readFileSync(path.join(dir,ref))).digest('hex')){stage='runtime-asset-bytes';console.log('Asset integrity mismatch: '+path.basename(ref));throw Error('Deployed bytes differ from verified archive');}
     const denied=await get(anonymous,target);
-    if(denied.ok()&&crypto.createHash('sha256').update(await denied.body()).digest('hex')===hash)throw Error('Unauthenticated asset access');
+    if(denied.ok()&&crypto.createHash('sha256').update(await denied.body()).digest('hex')===hash){stage='runtime-anonymous-access';throw Error('Unauthenticated asset access');}
    }
    const cookies=await context.cookies();
    const forged=await get(anonymous,new URL(refs[0],url).href,{Cookie:cookies.map(c=>c.name+'=invalid').join('; ')});
