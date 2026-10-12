@@ -66,6 +66,8 @@ def validate_manifest(manifest, label):
         raise ValueError(f"Некорректные ID/версия пака: {label}")
     if not number_equals(manifest.get("viewApi"), 2):
         raise ValueError(f"Требуется viewApi 2: {label}")
+    if "tileTheme" in manifest and manifest["tileTheme"] not in ("green", "coral", "blue", "gold", "violet"):
+        raise ValueError(f"Некорректная тема карточки: {label}")
     state = manifest.get("stateVersion")
     if (manifest.get("engineApi") not in (1, 2) or type(state) not in (int, float)
             or not 1 <= state <= MAX_SAFE_INTEGER or int(state) != state):

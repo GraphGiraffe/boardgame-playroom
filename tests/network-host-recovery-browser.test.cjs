@@ -47,7 +47,7 @@ async function profile(page,name,url){
   await page.goto(url);
   await page.locator('#profile-form input').fill(name);
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
-  await page.locator('.game-grid').waitFor();
+  await page.locator('.game-grid').first().waitFor();
 }
 async function pair(host,guest,{shareHandoff=false}={}){
   // The same live PR2/PR3 offer/answer flow used by the normal QR screen.
@@ -263,7 +263,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           // exit mechanism. Leaving the game must close RTC and show the hub.
           await guests[0].evaluate(()=>{window.confirm=()=>true;});
           await guests[0].locator('.table-shell.network-game .table-header [data-command=home]').click();
-          await guests[0].locator('.game-grid').waitFor({timeout:10000});
+          await guests[0].locator('.game-grid').first().waitFor({timeout:10000});
           assert.equal(await guests[0].evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
           await guests[0].locator('[data-net-action=room]').click();
           await guests[0].locator('[data-net-action=leave]').click();
@@ -274,7 +274,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         const parkedRevision=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
         await host.evaluate(()=>{window.confirm=()=>true;});
         await host.locator('.table-shell.network-game .table-header [data-command=home]').click();
-        await host.locator('.game-grid').waitFor({timeout:10000});
+        await host.locator('.game-grid').first().waitFor({timeout:10000});
         assert(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId));
         await host.locator('[data-command=room]').click();
         await host.locator('[data-command=lobby-leave]').click();

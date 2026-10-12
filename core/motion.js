@@ -10,7 +10,7 @@
     const edge = boundary || { x: 0, y: 0, width: root.innerWidth, height: root.innerHeight };
     const left = Math.max(0, edge.x), top = Math.max(0, edge.y);
     const right = Math.min(root.innerWidth, edge.x + edge.width), bottom = Math.min(root.innerHeight, edge.y + edge.height);
-    const width = Math.min(rect.width, Math.max(1, right - left)), height = Math.min(rect.height, Math.max(1, bottom - top));
+    const scale = Math.min(1,Math.max(1,right-left)/rect.width,Math.max(1,bottom-top)/rect.height), width=rect.width*scale,height=rect.height*scale;
     return { x: Math.max(left, Math.min(rect.x, right - width)), y: Math.max(top, Math.min(rect.y, bottom - height)), width, height };
   }
   function handOrigin(hand, maxWidth = 38, maxHeight = 54) {
@@ -133,8 +133,9 @@
         flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: baseDelay + drawIndex++ * duration * .3 });
       }
     }
-    const die = [...scene.querySelectorAll('[data-motion-lead]')].find(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el))||null;
-    if (!flights.length && !die) return Promise.resolve();
+    const dice = [...scene.querySelectorAll('[data-motion-lead]')].filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
+    const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
+    if (!flights.length && !dice.length && !effects.length) return Promise.resolve();
     return new Promise(resolve => {
       const animations = [], restore = [], timers = [], resizeUpdates=[], finishUpdates=[], layer = doc.createElement('div');
       let ended = false, timer = 0;
@@ -165,7 +166,7 @@
           mover.append(clone); layer.append(mover);
           const entry = el ? { el, visibility: el.style.getPropertyValue('visibility'), priority: el.style.getPropertyPriority('visibility') } : null;
           if (entry) { restore.push(entry); el.style.setProperty('visibility', 'hidden', 'important'); }
-          const sx = from.width / to.width, sy = from.height / to.height, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
+          const sx = Math.min(from.width / to.width,from.height / to.height), sy = sx, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
           const transform = (x,y,xScale,yScale) => `translate3d(${x}px,${y}px,0) scale(${xScale},${yScale})`;
           let frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
           let routeFrames;
@@ -197,13 +198,17 @@
           animation.finished.then(() => { show(entry); mover.remove(); }, () => {});
           animations.push(animation);
         }
-        if (die) {
+        for (const die of dice) {
           const mover=doc.createElement('div'),box=rectOf(die),clone=styledClone(die);
           mover.className='playroom-motion-flight';mover.dataset.motionKind='roll';mover.append(clone);layer.append(mover);
           const position=()=>{const r=rectOf(die)||box;Object.assign(mover.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${r.width}px`,height:`${r.height}px`,transformOrigin:'center'});};position();resizeUpdates.push(position);
           const entry={el:die,visibility:die.style.getPropertyValue('visibility'),priority:die.style.getPropertyPriority('visibility')};restore.push(entry);die.style.setProperty('visibility','hidden','important');
           const animation=mover.animate([{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
           animation.finished.then(()=>{show(entry);mover.remove();},()=>{});animations.push(animation);
+        }
+        for(const el of effects){
+          const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
+          animations.push(el.animate(frames,{duration,easing:'ease-out'}));
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.

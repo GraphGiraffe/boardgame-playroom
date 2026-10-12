@@ -317,3 +317,38 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
   assert.equal(keys.filter(key=>key.startsWith('playroom-pwa-')).length,1);
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });
+
+test('local Pages production deploy uploads once without GitHub and rolls back on failed smoke',()=>{
+ const code=String.raw`
+import importlib.util, os, tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('pages', 'scripts/pages-deploy.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-222222222222';sha='a'*40
+class Pages:
+ def __init__(self):self.project='existing';self.current=old;self.uploads=[];self.rollbacks=[]
+ def api(self,*args,**kwargs):
+  if kwargs.get('suffix')=='/deployments':return [{'id':new,'environment':'production','created_on':'1','url':'https://new.example','deployment_trigger':{'metadata':{'branch':'production','commit_hash':sha}}}]
+  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':self.current}}
+ def production_target(self,value):return {'id':value,'url':'https://old.example'}
+ def manual_uploads(self,project):pass
+ def rollback(self,value):self.rollbacks.append(value);self.current=value
+for fail in (False,True):
+ pages=Pages()
+ def command(cmd,**kwargs):
+  assert cmd[0]!='gh'
+  if cmd[0]=='npx':pages.uploads.append(cmd[cmd.index('--branch')+1]);pages.current=new
+ def prepare(public,sums,wrapper,destination):destination.mkdir();return {'sha256':'b'*64}
+ def smoke(url,*args,**kwargs):
+  if fail and url=='https://new.example':raise ValueError('smoke failed')
+ args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.3',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
+ with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
+  try:report=m.run(args)
+  except ValueError:
+   assert fail and pages.rollbacks==[old]
+  else:assert not fail and report['status']=='published' and not pages.rollbacks
+ assert pages.uploads==['production']
+`;
+ require('node:child_process').execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
+});
