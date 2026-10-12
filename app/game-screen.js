@@ -72,9 +72,9 @@
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
-    const winner=state.winner,person=winner==null?null:state.players[winner];
-    const title=winner===null?'Ничья!':viewer<0?`${person?.name||'Игрок'} побеждает`:winner===viewer?'Победа!':'Поражение';
-    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
+    const winner=state.winner,winningPlayers=state.winners|| (winner==null?[]:[winner]),person=winner==null?null:state.players[winner];
+    const title=winner===null?'Ничья!':viewer<0?winningPlayers.length>1?'Победители: '+winningPlayers.map(i=>state.players[i]?.name||'Игрок').join(', '):`${person?.name||'Игрок'} побеждает`:winningPlayers.includes(viewer)?'Победа!':'Поражение';
+    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${winningPlayers.includes(i)?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,

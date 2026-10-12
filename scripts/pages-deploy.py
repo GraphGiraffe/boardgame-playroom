@@ -67,8 +67,8 @@ def prepare(public, sums, wrapper, destination):
         if re.sub(r'\.[a-f0-9]{16}(?=\.(js|css)$)', '', name) in files:
             raise ValueError('Duplicate canonical shell assets')
     installed = next(files[n].decode() for n in refs if n.startswith('installed-packs.'))
-    if not {'uno', 'domino', 'durak', 'checkers', 'snakes'} <= set(re.findall(r'"id"\s*:\s*"([a-z-]+)"', installed)):
-        raise ValueError('Release must contain all five packs')
+    if not {'uno', 'domino', 'durak', 'checkers', 'snakes', 'tictactoe', 'battleship', 'pexeso', 'ludo', 'yatzy', 'gofish', 'oldmaid'} <= set(re.findall(r'"id"\s*:\s*"([a-z-]+)"', installed)):
+        raise ValueError('Release must contain all twelve packs')
     private = archive_files(io.BytesIO(wrapper))
     if set(private) != PRIVATE or any(not v for v in private.values()):
         raise ValueError('Private wrapper must contain exactly worker, routes and manifest')

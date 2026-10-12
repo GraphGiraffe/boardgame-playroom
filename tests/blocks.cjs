@@ -27,6 +27,8 @@ module.exports = {
   games: {label: "Правила и интерфейс игр", cases: [
     {"file": "game-layout-browser.test.cjs", "profiles": ["app", "layout", "smoke"], "subblock": "games/layout"},
     {"file": "views.test.cjs", "profiles": [], "subblock": "games/layout"},
+    {"file": "rc2-games.test.cjs", "profiles": [], "subblock": "games/actions"},
+    {"file": "rc2-games-browser.test.cjs", "profiles": ["layout"], "subblock": "games/layout"},
     {"file": "checkers-drag.test.cjs", "profiles": ["layout"], "subblock": "games/actions"},
     {"file": "domino-layout.test.cjs", "profiles": [], "subblock": "games/layout"},
     {"file": "compact-hand.test.cjs", "profiles": ["layout"], "subblock": "games/layout"},
@@ -39,6 +41,7 @@ module.exports = {
   ]},
   ui: {label: "Экраны приложения", cases: [
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
+    {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "mobile-navigation.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "history-library-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/history"},
     {"file": "unified-game-screen-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},

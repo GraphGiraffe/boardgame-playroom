@@ -202,7 +202,7 @@ def denied(call):
  try:call()
  except (ValueError, KeyError):return
  raise AssertionError('Unsafe deployment accepted')
-with patch.object(build,'installed_script',return_value=json.dumps([{'id':n} for n in ['uno','domino','durak','checkers','snakes']])):
+with patch.object(build,'installed_script',return_value=json.dumps([{'id':n} for n in ['uno','domino','durak','checkers','snakes','tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']])):
  items=dict(build.pwa_runtime_items())
 private={'_worker.js':'private test worker', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
 with tempfile.TemporaryDirectory() as directory:

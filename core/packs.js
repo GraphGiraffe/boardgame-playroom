@@ -38,7 +38,7 @@
     const m=bundle.manifest;
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error('Некорректные id или версия пакета');
     if(m.viewApi!==2)throw Error('Пакет требует API интерфейса 2; обновите пак');
-    if(m.engineApi!==1||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
+    if(![1,2].includes(m.engineApi)||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error('У пакета отсутствует название');
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error('Слишком много файлов в пакете');
     for(const path of paths){if(!pathOK(path)||typeof bundle.files[path]!=='string')throw Error('Некорректный путь или содержимое файла: '+path);if(!/\.(?:js|css|svg|json|txt|md)$/i.test(path))asset(bundle,path);}

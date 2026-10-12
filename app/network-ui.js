@@ -45,7 +45,7 @@
   function mountNetworkView(isHost){
     if(networkInMenu)return;
     const client=isHost?hostGameClient:clientGameClient,snapshot=client?.snapshot;if(!snapshot)return;
-    const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);
+    const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);b.rememberGame(snapshot.game);
     const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
     b.closeModal(true);document.getElementById('app').inert=false;
     const old=isHost?hostMount:clientMount;old?.destroy?.();

@@ -33,7 +33,7 @@ function durakFixture(count = 6, defending = false) {
   own.push(...[...cards.values()].slice(0, count - own.length).map(c => take(c.id)));
   d.hands = [own, [...cards.values()].slice(0, 6).map(c => take(c.id))];
   d.drawPile = [trump, ...cards.values()]; d.discard = []; d.taking = false;
-  d.attacker = defending ? 1 : 0; d.defender = 1 - d.attacker; d.attackLimit = 6; s.turn = 0;
+  d.attacker = defending ? 1 : 0; d.defender = 1 - d.attacker; d.attackCursor=d.attacker; d.passes=0; d.attackLimit = 6; s.turn = 0;
   Core.validateState(s); Session.restore(Core, saved); return saved;
 }
 function durakTableFixture(pairCount, ownCount, openHands) {
@@ -48,7 +48,7 @@ function durakTableFixture(pairCount, ownCount, openHands) {
   const defense = take(pairs.at(-1)[1]);
   d.hands = [[defense, ...[...cards.values()].slice(0, ownCount - 1).map(c => take(c.id))], [...cards.values()].slice(0, 6).map(c => take(c.id))];
   d.drawPile = [trump, ...cards.values()]; d.discard = []; d.taking = false;
-  d.attacker = 1; d.defender = 0; d.attackLimit = 6; s.turn = 0;
+  d.attacker = 1; d.defender = 0; d.attackCursor=d.attacker; d.passes=0; d.attackLimit = 6; s.turn = 0;
   Core.validateState(s); Session.restore(Core, saved);
   assert(Core.legalActions(s, 0).some(a => a.type === 'defend' && a.card === defense.id && a.target === pairCount - 1));
   return saved;
