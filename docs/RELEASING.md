@@ -1,6 +1,12 @@
 # Выпуск приложения и коллекции
 
-Текущая стабильная пара: приложение 0.15.0 и паки 0.4.0. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы.
+Подготавливаемая стабильная пара: приложение 0.16.0 и паки 0.5.0. До её публикации текущая стабильная пара — 0.15.0 / 0.4.0. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы.
+
+## Выпуск 0.16.0 / 0.5.0
+
+После локального совместного gate объединить task PR в `dev`. Сначала провести release PR паков `dev → main` merge-коммитом, fast-forward `dev`, создать `v0.5.0` и стабильный GitHub Release с файлами `dist/release-0.5.0`. Закрепить окончательный main SHA паков в workflow приложения, выполнить окончательный совместный gate для этой пары, затем провести такой же release PR приложения, fast-forward `dev`, создать `v0.16.0` и стабильный GitHub Release. Скачать опубликованные assets обоих релизов и проверить SHA256SUMS. Исторические версии паков не переписывать.
+
+Публикация Pages — один ручной запуск `Protected Pages publication` на `main` с `operation=deploy`, `release=v0.16.0` после проверки GitHub Release. Использовать прежний проект и приватную обёртку; workflow создаёт отчёт и выполняет rollback при ошибке smoke. Preview не требуется. При недоступном Actions использовать проверенный публичный ZIP и `scripts/deploy-local.sh` из закрытого комплекта в том же Pages проекте; не загружать публичный ZIP вместо защищённого runtime.
 
 ## Подготовка
 
@@ -16,16 +22,16 @@
 
 ```sh
 # В репозитории паков
-python3 build.py --output-dir dist/release-0.4.0
-(cd dist/release-0.4.0 && sha256sum -c SHA256SUMS)
+python3 build.py --output-dir dist/release-0.5.0
+(cd dist/release-0.5.0 && sha256sum -c SHA256SUMS)
 # В репозитории приложения
-python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.15.0
-(cd dist/release-0.15.0 && sha256sum -c SHA256SUMS)
+python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.16.0
+(cd dist/release-0.16.0 && sha256sum -c SHA256SUMS)
 ```
 
-Публичные assets приложения: playroom.html, playroom-all-games.html, playroom-pwa.zip, playroom-source.zip, tabletop-core.zip, SHA256SUMS. Коллекция: пять versioned .playroom-pack.json, playroom-paks-0.4.0.zip, playroom-paks-source.zip, SHA256SUMS. Дополнительный provenance JSON фиксирует оба commit SHA, версии и выполненные проверки; при его добавлении пересчитать SHA256SUMS.
+Публичные assets приложения: playroom.html, playroom-all-games.html, playroom-pwa.zip, playroom-source.zip, tabletop-core.zip, SHA256SUMS. Коллекция 0.5.0: двенадцать versioned .playroom-pack.json, playroom-paks-0.5.0.zip, playroom-paks-source.zip, SHA256SUMS. Дополнительный provenance JSON фиксирует оба commit SHA, версии и выполненные проверки; при его добавлении пересчитать SHA256SUMS.
 
-Теги v0.15.0 и v0.4.0 должны указывать на проверенные main SHA. Создать GitHub Releases с prerelease=false, заметками и assets. Сначала можно загрузить draft и проверить все файлы, затем опубликовать. Не перемещать существующие теги и не заменять файлы выпущенной версии.
+Теги v0.16.0 и v0.5.0 должны указывать на проверенные main SHA. Создать GitHub Releases с prerelease=false, заметками и assets. Сначала можно загрузить draft и проверить все файлы, затем опубликовать. Не перемещать существующие теги и не заменять файлы выпущенной версии.
 
 Скачать assets через GitHub Release и выполнить sha256sum -c SHA256SUMS над скачанными байтами. Проверить имя/тег/target SHA/prerelease flag. Слияние PR или зелёный build сами по себе не являются публикацией.
 
@@ -33,7 +39,7 @@ python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-d
 
 Сборка PWA содержит по одному экземпляру подключаемых JS/CSS: только имя с хешем содержимого. HTML и precache Service Worker ссылаются на эти имена; исходные имена остаются в исходниках, а не в деплойном архиве. Повторная сборка в тот же каталог удаляет устаревшие JS/CSS сборки.
 
-Имя кеша включает версию и отпечаток всей сборки. Даже перепаковка одной версии не перезаписывает кеш работающей партии. Worker сначала загружает и проверяет весь shell по SHA256, затем ждёт закрытия старых вкладок. При активации удаляет только прежние кеши playroom-pwa-; сохранения IndexedDB остаются. Ошибочный, устаревший или подменённый страницей входа ресурс не принимается. Для завершения обновления нужно закрыть все вкладки/PWA этого сайта и открыть приложение снова.
+Имя кеша включает версию и отпечаток всей сборки. Даже перепаковка одной версии не перезаписывает кеш работающей партии. Worker сначала загружает и проверяет весь shell по SHA256, затем показывает постоянную кнопку «Обновить». Перед активацией все открытые окна подтверждают, что они находятся в меню без активной комнаты; занятое или неответившее окно блокирует обновление. При успешной активации окна перезагружаются, прежние кеши playroom-pwa- удаляются, сохранения IndexedDB остаются. Ошибочный, устаревший или подменённый страницей входа ресурс не принимается.
 
 ## Закрытый архив для Pages
 
@@ -41,9 +47,9 @@ python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-d
 
 ```sh
 python3 scripts/package-pages.py \
-  --public dist/release-0.15.0/playroom-pwa.zip \
+  --public dist/release-0.16.0/playroom-pwa.zip \
   --protected-base /path/to/previous-private-pages.zip \
-  --output /path/to/private/playroom-pages-0.15.0-protected.zip
+  --output /path/to/private/playroom-pages-0.16.0-protected.zip
 ```
 
 Скрипт сохраняет _worker.js, _routes.json и manifest.webmanifest из доверенной прежней обёртки и проверяет байты архива. Не печатать Worker/секреты и не загружать этот ZIP в публичный Release. Корень ZIP содержит index.html без дополнительного каталога. Сверить runtime с публичной сборкой, затем запустить существующие браузерные сценарии над извлечённым runtime. Локальная проверка static runtime не является проверкой авторизации живого Cloudflare.
@@ -54,7 +60,7 @@ python3 scripts/package-pages.py \
 
 Сохранить локальную резервную Git bundle всех refs перед очисткой. После успешной публикации закрыть устаревшие PR, удалить завершённые worktree и task/release ветки локально и на origin. Оставить main/dev, теги и историю PR. Не удалять неперенесённую уникальную работу. Сообщить ссылки на оба релиза, приватный архив, SHA256 и фактические проверки.
 
-## Кандидат 0.16
+## История кандидата 0.16
 
 Перед стабильным выпуском выполнить [приёмку 0.16](RELEASE-0.16.md). Собирать RC из проверенного SHA с версией 0.16.0-rc.4 и публиковать как prerelease; не заменять стабильную 0.15 до приёмки. Workflow запускается вручную на `dev` через GitHub CLI; Ready PR не запускает дополнительные Actions.
 

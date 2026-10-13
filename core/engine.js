@@ -46,7 +46,8 @@
   function soundCues(state, viewer, afterEventId = 0) {
     const fallback = {move:'move',play:'move',action:'move',draw:'draw',take:'draw',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'notify'};
     return state.events.filter(e => e.id > afterEventId).flatMap(raw => {
-      const e=raw.privateTo!=null&&raw.privateTo!==viewer?{...raw,sound:raw.publicSound??null}:raw;
+      const visible=raw.privateTo==null||(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer);
+      const e=visible?raw:{...raw,sound:raw.publicSound??null};
       const id = e.kind === 'finish'
         ? state.winner == null ? 'draw-game' : viewer < 0 || !Number.isInteger(viewer) || viewer >= state.players.length ? 'notify' : (state.winners || [state.winner]).includes(viewer) ? 'victory' : 'defeat'
         : e.sound===null?null:e.sound?.id || fallback[e.kind];
@@ -118,7 +119,7 @@
     let last = 0;
     for (const e of state.events) {
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
-      assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1), 'видимость события');
+      assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1) || (Array.isArray(e.privateTo)&&e.privateTo.length>0&&new Set(e.privateTo).size===e.privateTo.length&&e.privateTo.every(i=>int(i,0,state.players.length-1))), 'видимость события');
       for(const sound of [e.sound,e.publicSound])assertState(sound == null || (record(sound) && typeof sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(sound.id) && (sound.target == null || int(sound.target, 0, state.players.length - 1))), 'звук события');
       if(e.transfer!=null){const t=e.transfer;assertState(record(t)&&int(t.player,0,state.players.length-1)&&int(t.count,1,256)&&['stock','hand','table'].includes(t.from)&&(t.fromPlayer===undefined||int(t.fromPlayer,0,state.players.length-1))&&(t.to===undefined||t.to==='table'),'передача компонентов');}
       if(e.presentation!=null){const p=e.presentation;assertState(record(p)&&typeof p.type==='string'&&/^[a-z][a-z0-9_-]{0,31}$/.test(p.type)&&(p.cell===undefined||int(p.cell,0,4095))&&(p.index===undefined||int(p.index,0,4095)),'представление действия');}
@@ -200,7 +201,7 @@
     if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || (out.openHands && viewer >= 0) ? hand : hidden(hand));
     for (const key of ['drawPile', 'stock']) if (out.data[key]) out.data[key] = hidden(out.data[key]);
     out.events = out.events.map(e => {
-      if (e.privateTo != null && e.privateTo !== viewer) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind, sound:e.publicSound??null };
+      if (e.privateTo != null && !(Array.isArray(e.privateTo)?e.privateTo.includes(viewer):e.privateTo===viewer)) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind, sound:e.publicSound??null };
       const event = { ...e }; delete event.privateTo; delete event.publicText;delete event.publicSound; return event;
     });
     if (pack.project) pack.project(out, viewer, state);
