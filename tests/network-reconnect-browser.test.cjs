@@ -30,7 +30,7 @@ async function profile(page,name){
   try{await page.locator('#profile-form input').fill(name,{timeout:8000});}
   catch(error){assert.fail('No profile modal: '+JSON.stringify({diagnostics,errors,error:error.message}));}
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
-  await page.locator('.game-grid').waitFor();
+  await page.locator('.game-grid').first().waitFor();
 }
 async function qrPng(page,selector){
   // The UI replaces its QR when asynchronous IP discovery completes.

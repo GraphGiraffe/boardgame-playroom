@@ -15,6 +15,10 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   await page.locator('[data-filter=favorites]').click();assert.equal(await page.locator('.game-tile').count(),1);await page.locator('[data-filter=all]').click();
   for(const width of [320,390]){await page.setViewportSize({width,height:740});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`horizontal overflow at ${width}`);}
   await page.locator('[data-start=pexeso]').first().click();
+  await page.locator('[data-command=room-change-game]').click();
+  assert.equal(await page.locator(`[data-room-game="${first}"]`).count(),0);
+  assert.equal(await page.locator('[data-room-game]').first().getAttribute('data-room-game'),second);
+  await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=room-rules]').click();
   await page.locator('#room-rules-form [name=preset]').selectOption('hard');
   await page.locator('#room-rules-form [name="option-deck"]').selectOption('54');
@@ -28,11 +32,12 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=lobby-start]').click();
   await page.locator('.table-heading [data-command=home]').click();
-  assert.equal(await page.locator('.recent-game-card').getAttribute('data-recent-start'),'pexeso');
-  assert.equal(await page.locator('.game-tile[data-game=pexeso]').count(),1);
+  assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
+  assert.equal(await page.locator('.game-tile[data-game=pexeso]').count(),2);
   assert.equal(await page.locator('.hub-game-section + .hub-game-section').count(),2);
+  for(const width of [390,1440]){await page.setViewportSize({width,height:900});const sizes=await page.locator('.game-tile[data-game=pexeso]').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));assert(Math.abs(sizes[0].width-sizes[1].width)<1);assert(Math.abs(sizes[0].height-sizes[1].height)<1);if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`hub-${width}.png`),fullPage:true});}
   await page.reload();
-  assert.equal(await page.locator('.recent-game-card').getAttribute('data-recent-start'),'pexeso');
+  assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
   await page.locator('[data-start=gofish]').first().click();
   await page.locator('[data-command=room-rules]').click();
   assert.equal(await page.locator('#room-rules-form [name=preset]').inputValue(),'classic');

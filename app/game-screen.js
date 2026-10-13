@@ -120,6 +120,9 @@
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
+    if(stage.dataset.fieldSizing==='content'){
+      field.style.width='100%';field.style.height='auto';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;
+    }
     if(stage.dataset.layoutFamily==='board'){
       const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;

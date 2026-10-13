@@ -10,7 +10,7 @@ function server(){
     res.writeHead(200,{'Content-Type':(types[path.extname(file)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(file));
   });return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
-async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').waitFor();}
+async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
 test('main app: two browsers join UNO lobby, ready, countdown and share a move',{timeout:90000,skip:!hasUno},async()=>{
@@ -161,7 +161,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     }
     const menuIdentity=await client.evaluate(()=>({id:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length}));
     await client.locator('.table-heading [data-command=home]').click();
-    await client.locator('.game-grid').waitFor();
+    await client.locator('.game-grid').first().waitFor();
     assert.equal(await client.evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
     assert.equal(await client.locator('.network-resume-card .pill').innerText(),'Сетевая');
     assert.equal(await client.locator('#network-return-button').innerText(),'');
@@ -306,7 +306,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     });
     await host.evaluate(()=>{window.confirm=()=>true;});
     await host.locator('.table-header [data-command=home]').click();
-    await host.locator('.game-grid').waitFor();
+    await host.locator('.game-grid').first().waitFor();
     await host.locator('[data-command=sessions]').click();
     assert.equal(await host.locator('.saved-self').first().innerText(),'Хост');
     assert.equal(await host.locator(`[data-network-continue="${archiveId}"]`).isDisabled(),true,'Completed matches cannot continue');

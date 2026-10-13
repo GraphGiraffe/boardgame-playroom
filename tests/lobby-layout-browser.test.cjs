@@ -93,7 +93,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await page.locator('.room-setup-modal').waitFor();await lobby.locator('[data-command=lobby-ready]').click();
         await settings.click();assert.equal(await page.locator('#lobby-nickname-form input').isDisabled(),true);await page.locator('.modal [data-command=close-modal]').click();
         await lobby.locator('[data-command=lobby-ready]').click();await lobby.locator('[data-kick-participant="layout-observer"]').click();assert.equal(await lobby.locator('[data-participant-id="layout-observer"]').count(),0);
-        await lobby.locator('[data-command=lobby-leave]').click();await page.locator('.game-grid').waitFor();
+        await lobby.locator('[data-command=lobby-leave]').click();await page.locator('.game-grid').first().waitFor();
         await page.locator('[data-start=uno]').click();await page.locator('[data-room-option=transportMode]').check();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-command=lobby-table]').click();
         assert.equal(await page.locator('.lobby-seat-row[data-participant-id]').count(),0);
         assert.equal(await page.locator('.lobby-table-slot [data-participant-id]').count(),1,'one participant occupies the table slot');assert.equal(await page.locator('.lobby-observer[data-participant-id]').count(),0);
