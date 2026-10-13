@@ -41,4 +41,4 @@
 - [x] Обновить app контракты/дизайн/архитектуру/данные/лобби/релиз, pack AUTHORING/пример/правила/реестр/ассеты/версии; roadmap/changelog/release/handoff.
 - [x] Обновить установленные локальные плагины PlayRoom и их отдельные tooling-ветки; не включать их в игровой релиз.
 - [x] Точечные существующие проверки, 320/390/768/landscape/большой текст, before/after screenshots, две сетевые стороны/приватность/reconnect/replay/reduced motion.
-- [ ] Финал: bash scripts/codex/check.sh --full --packs-dir ../playroom-paks/packs. Отдельные PR dev, prereleases, скачанные assets SHA256, production Pages в конце. Минимум Actions. Wrangler fallback в тот же проект, ZIP и команда в отчёте.
+- [x] Финал: bash scripts/codex/check.sh --full --packs-dir ../playroom-paks/packs. Отдельные PR dev, prereleases, скачанные assets SHA256, production Pages в конце. Минимум Actions. Wrangler fallback в тот же проект, ZIP и команда в отчёте.
