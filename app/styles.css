@@ -114,3 +114,7 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 .start-options{display:grid;grid-template-columns:1fr 1fr;gap:12px}.start-options fieldset{min-width:0;border:0;padding:0;margin:0}.start-options legend{font-weight:700;margin-bottom:8px}.start-option{display:flex;align-items:center;gap:6px;min-height:44px;font-size:14px}.start-option .icon{width:22px;height:22px;flex:none}.first-token,.first-player-mark{color:#171d18;background:#e2ba4e;border-radius:50%}.first-token{touch-action:none;z-index:3}.first-token[aria-pressed=true]{outline:3px solid var(--green)}.field[hidden]{display:none!important}
 
 .tile-tags{pointer-events:none}
+
+/* Keep long presses on game text from opening the browser selection menu. */
+.table-shell,.table-shell *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.table-shell input,.table-shell textarea,.table-shell [contenteditable]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}

@@ -23,6 +23,20 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     for(const e of [actions,hand].filter(Boolean)){const r=e.getBoundingClientRect(),s=stage.getBoundingClientRect();if(r.top<s.top-1||r.bottom>s.bottom+1)issues.push(`clipped ${e.className}: ${r.top}..${r.bottom}/${s.bottom}`);}
     if(actions&&hand&&actions.getBoundingClientRect().bottom>hand.getBoundingClientRect().top+1)issues.push('actions overlap hand');
     if(!stage.querySelector('[data-action],[data-select],[data-player-target],[data-view-key]'))issues.push('no interaction');
+    const gameShell=stage.closest('.table-shell');
+    if(gameShell&&getComputedStyle(gameShell.querySelector('.table-title h1')).userSelect!=='none')issues.push('game text selectable');
+    if(stage.classList.contains('ludo-scene')){
+     const arrow=stage.querySelector('.ludo-start-arrow'),safe=stage.querySelector('.ludo-safe');
+     if([arrow,safe].some(el=>!el||getComputedStyle(el).userSelect!=='none'))issues.push('Ludo symbols selectable');
+     for(const [seat,color]of [[2,'#668fad'],[3,'#cfac4c']]){
+      const pawn=stage.querySelector(`[data-entity="token-${seat}-0"]`),base=stage.querySelectorAll('.ludo-base')[seat];
+      if(!base||(pawn&&getComputedStyle(pawn).getPropertyValue('--pawn').trim()!==color)||getComputedStyle(base).getPropertyValue('--base').trim()!==color)issues.push(`Ludo seat ${seat} color`);
+     }
+    }
+    if(innerWidth===390&&stage.classList.contains('battleship-scene')){
+     const ships=[...stage.querySelectorAll('.player-panel.opponent-hand .fleet-indicator')];
+     if(ships.length===4&&ships.some(ship=>Math.abs(ship.getBoundingClientRect().top-ships[0].getBoundingClientRect().top)>1))issues.push('opponent fleet wraps');
+    }
     if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
     for(const name of stage.querySelectorAll('.player-heading strong'))if(name.getBoundingClientRect().height>30)issues.push('vertical player name');
     if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
@@ -78,6 +92,17 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(game==='battleship'&&document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
    }return issues;
   });assert.deepEqual(publicViews,[]);
+  for(const id of ['ludo','yatzy']){
+   const replay=await page.evaluate(id=>{
+    const E=TabletopCore,players=Array.from({length:id==='ludo'?4:2},(_,i)=>({name:`Игрок ${i+1}`}));let s=E.createGame(id,{seed:17,players,diceCount:3});
+    s=E.applyAction(s,s.turn,E.legalActions(s)[0]);const p=E.project(s,0),scene=PlayroomViews.render(p,0,[]);
+    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:id,state:p,viewer:0,scene,replay:true,historyHTML:PlayroomGameScreen.historyMarkup({index:1,count:3})});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    const outer=document.querySelector('.scene').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-actions .shared-die')],buttons=[...document.querySelectorAll('.layout-actions .scene-button')];
+    return {count:dice.length,visible:dice.every(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=outer.top&&r.bottom<=outer.bottom}),controls:buttons.some(el=>getComputedStyle(el).display!=='none')};
+   },id);
+   assert.equal(replay.count,id==='ludo'?3:5);assert.equal(replay.visible,true,`${id} replay dice visible`);assert.equal(replay.controls,false,`${id} replay controls hidden`);
+   if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`${id}-history-390.png`)});
+  }
   const choice=await page.evaluate(()=>{
    const E=TabletopCore;window.fixtureState=E.createGame('oldmaid',{seed:17,players:[{name:'Аня'},{name:'Борис'}]});const s=fixtureState,viewer=s.turn,actions=E.legalActions(s),projected=E.project(s,viewer);
    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Акулина',state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions)});PlayroomGameScreen.layoutScene(document.querySelector('#app'));

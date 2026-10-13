@@ -160,11 +160,14 @@ test('Ludo star squares are safe while the next unmarked square can capture',()=
  let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];
  s=play(s,{type:'move',owner:0,pawn:0,dieIndex:0});assert.equal(s.data.pawns[1][0],47);
 });
-test('Pexeso keeps mismatched cards visible until the next player flips, without Continue',()=>{
+test('Pexeso shows a mismatch through its animation, then closes it before the next turn',()=>{
  let s=create('pexeso',2,'easy'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
  s=play(s,{type:'flip',index:first});s=play(s,{type:'flip',index:second});
  assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
  assert(E.legalActions(s).every(a=>a.type==='flip'));
+ const projected=E.project(s,1),animated=V.render(projected,1,[],{presentationTurn:0}),settled=V.render(projected,1,[]);
+ assert.equal((animated.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
+ assert.equal((settled.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length);
  s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
 });
 test('Pexeso bot sometimes overlooks a known pair',()=>{

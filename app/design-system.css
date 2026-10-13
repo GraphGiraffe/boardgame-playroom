@@ -344,3 +344,11 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 
 .app-game-layout[data-field-sizing="scroll"] .layout-field{overflow:hidden}.app-game-layout[data-field-sizing="scroll"] .game-field-content{aspect-ratio:auto;overflow:hidden}
 .app-update-banner{position:relative;z-index:60;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:7px 12px;background:#f4e8c9;border-bottom:1px solid #c8b17c;color:var(--ink);font-size:12px}.app-update-banner[hidden]{display:none}.app-update-banner .btn{min-height:34px;padding:5px 12px}.app-update-banner #update-detail{flex-basis:100%;text-align:center}.app-update-banner #update-detail:empty{display:none}body:has(>#update-banner:not([hidden])) #app .table-shell{height:calc(100dvh - 56px - var(--app-notice-height,0px))}
+
+/* Keep dice visible in history without exposing inactive move controls. */
+.scene.replaying .layout-actions:has(.shared-die){display:flex!important;justify-content:center;min-height:0!important;pointer-events:none}
+.scene.replaying .layout-actions:has(.shared-die) :is(.scene-button,.shared-hint,.yatzy-dice-help){display:none!important}
+.scene.replaying .layout-actions .yatzy-controls{display:flex;min-height:0;gap:0}
+.scene.replaying .layout-actions:has(.yatzy-controls){min-height:0}
+/* A two-player fleet needs the same indicator width in both player panels. */
+.app-game-layout .player-panel.opponent-hand:has(.fleet-indicator){max-width:380px}
