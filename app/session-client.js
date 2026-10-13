@@ -4,7 +4,7 @@
   const uid=()=>globalThis.crypto?.randomUUID?.()||`client-${Date.now()}-${++sequence}`;
   class SessionClient {
     constructor(transport,{onEffect=()=>{}}={}){
-      this.transport=transport;this.snapshot=null;this.pending=null;this.deliveryError=null;this.inFlight=null;this.listeners=new Set();this.onEffect=onEffect;this.lastEvent=0;this.lastEffectRevision=-1;this.epoch=null;this.closed=false;
+      this.transport=transport;this.snapshot=null;this.pending=null;this.deliveryError=null;this.inFlight=null;this.listeners=new Set();this.onEffect=onEffect;this.lastEvent=0;this.lastEffectRevision=-1;this.epoch=null;this.closed=false;this.recovering=false;
       this.unsubscribe=transport.subscribe?.(s=>this.accept(s));
     }
     accept(snapshot){
@@ -15,7 +15,7 @@
       const initial=!this.snapshot;
       if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0))return false;
       this.epoch=snapshot.authorityEpoch;this.snapshot=P.freeze(P.clone(snapshot));
-      if(!initial){
+      if(!initial&&!this.recovering){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});
         for(const effect of snapshot.effects||[])if(effect.revision>this.lastEffectRevision)this.onEffect({type:'transfer',...effect});
       }
@@ -25,6 +25,20 @@
       return true;
     }
     async refresh(){const snapshot=await this.transport.snapshot();this.accept(snapshot);return this.snapshot;}
+    async reconcile(snapshot){
+      if(this.closed)throw Error('Подключение закрыто.');
+      const previous=this.snapshot;
+      if(!snapshot||snapshot.kind!=='snapshot'||snapshot.protocolVersion!==1||!Number.isSafeInteger(snapshot.revision)||
+        (previous&&(['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>snapshot[k]!==previous[k])||
+          snapshot.revision<previous.revision||(snapshot.controlRevision||0)<(previous.controlRevision||0))))throw Error('Состояние подключения изменилось. Нужно новое приглашение.');
+      this.recovering=true;
+      try{
+        this.accept(snapshot);
+        if(this.inFlight)await this.inFlight.catch(()=>{});
+        if(this.pending){const receipt=await this.retry();if(!receipt.ok&&!receipt.ignored)this.deliveryError=receipt.message;}
+        return this.snapshot;
+      }finally{this.recovering=false;}
+    }
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
     async send(action){if(this.closed||!this.snapshot)throw Error('Нет подключения.');if(this.pending)throw Error('Предыдущая команда ещё не подтверждена.');this.pending=P.command(this.snapshot,action,uid());return this.retry();}
     retry(){

@@ -22,10 +22,11 @@
   let clientHistoryUnsub=null,clientHistoryQueue=Promise.resolve(),clientHistoryWarning=false,clientBackfillId=0;
   let hostLockRelease=null,archiveMount=null,archiveAuthority=null;
   let hostRecovery=null,rosterQueue=Promise.resolve(),rosterError=null;
-  let reconnectStatus='';
+  let reconnectStatus='',clientRecovery=null,resumeIntent=null;
+  const connectionLabels={connecting:'Подключение',connected:'В игре',recovering:'Восстановление связи',invite:'Нужно новое приглашение'};
   let networkInMenu=false,presentationGeneration=0;
   const hasActiveRoom=()=>!!(hostRoomId||clientRoom);
-  const clientConnected=()=>clientPeer?.pc?.connectionState==='connected';
+  const clientConnected=()=>clientPeer?.pc?.connectionState==='connected'&&(!clientRecovery||clientRecovery.state==='connected');
   function parkNetworkView(){
     networkInMenu=true;presentationGeneration++;
     hostMount?.destroy?.();hostMount=null;clientMount?.destroy?.();clientMount=null;
@@ -44,11 +45,11 @@
   function mountNetworkView(isHost){
     if(networkInMenu)return;
     const client=isHost?hostGameClient:clientGameClient,snapshot=client?.snapshot;if(!snapshot)return;
-    const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);
+    const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);b.rememberGame(snapshot.game);
     const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
     b.closeModal(true);document.getElementById('app').inert=false;
     const old=isHost?hostMount:clientMount;old?.destroy?.();
-    const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame});
+    const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
     if(isHost)hostMount=mounted;else clientMount=mounted;
     mounted.render();renderPresence();showDisconnectBanner();
   }
@@ -459,7 +460,10 @@
       toast('QR: '+(error?.message||String(error)));
     }
   }
-  function closeClient(){
+  function closeClient({preserveIntent=false}={}){
+    if(preserveIntent&&clientGameClient&&clientRoom)resumeIntent={roomId:clientRoom.id,participantId:clientParticipantId,snapshot:clientGameClient.snapshot,pending:clientGameClient.pending,historyIndex:clientMount?.historyOpen?clientMount.historyIndex:null};
+    else if(!preserveIntent)resumeIntent=null;
+    clientRecovery?.close();clientRecovery=null;
     presentationGeneration++;
     clientSetupShown=false;clientBackfillId++;clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
   function closePendingHostPeer(){
@@ -525,13 +529,43 @@
     if(line.dataset.content!==value){line.dataset.content=value;line.innerHTML=value;}
   }
   function showDisconnectBanner(){
-    const shell=document.querySelector('.table-shell.network-game');
-    if(!shell||!clientPeer||!['disconnected','failed','closed'].includes(clientPeer.pc.connectionState))return;
-    if(shell.querySelector('#network-reconnect-button'))return;
-    const wrap=document.createElement('div');wrap.className='network-reconnect-banner';wrap.setAttribute('role','status');
-    wrap.innerHTML='<strong>Связь с хостом прервана.</strong> '+esc(reconnectStatus||'Ваше игровое место сохраняется у хоста.')+
-      ' <button class="btn secondary" id="network-reconnect-button" type="button">Повторно подключиться через QR</button>';
-    shell.appendChild(wrap);
+    if(!clientPeer||!clientRoom)return;
+    const shell=document.querySelector('.table-shell.network-game')||document.querySelector('.room-setup-modal .lobby-shell')||document.querySelector('.network-resume-card');
+    if(!shell)return;
+    const state=clientRecovery?.state||(clientConnected()?'connected':'connecting');
+    let wrap=shell.querySelector('.network-reconnect-banner');
+    if(!wrap){wrap=document.createElement('div');wrap.className='network-reconnect-banner';wrap.setAttribute('role','status');shell.appendChild(wrap);}
+    if(wrap.dataset.state===state)return;wrap.dataset.state=state;
+    wrap.innerHTML='<strong>'+connectionLabels[state]+'</strong> '+(state==='connected'?'':'Ваше игровое место сохраняется. ')+
+      (state==='invite'?'<button class="btn secondary" id="network-reconnect-button" type="button">Новое приглашение</button>':'')+
+      ' <button class="text-btn" data-net-action="diagnostics">Диагностика связи</button>';
+  }
+  function markClientPosition(kind,revision,frame){
+    const snapshot=clientGameClient?.snapshot,roomId=clientRoom?.id,id=clientParticipantId;
+    if(!snapshot||!roomId||!id||!clientHistoryStore)return;
+    const key=ClientHistory.id(roomId,id,snapshot.sessionId);
+    if(frame)saveClientProjection(frame);
+    clientHistoryQueue=clientHistoryQueue.catch(()=>{}).then(()=>clientHistoryStore.mark(key,kind,revision));
+  }
+  function startRecovery(){
+    clientRecovery?.close();const transport=clientTransport,peer=clientPeer;
+    clientRecovery=new W.Recovery({pc:peer.pc,transport,
+      onState:report=>{clientMount?.setConnected(report.state==='connected');if(report.state!=='connected')clientBackfillId++;showDisconnectBanner();renderPresence();ensureButtons();},
+      reconcile:async(snapshot,{recovering})=>{
+        if(transport!==clientTransport)throw Error('Подключение заменено.');
+        if(snapshot?.kind==='lobby'){
+          if(snapshot.room?.id!==clientRoom?.id||snapshot.participantId!==clientParticipantId)throw Error('Другая комната.');
+          const changed=snapshot.room.revision!==clientRoom.revision;clientRoom=snapshot.room;
+          if(clientGameClient&&clientGameClient.snapshot.state.status!=='finished')clientToLobby();
+          else if(!clientGameClient&&changed)renderClientLobby();return;
+        }
+        if(snapshot?.kind!=='snapshot')throw Error('Некорректное состояние.');
+        if(!clientGameClient)startClientGame(snapshot);
+        if(!clientGameClient)throw Error('Партия недоступна.');
+        if(recovering||clientGameClient.pending){clientMount?.setConnected(false);await clientGameClient.reconcile(snapshot);clientMount?.syncLive();}
+        else clientGameClient.accept(snapshot);
+        if(recovering)void backfillClientHistory(clientGameClient.snapshot,transport,clientRoom.id,clientParticipantId);
+      }});
   }
   function ensureButtons(){
     for(const [id,controller] of pendingAudio)if(!document.getElementById(id)){controller.abort();pendingAudio.delete(id);}
@@ -544,8 +578,8 @@
 
     if(hasActiveRoom()&&networkInMenu){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
-      if(parent){const markup=root.PlayroomGameScreen.resumeCard({title:room?.game?.name||'Комната',detail:(room?.name||'')+' · '+(connected?'Соединение активно':'Связь потеряна'),network:true,connected,action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
-        const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+connected+':'+(room?.name||'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);document.querySelector('.network-resume-card').dataset.renderKey=key;}
+      if(parent){const markup=root.PlayroomGameScreen.resumeCard({title:room?.game?.name||'Комната',detail:(room?.name||'')+' · '+(hostRoomId?'Соединение активно':connectionLabels[clientRecovery?.state||(connected?'connected':'connecting')]),network:true,connected,action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
+        const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+connected+':'+(room?.name||'')+':'+(clientRecovery?.state||'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);document.querySelector('.network-resume-card').dataset.renderKey=key;}
       }
     }
 
@@ -668,7 +702,7 @@
   async function acceptAnswer(form){try{await acceptAnswerSignal(signalFromInput(form.elements.answer.value,'answer'));}catch(error){toast(error.message);}}
   function showJoin(){
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))return toast('Сначала покиньте текущую комнату через лобби.');
-    networkInMenu=false;closeClient();const b=bridge();
+    networkInMenu=false;closeClient({preserveIntent:true});const b=bridge();
     const share='<p class="pairing-brief-status" role="status">Ожидаем приглашение через системное меню.</p>';
     const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-listen" type="button" '+(microphoneReady()?'':captureDisabled()||'disabled')+'>'+root.PlayroomGameScreen.icon('mic')+' Слушать</button>';
     const qr=scanControls('client');
@@ -683,7 +717,7 @@
     // bots and input/replay listeners can repaint the network scene.
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))throw Error('Сначала покиньте текущую комнату через лобби.');
     networkInMenu=false;bridge()?.parkLocalSession?.();
-    closeClient();clientPeer=await W.createClientPeer(signal);
+    closeClient({preserveIntent:true});clientPeer=await W.createClientPeer(signal);
     const network=initialNetworkChoice('client',clientPeer.answer);answerToken=network.token;
     const b=bridge();
     const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.(answerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+' Поделиться ответом</button>';
@@ -695,19 +729,6 @@
     syncSoundChoice('client',clientPeer.answer);updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
     clientPresenceUnsub=clientTransport.subscribePresence?.(status=>{clientPresence=status;renderPresence();});
-    const currentPeer=clientPeer;
-    currentPeer.pc.addEventListener('connectionstatechange',()=>{
-      if(currentPeer!==clientPeer)return;
-      const state=currentPeer.pc.connectionState;
-      if(['failed','disconnected','closed'].includes(state)){
-        reconnectStatus='Если связь сама не восстановится, используйте новый QR хоста.';
-        clientMount?.setConnected(false);showDisconnectBanner();renderPresence();
-      }else if(state==='connected'){
-        clientMount?.setConnected(true);reconnectStatus='';
-        document.getElementById('network-reconnect-button')?.closest('.network-reconnect-banner')?.remove();
-        renderPresence();
-      }
-    });
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error('Получены некорректные данные комнаты.');
     const saved=resumeStore.load(preview.room.id);
     if(saved){
@@ -720,8 +741,8 @@
         bridge().closeModal(true);
         const state=await clientTransport.snapshot();
         if(state?.kind==='snapshot')startClientGame(state);
-        else{attachClientLobbyListener();renderClientLobby();}
-        return;
+        else{resumeIntent=null;attachClientLobbyListener();renderClientLobby();}
+        startRecovery();return;
       }catch(error){
         toast('Автовозврат не удался: '+error.message+' Можно присоединиться новым игроком.');
       }
@@ -765,7 +786,7 @@
       }
       b.closeModal(true);
       attachClientLobbyListener();
-      renderClientLobby();
+      renderClientLobby();startRecovery();
     }catch(error){toast(error.message);}
   }
   function participant(room,id){return room.participants.find(p=>p.id===id);}
@@ -840,12 +861,12 @@
     clientSetupShown=true;
     if(!clientRoom)return;const room=clientRoom,me=participant(room,clientParticipantId),app=document.getElementById('app');
     app.inert=!!document.getElementById('modal-root').children.length;
-    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
+    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby,notice:room.phase==='lobby'&&me?.rulesNotice?'Хост изменил правила. Проверьте их и подтвердите готовность заново.':''}),'room-setup-modal');
     PlayroomLobbyView.bindDrag(document.querySelector('#modal-root .lobby-shell'),{canMove:id=>!room.recovery&&id===clientParticipantId&&room.phase==='lobby'&&!participant(room,id)?.ready,move:(id,slot)=>roomCommand(slot==='table'?{type:'claim-table'}:slot==='spectator'?{type:'spectator'}:{type:'claim-seat',seatId:slot}),onError:error=>toast(error.message)});
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
-  async function roomCommand(command){try{const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;renderClientLobby();}}catch(error){toast(error.message);}}
+  async function roomCommand(command){try{if(!clientConnected())throw Error('Дождитесь восстановления связи.');const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;renderClientLobby();}}catch(error){toast(error.message);}}
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
     const generation=++presentationGeneration;
@@ -1021,17 +1042,11 @@
   async function backfillClientHistory(initial,transport,roomId,participantId){
     if(!clientHistoryStore||!initial||initial.viewer< -1)return;
     const ticket=++clientBackfillId;
-    // Only projected history RPCs: never request/serialize the host full Session.
-    for(let index=0;index<=initial.revision;index++){
-      if(ticket!==clientBackfillId||clientTransport!==transport)break;
-      try{
-        const frame=await transport.history(index);
-        if(frame?.kind!=='history'||frame.sessionId!==initial.sessionId||frame.viewer!==initial.viewer||
-            frame.game!==initial.game||frame.packVersion!==initial.packVersion||frame.revision!==index)break;
-        await clientHistoryStore.save({roomId,participantId,roomName:clientRoom?.name||'',snapshot:frame});
-      }catch(_){break;} // Preserve already received frames; retry at next join.
-    }
+    try{await clientHistoryQueue;await clientHistoryStore.backfill({roomId,participantId,roomName:clientRoom?.name||'',snapshot:initial,transport,
+      isCurrent:()=>ticket===clientBackfillId&&clientTransport===transport&&clientGameClient?.snapshot?.sessionId===initial.sessionId&&clientGameClient?.snapshot?.authorityEpoch===initial.authorityEpoch});}
+    catch(_){/* Keep durable frames; retry only missing revisions after recovery. */}
   }
+
   async function listNetworkArchives(){
     const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
     if(responses.every(x=>x.status==='rejected'))throw Error('Сетевые архивы недоступны.');
@@ -1095,12 +1110,22 @@
         saveClientProjection(snapshot);
         void backfillClientHistory(snapshot,clientTransport,clientRoom.id,clientParticipantId);
       }
-      mountNetworkView(false);
+      if(resumeIntent){const intent=resumeIntent;resumeIntent=null;
+        if(intent.roomId===clientRoom.id&&intent.participantId===clientParticipantId&&['sessionId','authorityEpoch','viewer','game','packVersion'].every(k=>intent.snapshot[k]===snapshot[k])){
+          if(intent.pending)clientGameClient.pending=intent.pending;
+          mountNetworkView(false);if(intent.historyIndex!==null)void clientMount?.openHistory(intent.historyIndex);
+        }else mountNetworkView(false);
+      }else mountNetworkView(false);
     }catch(error){toast('Не удалось открыть сетевую игру. '+error.message);}
   }
   document.addEventListener('click',event=>{
     const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],[data-network-history],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
+    if(target.dataset.netAction==='diagnostics'){
+      const report=clientRecovery?.report()||{state:'connecting'};
+      bridge().openModal(bridge().modalHead('Диагностика связи')+'<p>'+esc(connectionLabels[report.state])+'</p><pre class="network-diagnostic-report" style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(JSON.stringify(report,null,2))+'</pre><button class="btn" data-net-action="copy-diagnostics">Скопировать отчёт</button>');return;
+    }
+    if(target.dataset.netAction==='copy-diagnostics'){void Promise.resolve().then(()=>navigator.clipboard.writeText(JSON.stringify(clientRecovery?.report()||{},null,2))).then(()=>toast('Отчёт скопирован'),()=>toast('Копирование недоступно; выделите текст отчёта.'));return;}
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button'||target.id==='network-reconnect-button')return showJoin();
@@ -1172,7 +1197,7 @@
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
-    client:{peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
+    client:{recovery:clientRecovery?.report()||null,peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
   root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});

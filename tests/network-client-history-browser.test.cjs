@@ -81,3 +81,24 @@ test('reusing a room for UNO then Checkers retains two isolated guest archives a
       assert.deepEqual(deleted,{sessions:['checkers-2','uno-1'],frames:0});
     }finally{await context.close();await browser.close();await close();}
   });
+
+test('incremental history fills holes only, persists independent cursors and rejects stale connection frames',{timeout:60000},async()=>{
+ const {url,close}=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const page=await browser.newPage();await page.goto(url);
+  const result=await page.evaluate(async()=>{
+   const store=new PlayroomNetworkClientHistory({name:'incremental-016'});
+   const mk=revision=>({kind:'history',protocolVersion:1,sessionId:'s',authorityEpoch:'e',viewer:0,game:'g',packVersion:'1',revision,state:{move:revision,game:'g',packVersion:'1',players:[]}});
+   const options={roomId:'room',participantId:'p'},key=PlayroomNetworkClientHistory.id('room','p','s');
+   await store.save({...options,snapshot:mk(0)});await store.save({...options,snapshot:mk(3)});
+   const before=await store.progress(key,3),calls=[];
+   await store.backfill({...options,snapshot:mk(3),transport:{history:async i=>{calls.push(i);return mk(i);}}});
+   await store.mark(key,'presentedRevision',3);await store.mark(key,'reviewedRevision',2);await store.mark(key,'reviewedRevision',1);
+   await store.mark(key,'presentedRevision',1);await store.save({...options,snapshot:mk(4)});
+   let rejected=false;try{await store.backfill({...options,snapshot:mk(5),transport:{history:async i=>({...mk(i),viewer:1})}});}catch(_){rejected=true;}
+   let active=true;await store.backfill({...options,snapshot:mk(5),isCurrent:()=>active,transport:{history:async i=>{active=false;return mk(i);}}});
+   store.close();const reopened=new PlayroomNetworkClientHistory({name:'incremental-016'}),saved=await reopened.read(key);reopened.close();
+   return {before,calls,rejected,received:saved.receivedRevision,presented:saved.presentedRevision,reviewed:saved.reviewedRevision,frames:saved.frames.map(f=>f.revision)};
+  });
+  assert.deepEqual(result,{before:{receivedRevision:0,missing:[1,2]},calls:[1,2],rejected:true,received:4,presented:3,reviewed:1,frames:[0,1,2,3,4]});
+ }finally{await browser.close();await close();}
+});

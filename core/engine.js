@@ -35,18 +35,22 @@
   }
   function finish(state, winner, text, points = 1) {
     state.status = 'finished';
-    state.winner = winner;
-    if (winner != null) state.players[winner].score += points;
-    event(state, text || (winner == null ? 'Ничья' : `${state.players[winner].name} побеждает`), winner, 'finish');
+    const winners = Array.isArray(winner) ? [...new Set(winner)] : winner == null ? [] : [winner];
+    state.winner = winners[0] ?? null;
+    if (Array.isArray(winner)) state.winners = winners;
+    for (const player of winners) state.players[player].score += points;
+    event(state, text || (!winners.length ? 'Ничья' : `${state.players[winners[0]].name} побеждает`), state.winner, 'finish');
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
   // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
   function soundCues(state, viewer, afterEventId = 0) {
     const fallback = {move:'move',play:'move',action:'move',draw:'draw',take:'draw',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'notify'};
-    return state.events.filter(e => e.id > afterEventId && (e.privateTo == null || e.privateTo === viewer)).flatMap(e => {
+    return state.events.filter(e => e.id > afterEventId).flatMap(raw => {
+      const visible=raw.privateTo==null||(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer);
+      const e=visible?raw:{...raw,sound:raw.publicSound??null};
       const id = e.kind === 'finish'
-        ? state.winner == null ? 'draw-game' : viewer < 0 || !Number.isInteger(viewer) || viewer >= state.players.length ? 'notify' : state.winner === viewer ? 'victory' : 'defeat'
-        : e.sound?.id || fallback[e.kind];
+        ? state.winner == null ? 'draw-game' : viewer < 0 || !Number.isInteger(viewer) || viewer >= state.players.length ? 'notify' : (state.winners || [state.winner]).includes(viewer) ? 'victory' : 'defeat'
+        : e.sound===null?null:e.sound?.id || fallback[e.kind];
       return id ? [{id, eventId:e.id, ...(e.sound?.target != null ? {target:e.sound.target} : {})}] : [];
     });
   }
@@ -110,12 +114,15 @@
     assertState(int(state.turn, 0, state.players.length - 1) && int(state.move, 0, Number.MAX_SAFE_INTEGER) && int(state.rng, 0, 4294967295), 'ход и генератор');
     assertState(typeof state.openHands === 'boolean' && ['playing', 'finished'].includes(state.status), 'статус');
     assertState((state.winner === null || int(state.winner, 0, state.players.length - 1)) && (state.status !== 'playing' || state.winner === null), 'победитель');
+    assertState(state.winners === undefined || (state.status === 'finished' && Array.isArray(state.winners) && state.winners.length > 0 && state.winners[0] === state.winner && new Set(state.winners).size === state.winners.length && state.winners.every(i => int(i, 0, state.players.length - 1))), 'победители');
     assertState(record(state.data) && Array.isArray(state.events), 'данные и события');
     let last = 0;
     for (const e of state.events) {
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
-      assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1), 'видимость события');
-      assertState(e.sound == null || (record(e.sound) && typeof e.sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(e.sound.id) && (e.sound.target == null || int(e.sound.target, 0, state.players.length - 1))), 'звук события');
+      assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1) || (Array.isArray(e.privateTo)&&e.privateTo.length>0&&new Set(e.privateTo).size===e.privateTo.length&&e.privateTo.every(i=>int(i,0,state.players.length-1))), 'видимость события');
+      for(const sound of [e.sound,e.publicSound])assertState(sound == null || (record(sound) && typeof sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(sound.id) && (sound.target == null || int(sound.target, 0, state.players.length - 1))), 'звук события');
+      if(e.transfer!=null){const t=e.transfer;assertState(record(t)&&int(t.player,0,state.players.length-1)&&int(t.count,1,256)&&['stock','hand','table'].includes(t.from)&&(t.fromPlayer===undefined||int(t.fromPlayer,0,state.players.length-1))&&(t.to===undefined||t.to==='table'),'передача компонентов');}
+      if(e.presentation!=null){const p=e.presentation;assertState(record(p)&&typeof p.type==='string'&&/^[a-z][a-z0-9_-]{0,31}$/.test(p.type)&&(p.cell===undefined||int(p.cell,0,4095))&&(p.index===undefined||int(p.index,0,4095)),'представление действия');}
       assertState(e.notice == null || (record(e.notice) && typeof e.notice.title === 'string' && e.notice.title.length <= 120 && (e.notice.detail === undefined || (typeof e.notice.detail === 'string' && e.notice.detail.length <= 180)) && (e.notice.tone===undefined||['success','warning','danger'].includes(e.notice.tone))), 'объявление события');
       last = e.id;
     }
@@ -194,8 +201,8 @@
     if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || (out.openHands && viewer >= 0) ? hand : hidden(hand));
     for (const key of ['drawPile', 'stock']) if (out.data[key]) out.data[key] = hidden(out.data[key]);
     out.events = out.events.map(e => {
-      if (e.privateTo != null && e.privateTo !== viewer) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind };
-      const event = { ...e }; delete event.privateTo; delete event.publicText; return event;
+      if (e.privateTo != null && !(Array.isArray(e.privateTo)?e.privateTo.includes(viewer):e.privateTo===viewer)) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind, sound:e.publicSound??null };
+      const event = { ...e }; delete event.privateTo; delete event.publicText;delete event.publicSound; return event;
     });
     if (pack.project) pack.project(out, viewer, state);
     return out;

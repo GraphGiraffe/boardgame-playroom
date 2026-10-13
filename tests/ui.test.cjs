@@ -77,14 +77,14 @@ test('Offline pack installation, updates and empty application preserve saved ve
           app:document.getElementById('app')?.innerText.slice(0,240),
           warning:globalThis.PlayroomPackLoadError,
         })))+'; JS errors: '+JSON.stringify(errors));
-      await page.locator('[data-start="qa-counter"]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(1);
+      await page.locator('[data-start="qa-counter"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(1);
       assert.equal((await saved(page)).packVersion,'0.1.0');await page.locator('.table-heading [data-command=home]').click();
     });
     await t.test('Update keeps old saves on exact rules and new games use the latest version',async()=>{
       await openManager();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();assert.equal(await page.locator('.pack-entry').count(),2);
       assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),true);await close();await page.reload();
       await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
-      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
+      await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
       await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),2);await close();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);
     });
@@ -173,7 +173,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open(data);await resume(page);await page.locator('[data-command=settings]').click();await page.locator('.modal [data-command=rules]').click();const n=await move(page);await page.waitForTimeout(350);assert.equal(await move(page),n);await page.locator('.modal [data-command=close-modal]').first().click();await page.waitForFunction(n=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move>n,n);assert.equal(await move(page),n+1);
     });
     await check('Invalid save is rejected with a visible explanation and the hub remains usable',async open=>{
-      const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),5);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('[data-command=lobby-start]').click();assert.equal((await saved(page)).game,'snakes');
+      const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),12);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('[data-command=lobby-start]').click();assert.equal((await saved(page)).game,'snakes');
     });
     await check('Settings persist and fullscreen enters/exits in Chromium',async open=>{
       const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await page.locator('#setting-speed').selectOption('normal');await page.locator('#setting-sound').check();await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'normal');assert.equal(await page.locator('#setting-sound').isChecked(),true);await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
@@ -188,7 +188,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#setting-volume').inputValue(),'0.6');
       assert.equal(await page.locator('#setting-volume').isDisabled(),true);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
-      assert.equal(await page.locator('#sound-preview option').count(),18,'17 standard cues plus the pack-owned UNO voice');
+      assert.equal(await page.locator('#sound-preview option').count(),27,'22 standard cues, UNO voice and four sea effects');
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
       await page.locator('#setting-sound').check();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
@@ -196,7 +196,9 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.locator('#sound-preview').selectOption('uno|uno.call');
       await page.locator('[data-command=sound-preview]').click();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
-      assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:17,scoped:true,global:false});
+      assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:22,scoped:true,global:false});
+      await page.evaluate(()=>PlayroomAppBridge.audio.play(['draw','success','victory'],'oldmaid'));
+      await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids.join(',')==='draw,success,victory'&&c.finished&&c.result));
       await page.locator('#setting-volume').selectOption('0.3');
       // Observe the persisted state before reloading; distinguish a failed
       // settings write from a delayed browser navigation or a fresh context.

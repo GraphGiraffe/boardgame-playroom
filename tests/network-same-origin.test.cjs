@@ -10,10 +10,10 @@ function server(){
     res.writeHead(200,{'Content-Type':(types[path.extname(file)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(file));
   });return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
-async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').waitFor();}
+async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
-for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: shared-profile pairing, bots, privacy and pause in '+game,{timeout:90000,skip:!hasUno},async()=>{
+for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','yatzy'])test('main app: shared-profile pairing, bots, privacy and pause in '+game,{timeout:90000,skip:!hasUno},async()=>{
   const externalUrl=process.env.PLAYROOM_URL||'';
   const hosted=externalUrl?{s:null,url:externalUrl}:await server();
   const {s,url}=hosted,browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -114,10 +114,11 @@ for(const game of ['uno','domino','durak','checkers','snakes'])test('main app: s
     await host.waitForFunction(()=>!document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
     if(game==='checkers'){await host.locator('.checker-piece.movable').first().click();await host.locator('.checker-cell.destination').first().click();}
     else if(game==='domino'||game==='durak'){const card=host.locator('.layout-hand .is-playable').first();await card.scrollIntoViewIfNeeded();const point=await card.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+8,y:r.y+16};});await host.mouse.click(point.x,point.y);if(game==='domino')await host.locator('.domino-drop-target[data-action]').first().click();}
-    else await host.locator(game==='uno'?'.stock-button[data-action]':'.die[data-action]').click();
+    else if(game==='oldmaid'){await host.locator('[data-player-target]').first().click();await host.locator('.player-target-menu [data-card-index]').first().click();}
+    else await host.locator(game==='uno'?'.stock-button[data-action]':game==='ludo'?'.shared-die[data-action]':game==='yatzy'?'.yatzy-roll[data-action]':'.die[data-action]').click();
     await client.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
     assert.ok(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'))>before);
-    if(game!=='uno')await client.waitForFunction(()=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>=2);
+    if(!['uno','ludo','yatzy'].includes(game))await client.waitForFunction(()=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>=2);
     assert.equal(await client.locator('.opponent-hand .public-card').count(),0,'hidden opponent hands never expose card faces');
     assert.equal(await host.locator('.player-panel').count(),seatedGuest?3:2);
     assert.deepEqual(errors,[]);

@@ -14,6 +14,9 @@ import zipfile
 
 
 ROOT = Path(__file__).resolve().parent
+# Registry data is embedded for offline browser use; JSON is the source of truth.
+_registry = json.loads((ROOT / "core/tags.json").read_text(encoding="utf-8"))
+(ROOT / "core/tag-registry.js").write_text("// Generated from core/tags.json by build.py.\nglobalThis.PlayroomTagRegistry = " + json.dumps(_registry, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
 ASSET_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 ATTR = re.compile(r"([\w-]+)\s*=\s*(['\"])(.*?)\2", re.DOTALL)
 # Portable format 1: keep these checks aligned with core/packs.js.
@@ -66,8 +69,24 @@ def validate_manifest(manifest, label):
         raise ValueError(f"Некорректные ID/версия пака: {label}")
     if not number_equals(manifest.get("viewApi"), 2):
         raise ValueError(f"Требуется viewApi 2: {label}")
+    if "tileTheme" in manifest and manifest["tileTheme"] not in ("green", "coral", "blue", "gold", "violet"):
+        raise ValueError(f"Некорректная тема карточки: {label}")
+    registry = parse_json((ROOT / "core/tags.json").read_text(encoding="utf-8"))
+    known = {item["id"]: item for item in registry["tags"]}
+    tags = manifest.get("tags")
+    if "tags" in manifest and (not isinstance(tags, list) or not 1 <= len(tags) <= 3
+            or any(not isinstance(tag, str) or tag not in known for tag in tags)
+            or len(set(tags)) != len(tags) or not any(known[tag]["kind"] == "type" for tag in tags)):
+        raise ValueError(f"Некорректные теги пака: {label}")
+    modes = manifest.get("playModes")
+    if "playModes" in manifest and (not isinstance(modes, list) or not modes or any(
+            not isinstance(mode, dict) or not isinstance(mode.get("id"), str)
+            or not isinstance(mode.get("teams"), bool) or not isinstance(mode.get("players"), list)
+            or not mode["players"] or any(type(n) is not int or not 1 <= n <= 32 for n in mode["players"])
+            or len(set(mode["players"])) != len(mode["players"]) for mode in modes)):
+        raise ValueError(f"Некорректные составы игроков: {label}")
     state = manifest.get("stateVersion")
-    if (not number_equals(manifest.get("engineApi"), 1) or type(state) not in (int, float)
+    if (manifest.get("engineApi") not in (1, 2) or type(state) not in (int, float)
             or not 1 <= state <= MAX_SAFE_INTEGER or int(state) != state):
         raise ValueError(f"Неподдерживаемый API/состояние пака: {label}")
     name = manifest.get("name")
@@ -195,6 +214,14 @@ def read_source_pack(manifest_path):
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             value = f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
         files[path.relative_to(pack).as_posix()] = value
+    if manifest.get("sharedUi"):
+        shared = pack.parent.parent / "shared"
+        files["view.js"] = (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
+        files["styles.css"] = (shared / "view-kit.css").read_text(encoding="utf-8") + "\n" + files["styles.css"]
+        for name in manifest.get("sharedAssets", []):
+            if not re.fullmatch(r"[a-z][a-z0-9-]*\.svg", name):
+                raise ValueError(f"Некорректное имя общего ресурса: {name}")
+            files[f"assets/shared/{name}"] = (shared / "assets" / name).read_text(encoding="utf-8")
     return validate_bundle({"format":"playroom-pack", "formatVersion":1, "manifest":manifest, "files":files}, pack.name)
 
 
@@ -294,8 +321,8 @@ def pwa_runtime_items(packs=()):
     items.extend(generated_icons())
     # Old workers match cached asset URLs with ignoreSearch=True. A query
     # version cannot prevent a new document from loading an old script.
-    # Keep canonical files for portable consumers; the PWA document and worker
-    # use content-addressed paths so an RC14 controller cannot mix builds.
+    # Ship only content-addressed shell assets. Canonical source paths remain
+    # in the source archive and standalone HTML, not in the deployment bundle.
     document = dict(items)["index.html"].decode("utf-8")
     urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
     aliases = {name: str(Path(name).with_name(Path(name).stem + "." + hashlib.sha256(content).hexdigest()[:16] + Path(name).suffix))
@@ -308,7 +335,16 @@ def pwa_runtime_items(packs=()):
     for name, alias in aliases.items():
         worker = worker.replace("'./" + name + "'", "'./" + alias + "'")
     items = [(name, worker.encode("utf-8") if name == "sw.js" else content) for name, content in items]
-    items.extend((alias, originals[name]) for name, alias in aliases.items())
+    items = [(aliases.get(name, name), content) for name, content in items]
+    # A rebuild of the same version must not write into the active worker cache.
+    # Include paths, bytes and worker code so every distinct shell is isolated.
+    build_hash = hashlib.sha256()
+    for name, content in sorted(items):
+        build_hash.update(name.encode() + b"\0" + hashlib.sha256(content).digest())
+    cache_id = build_hash.hexdigest()[:16]
+    items = [(name, re.sub(rb"(const CACHE='[^']+)(';)",
+                          lambda match: match[1] + b"-" + cache_id.encode() + match[2], content)
+              if name == "sw.js" else content) for name, content in items]
     # Private Pages packaging may preserve its own manifest; all executable
     # public assets and the document are checked against this exact build.
     integrity = {"./" + name: hashlib.sha256(content).hexdigest() for name, content in items
@@ -319,10 +355,20 @@ def pwa_runtime_items(packs=()):
 
 
 def write_directory(destination, items):
+    items = list(items)
     for name, content in items:
         path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+    # Reusing an output directory must not retain canonical or old hashed assets.
+    # Limit cleanup to generated shell scripts/styles; preserve private wrappers.
+    current = {name for name, _ in items}
+    candidates = [*destination.glob("app/**/*.js"), *destination.glob("app/**/*.css"),
+                  *destination.glob("core/**/*.js"), *destination.glob("core/**/*.css"),
+                  *destination.glob("installed-packs*.js")]
+    for path in candidates:
+        if path.relative_to(destination).as_posix() not in current:
+            path.unlink()
 
 def write_zip(destination, items):
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:

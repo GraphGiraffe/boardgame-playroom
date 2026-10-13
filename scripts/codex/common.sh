@@ -19,22 +19,22 @@ find_packs() {
   fi
   (cd -- "$candidate" && pwd -P)
 }
-require_five_source_packs() {
+require_source_packs() {
   python3 - "$1" <<'PY'
 import json
 from pathlib import Path
 import sys
 root = Path(sys.argv[1])
-for game in ('uno', 'domino', 'durak', 'checkers', 'snakes'):
+for game in ('uno', 'domino', 'durak', 'checkers', 'snakes', 'tictactoe', 'battleship', 'pexeso', 'ludo', 'yatzy', 'gofish', 'oldmaid'):
     for filename in ('manifest.json', 'manifest.js', 'rules.js', 'view.js', 'styles.css'):
         if not (root / game / filename).is_file():
-            sys.exit(f'Full checks require all five source packs; missing {root / game / filename}. Use --packs-dir /path/to/playroom-paks/packs.')
+            sys.exit(f'Full checks require all twelve source packs; missing {root / game / filename}. Use --packs-dir /path/to/playroom-paks/packs.')
     try:
         manifest = json.loads((root / game / 'manifest.json').read_text(encoding='utf-8'))
         if manifest.get('id') != game:
             raise ValueError('id does not match source directory')
     except (ValueError, OSError) as error:
         sys.exit(f'Invalid manifest for {game}: {error}')
-print(f'Using all five source packs: {root}')
+print(f'Using all twelve source packs: {root}')
 PY
 }

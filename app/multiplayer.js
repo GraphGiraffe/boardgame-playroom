@@ -40,6 +40,7 @@
     const fields=Array.isArray(settings)?settings:[];
     for(const [key,value] of Object.entries(rules.options||{})){
       const field=fields.find(item=>item?.key===key);
+      if(field?.visibleWhen&&!Object.entries(field.visibleWhen).every(([k,v])=>String(rules.options?.[k])===String(v)))continue;
       const option=field?.options?.find(item=>String(item.value)===String(value));
       rows.push({label:String(field?.label||key),value:String(option?.label??value)});
     }
@@ -136,7 +137,7 @@
       const timestamp=this.clock(),id=this.idFactory();
       const room={
         id,code:this._code(),name:normalizeRoomName(name),phase:'lobby',revision:1,lobbyRevision:1,rulesRevision:1,
-        ownerId:host.id,hostMode,transportMode:'network',firstPlayerMode:'random',firstParticipantId:null,game:clone(game),rules:clone(rules),constraints:playerConstraints,
+        ownerId:host.id,hostMode,transportMode:'network',firstPlayerMode:rules.firstPlayerMode||'rules',seatOrder:rules.seatOrder||'normal',firstParticipantId:null,game:clone(game),rules:clone(rules),constraints:playerConstraints,
         participants:[{id:host.id,nickname:normalizeName(host.nickname||host.name),role:hostMode==='player'?'player':'table',seatId:null,ready:false,connected:true,isHost:true,joinedAt:timestamp}],
         seats:Array.from({length:playerConstraints.max},(_,i)=>({id:'seat-'+(i+1),index:i,color:this._color(i),participantId:null})),
         createdAt:timestamp,updatedAt:timestamp,eventSequence:0,events:[],countdownEndsAt:null
@@ -145,7 +146,17 @@
       this._emit(room,'room-created','Комната создана.');
       this.rooms.set(id,room);return this.snapshot(id);
     }
-    startHotSeat(roomId,hostId){const room=this._room(roomId);this._host(room,hostId);this._lobby(room);if(room.transportMode!=='hotseat'||!this.canStart(roomId))throw Error('Недостаточно игроков');room.phase='playing';this._touch(room);return this.snapshot(roomId);}
+    prepareStart(roomId,hostId){
+      const room=this._room(roomId);this._host(room,hostId);
+      if(room.recovery||room.startOrderResolved)return this.snapshot(roomId);
+      if(!this.canStart(roomId))throw Error('Не все игроки готовы к старту');
+      const seats=room.seats.filter(s=>s.participantId),ids=seats.map(s=>s.participantId);
+      if(room.seatOrder==='random')for(let i=ids.length-1;i>0;i--){const j=Math.floor(this.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]];}
+      seats.forEach((seat,i)=>{seat.participantId=ids[i];this._participant(room,ids[i]).seatId=seat.id;});
+      room.startOrderResolved=true;for(const p of room.participants)delete p.rulesNotice;
+      this._touch(room);return this.snapshot(roomId);
+    }
+    startHotSeat(roomId,hostId){const room=this._room(roomId);this._host(room,hostId);this._lobby(room);if(room.transportMode!=='hotseat'||!this.canStart(roomId))throw Error('Недостаточно игроков');this.prepareStart(roomId,hostId);room.phase='playing';this._touch(room);return this.snapshot(roomId);}
     configure(roomId,hostId,changes={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       if(Object.keys(changes).some(key=>key!=='name'))this._newMatch(room);
@@ -154,12 +165,13 @@
         const host=this._participant(room,hostId);
         if(!host.seatId){const seat=room.seats.find(s=>!s.participantId)||room.seats.find(s=>room.participants.find(p=>p.id===s.participantId)?.bot);if(!seat)throw Error('Освободите игровое место для хоста');if(seat.participantId)room.participants=room.participants.filter(p=>p.id!==seat.participantId);seat.closed=false;seat.participantId=host.id;host.seatId=seat.id;host.role='player';room.hostMode='player';}
       }room.transportMode=changes.transportMode;}
+      if(changes.seatOrder!==undefined){if(!['normal','random'].includes(changes.seatOrder))throw Error('Неизвестный порядок');room.seatOrder=changes.seatOrder;}
       if(changes.firstPlayerMode!==undefined){if(!['rules','random','assigned'].includes(changes.firstPlayerMode))throw Error('Неизвестный первый ход');room.firstPlayerMode=changes.firstPlayerMode;}
       if(changes.firstParticipantId!==undefined){if(!room.participants.some(p=>p.id===changes.firstParticipantId&&p.seatId))throw Error('Первый игрок должен занять место');room.firstParticipantId=changes.firstParticipantId;}
       if(changes.hostMode!==undefined){if(!['player','table'].includes(changes.hostMode))throw Error('Неизвестная роль');room.hostMode=changes.hostMode;const host=this._participant(room,hostId);if(changes.hostMode==='table'){for(const seat of room.seats)if(seat.participantId===hostId)seat.participantId=null;host.seatId=null;host.role='table';}else host.role='spectator';}
       this._resetRoomReady(room);return this.snapshot(roomId);
     }
-    _resetRoomReady(room){for(const p of room.participants)p.ready=!!p.bot;room.lobbyRevision++;this._touch(room);}
+    _resetRoomReady(room){delete room.startOrderResolved;for(const p of room.participants)p.ready=!!p.bot;room.lobbyRevision++;this._touch(room);}
     setLocalSeat(roomId,hostId,seatId,{kind='bot',nickname='Бот'}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       this._newMatch(room);
@@ -190,7 +202,7 @@
         if(!p||occupied.has(p.id)||p.seatId!==seat.id||p.role!=='player')throw Error('Повреждены игровые места.');occupied.add(p.id);
       }
       const old=this.rooms.get(room.id);if(old&&old.ownerId!==hostId)throw Error('Комната принадлежит другому хосту.');
-      room.phase=active?'playing':'lobby';room.countdownEndsAt=null;delete room.recovery;
+      room.phase=active?'playing':'lobby';room.countdownEndsAt=null;delete room.recovery;if(!active)delete room.startOrderResolved;for(const p of room.participants)delete p.rulesNotice;
       for(const p of room.participants){p.ready=!!p.bot;p.connected=true;delete p.replacement;}
       this.rooms.set(room.id,room);this._touch(room);return this.snapshot(room.id);
     }
@@ -276,12 +288,14 @@
       if(!game?.id||!game?.name||!game?.version)throw Error('Выберите установленный пак игры.');
       const next=this._constraints(constraints);
       const occupied=room.seats.filter(seat=>seat.participantId);
-      if(occupied.some(seat=>seat.index>=next.max)||occupied.length>next.max)
+      if(occupied.length>next.max)
         throw Error('В новой игре меньше мест. Освободите лишние слоты перед сменой игры.');
       const players=room.participants.filter(p=>p.role==='player'&&p.seatId).length;
       if(players>next.max)throw Error('В новой игре недостаточно мест для участников.');
       room.seats=Array.from({length:next.max},(_,i)=>room.seats[i]||
         {id:'seat-'+(i+1),index:i,color:this._color(i),participantId:null});
+      for(const old of occupied.filter(seat=>seat.index>=next.max).sort((a,b)=>a.index-b.index)){const free=room.seats.find(seat=>!seat.participantId);free.participantId=old.participantId;free.closed=false;this._participant(room,old.participantId).seatId=free.id;}
+      delete room.startOrderResolved;room.firstPlayerMode=rules.firstPlayerMode||'rules';room.seatOrder=rules.seatOrder||'normal';
       room.game=clone(game);room.rules=clone(rules);room.constraints=next;
       room.rulesRevision++;room.lobbyRevision++;
       for(const p of room.participants)p.ready=!!p.bot;
@@ -294,7 +308,7 @@
       // The caller must verify that the authoritative match is FINISHED.
       // It remains in its immutable per-session IndexedDB journal.
       room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
-      delete room.recovery;
+      delete room.recovery;delete room.startOrderResolved;for(const p of room.participants)delete p.rulesNotice;
       for(const seat of room.seats){delete seat.playerIndex;delete seat.previousParticipant;}
       for(const p of room.participants){p.ready=!!p.bot;delete p.replacement;}
       this._touch(room);this._emit(room,stopped?'match-stopped':'new-match-lobby',stopped?'Партия сохранена для продолжения.':'Партия завершена. Выберите следующую игру и подтвердите готовность.');
@@ -304,7 +318,7 @@
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);
       if(participant.role!=='player'||!participant.seatId)throw Error('Сначала выберите игровое место.');
       if(ready&&participant.replacement&&!participant.replacement.accepted)throw Error('Сначала подтвердите принятие места на замену.');
-      participant.ready=!!ready;room.lobbyRevision++;this._touch(room);
+      participant.ready=!!ready;if(ready)delete participant.rulesNotice;room.lobbyRevision++;this._touch(room);
       this._emit(room,'ready-changed',participant.nickname+(participant.ready?' готов.':' больше не готов.'),{participantId,ready:participant.ready});
       return this.snapshot(roomId);
     }
@@ -312,7 +326,8 @@
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
       this._newMatch(room);
       room.rules=clone(rules||{});room.rulesRevision++;room.lobbyRevision++;
-      for(const participant of room.participants)participant.ready=!!participant.bot;
+      for(const participant of room.participants){participant.ready=!!participant.bot;participant.rulesNotice=!participant.bot;}
+      delete room.startOrderResolved;
       this._touch(room);this._emit(room,'rules-changed','Хост изменил правила. Проверьте их и подтвердите готовность заново.',{rulesRevision:room.rulesRevision});
       return this.snapshot(roomId);
     }
@@ -465,7 +480,8 @@
       const room=this._room(roomId);this._host(room,hostId);
       if(room.phase!=='playing')throw Error('Можно отменить только несостоявшийся старт.');
       room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
-      for(const participant of room.participants)participant.ready=!!participant.bot;
+      for(const participant of room.participants){participant.ready=!!participant.bot;participant.rulesNotice=!participant.bot;}
+      delete room.startOrderResolved;
       this._touch(room);this._emit(room,'start-rejected','Начало партии отменено: сохранение недоступно.');
       return this.snapshot(roomId);
     }
@@ -484,7 +500,7 @@
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
       if(!this.canStart(roomId))throw Error('Для старта все игроки должны занять места, быть в сети и подтвердить готовность.');
       if(!Number.isInteger(seconds)||seconds<1||seconds>10)throw Error('Некорректный обратный отсчёт.');
-      room.phase='starting';room.countdownEndsAt=this.clock()+seconds*1000;this._touch(room);
+      this.prepareStart(roomId,participantId);room.phase='starting';room.countdownEndsAt=this.clock()+seconds*1000;this._touch(room);
       this._emit(room,'countdown-started','Игра начинается через '+seconds+' сек.',{seconds});
       return this.snapshot(roomId);
     }
@@ -493,7 +509,7 @@
       if(room.phase!=='starting')return {room:this.snapshot(roomId),remaining:null,started:room.phase==='playing'};
       const remaining=Math.max(0,Math.ceil((room.countdownEndsAt-this.clock())/1000));
       if(remaining===0){
-        room.phase='playing';room.countdownEndsAt=null;this._touch(room);this._emit(room,'game-started','Игра началась.');
+        this.prepareStart(roomId,room.ownerId);room.phase='playing';room.countdownEndsAt=null;this._touch(room);this._emit(room,'game-started','Игра началась.');
         return {room:this.snapshot(roomId),remaining:0,started:true};
       }
       return {room:this.snapshot(roomId),remaining,started:false};

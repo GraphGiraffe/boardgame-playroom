@@ -57,8 +57,8 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
         for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}
-        await press(page.locator('[data-filter=cards]')); assert.equal(await page.locator('.game-tile').count(),2);
-        await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),5);
+        await press(page.locator('[data-tag-kind=type][data-tag=cards]')); assert.equal(await page.locator('.game-tile').count(),5);
+        await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),12);
         if(mobile){
           await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
           const footer=await page.locator('.hub-footer').boundingBox(),bar=await nav.boundingBox();
@@ -106,10 +106,10 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         return keys.map(key=>localStorage.getItem(key)).filter(Boolean).map(raw=>JSON.parse(raw).libraryId).sort();
       });
       const create=async(game,name,{hidden=false,preset='classic'}={})=>{
-        await home();await press(page.locator(`.game-tile [data-start="${game}"]`));
+        await home();await press(page.locator(`.game-tile [data-start="${game}"]`).first());
         await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=room-rules]').click();await page.locator('[name=preset]').selectOption(preset);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await page.evaluate(name=>{const b=PlayroomAppBridge,r=b.room();b.roomService.rename(r.id,r.ownerId,name);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:name+' · друг'});b.renderLobby();},name);
-        if(!hidden&&['uno','domino','durak'].includes(game)){await page.locator('[data-command=room-rules]').click();await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());}
+        if(['uno','domino','durak'].includes(game)){await page.locator('[data-command=room-rules]').click();if(hidden)await page.locator('[name=openHands]').uncheck();else await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());}
         await press(page.locator('[data-command=lobby-start]'));
         if(hidden){await page.locator('.handoff').waitFor();assert.equal(await page.locator('.hand-track .uno-card').count(),0);await press(page.locator('[data-command=unlock]'));}
         await page.locator(`.${game}-scene`).waitFor();return current();

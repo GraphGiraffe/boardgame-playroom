@@ -1,8 +1,5 @@
 name: Multiplayer preview smoke
 on:
-  pull_request:
-    branches: [dev]
-    types: [ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
-          ref: 5c8a172912bff583d92bb207dbbfe288b3bf002f
+          ref: fb2bb4486d3474ab6cd75016c7b4009020887ccb
           ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false
@@ -47,8 +44,8 @@ jobs:
         run: |
           rm -rf app/dist/smoke
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/smoke
-          test -s app/dist/smoke/pwa/app/vendor/qrcode.js
-          test -s app/dist/smoke/pwa/app/vendor/jsqr.js
+          test -s app/dist/smoke/pwa/app/vendor/qrcode.*.js
+          test -s app/dist/smoke/pwa/app/vendor/jsqr.*.js
           test -s app/dist/smoke/pwa/app/vendor/LICENSE.qrcode
           test -s app/dist/smoke/pwa/app/vendor/LICENSE.jsqr
           rm -f app/dist/smoke/playroom-pwa.zip
@@ -85,17 +82,18 @@ jobs:
           sleep 1
           PLAYROOM_URL=http://127.0.0.1:4174/ npm run test:rtc
           curl --fail http://127.0.0.1:4174/manifest.webmanifest >/dev/null
-          curl --fail http://127.0.0.1:4174/app/vendor/qrcode.js >/dev/null
-          curl --fail http://127.0.0.1:4174/app/vendor/jsqr.js >/dev/null
+          for asset in dist/smoke/pwa/app/vendor/{qrcode,jsqr}.*.js; do
+            curl --fail "http://127.0.0.1:4174/${asset#dist/smoke/pwa/}" >/dev/null
+          done
           rm -rf /tmp/playroom-pwa-zip && mkdir -p /tmp/playroom-pwa-zip
           unzip -q dist/smoke/playroom-pwa.zip -d /tmp/playroom-pwa-zip
-          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/qrcode.js
-          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/ggwave.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/qrcode.*.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/ggwave.*.js
           test -s /tmp/playroom-pwa-zip/pwa/app/vendor/LICENSE.ggwave
-          grep -F "app/vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/app/qr.js >/dev/null
-          grep -F "app/vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
-          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/jsqr.js
-          test -s /tmp/playroom-pwa-zip/pwa/app/qr-scanner.js
+          grep -F "app/vendor/qrcode.js" /tmp/playroom-pwa-zip/pwa/app/qr.*.js >/dev/null
+          grep -E "app/vendor/qrcode\.[a-f0-9]{16}\.js" /tmp/playroom-pwa-zip/pwa/sw.js >/dev/null
+          test -s /tmp/playroom-pwa-zip/pwa/app/vendor/jsqr.*.js
+          test -s /tmp/playroom-pwa-zip/pwa/app/qr-scanner.*.js
           test -s /tmp/playroom-pwa-zip/pwa/app/vendor/LICENSE.jsqr
       - uses: actions/upload-artifact@v4
         with:

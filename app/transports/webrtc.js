@@ -134,6 +134,7 @@
     };
     const onOpen=()=>sendHello();
     const onClose=()=>{
+      for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}pending.clear();
       if(!ready){clearTimeout(readyTimer);stopHello();rejectReady(Error('Соединение закрылось до подтверждения готовности.'));}
     };
     channel.addEventListener('message',onMessage);
@@ -170,6 +171,57 @@
       }
     });
   }
+  // No external signalling: only probe the existing authenticated connection.
+  class Recovery {
+    constructor({pc,transport,reconcile,onState=()=>{},document=root.document,interval=5000,grace=10000}){
+      Object.assign(this,{pc,transport,reconcile,onState,document,grace});
+      this.state='connecting';this.lastResponse=null;this.error=null;this.route=null;this.events=[];this.closed=false;this.flight=null;this.generation=0;
+      this.notify=()=>{const state=pc.connectionState;if(state!=='connected')this.generation++;
+        if(['failed','closed'].includes(state))this.setState('invite','channel-closed');
+        else if(state==='disconnected'){this.setState('recovering','channel-disconnected');this.waitForInvite();}
+        else if(state==='connected')void this.check();};
+      this.visibility=()=>{if(document?.hidden){this.generation++;this.setState('recovering');}else void this.check({recover:true});};
+      pc.addEventListener('connectionstatechange',this.notify);
+      document?.addEventListener('visibilitychange',this.visibility);
+      this.timer=setInterval(()=>{if(!document?.hidden)void this.check();},interval);
+      this.notify();
+    }
+    setState(state,error=null){
+      if(this.closed)return;const changed=this.state!==state||this.error!==error;this.state=state;this.error=error;
+      if(state==='connected'){clearTimeout(this.graceTimer);this.graceTimer=null;}
+      if(changed){this.events.push({at:Date.now(),state,error});if(this.events.length>100)this.events.shift();this.onState(this.report());}
+    }
+    waitForInvite(){if(!this.graceTimer)this.graceTimer=setTimeout(()=>{this.graceTimer=null;if(this.state!=='connected')this.setState('invite','recovery-timeout');},this.grace);}
+    report(){return {state:this.state,ice:this.pc.iceConnectionState||'unknown',channel:this.pc.connectionState||'unknown',lastResponse:this.lastResponse,error:this.error,route:this.route,events:this.events.map(e=>({...e}))};}
+    async routeInfo(){
+      try{const stats=await this.pc.getStats?.();if(!stats)return;
+        const pair=[...stats.values()].find(s=>s.type==='candidate-pair'&&s.state==='succeeded'&&(s.nominated||s.selected));
+        const local=stats.get(pair?.localCandidateId),remote=stats.get(pair?.remoteCandidateId);
+        const type=v=>['host','srflx','prflx','relay'].includes(v)?v:'unknown';
+        this.route=pair?{local:type(local?.candidateType),remote:type(remote?.candidateType),protocol:['udp','tcp'].includes(local?.protocol)?local.protocol:'unknown'}:null;
+      }catch(_){} // Diagnostics must never interrupt play or expose raw RTC data.
+    }
+    check({recover=false}={}){
+      if(this.closed||this.document?.hidden)return Promise.resolve();
+      if(this.flight)return this.flight;
+      if(this.pc.connectionState!=='connected'){this.notify();return Promise.resolve();}
+      const recovering=recover||this.state!=='connected';
+      if(recovering)this.setState('recovering');
+      const generation=this.generation;
+      this.flight=(async()=>{
+        try{
+          const snapshot=await this.transport.snapshot();if(this.closed||generation!==this.generation||this.document?.hidden)return;
+          await this.reconcile(snapshot,{recovering});if(this.closed||generation!==this.generation||this.document?.hidden)return;
+          this.lastResponse=Date.now();await this.routeInfo();
+          if(this.closed||generation!==this.generation||this.document?.hidden||this.pc.connectionState!=='connected')return;
+          this.setState('connected');
+        }catch(_){if(!this.closed&&generation===this.generation&&!this.document?.hidden){this.setState('invite','sync-failed');}}
+        finally{this.flight=null;}
+      })();
+      return this.flight;
+    }
+    close(){this.closed=true;clearInterval(this.timer);clearTimeout(this.graceTimer);this.pc.removeEventListener('connectionstatechange',this.notify);this.document?.removeEventListener('visibilitychange',this.visibility);}
+  }
   async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
     const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true}),id=pairingId();
     await pc.setLocalDescription(await pc.createOffer());await waitIce(pc);
@@ -199,5 +251,5 @@
       close(){try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
-  return {SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,serve,client,createHostPeer,createClientPeer};
+  return {Recovery,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,serve,client,createHostPeer,createClientPeer};
 });

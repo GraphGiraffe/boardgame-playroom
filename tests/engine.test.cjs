@@ -23,7 +23,7 @@ function dominoState(hands, chain, stock = []) {
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; return s;
+  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};
@@ -45,7 +45,7 @@ test('registry exposes five independent packs and isolates metadata', () => {
   assert.deepEqual(GAMES.map(g => g.id), ['uno', 'domino', 'durak', 'checkers', 'snakes']);
   assert.throws(() => E.register(E.get('uno')), /зарегистрирован/);
   assert.throws(() => create('missing'));
-  assert.throws(() => create('uno', 1)); assert.throws(() => create('durak', 3)); assert.throws(() => create('uno', 2, 'missing'));
+  assert.throws(() => create('uno', 1)); assert.equal(create('durak', 3).players.length,3); assert.throws(() => create('uno', 2, 'missing'));
   const metadata = E.GAMES; metadata[0].presets[0].label = 'corrupted';
   assert.notEqual(E.GAMES[0].presets[0].label, 'corrupted');
 });
@@ -307,7 +307,7 @@ test('sound metadata is optional, validated and respects private event visibilit
   const s=create('uno'),start=s.events.at(-1).id;
   E.event(s,'Private sound',0,'action',{privateTo:0,sound:{id:'custom.secret',target:0}});
   assert.deepEqual(E.soundCues(s,1,start),[]);assert.equal(E.soundCues(s,0,start)[0].id,'custom.secret');
-  assert.equal(E.project(s,1).events.at(-1).sound,undefined);assert(E.validateState(s));
+  assert.equal(E.project(s,1).events.at(-1).sound,null);assert.deepEqual(E.soundCues(E.project(s,1),1,start),[]);s.events.at(-1).publicSound={id:'draw'};assert.deepEqual(E.soundCues(s,1,start),E.soundCues(E.project(s,1),1,start));assert(E.validateState(s));
   for(const sound of [{id:'bad id'},{id:'move',target:99},'move']) {const bad=E.clone(s);bad.events.at(-1).sound=sound;assert.throws(()=>E.validateState(bad),/звук события/);}
   const old=E.clone(s);delete old.events.at(-1).sound;assert(E.validateState(old));assert.equal(E.soundCues(old,0,start)[0].id,'move');
 });
@@ -315,9 +315,9 @@ test('sound metadata is optional, validated and respects private event visibilit
 test('standalone audio library registers scoped pack overrides without a browser', async () => {
   const Audio=require('../core/audio.js');let contexts=0;
   const audio=new Audio({contextFactory:()=>{contexts++;return null;}});
-  assert.equal(audio.catalog().length,17);assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
+  assert.equal(audio.catalog().length,22);assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
   audio.registerPack('custom_pack',{move:{label:'Own move',notes:[{frequency:500,duration:.1}]},'custom.call':{label:'Call',notes:[{frequency:700,duration:.1}]}});
-  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,18);
+  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,23);
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);
@@ -350,7 +350,7 @@ test('offline packs validate metadata, entries and assets before registry mutati
   const parsed = manager.parse(source);
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null);assert(Object.isFrozen(parsed.files));
   const bad = modify => {const b=JSON.parse(JSON.stringify(source));modify(b);return b;};
-  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=2),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
+  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=3),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
   for(const b of [bad(b=>b.files['view.js']='throw Error("broken view")'),bad(b=>b.files['rules.js']='('),bad(b=>b.files['styles.css']='.x{background:url(https://example.invalid/x.png)}'),bad(b=>b.files['styles.css']='@import "https://example.invalid/x.css";')]) assert.throws(()=>manager.prepare(b));
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null,'failed prepare cannot persist or activate');
   assert.throws(()=>manager.install(source),/подготовьте/);

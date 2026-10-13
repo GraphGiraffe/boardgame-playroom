@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="core/tooltips.css">
 </head>
 <body>
+  <div id="update-banner" class="app-update-banner" role="status" hidden><span>Доступно обновление ХОД.</span><button class="btn" type="button" id="update-now">Обновить</button><span id="update-detail"></span></div>
   <div id="app"></div>
   <div id="modal-root"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -33,6 +34,8 @@
   <script src="core/ui.js"></script>
   <script src="core/player-target.js"></script>
   <script src="app/views.js"></script>
+  <script src="core/tag-registry.js"></script>
+  <script src="core/tags.js"></script>
   <script src="core/packs.js"></script>
   <script src="installed-packs.js"></script>
   <script src="app/pack-manager.js"></script>

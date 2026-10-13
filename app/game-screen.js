@@ -72,9 +72,9 @@
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
-    const winner=state.winner,person=winner==null?null:state.players[winner];
-    const title=winner===null?'Ничья!':viewer<0?`${person?.name||'Игрок'} побеждает`:winner===viewer?'Победа!':'Поражение';
-    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${i===winner?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
+    const winner=state.winner,winningPlayers=state.winners|| (winner==null?[]:[winner]),person=winner==null?null:state.players[winner];
+    const title=winner===null?'Ничья!':viewer<0?winningPlayers.length>1?'Победители: '+winningPlayers.map(i=>state.players[i]?.name||'Игрок').join(', '):`${person?.name||'Игрок'} побеждает`:winningPlayers.includes(viewer)?'Победа!':'Поражение';
+    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${winningPlayers.includes(i)?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
@@ -120,6 +120,10 @@
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
+    if(stage.dataset.fieldSizing==='scroll'){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
+    if(stage.dataset.fieldSizing==='content'){
+      field.style.width='100%';field.style.height='auto';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;
+    }
     if(stage.dataset.layoutFamily==='board'){
       const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
@@ -140,7 +144,7 @@
       }
     }
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
-    if(stage)stage.style.zoom='1';
+    if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
   }
   return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
 });

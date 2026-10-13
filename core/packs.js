@@ -5,6 +5,7 @@
   root.TabletopPacks = Packs;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
+  const Tags=root.PlayroomTags||(typeof require==='function'?require('./tags.js'):null);
   const FORMAT='playroom-pack', STORAGE='playroom.packs.v1', MAX_BYTES=4*1024*1024, MAX_TOTAL=20*1024*1024;
   const ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -36,9 +37,11 @@
     let bundle;try{bundle=JSON.parse(text);}catch(_){throw Error('Некорректный JSON пакета');}
     if(!record(bundle)||bundle.format!==FORMAT||bundle.formatVersion!==1||!record(bundle.manifest)||!record(bundle.files))throw Error('Неподдерживаемый формат пакета');
     const m=bundle.manifest;
+    if(m.tags!==undefined||m.playModes!==undefined){if(!Tags)throw Error("Недоступен реестр тегов");Tags.validate(m);}
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error('Некорректные id или версия пакета');
+    if(m.tileTheme!==undefined&&!['green','coral','blue','gold','violet'].includes(m.tileTheme))throw Error('Некорректная тема карточки пака');
     if(m.viewApi!==2)throw Error('Пакет требует API интерфейса 2; обновите пак');
-    if(m.engineApi!==1||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
+    if(![1,2].includes(m.engineApi)||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error('У пакета отсутствует название');
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error('Слишком много файлов в пакете');
     for(const path of paths){if(!pathOK(path)||typeof bundle.files[path]!=='string')throw Error('Некорректный путь или содержимое файла: '+path);if(!/\.(?:js|css|svg|json|txt|md)$/i.test(path))asset(bundle,path);}
