@@ -1047,9 +1047,9 @@
     catch(_){/* Keep durable frames; retry only missing revisions after recovery. */}
   }
 
-  async function listNetworkArchives(){
+  async function listNetworkArchives({strict=false}={}){
     const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
-    if(responses.every(x=>x.status==='rejected'))throw Error('Сетевые архивы недоступны.');
+    if(responses.every(x=>x.status==='rejected')||strict&&responses.some(x=>x.status==='rejected'))throw Error('Сетевые архивы недоступны. Повторите попытку после восстановления хранилища.');
     return responses.flatMap(x=>x.status==='fulfilled'?x.value:[]).map(item=>{let missingPack=false;try{if(!bridge().packs.list().some(p=>p.id===item.game&&p.version===item.packVersion))throw Error('Missing pack');}catch(_){missingPack=true;}return {...item,missingPack};});
   }
   async function removeNetworkArchive(key){

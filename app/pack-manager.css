@@ -1,4 +1,6 @@
 .pack-manager-modal{width:min(620px,100%)}
+.pack-bulk-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+.pack-bulk-actions .btn{flex:1;min-width:190px}
 .pack-file{position:relative;overflow:hidden;margin-top:18px;min-height:44px;cursor:pointer}
 .pack-file input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .pack-file:focus-within{outline:3px solid #629c87;outline-offset:3px}

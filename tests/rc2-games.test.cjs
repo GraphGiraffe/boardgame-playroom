@@ -121,13 +121,13 @@ test('RC4 sea bot decisions depend only on observed shots',()=>{
  let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'auto'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
  assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
 });
-test('RC4 immediate public pair has neutral transfer and public success, never card identity',()=>{
+test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.deepEqual(transfers[0].privateTo,[s.turn,pair.action.target]);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
-test('Akulina draw is visible only to its two participants in live and history snapshots',()=>{
+test('Akulina draw shows both participants to everyone, while the card stays private',()=>{
  const Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js');
  const session=new Session(E,'oldmaid',{players:Array.from({length:4},(_,i)=>({name:`P${i}`})),seed:17});
  const authority=new Authority(session),clients=[0,1,2,3,-1].map(i=>authority.connect(i));
@@ -137,15 +137,42 @@ test('Akulina draw is visible only to its two participants in live and history s
   assert(receipt.ok);
   for(const client of clients){const viewer=client.snapshot().viewer;
    for(const snapshot of [client.snapshot(),client.history(1)]){
-    const privateEffects=snapshot.effects.filter(e=>e.from==='hand'&&e.fromPlayer===target&&e.player===actor);
-    assert.equal(privateEffects.length,viewer===actor||viewer===target?1:0);
+    const publicEffects=snapshot.effects.filter(e=>e.from==='hand'&&e.fromPlayer===target&&e.player===actor);
+    assert.equal(publicEffects.length,1);
     const draw=snapshot.events.find(e=>e.kind==='draw');assert(draw);
-    assert.equal('transfer' in draw,viewer===actor||viewer===target);
+    assert.match(draw.text,/P\d+ вытянул закрытую карту у P\d+/);
+    assert.equal('transfer' in draw,true);
+    assert(E.project(session.current,viewer).data.hands[target].every(c=>viewer===target||c.hidden));
     assert(!JSON.stringify(snapshot).includes('privateTo'));
    }
   }
-  assert(!E.soundCues(session.current,-1,0).some(c=>c.id==='draw'));
+  assert(E.soundCues(session.current,-1,0).some(c=>c.id==='draw'));
  }finally{authority.dispose();}
+});
+test('Akulina awards descending points as players leave; the last player gets zero',()=>{
+ let s=create('oldmaid',4),steps=0;
+ while(s.status==='playing'&&steps++<500){const action=E.botAction(s);assert(action);s=play(s,action);}
+ assert.equal(s.status,'finished');assert.deepEqual(s.data.outOrder.map(i=>s.players[i].score),[3,2,1]);
+ assert.equal(s.players.find((_,i)=>!s.data.outOrder.includes(i)).score,0);
+ assert.deepEqual(s.winners,s.data.outOrder);
+});
+test('Ludo star squares are safe while the next unmarked square can capture',()=>{
+ let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];
+ s=play(s,{type:'move',owner:0,pawn:0,dieIndex:0});assert.equal(s.data.pawns[1][0],47);
+});
+test('Pexeso keeps mismatched cards visible until the next player flips, without Continue',()=>{
+ let s=create('pexeso',2,'easy'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
+ s=play(s,{type:'flip',index:first});s=play(s,{type:'flip',index:second});
+ assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
+ assert(E.legalActions(s).every(a=>a.type==='flip'));
+ s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
+});
+test('Pexeso bot sometimes overlooks a known pair',()=>{
+ const s=create('pexeso',2,'easy'),pair=(a,b)=>a.rank===b.rank&&(['♥','♦'].includes(a.suit)===['♥','♦'].includes(b.suit));
+ const first=s.data.board.findIndex((a,i)=>s.data.board.some((b,j)=>i!==j&&pair(a,b))),second=s.data.board.findIndex((b,j)=>j!==first&&pair(s.data.board[first],b));
+ s.data.seen[first]=s.data.board[first].id;s.data.seen[second]=s.data.board[second].id;
+ const choices=new Set();for(let move=0;move<12;move++){s.move=move;choices.add(E.botAction(s).index===first||E.botAction(s).index===second?'known':'missed');}
+ assert.deepEqual([...choices].sort(),['known','missed']);
 });
 test('Yatzy permits releasing a held die before the third roll',()=>{
  let s=create('yatzy');s=play(s,{type:'roll'});
