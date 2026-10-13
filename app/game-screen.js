@@ -30,9 +30,9 @@
   function updateModal(modal,content){
     const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
     const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
-    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0));
+    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
     const top=anchor?.getBoundingClientRect().top;
-    const key=n=>n.nodeType===1?(n.id||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
+    const key=n=>n.nodeType===1?(n.id||(n.dataset.packId&&n.dataset.packVersion?`${n.dataset.packId}@${n.dataset.packVersion}`:'')||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
     function patch(parent,next){
       const old=[...parent.childNodes],used=new Set();let previous=null;
       for(const fresh of [...next.childNodes]){

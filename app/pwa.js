@@ -98,6 +98,15 @@
       registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',()=>{
         if(registration.waiting&&navigator.serviceWorker.controller)announceUpdate(registration.waiting);
       }));
+      let checking=false;
+      const refresh=async()=>{
+        if(checking||document.hidden||registration.waiting)return;
+        checking=true;
+        try{await registration.update();}catch(_){}finally{checking=false;}
+      };
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh();});
+      root.addEventListener('focus',()=>{void refresh();});
+      setInterval(()=>{void refresh();},15*60*1000);
     }).catch(()=>{});
     navigator.serviceWorker.addEventListener('message',event=>{
       if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);

@@ -267,10 +267,10 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.evaluate(()=>qaGame.destroy());
     state.turn=0;state.data.phase='move';state.data.dice=[3,6,1];state.data.used=[false,false,false];state.data.pawns=[[2,-1,56,-1],[44,-1,-1,-1]];revision++;
     await page.evaluate(({definition,snapshot})=>{qaClient.snapshot=snapshot;qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();},{definition,snapshot:snapshot()});
-    await pawn(0).tap();await page.locator('.target-capture').tap();
+    await pawn(0).tap();await page.locator('.ludo-pawn[data-entity="token-1-0"][data-action]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[1][0]===-1);
-    await page.waitForFunction(()=>document.querySelector('[data-view-value="0:1"]'));
-    await pawn(1).tap();assert.equal(await page.locator('.target-home').count(),1);await page.locator('.target-home').tap();
+    assert.equal(await page.locator('.ludo-pawn[data-entity="token-0-1"][data-action]').count(),1,'base pawn exits in one tap');
+    await page.locator('.ludo-pawn[data-entity="token-0-1"]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][1]===0&&document.querySelector('[data-view-value="0:2"]'));
     await pawn(2).tap();assert.equal(await page.locator('.target-home[data-motion-anchor="finish-0"]').count(),1);
     for(const [width,height]of [[320,640],[740,390]]){await page.setViewportSize({width,height});await page.evaluate(()=>qaGame.render());assert(await page.locator('.ludo-target').evaluate(e=>{const r=e.getBoundingClientRect();return Math.abs(r.width-r.height)<1&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));}

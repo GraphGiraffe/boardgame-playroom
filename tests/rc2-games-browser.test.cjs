@@ -94,3 +94,19 @@ test('new game scenes preserve proportions, reachable controls and hands before 
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await fixture.close();}
 });
+test('Yatzy keeps score rows and table scroll stable when dice are held',{timeout:15000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const page=await browser.newPage({viewport:{width:390,height:740}});page.setDefaultTimeout(5000);await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
+  await page.locator('[data-start="yatzy"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command="lobby-start"]').click();
+  const before=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
+  await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-dice [data-action]').first().waitFor();
+  const after=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
+  assert(before.every((height,i)=>Math.abs(height-after[i])<=1),'score buttons do not stretch rows');
+  const top=await page.locator('.yatzy-board').evaluate(board=>{board.scrollTop=board.scrollHeight;window.qaYatzyBoard=board;return board.scrollTop;});assert(top>0);
+  await page.locator('.yatzy-dice [data-action]').first().click();
+  assert(await page.locator('.yatzy-board').evaluate(board=>board===window.qaYatzyBoard),'holding a die keeps the table node');
+  assert(Math.abs(await page.locator('.yatzy-board').evaluate(board=>board.scrollTop)-top)<=1,'holding a die keeps table scroll');
+  await page.locator('.yatzy-roll[data-action]').click();await page.waitForFunction(()=>document.querySelector('.yatzy-board')?.scrollTop>0);
+ }finally{await browser.close();await fixture.close();}
+});
