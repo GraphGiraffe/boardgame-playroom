@@ -120,6 +120,7 @@
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
+    if(stage.dataset.fieldSizing==='scroll'){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
     if(stage.dataset.fieldSizing==='content'){
       field.style.width='100%';field.style.height='auto';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;
     }
@@ -143,7 +144,7 @@
       }
     }
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
-    if(stage)stage.style.zoom='1';
+    if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
   }
   return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
 });

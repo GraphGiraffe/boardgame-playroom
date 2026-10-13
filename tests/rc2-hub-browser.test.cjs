@@ -6,6 +6,14 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);await page.evaluate(()=>localStorage.clear());await page.reload();if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
   assert.equal(await page.locator('.game-tile').count(),12);
+  assert.equal(await page.locator('.hub-filters>[role=group]').count(),4);
+  await page.locator('[data-tag-kind=type][data-tag=cards]').click();assert.equal(await page.locator('.game-tile').count(),5);
+  await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();assert.equal(await page.locator('.game-tile').count(),2);
+  await page.locator('[data-filter=favorites]').click();await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.game-tile').count(),2,'scope preserves both tag groups');
+  await page.locator('[data-tag-kind=type][data-tag=cards]').click();await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();
+  await page.locator('[data-format=duel]').click();assert.equal(await page.locator('.game-tile').count(),3);await page.locator('[data-format=duel]').click();
+  for(const width of [320,390,768]){await page.setViewportSize({width,height:740});assert(await page.locator('.filter-format').evaluate(row=>{const items=[...row.querySelectorAll('button')].map(b=>b.getBoundingClientRect());return items.length===8&&items.every(r=>Math.abs(r.top-items[0].top)<1)&&row.scrollWidth<=row.clientWidth+1;}));}
+  await page.setViewportSize({width:390,height:740});
   const ids=await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),first=ids[0],second=ids[1];
   await page.locator(`.game-tile[data-game="${second}"] .tile-favorite`).click();await page.locator('[data-filter=favorites]').click();assert.deepEqual(await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),[second]);
   await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.favorites-section .game-tile').count(),1);assert.equal(await page.locator('.other-section .game-tile').count(),11);await page.locator('.topbar-tools [data-command=packs]').click();

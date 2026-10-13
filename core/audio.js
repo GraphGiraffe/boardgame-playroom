@@ -26,6 +26,11 @@
     climb:{label:'Подъём',notes:[note(440,0,.13,'sine',.13),note(554,.07,.13,'sine',.13),note(659,.14,.13,'sine',.13),note(880,.21,.2,'sine',.14)]},
     fall:{label:'Спуск',notes:[note(740,0,.13,'sine',.13),note(587,.07,.13,'sine',.13),note(440,.14,.13,'sine',.13),note(294,.21,.2,'triangle',.14)]},
     penalty:{label:'Штраф',notes:[note(330,0,.11,'triangle',.15),note(330,.14,.11,'triangle',.15),note(247,.28,.19,'triangle',.13)]},
+    success:{label:'Пара / комплект / очки',notes:[note(660,0,.09),note(880,.08,.15)]},
+    'success.special':{label:'Особая комбинация',notes:[note(523,0,.13),note(659,.09,.13),note(880,.18,.2)]},
+    'success.yatzy':{label:'Ятзи',notes:[note(523,0,.14),note(659,.1,.14),note(784,.2,.14),note(1047,.3,.3)]},
+    mismatch:{label:'Нет совпадения',notes:[note(400,0,.1,'sine',.08),note(330,.1,.13,'sine',.08)]},
+    error:{label:'Действие недоступно',notes:[note(240,0,.11,'triangle',.1)]},
     notify:{label:'Уведомление',notes:[note(784,0,.2,'sine',.12),note(1047,.07,.24,'sine',.075)]}
   };
   function normalize(definition, id) {

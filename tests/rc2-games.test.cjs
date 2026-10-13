@@ -34,7 +34,7 @@ test('Battleship manual placement rotates and preserves the fleet rules',()=>{
 });
 
 test('Ludo teams finish together and Yatzy uses classic small straight',()=>{
- let s=create('ludo',4,'teams');s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.die=1;s=play(s,{type:'move',owner:2,pawn:3});assert.deepEqual(s.winners,[0,2]);
+ let s=create('ludo',4,'teams');s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.dice=[1];s.data.used=[false];s=play(s,{type:'move',owner:2,pawn:3,dieIndex:0});assert.deepEqual(s.winners,[0,2]);
  s=create('yatzy');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
 });
 
@@ -57,7 +57,7 @@ test('pack display preferences persist order, visibility and favorites',()=>{
 
 test('Akulina draws the chosen hidden card and rejects an invalid index',()=>{
  const s=create('oldmaid',4,'classic','54'),actions=E.legalActions(s),choice=actions.at(-1),id=s.data.hands[choice.target][choice.cardIndex].id;
- assert.equal(actions.length,s.data.hands[choice.target].length);assert(actions.every(a=>a.targetKind==='player'&&a.targetChoice==='card'&&!('card' in a)));
+ assert.equal(actions.length,s.data.hands.reduce((n,h,i)=>n+(i===s.turn?0:h.length),0));assert(actions.every(a=>a.targetKind==='player'&&a.targetChoice==='card'&&!('card' in a)));
  const next=play(s,choice);assert(!next.data.hands[choice.target].some(c=>c.id===id));assert([...next.data.hands[s.turn],...next.data.discard].some(c=>c.id===id));
  assert.throws(()=>play(s,{...choice,cardIndex:999}));assert(E.project(s,-1).data.hands.flat().every(c=>Object.keys(c).join() === 'hidden'));
 });
@@ -69,4 +69,40 @@ test('automatic fleets leave gaps in both rulesets and Yatzy totals include the 
 test('new pack actions have playable common sound cues and do not replay old events',()=>{
  for(const id of ['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']){const s=create(id),after=s.events.at(-1)?.id||0,n=play(s);assert(E.soundCues(n,s.turn,after).length,id);assert.deepEqual(E.soundCues(n,s.turn,n.events.at(-1).id),[]);}
  const sounds=fs.readFileSync(path.join(__dirname,'../packs/uno/sounds.js'),'utf8'),uri=sounds.match(/data:audio\/wav;base64,([A-Za-z0-9+/=]+)/)[1],asset=fs.readFileSync(path.join(__dirname,'../packs/uno/assets/uno-call.wav'));assert.deepEqual(Buffer.from(uri,'base64'),asset);
+});
+
+test('RC4 Durak variants and deck sizes finish with every supported roster',()=>{
+ for(const variant of ['simple','throwin','transfer'])for(const deck of ['36','52','54'])for(const n of [2,4,6])for(const endCondition of ['firstout','lastfool']){
+  let s=E.createGame('durak',{players:Array.from({length:n},(_,i)=>({name:`P${i}`})),variant,deck,endCondition,seed:71}),steps=0;
+  while(s.status==='playing'&&steps++<5000){assert(E.validateState(s),`${variant}/${deck}/${n}`);s=play(s);}
+  assert.equal(s.status,'finished',`${variant}/${deck}/${n}/${endCondition}`);assert(E.validateState(s));
+ }
+});
+test('RC4 Ludo multiple dice, guarantee, and independently consumed values',()=>{
+ for(const diceCount of [1,2,3])for(const sixReroll of ['on','off']){let s=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],diceCount,sixReroll,seed:15}),steps=0;while(s.status==='playing'&&steps++<3000){assert(E.validateState(s));s=play(s);}assert.equal(s.status,'finished');}
+ let s=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],diceCount:3,seed:17});s.data.failed[0]=2;
+ // Seed 1 produces 1/3/4; the third failed batch grants a real exit, not a fake six.
+ s.rng=1;s=play(s,{type:'roll'});assert(s.data.guarantee);assert(s.data.dice.every(n=>n!==6));
+ const a=E.legalActions(s).find(a=>a.dieIndex===1);s=play(s,a);assert.equal(s.data.pawns[0][a.pawn],0);assert.equal(s.data.used[1],true);assert.equal(s.data.guarantee,false);assert(E.legalActions(s).some(a=>a.type==='move'&&a.pawn===0&&a.dieIndex!==1));
+});
+test('RC4 sinking marks do not count as shots or leak when announcements disabled',()=>{
+ for(const announceSinking of ['on','off']){let s=E.createGame('battleship',{players:[{name:'A'},{name:'B'}],announceSinking,seed:4});s=play(s,{type:'auto'});s=play(s,{type:'auto'});const p=s.turn,ship=s.data.ships[1-p].at(-1),before=s.data.shots[p].length;
+  for(const cell of ship){s.turn=p;s=play(s,{type:'fire',cell});}
+  assert.equal(s.data.shots[p].length,before+ship.length);const other=E.project(s,p),publicState=E.project(s,-1),cues=E.soundCues(s,p,s.events.at(-2).id);
+  if(announceSinking==='on'){assert(s.data.marks[p].length);assert(other.data.fleetCounts[1-p]);assert(cues.some(c=>c.id==='sea.sunk'));assert(!cues.some(c=>c.id==='sea.hit'));}
+  else{assert.equal(s.data.marks[p].length,0);assert.equal(other.data.fleetCounts[1-p],null);assert(publicState.data.fleetCounts.every(x=>x===null));assert.equal(other.data.sunk[p].length,0);assert(cues.some(c=>c.id==='sea.hit'));}
+ }
+});
+test('RC4 sea bot decisions depend only on observed shots',()=>{
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'auto'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
+ assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
+});
+test('RC4 immediate public pair has neutral transfer and public success, never card identity',()=>{
+ const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
+ for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
+});
+test('RC4 Yatzy score sounds distinguish numeric, special and yatzy only after scoring',()=>{
+ for(const [key,sound]of [['ones','success'],['pair','success.special'],['yatzy','success.yatzy']]){let s=create('yatzy');s.data.rolls=3;s.data.dice=[1,1,1,1,1];const cursor=s.events.at(-1).id;s=play(s,{type:'score',key});assert(E.soundCues(s,0,cursor).some(c=>c.id===sound));}
 });

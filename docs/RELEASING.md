@@ -7,7 +7,7 @@
 1. Проверить чистоту рабочих деревьев, уникальные изменения веток и PR. Влить готовые исправления в dev обычными task PR. Сохранить полезные сведения старых планов в действующей документации.
 2. На release-ветках обновить package.json/package-lock.json/sw.js приложения, VERSION коллекции в build.py, README/CHANGELOG и release notes. Не переписывать индивидуальные паки ради версии коллекции.
 3. Сверить API, Roadmap, ограничения, инструкции и ссылки. Удалять устаревшие документы после переноса действующих требований; прошлое остаётся в Git/тегах.
-4. Провести самостоятельный check паков и полный совместный check приложения. Проверить точный SHA в CI PR; Ready запускает проверки, обычный push не делает этого.
+4. Провести самостоятельный check паков и полный совместный check приложения. Проверить обязательные gates точного SHA. По текущему workflow обычный push и PR не запускают Actions; локальные проверки выполняются перед единственным необходимым release-run.
 5. Подготовку объединить в dev. Выпуск провести отдельными PR dev → main, merge-коммитом; затем fast-forward dev до main. Зафиксировать main SHA паков в совместных workflow приложения перед окончательной проверкой приложения.
 
 ## Сборка из окончательных main SHA
@@ -56,12 +56,24 @@ python3 scripts/package-pages.py \
 
 ## Кандидат 0.16
 
-Перед стабильным выпуском выполнить [приёмку 0.16](RELEASE-0.16.md). Собирать RC из проверенного SHA с версией 0.16.0-rc.3 и публиковать как prerelease; не заменять стабильную 0.15 до приёмки. Новый workflow ручного деплоя станет доступен в Actions после попадания на default branch; Ready PR выполняет только проверку существующего сайта.
+Перед стабильным выпуском выполнить [приёмку 0.16](RELEASE-0.16.md). Собирать RC из проверенного SHA с версией 0.16.0-rc.4 и публиковать как prerelease; не заменять стабильную 0.15 до приёмки. Workflow запускается вручную на `dev` через GitHub CLI; Ready PR не запускает дополнительные Actions.
 
-Для кандидата использовать `python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.16.0-rc.3`, затем проверить `SHA256SUMS` в этом каталоге. Закрытый архив собирать из его `playroom-pwa.zip` командой `scripts/package-pages.py`, с прежней доверенной приватной обёрткой и именем `playroom-pages-0.16.0-rc.3-protected.zip`. Для rc.3 выпустить новую коллекцию 0.5.0-preview.2 из двенадцати паков и закрепить её точный SHA в workflow приложения. Примеры стабильной 0.15 выше описывают уже опубликованную базу; новые RC не заменяют её assets.
+Для кандидата использовать `python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.16.0-rc.4`, затем проверить `SHA256SUMS` в этом каталоге. Закрытый архив собирать из его `playroom-pwa.zip` командой `scripts/package-pages.py`, с прежней доверенной приватной обёрткой и именем `playroom-pages-0.16.0-rc.4-protected.zip`. Для rc.4 выпустить новую коллекцию 0.5.0-preview.3 из двенадцати паков и закрепить её точный SHA в workflow приложения. Примеры стабильной 0.15 выше описывают уже опубликованную базу; новые RC не заменяют её assets.
 
 До переноса нового Pages workflow на default branch используйте существующий **Release candidate build**: выберите ветку кандидата и operation `preflight`, `deploy` или `rollback`. Он вызывает тот же Pages workflow с того же SHA через workflow_call; `build` по-прежнему выполняет полную сборку RC. Автоматической публикации по push нет.
 
 ### Проверка отдельного защищённого preview
 
-`gh workflow run prerelease.yml --ref dev -f operation=preview -f release=v0.16.0-rc.3` проверяет архив опубликованного RC, приватную обёртку, вход, ресурсы и offline на отдельном deployment. Эта операция не переключает production и не отключает Git builds. `deploy` требует рабочую защищённую точку отката и публикует сразу production; промежуточный preview не создаётся.
+`gh workflow run prerelease.yml --ref dev -f operation=preview -f release=v0.16.0-rc.4` проверяет архив опубликованного RC, приватную обёртку, вход, ресурсы и offline на отдельном deployment. Эта операция не переключает production и не отключает Git builds. `deploy` требует рабочую защищённую точку отката и публикует сразу production; промежуточный preview не создаётся.
+
+### Ручной запуск RC.4 без потери GitHub-интеграции
+
+Предпочтительно: Actions → Release candidate build → Run workflow → ветка dev → operation=deploy → release=v0.16.0-rc.4. Не используйте build повторно, если точная пара SHA уже проверена и artifacts готовы. Production обновляется в существующем проекте, origin и интеграция GitHub сохраняются.
+
+Если Actions недоступен, распакуйте подготовленный приватный архив и используйте скрипт комплекта deploy-local.sh (он проверяет SHA и release-info). Низкоуровневая команда, когда архив уже проверен и обёртка на месте:
+
+```sh
+npx wrangler pages deploy /path/to/verified-runtime --project-name playroom-hod-test --branch main --commit-hash APP_SHA
+```
+
+Токен/аккаунт задаются через окружение. Не загружайте публичный PWA ZIP поверх защищённого сайта без прежней приватной обёртки. Веб drag-and-drop загрузка недоступна в Git-integrated Pages проекте; прямой deploy через Wrangler сохраняет интеграцию. Финальный результат подтверждает проверка origin/release-info и отчёт deploy-report.json.

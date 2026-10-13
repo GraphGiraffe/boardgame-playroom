@@ -43,7 +43,7 @@
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
     const stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back');
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
-    return { actor, viewer, action: action ? { type: action.type, card: action.card, from: action.from, to: action.to } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    return { actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el) {
     for (const node of [el, ...el.querySelectorAll('*')]) {
@@ -102,7 +102,7 @@
     }else sequence=null;
     const card = snapshot.action?.card;
     const publicNow = current.filter(publicEntity);
-    const played = publicNow.filter(el => {
+    const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
       const before = entities.get(el.dataset.entity);
       return /^(card|tile)-/.test(el.dataset.entity) && (!before || !before.public);
@@ -120,18 +120,19 @@
     const handCards = current.filter(el => el.closest('.hand-track, .hand-cards, .hand-scroll') && !entities.get(el.dataset.entity)?.hand);
     const drawCues = draws === undefined && snapshot.action?.type === 'draw' ? [{ player: snapshot.viewer, count: handCards.length, from: 'stock' }] : draws || [];
     const newHands = handOrigins(scene, snapshot.viewer), baseDelay = flights.length ? Math.max(...flights.map(f=>f.duration||duration)) : 0;
-    let drawIndex = 0, ownIndex = 0;
+    let cueDelay=baseDelay,ownIndex=0;
     for (const cue of drawCues) {
       if (!Number.isInteger(cue.player) || !Number.isInteger(cue.count) || cue.count < 1) continue;
       const from = cue.from === 'table' ? snapshot.table : cue.from === 'hand' ? snapshot.hands?.get(cue.fromPlayer) : snapshot.stock;
-      const anchor = newHands.get(cue.player) || snapshot.hands?.get(cue.player);
+      const anchor = cue.to==='table'?(handOrigin(scene?.querySelector('[data-motion-table]'),66,98)||snapshot.table):newHands.get(cue.player) || snapshot.hands?.get(cue.player);
       if (!from || !anchor) continue;
       for (let i = 0; i < cue.count; i++) {
-        const el = cue.player === snapshot.viewer ? handCards[ownIndex++] : null;
+        const el = cue.to==='table'?(i===cue.count-1?publicNow.filter(el=>el.closest('[data-motion-table]')).at(-1):null):cue.player === snapshot.viewer ? handCards[ownIndex++] : null;
         const to = el ? clampRect(rectOf(el), rectOf(el.closest(handSelector))) : anchor;
         if (!to) continue;
-        flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: baseDelay + drawIndex++ * duration * .3 });
+        flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: cueDelay + i * duration * .3 });
       }
+      cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
     }
     const dice = [...scene.querySelectorAll('[data-motion-lead]')].filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
     const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
@@ -176,10 +177,10 @@
               mover.style.width=`${box.width}px`;mover.style.height=`${box.height}px`;
               // All cells use their live centres, including after a resize.
               const at=point=>{const r=anchorRect(point)||box;return transform(r.x+(r.width-box.width)/2,r.y+(r.height-box.height)/2,1,1);};
-              const result=[{transform:at(route.origin),offset:0},{transform:at(route.origin),offset:duration/flightDuration}];
+              const result=[{transform:at(route.origin),offset:0},...(route.entry==='lift'?[{transform:at(route.origin)+' translateY(-10px) scale(1.1)',offset:duration/flightDuration*.5}]:[]),{transform:at(route.origin),offset:duration/flightDuration}];
               route.steps.forEach((point,index)=>result.push({transform:!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
               if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:transform(box.x,box.y,1,1),offset:1});}
-              return result;
+              if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
             };
             frames=routeFrames();
             const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===route.player);
@@ -208,7 +209,7 @@
         }
         for(const el of effects){
           const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
-          animations.push(el.animate(frames,{duration,easing:'ease-out'}));
+          animations.push(el.animate(frames,{duration:Math.min(duration,250),easing:'ease-out'}));
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.

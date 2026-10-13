@@ -78,7 +78,7 @@ test('standalone UI shares source and target policies without browser or game de
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
-  for (const game of games) for (const preset of ['classic', 'quick']) for (const count of [2, ...(E.get(game).max === 4 ? [4] : [])]) {
+  for (const game of games) for (const {id:preset} of E.get(game).presets) for (const count of [2, ...(E.get(game).max === 4 ? [4] : [])]) {
     for (const seed of [1, 7, 21]) {
       let state = make(game, preset, count, seed);
       for (let step = 0; step < 18 && state.status === 'playing'; step++) {
@@ -247,7 +247,7 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
   const checkers = make('checkers'), html0 = render(checkers, 0), html1 = render(checkers, 1);
   assert.ok(html0.indexOf('aria-label="a8') < html0.indexOf('aria-label="h1'));
   assert.ok(html1.indexOf('aria-label="h1') < html1.indexOf('aria-label="a8'));
-  for (const preset of ['classic', 'quick']) {
+  for (const {id:preset} of E.get('snakes').presets) {
     const state = make('snakes', preset, 4), html = render(state);
     assert.equal((html.match(/class="snakes-cell /g) || []).length, state.data.finish);
     assert.equal((html.match(/class="player-panel /g)||[]).length,4);assert.doesNotMatch(html,/snakes-legend|snakes-scores/);

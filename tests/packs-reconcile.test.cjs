@@ -47,3 +47,13 @@ test('incompatible and conflicting saved packs are isolated without executing th
   const reloaded=manager(saved);reloaded.instance.bootstrap([current]);assert.equal(reloaded.instance.quarantined.length,2);reloaded.instance.discardQuarantine(0);assert.equal(reloaded.instance.quarantined.length,1);reloaded.instance.discardQuarantine();assert.equal(JSON.parse(reloaded.raw()).quarantined.length,0);
 });
 test('explicit builtin restore clears only builtin deletion markers',()=>{const repo=manager({format:'playroom-packs',formatVersion:1,packs:[],active:{},removed:['demo@1.0.0','other@1.0.0']});repo.instance.bootstrap([bundle('current')]);assert.equal(repo.instance.list().length,0);repo.instance.bootstrap([bundle('current')],{restoreBuiltins:true});assert.equal(repo.instance.list().length,1);assert.deepEqual(JSON.parse(repo.raw()).removed,['other@1.0.0']);});
+
+
+test('RC4 registry validates tags and count filter semantics',()=>{
+ const T=require('../core/tags.js');const g={min:2,max:4},info={tags:['cards','combinations'],playModes:[{id:'any',players:[2,3,4],teams:false}]};
+ assert(T.validate(info));for(const tag of ['missing','solo'])assert.throws(()=>T.validate({tags:['cards',tag]}));assert.throws(()=>T.validate({tags:['logic']}));assert.throws(()=>T.validate({tags:['cards','cards']}));
+ assert(T.matches(g,info,'2+'));assert(T.matches(g,info,'3+'));assert(T.matches(g,info,'4+'));assert(!T.matches(g,info,'6+'));assert(!T.matches(g,info,'solo'));assert(!T.matches(g,info,'duel'));assert(!T.matches(g,info,'three'));assert(!T.matches(g,info,'teams'));
+ assert(T.matches({min:2,max:2},{},'duel'));assert(T.matches({min:1,max:1},{},'solo'));assert(T.matches(g,{playModes:[{id:'teams',teams:true,players:[4]}]},'teams'));
+ const sample=bundle('tags');sample.manifest.tags=['cards','unknown'];assert.throws(()=>manager().instance.prepare(sample));
+ const fs=require('node:fs'),path=require('node:path');const other=JSON.parse(fs.readFileSync(path.join(path.dirname(fs.realpathSync(path.join(__dirname,'../packs'))),'shared/tags.json'),'utf8'));assert.deepEqual(other,require('../core/tags.json'));
+});
