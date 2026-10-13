@@ -223,3 +223,58 @@ test('external modal closing restores projected legal actions without another ne
   await page.waitForFunction(()=>sent.length===1);
  }finally{await browser.close();}
 });
+
+
+test('Ludo selects a pawn without committing, keeps it after a destination, and consumes every die',{timeout:40000},async()=>{
+  require('../packs/ludo/rules.js');
+  const shared=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared');
+  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const page=await fixture(browser);
+  try{
+    const session=new Session(Engine,'ludo',{seed:17,diceCount:3,sixReroll:'off',players:[{name:'Аня'},{name:'Борис'}]}),authority=new Authority(session),client=authority.connect(0),base=client.snapshot();
+    let state=Engine.clone(base.state),revision=0;
+    const snapshot=()=>({...base,revision,state:Engine.project(state,0),events:state.events,actions:Engine.legalActions(state,0)});
+    await page.exposeFunction('ludoCommit',a=>{state=Engine.applyAction(state,0,a);revision++;return snapshot();});
+    await page.evaluate(({definition,snapshot})=>{
+      window.qaSent=[];const listeners=new Set();
+      window.PlayroomAppBridge={gameOptions:()=>({quickPlay:true,animationSpeed:'instant'})};
+      window.qaClient={snapshot,pending:null,subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(a){qaSent.push(a);const next=await ludoCommit(a);this.snapshot=next;for(const f of listeners)f(next);return {ok:true};},async history(){return this.snapshot;},close(){},emit(next){this.snapshot=next;for(const f of listeners)f(next);}};
+      window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();
+    },{definition,snapshot:snapshot()});
+    assert.equal(await page.locator('.shared-die.is-playable[data-action]').count(),3,'roll is visibly available on every active die');
+    // Two equal values share a destination; another die captures the enemy on cell 6.
+    state.data.phase='move';state.data.dice=[2,2,3];state.data.used=[false,false,false];state.data.lastRoll=3;state.data.pawns=[[2,10,-1,-1],[44,-1,-1,-1]];
+    revision++;await page.evaluate(next=>qaClient.emit(next),snapshot());
+    const pawn=index=>page.locator(`[data-view-key="pawn"][data-view-value="0:${index}"]`);
+    for(const index of [0,1,0])await pawn(index).tap();
+    assert.equal(await page.evaluate(()=>qaSent.length),0,'switching pawns never commits');
+    assert.equal(await page.locator('.ludo-target').count(),2,'duplicate dice share one destination');
+    assert.equal(await page.locator('.target-capture').count(),1);
+    assert.equal(await page.locator('.ludo-route-dot').count(),3);
+    if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-targets-390.png')});}
+    await page.locator('.target-move').tap();
+    await page.waitForFunction(()=>document.querySelectorAll('.shared-die.used').length===1&&document.querySelector('.ludo-pawn.is-selected'));
+    assert.equal(state.data.pawns[0][0],4);assert.equal(state.turn,0);
+    assert.equal(await pawn(0).getAttribute('aria-pressed'),'true');
+    await page.locator('.ludo-target[data-motion-anchor="path-6"]').tap();
+    await page.waitForFunction(()=>document.querySelectorAll('.shared-die.used').length===2&&document.querySelector('.ludo-target'));
+    assert.equal(state.data.pawns[0][0],6);
+    await pawn(1).tap();await page.locator('.ludo-target').tap();
+    await page.waitForFunction(()=>qaSent.length===3&&qaClient.snapshot.state.turn===1);
+    assert.equal(state.data.pawns[0][1],13);assert.deepEqual(state.data.used,[true,true,true]);
+    // Remount a legal capture / home fixture to verify targets underneath opponent pawns and the home lane.
+    await page.evaluate(()=>qaGame.destroy());
+    state.turn=0;state.data.phase='move';state.data.dice=[3,6,1];state.data.used=[false,false,false];state.data.pawns=[[2,-1,56,-1],[44,-1,-1,-1]];revision++;
+    await page.evaluate(({definition,snapshot})=>{qaClient.snapshot=snapshot;qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();},{definition,snapshot:snapshot()});
+    await pawn(0).tap();await page.locator('.target-capture').tap();
+    await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[1][0]===-1);
+    await page.waitForFunction(()=>document.querySelector('[data-view-value="0:1"]'));
+    await pawn(1).tap();assert.equal(await page.locator('.target-home').count(),1);await page.locator('.target-home').tap();
+    await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][1]===0&&document.querySelector('[data-view-value="0:2"]'));
+    await pawn(2).tap();assert.equal(await page.locator('.target-home[data-motion-anchor="finish-0"]').count(),1);
+    for(const [width,height]of [[320,640],[740,390]]){await page.setViewportSize({width,height});await page.evaluate(()=>qaGame.render());assert(await page.locator('.ludo-target').evaluate(e=>{const r=e.getBoundingClientRect();return Math.abs(r.width-r.height)<1&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;}));}
+    await page.locator('.target-home').tap();await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][2]===57);
+    await page.evaluate(()=>qaGame.destroy());
+  }finally{await page.close();await browser.close();}
+});
