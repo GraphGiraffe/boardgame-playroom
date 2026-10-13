@@ -56,7 +56,9 @@ test('Offline pack installation, updates and empty application preserve saved ve
     await page.evaluate(()=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));});await page.reload();
     await t.test('All bundled games can be removed into a persistent empty hub',async()=>{
       await openManager();
-      while(await page.locator('[data-pack-remove]').count())await page.locator('[data-pack-remove]').first().click();
+      await page.locator('[data-pack-remove]').last().click();await page.locator('[data-pack-confirm="1"]').click();
+      assert((await page.locator('.pack-manager-modal .modal-body').evaluate(el=>el.scrollTop))>0,'pack list keeps its scroll after removing a lower row');
+      await page.locator('[data-pack-bulk="all"]').click();await page.locator('[data-pack-confirm="1"]').click();
       await close();assert.equal(await page.locator('.game-tile').count(),0);assert.equal(await page.locator('.packs-empty-hub [data-command=packs]').count(),1);
       await page.reload();assert.equal(await page.locator('.game-tile').count(),0);assert.equal(await page.locator('.packs-empty-hub').count(),1);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
@@ -82,10 +84,10 @@ test('Offline pack installation, updates and empty application preserve saved ve
     });
     await t.test('Update keeps old saves on exact rules and new games use the latest version',async()=>{
       await openManager();await choose(installableCounter('0.2.0',10));await page.locator('[data-pack-install]').click();assert.equal(await page.locator('.pack-entry').count(),2);
-      assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),true);await close();await page.reload();
+      assert.equal(await page.locator('.pack-entry[data-pack-version="0.1.0"] [data-pack-remove]').isDisabled(),false);await close();await page.reload();
       await resume(page);await add(2);assert.equal((await saved(page)).packVersion,'0.1.0');assert.equal(await page.locator('.qa-counter-scene [data-view-version]').getAttribute('data-view-version'),'0.1.0');assert.equal(await page.locator('.qa-count').evaluate(el=>getComputedStyle(el).color),'rgb(36, 84, 64)');
       await page.locator('.table-heading [data-command=home]').click();await page.locator('[data-start="qa-counter"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await add(10);assert.equal((await saved(page)).packVersion,'0.2.0');
-      await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),2);await close();
+      await page.locator('.table-heading [data-command=home]').click();await openManager();assert.equal(await page.locator('[data-pack-remove]:disabled').count(),0);await close();
       await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.saved-game').count(),2);
     });
     await t.test('A missing pack leaves the save intact and installing its exact version restores it',async()=>{
@@ -102,9 +104,20 @@ test('Offline pack installation, updates and empty application preserve saved ve
       await choose(broken);await page.locator('[data-pack-install]').click();await close();await page.reload();
       assert.match(await page.locator('[data-game="qa-broken"] .game-cover').innerText(),/предпросмотр недоступен/i);
       assert.match(await page.evaluate(()=>PlayroomViews.render({game:'qa-broken'},0,[])),/не удалось показать игру/i);
-      await openManager();await page.locator('[data-pack-remove="qa-broken"]').click();await close();assert.equal(await page.locator('[data-game="qa-broken"]').count(),0);
+      await openManager();await page.locator('[data-pack-remove="qa-broken"]').click();await page.locator('[data-pack-confirm="1"]').click();await close();assert.equal(await page.locator('[data-game="qa-broken"]').count(),0);
       await page.evaluate(()=>{PlayroomCatalog['qa-counter'].playerBadge=()=>{throw Error('Broken badge')};});
       await resume(page);assert.equal(await page.locator('.qa-count').innerText(),'10');assert.equal(await page.locator('.table-heading [data-command=home]').isVisible(),true);
+    });
+    await t.test('Removing a saved pack version requires two confirmations and removes only its history',async()=>{
+      await page.locator('.table-heading [data-command=home]').click();await openManager();
+      await page.locator('[data-pack-remove="qa-counter"][data-pack-version="0.2.0"]').click();
+      await page.locator('[data-pack-confirm="1"]').waitFor();
+      await page.locator('[data-pack-confirm="1"]').click();
+      await page.locator('[data-pack-confirm="2"]').waitFor();
+      await page.locator('[data-pack-confirm="2"]').click();
+      await page.locator('.pack-entry[data-pack-version="0.2.0"]').waitFor({state:'detached'});
+      await close();await page.locator('.side-nav [data-command=sessions]').click();
+      assert.equal(await page.locator('.saved-game').count(),1);
     });
     assert.deepEqual(errors,[]);
   }finally{await context.close();await browser.close();await fixtureServer?.close();}

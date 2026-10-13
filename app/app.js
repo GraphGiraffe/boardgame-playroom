@@ -200,7 +200,7 @@
     const sections=filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра"><h2 class="hub-section-title">Последняя игра</h2>${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><h2 class="hub-section-title">Избранное</h2><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.0</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.1</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
         {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
@@ -241,7 +241,7 @@
       `<button type="button" class="filter ${savedFilter===value?'active':''}" data-saved-filter="${value}" aria-pressed="${savedFilter===value}">${label}</button>`).join('');
     const note=networkSavedState==='loading'?'<p class="saved-network-info" role="status">Загружаем сетевые сохранения…</p>':
       networkSavedState==='error'?'<p class="recovery-note" role="alert">Сетевой архив этого браузера недоступен. Локальные партии не затронуты.</p>':'';
-    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></header>
+    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><div class="saved-heading-actions"><button class="btn secondary" data-clear-games ${local.length+networkSaved.length?'':'disabled'}>Очистить Мои партии</button><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></div></header>
       <div class="saved-filter-bar" role="group" aria-label="Тип партии">${filters}</div>${note}
       <section class="saved-games-list" aria-label="Сохранённые партии">${entries.length?cards:'<div class="saved-empty"><h2>Пока нет партий</h2><p>Начните игру или проверьте другой раздел.</p><button class="btn" data-command="home">Выбрать игру</button></div>'}</section>`;
   }
@@ -253,8 +253,12 @@
       networkSaved=records;networkSavedState='ready';
     }catch(_){if(ticket!==networkSavedTicket)return;networkSavedState='error';}
     if(ticket===networkSavedTicket&&screen==='hub'&&hubTab==='sessions'){
-      const panel=$('#saved-games-panel');if(panel)panel.innerHTML=savedGamesMarkup();
+      updateSavedPanel();
     }
+  }
+  function updateSavedPanel(){
+    const panel=$('#saved-games-panel');if(!panel)return;
+    const position=window.scrollY;panel.innerHTML=savedGamesMarkup();window.scrollTo(0,position);
   }
 
   function leaveTable(tab='games') {
@@ -330,6 +334,7 @@
     openModal(PlayroomGameScreen.deleteConfirmation({name:meta(entry.game)?.name||entry.game||'Это сохранение',network:true,confirmAttrs:`data-delete-network-confirm="${esc(id)}"`}));
   }
   function deleteSession(id) {
+    const position=window.scrollY;
     try {
       library.remove(id);
       if(id===sessionId){interruptAction();cancelBot();stopReplay();session=null;sessionId=null;selected=null;gate=null;lastResult=null;missedFrom=null;awaitingPass=false;}
@@ -340,8 +345,29 @@
         }catch(error){globalThis.PlayroomPackLoadError=error.message||'Не удалось пересчитать версии паков.';}
       }
       refreshSavedGameRecovery();
-      screen='hub';hubTab='sessions';closeModal(true);render();
+      screen='hub';hubTab='sessions';closeModal(true);render();window.scrollTo(0,position);
     } catch (_) {toast('Не удалось удалить партию: хранилище браузера недоступно.');}
+  }
+  function clearDeletedSession(){
+    if(sessionId&&library.records().some(record=>record.id===sessionId))return;
+    interruptAction();cancelBot();stopReplay();session=null;sessionId=null;selected=null;gate=null;lastResult=null;missedFrom=null;awaitingPass=false;
+    refreshSavedGameRecovery();
+  }
+  async function askClearGames(){
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату.');
+    try{
+      const local=library.records(),network=await globalThis.PlayroomNetworkLibrary.list({strict:true});
+      if(!local.length&&!network.length)return;
+      openModal(`${modalHead('Очистить Мои партии?')}<p class="lead">Все ${local.length+network.length} сохранённых партий и их истории будут удалены с этого устройства. Паки игр останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-clear-games-confirm>Удалить все партии</button></div>`);
+    }catch(error){toast(error.message);}
+  }
+  async function clearGames(){
+    try{
+      const network=await globalThis.PlayroomNetworkLibrary.list({strict:true});
+      for(const entry of network)await globalThis.PlayroomNetworkLibrary.remove(entry.role==='client'?'client:'+entry.id:entry.sessionId);
+      for(const record of library.records())library.remove(record.id);
+      clearDeletedSession();closeModal(true);renderHub();
+    }catch(error){toast('Не удалось очистить все партии: '+error.message);renderHub();}
   }
   function activeActions(state) {
     if (transition||isReplay()||gate!==null||paused||state.status==='finished'||state.players[viewer]?.bot) return [];
@@ -350,7 +376,7 @@
   function playersMarkup(state,actions=[]) {
     return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||'очки',playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
   }
-  function renderTable(animate=false) {
+  function renderTable(animate=false,preserveYatzy=false) {
     if (!session) return renderHub();
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state), passProtected=handoffDelay()>0;
@@ -362,7 +388,9 @@
     const turnText=replay?'Просмотр истории':transition?'Показываем ход…':finished?'Партия завершена':paused?'Пауза':turnPlayer?.bot?`${turnPlayer.name} думает…`:isPass()?`Ходит ${turnPlayer?.name}`:'Ваш ход';
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
     const eventText=replay&&replayIndex===0?'Начальная расстановка':lastEvent(projected)?.text||'Выберите доступное действие на столе';
-    $('#app').innerHTML=GameScreen.render({
+    const scoreBoard=state.game==='yatzy'?$('#app .yatzy-board'):null;
+    const scoreScroll=scoreBoard?{top:scoreBoard.scrollTop,left:scoreBoard.scrollLeft}:null;
+    const markup=GameScreen.render({
       gameName:game.name,subtitle:session.options.presetLabel||'Основной набор',
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||'очки',
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
@@ -374,9 +402,15 @@
       footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
+    if(preserveYatzy&&scoreBoard){
+      const template=document.createElement('template');template.innerHTML=markup;
+      template.content.querySelector('.yatzy-board')?.replaceWith(scoreBoard);
+      $('#app').replaceChildren(template.content);
+    }else $('#app').innerHTML=markup;
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     HandOverflow.sync($('#app'));
     ensureRoomButton();GameScreen.layoutScene($('#app'));
+    const nextScoreBoard=$('#app .yatzy-board');if(scoreScroll&&nextScoreBoard){nextScoreBoard.scrollTop=scoreScroll.top;nextScoreBoard.scrollLeft=scoreScroll.left;}
     feedback.refresh();playerTargets?.refresh();
     if(gate!==null&&!replay)showGate();
     if(!transition&&!replay&&gate===null)presentationReady();
@@ -455,6 +489,7 @@
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
       feedback.accept(E.project(session.current,viewer).events,[],session.game);
       save();input?.cancel();
+      if(session.game==='yatzy'&&action.type==='hold'){renderTable(false,true);return;}
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
       flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}).then(()=>{
@@ -463,8 +498,8 @@
     } catch(error){toast(error.message||'Это действие сейчас недоступно');void previewSound('error',session?.game);}
   }
   function openModal(content,className='',{keepAudio=false}={}) {
-    const existing=$('#modal-root .room-setup-modal');
-    if(className==='room-setup-modal'&&existing){GameScreen.updateModal(existing,content);return;}
+    const existing=className&&$('#modal-root .'+className);
+    if(existing&&(className==='room-setup-modal'||className==='pack-manager-modal')){GameScreen.updateModal(existing,content);return;}
     const returnToRoom=!!$('#modal-root .room-setup-modal')&&className!=='room-setup-modal';
     dismissNotice();const focused=document.activeElement;interruptAction();stopReplay(!keepAudio);input?.cancel();cancelBot();if(screen==='table')renderTable();cancelBot();modalReturn=focused?.isConnected?focused:focused?.dataset?.command?$('#app [data-command="'+focused.dataset.command+'"]'):focused;modalBack=returnToRoom?($('#modal-root [data-command=lobby-start]')?renderLobby:()=>globalThis.PlayroomNetworkLibrary?.openRoom?.()):null;$('#app').inert=true;
     const template=document.createElement('template');template.innerHTML=content;
@@ -764,7 +799,9 @@
     if(button.dataset.roomGame){updateRoomGame(button.dataset.roomGame);return;}
     if(button.dataset.roomCycle){try{cycleRoomSeat(button.dataset.roomCycle);}catch(error){toast(error.message);}return;}
     if(button.dataset.roomBot){try{room=roomService.setLocalSeat(room.id,lobbyParticipantId,button.dataset.roomBot,{kind:'bot',nickname:button.dataset.botName});renderLobby();}catch(error){toast(error.message);}return;}
-    if(button.dataset.savedFilter){savedFilter=button.dataset.savedFilter;const panel=$('#saved-games-panel');if(panel)panel.innerHTML=savedGamesMarkup();return;}
+    if(button.dataset.savedFilter){savedFilter=button.dataset.savedFilter;updateSavedPanel();return;}
+    if(button.hasAttribute('data-clear-games-confirm')){void clearGames();return;}
+    if(button.hasAttribute('data-clear-games')){void askClearGames();return;}
     if(button.dataset.historyId){resumeSession(button.dataset.historyId,{history:true});return;}
     if(button.dataset.resumeId){resumeSession(button.dataset.resumeId);return;}
     if(button.dataset.deleteNetworkConfirm){void deleteNetworkSession(button.dataset.deleteNetworkConfirm);return;}
@@ -838,8 +875,9 @@
     else if(screen==='table'&&session){renderTable();if(missedFrom!==null)missedFrom=null;}
   });
   window.addEventListener('pagehide',()=>{stopSounds();if(session)save();});
-  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,openModal,modalHead,toast,onChange(){
+  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onChange(){
     filter='all';
+    clearDeletedSession();
     refreshSavedGameRecovery();
     for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
     renderHub();
