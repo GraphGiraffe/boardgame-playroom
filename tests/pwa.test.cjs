@@ -342,7 +342,7 @@ for fail in (False,True):
  def prepare(public,sums,wrapper,destination):destination.mkdir();return {'sha256':'b'*64}
  def smoke(url,*args,**kwargs):
   if fail and url=='https://new.example':raise ValueError('smoke failed')
- args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.3',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
+ args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.4',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
  with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
   try:report=m.run(args)
   except ValueError:

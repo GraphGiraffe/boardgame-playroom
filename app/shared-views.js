@@ -14,7 +14,7 @@
   }
   function mount(client,definition,{surface,readOnly=false,onExit=null,connected:initialConnected=true,onPresented=()=>{},onReviewed=()=>{}}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
-    let viewState={},viewIdentity='';
+    let viewState={},viewIdentity='',presentationTurn=null;
     let selected=null,connected=initialConnected,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false,historyPause=null;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
@@ -46,7 +46,7 @@
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
       const identity=[s.game,s.viewer,s.state.turn].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
-      const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,viewState,surface:actual,quickPlay:flow.quickPlay});
+      const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:H.viewPreferences(s.game,s.viewer),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
       const markup=GameScreen.render({
         network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
@@ -209,6 +209,7 @@
       event.stopPropagation();
       const target=event.target.closest('button,[data-player-target],[data-player-panel-target],[data-command],[data-action],[data-select]');
       if(!target||target.disabled)return;
+      if(target.dataset.viewPreference){const s=shownLive||client.snapshot;H.viewPreferences(s.game,s.viewer,target.dataset.viewPreference,target.dataset.viewValue);viewState={};render();return;}
       if(target.dataset.viewKey){const {viewKey,viewValue}=target.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;render();}return;}
       const command=target.dataset.command;
       if(command){void action(command).catch(e=>toast(e.message));return;}
@@ -265,7 +266,7 @@
         const change=Flow.eventAction(previous,next);
         const shot=change&&connected&&!document.hidden&&!dialogOpen
           ?flow.capture({actor:change.actor,action:change.action,viewer:next.viewer}):null;
-        shownLive=next;transitionActive=!!shot;
+        presentationTurn=previous?.state.turn;shownLive=next;transitionActive=!!shot;
         input.cancel();playerTargets.cancel();
         feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{silent:!connected||document.hidden});
         render();

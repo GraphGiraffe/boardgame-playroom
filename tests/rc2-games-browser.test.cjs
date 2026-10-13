@@ -5,9 +5,9 @@ const root=path.resolve(__dirname,'..');
 test('new game scenes preserve proportions, reachable controls and hands before and after a move',{timeout:120000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const page=await browser.newPage({viewport:{width:390,height:740}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}assert.equal(await page.locator('#modal-root .modal').count(),0);const games=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid'];
-  for(const [width,height]of [[320,640],[390,740],[740,390],[640,280],[1280,900]]){await page.setViewportSize({width,height});for(const game of games)for(const progressed of [false,true]){
+  for(const [width,height]of [[320,640],[390,740],[740,390],[640,280],[768,1024],[1280,900]]){await page.setViewportSize({width,height});for(const game of games)for(const progressed of [false,true]){
    await page.evaluate(({game,progressed,width})=>{
-    const E=TabletopCore,g=E.get(game);let state=E.createGame(game,{seed:17,preset:g.presets[0].id,players:Array.from({length:width<=390?g.max:2},(_,i)=>({name:['Аня','Борис','Вера','Глеб','Даша','Егор'][i]}))});
+    const E=TabletopCore,g=E.get(game);let state=E.createGame(game,{seed:17,preset:g.presets[0].id,...(game==='ludo'?{diceCount:3}:{}),players:Array.from({length:width<=390?g.max:2},(_,i)=>({name:['Аня','Борис','Вера','Глеб','Даша','Егор'][i]}))});
     if(progressed){const count=game==='battleship'?2:game==='pexeso'?2:1;for(let n=0;n<count;n++)state=E.applyAction(state,state.turn,E.botAction(state));if(game==='yatzy')state=E.applyAction(state,state.turn,E.legalActions(state).find(a=>a.type==='score'));}
     window.fixtureState=state;const viewer=state.turn,projected=E.project(state,viewer),actions=E.legalActions(state,viewer),scene=PlayroomViews.render(projected,viewer,actions,{selected:null});
     document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:g.name,state:projected,viewer,actions,scene,turnText:'Ваш ход'});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
@@ -16,7 +16,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    const result=await page.evaluate(()=>{
     const stage=document.querySelector('.app-game-layout'),issues=[];
     if(!stage)return ['missing scene'];
-    const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;};
+    const visible=e=>{const r=e.getBoundingClientRect();return !e.closest('[inert]')&&r.width>0&&r.height>0;};
     for(const [selector,ratio]of [['.shared-card',5/7],['.shared-die',1],['.battle-cell',1],['.ttt-cell',1],['.ludo-board',1],['.ludo-pawn',1]])for(const e of stage.querySelectorAll(selector)){if(!visible(e))continue;const r=e.getBoundingClientRect();if(Math.abs(r.width/r.height-ratio)>.025)issues.push(`${selector} ratio ${r.width}/${r.height}`);}
     if(document.documentElement.scrollWidth>innerWidth+1)issues.push('page overflow');
     const actions=stage.querySelector('.layout-actions'),hand=stage.querySelector('.layout-hand'),field=stage.querySelector('.layout-field');
@@ -26,6 +26,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
     for(const name of stage.querySelectorAll('.player-heading strong'))if(name.getBoundingClientRect().height>30)issues.push('vertical player name');
     if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
+    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>Math.abs(w-56)>1))issues.push('Yatzy unequal score columns');}
     for(const panel of stage.querySelectorAll('[data-hand-count].player-panel'))if(panel.querySelectorAll('.piece-count.is-hand').length!==1)issues.push('duplicate hand counter');
     return [...new Set(issues)];
    });

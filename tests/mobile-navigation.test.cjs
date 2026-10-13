@@ -57,7 +57,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
         for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}
-        await press(page.locator('[data-filter=cards]')); assert.equal(await page.locator('.game-tile').count(),5);
+        await press(page.locator('[data-tag-kind=type][data-tag=cards]')); assert.equal(await page.locator('.game-tile').count(),5);
         await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),12);
         if(mobile){
           await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
