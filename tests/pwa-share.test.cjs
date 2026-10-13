@@ -4,6 +4,7 @@ const source=fs.readFileSync(path.join(__dirname,'../app/pwa.js'),'utf8');
 function pwa(protocol,{canShare=()=>true}={}){
   const shareCalls=[];
   const context={isSecureContext:protocol==='https:',location:{protocol,hostname:protocol==='https:'?'example.test':'',href:protocol==='https:'?'https://example.test/playroom/':'content://test/playroom'},
+    document:{addEventListener(){}},
     navigator:{share:async payload=>{shareCalls.push(payload);},canShare},
     matchMedia:()=>({matches:false}),
     PlayroomPairing:{decode:()=>({kind:'offer'}),shareText:()=> 'PR3.TEST',protocolUrl:()=> 'web+playroom:pair/PR3.TEST',extract:()=>null},

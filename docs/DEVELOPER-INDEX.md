@@ -1,6 +1,6 @@
-# Разработчику ХОД · 0.15 / кандидат 0.16
+# Разработчику ХОД · 0.16
 
-Стабильная база — приложение 0.15.0 и коллекция 0.4.0; изменения кандидата описаны в [0.16](RELEASE-0.16.md). Реализованные возможности — [релиз](RELEASE-0.15.md), незавершённые требования — [Roadmap](ROADMAP.md).
+Исходники версии 0.16.0 работают с коллекцией 0.5.0; детали выпуска описаны в [0.16](RELEASE-0.16.md). Предыдущая стабильная пара — 0.15.0 / 0.4.0; незавершённые требования — в [Roadmap](ROADMAP.md).
 
 | Задача | Документ | Основные исходники |
 | --- | --- | --- |
@@ -19,7 +19,7 @@
 - [GAME-ELEMENTS-API](GAME-ELEMENTS-API.md): дескрипторы UI API 2.
 - [MULTIVIEW](MULTIVIEW.md): audience, surface, история.
 - [LAN-01](LAN-01-SESSION-STORE.md): durable commit и хостовое восстановление.
-- [Руководство автора](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/v0.4.0/docs/AUTHORING.md): runnable private-counter и полный цикл сборки.
+- [Руководство автора](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/v0.5.0/docs/AUTHORING.md): runnable private-counter и полный цикл сборки.
 
 При работе с правилами сверяйтесь с точной версией пака. При диагностике «не могу ходить» проверяйте legal actions, viewer, состояние pending-команды и блокировку ввода, а не только обработчик DOM. Публичный Стол имеет viewer=-1 и не получает приватную руку или управление.
 

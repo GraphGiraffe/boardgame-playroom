@@ -131,7 +131,14 @@
     noticeElement.innerHTML=`<span>${esc(message)}</span><button class="icon-btn" data-command="dismiss-notice" aria-label="Закрыть сообщение" title="Закрыть сообщение">${icon('close')}</button>`;noticeElement.classList.add('show');noticeElement.setAttribute('role','alert');placeNotice();
     const modal=noticeElement.closest('.modal');if(modal)modal.scrollTop=0;
   }
-  window.addEventListener('playroom-update-ready',()=>toast('Обновление готово. После окончания игры закройте все вкладки ХОД и откройте приложение снова. Сохранённые партии останутся.'));
+  const updateBanner=$('#update-banner'),updateDetail=$('#update-detail');
+  globalThis.PlayroomPWA?.setUpdateGuard(()=>screen==='hub'&&!room&&!transition&&!$('#modal-root').children.length&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()&&save());
+  window.addEventListener('playroom-update-ready',()=>{updateBanner.hidden=false;updateDetail.textContent='';});
+  $('#update-now')?.addEventListener('click',async()=>{
+    const button=$('#update-now');button.disabled=true;updateDetail.textContent='Проверяем открытые окна…';
+    try{await globalThis.PlayroomPWA.activateUpdate();updateDetail.textContent='Обновляем приложение…';}
+    catch(error){updateDetail.textContent=error.message;button.disabled=false;}
+  });
   function save() {
     if (!session||historyOrigin?.kind==='library') return true;
     try { library.write(session,sessionId); storageOK = true; loadWarning=''; return true; }
@@ -193,7 +200,7 @@
     const sections=filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра"><h2 class="hub-section-title">Последняя игра</h2>${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><h2 class="hub-section-title">Избранное</h2><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16-rc.3</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.0</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
         {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
@@ -450,7 +457,7 @@
       save();input?.cancel();
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
-      flow.play(snapshot,{draws:cardTransfers(beforeState,session.current)}).then(()=>{
+      flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}).then(()=>{
         if(transition===run)run.timer=setTimeout(()=>finishAction(run),timing.settle);
       }).catch(()=>finishAction(run));
     } catch(error){toast(error.message||'Это действие сейчас недоступно');void previewSound('error',session?.game);}

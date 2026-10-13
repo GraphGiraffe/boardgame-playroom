@@ -1,7 +1,7 @@
 'use strict';
 // API 2 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Published RC9 remains immutable.
-const CACHE='playroom-pwa-v0.16.0-rc.4';
+const CACHE='playroom-pwa-v0.16.0';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
@@ -54,6 +54,26 @@ self.addEventListener('install',event=>{
     await Promise.all(entries.map(([path,response])=>cache.put(path,response)));
     // A waiting update never replaces an in-use shell or interrupts a room.
     for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({kind:'playroom-update-ready',version:CACHE.slice('playroom-pwa-v'.length).replace(/-[a-f0-9]{16}$/,'')});
+  })());
+});
+self.addEventListener('message',event=>{
+  if(event.data?.kind!=='playroom-activate-update')return;
+  event.waitUntil((async()=>{
+    const reply=result=>event.ports?.[0]?.postMessage(result);
+    const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const checks=await Promise.all(clients.map(client=>new Promise(resolve=>{
+      const channel=new MessageChannel();let done=false;
+      const finish=ok=>{if(done)return;done=true;clearTimeout(timer);channel.port1.close();resolve(ok);};
+      const timer=setTimeout(()=>finish(false),3000);
+      channel.port1.onmessage=message=>finish(message.data?.kind==='playroom-update-idle');
+      client.postMessage({kind:'playroom-update-check'},[channel.port2]);
+    })));
+    const current=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    if(checks.some(ok=>!ok)||current.some(client=>!clients.some(checked=>checked.id===client.id))){
+      for(const client of current)client.postMessage({kind:'playroom-update-release'});
+      reply({ok:false,reason:'Закройте другие окна ХОД или завершите в них игру и повторите обновление.'});return;
+    }
+    reply({ok:true});await self.skipWaiting();
   })());
 });
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE&&key.startsWith('playroom-pwa-'))await caches.delete(key);await self.clients.claim();})()));

@@ -101,6 +101,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .mini-hand{flex:1;min-width:25px;height:44px}
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex:1;min-width:75px}
 .app-game-layout[data-layout-mode="phone-landscape"] .layout-self{max-height:none;overflow:auto}
+.app-game-layout[data-layout-mode="phone-landscape"] .layout-self>.layout-actions{order:-1}
 .app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-track.is-fan{height:auto;min-height:113px;max-height:none}
 @media(max-height:550px) and (orientation:landscape){#app .table-status{min-height:26px;padding:3px 7px}#app .table-status .status-event{font-size:10px}#app .table-title p{font-size:9px}#app .table-shell .history-panel{max-height:26dvh}}
 
@@ -326,7 +327,7 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .app-game-layout .layout-hand .shared-card.hand-card{width:var(--fan-card-width,70px)!important;min-width:var(--fan-card-width,70px)!important;height:calc(var(--fan-card-width,70px)*1.4)!important;min-height:0!important;aspect-ratio:5/7;align-self:center}
 .app-game-layout .mini-hand .shared-card{width:100%;height:100%;aspect-ratio:5/7}
 .app-game-layout .layout-actions .shared-die{min-width:0;min-height:0;aspect-ratio:1;height:auto}
-.app-game-layout .layout-actions:has(.yatzy-controls){min-height:108px}
+.app-game-layout .layout-actions:has(.yatzy-controls){min-height:130px}
 .player-target-menu.is-card-choice{position:fixed;z-index:90;flex-direction:row;overflow-x:auto;overflow-y:hidden;max-width:calc(100vw - 16px);padding:12px;gap:8px;box-sizing:border-box}
 .player-target-menu.is-card-choice>button{flex:none;min-width:0;width:55px;height:77px;aspect-ratio:5/7;padding:0;border:2px solid #638658;border-radius:9px;background:#e7ead7}
 .player-target-menu.is-card-choice .piece-back{display:block;width:100%;height:100%;min-width:0;min-height:0;border:0;aspect-ratio:5/7}
@@ -339,5 +340,7 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 [data-game-element="field"]{position:relative}.player-target-menu.is-card-choice.in-field{position:absolute;inset:0;max-width:none;max-height:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));grid-auto-rows:min-content;align-content:start;gap:8px;overflow-x:hidden;overflow-y:auto;box-shadow:none;z-index:10}.player-target-menu.is-card-choice.in-field>button{width:100%;height:auto;aspect-ratio:5/7}.card-choice-heading{grid-column:1/-1;display:flex;align-items:center;gap:8px;position:sticky;top:-12px;background:var(--paper);z-index:1}.card-choice-heading .avatar{width:28px;height:28px;font-size:16px;flex:none}.card-choice-heading .icon-btn{margin-left:auto}button>.avatar{height:24px;width:24px;flex:none;font-size:14px}
 
 .player-indicators{display:flex;gap:6px;flex-wrap:wrap}.player-indicator{display:inline-flex;align-items:center;gap:3px;position:relative;white-space:nowrap;font-size:11px}.player-indicator svg{width:18px;height:16px}.indicator-size{position:absolute;top:8px;left:0;font-size:5px;letter-spacing:-1px;color:currentColor}.player-data:has(.player-indicators:not(:empty)){flex-wrap:wrap}
+.player-indicator.fleet-indicator{min-height:25px;gap:5px;padding:2px 6px;border:1px solid #8db0ad;border-radius:6px;background:#e6f1ee;color:#315d65;font-weight:800}.player-indicator.fleet-indicator .fleet-ship-icon{width:auto;height:18px;flex:none}.player-indicator.fleet-indicator b{min-width:1ch;text-align:center;font-variant-numeric:tabular-nums}.player-indicator.fleet-indicator.is-empty{background:#efcfc9;border-color:#bf6256;color:#8d302a}
 
 .app-game-layout[data-field-sizing="scroll"] .layout-field{overflow:hidden}.app-game-layout[data-field-sizing="scroll"] .game-field-content{aspect-ratio:auto;overflow:hidden}
+.app-update-banner{position:relative;z-index:60;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;padding:7px 12px;background:#f4e8c9;border-bottom:1px solid #c8b17c;color:var(--ink);font-size:12px}.app-update-banner[hidden]{display:none}.app-update-banner .btn{min-height:34px;padding:5px 12px}.app-update-banner #update-detail{flex-basis:100%;text-align:center}.app-update-banner #update-detail:empty{display:none}body:has(>#update-banner:not([hidden])) #app .table-shell{height:calc(100dvh - 56px - var(--app-notice-height,0px))}

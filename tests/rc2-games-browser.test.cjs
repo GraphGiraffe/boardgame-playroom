@@ -35,6 +35,36 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    if(process.env.PLAYROOM_QA_DIR&&[390,740].includes(width)){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`${game}-${width}-${progressed?'after':'initial'}.png`)});}
   }}
 
+  for(const [width,height] of [[390,740],[640,280]]){
+   await page.setViewportSize({width,height});
+   const geometry=await page.evaluate(()=>{
+    const E=TabletopCore,issues=[];
+    for(const id of E.GAMES.map(g=>g.id)){
+     const game=E.get(id),players=Array.from({length:Math.max(2,game.min)},(_,i)=>({name:`Игрок ${i+1}`}));
+     let state=E.createGame(id,{players,seed:17}),before;
+     const measure=()=>{const projected=E.project(state,state.turn),actions=E.legalActions(state),scene=PlayroomViews.render(projected,state.turn,actions);
+      document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game.name,state:projected,viewer:state.turn,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+      const f=document.querySelector('.layout-field').getBoundingClientRect(),a=document.querySelector('.layout-actions')?.getBoundingClientRect();return {field:[f.left,f.top,f.width,f.height],actions:a?.height||0};};
+     before=measure();const action=E.botAction(state);if(!action)continue;state=E.applyAction(state,state.turn,action);const after=measure();
+     if(before.field.some((value,i)=>Math.abs(value-after.field[i])>2))issues.push(`${id} field shifted after action: ${before.field} -> ${after.field}`);
+     if(before.actions&&after.actions&&Math.abs(before.actions-after.actions)>2)issues.push(`${id} actions changed height: ${before.actions} -> ${after.actions}`);
+    }return issues;
+   });
+   assert.deepEqual(geometry,[],`stable action reserve at ${width}x${height}`);
+   const fleets=await page.evaluate(()=>{
+    const E=TabletopCore,issues=[],players=[{name:'Аня'},{name:'Борис'}];let state=E.createGame('battleship',{players,seed:17});
+    state=E.applyAction(state,state.turn,{type:'auto'});state=E.applyAction(state,state.turn,{type:'auto'});
+    for(const fleet of ['own','enemy']){
+     const projected=E.project(state,0),actions=E.legalActions(state,0),scene=PlayroomViews.render(projected,0,actions,{viewState:{fleet}});
+     document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Морской бой',state:projected,viewer:0,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+     const field=document.querySelector('.battle-fields').getBoundingClientRect(),board=document.querySelector('.battle-panel.is-active .battle-grid').getBoundingClientRect();
+     if(board.left<field.left-1||board.right>field.right+1||board.top<field.top-1||board.bottom>field.bottom+1)issues.push(`${fleet} clipped board=${board.x},${board.y},${board.width},${board.height} field=${field.x},${field.y},${field.width},${field.height}`);
+     if(Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
+     const counters=[...document.querySelectorAll('.battle-panel.is-active .fleet-indicator')];if(!counters.length)issues.push(`${fleet} counters missing`);
+    }return issues;
+   });assert.deepEqual(fleets,[],`centered fleet at ${width}x${height}`);
+  }
+
   await page.setViewportSize({width:390,height:740});
   const publicViews=await page.evaluate(()=>{
    const E=TabletopCore,issues=[];
