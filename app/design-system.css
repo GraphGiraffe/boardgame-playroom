@@ -354,15 +354,14 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .app-game-layout .player-panel.opponent-hand:has(.fleet-indicator){max-width:380px}
 .player-avatar-wrap{position:relative;display:inline-flex;flex:none;align-items:center;justify-content:center;width:29px;height:29px;overflow:visible}
 .player-avatar-wrap>.avatar{width:100%!important;height:100%!important;min-width:0!important;flex:none}
-.player-medallion{position:absolute;z-index:2;top:-8px;right:-8px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:2px solid #fff9e9;background:#eadfc0;color:#283c30;font:800 11px/1 system-ui;box-shadow:0 2px 0 #bcae8e,0 2px 4px #21392d55;pointer-events:none}
+.player-medallion{position:absolute;z-index:2;top:-6px;right:-6px;display:grid;place-items:center;width:13px;height:13px;border-radius:50%;border:1px solid #fff9e9;background:#eadfc0;color:#283c30;font:800 9px/1 system-ui;box-shadow:0 1px 0 #bcae8e,0 1px 2px #21392d55;pointer-events:none}
 .player-medallion.is-team{background:var(--medallion-color);color:#fffdf4}
 .player-medallion.is-place{border:0;background:#e0bc59}.player-medallion.place-2{background:#c3c8c7}.player-medallion.place-3{background:#b78b66}
-.player-medallion.is-team:empty{font-size:0}.player-medallion.is-team:empty:after{content:'●';font-size:8px}
 @keyframes turn-start-flash{0%,100%{box-shadow:inherit}35%,70%{box-shadow:0 0 0 4px #e0bc59,0 0 0 8px #e0bc5966}}
 .player-panel.turn-start-flash{animation:turn-start-flash .9s ease-out}
 @media(prefers-reduced-motion:reduce){.player-panel.turn-start-flash{animation:none}}
 .player-medallion.is-first{background:#eadfc0;color:var(--ink)}
-.player-medallion.is-first svg,.player-medallion.is-team svg{display:block;width:16px;height:16px;stroke-width:2.2}
+.player-medallion.is-first svg,.player-medallion.is-team svg{display:block;width:11px;height:11px;stroke-width:2.2}
 .player-medallion.is-team:has(svg){color:#fffdf4}
 .result-scores .score-row{align-items:center;gap:10px;text-align:left}
 .result-scores .result-player{display:flex;align-items:center;gap:8px;min-width:0}

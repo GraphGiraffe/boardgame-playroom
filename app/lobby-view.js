@@ -11,7 +11,9 @@
     const seats=room.seats.map(seat=>{
       const p=room.participants.find(p=>p.id===seat.participantId),mine=p?.id===participantId;
       const rename=isHost&&!configLocked&&p&&(p.bot||room.transportMode==='hotseat');
-      const seatIndex=room.seats.indexOf(seat),teams=room.rules?.preset==='teams'?room.game.teamBadges:null,team=p&&Array.isArray(teams)?teams[seatIndex%teams.length]:null;
+      const seatIndex=room.seats.indexOf(seat),manifest=root.PlayroomCatalog?.[room.game.id];
+      const teams=room.rules?.preset==='teams'?(room.game.teamBadges||(manifest?.version===room.game.version?manifest.teamBadges:null)):null;
+      const team=p&&Array.isArray(teams)&&teams.length?teams[seatIndex%teams.length]:null;
       const first=room.firstPlayerMode==='assigned'&&p?.id===room.firstParticipantId;
       const avatar=p?`<span class="player-avatar-wrap lobby-avatar-wrap"><span class="avatar p${seatIndex}" aria-hidden="true">${esc(p.nickname.slice(0,1))}</span>${root.TabletopUI.helpers.playerMedallion({first,team})}</span>`:`<span class="seat-color" style="background:${esc(seat.color.value)}"></span>`;
       const edit=isHost&&!locked?`<div class="slot-edit"><span class="slot-delete">${p&&!p.isHost?kick(p):''}</span>${button(`data-room-cycle="${esc(seat.id)}"`,'Сменить тип места','seatType',configLocked||!!p&&(p.isHost||!p.local&&!p.bot))}</div>`:'';
