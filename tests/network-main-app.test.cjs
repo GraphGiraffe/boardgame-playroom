@@ -203,7 +203,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='connected');
     assert.equal(await client.locator('#replay-range').inputValue(),'0','Wake-up preserves selected history');
     assert.equal(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision')),0);
-    assert.match(await client.locator('.history-latest-hint').innerText(),/более поздние ходы/);
+    assert.equal(await client.locator('.history-latest-hint').count(),0,'History review has no layout-shifting notice');
     await client.waitForFunction(async()=>{const store=new PlayroomNetworkClientHistory();try{const rows=await store.list();return rows.some(r=>r.reviewedRevision===0&&r.presentedRevision>0&&r.receivedRevision>=r.presentedRevision);}finally{store.close();}});
     await client.locator('.table-heading [data-command=history-close]').click();
     assert.equal(await client.locator('.history-panel').count(),0);

@@ -1042,8 +1042,15 @@
   async function backfillClientHistory(initial,transport,roomId,participantId){
     if(!clientHistoryStore||!initial||initial.viewer< -1)return;
     const ticket=++clientBackfillId;
-    try{await clientHistoryQueue;await clientHistoryStore.backfill({roomId,participantId,roomName:clientRoom?.name||'',snapshot:initial,transport,
-      isCurrent:()=>ticket===clientBackfillId&&clientTransport===transport&&clientGameClient?.snapshot?.sessionId===initial.sessionId&&clientGameClient?.snapshot?.authorityEpoch===initial.authorityEpoch});}
+    try{await clientHistoryQueue;
+      const key=ClientHistory.id(roomId,participantId,initial.sessionId);
+      const archive=(await clientHistoryStore.list()).find(item=>item.id===key);
+      const progress=await clientHistoryStore.progress(key,initial.revision);
+      const boundary=archive?.presentedRevision!=null&&progress.missing.some(revision=>revision>archive.presentedRevision)?archive.presentedRevision+1:null;
+      await clientHistoryStore.backfill({roomId,participantId,roomName:clientRoom?.name||'',snapshot:initial,transport,
+        isCurrent:()=>ticket===clientBackfillId&&clientTransport===transport&&clientGameClient?.snapshot?.sessionId===initial.sessionId&&clientGameClient?.snapshot?.authorityEpoch===initial.authorityEpoch});
+      if(ticket===clientBackfillId&&boundary!==null)clientMount?.setHistoryBoundary(boundary);
+    }
     catch(_){/* Keep durable frames; retry only missing revisions after recovery. */}
   }
 

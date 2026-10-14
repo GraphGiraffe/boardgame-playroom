@@ -200,7 +200,7 @@
     const sections=filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра"><h2 class="hub-section-title">Последняя игра</h2>${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><h2 class="hub-section-title">Избранное</h2><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.2</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.3</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
         {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
@@ -402,10 +402,9 @@
       footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
-    if(preserveYatzy&&scoreBoard){
+    if(scoreBoard&&state.game==='yatzy'){
       const template=document.createElement('template');template.innerHTML=markup;
-      template.content.querySelector('.yatzy-board')?.replaceWith(scoreBoard);
-      $('#app').replaceChildren(template.content);
+      GameScreen.patchChildren($('#app'),template.content);
     }else $('#app').innerHTML=markup;
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     HandOverflow.sync($('#app'));
@@ -487,12 +486,12 @@
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
       else {const client=localClient(actor),receipt=client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
-      feedback.accept(E.project(session.current,viewer).events,[],session.game);
+      feedback.accept(E.project(session.current,viewer).events,[],session.game,{duration:Math.max(220,timing.duration+200)});
       save();input?.cancel();
       if(session.game==='yatzy'&&action.type==='hold'){renderTable(false,true);return;}
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
-      flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}).then(()=>{
+      Promise.all([flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}),feedback.whenIdle()]).then(()=>{
         if(transition===run)run.timer=setTimeout(()=>finishAction(run),timing.settle);
       }).catch(()=>finishAction(run));
     } catch(error){toast(error.message||'Это действие сейчас недоступно');void previewSound('error',session?.game);}
@@ -874,7 +873,10 @@
     if(document.hidden){cancelBot();stopReplay();interruptAction();if(session)missedFrom=Math.max(0,session.states.length-5);}
     else if(screen==='table'&&session){renderTable();if(missedFrom!==null)missedFrom=null;}
   });
-  window.addEventListener('pagehide',()=>{stopSounds();if(session)save();});
+  window.addEventListener('pagehide',()=>{
+    stopSounds();if(session)save();
+    try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?viewState:{},scroll:screen==='table'?{top:$('#app .yatzy-board')?.scrollTop||0,left:$('#app .yatzy-board')?.scrollLeft||0}:null}));}catch(_){}
+  });
   packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onChange(){
     filter='all';
     clearDeletedSession();
@@ -906,6 +908,11 @@
       void audio.unlock().then(ok=>{if(ok&&settings.sound&&!document.hidden)void audio.sequence(ordered,{pack});});},
     stop:()=>audio.stop()
   }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,modalHead,showSettings,rememberGame});
-  render();
+  let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
+  if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
+    resumeSession(sessionId);
+    if(navigation.viewState&&typeof navigation.viewState==='object')viewState=navigation.viewState;
+    if(navigation.scroll){const board=$('#app .yatzy-board');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
+  }else render();
   if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();

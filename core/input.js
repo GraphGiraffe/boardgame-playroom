@@ -44,7 +44,14 @@
     }
 
     function hoverAt(s, x, y) {
-      const el = doc.elementFromPoint(x, y)?.closest('[data-drop-piece]');
+      let pointed=doc.elementFromPoint(x, y);
+      if(s.segment){
+        const cell=pointed?.closest('[data-grid-index]'),board=cell?.closest('[data-drag-boundary]');
+        if(board){const columns=Number(board.dataset.gridColumns)||10,index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
+          pointed=board.querySelector('[data-grid-index="'+index+'"]')||pointed;
+        }
+      }
+      const el = pointed?.closest('[data-drop-piece]');
       const supported = el?.hasAttribute('data-action') || el?.dataset.dropSelect === s.piece;
       const next = usable(el) && supported && el.dataset.dropPiece === s.piece ? el : null;
       if (s.hover !== next) { s.hover?.classList.remove('playroom-drop-hover'); next?.classList.add('playroom-drop-hover'); s.hover = next; }
@@ -96,10 +103,16 @@
       if (!s.drag || !s.source.isConnected || !canStart(s.source) || !canSelect(s.source)) { cleanup(); return; }
       // Clone before select(): selecting may synchronously replace the scene.
       const rect = s.source.getBoundingClientRect(), style = root.getComputedStyle(s.source);
-      s.width = rect.width; s.height = rect.height;
-      s.offsetX = Math.max(0, Math.min(s.width, s.startX - rect.left));
-      s.offsetY = Math.max(0, Math.min(s.height, s.startY - rect.top));
-      s.ghost = s.source.cloneNode(true);
+      const shape=/^([1-8]):([hv])$/.exec(s.source.dataset.dragShape||'');
+      const unit=shape?s.source.closest('.scene')?.querySelector('[data-drag-unit]')?.getBoundingClientRect():null;
+      s.vertical=shape?.[2]==='v';s.segment=Number(s.source.dataset.dragSegment)||0;
+      s.width=shape&&unit?unit.width*(s.vertical?1:Number(shape[1])):rect.width;
+      s.height=shape&&unit?unit.height*(s.vertical?Number(shape[1]):1):rect.height;
+      s.offsetX=Math.max(0,Math.min(s.width,s.startX-rect.left+(s.vertical?0:s.segment*(unit?.width||0))));
+      s.offsetY=Math.max(0,Math.min(s.height,s.startY-rect.top+(s.vertical?s.segment*(unit?.height||0):0)));
+      s.boundary=s.source.closest('[data-drag-boundary]')?.getBoundingClientRect();
+      s.ghost=shape&&unit?doc.createElement('div'):s.source.cloneNode(true);
+      if(shape&&unit){s.ghost.className='playroom-composite-ghost';s.ghost.style.gridTemplateColumns=`repeat(${s.vertical?1:Number(shape[1])},1fr)`;s.ghost.style.gridTemplateRows=`repeat(${s.vertical?Number(shape[1]):1},1fr)`;for(let i=0;i<Number(shape[1]);i++)s.ghost.append(doc.createElement('span'));}
       for (const el of [s.ghost, ...s.ghost.querySelectorAll('*')]) {
         el.removeAttribute('id'); el.removeAttribute('data-drag-piece'); el.removeAttribute('data-select'); el.removeAttribute('data-action'); el.removeAttribute('data-entity'); el.removeAttribute('data-swipe-action'); el.removeAttribute('data-swipe-select'); el.removeAttribute('data-hand-preview');
       }
@@ -108,7 +121,7 @@
       s.ghost.inert = true;
       s.ghost.setAttribute('aria-hidden', 'true'); s.ghost.setAttribute('tabindex', '-1');
       if ('disabled' in s.ghost) s.ghost.disabled = true;
-      Object.assign(s.ghost.style, { width: `${rect.width}px`, height: `${rect.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, flexDirection: style.flexDirection });
+      Object.assign(s.ghost.style, { width: `${s.width}px`, height: `${s.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, flexDirection: style.flexDirection });
       s.phase = 'dragging';
       doc.body.append(s.ghost); capture.classList.add('playroom-dragging'); takeCapture(s);
       try { select(s.piece); } catch (error) { cancel(); throw error; }
@@ -200,6 +213,8 @@
           action = readAction(target.dataset.action);
           if(action&&s.ghost){const rect=s.ghost.getBoundingClientRect();playedFrom={x:rect.x,y:rect.y,width:rect.width,height:rect.height};}
           if (!target.hasAttribute('data-action') && target.dataset.dropSelect === s.piece) selection = s.piece;
+        } else if(s.boundary&&(s.x<s.boundary.left||s.x>s.boundary.right||s.y<s.boundary.top||s.y>s.boundary.bottom)){
+          action=readAction(s.source.dataset.dragOutsideAction);
         } else if (s.touch && performance.now() - s.startedAt <= 300 && s.startY - s.y > 38 && Math.abs(s.startX - s.x) < 65) {
           // Optional quick touch swipe is distinct from a held drag. Each pack
           // explicitly supplies its legal action, or a choice still to be made.

@@ -352,3 +352,22 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .scene.replaying .layout-actions:has(.yatzy-controls){min-height:0}
 /* A two-player fleet needs the same indicator width in both player panels. */
 .app-game-layout .player-panel.opponent-hand:has(.fleet-indicator){max-width:380px}
+.player-avatar-wrap{position:relative;display:inline-flex;flex:none;align-items:center;justify-content:center;width:29px;height:29px;overflow:visible}
+.player-avatar-wrap>.avatar{width:100%!important;height:100%!important;min-width:0!important;flex:none}
+.player-medallion{position:absolute;z-index:2;top:-8px;right:-8px;display:grid;place-items:center;width:19px;height:19px;border-radius:50%;border:2px solid var(--paper);background:#eadfc0;color:#283c30;font:800 11px/1 system-ui;box-shadow:0 1px 3px #21392d55;pointer-events:none}
+.player-medallion.is-team{background:var(--medallion-color);color:#fffdf4}
+.player-medallion.is-place{border:0;background:#e0bc59}.player-medallion.place-2{background:#c3c8c7}.player-medallion.place-3{background:#b78b66}
+.player-medallion.is-team:empty{font-size:0}.player-medallion.is-team:empty:after{content:'●';font-size:8px}
+.history-controls .replay-track{position:relative;display:flex;align-items:center;flex:1;min-width:0}
+.history-controls .replay-track input{width:100%;margin:0;position:relative;z-index:1}
+.history-controls .replay-track.has-new-history:before{content:'';position:absolute;left:var(--new-from);right:0;height:5px;border-radius:4px;background:#91ad80;transform:translateY(1px)}
+.history-controls .replay-track.has-new-history:after{content:'';position:absolute;left:var(--new-from);width:3px;height:18px;border-radius:2px;background:#436949;transform:translate(-1px,1px);pointer-events:none;z-index:2}
+html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdrop),body:has(#modal-root>.modal-backdrop){overscroll-behavior:none}
+.player-panel{position:relative}.player-panel.is-addressed{box-shadow:inset 0 0 0 2px #5c92b5,0 0 0 2px #5c92b540!important}
+.game-speech{position:absolute;z-index:20;top:0;right:4px;transform:translateY(-58%);display:inline-flex;align-items:center;justify-content:center;gap:4px;max-width:min(180px,70vw);min-width:24px;min-height:24px;padding:4px 8px;border:1px solid #90b088;border-radius:13px;background:#e6f2df;color:#244c35;box-shadow:0 4px 10px #183b2b25;font:700 11px/1.25 system-ui;white-space:normal;pointer-events:none}
+.game-speech:after{content:'';position:absolute;bottom:-5px;left:12px;width:7px;height:7px;transform:rotate(45deg);border-right:1px solid #90b088;border-bottom:1px solid #90b088;background:inherit}
+.game-speech.is-chat{background:#fffdf4;border-color:#d8dacd;color:#283c30}
+.game-speech-icon svg{width:16px;height:16px;vertical-align:middle}
+.game-speech.is-success{animation:speech-success 320ms ease-in-out 2}.game-speech.is-error{animation:speech-error 320ms ease-in-out 2}
+@keyframes speech-success{50%{background:#b9e5aa;box-shadow:0 0 0 4px #73b66a55}}@keyframes speech-error{50%{background:#f4c9c0;box-shadow:0 0 0 4px #df7e7055}}
+body.reduced-motion .game-speech,.reduced-motion .game-speech{animation:none!important}
