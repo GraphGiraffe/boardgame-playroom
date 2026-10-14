@@ -4,7 +4,7 @@ const blocks=require('../../tests/blocks.cjs'),root=path.resolve(__dirname,'../.
 const args=process.argv.slice(2),list=args.includes('--list');if(list)args.splice(args.indexOf('--list'),1);
 const changed=args[0]==='--changed',base=changed?(args[1]||'origin/dev'):null;
 const profile=changed?'changed':args[0]||'all';
-const profiles=new Set(['all',...Object.keys(blocks),...Object.values(blocks).flatMap(b=>b.cases.flatMap(c=>[c.subblock,...c.profiles]))]);
+const profiles=new Set(['all',...Object.keys(blocks),...Object.values(blocks).flatMap(b=>b.cases.flatMap(c=>[c.subblock,...c.profiles,'case/'+c.file.replace(/\.test\.cjs$/,'')]))]);
 const requested=profile.split(',');
 if((changed?args.length>2:args.length>1)||(!changed&&requested.some(p=>!profiles.has(p)))){
   console.error('Usage: node scripts/codex/test.cjs [block/subblock[,other]|profile|--changed [base]] [--list]');process.exit(2);
@@ -15,7 +15,7 @@ const actual=fs.readdirSync(path.join(root,'tests')).filter(f=>f.endsWith('.test
 if(new Set(registered).size!==registered.length||registered.length!==actual.length||actual.some(f=>!registered.includes(f))){
   console.error('Every tests/*.test.cjs scenario must belong to exactly one block in tests/blocks.cjs.');process.exit(2);
 }
-const includes=(c,id,selectors)=>selectors.some(p=>p==='all'||p===id||p===c.subblock||c.profiles.includes(p));
+const includes=(c,id,selectors)=>selectors.some(p=>p==='all'||p===id||p===c.subblock||p==='case/'+c.file.replace(/\.test\.cjs$/,'')||c.profiles.includes(p));
 const chosen=new Set();
 if(changed){
   const paths=[...new Set((execFileSync('git',['diff','--name-only',base,'--'],{cwd:root,encoding:'utf8'})+'\n'+execFileSync('git',['ls-files','--others','--exclude-standard'],{cwd:root,encoding:'utf8'})).trim().split('\n').filter(Boolean))];
