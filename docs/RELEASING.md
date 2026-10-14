@@ -1,6 +1,14 @@
 # Выпуск приложения и коллекции
 
-Текущая пара: приложение 0.17.3 и паки 0.6.1. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+Текущая пара: приложение 0.17.4 и паки 0.6.2. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+
+## Выпущенная пара 0.17.4 / 0.6.2
+
+Паки прошли [task PR #52](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/52) и [release PR #53](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/53). [Тег и GitHub Release `v0.6.2`](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.2) закреплены за `fddf0da96e711b6444d64b3b79028e3db03734c9`. В 16 файлах релиза — 12 паков, архив коллекции, исходники, отдельный архив общих ассетов и `SHA256SUMS`; скачанные файлы сверены. [Публикация R2 #38625024423](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38625024423) завершилась успешно.
+
+Приложение прошло [task PR #98](https://github.com/GraphGiraffe/boardgame-playroom/pull/98) и [release PR #99](https://github.com/GraphGiraffe/boardgame-playroom/pull/99). [Тег и GitHub Release `v0.17.4`](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.4) закреплены за `99f26ad84083bd8ed1f1d1a988d3f3fb9e2935f3`. Локальный и [Actions gate #38625519821](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38625519821) прошли 811/811 с точным SHA паков. Пять скачанных файлов приложения совпали с `SHA256SUMS`.
+
+[Preflight #38634942612](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38634942612) подтвердил существующий защищённый Pages проект и R2 binding. Единственная загрузка [#38635249654](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38635249654) создала production deployment `28fa8189-5ab2-43e6-8294-1a48b84c535d`, но ранний smoke попал в окно распространения Pages и вернул прежний сайт. Read-only [проверка нового deployment #38636238612](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38636238612) прошла; [переключение #38636924897](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38636924897) выбрало уже загруженный deployment без второй загрузки. Независимый [postflight #38637401367](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38637401367) подтвердил его на основном адресе, защищённый runtime, каталог 12 паков и offline PWA. Автоматические Git production/preview сборки выключены.
 
 ## Выпущенная пара 0.17.3 / 0.6.1
 
