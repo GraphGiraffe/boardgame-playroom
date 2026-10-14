@@ -200,10 +200,12 @@ def run(args):
     if args.operation == 'preflight':
         source = project.get('source') or {}
         config = source.get('config') or {}
+        r2_bindings = ((project.get('deployment_configs') or {}).get('production') or {}).get('r2_buckets') or {}
         report.update(productionBranch=production, sourceType=source.get('type'),
             gitProductionBuilds=config.get('production_deployments_enabled'),
             gitPreviewBuilds=config.get('preview_deployment_setting'),
             buildOutput=(project.get('build_config') or {}).get('destination_dir'),
+            productionPackBucket=(r2_bindings.get('PLAYROOM_PACKS') or {}).get('name'),
             status='preflight-started', deployments=[{
                 'id': d['id'], 'url': d['url'], 'environment': d.get('environment'),
                 'status': d.get('latest_stage', {}).get('status'), 'created': d.get('created_on')
