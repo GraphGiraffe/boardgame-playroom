@@ -71,7 +71,7 @@
     root.PlayroomPackLoadError=manager.warnings?.join(' ')||'';
     return list;
   }
-  function create({manager,library,networkLibrary,openModal,modalHead,toast,onChange}) {
+  function create({manager,library,networkLibrary,openModal,modalHead,toast,onChange,onCatalog=()=>{}}) {
     let pending = null, message = '', reading = 0, savedScroll = null, busy = false;
     const remote=root.PlayroomRemotePacks;
     const title = manifest => manifest.name || manifest.title || manifest.id;
@@ -192,7 +192,7 @@
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';open();}
       else return;
     });
-    return {open(){pending=null;message=currentBootWarnings();open();void remote?.load().then(()=>{if(document.querySelector('.pack-manager-modal')){savedScroll=document.querySelector('.pack-manager-modal .modal-body')?.scrollTop??null;open();}});}};
+    return {open(){pending=null;message=currentBootWarnings();open();void remote?.load().then(()=>{if(document.querySelector('.pack-manager-modal')){savedScroll=document.querySelector('.pack-manager-modal .modal-body')?.scrollTop??null;open();onCatalog();}});}};
   }
   root.PlayroomPackManager = {create,reconcile,displayPreferences,ordered,category,setCategory,moveGame,toggleFavorite};
 })(globalThis);

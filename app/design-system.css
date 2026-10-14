@@ -367,8 +367,11 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .result-scores .result-player{display:flex;align-items:center;gap:8px;min-width:max-content;white-space:nowrap}
 .result-scores .player-medallion{position:static;flex:none;width:25px;height:25px;font-size:14px}
 .result-scores .result-awards{position:relative;display:block;flex:none;width:31px;height:27px}
+.result-scores .result-awards:has(svg){width:33px;height:32px}
 .result-scores .result-awards .player-medallion{position:absolute;top:0;left:0}
-.result-scores .result-awards .player-medallion.is-team{top:2px;left:6px;z-index:0}
+.result-scores .result-awards .player-medallion.is-team,.result-scores .result-awards .player-medallion.is-first{top:2px;left:6px;z-index:0}
+.result-scores .result-awards .player-medallion.is-team:has(svg),.result-scores .result-awards .player-medallion.is-first:has(svg){top:7px;left:8px}
+.result-scores .result-awards .player-medallion:has(svg) svg{width:11px;height:11px;transform:translate(7px,7px)}
 .result-scores .result-awards .player-medallion.is-place{z-index:1}
 .result-scores .result-place-text{font-weight:800;white-space:nowrap}
 .result-scores .result-stat{display:flex;flex:1;min-width:0;flex-direction:column;text-align:right;gap:2px}
