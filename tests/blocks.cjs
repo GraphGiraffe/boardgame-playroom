@@ -42,6 +42,7 @@ module.exports = {
   ui: {label: "Экраны приложения", cases: [
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
+    {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "mobile-navigation.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "history-library-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/history"},
     {"file": "unified-game-screen-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
