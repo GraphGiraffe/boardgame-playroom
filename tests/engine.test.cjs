@@ -50,6 +50,18 @@ test('registry exposes five independent packs and isolates metadata', () => {
   assert.notEqual(E.GAMES[0].presets[0].label, 'corrupted');
 });
 
+test('finished results keep shared places and survive projection', () => {
+  const state=create('snakes',4);
+  state.data.positions=[state.data.finish,30,30,0];
+  E.finish(state,0);
+  assert.deepEqual(state.result.values,[state.data.finish,30,30,0]);
+  assert.deepEqual(state.result.places,[1,2,2,3]);
+  assert.deepEqual(E.project(state,2).result,state.result);
+  assert.equal(E.validateState(state),true);
+  const legacy=E.clone(state);delete legacy.result;
+  assert.equal(E.validateState(legacy),true);
+});
+
 test('immutable transitions reject forged actors, card ids, wrong colors and duplicate moves', () => {
   for (const game of GAMES) {
     const s = create(game.id), before = JSON.stringify(s), a = E.botAction(s);
@@ -315,9 +327,9 @@ test('sound metadata is optional, validated and respects private event visibilit
 test('standalone audio library registers scoped pack overrides without a browser', async () => {
   const Audio=require('../core/audio.js');let contexts=0;
   const audio=new Audio({contextFactory:()=>{contexts++;return null;}});
-  assert.equal(audio.catalog().length,22);assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
+  assert.equal(audio.catalog().length,23);assert.equal(audio.catalog().find(c=>c.id==='turn').label,'Ваш ход');assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
   audio.registerPack('custom_pack',{move:{label:'Own move',notes:[{frequency:500,duration:.1}]},'custom.call':{label:'Call',notes:[{frequency:700,duration:.1}]}});
-  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,23);
+  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,24);
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);

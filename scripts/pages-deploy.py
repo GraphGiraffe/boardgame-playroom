@@ -14,6 +14,9 @@ import urllib.error
 import urllib.request
 import uuid
 from zipfile import ZipFile
+import runpy
+
+wrap_private_worker = runpy.run_path(str(Path(__file__).with_name('pack_worker.py')))['wrap_private_worker']
 
 ROOT = Path(__file__).resolve().parents[1]
 WRANGLER = 'wrangler@4.149.0'
@@ -93,8 +96,12 @@ def prepare(public, sums, wrapper, destination):
         if re.sub(r'\.[a-f0-9]{16}(?=\.(js|css)$)', '', name) in files:
             raise ValueError('Duplicate canonical shell assets')
     installed = next(files[n].decode() for n in refs if n.startswith('installed-packs.'))
-    if not {'uno', 'domino', 'durak', 'checkers', 'snakes', 'tictactoe', 'battleship', 'pexeso', 'ludo', 'yatzy', 'gofish', 'oldmaid'} <= set(re.findall(r'"id"\s*:\s*"([a-z-]+)"', installed)):
-        raise ValueError('Release must contain all twelve packs')
+    ids=set(re.findall(r'"id"\s*:\s*"([a-z-]+)"', installed))
+    remote=not ids and 'PlayroomInstalledPacks = []' in installed
+    if not remote and not {'uno', 'domino', 'durak', 'checkers', 'snakes', 'tictactoe', 'battleship', 'pexeso', 'ludo', 'yatzy', 'gofish', 'oldmaid'} <= ids:
+        raise ValueError('Release must contain all twelve packs or use the remote catalog')
+    if remote and not any(name.startswith('app/remote-catalog.') for name in refs):
+        raise ValueError('Remote-catalog runtime is missing')
     private = archive_files(io.BytesIO(wrapper))
     if set(private) != PRIVATE or any(not v for v in private.values()):
         raise ValueError('Private wrapper must contain exactly worker, routes and manifest')
@@ -109,6 +116,7 @@ def prepare(public, sums, wrapper, destination):
         raise ValueError('Deployment destination must be empty')
     destination.mkdir(parents=True, exist_ok=True)
     files.update(private)
+    files['_worker.js'] = wrap_private_worker(files['_worker.js'])
     for name, content in files.items():
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +215,7 @@ def run(args):
             raise ValueError('Invalid private wrapper archive')
         with tempfile.TemporaryDirectory(prefix='pages-wrapper-') as tmp:
             worker = Path(tmp)/'_worker.js'
-            worker.write_bytes(private['_worker.js'])
+            worker.write_bytes(wrap_private_worker(private['_worker.js']))
             subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(worker)], check=True)
         target = pages.production_target(args.deployment) if args.deployment else None
         smoke(target['url'] if target else expected)

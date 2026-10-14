@@ -39,6 +39,12 @@
     state.winner = winners[0] ?? null;
     if (Array.isArray(winner)) state.winners = winners;
     for (const player of winners) state.players[player].score += points;
+    const summary=forState(state).result?.(state);
+    const values=summary?.values??state.players.map((_,index)=>winners.includes(index)?1:0);
+    if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||value<0))throw Error('Некорректный итог пака');
+    if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isSafeInteger(value)||value<0)))throw Error('Некорректная статистика пака');
+    const order=summary?.order==='asc'?'asc':'desc',places=values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
+    state.result={label:summary?.label||'Победа',values,places,order,...(summary?.details?{detailLabel:summary.detailLabel||'Показатель',details:summary.details}:{})};
     event(state, text || (!winners.length ? 'Ничья' : `${state.players[winners[0]].name} побеждает`), state.winner, 'finish');
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
@@ -115,6 +121,7 @@
     assertState(typeof state.openHands === 'boolean' && ['playing', 'finished'].includes(state.status), 'статус');
     assertState((state.winner === null || int(state.winner, 0, state.players.length - 1)) && (state.status !== 'playing' || state.winner === null), 'победитель');
     assertState(state.winners === undefined || (state.status === 'finished' && Array.isArray(state.winners) && state.winners.length > 0 && state.winners[0] === state.winner && new Set(state.winners).size === state.winners.length && state.winners.every(i => int(i, 0, state.players.length - 1))), 'победители');
+    if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),'итог');assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,'детали итога');}
     assertState(record(state.data) && Array.isArray(state.events), 'данные и события');
     let last = 0;
     for (const e of state.events) {
