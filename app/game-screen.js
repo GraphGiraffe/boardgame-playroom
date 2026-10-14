@@ -73,18 +73,29 @@
   function deleteConfirmation({name='Это сохранение',network=false,confirmAttrs=''}){
     return `${modalHead('Удалить партию?')}<p class="lead">${esc(name)} и вся история этой партии будут удалены ${network?'только на этом устройстве':'с устройства'}. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" ${confirmAttrs}>${icon('trash')} Удалить</button></div>`;
   }
-  function resultMarkup({state,viewer,gameName,scoreLabel='очки',teamBadges=[],network=false}={}){
+  function resultMarkup({state,viewer,gameName,scoreLabel='очки',teamBadges=[],playerContent=[],network=false}={}){
     if(!state||state.status!=='finished')return '';
     const winner=state.winner,winningPlayers=state.winners|| (winner==null?[]:[winner]),person=winner==null?null:state.players[winner];
     const title=winner===null?'Ничья!':viewer<0?winningPlayers.length>1?'Победители: '+winningPlayers.map(i=>state.players[i]?.name||'Игрок').join(', '):`${person?.name||'Игрок'} побеждает`:winningPlayers.includes(viewer)?'Победа!':'Поражение';
     const scores=state.players.map((player,i)=>({player,i})).sort((a,b)=>(state.result?.places?.[a.i]??0)-(state.result?.places?.[b.i]??0)||a.i-b.i).map(({player,i})=>{
       const place=state.result?.places?.[i],value=state.result?.values?.[i],detail=state.result?.details?.[i];
-      const medal=place?place<=3?UI.playerMedallion({place}):`<span class="result-place-text">${place} место</span>`:winningPlayers.includes(i)?'★ ':'';
+      const medal=place?place<=3?UI.playerMedallion({place}):`<span class="result-place-text" role="img" aria-label="${place} место">${place}</span>`:winningPlayers.includes(i)?'★ ':'';
       const team=state.preset==='teams'&&Array.isArray(teamBadges)&&teamBadges.length?teamBadges[i%teamBadges.length]:null;
       const first=state.firstPlayer===i;
       const playerBadge=UI.playerMedallion({first,team});
-      const badge=playerBadge&&place>=1&&place<=3?`<span class="result-awards">${playerBadge}${medal}</span>`:playerBadge+medal;
-      return `<div class="score-row"><span class="result-player">${badge}${esc(player.name)}${i===viewer?' · вы':''}</span><span class="result-stat"><strong>${esc(state.result?.label||scoreLabel)}: ${Number.isSafeInteger(value)?value:Number.isFinite(player.score)?player.score:0}</strong>${Number.isSafeInteger(detail)?`<small>${esc(state.result.detailLabel)}: ${detail}</small>`:''}</span></div>`;
+      const badge=`<span class="result-awards">${medal}${playerBadge}</span>`;
+      const content=playerContent[i]||{},counters=content.counters??[{kind:scoreLabel==='победы'?'wins':'points',value:Number.isSafeInteger(player.score)&&player.score>=0?player.score:0,label:scoreLabel}];
+      const shown=[...counters].sort((a,b)=>(a.kind==='wins')-(b.kind==='wins'));
+      const hand=Number.isSafeInteger(content.handCount)?UI.countBadge(content.handCount,`Рука ${player.name} (${content.countLabel||'в руке'})`,{hand:true}):'';
+      const indicators=Array.isArray(content.indicators)?UI.indicators(content.indicators.map(({icon,value,size,label})=>({icon,value,size,label}))):'';
+      const primary=`<span class="result-core-counters">${hand}${shown.map(UI.scoreBadge).join('')}</span>${indicators}`;
+      const resultValue=Number.isSafeInteger(value)?value:Number.isFinite(player.score)?player.score:0;
+      const shownValue=shown.some(counter=>counter.value===resultValue&&counter.kind!=='wins')||state.result?.label==='Победа';
+      const extra=[];
+      if(state.preset!=='teams'&&!shownValue)extra.push(`${state.result?.label||scoreLabel}: ${resultValue}`);
+      const shownDetail=shown.some(counter=>counter.kind==='pieces'&&counter.value===detail)||content.handCount===detail&&/карт|рук/i.test(state.result?.detailLabel||'');
+      if(Number.isSafeInteger(detail)&&!shownDetail)extra.push(`${state.result.detailLabel}: ${detail}`);
+      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span></div>`;
     }).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
   }

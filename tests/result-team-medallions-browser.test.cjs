@@ -16,13 +16,15 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
       PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges}),'result-modal');
     });
     const badges=await page.locator('.result-awards').evaluateAll(wrappers=>wrappers.map(wrapper=>{
-      const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect();
-      return {medal:m.width,team:t.width,exposedRight:t.right-m.right,exposedBottom:t.bottom-m.bottom,color:getComputedStyle(team).backgroundColor,medalLayer:getComputedStyle(medal).zIndex,teamLayer:getComputedStyle(team).zIndex};
+      const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect(),symbol=team.querySelector('svg')?.getBoundingClientRect(),disc=team.querySelectorAll('circle')[1];
+      return {medal:m.width,team:t.width,exposedRight:t.right-m.right,exposedBottom:t.bottom-m.bottom,color:getComputedStyle(disc).fill,medalLayer:getComputedStyle(medal).zIndex,teamLayer:getComputedStyle(team).zIndex,symbolWidth:symbol?.width,symbolOffset:symbol?Math.hypot((symbol.left+symbol.width/2)-(t.left+t.width/2),(symbol.top+symbol.height/2)-(t.top+t.height/2)):null};
     }));
     assert.equal(badges.length,4);
     assert.deepEqual(badges.map(b=>b.color),['rgb(102, 143, 173)','rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(206, 115, 93)']);
     assert.equal(await page.locator('.result-awards .player-medallion.is-team[aria-label="Команда синяя · первый ход"]').count(),1);
-    assert(badges.every((b,i)=>b.medal===25&&b.team===25&&b.exposedRight>=(i===0?7:5)&&b.exposedRight<=(i===0?9:7)&&b.exposedBottom>=(i===0?6:1)&&b.exposedBottom<=(i===0?8:3)&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek from below the medal: '+JSON.stringify(badges));
+    assert(badges[0].symbolOffset<1,'first-player symbol stays centered on its team disc');
+    assert.equal(badges[0].symbolWidth,22,'first-player artwork scales with the disc');
+    assert(badges.every(b=>b.medal===22&&b.team===22&&b.exposedRight>=4&&b.exposedRight<=6&&b.exposedBottom>=2&&b.exposedBottom<=4&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek uniformly from below the medal: '+JSON.stringify(badges));
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
     await page.setViewportSize({width:320,height:740});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
@@ -32,8 +34,8 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
       PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Шашки'}),'result-modal');
     });
     assert.equal(await page.locator('.result-awards .player-medallion.is-first').count(),1);
-    const first=await page.locator('.result-awards').first().evaluate(el=>{const disc=el.querySelector('.is-first').getBoundingClientRect(),medal=el.querySelector('.is-place').getBoundingClientRect();return {disc:disc.width,medal:medal.width,exposed:disc.right-medal.right};});
-    assert.equal(first.disc,first.medal);assert(first.exposed>=7&&first.exposed<=9);
+    const first=await page.locator('.result-awards').first().evaluate(el=>{const disc=el.querySelector('.is-first').getBoundingClientRect(),medal=el.querySelector('.is-place').getBoundingClientRect(),symbol=el.querySelector('.is-first svg').getBoundingClientRect();return {disc:disc.width,medal:medal.width,exposed:disc.right-medal.right,symbolOffset:Math.hypot((symbol.left+symbol.width/2)-(disc.left+disc.width/2),(symbol.top+symbol.height/2)-(disc.top+disc.height/2))};});
+    assert.equal(first.disc,first.medal);assert(first.exposed>=4&&first.exposed<=6);assert(first.symbolOffset<1);
     if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-320.png')});
   }finally{await context.close();await browser.close();await server.close();}
 });

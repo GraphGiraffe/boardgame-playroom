@@ -6,6 +6,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const firstSymbol=(textY=12.5)=>`<circle cx="12" cy="12" r="9"/><text class="first-symbol-digit" x="12" y="${textY}" text-anchor="middle" dominant-baseline="central" fill="currentColor" stroke="none" font-family="system-ui, sans-serif" font-size="14" font-weight="800">1</text>`;
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
     cards:'<path d="m4.5 6-1.4 11a3 3 0 0 0 2.6 3.3l8.9 1.3a3 3 0 0 0 3.4-2.4M4 20a3 3 0 0 0 2.3 2l7.9 1.1"/><g transform="rotate(10 13 10.4)"><rect x="7" y="2" width="12" height="16.8" rx="2.4"/><path d="M10.5 7h5l-3.6 6.8"/></g>',
     board:"<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M9 3v18M15 3v18M3 9h18M3 15h18\"/>",
@@ -64,7 +65,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     text:'<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
     chevron:'<path d="m6 9 6 6 6-6"/>',
     dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 7h.01M17 7h.01M12 12h.01M7 17h.01M17 17h.01"/>',
-    first:'<circle cx="12" cy="12" r="9"/><text x="12" y="12.5" text-anchor="middle" dominant-baseline="central" fill="currentColor" stroke="none" font-family="system-ui, sans-serif" font-size="14" font-weight="800">1</text>',
+    first:firstSymbol(),
     exit:'<path d="M10 4H3v16h7M10 12h11m-4-4 4 4-4 4"/>',
     room:'<path d="M3 21V3h13v18M7 12h.01M16 7h5v14H3"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
@@ -123,14 +124,34 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
     const label=counter.label||(counter.kind==='wins'?'Победы':counter.kind==='pieces'?'Фишки':'Очки');
-    return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.value}</span>`;
+    return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.kind==='pieces'?roundTokenArt({value:counter.value}):counter.value}</span>`;
+  }
+  const numberPaths=Object.freeze({
+    0:'M12 6c-4 0-5 3-5 6s1 6 5 6 5-3 5-6-1-6-5-6Z',
+    1:'M12 7v11',
+    2:'M7 9c0-2 2-3 5-3s5 1 5 4c0 2-2 4-10 8h10',
+    3:'M8 7c1-1 2-1 4-1 3 0 5 1 5 3 0 2-2 3-5 3 3 0 5 1 5 3 0 2-2 3-5 3-2 0-4-1-5-2',
+    4:'M15 18V6L7 14h10',
+    5:'M17 6H8l-1 6c2-1 4-1 6-1 3 0 5 1 5 4s-2 4-6 4c-2 0-4-1-5-2',
+    6:'M16 7c-4-2-8 1-9 5-1 5 1 7 5 7 3 0 5-2 5-4s-2-4-5-4c-2 0-4 1-5 3',
+    7:'M7 6h11L9 18',
+    8:'M12 12c-3 0-5-1-5-3s2-3 5-3 5 1 5 3-2 3-5 3Zm0 0c-3 0-5 1-5 3s2 4 5 4 5-2 5-4-2-3-5-3Z',
+    9:'M17 11c-1 2-3 3-5 3-3 0-5-2-5-4s2-4 5-4c4 0 6 3 5 7-1 4-4 6-9 5'
+  });
+  function numberPath(value){if(!Object.hasOwn(numberPaths,value))throw Error('Invalid number mark');return numberPaths[value];}
+  function numberMark(value){return `<svg class="number-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="${numberPath(value)}"/></svg>`;}
+  function roundTokenArt({value=null,first=false}={}) {
+    if(value!==null&&(!Number.isSafeInteger(value)||value<0))throw Error('Invalid round token value');
+    const label=String(first?1:value??''),size=label.length===1?52:label.length===2?39:Math.max(21,Math.floor(78/(label.length*.58)));
+    const mark=first?`<svg x="4" y="-1" width="92" height="92" viewBox="0 0 24 24" fill="none" stroke="var(--round-token-mark,currentColor)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" color="var(--round-token-mark,currentColor)">${firstSymbol(12.5)}</svg>`:label?`<text x="50" y="45" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-weight="800" font-size="${size}" fill="var(--round-token-mark,currentColor)">${label}</text>`:'';
+    return `<svg class="round-token-art medallion-art" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="55" r="42" fill="var(--round-token-side,#a7ae93)"/><circle cx="50" cy="45" r="41" fill="var(--round-token-fill,#eadfc0)" stroke="var(--round-token-rim,#fff9e9)" stroke-width="4"/>${mark}</svg>`;
   }
   function playerMedallion({first=false,team=null,place=null}={}) {
     if(!first&&!team&&place==null)return '';
     const label=team?(first?`Команда ${team.label} · первый ход`:`Команда ${team.label}`):first?'Первый ход':`Место ${place}`;
     const tone=team?'team':place!=null?'place':'first';
     const color=team&&/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(team.color||'')?team.color:'';
-    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color?` style="--medallion-color:${esc(color)}"`:''}>${first?icon('first'):place!=null?esc(place):''}</span>`;
+    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color?` style="--medallion-color:${esc(color)}"`:''}>${roundTokenArt({value:place,first})}</span>`;
   }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{
@@ -187,7 +208,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end='',exclusive=false})=>`<div class="game-action-bar"${exclusive?' data-exclusive="true"':''}><div data-action-position="start"${exclusive?' inert aria-hidden="true"':''}>${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end"${exclusive?' inert aria-hidden="true"':''}>${end}</div></div>`;
-  const helpers = {viewApi:2,seatOrder,viewPreferences,indicators,avatar,playerMedallion,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){
