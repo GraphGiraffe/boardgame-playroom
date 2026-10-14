@@ -28,7 +28,7 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     const lobby=await inspect('.lobby-seat-row[data-participant-id] .player-medallion.is-team');
     assert.equal(lobby.length,4,'all four occupied team seats have a badge');
     assert.deepEqual(lobby.map(item=>item.color),['rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(102, 143, 173)','rgb(206, 115, 93)']);
-    assert(lobby.every(item=>item.width<=18&&item.height<=18&&item.shadow!=='none'&&['1px','1.5px'].includes(item.border)),`small raised discs use one shared style: ${JSON.stringify(lobby)}`);
+    assert(lobby.every(item=>item.width<=14&&item.height<=14&&item.shadow!=='none'&&item.border==='1px'),`small raised discs use one shared style: ${JSON.stringify(lobby)}`);
     assert.equal(lobby[0].svg,true,'the first player gets the numbered ring on the team disc');
     assert(lobby.slice(1).every(item=>!item.svg&&!item.content&&item.children===0&&['none','normal'].includes(item.after)),'other teams have plain discs without a center dot');
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-lobby.png')});}
