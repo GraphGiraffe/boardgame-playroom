@@ -2,9 +2,13 @@
 
 Текущая пара: приложение 0.17.3 и паки 0.6.1. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
 
-## Выпуск 0.17.3 / 0.6.1
+## Выпущенная пара 0.17.3 / 0.6.1
 
 Приложение читает командные цвета Лудо из метаданных установленного пака и показывает один и тот же уменьшенный жетон-диск в лобби и игре. Пустой командный диск не имеет центральной точки. Пак Лудо 0.1.10 рисует безопасную звезду SVG почти на всю клетку по центру, стартовые стрелки как SVG-треугольники и фишки базы по центрам кругов; остальные паки не меняются. Для совместного выпуска выбраны адресные сценарии `case/ludo-team-markers-browser`, `case/first-medallion-browser` и необходимые проверки сборки/контрольных сумм. Локально оба браузерных сценария прошли, включая ширину 320 px.
+
+Изменения прошли task PR [паков #48](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/48) и [приложения #92](https://github.com/GraphGiraffe/boardgame-playroom/pull/92), затем release PR [#49](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/49) и [#93](https://github.com/GraphGiraffe/boardgame-playroom/pull/93). Теги [паков `v0.6.1`](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.1) и [приложения `v0.17.3`](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.3) указывают на `b66bf04ec0e1d63d8d7541b0319b1cb5a60492ad` и `05baaa963fc0ae01d23fed2082b42b90cb623d5b`. Все 14 файлов паков и пять файлов приложения скачаны из GitHub Releases и сверены с `SHA256SUMS`.
+
+Ручная [сборка кандидата #38570616681](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38570616681) использовала точный SHA паков и выполнила только выбранные два браузерных сценария, 2/2. Публикация [паков #38570573996](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38570573996) обновила в R2 только Лудо до 0.1.10; снимок каталога `5b1e1efc75a64bd45fb7e38fc4e4f7ac614a59dfeeda6a37dd2ddd1e9671b88e`. Preflight [#38571247760](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38571247760) прошёл перед единственным production [деплоем #38571458043](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38571458043) в существующий Pages проект. Deployment `e4447f0e-09f5-416a-a955-13312a13a502` проверен независимым [postflight #38571888730](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38571888730) на основном адресе: защищённый runtime, 12 файлов каталога и офлайн PWA прошли smoke; автоматические Git-деплои production/preview выключены.
 
 ## Выпущенная пара 0.17.2 / 0.6.0
 
