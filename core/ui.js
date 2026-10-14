@@ -64,7 +64,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     text:'<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
     chevron:'<path d="m6 9 6 6 6-6"/>',
     dice:'<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 7h.01M17 7h.01M12 12h.01M7 17h.01M17 17h.01"/>',
-    first:'<circle cx="12" cy="12" r="9"/><path d="m10 8 2-1v10m-3 0h6"/>',
+    first:'<circle cx="12" cy="12" r="9"/><text x="12" y="12.5" text-anchor="middle" dominant-baseline="central" fill="currentColor" stroke="none" font-family="system-ui, sans-serif" font-size="14" font-weight="800">1</text>',
     exit:'<path d="M10 4H3v16h7M10 12h11m-4-4 4 4-4 4"/>',
     room:'<path d="M3 21V3h13v18M7 12h.01M16 7h5v14H3"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
