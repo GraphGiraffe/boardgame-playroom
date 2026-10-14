@@ -196,6 +196,9 @@
     interruptAction();input?.cancel();playerTargets?.cancel();feedback.clear();cancelBot(); latestPacks();
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
     const games=orderedVisibleGames().filter(g=>(filter!=='favorites'||preferences.favorites.includes(g.id))&&Tags.matches(g,catalog[g.id],hubFilters.format)&&['type','mechanic'].every(kind=>!hubFilters[kind]||Tags.forPack(catalog[g.id]).some(t=>t.id===hubFilters[kind])));
+    const hiddenCount=E.GAMES.filter(g=>preferences.hidden.includes(g.id)).length;
+    const filtering=filter!=='all'||Object.values(hubFilters).some(Boolean);
+    const collectionCount=hubEditing?`ВСЕГО: ${E.GAMES.length} · СКРЫТО: ${hiddenCount}`:filtering?`ПО ФИЛЬТРУ: ${games.length} · СКРЫТО: ${hiddenCount}`:`ПОКАЗАНО: ${E.GAMES.length-hiddenCount} · СКРЫТО: ${hiddenCount}`;
     let lastGameId;try{lastGameId=localStorage.getItem('playroom.last-game.v1');}catch(_){}
     const lastGame=filter==='all'?games.find(g=>g.id===(lastGameId||session?.game)):null;
     const favorites=filter==='all'?games.filter(g=>preferences.favorites.includes(g.id)):[];
@@ -217,7 +220,7 @@
       ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
       ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="Закрыть предупреждение">${icon('close')}</button></p>`:''}
       ${session?GameScreen.resumeCard({title:(session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт')+' · '+meta(session.game).name,detail:session.current.status==='finished'?'Результат и история сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'}`}):''}
-      <div class="library-heading">${hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${E.GAMES.length} В КОЛЛЕКЦИИ</span><button type="button" class="btn secondary hub-edit-toggle" data-edit-toggle aria-pressed="${hubEditing}">${icon(hubEditing?'check':'edit')} ${hubEditing?'Готово':'Изменить порядок'}</button></div></div>
+      <div class="library-heading">${hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${collectionCount}</span><button type="button" class="btn secondary hub-edit-toggle" data-edit-toggle aria-pressed="${hubEditing}">${icon(hubEditing?'check':'edit')} ${hubEditing?'Готово':'Изменить порядок'}</button></div></div>
       ${sections}${!E.GAMES.length?'<div class="packs-empty-hub"><h2>Начните с первой игры</h2><p>Приложение готово. Добавьте файл пака: в нём есть правила, компоненты и оформление вашей игры.</p><button class="btn" data-command="packs">Установить пак игры</button></div>':!games.length?'<p class="lead">В этой категории пока нет игр.</p>':''}`}
       <footer class="hub-footer"><span class="hub-footer-brand">${icon('hand')}<span class="hub-footer-lines"><span>Сделано для игры, а не для спешки</span><span class="eyebrow">PLAYROOM / ${esc(appVersion)}</span></span></span><span>Без регистрации.<br class="mobile-text"> Даже без интернета.</span></footer></main></div>`;
     if(hubTab==='sessions')refreshNetworkSaved();
