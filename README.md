@@ -1,16 +1,16 @@
 # ХОД · настольные игры в браузере
 
-В разработке **0.17.0** с коллекцией **0.6.0** из 12 игр. Текущая опубликованная пара — [приложение 0.16.3](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.16.3) и [паки 0.5.4](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.5.4). Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
+Текущая пара — [приложение 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) и [коллекция 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
 
 ## Начать играть
 
-Из [релиза 0.16.3](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.16.3) скачайте:
+Из [релиза 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) скачайте:
 
 - `playroom-all-games.html` — автономный HTML со всеми 12 играми;
 - `playroom.html` — оболочку для установки выбранных паков;
 - `playroom-pwa.zip` — PWA для размещения на HTTPS (или localhost).
 
-Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.5.4](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.5.4). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
+Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
 
 В комнате выберите «Локальная» или «Сетевая», настройте места, ботов и правила. Для сети хост передаёт приглашение, гость возвращает ответ через QR, текст, системное меню «Поделиться» или звук. После сопряжения игра передаётся по WebRTC. Общий Стол и зрители получают публичное представление; игрок — свою руку. Отдельный сервер для локальной сети не нужен.
 
