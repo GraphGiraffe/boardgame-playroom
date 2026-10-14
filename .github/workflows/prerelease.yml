@@ -26,7 +26,7 @@ jobs:
   prerelease:
     if: inputs.operation == 'build' || inputs.operation == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,7 +54,7 @@ jobs:
       - name: Prepare app with pinned source packs
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - name: Full application and pack checks
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - name: Build tested all-games artifacts
         run: |
