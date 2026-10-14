@@ -229,7 +229,7 @@ test('external modal closing restores projected legal actions without another ne
 test('Ludo selects a pawn without committing, keeps it after a destination, and consumes every die',{timeout:40000},async()=>{
   require('../packs/ludo/rules.js');
   const shared=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared');
-  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
+  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','round-token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);
   try{
@@ -250,7 +250,7 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     assert(await page.locator('.ludo-pawn.is-stacked').evaluateAll(pawns=>{
       if(pawns.length!==4)return false;
       const centers=pawns.map(pawn=>{const r=pawn.getBoundingClientRect();return `${Math.round(r.x+r.width/2)}:${Math.round(r.y+r.height/2)}`;});
-      return new Set(centers).size===4&&new Set(pawns.map(pawn=>getComputedStyle(pawn).backgroundColor)).size===2;
+      return new Set(centers).size===4&&new Set(pawns.map(pawn=>getComputedStyle(pawn).getPropertyValue('--pawn').trim())).size===2;
     }),'shared start shows distinct positions and both colors');
     // Two equal values share a destination; another die captures the enemy on cell 6.
     state.data.phase='move';state.data.dice=[2,2,3];state.data.used=[false,false,false];state.data.lastRoll=3;state.data.pawns=[[2,10,-1,-1],[44,-1,-1,-1]];

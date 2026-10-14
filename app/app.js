@@ -33,6 +33,23 @@
   const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
   const turnNotice=GameScreen.turnNotice({play:()=>{if(settings.sound&&!document.hidden)void audio.play('turn',{volume:.45});},reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
   const appVersion=globalThis.PlayroomAppVersion||'неизвестна';
+  const PACK_NOTICES_KEY='playroom.pack-update-notices.v1';
+  let packNotices={dismissed:[],read:[]},flashPacksOnHub=false;
+  try {const saved=JSON.parse(localStorage.getItem(PACK_NOTICES_KEY)||'{}');for(const key of ['dismissed','read'])if(Array.isArray(saved[key]))packNotices[key]=saved[key].filter(value=>typeof value==='string').slice(-128);}catch(_){}
+  function packUpdates(){
+    const versions=new Map();
+    for(const pack of packs.list())if(!versions.has(pack.id)||globalThis.TabletopPacks.compareVersions(pack.version,versions.get(pack.id))>0)versions.set(pack.id,pack.version);
+    return (globalThis.PlayroomRemotePacks?.current?.packs||[]).filter(item=>versions.has(item.id)&&globalThis.TabletopPacks.compareVersions(item.version,versions.get(item.id))>0);
+  }
+  const updateKey=item=>item.id+'@'+item.version;
+  function rememberPackUpdates(kind){
+    packNotices[kind]=[...new Set([...packNotices[kind],...packUpdates().map(updateKey)])].slice(-128);
+    try{localStorage.setItem(PACK_NOTICES_KEY,JSON.stringify(packNotices));}catch(_){}
+  }
+  function refreshPackUpdates(){
+    const before=packUpdates().map(updateKey).join('|');
+    void globalThis.PlayroomRemotePacks?.load().then(()=>{if(screen==='hub'&&before!==packUpdates().map(updateKey).join('|'))renderHub();});
+  }
   const brand = '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>ХОД<small>β</small>';
   const botNames = ['Мика','Тео','Луна','Ника','Лев','Рэй','Сэм','Кира'];
   const randomBotName = () => {const used=new Set(room?.participants.filter(p=>p.bot).map(p=>p.nickname));const available=botNames.filter(name=>!used.has(name));return available[Math.floor(Math.random()*available.length)]||botNames[0];};
@@ -194,6 +211,8 @@
   }
   function renderHub() {
     interruptAction();input?.cancel();playerTargets?.cancel();feedback.clear();cancelBot(); latestPacks();
+    const updates=packUpdates(),unread=updates.some(item=>!packNotices.read.includes(updateKey(item))),newUpdates=updates.filter(item=>!packNotices.dismissed.includes(updateKey(item)));
+    const flashPacks=flashPacksOnHub&&unread;flashPacksOnHub=false;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
     const games=orderedVisibleGames().filter(g=>(filter!=='favorites'||preferences.favorites.includes(g.id))&&Tags.matches(g,catalog[g.id],hubFilters.format)&&['type','mechanic'].every(kind=>!hubFilters[kind]||Tags.forPack(catalog[g.id]).some(t=>t.id===hubFilters[kind])));
     const hiddenCount=E.GAMES.filter(g=>preferences.hidden.includes(g.id)).length;
@@ -213,11 +232,11 @@
       <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / ${esc(appVersion)}</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
-        {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
+        {attrs:'data-command="packs"',label:unread?'Паки игр: есть непросмотренные обновления':'Паки игр',name:'layers',className:`pack-hub-button${unread?' has-unread':''}${flashPacks?' flash-unread':''}`},
         {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
         {attrs:'data-command="help"',label:'Как играть',name:'help'}
       ])}</div></header>
-      ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
+      ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`${newUpdates.length?`<div class="pack-update-notice" role="status"><span>${newUpdates.length===1?'Доступно обновление одного пака':`Доступны обновления паков: ${newUpdates.length}`}</span><button type="button" class="btn secondary" data-command="packs">Посмотреть</button><button type="button" class="icon-btn" data-command="dismiss-pack-updates" aria-label="Закрыть уведомление об обновлениях паков">${icon('close')}</button></div>`:''}<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
       ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="Закрыть предупреждение">${icon('close')}</button></p>`:''}
       ${session?GameScreen.resumeCard({title:(session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт')+' · '+meta(session.game).name,detail:session.current.status==='finished'?'Результат и история сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'}`}):''}
       <div class="library-heading">${hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${collectionCount}</span><button type="button" class="btn secondary hub-edit-toggle" data-edit-toggle aria-pressed="${hubEditing}">${icon(hubEditing?'check':'edit')} ${hubEditing?'Готово':'Изменить порядок'}</button></div></div>
@@ -294,7 +313,7 @@
     if(screen==='table')save();
     if(room?.transportMode==='hotseat'){roomService.discardRecovery(room.id);room=null;lobbyParticipantId=null;}
     screen='hub';hubTab=tab;filter='all';Object.assign(hubFilters,{type:'',mechanic:'',format:''});historyOpen=false;replayIndex=null;selected=null;paused=true;
-    closeModal(true);render();
+    closeModal(true);flashPacksOnHub=true;render();refreshPackUpdates();
   }
   function resumeSession(id=sessionId,{history=false}={}) {
     if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату через лобби.');
@@ -655,7 +674,7 @@
   function leaveLobby(){
     if(screen==='table')save();clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;
     globalThis.PlayroomNetworkLibrary?.leaveHostRoom?.(room?.id);
-    room=null;lobbyParticipantId=null;cancelBot();closeModal(true);screen='hub';renderHub();
+    room=null;lobbyParticipantId=null;cancelBot();closeModal(true);screen='hub';flashPacksOnHub=true;renderHub();refreshPackUpdates();
   }
   function showPlayerNamePrompt(){
     openModal(`<header class="modal-head"><h2>Как вас называть?</h2></header><p class="lead">Имя используется по умолчанию в локальных и сетевых партиях. В конкретной комнате никнейм можно поменять отдельно.</p><form id="profile-form"><label class="field"><span>Имя игрока</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="Например, Иван" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">${icon('save')} Сохранить</button></form>`);
@@ -715,7 +734,10 @@
   function showResult() {
     if(!session||session.current.status!=='finished'||screen!=='table')return;
     const state=session.current,winner=state.winner;
-    openModal(GameScreen.resultMarkup({state,viewer:isPass()?-1:viewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки'}),'result-modal',{keepAudio:true});
+    const shownViewer=isPass()?-1:viewer;
+    let playerContent=[];
+    try{playerContent=V.get(session.game)?.render(E.project(state,shownViewer),shownViewer,[],{})?.playerContent||[];}catch(_){}
+    openModal(GameScreen.resultMarkup({state,viewer:shownViewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки',teamBadges:catalog[session.game]?.teamBadges,playerContent}),'result-modal',{keepAudio:true});
   }
   function captureHistoryOrigin(kind){return {kind,session,sessionId,viewer,gate,paused,awaitingPass,screen,hubTab,scrollY:window.scrollY};}
   function restoreHistoryOrigin(){const origin=historyOrigin;if(!origin)return;historyOrigin=null;session=origin.session;sessionId=origin.sessionId;viewer=origin.viewer;gate=origin.gate;paused=origin.paused;awaitingPass=origin.awaitingPass;screen=origin.screen;hubTab=origin.hubTab;return origin;}
@@ -776,7 +798,8 @@
     home(){leaveTable('games');},
     sessions(){leaveTable('sessions');},
     resume(){resumeSession();},
-    packs(){packUI?.open();},
+    packs(){rememberPackUpdates('read');rememberPackUpdates('dismissed');packUI?.open();if(screen==='hub')renderHub();},
+    'dismiss-pack-updates'(){rememberPackUpdates('dismissed');renderHub();},
     help:showHelp,settings:showSettings,'card-help':showCardHelp,fullscreen,rules:()=>showRules(),
     'room-rules':showRoomRulesEditor,'room-change-game':showRoomGameEditor,
     'lobby-ready':toggleLobbyReady,
@@ -938,7 +961,9 @@
     stopSounds();if(session)save();
     try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?viewState:{},scroll:screen==='table'?{top:$('#app .yatzy-board')?.scrollTop||0,left:$('#app .yatzy-board')?.scrollLeft||0}:null}));}catch(_){}
   });
-  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onChange(){
+  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onCatalog(){
+    rememberPackUpdates('read');rememberPackUpdates('dismissed');if(screen==='hub')renderHub();
+  },onChange(){
     filter='all';
     clearDeletedSession();
     refreshSavedGameRecovery();
@@ -977,8 +1002,8 @@
   }else render();
   if(globalThis.PlayroomRemotePacks){
     void globalThis.PlayroomRemotePacks.load().then(async catalog=>{
-      if(!catalog||packs.list().length)return;
-      for(const item of catalog.packs){
+      if(!catalog)return;
+      if(!packs.list().length)for(const item of catalog.packs){
         try{await globalThis.PlayroomRemotePacks.install(item.id,{activate:true});}
         catch(error){loadWarning='Не удалось установить '+item.id+': '+error.message;}
       }

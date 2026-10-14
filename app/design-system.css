@@ -354,21 +354,36 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .app-game-layout .player-panel.opponent-hand:has(.fleet-indicator){max-width:380px}
 .player-avatar-wrap{position:relative;display:inline-flex;flex:none;align-items:center;justify-content:center;width:29px;height:29px;overflow:visible}
 .player-avatar-wrap>.avatar{width:100%!important;height:100%!important;min-width:0!important;flex:none}
-.player-medallion{position:absolute;z-index:2;top:-6px;right:-6px;display:grid;place-items:center;width:13px;height:13px;border-radius:50%;border:1px solid #fff9e9;background:#eadfc0;color:#283c30;font:800 9px/1 system-ui;box-shadow:0 1px 0 #bcae8e,0 1px 2px #21392d55;pointer-events:none}
-.player-medallion.is-team{background:var(--medallion-color);color:#fffdf4}
-.player-medallion.is-place{border:0;background:#e0bc59}.player-medallion.place-2{background:#c3c8c7}.player-medallion.place-3{background:#b78b66}
+.player-medallion{position:absolute;z-index:2;top:-6px;right:-6px;display:block;width:13px;height:13px;--round-token-fill:#eadfc0;--round-token-side:#ac9b72;--round-token-mark:#283c30;color:#283c30;pointer-events:none}
+.player-medallion.is-team{--round-token-fill:var(--medallion-color);--round-token-side:color-mix(in srgb,var(--medallion-color) 63%,#233c30);--round-token-mark:#fffdf4;color:#fffdf4}
+.player-medallion.is-place{--round-token-fill:#e0bc59;--round-token-side:#a27f30}.player-medallion.place-2{--round-token-fill:#c3c8c7;--round-token-side:#858e8b}.player-medallion.place-3{--round-token-fill:#b78b66;--round-token-side:#805b40}
+.player-medallion .medallion-art{display:block;width:100%;height:100%;overflow:visible}
+.player-avatar-wrap .player-medallion .first-symbol-digit,.lobby-avatar-wrap .player-medallion .first-symbol-digit{transform:translateY(.7px)}
 @keyframes turn-start-flash{0%,100%{box-shadow:inherit}35%,70%{box-shadow:0 0 0 4px #e0bc59,0 0 0 8px #e0bc5966}}
 .player-panel.turn-start-flash{animation:turn-start-flash .9s ease-out}
 @media(prefers-reduced-motion:reduce){.player-panel.turn-start-flash{animation:none}}
-.player-medallion.is-first{background:#eadfc0;color:var(--ink)}
-.player-medallion.is-first svg,.player-medallion.is-team svg{display:block;width:11px;height:11px;stroke-width:2.2}
+.player-medallion.is-first{--round-token-fill:#eadfc0;--round-token-mark:var(--ink);color:var(--ink)}
 .player-medallion.is-team:has(svg){color:#fffdf4}
-.result-scores .score-row{align-items:center;gap:10px;text-align:left}
-.result-scores .result-player{display:flex;align-items:center;gap:8px;min-width:0}
-.result-scores .player-medallion{position:static;flex:none;width:25px;height:25px;font-size:14px}
-.result-scores .result-place-text{font-weight:800;white-space:nowrap}
-.result-scores .result-stat{display:flex;flex-direction:column;text-align:right;gap:2px}
-.result-scores .result-stat small{color:var(--muted)}
+.result-scores .score-row{display:grid;grid-template-columns:27px 29px minmax(0,1fr) minmax(0,45%);align-items:center;column-gap:6px;text-align:left}
+.result-scores .score-row>.avatar{flex:none}
+.result-scores .result-name{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
+.result-scores .result-name .participant-role{flex:none}
+.result-scores .result-name strong{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis}
+.result-scores .player-medallion{position:static;flex:none;width:22px;height:22px}
+.result-scores .result-awards{position:relative;display:block;flex:none;width:27px;height:25px}
+.result-scores .result-awards .player-medallion{position:absolute;top:0;left:0}
+.result-scores .result-awards .player-medallion:nth-child(2){top:3px;left:5px;z-index:1}
+.result-scores .result-awards .player-medallion:nth-child(3){top:6px;left:10px;z-index:0}
+.result-scores .result-awards .player-medallion.is-place{z-index:2}
+.result-scores .result-place-text{display:grid;place-items:center;width:22px;height:22px;font-weight:800;white-space:nowrap}
+.result-scores .result-stat{display:flex;min-width:0;flex-direction:column;align-items:flex-end;text-align:right;gap:2px}
+.result-scores .result-counters{display:flex;align-items:center;justify-content:flex-end;gap:4px;white-space:nowrap;max-width:100%}
+.result-scores .result-core-counters{display:flex;align-items:center;gap:4px}
+.result-scores .result-counters:has(.fleet-indicator){flex-direction:column;align-items:flex-end}
+.result-scores .result-counters .player-indicators{justify-content:flex-end;gap:3px}
+.result-scores .result-counters .fleet-indicator{min-height:21px;padding:1px 3px;gap:2px}
+.result-scores .result-counters .fleet-ship-icon{max-width:28px;height:14px}
+.result-scores .result-stat small{color:var(--muted);font-size:10px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .history-controls .replay-track{position:relative;display:flex;align-items:center;flex:1;min-width:0}
 .history-controls .replay-track input{width:100%;margin:0;position:relative;z-index:1}
 .history-controls .replay-track.has-new-history:before{content:'';position:absolute;left:var(--new-from);right:0;height:5px;border-radius:4px;background:#91ad80;transform:translateY(1px)}
