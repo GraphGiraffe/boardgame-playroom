@@ -19,13 +19,13 @@ test('new packs, deck sizes and Durak variants finish with valid states',()=>{
 });
 
 test('hidden boards and hands remain private in projected state',()=>{
- let s=create('battleship',2,'russian');s=play(s,{type:'auto'});s=play(s,{type:'auto'});const sea=E.project(s,0);assert(sea.data.ships[0].flat().some(Number.isInteger));assert(sea.data.ships[1].flat().every(x=>x===null));
+ let s=create('battleship',2,'russian');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const sea=E.project(s,0);assert(sea.data.ships[0].flat().some(Number.isInteger));assert(sea.data.ships[1].flat().every(x=>x===null));
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}
 });
 
 test('Battleship hit repeat and five-ship alternating turns',()=>{
- for(const preset of ['russian','classic']){let s=create('battleship',2,preset);s=play(s,{type:'auto'});s=play(s,{type:'auto'});const actor=s.turn,cell=s.data.ships[1-actor][0][0];s=play(s,{type:'fire',cell});assert.equal(s.data.shots[actor].at(-1).hit,true);assert.equal(s.turn,preset==='russian'?actor:1-actor);}
+ for(const preset of ['russian','classic']){let s=create('battleship',2,preset);s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][0];s=play(s,{type:'fire',cell});assert.equal(s.data.shots[actor].at(-1).hit,true);assert.equal(s.turn,preset==='russian'?actor:1-actor);}
 });
 
 test('Battleship manual placement rotates and preserves the fleet rules',()=>{
@@ -38,6 +38,27 @@ test('Battleship manual placement rotates and preserves the fleet rules',()=>{
 test('Ludo teams finish together and Yatzy uses classic small straight',()=>{
  let s=create('ludo',4,'teams');s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.dice=[1];s.data.used=[false];s=play(s,{type:'move',owner:2,pawn:3,dieIndex:0});assert.deepEqual(s.winners,[0,2]);
  s=create('yatzy');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
+});
+
+test('Ludo keeps every pawn visible on a shared start and does not replay the prior roll',()=>{
+ const s=create('ludo',4),cell=13;
+ for(const count of [2,4,8,16]){
+  s.data.pawns=s.data.pawns.map((row,p)=>row.map((_,j)=>p*4+j<count?(cell-p*13+52)%52:-1));
+  const html=V.render(E.project(s,0),0,E.legalActions(s,0),{});
+  const pawns=[...html.matchAll(/<button class="ludo-pawn[^>]*data-entity="token-(\d)-(\d)"[^>]*>/g)].filter(match=>Number(match[1])*4+Number(match[2])<count);
+  assert.equal(pawns.length,count);
+  const positions=pawns.map(match=>match[0].match(/left:([\d.]+)%;top:([\d.]+)%/).slice(1).join(':'));
+  assert.equal(new Set(positions).size,count,`${count} pawns occupy distinct positions`);
+  assert(pawns.every(match=>match[0].includes('is-stacked')));
+ }
+ s.data.phase='roll';s.data.lastRoll=6;s.data.lastRolled=[0];s.events.push({id:1,kind:'roll',player:0});s.turn=1;
+ assert.doesNotMatch(V.render(E.project(s,1),1,E.legalActions(s,1),{}),/data-motion-lead="roll"/);
+ s.turn=0;assert.match(V.render(E.project(s,0),0,E.legalActions(s,0),{}),/data-motion-lead="roll"/);
+ s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.dice=[1];s.data.used=[false];
+ const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
+ const safeCell=route.match(/<button class="ludo-cell ludo-safe[^>]*data-motion-anchor="path-8"[^>]*>[\s\S]*?<\/button>/)?.[0];
+ assert(safeCell?.includes('ludo-safe-star'));
+ assert(!safeCell.includes('ludo-route-dot'),'route dots do not hide a safe star');
 });
 
 test('Durak lets a non-defender join the attack',()=>{
@@ -92,7 +113,7 @@ test('RC4 Ludo multiple dice, guarantee, and independently consumed values',()=>
  }
 });
 test('RC4 sinking marks do not count as shots or leak when announcements disabled',()=>{
- for(const announceSinking of ['on','off']){let s=E.createGame('battleship',{players:[{name:'A'},{name:'B'}],announceSinking,seed:4});s=play(s,{type:'auto'});s=play(s,{type:'auto'});const p=s.turn,ship=s.data.ships[1-p].at(-1),before=s.data.shots[p].length;
+ for(const announceSinking of ['on','off']){let s=E.createGame('battleship',{players:[{name:'A'},{name:'B'}],announceSinking,seed:4});s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const p=s.turn,ship=s.data.ships[1-p].at(-1),before=s.data.shots[p].length;
   for(const cell of ship){s.turn=p;s=play(s,{type:'fire',cell});}
   assert.equal(s.data.shots[p].length,before+ship.length);const other=E.project(s,p),publicState=E.project(s,-1),cues=E.soundCues(s,p,s.events.at(-2).id);
   if(announceSinking==='on'){assert(s.data.marks[p].length);assert(other.data.fleetCounts[1-p]);assert(cues.some(c=>c.id==='sea.sunk'));assert(!cues.some(c=>c.id==='sea.hit'));}
@@ -106,7 +127,7 @@ test('fleet counters show distinct deck lengths and mark zero in both surfaces',
  assert.equal((html.match(/fleet-ship-icon/g)||[]).length,5);
  assert.equal((html.match(/class="player-indicator fleet-indicator is-empty"/g)||[]).length,1);
  assert.deepEqual([...html.matchAll(/class="fleet-ship-icon" width="(\d+)"/g)].map(x=>Number(x[1])),[25,34,43,52,61]);
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'auto'});
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});
  const scene=V.render(E.project(s,0),0,E.legalActions(s,0));
  assert.match(scene,/fleet-indicator/);
 });
@@ -118,7 +139,7 @@ test('board game avatars keep the standard light palette',()=>{
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'auto'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
  assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
@@ -166,7 +187,7 @@ test('Pexeso shows a mismatch through its animation, then closes it before the n
  assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
  assert(E.legalActions(s).every(a=>a.type==='flip'));
  const projected=E.project(s,1),animated=V.render(projected,1,[],{presentationTurn:0}),settled=V.render(projected,1,[]);
- assert.equal((animated.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
+ assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
  assert.equal((settled.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length);
  s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
 });

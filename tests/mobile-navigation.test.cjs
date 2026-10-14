@@ -76,7 +76,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         assert.equal(await page.locator('.uno-scene').count(),1,'lobby dismissal returns to the game');
         // Persistent saves must survive without any test-only sessionStorage marker.
         await page.evaluate(()=>sessionStorage.clear());
-        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
+        await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await press(page.locator('.handoff [data-command=unlock]'));if(await page.locator('.table-heading [data-command=home]').count())await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();
         await press(page.locator('.table-tools [data-command=room]'));
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),restoredRoom.id);
         await page.keyboard.press('Escape');assert.equal(await page.locator('.uno-scene').count(),1);
@@ -145,7 +145,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await page.locator('.handoff').waitFor();assert.equal(await page.locator('.hand-track .uno-card').count(),0);
         await press(page.locator('[data-command=unlock]'));assert.deepEqual(await current(),second);
         assert.equal(await page.locator('.hand-track .uno-card').count(),5);
-        await list();await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        await list();await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await press(page.locator('.handoff [data-command=unlock]'));if(await page.locator('.table-heading [data-command=home]').count())await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
         assert.deepEqual(await ids(),[first.id,second.id,third.id].sort());
         await press(row(second.id).locator('[data-resume-id]'));await page.locator('.handoff').waitFor();
         assert.equal(await page.locator('.hand-track .uno-card').count(),0,'Reload must not bypass the private hand curtain');
@@ -164,7 +164,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         assert.deepEqual(await ids(),survivors,'Saved-game UI must show the same surviving records after reload');
         await press(row(second.id).locator('[data-delete-id]'));await press(page.locator('.modal [data-delete-confirm]'));
         await page.waitForFunction(()=>document.querySelectorAll('.saved-game[data-session-id]').length===1);
-        await page.reload();await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
+        await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await press(page.locator('.handoff [data-command=unlock]'));if(await page.locator('.table-heading [data-command=home]').count())await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();
         assert.deepEqual(await ids(),[third.id],'Deleted active session must not return through pagehide autosave');
         await press(row(third.id).locator('[data-resume-id]'));await page.locator('.snakes-scene').waitFor();assert.deepEqual(await current(),third);
         assert.deepEqual(errors,[]);
@@ -196,6 +196,8 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
           localStorage.setItem('playroom.session.v1',saved);
         },JSON.stringify(penultimate));
         await page.reload();
+        if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').tap();
+        if(await page.locator('.table-heading [data-command=home]').count())await page.locator('.table-heading [data-command=home]').tap();
         // Resume via the persisted library entry, not the optional hero banner.
         // The saved-game record and the finished replay are still asserted.
         await page.locator('.side-nav [data-command=sessions]').tap();
@@ -226,6 +228,10 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
           assert.equal(await page.locator('#replay-range').inputValue(),'0');
           assert.deepEqual(await current(),expected,'History inspection must not modify the completed session');
           await page.reload();
+          if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').tap();
+          if(await page.locator('.table-heading [data-command=history-close]').count())await page.locator('.table-heading [data-command=history-close]').tap();
+          if(await page.locator('.result-modal [data-command=home]').count())await page.locator('.result-modal [data-command=home]').tap();
+          else if(await page.locator('.table-heading [data-command=home]').count())await page.locator('.table-heading [data-command=home]').tap();
         }
         assert.deepEqual(await current(),expected);assert.deepEqual(errors,[]);
       }finally{

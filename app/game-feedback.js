@@ -1,33 +1,50 @@
 (function(root,factory){
   'use strict';
-  const API=factory();
+  const API=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=API;
   root.PlayroomGameFeedback=API;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
-  // Render only authorized projected events. A repeated snapshot, history
-  // navigation, or a lost-ACK retry must not replay sounds or announcements.
+  // Speech is presentation of authorized public events. It never changes a turn.
   class GameFeedback {
-    constructor({mount=()=>document.querySelector('.table-shell'),play=()=>{},clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},duration=3000}={}){
+    constructor({mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},duration=700}={}){
       this.mount=mount;this.play=play;this.clock=clock;this.duration=duration;
-      this.cursor=0;this.notice=null;this.timer=null;
+      this.cursor=0;this.notice=null;this.timer=null;this.queue=[];this.active=null;this.waiters=[];
     }
-    start(events=[]){this.cursor=events.at(-1)?.id||0;this.notice=null;this.refresh();}
-    accept(events=[],cues=[],pack,{silent=false}={}){
+    start(events=[]){this.clear();this.cursor=events.at(-1)?.id||0;}
+    accept(events=[],cues=[],pack,{silent=false,duration=this.duration}={}){
       const additions=events.filter(e=>Number.isSafeInteger(e?.id)&&e.id>this.cursor);
       if(!additions.length)return;
       this.cursor=additions.at(-1).id;
       if(silent)return;
       const fresh=cues.filter(c=>additions.some(e=>e.id===c.eventId)&&typeof c.id==='string');
       if(fresh.length)this.play(fresh.map(c=>c.id),pack);
+      for(const event of additions)if(event.speech)this.queue.push({speech:event.speech,duration:Math.max(220,Number(duration)||this.duration)});
+      if(!this.active)this.next();
     }
+    next(){
+      if(this.timer!==null){this.clock.clearTimeout(this.timer);this.timer=null;}
+      this.active=this.queue.shift()||null;this.refresh();
+      if(!this.active){for(const done of this.waiters.splice(0))done();return;}
+      this.timer=this.clock.setTimeout(()=>{this.timer=null;this.next();},this.active.duration);
+    }
+    whenIdle(){return this.active||this.queue.length?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
     refresh(){
       const mount=this.mount();if(!mount)return;
-      mount.querySelector('.game-notice')?.remove();
-      // Action descriptions belong to the shared status bar. Rendering a new
-      // frame must never cover a hand or create a timed duplicate notification.
+      mount.querySelectorAll('.game-notice,.game-speech').forEach(node=>node.remove());
+      mount.querySelectorAll('.player-panel.is-addressed').forEach(node=>node.classList.remove('is-addressed'));
+      const speech=this.active?.speech;if(!speech)return;
+      const panel=[...mount.querySelectorAll('.player-panel[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===speech.speaker);
+      if(!panel)return;
+      if(Number.isInteger(speech.target))mount.querySelector(`.player-panel[data-player-index="${speech.target}"]`)?.classList.add('is-addressed');
+      const bubble=mount.ownerDocument.createElement('span');bubble.className='game-speech is-game'+(speech.result==='success'?' is-success':speech.result==='error'?' is-error':'');bubble.setAttribute('role','status');
+      const message=speech.text||((speech.icon==='cards'?'Передано карт: ':'Нет карт')+(speech.count||''));bubble.setAttribute('aria-label',message);
+      if(speech.icon==='cards'){const icon=mount.ownerDocument.createElement('span');icon.className='game-speech-icon';icon.innerHTML=root.TabletopUI?.icon?.('cards')||'▰';bubble.append(icon);const count=mount.ownerDocument.createElement('b');count.textContent=String(speech.count);bubble.append(count);}
+      else if(speech.icon==='cross')bubble.textContent='✕';
+      else bubble.textContent=speech.text;
+      panel.append(bubble);
     }
-    clear(){if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.notice=null;this.refresh();}
+    clear(){if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;for(const done of this.waiters.splice(0))done();this.refresh();}
     destroy(){this.clear();}
   }
   return GameFeedback;

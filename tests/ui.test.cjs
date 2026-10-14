@@ -18,6 +18,7 @@ async function resume(page){
   // With the unified «Мои партии» hub, an active local match may appear
   // in the saved-games panel rather than as a hero banner on reload.
   // Require an actual stored session and continue through either real UI path.
+  if(await page.locator('.table-shell').count()){if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();return;}
   const banner=page.locator('.resume-banner [data-command=resume]');
   if(await banner.count())await banner.click();
   else{
@@ -219,7 +220,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
         const stored=JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}');
         return stored.sound===true&&stored.volume===0.3;
       });
-      await page.locator('.modal [data-command=close-modal]').click();await page.reload();
+      await page.locator('.modal [data-command=close-modal]').click();await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
       await page.locator('[data-command=settings]').click();
       assert.equal(await page.locator('#setting-sound').isChecked(),true);
       assert.equal(await page.locator('#setting-volume').inputValue(),'0.3');
@@ -227,7 +228,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#setting-volume').isDisabled(),true);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
       assert.equal(await page.evaluate(()=>qaAudio.audio.enabled),false);
-      await page.locator('.modal [data-command=close-modal]').click();await page.reload();
+      await page.locator('.modal [data-command=close-modal]').click();await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
       await page.locator('[data-command=settings]').click();
       assert.equal(await page.locator('#setting-sound').isChecked(),false);
       assert.equal(await page.locator('#setting-volume').inputValue(),'0.3');
@@ -501,6 +502,8 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         // Use the same static overlay markup emitted by both room renderers;
         // scrolling isolation does not require connecting an authority.
         await page.goto(server.url);
+        if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
+        if(await page.locator('.table-heading [data-command=home]').count())await page.locator('.table-heading [data-command=home]').click();
         await page.evaluate(()=>{
           document.querySelector('#app').style.minHeight='2400px';
           document.querySelector('#app').insertAdjacentHTML('beforeend','<div class="lobby-countdown" role="status" aria-live="assertive"><div><strong>3</strong><p>Игра начинается…</p></div></div>');

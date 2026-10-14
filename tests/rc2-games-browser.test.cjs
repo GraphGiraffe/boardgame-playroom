@@ -67,7 +67,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    assert.deepEqual(geometry,[],`stable action reserve at ${width}x${height}`);
    const fleets=await page.evaluate(()=>{
     const E=TabletopCore,issues=[],players=[{name:'Аня'},{name:'Борис'}];let state=E.createGame('battleship',{players,seed:17});
-    state=E.applyAction(state,state.turn,{type:'auto'});state=E.applyAction(state,state.turn,{type:'auto'});
+    state=E.applyAction(state,state.turn,{type:'auto'});state=E.applyAction(state,state.turn,{type:'ready'});state=E.applyAction(state,state.turn,{type:'auto'});state=E.applyAction(state,state.turn,{type:'ready'});
     for(const fleet of ['own','enemy']){
      const projected=E.project(state,0),actions=E.legalActions(state,0),scene=PlayroomViews.render(projected,0,actions,{viewState:{fleet}});
      document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Морской бой',state:projected,viewer:0,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
@@ -84,7 +84,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    const E=TabletopCore,issues=[];
    for(const game of ['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']){
     let s=E.createGame(game,{seed:17,players:Array.from({length:E.get(game).max},(_,i)=>({name:`Игрок ${i+1}`}))});
-    if(game==='battleship')for(let n=0;n<2;n++)s=E.applyAction(s,s.turn,{type:'auto'});
+    if(game==='battleship')for(let n=0;n<2;n++){s=E.applyAction(s,s.turn,{type:'auto'});s=E.applyAction(s,s.turn,{type:'ready'});}
     const p=E.project(s,-1);document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game,state:p,viewer:-1,actions:[],scene:PlayroomViews.render(p,-1,[],{surface:'table'})});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
     if(document.querySelector('.view-error')||document.querySelector('[data-action]:not([disabled])'))issues.push(game+' public actions');
     if(game==='yatzy'&&document.querySelectorAll('.shared-die').length!==5)issues.push('missing public dice');
