@@ -209,7 +209,7 @@
         }
         for(const el of effects){
           const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
-          animations.push(el.animate(frames,{duration:Math.min(duration,250),easing:'ease-out'}));
+          animations.push(el.animate(frames,{duration,easing:'ease-out'}));
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.

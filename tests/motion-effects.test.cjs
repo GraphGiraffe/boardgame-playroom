@@ -124,6 +124,15 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const rect=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]').getBoundingClientRect();return{table:snap.table,stock:snap.stock,actual:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
       });assert(result.actual.width<=67&&result.actual.height<=99);assert(Math.abs(result.actual.x-result.table.x)<2);assert(Math.abs(result.actual.x-result.stock.x)>30);await page.evaluate(()=>flight);
     });
+    await check('A visible ask effect uses the selected animation duration',async page=>{
+      const duration=await page.evaluate(()=>{
+        const target=document.querySelector('.stock-button');target.dataset.motionEffect='pulse';target.dataset.motionTrigger='ask';
+        const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'ask'}});
+        window.flight=PlayroomMotion.play(snapshot,{duration:1100});
+        return target.getAnimations()[0]?.effect.getTiming().duration;
+      });
+      assert.equal(duration,1100);await page.evaluate(()=>flight);
+    });
     await check('A completed drag settles from its release rectangle rather than jumping back into the hand',async page=>{
       const result=await page.evaluate(()=>{
         const rect=document.querySelector('.public-card').getBoundingClientRect(),release={x:rect.x,y:rect.y,width:rect.width,height:rect.height};
