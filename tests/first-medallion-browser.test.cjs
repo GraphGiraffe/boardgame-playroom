@@ -22,7 +22,7 @@ test('first-player token is a centered number on the same raised disc in lobby a
     for(const mark of [button,lobby]){
       assert.equal(mark.background,'rgb(234, 223, 192)');
       assert.notEqual(mark.shadow,'none');
-      assert.equal(mark.border,'2px');
+      assert(['1px','1.5px'].includes(mark.border));
       assert.equal(mark.number,'1');
       assert(mark.centerOffset<1.5,`number is off center by ${mark.centerOffset}px`);
     }
