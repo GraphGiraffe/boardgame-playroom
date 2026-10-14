@@ -71,14 +71,37 @@
     return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><span class="replay-track ${Number.isInteger(newFrom)&&newFrom>0&&newFrom<=count?'has-new-history':''}" style="--new-from:${Number.isInteger(newFrom)&&count>0?Math.max(0,Math.min(100,newFrom/count*100)):100}%"><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"></span><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div></section>`;
   }
   function deleteConfirmation({name='Это сохранение',network=false,confirmAttrs=''}){
-    return `${modalHead('Удалить партию?')}<p class="lead">${esc(name)} и вся история этой партии будут удалены ${network?'только на этом устройстве':'с устройства'}. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" ${confirmAttrs}>Удалить</button></div>`;
+    return `${modalHead('Удалить партию?')}<p class="lead">${esc(name)} и вся история этой партии будут удалены ${network?'только на этом устройстве':'с устройства'}. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" ${confirmAttrs}>${icon('trash')} Удалить</button></div>`;
   }
   function resultMarkup({state,viewer,gameName,scoreLabel='очки',network=false}={}){
     if(!state||state.status!=='finished')return '';
     const winner=state.winner,winningPlayers=state.winners|| (winner==null?[]:[winner]),person=winner==null?null:state.players[winner];
     const title=winner===null?'Ничья!':viewer<0?winningPlayers.length>1?'Победители: '+winningPlayers.map(i=>state.players[i]?.name||'Игрок').join(', '):`${person?.name||'Игрок'} побеждает`:winningPlayers.includes(viewer)?'Победа!':'Поражение';
-    const scores=state.players.map((player,i)=>`<div class="score-row"><span>${winningPlayers.includes(i)?'★ ':''}${esc(player.name)}${i===viewer?' · вы':''}</span><strong>${esc(scoreLabel)}: ${Number.isFinite(player.score)?player.score:0}</strong></div>`).join('');
+    const scores=state.players.map((player,i)=>({player,i})).sort((a,b)=>(state.result?.places?.[a.i]??0)-(state.result?.places?.[b.i]??0)||a.i-b.i).map(({player,i})=>{
+      const place=state.result?.places?.[i],value=state.result?.values?.[i],detail=state.result?.details?.[i];
+      const badge=place?place<=3?UI.playerMedallion({place}):`<span class="result-place-text">${place} место</span>`:winningPlayers.includes(i)?'★ ':'';
+      return `<div class="score-row"><span class="result-player">${badge}${esc(player.name)}${i===viewer?' · вы':''}</span><span class="result-stat"><strong>${esc(state.result?.label||scoreLabel)}: ${Number.isSafeInteger(value)?value:Number.isFinite(player.score)?player.score:0}</strong>${Number.isSafeInteger(detail)?`<small>${esc(state.result.detailLabel)}: ${detail}</small>`:''}</span></div>`;
+    }).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;
+  }
+  function turnNotice({play=()=>{},reducedMotion=()=>false}={}){
+    let previous=null,timer=null;
+    return {
+      observe({sessionId,revision,turn,viewer,status,paused=false,active=true,mount=document}){
+        if(!active)return false;
+        const next={sessionId,revision,turn};
+        const started=active&&previous&&previous.sessionId===sessionId&&revision>previous.revision&&turn!==previous.turn&&turn===viewer&&status==='playing'&&!paused;
+        previous=next;
+        if(!started)return false;
+        const card=mount.querySelector(`.player-panel[data-player-index="${viewer}"]`);
+        if(card&&!reducedMotion()){
+          card.classList.remove('turn-start-flash');void card.offsetWidth;card.classList.add('turn-start-flash');
+          clearTimeout(timer);timer=setTimeout(()=>card.classList.remove('turn-start-flash'),1000);
+        }
+        play();return true;
+      },
+      reset(){previous=null;clearTimeout(timer);}
+    };
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
@@ -149,5 +172,5 @@
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
   }
-  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
 });

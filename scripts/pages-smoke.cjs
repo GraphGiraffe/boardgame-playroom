@@ -119,6 +119,20 @@ async function main(){
    if(forged.ok()&&!((forged.headers()['content-type']||'').includes('text/html')))throw Error('Forged cookie accepted');
    const worker=await get(anonymous,new URL('_worker.js',url).href);
    if(worker.ok()&&!((worker.headers()['content-type']||'').includes('text/html')))throw Error('Private Worker exposed');
+   if(await page.evaluate(()=>Array.isArray(globalThis.PlayroomInstalledPacks)&&globalThis.PlayroomInstalledPacks.length===0)){
+    stage='remote-pack-catalog';
+    const target=new URL('/api/packs/catalog',url).href;
+    const denied=await get(anonymous,target);
+    if(denied.ok())throw Error('Remote catalog exposed without authentication');
+    const catalogResponse=await get(context,target);
+    if(!catalogResponse.ok())throw Error('Protected remote catalog unavailable: '+catalogResponse.status());
+    const catalog=await catalogResponse.json();
+    if(catalog.format!=='playroom-catalog'||catalog.packs?.length!==12)throw Error('Remote catalog is incomplete');
+    for(const item of catalog.packs){
+     const file=await get(context,new URL(item.url,url).href);
+     if(!file.ok()||crypto.createHash('sha256').update(await file.body()).digest('hex')!==item.sha256)throw Error('Remote pack mismatch: '+item.id);
+    }
+   }
   }finally{await anonymous.close();}
   if(process.env.PLAYROOM_SMOKE_ONLINE_ONLY==='1'){
    console.log('Protected online rollback baseline passed; offline verification omitted for this recovery target.');

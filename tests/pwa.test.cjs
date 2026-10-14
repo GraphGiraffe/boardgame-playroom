@@ -122,15 +122,51 @@ with tempfile.TemporaryDirectory() as d:
  with ZipFile(p/'public.zip','w') as z:
   for n in ['index.html','sw.js','app/app.js','manifest.webmanifest']: z.writestr('playroom-pwa/'+n,n)
  with ZipFile(p/'private.zip','w') as z:
-  for n in ['_worker.js','_routes.json','manifest.webmanifest']: z.writestr(n,'private-'+n)
+  for n in ['_routes.json','manifest.webmanifest']: z.writestr(n,'private-'+n)
+  z.writestr('_worker.js','export default {fetch(request,env){return env.ASSETS.fetch(request)}}')
  m.package(p/'public.zip',p/'private.zip',p/'out.zip')
  with ZipFile(p/'out.zip') as z:
   assert 'index.html' in z.namelist()
   assert not any(n.startswith('playroom-pwa/') for n in z.namelist())
-  assert z.read('_worker.js')==b'private-_worker.js'
+  assert b'PlayroomPrivateWorker' in z.read('_worker.js')
+  assert b'PlayroomPackRoute' in z.read('_worker.js')
   assert z.read('manifest.webmanifest')==b'private-manifest.webmanifest'
 `;
  execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
+});
+
+test('R2 catalog route verifies snapshot bytes and serves immutable pack files',async()=>{
+ const vm=require('node:vm'),crypto=require('node:crypto');
+ const source=fs.readFileSync(path.join(root,'scripts/pack-catalog-route.js'),'utf8');
+ const route=vm.runInNewContext(source+'\nPlayroomPackRoute',{Request,Response,URL,crypto:crypto.webcrypto,Uint8Array});
+ const snapshot=Buffer.from('{"format":"playroom-catalog","version":1,"packs":[]}');
+ const sha=crypto.createHash('sha256').update(snapshot).digest('hex'),pack=Buffer.from('{"manifest":{"id":"uno"}}');
+ const packSha=crypto.createHash('sha256').update(pack).digest('hex');
+ const objects=new Map([['catalog/current.json',{text:async()=>JSON.stringify({version:1,key:`catalog/snapshots/${sha}.json`,sha256:sha})}],[`catalog/snapshots/${sha}.json`,{arrayBuffer:async()=>Uint8Array.from(snapshot).buffer}],[`files/uno/0.4.9/${packSha}.playroom-pack.json`,{body:pack}]]);
+ const env={PLAYROOM_PACKS:{get:key=>objects.get(key)}};
+ const catalog=await route.fetch(new Request('https://example.test/api/packs/catalog'),env);
+ assert.equal(catalog.status,200);assert.equal(catalog.headers.get('cache-control'),'no-store, max-age=0');assert.equal(await catalog.text(),snapshot.toString());
+ const file=await route.fetch(new Request(`https://example.test/api/packs/files/uno/0.4.9/${packSha}.playroom-pack.json`),env);
+ assert.equal(file.status,200);assert.match(file.headers.get('cache-control'),/immutable/);assert.equal(await file.text(),pack.toString());
+ objects.set(`catalog/snapshots/${sha}.json`,{arrayBuffer:async()=>Uint8Array.from(Buffer.from('tampered')).buffer});
+ assert.equal((await route.fetch(new Request('https://example.test/api/packs/catalog'),env)).status,503);
+ assert.equal((await route.fetch(new Request('https://example.test/api/packs/catalog'),{})).status,503);
+});
+
+test('remote pack loader checks URL, SHA256 and manifest before installation',async()=>{
+ const crypto=require('node:crypto'),{RemoteCatalog,validate}=require('../app/remote-catalog.js');
+ const bundle={manifest:{id:'uno',version:'0.4.9',stateVersion:1,engineApi:1,viewApi:2}};
+ const bytes=Buffer.from(JSON.stringify(bundle)),sha=crypto.createHash('sha256').update(bytes).digest('hex');
+ const item={...bundle.manifest,sha256:sha,url:`/api/packs/files/uno/0.4.9/${sha}.playroom-pack.json`};
+ const catalog={format:'playroom-catalog',version:1,collection:'0.6.0',packs:[item]};
+ assert.throws(()=>validate({...catalog,packs:[{...item,url:'/other-origin'}]}));
+ assert.throws(()=>validate({...catalog,packs:[item,item]}));
+ let installed=0,corrupt=false;
+ const manager={list:()=>[],parse:JSON.parse,prepare:value=>value,install:value=>{installed++;return value;}};
+ const storage=new Map(),client=new RemoteCatalog({manager,storage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},crypto:crypto.webcrypto,
+  fetcher:async url=>new Response(url==='/api/packs/catalog'?JSON.stringify(catalog):corrupt?'tampered':bytes)});
+ await client.refresh();await client.install('uno',{activate:true});assert.equal(installed,1);
+ corrupt=true;await assert.rejects(()=>client.install('uno'),/сумма/);assert.equal(installed,1);
 });
 
 test('incomplete or login-page shell never installs; verified update waits for existing clients',async()=>{
@@ -204,7 +240,7 @@ def denied(call):
  raise AssertionError('Unsafe deployment accepted')
 with patch.object(build,'installed_script',return_value=json.dumps([{'id':n} for n in ['uno','domino','durak','checkers','snakes','tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']])):
  items=dict(build.pwa_runtime_items())
-private={'_worker.js':'private test worker', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
+private={'_worker.js':'export default {fetch(request,env){return env.ASSETS.fetch(request)}}', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
 with tempfile.TemporaryDirectory() as directory:
  root=Path(directory);public=root/'playroom-pwa.zip';sums=root/'SHA256SUMS'
  def package(files):
@@ -213,7 +249,8 @@ with tempfile.TemporaryDirectory() as directory:
  package(items)
  result=pages.prepare(public,sums,archive(private),root/'valid')
  assert result['files']==len(items)+2
- assert (root/'valid/_worker.js').read_text()==private['_worker.js']
+ assert 'PlayroomPrivateWorker' in (root/'valid/_worker.js').read_text()
+ assert 'PlayroomPackRoute' in (root/'valid/_worker.js').read_text()
  denied(lambda:pages.prepare(public,sums,archive(private),root/'valid'))
  sums.write_text('0'*64+'  playroom-pwa.zip\\n')
  denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))

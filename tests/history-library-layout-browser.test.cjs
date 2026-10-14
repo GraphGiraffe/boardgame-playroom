@@ -126,7 +126,7 @@ test('local and network delete dialogs share controls and delete only their chos
    assert.equal(await page.locator('[data-delete-id="keep-local"]').count(),1);assert.equal(await page.locator('[data-delete-id="client:keep-network"]').count(),1);
   }
   assert.deepEqual(geometry[0],geometry[1]);assert.deepEqual(await page.evaluate(()=>removed),['client:delete-network']);
-  await page.locator('[data-clear-games]').click();assert.equal(await page.locator('#modal-root h2').innerText(),'Очистить Мои партии?');
+  await page.locator('[data-clear-games]').click();assert.equal(await page.locator('#modal-root h2').innerText(),'Удалить все партии?');
   await page.getByRole('button',{name:'Оставить',exact:true}).click();assert.equal(await page.locator('.saved-game').count(),2);
   await page.locator('[data-clear-games]').click();await page.locator('[data-clear-games-confirm]').click();
   await page.waitForFunction(()=>document.querySelectorAll('.saved-game').length===0);

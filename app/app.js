@@ -31,6 +31,8 @@
   const noticeElement=$('#toast');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
+  const turnNotice=GameScreen.turnNotice({play:()=>{if(settings.sound&&!document.hidden)void audio.play('turn',{volume:.45});},reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const appVersion=globalThis.PlayroomAppVersion||'неизвестна';
   const brand = '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>ХОД<small>β</small>';
   const botNames = ['Мика','Тео','Луна','Ника','Лев','Рэй','Сэм','Кира'];
   const randomBotName = () => {const used=new Set(room?.participants.filter(p=>p.bot).map(p=>p.nickname));const available=botNames.filter(name=>!used.has(name));return available[Math.floor(Math.random()*available.length)]||botNames[0];};
@@ -41,6 +43,7 @@
   let viewState = {}, viewIdentity = '';
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
   let sessionId = null, hubTab = 'games', savedFilter='all', networkSaved=[], networkSavedState='idle', networkSavedTicket=0;
+  let hubEditing=false;
   let room=null,lobbyParticipantId=null,lobbyTimer=null,lobbyCountdown=null;
   let historyOpen = false, replayIndex = null, replayTimer = null, botTimer = null, autoPassTimer = null;
   let paused = false, lastResult = null, storageOK = true, modalReturn = null;
@@ -171,16 +174,16 @@
     const order=id=>{const i=p.order.indexOf(id);return i<0?p.order.length+E.GAMES.findIndex(g=>g.id===id):i;};
     return E.GAMES.filter(g=>!p.hidden.includes(g.id)).sort((a,b)=>order(a.id)-order(b.id));
   }
-  function tile(g, featured) {
+  function tile(g, featured, editing=false) {
     const info=catalog[g.id]||{},favorite=globalThis.PlayroomPackManager?.displayPreferences().favorites.includes(g.id);
     const theme=['green','coral','blue','gold','violet'].includes(info.tileTheme)?info.tileTheme:({cards:'green',board:'gold',dice:'violet'})[info.category]||'green';
-    return `<article class="game-tile ${featured?'featured':''}" data-theme="${theme}" data-game="${g.id}">
+    return `<article class="game-tile ${featured?'featured':''}${editing?' is-editing':''}" data-theme="${theme}" data-game="${g.id}" ${editing?'draggable="true"':''}>
       <div class="tile-top tile-tags">${Tags.forPack(info).map(t=>`<span class="pill tag-${t.kind}" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.kind==='type'?icon(t.icon):esc(t.label)}</span>`).join('')}</div>
-      <button class="tile-favorite" data-favorite="${esc(g.id)}" aria-label="${favorite?'Убрать из избранного':'Добавить в избранное'}: ${esc(g.name)}" aria-pressed="${!!favorite}" title="${favorite?'Убрать из избранного':'Добавить в избранное'}">${favorite?'★':'☆'}</button>
+      ${editing?'':`<button class="tile-favorite" data-favorite="${esc(g.id)}" aria-label="${favorite?'Убрать из избранного':'Добавить в избранное'}: ${esc(g.name)}" aria-pressed="${!!favorite}" title="${favorite?'Убрать из избранного':'Добавить в избранное'}">${icon('star')}</button>`}
       <div class="game-cover">${V.cover ? V.cover(g.id) : ''}</div>
       <div class="tile-content"><h2 class="tile-title">${esc(g.name)}</h2><p class="tile-description">${esc(info.tagline || g.description)}</p>
       <div class="tile-bottom"><div class="tile-meta"><span>${icon('people')} ${g.min===g.max?g.min:g.min+'–'+g.max}</span><span class="meta-time">· ${esc(info.estimatedDuration||'Своя партия')}</span></div><span class="play-tile">${featured?'За стол ':''}${icon(featured?'arrow':'play')}</span></div></div>
-      <button class="tile-hit" data-start="${g.id}" aria-label="Играть в ${esc(g.name)}"></button></article>`;
+      ${editing?`<div class="tile-edit-actions" role="group" aria-label="Порядок и раздел: ${esc(g.name)}"><button type="button" data-edit-handle aria-label="Перетащить ${esc(g.name)}">⠿</button><button type="button" data-edit-step="-1" data-edit-id="${esc(g.id)}" aria-label="Поднять ${esc(g.name)}">${icon('up')}</button><button type="button" data-edit-step="1" data-edit-id="${esc(g.id)}" aria-label="Опустить ${esc(g.name)}">${icon('down')}</button><button type="button" data-edit-category="${esc(g.id)}" aria-label="Сменить раздел: ${esc(g.name)}">${esc(({favorites:'Избранное',normal:'Игры',hidden:'Скрытые'})[globalThis.PlayroomPackManager.category(g.id)])}</button></div>`:`<button class="tile-hit" data-start="${g.id}" aria-label="Играть в ${esc(g.name)}"></button>`}</article>`;
   }
   function recentGameCard(g){return `<div class="game-grid">${tile(g,false)}</div>`;}
   function hubFilterMarkup(){
@@ -197,10 +200,14 @@
     const lastGame=filter==='all'?games.find(g=>g.id===(lastGameId||session?.game)):null;
     const favorites=filter==='all'?games.filter(g=>preferences.favorites.includes(g.id)):[];
     const others=filter==='all'?games.filter(g=>!preferences.favorites.includes(g.id)):games;
-    const sections=filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра"><h2 class="hub-section-title">Последняя игра</h2>${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><h2 class="hub-section-title">Избранное</h2><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
+    const editSections=hubEditing?['favorites','normal','hidden'].map(group=>{
+      const labels={favorites:'Избранные',normal:'Игры',hidden:'Скрытые'},items=globalThis.PlayroomPackManager.ordered(E.GAMES.map(g=>g.id),preferences).map(id=>E.GAMES.find(g=>g.id===id)).filter(g=>globalThis.PlayroomPackManager.category(g.id,preferences)===group);
+      return `<section class="hub-game-section hub-edit-section" data-edit-drop="${group}" aria-label="${labels[group]}"><h2 class="hub-section-title">${labels[group]}</h2><div class="game-grid">${items.map(g=>tile(g,false,true)).join('')}</div>${items.length?'':'<p class="hub-edit-empty">Перетащите сюда игру</p>'}</section>`;
+    }).join(''):'';
+    const sections=hubEditing?editSections:filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра">${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
     $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-command="help">${icon('help')}Как играть</button></nav>
-      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / 0.16.3</span></div></aside>
+      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / ${esc(appVersion)}</span></div></aside>
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
       <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
         {attrs:'data-command="packs"',label:'Паки игр',name:'layers',className:'pack-hub-button'},
@@ -210,10 +217,26 @@
       ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
       ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="Закрыть предупреждение">${icon('close')}</button></p>`:''}
       ${session?GameScreen.resumeCard({title:(session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт')+' · '+meta(session.game).name,detail:session.current.status==='finished'?'Результат и история сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'}`}):''}
-      <div class="library-heading">${hubFilterMarkup()}<span class="collection-count">${games.length} В КОЛЛЕКЦИИ</span></div>
+      <div class="library-heading">${hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${E.GAMES.length} В КОЛЛЕКЦИИ</span><button type="button" class="btn secondary hub-edit-toggle" data-edit-toggle aria-pressed="${hubEditing}">${icon(hubEditing?'check':'edit')} ${hubEditing?'Готово':'Изменить порядок'}</button></div></div>
       ${sections}${!E.GAMES.length?'<div class="packs-empty-hub"><h2>Начните с первой игры</h2><p>Приложение готово. Добавьте файл пака: в нём есть правила, компоненты и оформление вашей игры.</p><button class="btn" data-command="packs">Установить пак игры</button></div>':!games.length?'<p class="lead">В этой категории пока нет игр.</p>':''}`}
-      <footer class="hub-footer"><span>${icon('hand')} Сделано для игры, а не для спешки</span><span>Без регистрации.<br class="mobile-text"> Даже без интернета.</span></footer></main></div>`;
+      <footer class="hub-footer"><span class="hub-footer-brand">${icon('hand')}<span class="hub-footer-lines"><span>Сделано для игры, а не для спешки</span><span class="eyebrow">PLAYROOM / ${esc(appVersion)}</span></span></span><span>Без регистрации.<br class="mobile-text"> Даже без интернета.</span></footer></main></div>`;
     if(hubTab==='sessions')refreshNetworkSaved();
+  }
+  function moveHubGame(id,group,beforeId=null){
+    globalThis.PlayroomPackManager.moveGame(id,group,beforeId,E.GAMES.map(game=>game.id));
+    renderHub();
+  }
+  function editHubStep(id,step){
+    const manager=globalThis.PlayroomPackManager,prefs=manager.displayPreferences(),group=manager.category(id,prefs);
+    const ids=manager.ordered(E.GAMES.map(game=>game.id),prefs).filter(item=>manager.category(item,prefs)===group),at=ids.indexOf(id),to=at+step;
+    if(to<0||to>=ids.length)return;
+    moveHubGame(id,group,step<0?ids[to]:ids[to+1]||null);
+  }
+  function hubDropAt(id,target){
+    const section=target?.closest?.('[data-edit-drop]');if(!section)return;
+    const card=target.closest('.game-tile[data-game]');
+    if(card?.dataset.game===id)return;
+    moveHubGame(id,section.dataset.editDrop,card?.dataset.game||null);
   }
   function savedGamesMarkup(){
     let local=[];
@@ -241,7 +264,7 @@
       `<button type="button" class="filter ${savedFilter===value?'active':''}" data-saved-filter="${value}" aria-pressed="${savedFilter===value}">${label}</button>`).join('');
     const note=networkSavedState==='loading'?'<p class="saved-network-info" role="status">Загружаем сетевые сохранения…</p>':
       networkSavedState==='error'?'<p class="recovery-note" role="alert">Сетевой архив этого браузера недоступен. Локальные партии не затронуты.</p>':'';
-    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><div class="saved-heading-actions"><button class="btn secondary" data-clear-games ${local.length+networkSaved.length?'':'disabled'}>Очистить Мои партии</button><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></div></header>
+    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><div class="saved-heading-actions"><button class="btn secondary" data-clear-games ${local.length+networkSaved.length?'':'disabled'}>${icon('trash')} Удалить все партии</button><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></div></header>
       <div class="saved-filter-bar" role="group" aria-label="Тип партии">${filters}</div>${note}
       <section class="saved-games-list" aria-label="Сохранённые партии">${entries.length?cards:'<div class="saved-empty"><h2>Пока нет партий</h2><p>Начните игру или проверьте другой раздел.</p><button class="btn" data-command="home">Выбрать игру</button></div>'}</section>`;
   }
@@ -358,7 +381,7 @@
     try{
       const local=library.records(),network=await globalThis.PlayroomNetworkLibrary.list({strict:true});
       if(!local.length&&!network.length)return;
-      openModal(`${modalHead('Очистить Мои партии?')}<p class="lead">Все ${local.length+network.length} сохранённых партий и их истории будут удалены с этого устройства. Паки игр останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-clear-games-confirm>Удалить все партии</button></div>`);
+      openModal(`${modalHead('Удалить все партии?')}<p class="lead">Все ${local.length+network.length} сохранённых партий и их истории будут удалены с этого устройства. Паки игр останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-clear-games-confirm>${icon('trash')} Удалить все партии</button></div>`);
     }catch(error){toast(error.message);}
   }
   async function clearGames(){
@@ -411,6 +434,8 @@
     ensureRoomButton();GameScreen.layoutScene($('#app'));
     const nextScoreBoard=$('#app .yatzy-board');if(scoreScroll&&nextScoreBoard){nextScoreBoard.scrollTop=scoreScroll.top;nextScoreBoard.scrollLeft=scoreScroll.left;}
     feedback.refresh();playerTargets?.refresh();
+    if(replay)turnNotice.reset();
+    else turnNotice.observe({sessionId:sessionId||session.createdAt,revision:state.move,turn:state.turn,viewer,status:state.status,paused,active:screen==='table'&&!transition&&gate===null&&!document.hidden,mount:$('#app')});
     if(gate!==null&&!replay)showGate();
     if(!transition&&!replay&&gate===null)presentationReady();
     scheduleBot();scheduleAutoPass();
@@ -583,7 +608,7 @@
     gate=needsGate(next.current)?viewer:null;closeModal(true);render();presentationReady();
   }
   function updateLobbyNickname(form){try{room=roomService.rename(room.id,lobbyParticipantId,form.elements.nickname.value);renderLobby();}catch(error){toast(error.message);}}
-  function showRoomHuman(seatId){const seat=room.seats.find(s=>s.id===seatId),p=room.participants.find(p=>p.id===seat?.participantId);openModal(`${modalHead(p?'Имя в комнате':'Добавить игрока')}<form id="room-human-form" data-seat="${esc(seatId)}" ${p?'data-rename="true"':''}><label class="field">Имя<input name="nickname" maxlength="24" required value="${esc(p?.nickname||'Игрок')}"></label><button class="icon-btn" aria-label="${p?'Сохранить имя':'Добавить игрока'}" type="submit">${icon('check')}</button></form>`);modalBack=renderLobby;}
+  function showRoomHuman(seatId){const seat=room.seats.find(s=>s.id===seatId),p=room.participants.find(p=>p.id===seat?.participantId);openModal(`${modalHead(p?'Имя в комнате':'Добавить игрока')}<form id="room-human-form" data-seat="${esc(seatId)}" ${p?'data-rename="true"':''}><label class="field">Имя<input name="nickname" maxlength="24" required value="${esc(p?.nickname||'Игрок')}"></label><button class="icon-btn" aria-label="${p?'Сохранить имя':'Добавить игрока'}" type="submit">${icon(p?'save':'addPlayer')}</button></form>`);modalBack=renderLobby;}
   function claimLobbySeat(seatId){const occupant=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId);if(room.ownerId===lobbyParticipantId&&!room.recovery&&occupant&&(occupant.bot||room.transportMode==='hotseat')){showRoomHuman(seatId);return;}if(room.transportMode==='hotseat'&&!room.seats.find(s=>s.id===seatId)?.participantId){showRoomHuman(seatId);return;}try{room=roomService.claimSeat(room.id,lobbyParticipantId,seatId);renderLobby();}catch(error){toast(error.message);}}
   function kickLobbyParticipant(targetId){try{room=roomService.kick(room.id,lobbyParticipantId,targetId);renderLobby();}catch(error){toast(error.message);}}
   function showRoomRules(){
@@ -594,7 +619,7 @@
   function showRoomHelp(){openModal(modalHead('Комната · справка')+PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)));modalBack=renderLobby;}
   function showRoomRulesEditor(){
     const state=roomService.snapshot(room.id),g=meta(state.game.id),presets=g.presets?.length?g.presets:[{id:'default',label:'Классический'}],fields=catalog[state.game.id]?.settings||[];
-    openModal(`${modalHead('Правила · '+g.name)}<form id="room-rules-form" data-game="${esc(state.game.id)}"><div class="start-options">${[['firstPlayerMode','Игрок №1',[['rules','По правилам','rules'],['random','Случайно','shuffle'],['assigned','Назначить','first']]],['seatOrder','Порядок',[['normal','Нормальный','arrow'],['random','Случайно','shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div><label class="field"><span>Набор правил</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<label class="field" data-rule-field="${esc(field.key)}"><span>${esc(field.label)}</span><select name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></label>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>Открытые руки</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">Просмотреть правила</button><button class="btn" type="submit">Сохранить правила</button></div></form>`);syncRuleVisibility($('#room-rules-form'));
+    openModal(`${modalHead('Правила · '+g.name)}<form id="room-rules-form" data-game="${esc(state.game.id)}"><div class="start-options">${[['firstPlayerMode','Игрок №1',[['rules','По правилам','rules'],['random','Случайно','shuffle'],['assigned','Назначить','first']]],['seatOrder','Порядок',[['normal','Нормальный','arrow'],['random','Случайно','shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div><label class="field"><span>Набор правил</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<label class="field" data-rule-field="${esc(field.key)}"><span>${esc(field.label)}</span><select name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></label>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>Открытые руки</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">Просмотреть правила</button><button class="btn" type="submit">${icon('save')} Сохранить правила</button></div></form>`);syncRuleVisibility($('#room-rules-form'));
   }
   function syncRuleVisibility(form){if(!form)return;for(const field of catalog[form.dataset.game]?.settings||[]){const row=form.querySelector('[data-rule-field="'+field.key+'"]');if(row)row.hidden=!!field.visibleWhen&&!Object.entries(field.visibleWhen).every(([key,value])=>form.elements['option-'+key]?.value===String(value));}}
   function showRoomGameEditor(){
@@ -630,7 +655,7 @@
     room=null;lobbyParticipantId=null;cancelBot();closeModal(true);screen='hub';renderHub();
   }
   function showPlayerNamePrompt(){
-    openModal(`<header class="modal-head"><h2>Как вас называть?</h2></header><p class="lead">Имя используется по умолчанию в локальных и сетевых партиях. В конкретной комнате никнейм можно поменять отдельно.</p><form id="profile-form"><label class="field"><span>Имя игрока</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="Например, Иван" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">Сохранить</button></form>`);
+    openModal(`<header class="modal-head"><h2>Как вас называть?</h2></header><p class="lead">Имя используется по умолчанию в локальных и сетевых партиях. В конкретной комнате никнейм можно поменять отдельно.</p><form id="profile-form"><label class="field"><span>Имя игрока</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="Например, Иван" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">${icon('save')} Сохранить</button></form>`);
   }
   function savePlayerProfile(form){try{playerProfile=profileStore.save(form.elements.playerName.value);closeModal(true);render();}catch(error){toast(error.message);}}
   function showRules(gameId=($('#modal-root .room-setup-modal,#room-rules-form')?room?.game?.id:session?.game)) {
@@ -784,7 +809,37 @@
     actions:()=>screen==='table'&&session&&!isReplay()&&!paused&&gate===null&&!transition?activeActions(session.current):[],
     selected:()=>selected,commit:action=>act(viewer,action),root:()=>document.querySelector('#app .table-shell')
   });
+  let hubDragged=null,hubTouch=null,hubDropSuppress=0;
+  document.addEventListener('dragstart',event=>{
+    const card=event.target.closest?.('.hub-edit-section .game-tile[data-game]');
+    if(!hubEditing||!card||event.target.closest('button'))return;
+    hubDragged=card.dataset.game;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',hubDragged);
+  });
+  document.addEventListener('dragover',event=>{if(hubDragged&&event.target.closest?.('[data-edit-drop]'))event.preventDefault();});
+  document.addEventListener('drop',event=>{if(!hubDragged)return;event.preventDefault();const id=hubDragged;hubDragged=null;hubDropAt(id,event.target);});
+  document.addEventListener('dragend',()=>{hubDragged=null;});
+  document.addEventListener('pointerdown',event=>{
+    const card=event.pointerType==='touch'&&hubEditing?event.target.closest('.hub-edit-section .game-tile[data-game]'):null;
+    if(!card||!event.target.closest('[data-edit-handle]'))return;
+    const hold={id:card.dataset.game,x:event.clientX,y:event.clientY,active:false,timer:null};
+    hold.timer=setTimeout(()=>{hold.active=true;card.classList.add('is-dragging');},420);hubTouch=hold;
+  });
+  document.addEventListener('pointermove',event=>{
+    const hold=hubTouch;if(!hold)return;
+    if(!hold.active&&Math.hypot(event.clientX-hold.x,event.clientY-hold.y)>9){clearTimeout(hold.timer);hubTouch=null;return;}
+    if(hold.active)event.preventDefault();
+  },{passive:false});
+  function finishHubTouch(event){
+    const hold=hubTouch;if(!hold)return;clearTimeout(hold.timer);hubTouch=null;
+    document.querySelector('.hub-edit-section .game-tile.is-dragging')?.classList.remove('is-dragging');
+    if(!hold.active||event.type==='pointercancel')return;
+    event.preventDefault();hubDropSuppress=Date.now()+500;
+    hubDropAt(hold.id,document.elementFromPoint(event.clientX,event.clientY));
+  }
+  document.addEventListener('pointerup',finishHubTouch);
+  document.addEventListener('pointercancel',finishHubTouch);
   document.addEventListener('click',event=>{
+    if(Date.now()<hubDropSuppress&&event.target.closest('.hub-edit-section')){event.preventDefault();return;}
     if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
     const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead('Игрок на замену')}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
     const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};renderTable();return;}
@@ -809,6 +864,9 @@
     if(button.dataset.deleteConfirm){deleteSession(button.dataset.deleteConfirm);return;}
     if(button.dataset.lobbySeat){claimLobbySeat(button.dataset.lobbySeat);return;}
     if(button.dataset.kickParticipant){kickLobbyParticipant(button.dataset.kickParticipant);return;}
+    if(button.hasAttribute('data-edit-toggle')){hubEditing=!hubEditing;filter='all';renderHub();return;}
+    if(button.dataset.editStep){editHubStep(button.dataset.editId,Number(button.dataset.editStep));return;}
+    if(button.dataset.editCategory){const manager=globalThis.PlayroomPackManager,id=button.dataset.editCategory,groups=['favorites','normal','hidden'],next=groups[(groups.indexOf(manager.category(id))+1)%groups.length];moveHubGame(id,next);return;}
     if(button.dataset.command){commands[button.dataset.command]?.();return;}
     if(button.dataset.favorite){try{globalThis.PlayroomPackManager.toggleFavorite(button.dataset.favorite);renderHub();}catch(error){toast(error.message);}return;}
     if(button.dataset.recentStart){setup(button.dataset.recentStart);return;}
@@ -870,7 +928,7 @@
     }
   });
   document.addEventListener('visibilitychange',()=>{
-    if(document.hidden){cancelBot();stopReplay();interruptAction();if(session)missedFrom=Math.max(0,session.states.length-5);}
+    if(document.hidden){turnNotice.reset();cancelBot();stopReplay();interruptAction();if(session)missedFrom=Math.max(0,session.states.length-5);}
     else if(screen==='table'&&session){renderTable();if(missedFrom!==null)missedFrom=null;}
   });
   window.addEventListener('pagehide',()=>{
@@ -914,5 +972,15 @@
     if(navigation.viewState&&typeof navigation.viewState==='object')viewState=navigation.viewState;
     if(navigation.scroll){const board=$('#app .yatzy-board');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
   }else render();
+  if(globalThis.PlayroomRemotePacks){
+    void globalThis.PlayroomRemotePacks.load().then(async catalog=>{
+      if(!catalog||packs.list().length)return;
+      for(const item of catalog.packs){
+        try{await globalThis.PlayroomRemotePacks.install(item.id,{activate:true});}
+        catch(error){loadWarning='Не удалось установить '+item.id+': '+error.message;}
+      }
+      if(screen==='hub')renderHub();
+    });
+  }
   if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();

@@ -32,6 +32,8 @@
     back:'<path d="M19 12H5m5-5-5 5 5 5"/>',
     next:'<path d="m9 6 6 6-6 6"/>',
     prev:'<path d="m15 6-6 6 6 6"/>',
+    up:'<path d="m6 15 6-6 6 6"/>',
+    down:'<path d="m6 9 6 6 6-6"/>',
     close:'<path d="m6 6 12 12M6 18 18 6"/>',
     trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
     seatType:'<rect x="5" y="3" width="14" height="9" rx="2"/><path d="M4 12v5h16v-5M6 17v4M18 17v4"/>',
@@ -128,7 +130,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const label=team?(first?`Команда ${team.label} · первый ход`:`Команда ${team.label}`):first?'Первый ход':`Место ${place}`;
     const tone=team?'team':place!=null?'place':'first';
     const color=team&&/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(team.color||'')?team.color:'';
-    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color?` style="--medallion-color:${esc(color)}"`:''}>${esc(first?'1':place??'')}</span>`;
+    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color?` style="--medallion-color:${esc(color)}"`:''}>${first?icon('first'):place!=null?esc(place):''}</span>`;
   }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{

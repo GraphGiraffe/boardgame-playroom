@@ -1,16 +1,16 @@
 # ХОД · настольные игры в браузере
 
-Версия **0.16.3** работает с [коллекцией 0.5.4](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.5.4) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении. Прежняя стабильная пара 0.16.2 / 0.5.2 остаётся в истории релизов.
+Текущая пара — [приложение 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) и [коллекция 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
 
 ## Начать играть
 
-Из [релиза 0.16.3](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.16.3) скачайте:
+Из [релиза 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) скачайте:
 
 - `playroom-all-games.html` — автономный HTML со всеми 12 играми;
 - `playroom.html` — оболочку для установки выбранных паков;
 - `playroom-pwa.zip` — PWA для размещения на HTTPS (или localhost).
 
-Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.5.4](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.5.4). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
+Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
 
 В комнате выберите «Локальная» или «Сетевая», настройте места, ботов и правила. Для сети хост передаёт приглашение, гость возвращает ответ через QR, текст, системное меню «Поделиться» или звук. После сопряжения игра передаётся по WebRTC. Общий Стол и зрители получают публичное представление; игрок — свою руку. Отдельный сервер для локальной сети не нужен.
 
@@ -29,8 +29,8 @@ bash scripts/codex/serve.sh
 Сервер: `http://127.0.0.1:4173`. Самостоятельная проверка без игр: `bash scripts/codex/check.sh`. Явный браузер можно передать через `CHROME_BIN`; переносимый выбор описан в [Cloud-инструкции](docs/CODEX-CLOUD.md).
 
 ```sh
-python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.16.3
-(cd dist/release-0.16.3 && sha256sum -c SHA256SUMS)
+python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.17.0
+(cd dist/release-0.17.0 && sha256sum -c SHA256SUMS)
 ```
 
 `core/` — независимый движок, `app/` — оболочка, комнаты и транспорт, правила игр — в отдельном репозитории. `dist/`, установленные для разработки паки, зависимости и приватные архивы не коммитятся.
@@ -38,6 +38,7 @@ python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-d
 ## Документация
 
 - [Что вошло в 0.16 и ограничения](docs/RELEASE-0.16.md), [Roadmap и приоритеты](docs/ROADMAP.md).
+- [Раздельная публикация 0.17](docs/PACK-PUBLICATION-0.17.md), [итоги игр](docs/RESULT-POLICIES-0.17.md), [аудит элементов](docs/UI-SEMANTICS-AUDIT-0.17.md).
 - [Путеводитель по коду](docs/DEVELOPER-INDEX.md), [UI-дизайн](docs/UI-DESIGN-SYSTEM.md).
 - [Правила/API паков](docs/PACKS.md), [формат файла](docs/PACK-FORMAT.md), [элементы UI API 2](docs/GAME-ELEMENTS-API.md).
 - [Сетевое взаимодействие](docs/DEVELOPER-MULTIPLAYER.md), [сопряжение](docs/DEVELOPER-PAIRING.md).

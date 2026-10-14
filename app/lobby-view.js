@@ -29,7 +29,7 @@
   }
   function nicknameMarkup(room,participantId,client=false){
     const me=room.participants.find(p=>p.id===participantId),disabled=me?.ready||room.phase!=='lobby';
-    return `<form id="${client?'net-client-nickname':'lobby-nickname-form'}" class="lobby-profile"><label class="field"><span>Никнейм в комнате</span><input name="nickname" maxlength="24" autocomplete="nickname" required value="${esc(me?.nickname||'')}" ${disabled?'disabled':''}></label><button class="icon-btn" type="submit" aria-label="Сохранить никнейм" title="Сохранить никнейм" ${disabled?'disabled':''}>${icon('check')}</button></form>`;
+    return `<form id="${client?'net-client-nickname':'lobby-nickname-form'}" class="lobby-profile"><label class="field"><span>Никнейм в комнате</span><input name="nickname" maxlength="24" autocomplete="nickname" required value="${esc(me?.nickname||'')}" ${disabled?'disabled':''}></label><button class="icon-btn" type="submit" aria-label="Сохранить никнейм" title="Сохранить никнейм" ${disabled?'disabled':''}>${icon('save')}</button></form>`;
   }
   function rulesMarkup(room,rows,game={}){
     const rules=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];

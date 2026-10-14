@@ -10,6 +10,9 @@ on:
       release:
         description: Published release tag for Pages deployment
         type: string
+      packs_sha:
+        description: Exact 40-character pack repository commit for a candidate build
+        type: string
       deployment:
         description: Protected production fallback ID for deploy, or target for rollback
         type: string
@@ -23,7 +26,7 @@ jobs:
   prerelease:
     if: inputs.operation == 'build' || inputs.operation == ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,24 +40,30 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Require an immutable companion commit
+        env:
+          PACKS_SHA: ${{ inputs.packs_sha }}
+        run: '[[ "$PACKS_SHA" =~ ^[a-f0-9]{40}$ ]]'
       - uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
-          ref: 06c04932a342c0645e469fe119f668295d4b0167
+          ref: ${{ inputs.packs_sha }}
           ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false
       - name: Prepare app with pinned source packs
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - name: Full application and pack checks
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - name: Build tested all-games artifacts
         run: |
           rm -rf app/dist/prerelease
-          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/prerelease
+          python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --remote-catalog --output-dir app/dist/prerelease
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n'             'Playroom release candidate'             "App head: ${GITHUB_SHA}"             'Packs: API 1/2, pinned source commit 06c04932a342c0645e469fe119f668295d4b0167'             'To run the PWA, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+          printf '%s\n' 'Playroom release candidate' "App head: ${GITHUB_SHA}" "Packs: API 1/2, pinned source commit ${PACKS_SHA}" 'Production PWA loads games from the protected catalog; the standalone HTML embeds the pinned collection.' > app/dist/prerelease/README-TEST.txt
+        env:
+          PACKS_SHA: ${{ inputs.packs_sha }}
       - uses: actions/upload-artifact@v4
         with:
           name: playroom-release-candidate
