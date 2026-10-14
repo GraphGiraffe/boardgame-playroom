@@ -32,6 +32,19 @@ test('team results place the shared team disc behind each medal while solo resul
   assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо',teamBadges}).match(/result-awards/g)||[]).length,0);
 });
 
+test('results reuse the first-player disc, under a medal when one is awarded',()=>{
+  const state={...projected,status:'finished',winner:0,firstPlayer:0,result:{places:[1,4],values:[10,4]},players:[{name:'Первый'},{name:'Второй'}]};
+  const solo=Screen.resultMarkup({state,viewer:0,gameName:'Шашки'});
+  assert.match(solo,/<span class="result-awards"><span class="player-medallion is-first"[^>]*aria-label="Первый ход"[^>]*>.*?<span class="player-medallion is-place place-1"/);
+  assert.equal((solo.match(/player-medallion is-first/g)||[]).length,1);
+  const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
+  assert.doesNotMatch(noMedal,/class="result-awards"[^>]*><span class="player-medallion is-first"/);
+  assert.match(noMedal,/class="player-medallion is-first"/);
+  const teams=Screen.resultMarkup({state:{...state,preset:'teams'},viewer:0,gameName:'Лудо',teamBadges:[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}]});
+  assert.match(teams,/class="player-medallion is-team"[^>]*aria-label="Команда синяя · первый ход"/);
+  assert.equal((teams.match(/class="player-medallion is-first"/g)||[]).length,0);
+});
+
 test('local and network deletion share confirmation layout and preserve target routing',()=>{
  for(const network of [false,true]){
   const html=Screen.deleteConfirmation({name:'UNO <&',network,confirmAttrs:network?'data-delete-network-confirm="network-id"':'data-delete-confirm="local-id"'});

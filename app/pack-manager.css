@@ -1,5 +1,10 @@
 .pack-manager-modal{width:min(620px,100%)}
 .pack-online{margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:14px;background:#eef2e8}.pack-online h3{margin:0 0 8px}.pack-online-entry{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0}.pack-online-entry .btn{min-height:38px;padding:7px 10px;font-size:12px}
+.pack-update-notice{display:flex;align-items:center;gap:9px;margin:12px 0;padding:10px 12px;border:1px solid #c8b17c;border-radius:14px;background:#f4e8c9;color:var(--ink);font-size:13px}.pack-update-notice span{flex:1}.pack-update-notice .btn{min-height:36px;padding:6px 10px}.pack-update-notice .icon-btn{width:36px;min-width:36px;height:36px}
+.pack-hub-button.has-unread{position:relative;background:#f4e8c9}.pack-hub-button.has-unread:after{content:'';position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#b86442}
+@keyframes pack-update-flash{0%,100%{box-shadow:none}25%,65%{box-shadow:0 0 0 4px #e2ba4e,0 0 0 7px #e2ba4e55}}
+@media(prefers-reduced-motion:no-preference){.pack-hub-button.flash-unread{animation:pack-update-flash 1s ease-in-out 2}}
+@media(max-width:390px){.pack-update-notice{flex-wrap:wrap}.pack-update-notice span{flex-basis:100%}}
 .pack-bulk-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .pack-bulk-actions .btn{flex:1;min-width:190px}
 .pack-file{position:relative;overflow:hidden;margin-top:18px;min-height:44px;cursor:pointer}

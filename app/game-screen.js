@@ -81,7 +81,9 @@
       const place=state.result?.places?.[i],value=state.result?.values?.[i],detail=state.result?.details?.[i];
       const medal=place?place<=3?UI.playerMedallion({place}):`<span class="result-place-text">${place} место</span>`:winningPlayers.includes(i)?'★ ':'';
       const team=state.preset==='teams'&&Array.isArray(teamBadges)&&teamBadges.length?teamBadges[i%teamBadges.length]:null;
-      const badge=team&&place>=1&&place<=3?`<span class="result-awards">${UI.playerMedallion({team})}${medal}</span>`:team?UI.playerMedallion({team})+medal:medal;
+      const first=state.firstPlayer===i;
+      const playerBadge=UI.playerMedallion({first,team});
+      const badge=playerBadge&&place>=1&&place<=3?`<span class="result-awards">${playerBadge}${medal}</span>`:playerBadge+medal;
       return `<div class="score-row"><span class="result-player">${badge}${esc(player.name)}${i===viewer?' · вы':''}</span><span class="result-stat"><strong>${esc(state.result?.label||scoreLabel)}: ${Number.isSafeInteger(value)?value:Number.isFinite(player.score)?player.score:0}</strong>${Number.isSafeInteger(detail)?`<small>${esc(state.result.detailLabel)}: ${detail}</small>`:''}</span></div>`;
     }).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} действий за столом</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">Посмотреть историю</button>${network?`<button class="btn" data-command="rematch">Вернуться в комнату</button>`:`<button class="btn" data-command="rematch">Ещё партию</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} В меню</button>`}`;

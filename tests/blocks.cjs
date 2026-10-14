@@ -45,6 +45,7 @@ module.exports = {
     {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "ludo-team-markers-browser.test.cjs", "profiles": [], "subblock": "ui/room"},
     {"file": "result-team-medallions-browser.test.cjs", "profiles": [], "subblock": "ui/results"},
+    {"file": "pack-update-notice-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "mobile-navigation.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "history-library-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/history"},
     {"file": "unified-game-screen-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},

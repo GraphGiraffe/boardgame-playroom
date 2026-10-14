@@ -11,7 +11,7 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
   try{
     await page.goto(server.url);
     await page.evaluate(()=>{
-      const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
+      const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
       const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
       PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges}),'result-modal');
     });
@@ -21,11 +21,19 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     }));
     assert.equal(badges.length,4);
     assert.deepEqual(badges.map(b=>b.color),['rgb(102, 143, 173)','rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(206, 115, 93)']);
-    assert(badges.every(b=>b.medal===25&&b.team===25&&b.exposedRight>=5&&b.exposedRight<=7&&b.exposedBottom>=1&&b.exposedBottom<=3&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek from below the medal');
+    assert.equal(await page.locator('.result-awards .player-medallion.is-team[aria-label="Команда синяя · первый ход"]').count(),1);
+    assert(badges.every((b,i)=>b.medal===25&&b.team===25&&b.exposedRight>=(i===0?7:5)&&b.exposedRight<=(i===0?9:7)&&b.exposedBottom>=(i===0?6:1)&&b.exposedBottom<=(i===0?8:3)&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek from below the medal: '+JSON.stringify(badges));
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
     await page.setViewportSize({width:320,height:740});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
     assert.equal(await page.locator('.result-awards').count(),4);
+    await page.evaluate(()=>{
+      const state={status:'finished',winner:0,firstPlayer:0,move:20,players:[{name:'Иван'},{name:'Тео'}],result:{places:[1,4],values:[10,4]}};
+      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Шашки'}),'result-modal');
+    });
+    assert.equal(await page.locator('.result-awards .player-medallion.is-first').count(),1);
+    const first=await page.locator('.result-awards').first().evaluate(el=>{const disc=el.querySelector('.is-first').getBoundingClientRect(),medal=el.querySelector('.is-place').getBoundingClientRect();return {disc:disc.width,medal:medal.width,exposed:disc.right-medal.right};});
+    assert.equal(first.disc,first.medal);assert(first.exposed>=7&&first.exposed<=9);
     if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-320.png')});
   }finally{await context.close();await browser.close();await server.close();}
 });
