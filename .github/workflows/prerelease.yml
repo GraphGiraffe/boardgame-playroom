@@ -13,6 +13,9 @@ on:
       packs_sha:
         description: Exact 40-character pack repository commit for a candidate build
         type: string
+      checks:
+        description: Required for build; full or comma-separated block/subblock/case selectors from docs/TESTING.md
+        type: string
       deployment:
         description: Protected production fallback ID for deploy, or target for rollback
         type: string
@@ -53,17 +56,30 @@ jobs:
           persist-credentials: false
       - name: Prepare app with pinned source packs
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
+      - name: Require explicit checks for this release
+        env:
+          CHECKS: ${{ inputs.checks }}
+        run: '[[ -n "$CHECKS" && "$CHECKS" != *" "* ]]'
       - name: Full application and pack checks
+        if: inputs.checks == 'full'
         timeout-minutes: 25
         run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
-      - name: Build tested all-games artifacts
+      - name: Selected application checks
+        if: inputs.checks != 'full'
+        working-directory: app
+        env:
+          CHECKS: ${{ inputs.checks }}
+        run: node scripts/codex/test.cjs "$CHECKS"
+      - name: Build release candidate artifacts
         run: |
           rm -rf app/dist/prerelease
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --remote-catalog --output-dir app/dist/prerelease
+          (cd app/dist/prerelease && sha256sum -c SHA256SUMS)
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n' 'Playroom release candidate' "App head: ${GITHUB_SHA}" "Packs: API 1/2, pinned source commit ${PACKS_SHA}" 'Production PWA loads games from the protected catalog; the standalone HTML embeds the pinned collection.' > app/dist/prerelease/README-TEST.txt
+          printf '%s\n' 'Playroom release candidate' "App head: ${GITHUB_SHA}" "Packs: API 1/2, pinned source commit ${PACKS_SHA}" "Checks: ${CHECKS}" 'Production PWA loads games from the protected catalog; the standalone HTML embeds the pinned collection.' > app/dist/prerelease/README-TEST.txt
         env:
           PACKS_SHA: ${{ inputs.packs_sha }}
+          CHECKS: ${{ inputs.checks }}
       - uses: actions/upload-artifact@v4
         with:
           name: playroom-release-candidate
