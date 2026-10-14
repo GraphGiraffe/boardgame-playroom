@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-paks
-          ref: a9797c5bf924a12d119ef13c545f1bf3e35885b1
+          ref: 06c04932a342c0645e469fe119f668295d4b0167
           ssh-key: ${{ secrets.PLAYROOM_PAKS_READ_KEY }}
           path: companion
           persist-credentials: false
@@ -54,7 +54,7 @@ jobs:
           rm -rf app/dist/prerelease
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --output-dir app/dist/prerelease
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n'             'Playroom release candidate'             "App head: ${GITHUB_SHA}"             'Packs: API 1/2, pinned source commit 1beaa867b674597b23296cafa98bac1c9b08d4a3'             'To run the PWA, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
+          printf '%s\n'             'Playroom release candidate'             "App head: ${GITHUB_SHA}"             'Packs: API 1/2, pinned source commit 06c04932a342c0645e469fe119f668295d4b0167'             'To run the PWA, host dist/prerelease/pwa over HTTPS. Pairing supports Web Share, Share Target, web+playroom links, QR and copy-paste fallback.'             > app/dist/prerelease/README-TEST.txt
       - uses: actions/upload-artifact@v4
         with:
           name: playroom-release-candidate

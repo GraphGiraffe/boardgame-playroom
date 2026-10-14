@@ -27,11 +27,7 @@
     const header=head?.outerHTML||'';head?.remove();
     return header+'<div class="modal-body">'+template.innerHTML+'</div>';
   }
-  function updateModal(modal,content){
-    const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
-    const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
-    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
-    const top=anchor?.getBoundingClientRect().top;
+  function patchChildren(parent,next){
     const key=n=>n.nodeType===1?(n.id||(n.dataset.packId&&n.dataset.packVersion?`${n.dataset.packId}@${n.dataset.packVersion}`:'')||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
     function patch(parent,next){
       const old=[...parent.childNodes],used=new Set();let previous=null;
@@ -52,7 +48,14 @@
       }
       for(const n of old)if(!used.has(n)&&n.parentNode===parent)n.remove();
     }
-    patch(modal,template.content);
+    patch(parent,next);
+  }
+  function updateModal(modal,content){
+    const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
+    const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
+    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
+    const top=anchor?.getBoundingClientRect().top;
+    patchChildren(modal,template.content);
     if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
   }
   function resumeCard({title,detail,network=false,connected=true,action='data-command="resume"',leave=''}){
@@ -64,8 +67,8 @@
     return [...UI.seatOrder(state.players.length,viewer),...(viewer>=0&&viewer<state.players.length?[viewer]:[])].map(i=>UI.playerPanel(state,i,viewer,{scoreLabel,badges:[playerBadge(state,i)].filter(Boolean)},actions)).join('');
   }
 
-  function historyMarkup({index,count,caption='',playing=false,readOnly=false}={}){
-    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div></section>`;
+  function historyMarkup({index,count,caption='',playing=false,readOnly=false,newFrom=null}={}){
+    return `<section class="history-panel" aria-label="Повтор ходов"><div class="history-controls"><button class="icon-btn" data-command="replay-prev" aria-label="Предыдущий ход" ${index===0?'disabled':''}>${icon('prev')}</button><button class="icon-btn" data-command="replay-play" aria-label="${playing?'Остановить':'Воспроизвести'} повтор">${icon(playing?'pause':'play')}</button><span class="replay-track ${Number.isInteger(newFrom)&&newFrom>0&&newFrom<=count?'has-new-history':''}" style="--new-from:${Number.isInteger(newFrom)&&count>0?Math.max(0,Math.min(100,newFrom/count*100)):100}%"><input type="range" min="0" max="${count}" value="${index}" id="replay-range" aria-label="Номер хода"></span><button class="icon-btn" data-command="replay-next" aria-label="Следующий ход" ${index===count?'disabled':''}>${icon('next')}</button><span class="replay-badge" aria-label="Ход ${index} из ${count}">${index} / ${count}</span></div></section>`;
   }
   function deleteConfirmation({name='Это сохранение',network=false,confirmAttrs=''}){
     return `${modalHead('Удалить партию?')}<p class="lead">${esc(name)} и вся история этой партии будут удалены ${network?'только на этом устройстве':'с устройства'}. Остальные партии останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" ${confirmAttrs}>Удалить</button></div>`;
@@ -146,5 +149,5 @@
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
   }
-  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,render,layoutScene,iconButton,toolbar,modalHead});
 });

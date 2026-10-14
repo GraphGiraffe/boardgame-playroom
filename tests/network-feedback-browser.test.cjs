@@ -81,6 +81,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     finish.cues=[{id:'defeat',eventId:3}];
     await page.evaluate(next=>qaClient.emit(next),finish);
     const modal=page.locator('#modal-root .modal');
+    await modal.waitFor();
     assert.equal(await modal.count(),1,'Finish should open results automatically');
     assert.match(await modal.innerText(),/Поражение/);
     assert.match(await modal.innerText(),/Джон/);assert.match(await modal.innerText(),/148/);
@@ -243,6 +244,14 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
       window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();
     },{definition,snapshot:snapshot()});
     assert.equal(await page.locator('.shared-die.is-playable[data-action]').count(),3,'roll is visibly available on every active die');
+    state.data.pawns=[[13,13,-1,-1],[0,0,-1,-1]];revision++;
+    await page.evaluate(next=>qaClient.emit(next),snapshot());
+    await page.waitForFunction(()=>document.querySelectorAll('.ludo-pawn.is-stacked').length===4);
+    assert(await page.locator('.ludo-pawn.is-stacked').evaluateAll(pawns=>{
+      if(pawns.length!==4)return false;
+      const centers=pawns.map(pawn=>{const r=pawn.getBoundingClientRect();return `${Math.round(r.x+r.width/2)}:${Math.round(r.y+r.height/2)}`;});
+      return new Set(centers).size===4&&new Set(pawns.map(pawn=>getComputedStyle(pawn).backgroundColor)).size===2;
+    }),'shared start shows distinct positions and both colors');
     // Two equal values share a destination; another die captures the enemy on cell 6.
     state.data.phase='move';state.data.dice=[2,2,3];state.data.used=[false,false,false];state.data.lastRoll=3;state.data.pawns=[[2,10,-1,-1],[44,-1,-1,-1]];
     revision++;await page.evaluate(next=>qaClient.emit(next),snapshot());

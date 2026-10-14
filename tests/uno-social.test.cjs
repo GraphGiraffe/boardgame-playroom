@@ -49,7 +49,7 @@ async function moved(page, move) {
   assert.equal((await state(page)).move, move);
 }
 async function resume(page) {
-  await page.locator('.resume-banner [data-command=resume]').click();
+  if(await page.locator('.resume-banner [data-command=resume]').count())await page.locator('.resume-banner [data-command=resume]').click();
   if (await page.locator('.handoff').count()) await page.locator('[data-command=unlock]').click();
   await ready(page);
 }

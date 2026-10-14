@@ -136,7 +136,8 @@
     }
     const dice = [...scene.querySelectorAll('[data-motion-lead]')].filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
     const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
-    if (!flights.length && !dice.length && !effects.length) return Promise.resolve();
+    const closing=snapshot.action?.type==='flip'?[...scene.querySelectorAll('[data-motion-close]')]:[];
+    if (!flights.length && !dice.length && !effects.length && !closing.length) return Promise.resolve();
     return new Promise(resolve => {
       const animations = [], restore = [], timers = [], resizeUpdates=[], finishUpdates=[], layer = doc.createElement('div');
       let ended = false, timer = 0;
@@ -211,9 +212,19 @@
           const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
           animations.push(el.animate(frames,{duration,easing:'ease-out'}));
         }
+        // A mismatched pair stays readable, then both faces turn back.
+        const closeDelay=duration+550,closeDuration=320;
+        for(const slot of closing){
+          const face=slot.querySelector('.pexeso-face'),back=slot.querySelector('.pexeso-close-back');
+          if(!face||!back)continue;
+          const first=face.animate([{transform:'rotateY(0)'},{transform:'rotateY(90deg)'}],{delay:closeDelay,duration:closeDuration/2,easing:'ease-in',fill:'forwards'});
+          const second=back.animate([{transform:'rotateY(-90deg)'},{transform:'rotateY(0)'}],{delay:closeDelay+closeDuration/2,duration:closeDuration/2,easing:'ease-out',fill:'forwards'});
+          timers.push(root.setTimeout(()=>{face.style.visibility='hidden';back.style.visibility='visible';},closeDelay+closeDuration/2));
+          animations.push(first,second);
+        }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.
-        timer = root.setTimeout(run.finish, Math.max(duration, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
+        timer = root.setTimeout(run.finish, Math.max(duration, closing.length?closeDelay+closeDuration:0, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
         Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(run.finish);
       } catch (error) { run.finish(); throw error; }
     });

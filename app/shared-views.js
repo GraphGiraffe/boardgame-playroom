@@ -14,7 +14,7 @@
   }
   function mount(client,definition,{surface,readOnly=false,onExit=null,connected:initialConnected=true,onPresented=()=>{},onReviewed=()=>{}}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
-    let viewState={},viewIdentity='',presentationTurn=null;
+    let viewState={},viewIdentity='',presentationTurn=null,newHistoryBoundary=null,historyVisitedBoundary=false;
     let selected=null,connected=initialConnected,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false,historyPause=null;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
@@ -47,7 +47,7 @@
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
       const identity=[s.game,s.viewer,s.state.turn].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:H.viewPreferences(s.game,s.viewer),surface:actual,quickPlay:flow.quickPlay});
-      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly}):'';
+      const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:newHistoryBoundary}):'';
       const markup=GameScreen.render({
         network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
@@ -74,6 +74,9 @@
           const selector='[data-command="'+command+'"]',button=app.querySelector(selector),next=template.content.querySelector(selector);
           button.disabled=next.disabled;button.innerHTML=next.innerHTML;button.setAttribute('aria-label',next.getAttribute('aria-label'));
         }
+      }else if(app.querySelector('.yatzy-board')&&s.game==='yatzy'){
+        const template=document.createElement('template');template.innerHTML=markup;
+        GameScreen.patchChildren(app,template.content);
       }else app.innerHTML=markup;
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       const historyPanel=app.querySelector('.history-panel');
@@ -86,11 +89,9 @@
         if(historyOpen&&historySnapshot&&lastReviewed!==s.revision){lastReviewed=s.revision;onReviewed(s.revision,s);}
         else if(!historyOpen&&!draining&&lastPresented!==s.revision){lastPresented=s.revision;onPresented(s.revision);}
       }
-      const hint=app.querySelector('.history-latest-hint');
       if(historyOpen&&historyIndex<historyCount()){
         const button=app.querySelector('[data-command="history-close"]');if(button){button.title='К текущему ходу';button.setAttribute('aria-label','К текущему ходу');}
-        if(!hint)app.querySelector('.history-panel')?.insertAdjacentHTML('beforeend','<span class="history-latest-hint">Доступны более поздние ходы</span>');
-      }else hint?.remove();
+      }
       if(!draining&&!historyOpen&&!transitionActive)void acknowledgePresentation();
     }
     function show(content){
@@ -132,7 +133,10 @@
       historyRequested=null;
       if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.game!==client.snapshot.game||result.packVersion!==client.snapshot.packVersion||result.revision!==pos||result.revision>client.snapshot.revision){render();throw Error('Некорректная история.');}
       const change=animate?Flow.eventAction(historySnapshot,result):null,shot=change?flow.capture({actor:change.actor,action:change.action,viewer:result.viewer}):null;
-      historyIndex=pos;historySnapshot=result;transitionActive=!!shot;render();
+      historyIndex=pos;historySnapshot=result;transitionActive=!!shot;
+      if(newHistoryBoundary!==null&&pos<newHistoryBoundary)historyVisitedBoundary=true;
+      if(historyVisitedBoundary&&pos>=historyCount()){newHistoryBoundary=null;historyVisitedBoundary=false;}
+      render();
       if(shot)await flow.play(shot,{draws:result.effects||[]});
       if(ticket!==historyTicket||!historyOpen||destroyed)return;transitionActive=false;render();
     }
@@ -266,12 +270,14 @@
         const change=Flow.eventAction(previous,next);
         const shot=change&&connected&&!document.hidden&&!dialogOpen
           ?flow.capture({actor:change.actor,action:change.action,viewer:next.viewer}):null;
-        presentationTurn=previous?.state.turn;shownLive=next;transitionActive=!!shot;
+        presentationTurn=previous?.state.turn;shownLive=next;transitionActive=!!shot||!!change?.action?.closeAfter;
         input.cancel();playerTargets.cancel();
-        feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{silent:!connected||document.hidden});
+        feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{silent:!connected||document.hidden,duration:Math.max(220,flow.pace().duration+200)});
         render();
-        if(shot)try{await flow.play(shot,{draws:(next.effects||[]).filter(effect=>effect.revision===next.revision)});}
+        if(shot)try{await Promise.all([flow.play(shot,{draws:(next.effects||[]).filter(effect=>effect.revision===next.revision)}),feedback.whenIdle()]);}
         catch(error){if(ticket===animationTicket)toast(error.message||'Анимация не воспроизведена');}
+        else if(change?.action?.closeAfter)await Promise.all([flow.play(null),feedback.whenIdle()]);
+        else await feedback.whenIdle();
         if(ticket!==animationTicket)return;
         transitionActive=false;
       }
@@ -310,7 +316,7 @@
     const resize=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('resize',resize);
     const onOptions=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){stopReplay();flow.cancel();}else if(!draining)render();};document.addEventListener('visibilitychange',visibility);
-    return {render,openHistory,syncLive(){stopMotion();shownLive=client.snapshot;queuedRevision=shownLive?.revision??-1;feedback.start(shownLive?.events||[]);render();},get historyIndex(){return historyIndex;},setConnected(value){if(connected!==value){connected=value;if(!value){presentedWindow=null;playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
+    return {render,openHistory,setHistoryBoundary(value){if(Number.isInteger(value)&&value>0&&value<=historyCount()){newHistoryBoundary=value;historyVisitedBoundary=false;render();}},syncLive(){stopMotion();shownLive=client.snapshot;queuedRevision=shownLive?.revision??-1;feedback.start(shownLive?.events||[]);render();},get historyIndex(){return historyIndex;},setConnected(value){if(connected!==value){connected=value;if(!value){presentedWindow=null;playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
       destroy(){destroyed=true;modalObserver.disconnect();clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
