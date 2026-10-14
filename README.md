@@ -1,16 +1,16 @@
 # ХОД · настольные игры в браузере
 
-Текущая пара — [приложение 0.17.2](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.2) и [коллекция 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
+Текущая пара — [приложение 0.17.3](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.3) и [коллекция 0.6.1](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.1) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
 
 ## Начать играть
 
-Из [релиза 0.17.2](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.2) скачайте:
+Из [релиза 0.17.3](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.3) скачайте:
 
 - `playroom-all-games.html` — автономный HTML со всеми 12 играми;
 - `playroom.html` — оболочку для установки выбранных паков;
 - `playroom-pwa.zip` — PWA для размещения на HTTPS (или localhost).
 
-Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
+Игровые файлы `.playroom-pack.json` доступны в [коллекции 0.6.1](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.1). Установка: «Паки игр» → выбрать файл → подтвердить. Пак исполняет код, поэтому устанавливайте только доверенные файлы.
 
 В комнате выберите «Локальная» или «Сетевая», настройте места, ботов и правила. Для сети хост передаёт приглашение, гость возвращает ответ через QR, текст, системное меню «Поделиться» или звук. После сопряжения игра передаётся по WebRTC. Общий Стол и зрители получают публичное представление; игрок — свою руку. Отдельный сервер для локальной сети не нужен.
 
@@ -29,8 +29,8 @@ bash scripts/codex/serve.sh
 Сервер: `http://127.0.0.1:4173`. Самостоятельная проверка без игр: `bash scripts/codex/check.sh`. Явный браузер можно передать через `CHROME_BIN`; переносимый выбор описан в [Cloud-инструкции](docs/CODEX-CLOUD.md).
 
 ```sh
-python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --remote-catalog --output-dir dist/release-0.17.2
-(cd dist/release-0.17.2 && sha256sum -c SHA256SUMS)
+python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --remote-catalog --output-dir dist/release-0.17.3
+(cd dist/release-0.17.3 && sha256sum -c SHA256SUMS)
 ```
 
 `core/` — независимый движок, `app/` — оболочка, комнаты и транспорт, правила игр — в отдельном репозитории. `dist/`, установленные для разработки паки, зависимости и приватные архивы не коммитятся.

@@ -1,0 +1,61 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
+
+test('Ludo team discs and first-player token match in lobby and game; board symbols are centered SVGs',{timeout:45000},async()=>{
+  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
+  const page=await context.newPage();
+  try{
+    await page.goto(server.url);
+    await page.locator('[data-start=ludo]').click();
+    await page.locator('[data-command=room-rules]').click();
+    await page.locator('#room-rules-form [name=preset]').selectOption('teams');
+    await page.locator('#room-rules-form [name=firstPlayerMode][value=assigned]').check();
+    await page.locator('#room-rules-form').evaluate(form=>form.requestSubmit());
+    await page.evaluate(()=>{
+      const bridge=PlayroomAppBridge,room=bridge.room();
+      for(const seat of room.seats.slice(1))bridge.roomService.setLocalSeat(room.id,room.ownerId,seat.id,{kind:'bot',nickname:'Бот'});
+      bridge.roomService.configure(room.id,room.ownerId,{firstParticipantId:room.ownerId});
+      bridge.renderLobby();
+    });
+    const inspect=selector=>page.locator(selector).evaluateAll(elements=>elements.map(el=>{
+      const rect=el.getBoundingClientRect(),style=getComputedStyle(el);
+      return {width:rect.width,height:rect.height,color:style.backgroundColor,border:style.borderWidth,shadow:style.boxShadow,content:el.textContent.trim(),children:el.children.length,svg:!!el.querySelector('svg'),after:getComputedStyle(el,'::after').content};
+    }));
+    const lobby=await inspect('.lobby-seat-row[data-participant-id] .player-medallion.is-team');
+    assert.equal(lobby.length,4,'all four occupied team seats have a badge');
+    assert.deepEqual(lobby.map(item=>item.color),['rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(102, 143, 173)','rgb(206, 115, 93)']);
+    assert(lobby.every(item=>item.width<=14&&item.height<=14&&item.shadow!=='none'&&item.border==='1px'),`small raised discs use one shared style: ${JSON.stringify(lobby)}`);
+    assert.equal(lobby[0].svg,true,'the first player gets the numbered ring on the team disc');
+    assert(lobby.slice(1).every(item=>!item.svg&&!item.content&&item.children===0&&['none','normal'].includes(item.after)),'other teams have plain discs without a center dot');
+    if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-lobby.png')});}
+    await page.locator('[data-command=lobby-start]').click();
+    await page.locator('.ludo-board').waitFor();
+    const game=await inspect('.player-panel .player-medallion.is-team');
+    assert.equal(game.length,4,'game cards keep all four team badges');
+    assert(game.every(item=>item.width===lobby[0].width&&item.border===lobby[0].border&&item.shadow===lobby[0].shadow),'lobby and game reuse the same disc styling');
+    assert.equal(game.filter(item=>item.svg).length,1);
+    const symbols=await page.locator('.ludo-safe-star,.ludo-start-arrow').evaluateAll(elements=>elements.map(el=>{
+      const symbol=el.getBoundingClientRect(),cell=el.closest('.ludo-cell').getBoundingClientRect();
+      return {kind:el.classList.contains('ludo-safe-star')?'star':'arrow',tag:el.tagName,paths:el.querySelectorAll('path').length,ratio:symbol.width/cell.width,offset:Math.hypot((symbol.left+symbol.right-cell.left-cell.right)/2,(symbol.top+symbol.bottom-cell.top-cell.bottom)/2)};
+    }));
+    assert.equal(symbols.filter(item=>item.kind==='star').length,4);
+    assert.equal(symbols.filter(item=>item.kind==='arrow').length,4);
+    assert(symbols.every(item=>item.tag.toLowerCase()==='svg'&&item.paths===1&&item.offset<1),'symbols are centered SVGs');
+    assert(symbols.filter(item=>item.kind==='star').every(item=>item.ratio>=.9),'stars fill almost the whole cell');
+    const baseOffsets=await page.locator('.ludo-base [data-motion-anchor]').evaluateAll(anchors=>anchors.map(anchor=>{
+      const id=anchor.dataset.motionAnchor.replace('base-','').split('-');
+      const pawn=document.querySelector(`[data-entity="token-${id[0]}-${id[1]}"]`);
+      const a=anchor.getBoundingClientRect(),b=pawn.getBoundingClientRect();
+      return Math.hypot((a.left+a.right-b.left-b.right)/2,(a.top+a.bottom-b.top-b.bottom)/2);
+    }));
+    assert(baseOffsets.every(offset=>offset<1.5),`base pieces must sit on their circles: ${baseOffsets.join(', ')}`);
+    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-game.png')});
+    await page.setViewportSize({width:320,height:740});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'badges do not widen the phone layout');
+    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-game-320.png')});
+  }finally{await context.close();await browser.close();await server.close();}
+});
