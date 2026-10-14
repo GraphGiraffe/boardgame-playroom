@@ -1,10 +1,10 @@
 # ХОД · настольные игры в браузере
 
-Текущая пара — [приложение 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) и [коллекция 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
+Текущая пара — [приложение 0.17.1](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.1) и [коллекция 0.6.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.0) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
 
 ## Начать играть
 
-Из [релиза 0.17.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.0) скачайте:
+Из [релиза 0.17.1](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.1) скачайте:
 
 - `playroom-all-games.html` — автономный HTML со всеми 12 играми;
 - `playroom.html` — оболочку для установки выбранных паков;
@@ -29,8 +29,8 @@ bash scripts/codex/serve.sh
 Сервер: `http://127.0.0.1:4173`. Самостоятельная проверка без игр: `bash scripts/codex/check.sh`. Явный браузер можно передать через `CHROME_BIN`; переносимый выбор описан в [Cloud-инструкции](docs/CODEX-CLOUD.md).
 
 ```sh
-python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --output-dir dist/release-0.17.0
-(cd dist/release-0.17.0 && sha256sum -c SHA256SUMS)
+python3 build.py --all-games --packs-dir ../playroom-paks/packs --pwa --remote-catalog --output-dir dist/release-0.17.1
+(cd dist/release-0.17.1 && sha256sum -c SHA256SUMS)
 ```
 
 `core/` — независимый движок, `app/` — оболочка, комнаты и транспорт, правила игр — в отдельном репозитории. `dist/`, установленные для разработки паки, зависимости и приватные архивы не коммитятся.
