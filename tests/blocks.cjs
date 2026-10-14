@@ -44,6 +44,7 @@ module.exports = {
     {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "ludo-team-markers-browser.test.cjs", "profiles": [], "subblock": "ui/room"},
+    {"file": "result-team-medallions-browser.test.cjs", "profiles": [], "subblock": "ui/results"},
     {"file": "mobile-navigation.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "history-library-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/history"},
     {"file": "unified-game-screen-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},

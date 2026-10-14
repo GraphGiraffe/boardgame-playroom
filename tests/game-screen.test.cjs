@@ -21,6 +21,17 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
 });
 
+test('team results place the shared team disc behind each medal while solo results stay unchanged',()=>{
+  const state={...projected,preset:'teams',status:'finished',winner:0,winners:[0,2],result:{places:[1,2,1,2],values:[8,5,8,5]},players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}]};
+  const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
+  const html=Screen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges});
+  assert.equal((html.match(/class="result-awards"/g)||[]).length,4);
+  assert.equal((html.match(/class="player-medallion is-team"/g)||[]).length,4);
+  assert.equal((html.match(/class="player-medallion is-place/g)||[]).length,4);
+  assert.match(html,/Команда синяя/);assert.match(html,/Команда красная/);
+  assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо',teamBadges}).match(/result-awards/g)||[]).length,0);
+});
+
 test('local and network deletion share confirmation layout and preserve target routing',()=>{
  for(const network of [false,true]){
   const html=Screen.deleteConfirmation({name:'UNO <&',network,confirmAttrs:network?'data-delete-network-confirm="network-id"':'data-delete-confirm="local-id"'});

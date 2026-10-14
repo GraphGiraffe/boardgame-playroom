@@ -1,0 +1,31 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
+const {serveBrowserFixture}=require('./browser-origin.cjs');
+
+test('team result discs peek from under equal-sized medals on phone screens',{timeout:30000},async()=>{
+  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
+  const page=await context.newPage();
+  try{
+    await page.goto(server.url);
+    await page.evaluate(()=>{
+      const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
+      const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
+      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges}),'result-modal');
+    });
+    const badges=await page.locator('.result-awards').evaluateAll(wrappers=>wrappers.map(wrapper=>{
+      const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect();
+      return {medal:m.width,team:t.width,exposedRight:t.right-m.right,exposedBottom:t.bottom-m.bottom,color:getComputedStyle(team).backgroundColor,medalLayer:getComputedStyle(medal).zIndex,teamLayer:getComputedStyle(team).zIndex};
+    }));
+    assert.equal(badges.length,4);
+    assert.deepEqual(badges.map(b=>b.color),['rgb(102, 143, 173)','rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(206, 115, 93)']);
+    assert(badges.every(b=>b.medal===25&&b.team===25&&b.exposedRight>=5&&b.exposedRight<=7&&b.exposedBottom>=1&&b.exposedBottom<=3&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek from below the medal');
+    if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
+    await page.setViewportSize({width:320,height:740});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+    assert.equal(await page.locator('.result-awards').count(),4);
+    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-320.png')});
+  }finally{await context.close();await browser.close();await server.close();}
+});
