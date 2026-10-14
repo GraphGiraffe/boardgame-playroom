@@ -22,6 +22,7 @@
     let frames=[],draining=false,intake=Promise.resolve(),queuedRevision=shownLive?.revision??-1,presentedWindow=null;
     const stopMotion=()=>{animationTicket++;transitionActive=false;draining=false;frames=[];queuedRevision=client.snapshot?.revision??-1;flow.cancel();};
     const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
+    const turnNotice=GameScreen.turnNotice({play:()=>audio?.play?.(['turn'],pack.manifest.id),reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     const feedback=new root.PlayroomGameFeedback({mount:()=>app.querySelector('.table-shell'),play:(ids,id)=>audio?.play?.(ids,id)});
     feedback.start(client.snapshot?.events||[]);
     let liveStatus=client.snapshot?.state?.status||'playing';
@@ -85,6 +86,8 @@
       GameScreen.layoutScene(app);
       const shell=app.querySelector('.network-game');if(shell)shell.dataset.mode=historyOpen?'history':'live';
       renderedRevision=s.revision;feedback.refresh();playerTargets?.refresh();
+      if(historyOpen||!connected||readOnly)turnNotice.reset();
+      else turnNotice.observe({sessionId:s.sessionId,revision:s.revision,turn:s.state.turn,viewer:s.viewer,status:s.state.status,paused:live.paused,active:!document.hidden&&!transitionActive&&!draining&&s.revision===live.revision,mount:app});
       if(!document.hidden&&!transitionActive){
         if(historyOpen&&historySnapshot&&lastReviewed!==s.revision){lastReviewed=s.revision;onReviewed(s.revision,s);}
         else if(!historyOpen&&!draining&&lastPresented!==s.revision){lastPresented=s.revision;onPresented(s.revision);}
@@ -315,7 +318,7 @@
     document.addEventListener('keydown',keydown,true);
     const resize=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('resize',resize);
     const onOptions=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
-    const visibility=()=>{if(document.hidden){stopReplay();flow.cancel();}else if(!draining)render();};document.addEventListener('visibilitychange',visibility);
+    const visibility=()=>{if(document.hidden){turnNotice.reset();stopReplay();flow.cancel();}else if(!draining)render();};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,setHistoryBoundary(value){if(Number.isInteger(value)&&value>0&&value<=historyCount()){newHistoryBoundary=value;historyVisitedBoundary=false;render();}},syncLive(){stopMotion();shownLive=client.snapshot;queuedRevision=shownLive?.revision??-1;feedback.start(shownLive?.events||[]);render();},get historyIndex(){return historyIndex;},setConnected(value){if(connected!==value){connected=value;if(!value){presentedWindow=null;playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
       destroy(){destroyed=true;modalObserver.disconnect();clearDialog();stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();historyTicket++;unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }

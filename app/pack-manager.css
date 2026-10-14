@@ -1,4 +1,5 @@
 .pack-manager-modal{width:min(620px,100%)}
+.pack-online{margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:14px;background:#eef2e8}.pack-online h3{margin:0 0 8px}.pack-online-entry{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0}.pack-online-entry .btn{min-height:38px;padding:7px 10px;font-size:12px}
 .pack-bulk-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
 .pack-bulk-actions .btn{flex:1;min-width:190px}
 .pack-file{position:relative;overflow:hidden;margin-top:18px;min-height:44px;cursor:pointer}

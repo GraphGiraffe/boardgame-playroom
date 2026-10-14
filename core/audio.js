@@ -31,7 +31,8 @@
     'success.yatzy':{label:'Ятзи',notes:[note(523,0,.14),note(659,.1,.14),note(784,.2,.14),note(1047,.3,.3)]},
     mismatch:{label:'Нет совпадения',notes:[note(400,0,.1,'sine',.08),note(330,.1,.13,'sine',.08)]},
     error:{label:'Действие недоступно',notes:[note(240,0,.11,'triangle',.1)]},
-    notify:{label:'Уведомление',notes:[note(784,0,.2,'sine',.12),note(1047,.07,.24,'sine',.075)]}
+    notify:{label:'Уведомление',notes:[note(784,0,.2,'sine',.12),note(1047,.07,.24,'sine',.075)]},
+    turn:{label:'Ваш ход',notes:[note(740,0,.075,'sine',.075),note(988,.085,.10,'sine',.065)]}
   };
   function normalize(definition, id) {
     if (!definition || typeof definition !== 'object') throw new TypeError('Invalid sound: ' + id);

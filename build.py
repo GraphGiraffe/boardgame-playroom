@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parent
 # Registry data is embedded for offline browser use; JSON is the source of truth.
 _registry = json.loads((ROOT / "core/tags.json").read_text(encoding="utf-8"))
 (ROOT / "core/tag-registry.js").write_text("// Generated from core/tags.json by build.py.\nglobalThis.PlayroomTagRegistry = " + json.dumps(_registry, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
+_app_version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+(ROOT / "app/version.js").write_text("// Generated from package.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\n", encoding="utf-8")
 ASSET_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 ATTR = re.compile(r"([\w-]+)\s*=\s*(['\"])(.*?)\2", re.DOTALL)
 # Portable format 1: keep these checks aligned with core/packs.js.
@@ -307,7 +309,7 @@ def ensure_dev_icons():
         path=ROOT/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
 
 
-def pwa_runtime_items(packs=()):
+def pwa_runtime_items(packs=(), remote_catalog=False):
     """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
     paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js"}
     for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "core/*.js", "core/*.css", "icons/*.svg"):
@@ -317,7 +319,7 @@ def pwa_runtime_items(packs=()):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
             raise ValueError(f"Недопустимый PWA-файл: {path}")
         items.append((path.relative_to(ROOT).as_posix(), path.read_bytes()))
-    items.append(("installed-packs.js", installed_script(list(packs)).encode("utf-8")))
+    items.append(("installed-packs.js", installed_script([] if remote_catalog else list(packs)).encode("utf-8")))
     items.extend(generated_icons())
     # Old workers match cached asset URLs with ignoreSearch=True. A query
     # version cannot prevent a new document from loading an old script.
@@ -385,10 +387,13 @@ def main():
     parser.add_argument("--packs-dir", type=Path, help="Внешний каталог packs/ с manifest.json или dist/ с *.playroom-pack.json")
     parser.add_argument("--all-games", action="store_true", help="Дополнительно собрать playroom-all-games.html из --packs-dir")
     parser.add_argument("--pwa", action="store_true", help="Дополнительно собрать installable PWA-каталог и playroom-pwa.zip")
+    parser.add_argument("--remote-catalog", action="store_true", help="PWA получает паки из защищённого каталога; автономный HTML сохраняет встроенные версии")
     parser.add_argument("--prepare-dev", action="store_true", help="Создать installed-packs.js для index.html и ссылку packs/ для локальных тестов")
     args = parser.parse_args()
     if args.all_games and not args.packs_dir:
         parser.error("Для --all-games требуется явный --packs-dir")
+    if args.remote_catalog and not args.pwa:
+        parser.error("Для --remote-catalog требуется --pwa")
     if args.packs_dir and not (args.all_games or args.prepare_dev or args.pwa):
         parser.error("Выберите --all-games, --pwa или --prepare-dev для указанных паков")
     packs, source_root = read_packs(args.packs_dir) if args.packs_dir else ([], None)
@@ -417,7 +422,7 @@ def main():
         artifacts.append(complete)
     if args.pwa:
         pwa_dir = output / "pwa"
-        pwa_items = pwa_runtime_items(packs)
+        pwa_items = pwa_runtime_items(packs, remote_catalog=args.remote_catalog)
         write_directory(pwa_dir, pwa_items)
         pwa_archive = output / "playroom-pwa.zip"
         write_zip(pwa_archive, [("playroom-pwa/" + name, content) for name, content in pwa_items])

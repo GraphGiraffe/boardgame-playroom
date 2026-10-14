@@ -8,6 +8,9 @@ import argparse
 import re
 from pathlib import PurePosixPath, Path
 from zipfile import ZipFile, ZIP_DEFLATED
+import runpy
+
+wrap_private_worker = runpy.run_path(str(Path(__file__).with_name('pack_worker.py')))['wrap_private_worker']
 
 
 def package(public, protected_base, output):
@@ -30,6 +33,7 @@ def package(public, protected_base, output):
             raise ValueError('Incomplete PWA runtime')
         for name in ('_worker.js', '_routes.json', 'manifest.webmanifest'):
             files[name] = private.read(name)
+        files['_worker.js'] = wrap_private_worker(files['_worker.js'])
     output = Path(output)
     if output.resolve() in (Path(public).resolve(), Path(protected_base).resolve()):
         raise ValueError('Output must not overwrite an input')
