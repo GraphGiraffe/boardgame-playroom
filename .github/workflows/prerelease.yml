@@ -14,8 +14,9 @@ on:
         description: Exact 40-character pack repository commit for a candidate build
         type: string
       checks:
-        description: Required for build; full or comma-separated block/subblock/case selectors from docs/TESTING.md
+        description: 'Required: none or selectors; all blocks: core,input,games,ui,storage,network,pairing'
         type: string
+        required: true
       deployment:
         description: Protected production fallback ID for deploy, or target for rollback
         type: string
@@ -40,6 +41,14 @@ jobs:
           node-version-file: app/.nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Require an explicit test selection
+        working-directory: app
+        env:
+          CHECKS: ${{ inputs.checks }}
+        run: |
+          [[ -n "$CHECKS" && "$CHECKS" != *" "* && "$CHECKS" != full && "$CHECKS" != all ]]
+          case ",$CHECKS," in *,all,*|*,full,*) exit 2;; esac
+          if [[ "$CHECKS" != none ]]; then node scripts/codex/test.cjs "$CHECKS" --list; fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -56,20 +65,16 @@ jobs:
           persist-credentials: false
       - name: Prepare app with pinned source packs
         run: bash app/scripts/codex/setup.sh --packs-dir "$GITHUB_WORKSPACE/companion/packs"
-      - name: Require explicit checks for this release
-        env:
-          CHECKS: ${{ inputs.checks }}
-        run: '[[ -n "$CHECKS" && "$CHECKS" != *" "* ]]'
-      - name: Full application and pack checks
-        if: inputs.checks == 'full'
-        timeout-minutes: 25
-        run: bash app/scripts/codex/check.sh --full --packs-dir "$GITHUB_WORKSPACE/companion/packs"
       - name: Selected application checks
-        if: inputs.checks != 'full'
+        if: inputs.checks != 'none'
+        timeout-minutes: 25
         working-directory: app
         env:
           CHECKS: ${{ inputs.checks }}
         run: node scripts/codex/test.cjs "$CHECKS"
+      - name: Source tests intentionally skipped
+        if: inputs.checks == 'none'
+        run: echo 'No source tests selected for this candidate; artifact build and SHA256 verification still run.'
       - name: Build release candidate artifacts
         run: |
           rm -rf app/dist/prerelease
@@ -86,10 +91,15 @@ jobs:
           path: app/dist/prerelease/
           retention-days: 30
   pages:
-    if: inputs.operation != 'build' && inputs.operation != ''
+    if: inputs.operation != 'build' && inputs.operation != '' && inputs.checks == 'none'
     uses: ./.github/workflows/pages-deploy.yml
     with:
       operation: ${{ inputs.operation }}
       release: ${{ inputs.release }}
       deployment: ${{ inputs.deployment }}
     secrets: inherit
+  reject_pages_test_selection:
+    if: inputs.operation != 'build' && inputs.operation != '' && inputs.checks != 'none'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Pages operations do not run source tests; specify checks=none and use the verified release candidate.' >&2; exit 2
