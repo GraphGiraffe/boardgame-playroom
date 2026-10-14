@@ -2,9 +2,13 @@
 
 Текущая пара: приложение 0.17.2 и паки 0.6.0. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
 
-## Выпуск 0.17.2 / 0.6.0
+## Выпущенная пара 0.17.2 / 0.6.0
 
-Исправлена форма жетона первого игрока: у контурной единицы появился отдельный светло-бежевый диск и центрирование. Коллекция паков 0.6.0 не меняется. Для выпуска выбран адресный браузерный сценарий жетона в лобби и игровой карточке (`checks=case/first-medallion-browser`); сборка и SHA256 обязательны. Полный совместный прогон не требуется: игровой контракт, паки, сеть и сохранения не менялись.
+Исправлена форма жетона первого игрока: у контурной единицы появился отдельный светло-бежевый диск и центрирование. Коллекция паков 0.6.0 не менялась. Изменение прошло [task PR #88](https://github.com/GraphGiraffe/boardgame-playroom/pull/88) и [release PR #89](https://github.com/GraphGiraffe/boardgame-playroom/pull/89). Тег приложения `v0.17.2` указывает на `a8185c0e17552f119657e6c57a08a06c4ea5fe6d`.
+
+Адресный браузерный тест лобби и игровой карточки прошёл локально на 390 px, включая проверку отсутствия переполнения на 320 px. Ручной [RC workflow #38566731780](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38566731780) выполнил только `checks=case/first-medallion-browser`: 1/1, затем сборку с закреплённым SHA паков `06d270798c82e9b0d3e6a09835d0c872f4a083cc` и сверку пяти SHA256. Полный прогон не запускался: правила игр, паки, сеть и сохранения не менялись. Все пять скачанных файлов [GitHub Release](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.2) повторно прошли `SHA256SUMS`.
+
+Один production [deploy #38567481376](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38567481376) опубликовал deployment `35f73a51-cee1-4f50-a3e8-77704e2eeae7` на `playroom-hod-test.pages.dev`. Независимый read-only [preflight #38568040590](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38568040590) подтвердил этот deployment, R2 bucket `playroom-hod-packs` и отключённые автоматические Git-сборки production/preview.
 
 ## Выпущенная пара 0.17.1 / 0.6.0
 
