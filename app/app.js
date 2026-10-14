@@ -715,7 +715,7 @@
   function showResult() {
     if(!session||session.current.status!=='finished'||screen!=='table')return;
     const state=session.current,winner=state.winner;
-    openModal(GameScreen.resultMarkup({state,viewer:isPass()?-1:viewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки'}),'result-modal',{keepAudio:true});
+    openModal(GameScreen.resultMarkup({state,viewer:isPass()?-1:viewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки',teamBadges:catalog[session.game]?.teamBadges}),'result-modal',{keepAudio:true});
   }
   function captureHistoryOrigin(kind){return {kind,session,sessionId,viewer,gate,paused,awaitingPass,screen,hubTab,scrollY:window.scrollY};}
   function restoreHistoryOrigin(){const origin=historyOrigin;if(!origin)return;historyOrigin=null;session=origin.session;sessionId=origin.sessionId;viewer=origin.viewer;gate=origin.gate;paused=origin.paused;awaitingPass=origin.awaitingPass;screen=origin.screen;hubTab=origin.hubTab;return origin;}

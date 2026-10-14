@@ -364,10 +364,14 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .player-medallion.is-first svg,.player-medallion.is-team svg{display:block;width:11px;height:11px;stroke-width:2.2}
 .player-medallion.is-team:has(svg){color:#fffdf4}
 .result-scores .score-row{align-items:center;gap:10px;text-align:left}
-.result-scores .result-player{display:flex;align-items:center;gap:8px;min-width:0}
+.result-scores .result-player{display:flex;align-items:center;gap:8px;min-width:max-content;white-space:nowrap}
 .result-scores .player-medallion{position:static;flex:none;width:25px;height:25px;font-size:14px}
+.result-scores .result-awards{position:relative;display:block;flex:none;width:31px;height:27px}
+.result-scores .result-awards .player-medallion{position:absolute;top:0;left:0}
+.result-scores .result-awards .player-medallion.is-team{top:2px;left:6px;z-index:0}
+.result-scores .result-awards .player-medallion.is-place{z-index:1}
 .result-scores .result-place-text{font-weight:800;white-space:nowrap}
-.result-scores .result-stat{display:flex;flex-direction:column;text-align:right;gap:2px}
+.result-scores .result-stat{display:flex;flex:1;min-width:0;flex-direction:column;text-align:right;gap:2px}
 .result-scores .result-stat small{color:var(--muted)}
 .history-controls .replay-track{position:relative;display:flex;align-items:center;flex:1;min-width:0}
 .history-controls .replay-track input{width:100%;margin:0;position:relative;z-index:1}
