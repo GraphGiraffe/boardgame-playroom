@@ -29,20 +29,34 @@ test('team results place the shared team disc behind each medal while solo resul
   assert.equal((html.match(/class="player-medallion is-team"/g)||[]).length,4);
   assert.equal((html.match(/class="player-medallion is-place/g)||[]).length,4);
   assert.match(html,/Команда синяя/);assert.match(html,/Команда красная/);
-  assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо',teamBadges}).match(/result-awards/g)||[]).length,0);
+  assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо',teamBadges}).match(/player-medallion is-team/g)||[]).length,0);
 });
 
 test('results reuse the first-player disc, under a medal when one is awarded',()=>{
   const state={...projected,status:'finished',winner:0,firstPlayer:0,result:{places:[1,4],values:[10,4]},players:[{name:'Первый'},{name:'Второй'}]};
   const solo=Screen.resultMarkup({state,viewer:0,gameName:'Шашки'});
-  assert.match(solo,/<span class="result-awards"><span class="player-medallion is-first"[^>]*aria-label="Первый ход"[^>]*>.*?<span class="player-medallion is-place place-1"/);
+  assert.match(solo,/<span class="result-awards"><span class="player-medallion is-place place-1"[^>]*>.*?<span class="player-medallion is-first"[^>]*aria-label="Первый ход"/);
   assert.equal((solo.match(/player-medallion is-first/g)||[]).length,1);
   const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
-  assert.doesNotMatch(noMedal,/class="result-awards"[^>]*><span class="player-medallion is-first"/);
+  assert.match(noMedal,/class="result-awards"><span class="result-place-text"[^>]*>4<\/span><span class="player-medallion is-first"/);
   assert.match(noMedal,/class="player-medallion is-first"/);
   const teams=Screen.resultMarkup({state:{...state,preset:'teams'},viewer:0,gameName:'Лудо',teamBadges:[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}]});
   assert.match(teams,/class="player-medallion is-team"[^>]*aria-label="Команда синяя · первый ход"/);
   assert.equal((teams.match(/class="player-medallion is-first"/g)||[]).length,0);
+});
+
+test('results reuse player card counters and omit repeated team text',()=>{
+  const state={...projected,preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]},players:[{name:'Иван',score:1},{name:'Тео',score:0},{name:'Луна',score:1},{name:'Сэм',score:0}]};
+  const playerContent=state.players.map((p,i)=>({counters:[{kind:'pieces',value:state.result.details[i],label:'Фишки дома'},{kind:'wins',value:p.score}]}));
+  const html=Screen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent,teamBadges:[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}]});
+  assert.match(html,/class="result-awards"[\s\S]*?class="avatar p0"[\s\S]*?class="result-name"/);
+  assert.match(html,/data-participant-role="player"/);
+  assert.match(html,/class="result-name">[\s\S]*?<strong>Иван<\/strong>/);
+  assert.doesNotMatch(html,/· вы/);
+  assert.match(html,/data-score-kind="pieces"/);
+  assert.doesNotMatch(html,/Команда: 8/);
+  assert.doesNotMatch(html,/Свои фишки дома: /);
+  assert.doesNotMatch(html,/Фишек команды дома: /);
 });
 
 test('local and network deletion share confirmation layout and preserve target routing',()=>{
