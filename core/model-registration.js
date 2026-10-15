@@ -12,19 +12,30 @@
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
-    const text = reference => translator.format(reference);
+    function bindParticipants(value,players){
+      if(value?.kind==='player-reference'){
+        if(!Number.isInteger(value.index)||!players[value.index])throw Error('PLAYER_REFERENCE_INVALID');
+        return players[value.index].name;
+      }
+      if(Array.isArray(value))return value.map(item=>bindParticipants(item,players));
+      if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,bindParticipants(item,players)]));
+      return value;
+    }
+    const text = (reference,players=[]) => translator.format(bindParticipants(reference,players));
     const metadata = presentation.metadata;
     const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
-      data:state.data,rng:state.rng,preset:state.preset,revision:state.move});
-    function decorated(action,projection) { return {...action, label:text(presentation.action(action,projection))}; }
+      data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
+    function decorated(action,projection,players) { return {...presentation.choice?.(action,projection),...action, label:text(presentation.action(action,projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
     function presentEvent(value,players) {
       const description=presentation.event(value),params={...description.message.params};
       if(value.actor!==null)params.player=players[value.actor].name;
       const message={...description.message,params};
-      return {...value,player:value.actor,text:text(message),message,kind:description.finish?'finish':description.kind||'action',
+      return {...value,player:value.actor,text:text(message,players),message:bindParticipants(message,players),kind:description.finish?'finish':description.kind||'action',
         ...(description.presentation?{presentation:description.presentation}:{}),
+        ...(description.transfer?{transfer:description.transfer}:{}),
+        ...(description.speech?{speech:{...description.speech,...(description.speech.text?{text:text(description.speech.text,players)}:{})}}:{}),
         ...(description.sound!==undefined?{sound:description.sound}:{})};
     }
     return {
@@ -34,33 +45,43 @@
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label)})),
       rules:metadata.rules.map(text),
       create(state, options) {
-        const created = model.create({playerCount:state.players.length, preset:state.preset,
+        const initial = model.start({playerCount:state.players.length, preset:state.preset,
           firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
+        const created=initial.position;
         state.turn = created.turn; state.data = engine.clone(created.data);if(created.rng!==undefined)state.rng=created.rng;
+        const scores=model.score(created);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
+        if(created.status==='finished')engine.complete(state,created.winners.length>1?created.winners:created.winners[0]??null,scores?0:1);
+        state.events=[...Events.append(state.events,initial.events,state.players.length,state.move)];
       },
       validateState(state) { model.validate(position(state)); },
-      legal(state, actor) { const projection=model.project(position(state),actor);return projection.actions.map(command=>decorated(command,projection)); },
+      resolveAction(state,actor,action) {
+        const command=model.legalActions(position(state),actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));
+        return command?decorated(command,model.project(position(state),actor),state.players):null;
+      },
+      legal(state, actor) { const projection=model.project(position(state),actor);return projection.actions.map(command=>decorated(command,projection,state.players)); },
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.
         const legal = model.legalActions(position(state), actor).find(candidate =>
           Object.keys(candidate).every(key => JSON.stringify(candidate[key]) === JSON.stringify(action[key])));
-        const changed = model.apply(position(state), actor, legal);
+        const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal);
         state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;
+        const scores=model.score(changed.position);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
         if(changed.position.status==='finished'){
           const winners=changed.position.winners;
-          engine.complete(state,winners.length>1?winners:winners[0]??null);
+          engine.complete(state,winners.length>1?winners:winners[0]??null,scores?0:1);
         }
         state.events=[...Events.append(state.events,changed.events,state.players.length,state.move)];
       },
       project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data); },
-      tableProjection(state, actor) { return model.projectTable(position(state), actor, state.events.filter(value=>value.visibility)); },
-      tableCommand(state, actor, action) { return model.commandFor(position(state), actor, action, 'table'); },
-      bot(state, actor) { const chosen = model.botAction(position(state), actor); return chosen ? decorated(chosen,model.project(position(state),actor)) : null; },
+      tableProjection(state, actor) { return model.projectTable(position(state),actor,state.events.filter(value=>value.visibility)); },
+      tableChoices(state, actor) { const projection=model.projectTable(position(state),actor);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
+      tableCommand(state, actor, action) { const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },
+      bot(state, actor) { const chosen = model.botAction(position(state), actor); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
       result(state) {
         const summary = model.result(position(state));
         const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
-        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],places:summary.places,metrics,
+        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',places:summary.places,metrics,
           ...(metrics[1]?{detailLabel:metrics[1].label,detailMetricId:metrics[1].id,details:metrics[1].values}:{})};
       }
     };

@@ -2,7 +2,7 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: выполнены девять разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-15: выполнены десять разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
@@ -17,9 +17,9 @@
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
-| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и Крестики-нолики перенесены; остальные впереди |
+| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и 10 паков перенесены; UNO и Дурак впереди |
 | F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | History и общий CommandProcessor перенесены; выбранные authority/durable/table проверки прошли |
-| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт и сетевой Table routing для Крестиков-ноликов проверены; остальные паки впереди |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды 10 моделей / приватные карточные choices; UNO и Дурак впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
@@ -46,17 +46,17 @@
 
 | Пак | Особенности, которые нельзя потерять | Перенос |
 | --- | --- | --- |
-| ludo | 1–3 dice/exit/guarantee/safe/capture/team help/stack/finish triangle | Впереди |
+| ludo | 1–3 dice/exit/guarantee/safe/capture/team help/stack/finish triangle | API 3 / 0.2.0; domain/board/scene/locales; общая геометрия правил и предпросмотра |
 | battleship | russian/classic/setup/manual/auto/ready/ship drag/observer follow | Domain/геометрия/scene/locales; API 3 / 0.2.0; публичные выстрелы, приватная расстановка |
 | yatzy | 15 categories/3 rolls/hold/release/upper bonus/scroll | Независимая модель/схема/scene/locales, API 3 / 0.2.0; выбранные проверки прошли |
 | pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Domain/scene/locales; API 3 / 0.2.0; отдельная память бота |
-| gofish | 36/52/54/books/ask/response/repeat/empty stock | Общая колода |
-| oldmaid | 35/54/53/pairs/hidden draw/out order/points | Общая колода с исключением |
+| gofish | 36/52/54/books/ask/response/repeat/empty stock | API 3 / 0.2.0; domain/scene/locales; публичные сообщения, приватные choices |
+| oldmaid | 35/54/53/pairs/hidden draw/out order/points | API 3 / 0.2.0; stateVersion 4 с points; публичный слепой draw, приватные руки |
 | durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | Общая колода |
 | uno | 108 cards/color/penalty/manual-auto/declarations/protection | Впереди |
-| checkers | forced chain/king/promotion/deferred capture/draw | Впереди |
-| domino | endpoints/orientation/stock/pass/fish/score/long chain | Впереди |
-| snakes | 64/100/bounce/link once/same-cell pawns/die | Впереди |
+| checkers | forced chain/king/promotion/deferred capture/draw | API 3 / 0.4.0; domain/board/scene/locales; семантический capture вместо разбора подписи |
+| domino | endpoints/orientation/stock/pass/fish/score/long chain | API 3 / 0.4.0; domain/scene/locales; явный ascending result и начисление очков |
+| snakes | 64/100/bounce/link once/same-cell pawns/die | API 3 / 0.4.0; domain/scene/locales, переносимая motion route |
 | tictactoe | assigned first/X-O/win/draw/bot/public | Domain/scene/locales/Web разделены, engineApi 3, версия 0.2.0 в разработке |
 
 ## Проверенный первый срез
@@ -175,3 +175,23 @@ History владеет последовательностью immutable реви
 
 - Браузерные `case/rc2-games-browser` — 3/3; `case/result-team-medallions-browser` — 1/1; `network/table` — 6/6. Исправлено дублирование панели полей в Table surface.
 - `build.py --prepare-dev --all-games --packs-dir ../playroom-paks/packs` и SHA256SUMS — 4/4 разработческих артефакта.
+
+## Десятый срез: десять независимых моделей и общий публичный результат
+
+Перенесены Лудо, Змеи и лестницы, Акулина, Рыба, Домино, Шашки. Domain не читает engine/UI/имена/часы/ambient RNG; отдельные presentation/locales. Headless VM проверяет все десять моделей с заблокированными Math.random/Date.now и без TabletopCore/DOM/storage. Структурные паковые подписи/общие Web-компоненты ещё продолжают перенос, это не завершение всей локализации.
+
+GameModel.start возвращает начальный Transition с фактами (комплекты при раздаче); create возвращает Position. Необязательный score задаёт текущие очки модели, включая выход Акулины и начисление Домино. Номер revision продвигается самим runtime. Choice metadata/capture и PlayerReference принадлежат presentation. Protocol.command выбирает только поля канонической команды по разрешённому modelProjection.actions.
+
+Эффекты локальной игры, сети и replay читают уже разрешённые события. Сетевой snapshot передаёт публичные firstPlayer/firstPlayerMode/result, клиент результатов использует те же playerContent, что сцена.
+
+Проверки:
+
+- `core/model,case/engine,case/rc2-games` — 79/79.
+- `case/authority,case/durable-authority,case/views,case/session` — 58/58.
+- `case/rc2-games-browser,case/checkers-drag,case/domino-layout` — 25/25.
+- `case/network-feedback-browser,case/result-team-medallions-browser` после исправления fixtures — 8/8.
+- Минимальные позиции Домино (без полной колоды) теперь проверяют непосредственно чистые локальные правила; полная GameModel продолжает требовать все 28 костей. Privacy fixture использует настоящие ID, не ломает схему ради маркера. Проверка целостности не ослаблялась.
+
+UNO/Дурак, общие screen/history/input/room controllers, все семейства AssetResolver, полный каталог приложения, единый compiler и окончательный cutover ещё не завершены. Публичные версии не изменены; releases/deploy/Actions не запускались.
+
+- После разделения Table choices и canonical protocol: `case/model-contract,case/authority,case/durable-authority,network/table` — 37/37.

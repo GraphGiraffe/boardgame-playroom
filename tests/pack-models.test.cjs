@@ -111,3 +111,63 @@ test('Pexeso bot receives only public observations and does not reveal its memor
   assert.equal(model.projectTable(state,0).actions.length,state.data.board.length-1);
   assert.equal(model.project(state,-1).data.seen,undefined);
 });
+
+test('card model initialization preserves facts, local hands, blind public choices and exit points',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js');
+ const Deck=require(path.join(packs,'shared/domain/standard-deck.js'));
+ for(const id of ['oldmaid','gofish']){
+  const base=path.join(packs,'packs',id),model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle,random:Random.random},Deck));
+  for(const deck of [36,52,54])for(const count of [2,4,6]){
+   let state=model.create({playerCount:count,firstPlayer:count-1,preset:'classic',rng:17,openHands:false,options:{deck}}),steps=0;
+   const initial=model.project(state,count-1),table=model.projectTable(state,count-1);
+   assert(initial.data.hands[count-1].every(card=>card.id));
+   assert(table.data.hands.flat().every(card=>card.hidden));
+   assert.equal(table.actions.length,id==='oldmaid'?model.legalActions(state,count-1).length:0);
+   while(state.status==='playing'&&steps++<2000){const actor=state.turn;state=model.apply(state,actor,model.botAction(state,actor)).position;}
+   assert.equal(state.status,'finished',id+' '+deck+'/'+count);
+   const result=model.result(state);assert.equal(result.places.length,count);
+   if(id==='oldmaid'){
+    assert.deepEqual([...model.score(state)].sort((a,b)=>a-b),Array.from({length:count},(_,index)=>index));
+    assert.deepEqual(result.metrics[0].values,model.score(state));
+   }
+  }
+ }
+});
+
+test('model start validates setup events and scoring without a Session or engine facade',()=>{
+ const {GameModel}=require('../core/model-runtime.js');
+ const base={contractVersion:1,id:'setup-facts',minPlayers:2,maxPlayers:2,
+  create:()=>({position:{playerCount:2,turn:0,status:'playing',winners:[],data:{points:[2,0]}},
+    events:[{type:'setup.observed',actor:0,params:{count:2},visibility:{kind:'public'}}]}),
+  validate:()=>true,actions:()=>[],reduce:position=>({position,events:[]}),project:position=>position.data,
+  score:position=>position.data.points,result:()=>null};
+ const model=new GameModel(base),start=model.start({playerCount:2});
+ assert.equal(start.events[0].type,'setup.observed');assert.deepEqual(model.score(start.position),[2,0]);
+ assert(Object.isFrozen(start.events));assert.deepEqual(model.create({playerCount:2}),start.position);
+ assert.throws(()=>new GameModel({...base,score:()=>[NaN,0]}).score(start.position),error=>error.code==='SCORE_INVALID');
+});
+
+test('each migrated pack definition executes in isolation with explicit deterministic ports',()=>{
+ const entries={tictactoe:null,yatzy:'PlayroomYatzyCategories',battleship:'PlayroomBattleshipGeometry',pexeso:'deck',
+  oldmaid:'deck',gofish:'deck',ludo:'PlayroomLudoBoard',snakes:null,domino:null,checkers:'PlayroomCheckersBoard'};
+ for(const [id,dependency]of Object.entries(entries)){
+  const context=vm.createContext({}),base=path.join(packs,'packs',id),manifest=JSON.parse(fs.readFileSync(base+'/manifest.json'));
+  vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
+  const files=['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file));
+  if(dependency==='deck')files.push(path.join(packs,'shared/domain/standard-deck.js'));
+  files.push(...manifest.sourceModules.rules.map(file=>path.join(base,file)));
+  for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
+  const dependencySource=dependency==='deck'?'PlayroomPackDomain.standardDeck':dependency||'undefined';
+  const result=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
+   const definition=globalThis.PlayroomPackDefinition||PlayroomPackDefinitionFactory({rollDie:PlayroomRandom.rollDie,random:PlayroomRandom.random,shuffle:PlayroomRandom.shuffle},${dependencySource});
+   const model=new PlayroomModelRuntime.GameModel(definition),preset=PlayroomPackPresentation.metadata.presets[0].id;
+   const initial=model.create({playerCount:2,firstPlayer:1,preset,rng:17,openHands:false,options:{deck:54}});
+   const actor=initial.turn,action=model.botAction(initial,actor),changed=model.apply(initial,actor,action);
+   const projected=model.projectTable(changed.position,changed.position.turn),scene=PlayroomPackPresentation.scene(projected);
+   return {game:projected.game,contract:scene.contractVersion,secret:projected.rng,initialTurn:initial.turn};
+  })())`,context));
+  assert.equal(result.game,id);assert.equal(result.contract,1);assert.equal(result.secret,undefined);
+  assert.equal(result.initialTurn,1,id+' first player');
+  for(const key of ['TabletopCore','document','localStorage','window','fetch'])assert.equal(context[key],undefined,id+' '+key);
+ }
+});

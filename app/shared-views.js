@@ -122,7 +122,11 @@
     }
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:usable,select(value){selected=value;render();},commit:submit});
     playerTargets=new root.PlayroomPlayerTarget({selected:()=>selected,actions:()=>usable()?client.snapshot.actions:[],commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
-    function result(){if(client.snapshot?.state?.status==='finished')show(GameScreen.resultMarkup({state:client.snapshot.state,viewer:client.snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',teamBadges:pack.manifest.teamBadges,network:true}));}
+    function result(){
+      const snapshot=client.snapshot;if(snapshot?.state?.status!=='finished')return;
+      const playerContent=V.get(snapshot.state.game)?.render(snapshot.state,snapshot.viewer,[],{})?.playerContent||[];
+      show(GameScreen.resultMarkup({state:snapshot.state,viewer:snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',teamBadges:pack.manifest.teamBadges,playerContent,network:true}));
+    }
     async function viewHistory(index,{animate=false}={}){
       if(!historyOpen||!client.snapshot)return;
       const pos=Math.min(Math.max(0,index),historyCount()),ticket=++historyTicket;

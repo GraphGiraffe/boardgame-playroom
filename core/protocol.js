@@ -11,7 +11,12 @@
   }
   const role=snapshot=>snapshot.role||(snapshot.viewer<0?'spectator':'player');
   const sameAudience=(a,b)=>a.viewer===b.viewer&&role(a)===role(b);
-  function command(snapshot,action,commandId){return {protocolVersion:version,sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,commandId,expectedRevision:snapshot.revision,action:clone(action),...(role(snapshot)==='table'?{actor:snapshot.actor}:{})};}
+  function command(snapshot,action,commandId){
+    const commands=snapshot.state?.modelProjection?.actions;
+    const allowed=Array.isArray(commands)&&commands.find(candidate=>record(action)&&Object.keys(candidate).every(key=>canonical(candidate[key])===canonical(action[key])));
+    return {protocolVersion:version,sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,commandId,
+      expectedRevision:snapshot.revision,action:clone(allowed||action),...(role(snapshot)==='table'?{actor:snapshot.actor}:{})};
+  }
   function presentationReady(snapshot){return {protocolVersion:version,kind:'presentation-ready',sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,controlRevision:snapshot.controlRevision||0,revision:snapshot.reactionWindow?.revision??snapshot.revision,windowId:snapshot.reactionWindow?.id};}
   function validatePresentationReady(message){return record(message)&&Object.keys(message).every(k=>['protocolVersion','kind','sessionId','authorityEpoch','controlRevision','revision','windowId'].includes(k))&&message.protocolVersion===version&&message.kind==='presentation-ready'&&id(message.sessionId)&&id(message.authorityEpoch)&&id(message.windowId)&&Number.isSafeInteger(message.controlRevision)&&message.controlRevision>=0&&Number.isSafeInteger(message.revision)&&message.revision>=0;}
   return {version,clone,freeze,canonical,validate,command,role,sameAudience,presentationReady,validatePresentationReady};

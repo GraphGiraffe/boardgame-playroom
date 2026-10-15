@@ -178,3 +178,15 @@ Bootstrap загружает model-values перед events/model-runtime/histor
 Регистрация поддерживает stateVersion паков и primary/detail metric IDs. Результаты берут места из rules-модели; новые показатели сравниваются по ID, без догадок по одинаковым числам. Временный fallback старых паков остаётся до их переноса. Translator переиспользует Intl форматтеры в пределах locale.
 
 После перевода фишек «Змей и лестниц» на общий источник исправлена зависимость standalone-пака: манифест явно подключает sharedUi. Изменения SVG/принятого дизайна в этом срезе не выполнялись.
+
+
+## Десятый срез: lifecycle, choices и разрешённые эффекты
+
+- GameDefinition.create может вернуть Position либо `{position, events}`. GameModel.start всегда возвращает immutable Transition; create — только Position. Начальные факты проходят обычную проверку видимости. Начальная revision=0; apply увеличивает её один раз. Внешний Session envelope использует тот же номер через временный адаптер.
+- Необязательный `score(position)` возвращает текущие неотрицательные integer очки всех игроков. Adapter переносит их без дополнительной автоматической победной единицы. `Result.metrics[*].order` задаёт порядок показателя, places возвращаются непосредственно domain.
+- Presentation.action даёт MessageRef, choice — отдельные подсказки выбора (card source/targetKind/capture). `PlayerReference={kind:'player-reference',index}` связывается с публичным roster только перед переводом. Domain не получает имена.
+- Наружный compatibility facade допускает decorated actions, но resolveAction сопоставляет только явно объявленные поля GameAction. PlayerProjection.actions и TableProjection.actions остаются каноническими; Table choices декорируются отдельно. Protocol.command не передаёт label/tooltip/capture и прочие поля renderer в новую model-команду.
+- Authority вычисляет transfer effects из уже разрешённых projected events для данного viewer; facts хоста не становятся готовыми анимациями без проекции. Local replay также берёт presentation cues из разрешённого журнала. Старое inference для ещё не перенесённых паков остаётся до финального cutover.
+- Public snapshot включает firstPlayer/firstPlayerMode/result. История результата и живой результат клиента используют одни публичные показатели и playerContent, без полного host state.
+
+У десяти паков engineApi 3: tictactoe, yatzy, battleship, pexeso, oldmaid, gofish, ludo, snakes, domino, checkers. UNO и Дурак продолжают перенос; окончательное удаление legacy слоя впереди.

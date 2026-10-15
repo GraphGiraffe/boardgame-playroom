@@ -10,7 +10,7 @@ async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
   for(const name of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/protocol.js','core/component-assets.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['presentation/localization.js','core/protocol.js','core/component-assets.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
@@ -229,13 +229,17 @@ test('external modal closing restores projected legal actions without another ne
 test('Ludo selects a pawn without committing, keeps it after a destination, and consumes every die',{timeout:40000},async()=>{
   require('../packs/ludo/rules.js');
   const shared=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared');
-  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','round-token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
+  const installed={};require('node:vm').runInNewContext(read('installed-packs.js'),installed);
+  const bundle=installed.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='ludo');
+  const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('ludo').rules,
+    assets:Object.fromEntries(['die','round-token'].map(name=>['assets/shared/'+name+'.svg','data:image/svg+xml;base64,'+Buffer.from(bundle.files['assets/shared/'+name+'.svg']).toString('base64')]))};
+
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);
   try{
     const session=new Session(Engine,'ludo',{seed:17,diceCount:3,sixReroll:'off',players:[{name:'Аня'},{name:'Борис'}]}),authority=new Authority(session),client=authority.connect(0),base=client.snapshot();
-    let state=Engine.clone(base.state),revision=0;
-    const snapshot=()=>({...base,revision,state:Engine.project(state,0),events:state.events,actions:Engine.legalActions(state,0)});
+    let state=Engine.clone(session.current),revision=0;
+    const snapshot=()=>{const projected=Engine.project(state,0);return {...base,revision,state:projected,events:projected.events,actions:Engine.legalActions(state,0)};};
     await page.exposeFunction('ludoCommit',a=>{state=Engine.applyAction(state,0,a);revision++;return snapshot();});
     await page.evaluate(({definition,snapshot})=>{
       window.qaSent=[];const listeners=new Set();

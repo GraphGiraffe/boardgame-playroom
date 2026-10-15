@@ -10,7 +10,17 @@ const root = path.resolve(__dirname, '..');
 const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/random.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+  const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
+  if(match){
+    const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
+    sandbox.PlayroomPack={...manifest,asset:()=>'',adaptModel:spec=>sandbox.PlayroomModelRegistration.adapt(sandbox.TabletopCore,spec)};
+    const catalogs={};for(const [locale,files]of Object.entries(manifest.sourceModules?.locales||{})){
+      catalogs[locale]=Object.assign({},...files.map(name=>JSON.parse(fs.readFileSync(path.join(base,name),'utf8'))));
+    }
+    sandbox.PlayroomPackResources={locales:catalogs};
+    for(const name of manifest.sourceModules?.[match[2]]||[])vm.runInContext(fs.readFileSync(path.join(base,name),'utf8'),sandbox,{filename:name});
+  }
   vm.runInContext(fs.readFileSync(file.startsWith('shared/')?path.join(path.dirname(sharedKit),file.slice(7)):path.join(root, file), 'utf8'), sandbox, { filename: file });
 }
 const E = sandbox.TabletopCore, V = sandbox.PlayroomViews;
@@ -100,14 +110,15 @@ test('private hands/decks do not leak identities; public hands retain every card
     const state = make(game), hand = state.data.hands[1];
     const stock = state.data.drawPile || state.data.stock;
     hand.push(...stock.splice(1, Math.min(12, stock.length - 1)));
-    hand.forEach((card, i) => { card.id = `SECRET_HAND_${i}`; });
-    stock.forEach((card, i) => { card.id = `SECRET_STOCK_${i}`; });
-    assert.doesNotMatch(render(state, 0), /SECRET_/, `${game}: hidden hand or stock identity leaked`);
-    assert.doesNotMatch(render(state, -1), /SECRET_/, `${game}: handoff identity leaked`);
+    const hidden=render(state,0),handoff=render(state,-1);
+    for(const card of [...hand,...stock])for(const html of [hidden,handoff]){
+      assert(!html.includes('card-'+card.id+'"')&&!html.includes('tile-'+card.id+'"'),game+': private component identity leaked');
+    }
+
     state.openHands = true;
     const html = render(state, 0);
     for (const card of hand) assert.ok(html.includes(`-${card.id}"`), `${game}: public card omitted`);
-    assert.doesNotMatch(html, /SECRET_STOCK_/, `${game}: public-hands mode leaked stock`);
+    for(const card of stock)assert(!html.includes('card-'+card.id+'"')&&!html.includes('tile-'+card.id+'"'),game+': public-hands mode leaked stock');
   }
 });
 

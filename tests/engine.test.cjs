@@ -12,6 +12,7 @@ const types = s => actions(s).map(a => a.type);
 const has = (s, query) => actions(s).some(a => Object.entries(query).every(([k, v]) => a[k] === v));
 let fixtureId = 0;
 const uno = (color, value) => ({ id: `fixture-${fixtureId++}`, color, value });
+const dominoRules=require('../packs/domino/domain/game.js')({shuffle:E.shuffle});
 const tile = (a, b) => ({ id: `fixture-${fixtureId++}`, a, b });
 const card = (suit, rank) => ({ id: `${suit}${rank}`, suit, rank });
 function unoState(hands, top = uno('red', '5'), drawPile = []) {
@@ -19,7 +20,8 @@ function unoState(hands, top = uno('red', '5'), drawPile = []) {
   Object.assign(s.data, { hands, discard: [top], drawPile, color: top.color, drawn: null, noDraw: false, stalled: 0 }); return s;
 }
 function dominoState(hands, chain, stock = []) {
-  const s = create('domino', hands.length); s.turn = 0; s.data = { hands, chain, stock, passes: 0 }; return s;
+  // Minimal local-rule fixtures deliberately omit the rest of the double-six deck.
+  return {playerCount:hands.length,turn:0,status:'playing',winners:[],data:{hands,chain,stock,passes:0}};
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
@@ -172,21 +174,21 @@ test('UNO reverse/skip directions, action scores and stock exhaustion', () => {
 test('domino orients both endpoints and enforces draw-until-playable', () => {
   const left = tile(3, 6), right = tile(1, 5);
   let s = dominoState([[left,tile(0,0)],[right,tile(2,2)]],[tile(3,1)]);
-  s = act(s,{type:'play',card:left.id,side:'left'}); assert.deepEqual([s.data.chain[0].a,s.data.chain[0].b],[6,3]);
-  s = act(s,{type:'play',card:right.id,side:'right'}); assert.deepEqual([s.data.chain.at(-1).a,s.data.chain.at(-1).b],[1,5]);
+  s = dominoRules.reduce(s,s.turn,{type:'play',card:left.id,side:'left'}).position; assert.deepEqual([s.data.chain[0].a,s.data.chain[0].b],[6,3]);
+  s = dominoRules.reduce(s,s.turn,{type:'play',card:right.id,side:'right'}).position; assert.deepEqual([s.data.chain.at(-1).a,s.data.chain.at(-1).b],[1,5]);
   const fitting=tile(1,4), blocked=tile(2,2);
   s=dominoState([[tile(6,6)],[tile(3,3)]],[tile(1,1)],[fitting,blocked]);
-  assert.deepEqual(types(s),['draw']); s=act(s,{type:'draw'}); assert.equal(s.turn,0); assert.deepEqual(types(s),['draw']);
-  s=act(s,{type:'draw'}); assert(has(s,{card:fitting.id})); assert(!types(s).includes('draw')); assert(!types(s).includes('pass'));
+  assert.deepEqual(dominoRules.actions(s,s.turn).map(choice=>choice.command.type),['draw']); s=dominoRules.reduce(s,s.turn,{type:'draw'}).position; assert.equal(s.turn,0); assert.deepEqual(dominoRules.actions(s,s.turn).map(choice=>choice.command.type),['draw']);
+  s=dominoRules.reduce(s,s.turn,{type:'draw'}).position; assert(dominoRules.actions(s,s.turn).some(choice=>choice.command.card===fitting.id)); assert(!dominoRules.actions(s,s.turn).map(choice=>choice.command.type).includes('draw')); assert(!dominoRules.actions(s,s.turn).map(choice=>choice.command.type).includes('pass'));
 });
 
 test('domino blocked minimum, tie, empty-hand victory and score are exact', () => {
   for (const [other, winner, score] of [[tile(2,2),0,4],[tile(1,1),null,0]]) {
-    let s=dominoState([[tile(0,2)],[other]],[tile(6,6)]); s=act(s,{type:'pass'}); s=act(s,{type:'pass'});
-    assert.equal(s.status,'finished'); assert.equal(s.winner,winner); assert.equal(s.players[0].score,score);
+    let s=dominoState([[tile(0,2)],[other]],[tile(6,6)]); s=dominoRules.reduce(s,s.turn,{type:'pass'}).position; s=dominoRules.reduce(s,s.turn,{type:'pass'}).position;
+    assert.equal(s.status,'finished'); assert.equal(s.winners[0]??null,winner); assert.equal(dominoRules.score(s)[0],score);
   }
   const last=tile(1,2); let s=dominoState([[last],[tile(3,5)]],[tile(1,1)],[tile(6,6)]);
-  s=act(s,{type:'play',card:last.id,side:'right'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,8);
+  s=dominoRules.reduce(s,s.turn,{type:'play',card:last.id,side:'right'}).position; assert.equal(s.winners[0],0); assert.equal(dominoRules.score(s)[0],8);
 });
 
 test('durak beats by suit/rank or trump, attacker may add defense rank', () => {
@@ -244,7 +246,7 @@ test('checkers wins by blocked opponent and draws by repetition or quiet-king li
   s=checkersState([[56,0,true],[5,1,true]]);
   const cycle=[[56,49],[5,12],[49,56],[12,5]];
   for(let i=0;i<9 && s.status==='playing';i++) {const [from,to]=cycle[i%4]; s=act(s,{type:'move',from,to});}
-  assert.equal(s.status,'finished'); assert.equal(s.winner,null); assert.match(s.events.at(-1).text,/трижды/);
+  assert.equal(s.status,'finished'); assert.equal(s.winner,null); assert.equal(s.events.at(-1).type,'checkers.repeated');assert.match(E.project(s,0).events.at(-1).text,/трижды/);
   s=checkersState([[56,0,true],[5,1,true]]); s.data.quiet=29; s=act(s,{type:'move',from:56,to:49}); assert.equal(s.status,'finished'); assert.equal(s.winner,null);
 });
 

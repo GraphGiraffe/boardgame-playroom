@@ -203,13 +203,23 @@ test('authority preserves model projections, idempotency and read-only spectator
   const session=new Session(E,'tictactoe',{seed:'never-send-seed',players:[{name:'A'},{name:'B'}],firstPlayerMode:'assigned',firstPlayer:1});
   const authority=new Authority(session),player=authority.connect(1),spectator=authority.connect(-1);
   try{
-    const request=Protocol.command(player.snapshot(),{type:'place',cell:4},'model-move');
+    const request=Protocol.command(player.snapshot(),{type:'place',cell:4,label:'UI label',tooltip:'private client text'},'model-move');
+    assert.deepEqual(request.action,{type:'place',cell:4});
     assert.equal(spectator.dispatch(Protocol.command(spectator.snapshot(),{type:'place',cell:4},'forged')).code,'READ_ONLY');
     assert.equal(player.dispatch(request).ok,true);assert.equal(player.dispatch(request).duplicate,true);
     assert.equal(authority.revision,1);assert.equal(player.snapshot().state.modelProjection.data.board[4],1);
     const publicView=spectator.snapshot();assert.deepEqual(publicView.state.modelProjection.actions,[]);
     assert.equal(publicView.state.modelProjection.actor,-1);assert(!JSON.stringify(publicView).includes('never-send-seed'));
     assert.equal(spectator.history(0).state.modelProjection.data.board[4],null);
+    assert.equal(publicView.state.firstPlayer,1);
+    assert.equal(publicView.state.firstPlayerMode,'assigned');
+    const other=authority.connect(0);
+    for(const [connection,cell]of [[other,0],[player,3],[other,1],[player,5]]){
+      assert.equal(connection.dispatch(Protocol.command(connection.snapshot(),{type:'place',cell},'finish-'+cell)).ok,true);
+    }
+    assert.equal(spectator.snapshot().state.result.metricId,'wins');
+    assert.deepEqual(spectator.snapshot().state.result.values,[0,1]);
+    assert.equal(spectator.snapshot().state.firstPlayer,1);
   }finally{authority.dispose();}
 });
 

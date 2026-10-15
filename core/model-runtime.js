@@ -16,7 +16,8 @@
         integer(definition.minPlayers, 1, 32) && integer(definition.maxPlayers, definition.minPlayers, 32) &&
         ['create','validate','actions','reduce','project','result'].every(key => typeof definition[key] === 'function') &&
         (definition.bot === undefined || typeof definition.bot === 'function') &&
-        (definition.observe === undefined || typeof definition.observe === 'function'), 'MODEL_INVALID');
+        (definition.observe === undefined || typeof definition.observe === 'function') &&
+        (definition.score === undefined || typeof definition.score === 'function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
       Object.freeze(this);
@@ -26,16 +27,31 @@
         integer(position.turn, 0, position.playerCount - 1) && ['playing','finished'].includes(position.status) &&
         Array.isArray(position.winners) && new Set(position.winners).size === position.winners.length &&
         position.winners.every(player => integer(player, 0, position.playerCount - 1)) &&
-        (position.status === 'finished' || position.winners.length === 0) && record(position.data), 'POSITION_INVALID');
+        (position.status === 'finished' || position.winners.length === 0) && record(position.data) &&
+        (position.revision===undefined||integer(position.revision,0,Number.MAX_SAFE_INTEGER)), 'POSITION_INVALID');
       const value = snapshot(position);
       check(this.#definition.validate(value) === true, 'POSITION_INVALID');
       return true;
     }
     create(options) {
-      const position = this.#definition.create(snapshot(options));
+      return this.start(options).position;
+    }
+    start(options) {
+      const created=this.#definition.create(snapshot(options));
+      check(record(created),'POSITION_INVALID');
+      const initial=created.position?created:{position:created,events:[]};
+      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0}};
+      this.validate(transition.position);
+      check(transition.position.playerCount===options.playerCount&&Array.isArray(transition.events),'POSITION_INVALID');
+      for(const value of transition.events)event(value,options.playerCount);
+      return snapshot(transition);
+    }
+    score(position) {
       this.validate(position);
-      check(position.status === 'playing' && position.playerCount === options.playerCount, 'POSITION_INVALID');
-      return snapshot(position);
+      if(!this.#definition.score)return null;
+      const values=this.#definition.score(snapshot(position));
+      check(Array.isArray(values)&&values.length===position.playerCount&&values.every(value=>integer(value,0,Number.MAX_SAFE_INTEGER)),'SCORE_INVALID');
+      return snapshot(values);
     }
     #choices(position, actor) {
       this.validate(position);
@@ -63,9 +79,10 @@
       const result = this.#definition.reduce(snapshot(position), actor, legal);
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
-      this.validate(result.position);
+      const next={...result,position:{...result.position,revision:(position.revision??0)+1}};
+      this.validate(next.position);
       for (const value of result.events) event(value, position.playerCount);
-      return snapshot(result);
+      return snapshot(next);
     }
     project(position, viewer, events = []) {
       this.validate(position);

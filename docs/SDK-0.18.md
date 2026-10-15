@@ -38,3 +38,10 @@ Library записывает librarySummary до сериализованной 
 Канонический RoundToken — playroom-paks/shared/components/round-token.js. Host SDK содержит закреплённую generated копию core/component-assets.js и provenance/digest core/component-assets.json. build.py --packs-dir синхронизирует её с выбранным companion source; автономная сборка без companion проверяет закреплённый digest. Оба pack builder встраивают этот же исходник перед view-kit. Не редактировать generated копию вручную.
 
 Один SVG масштабирует диск, ободок, грань и знак вместе. Видимый размер отличается от hit area. Правила малых жетонов/веера/стопки/финиша описаны в shared/assets/README.md паков. После изменения canonical source обновить vendored digest сборкой и проверить actual components во всех контекстах.
+
+
+## Lifecycle и представление
+
+`model.start(options)` возвращает `{position,events}`, `model.create(options)` — Position. Начальные комплекты/прочие игровые факты сохраняются так же, как факты хода. Runtime продвигает revision после каждого apply. Необязательные Definition.score/observe возвращают очки и разрешённую память бота; наблюдения бота не становятся частью viewer projection.
+
+Каноническая команда содержит только параметры domain. Presentation.choice/action добавляют подсказки и MessageRef отдельно; Protocol.command строит игровую команду по разрешённой проекции, не по списку исключённых UI-полей. PlayerReference связывается с roster перед локализацией, имен в domain нет.

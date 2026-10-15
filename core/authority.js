@@ -11,9 +11,9 @@
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
   const text={REACTION_IGNORED:'Реакция уже обработана или пока недоступна.',REACTION_WAIT:'Дайте игроку завершить объявление.',PAUSED:'Партия на паузе.',BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Это подключение не позволяет выполнить действие.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.',RECOVERY_REQUIRED:'Ход записан в хранилище, но интерфейс исполнителя не удалось обновить. Перезагрузите страницу хоста и восстановите комнату из сетевого сохранения.'};
-  function transfers(before,after){
+  function transfers(before,after,events=after.events){
     if(!before.data.hands||!after.data.hands)return [];
-    const explicit=after.events.filter(e=>e.id>(before.events.at(-1)?.id||0)&&e.transfer).map(e=>({...e.transfer,...(e.privateTo!=null?{privateTo:e.privateTo}:{})}));
+    const explicit=events.filter(e=>e.id>(before.events.at(-1)?.id||0)&&e.transfer).map(e=>({...e.transfer,...(e.privateTo!=null?{privateTo:e.privateTo}:{})}));
     const owners=new Map(),table=new Set(),groups=new Map();
     before.data.hands.forEach((h,p)=>h.forEach(c=>owners.set(c.id,p)));
     const visit=v=>{if(v&&typeof v==='object'){if(v.id)table.add(v.id);else Object.values(v).forEach(visit);}};visit(before.data.table);
@@ -35,7 +35,7 @@
         if(receipts.has(key))throw Error('Duplicate restored receipt');
         receipts.set(key,{signature:row.signature,receipt:freeze(clone(row.receipt))});
       }
-      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[],paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
     }
     _processor() {
       const r=records.get(this);
@@ -45,7 +45,6 @@
         commit:next=>r.session.commitPrepared(next),
         remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
         publish:(before,next)=>{
-          r.effects=transfers(before,next).map((draw,i)=>({id:`${next.move}:draw:${i}`,revision:next.move,...draw}));
           this._publish();if(r.persistence)this.scheduleBot();
         },
         reject:(code,command)=>({ok:false,code,message:text[code],commandId:command.commandId,revision:this.revision}),
@@ -85,11 +84,11 @@
       const reactionWindow=reactionWindows.find(w=>w.owner===viewer)||reactionWindows[0]||null;
       const role=binding?.role||(viewer<0?'spectator':'player');
       const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!state.players[state.turn]?.bot?state.turn:-1):viewer;
-      const projected=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor):s.engine.project(state,viewer),previous=live?null:s.states[index-1];
-      const visible=live?r.effects:previous?transfers(previous,state).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
+      const projected=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor):s.engine.project(state,viewer),previous=live?s.states.at(-2):s.states[index-1];
+      const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','openHands','data','events','modelProjection'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','data','events','modelProjection'])if(projected[key]!==undefined)safe[key]=projected[key];
       const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
       if(safe.modelProjection)safe.modelProjection={...safe.modelProjection,actions:safe.modelProjection.actions.filter(command=>
         actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};

@@ -152,7 +152,7 @@ test('RC4 sea bot decisions depend only on observed shots',()=>{
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
 test('Akulina draw shows both participants to everyone, while the card stays private',()=>{

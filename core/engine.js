@@ -201,7 +201,9 @@
   function applyAction(state, actor, action) {
     if (!action || typeof action !== 'object') throw Error('Не задано действие');
     if (reactionControl(state, actor, action)?.ignore) return state;
-    const legal = legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
+    const pack=forState(state);
+    const legal=pack.resolveAction?(activePlayer(state,actor)?pack.resolveAction(state,actor,action):null):
+      legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error('Этот ход сейчас недоступен');
     const next = clone(state);
     next.move++;
@@ -221,7 +223,7 @@
   function projectTable(state, actor) {
     const out = project(state, -1), projection = forState(state).tableProjection?.(state, actor);
     out.tableActor = projection?.actor ?? -1;
-    out.tableActions = projection?.actions ?? [];
+    out.tableActions = forState(state).tableChoices?.(state,actor) ?? projection?.actions ?? [];
     if (projection) out.modelProjection = projection;
     return out;
   }

@@ -519,7 +519,7 @@
     if(result&&screen==='table'&&!isReplay()&&!$('#modal-root').children.length&&session.current.status==='finished'&&lastResult!==session.createdAt){lastResult=session.createdAt;showResult();}
   }
   function interruptAction() { if(transition)finishAction(transition,{redraw:false,result:false}); }
-  const cardTransfers=Authority.transfers;
+  const cardTransfers=(before,after)=>Authority.transfers(before,after,E.project(after,viewer).events);
   function act(actor,action,context={}) {
     if(transition||isReplay()||paused||gate!==null)return;
     try {
@@ -770,8 +770,8 @@
     const step=async()=>{
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
-      const before=currentState(),after=session.states[replayIndex+1],events=after.events.filter(e=>e.id>(before.events.at(-1)?.id||0));
-      const action={type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
+      const before=currentState(),after=session.states[replayIndex+1],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
+      const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
       replayIndex++;renderTable();playSounds(before,after);
       await flow.play(snapshot,{draws:cardTransfers(before,after)});
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
