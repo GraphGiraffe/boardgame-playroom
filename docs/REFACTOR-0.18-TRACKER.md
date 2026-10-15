@@ -2,7 +2,7 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: начат первый этап; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-15: выполнены шесть разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
@@ -11,14 +11,14 @@
 | F03 | Установка, версии, quarantine — core/packs.js, pack-manager | view-contract, packs-reconcile | Статика |
 | F04 | Каталог/скачивание/SHA — remote-catalog, pack route | packs-reconcile, pwa | Статика |
 | F05 | Удаление одного/старых/всех паков и зависимых партий | rc2-games, ui; отказ сетевого архива отдельно | Статика; уточнить failure fixture |
-| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Статика |
+| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Session history/codec выделены и проверены; перенос library/очистки впереди |
 | F07 | Профиль/имя/роль/место/бот — multiplayer | player-profile, multiplayer-lobby | Статика |
 | F08 | Команды/первый игрок/готовность/отсчёт/правила | multiplayer-lobby, ludo-team-markers-browser, lobby-layout-browser | Статика |
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
 | F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и Крестики-нолики перенесены; остальные впереди |
-| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | Общий pipeline сохранён и подключён к Столу; извлечение CommandProcessor впереди |
+| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | Staging/invalidation выделены в History; pipeline сохранён; CommandProcessor впереди |
 | F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт и сетевой Table routing для Крестиков-ноликов проверены; остальные паки впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
@@ -128,3 +128,16 @@
 - `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-table` и SHA256SUMS — 5/5.
 
 Полный цикл/Actions/release/deploy не запускались. Физические устройства и внешние сети этим прогоном не проверены. Следующие этапы: canonical Session/events/CommandProcessor, полное представление results/metrics и перенос остальных 11 паков, включая их public actions/reactions. Временный адаптер и прежние форматы будут удалены при общем переходе; публикация остаётся 0.17.6 / 0.6.5.
+
+## Шестой срез: независимые механизмы Session
+
+History владеет последовательностью immutable ревизий, staging/invalidation/compaction. Codec владеет компактным JSON с прежними ограничениями импорта. Typed Events/ModelValues выделены из GameModel; Session связывает их с существующим engine через историю и принимает порт часов. Restore не создаёт игру заново. Контракты и незакрытые границы — [описание среза](REFACTOR-0.18-CONTRACTS.md#шестой-срез-история-сериализация-и-порт-часов-session).
+
+Выбранные проверки, без полного цикла:
+
+- `node scripts/codex/test.cjs core/model,core/session-runtime,case/session,case/authority,case/durable-authority,network/table,case/host-recovery,case/network-store-integrity` — **79/79**. Новый подблок содержит семь регрессий: независимое исполнение без платформы, immutable staging, stale/foreign/invalidation, атомарный отказ compaction, no-op, явные часы/их отказ и восстановление без create/чтения времени. Существующие проверки сохраняют приватность, exact packVersion и защиту импорта.
+- `node scripts/codex/test.cjs case/engine,case/rc2-games,case/network-session-store-browser,case/network-host-recovery-browser,case/artwork` — **68/68**. Проверены правила/проекции действующих паков, реальная IndexedDB, reload и duplicate ACK Стола без второго хода, восстановление комнаты/приватного viewer хоста и браузерные таймеры authority.
+- `node --test --test-name-pattern='built PWA uses content-addressed' tests/pwa.test.cjs` — **1/1**: новые entrypoints входят в hashed URLs/cache/integrity.
+- Разработческая сборка: `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-session`; файлы не публикуются под прежними версиями. SHA256SUMS — **5/5**. Готовый playroom-all-games.html через file:// в Chrome: новые модули загружены, ход Крестиков-ноликов и compact restore с явными часами прошли, page errors 0.
+
+Этот срез не завершает Session/events/CommandProcessor и не меняет API/байты опубликованных паков. Полный pipeline приватных событий остаётся закрыт временным адаптером. Остальные 11 domain/presentation, общие metrics/results, AssetResolver и финальный переход ещё в плане. Actions/release/deploy не запускались; опубликованная пара 0.17.6 / 0.6.5 остаётся базой сравнения.

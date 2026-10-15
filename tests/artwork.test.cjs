@@ -13,7 +13,7 @@ test('canonical art scales borders and glyphs uniformly, while compact remains o
 test('authority default clock binds browser timers and cancels bot callbacks',async()=>{
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});try{
   const page=await browser.newPage();await page.setContent('<main>Clock regression</main>');
-  for(const file of ['core/random.js','core/engine.js','core/session.js','core/protocol.js','core/authority.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
+  for(const file of ['core/random.js','core/engine.js','core/model-values.js','core/history.js','core/session-codec.js','core/session.js','core/protocol.js','core/authority.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,file),'utf8')});
   const result=await page.evaluate(async()=>{
    TabletopCore.register({id:'clock-fixture',name:'Clock',min:2,max:2,presets:[{id:'standard',label:'Standard'}],rules:[],create:s=>{s.data={};},legal:()=>[{type:'next'}],apply:s=>{s.turn=1;}});
    const session=new TabletopSession(TabletopCore,'clock-fixture',{players:[{name:'Bot',bot:true},{name:'Human'}]});

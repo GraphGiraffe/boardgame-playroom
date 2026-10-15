@@ -121,3 +121,23 @@ Source manifest sourceModules задаёт упорядоченные rules/view
 - SharedViews включает public live controls по роли/actor и обычным pending/transition/history gates. MessagePort server теперь ожидает asynchronous result перед postMessage, как требует durable pipeline; presentation-ready доступен тем же портом.
 
 Подробности прав и ограничений — [MULTIVIEW](MULTIVIEW.md#сетевая-привязка-в-разработке-018). Публичный ввод проверен в Крестиках-ноликах; остальные паки ещё требуют переноса деклараций. Полный CommandProcessor, canonical event IDs/visibility pipeline и окончательное удаление временного Session/model adapter остаются впереди.
+
+## Шестой срез: история, сериализация и порт часов Session
+
+Из Session извлечены переиспользуемые механизмы без зависимости от Web. Существующий authority/store использует тот же prepare → durable write → commit → ACK; форматы Session 1/2 пока не меняются.
+
+| Модуль | Контракт и ответственность |
+| --- | --- |
+| core/model-values.js | Проверяемый immutable JSON, ModelError/codes, каноническая сигнатура команд; общий для модели и истории |
+| core/events.js | validate(event, playerCount), project(events, viewer, playerCount); audience проверяется до presentation/перевода, publicEvent не содержит приватных params |
+| core/history.js | History(states, {revision, validate, compact}); states/current, prepare(produce), commit(candidate), invalidate() |
+| core/session-codec.js | create(), encodeSnapshot(codec,state), decode(saved); interned-json-v1, лимиты размера/глубины/ссылок и безопасные собственные свойства |
+| core/session.js | Интеграционный фасад engine/метаданных/проекций/envelope/cache; делегирует историю и codec, принимает now как порт |
+
+History не знает игры, игроков, хранилища или часов. Получает уже созданный начальный кадр; revision по умолчанию state.revision, а прежний Session задаёт state.move. Кадры принадлежат истории и глубоко заморожены; массив истории read-only. prepare не меняет live state. Фиксация допустима только для кандидата данного экземпляра, подготовленного из текущего кадра в текущем поколении метаданных. Новая ревизия идёт подряд; no-op не добавляет кадр. invalidate аннулирует кандидатов после изменения roster. Ошибка producer/compaction не меняет историю. Ранее выданные кадры не меняются при compaction; только массив ссылок обновляется, старые кадры не обходятся заново на каждом commit.
+
+`new Session(engine, game, options, {now})` и `Session.restore(engine, saved, {now})` принимают функцию now, возвращающую неотрицательное safe integer время в миллисекундах. Создание читает её один раз; prepare/restore её не читают. Restore не вызывает pack.create. Успешный commit обновляет монотонный updatedAt; если часы отказали или вернули недопустимое значение после durable write, ход остаётся зафиксирован, updatedAt сохраняется. Default Date.now остаётся только на существующей интеграционной границе фасада, до переноса bootstrap/application; независимые History/Events/Codec к нему не обращаются.
+
+Bootstrap загружает model-values перед events/model-runtime/history, session-codec и history перед Session. CommonJS использует те же исходники через require. Entry points включены в автономный HTML, core/source ZIP и PWA cache/integrity.
+
+Границы среза: typed event draft/projector выделены из GameModel без смены схемы; canonical durable event IDs/revisions, единый приватный event store, CommandProcessor, Result/Metric presentation и перенос остальных 11 паков ещё впереди. Временный model-adapter по-прежнему **отклоняет приватные события**; нельзя считать их поддержанными только потому, что отдельный projector умеет players/publicEvent. Старый формат/session facade будет удалён при общем переходе 0.18, legacy runtime в финальный выпуск не переносится.

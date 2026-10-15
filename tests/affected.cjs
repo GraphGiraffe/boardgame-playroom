@@ -2,7 +2,8 @@
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
   {paths:['application/session-access.js'],select:['network/table','case/network-main-app']},
-  {paths:['core/model-runtime.js','app/model-adapter.js'],select:['core/model','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
+  {paths:['core/model-values.js','core/events.js','core/model-runtime.js','app/model-adapter.js'],select:['core/model','core/session-runtime','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
+  {paths:['core/history.js','core/session-codec.js'],select:['core/session-runtime','case/session','case/durable-authority','case/network-store-integrity','case/host-recovery','network/table']},
   {paths:['app/appearance-ui.js','app/appearance-web.js','app/appearance.css'],select:['ui/appearance']},
   {paths:['application/appearance.js','themes/'],select:['core/appearance','ui/appearance']},
   {paths:['presentation/localization.js','locales/'],select:['core/localization','ui/appearance']},

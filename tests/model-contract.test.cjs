@@ -17,7 +17,7 @@ const coded=code=>error=>error.code===code;
 test('rules and scenes execute headlessly without engine, DOM, clock, storage or ambient RNG',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  for(const file of [path.join(root,'core/model-runtime.js'),path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')]){
+  for(const file of ['core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file)).concat([path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')])){
     vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   }
   const value=JSON.parse(vm.runInContext(`JSON.stringify((()=>{

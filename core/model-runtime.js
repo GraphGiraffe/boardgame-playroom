@@ -1,70 +1,13 @@
 // Portable rules contract. No engine registry, DOM, storage, clocks or ambient RNG.
 (function (root, factory) {
   'use strict';
-  const api = factory();
+  const api = factory(root.PlayroomModelValues || require('./model-values.js'), root.PlayroomEvents || require('./events.js'));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.PlayroomModelRuntime = api;
-})(globalThis, function () {
+})(globalThis, function (Values, Events) {
   'use strict';
-  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-  const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
-  const identifier = value => typeof value === 'string' && /^[a-z][a-z0-9_.-]{0,95}$/.test(value);
-  class ModelError extends Error {
-    constructor(code) { super(code); this.name = 'ModelError'; this.code = code; }
-  }
-  function check(valid, code) { if (!valid) throw new ModelError(code); }
-  function json(value, ancestors = new Set()) {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
-    if (typeof value === 'number') { check(Number.isFinite(value), 'JSON_INVALID'); return; }
-    check(typeof value === 'object' && !ancestors.has(value) &&
-      (Array.isArray(value) || Object.prototype.toString.call(value) === '[object Object]'), 'JSON_INVALID');
-    ancestors.add(value);
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index++) {
-        check(Object.hasOwn(value, index), 'JSON_INVALID'); json(value[index], ancestors);
-      }
-    } else for (const key of Object.keys(value)) json(value[key], ancestors);
-    ancestors.delete(value);
-  }
-  function copy(value) { json(value); return JSON.parse(JSON.stringify(value)); }
-  function freeze(value) {
-    if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
-    return value;
-  }
-  const snapshot = value => freeze(copy(value));
-  const canonical = value => JSON.stringify(value, (_, item) => record(item)
-    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
-  function command(value) {
-    check(record(value) && identifier(value.type), 'ACTION_INVALID');
-    json(value);
-    return canonical(value);
-  }
-  function event(value, playerCount) {
-    check(record(value) && identifier(value.type) &&
-      (value.actor === null || integer(value.actor, 0, playerCount - 1)) && record(value.params), 'EVENT_INVALID');
-    json(value.params);
-    const audience = value.visibility;
-    check(record(audience) && (audience.kind === 'public' || audience.kind === 'players' &&
-      Array.isArray(audience.players) && audience.players.length > 0 &&
-      new Set(audience.players).size === audience.players.length &&
-      audience.players.every(player => integer(player, 0, playerCount - 1))), 'EVENT_INVALID');
-    if (value.publicEvent !== undefined) {
-      check(audience.kind === 'players' && value.publicEvent?.visibility?.kind === 'public' &&
-        value.publicEvent.publicEvent === undefined, 'EVENT_INVALID');
-      event(value.publicEvent, playerCount);
-    }
-  }
-  // Visibility is resolved before presentation receives parameters or message refs.
-  function projectEvents(events, viewer, playerCount) {
-    check(Array.isArray(events), 'EVENT_INVALID');
-    return snapshot(events.flatMap(value => {
-      event(value, playerCount);
-      const visible = value.visibility.kind === 'public' ||
-        integer(viewer, 0, playerCount - 1) && value.visibility.players.includes(viewer);
-      const allowed = visible ? value : value.publicEvent;
-      return allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params}] : [];
-    }));
-  }
+  const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
+  const event=Events.validate, projectEvents=Events.project;
 
   class GameModel {
     #definition;
