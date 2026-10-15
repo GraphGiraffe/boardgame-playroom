@@ -1,6 +1,16 @@
 # Выпуск приложения и коллекции
 
-Текущая пара: приложение 0.17.5 и паки 0.6.4. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+Текущая пара: приложение 0.17.6 и паки 0.6.5. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+
+## Выпущенная пара 0.17.6 / 0.6.5
+
+Морской бой 0.1.8 снимает подсветку выбранного размера после расстановки и не подсвечивает индикаторы соперника. Приложение 0.17.6 размещает счётчик побед в строке имени карточки Морского боя. Правила и формат состояния пака не менялись; сохранения используют точную версию пака.
+
+Паки прошли [task PR #62](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/62) и [release PR #63](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/63). [GitHub Release `v0.6.5`](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.5) закреплён за `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`; 15 файлов прошли `SHA256SUMS` локально и после скачивания релиза. [Адресная публикация R2 #38671499200](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38671499200) изменила только `battleship`; снимок каталога `075003039fba33e9f3b92641e43a1220d1ea23ce4efcdac812c869d4cae36540` содержит версию 0.1.8.
+
+Приложение прошло [task PR #110](https://github.com/GraphGiraffe/boardgame-playroom/pull/110) и [release PR #111](https://github.com/GraphGiraffe/boardgame-playroom/pull/111). [GitHub Release `v0.17.6`](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.6) закреплён за `cca7f60e169619d9cb442ccf3b52d95fefc8dd89`. Локально и в [Actions gate #38671436452](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38671436452) прошёл выбранный `case/rc2-games-browser` — 2/2 с точным SHA паков; отдельная проверка на 390 px подтвердила счётчик в строке имени. Пять файлов приложения прошли `SHA256SUMS` локально и после скачивания.
+
+После [preflight #38671813000](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38671813000) один [production deploy #38671967832](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38671967832) опубликовал deployment `bddc9741-d208-42a8-adf6-ab8e8de655c9` со статусом `published`. Независимый read-only [postflight #38672280218](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38672280218) подтвердил этот deployment на основном адресе `playroom-hod-test.pages.dev` и binding `PLAYROOM_PACKS`.
 
 ## Обновление только паков: 0.6.4 для приложения 0.17.5
 
