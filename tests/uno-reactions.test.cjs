@@ -8,13 +8,14 @@ function fixture(hands=[['u1','u3'],['u5','u7']],{pending=null,turn=0,mode='manu
   const s=create(hands.length,mode),d=s.data,all=new Map([...d.hands.flat(),...d.drawPile,...d.discard].map(c=>[c.id,c]));
   const take=id=>{const c=all.get(id);assert(c,id);all.delete(id);return c;};
   d.hands=hands.map(h=>h.map(take));d.discard=[take('u9')];d.drawPile=[...all.values()];d.color='red';d.direction=1;d.drawn=null;d.noDraw=false;d.stalled=0;
-  d.uno={mode,declared:hands.map(()=>false),pending};s.turn=turn;E.validateState(s);return s;
+  d.uno={mode,declared:hands.map(()=>false),pending,episode:0,calls:[],penalties:[],situations:hands.map(hand=>({episode:0,open:mode==='manual'&&hand.length===1,settled:false,called:false}))};s.turn=turn;E.validateState(s);return s;
 }
 const act=(s,actor,action)=>E.applyAction(s,actor,action);
 const play=(s,actor,id)=>act(s,actor,{type:'play',card:id});
 const declare=(s,actor)=>act(s,actor,{type:'declare-uno'});
 const accuse=(s,actor,target)=>act(s,actor,{type:'accuse-uno',target});
 const normal=s=>E.legalActions(s,s.turn).filter(a=>!['declare-uno','accuse-uno'].includes(a.type));
+const visible=s=>E.project(s,-1).events;
 const inventory=s=>[...s.data.hands.flat(),...s.data.drawPile,...s.data.discard].map(c=>c.id).sort();
 
 test('generic reactions are available out of turn while ordinary bots stay on turn actions',()=>{
@@ -35,26 +36,26 @@ test('manual UNO offers declaration and every other accusation even with the wro
 
 test('playing to one opens an internal manual window without disclosing its pending hint',()=>{
   const before=fixture(),json=JSON.stringify(before);const s=play(before,0,'u1');
-  assert.equal(JSON.stringify(before),json);assert.equal(s.turn,1);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[0],false);assert(!s.events.some(e=>e.kind==='uno'));
+  assert.equal(JSON.stringify(before),json);assert.equal(s.turn,1);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[0],false);assert(!visible(s).some(e=>e.kind==='uno'));
   const projected=E.project(s,1);assert.equal(projected.data.uno.pending,undefined);assert.equal(projected.data.uno.episode,1);assert.deepEqual(projected.data.uno.declared,[false,false]);assert.deepEqual(projected.data.hands[0],[{hidden:true}]);
   E.validateState(s);
 });
 
 test('proper out-of-turn declaration closes own window; repeating does not draw cards',()=>{
   let s=play(fixture(),0,'u1');const before=inventory(s),turn=s.turn;s=declare(s,0);
-  assert.equal(s.turn,turn);assert.equal(s.data.uno.pending,null);assert.equal(s.data.uno.declared[0],true);assert.equal(s.events.at(-1).kind,'uno');
-  const declared=s;s=declare(s,0);assert.equal(s,declared);assert.equal(s.data.hands[0].length,1);assert.equal(s.events.at(-1).kind,'uno');assert.deepEqual(inventory(s),before);assert.equal(E.botReaction(s,0),null);
+  assert.equal(s.turn,turn);assert.equal(s.data.uno.pending,null);assert.equal(s.data.uno.declared[0],true);assert.equal(visible(s).at(-1).kind,'uno');
+  const declared=s;s=declare(s,0);assert.equal(s,declared);assert.equal(s.data.hands[0].length,1);assert.equal(visible(s).at(-1).kind,'uno');assert.deepEqual(inventory(s),before);assert.equal(E.botReaction(s,0),null);
 });
 
 test('early declaration is logged without a penalty and does not reserve a later UNO',()=>{
-  let s=fixture();const hand=s.data.hands[0].map(c=>c.id);s=declare(s,0);assert.equal(s.events.at(-1).kind,'false-uno');assert.equal(s.data.uno.declared[0],false);assert.deepEqual(s.data.hands[0].map(c=>c.id),hand);
+  let s=fixture();const hand=s.data.hands[0].map(c=>c.id);s=declare(s,0);assert.equal(visible(s).at(-1).kind,'false-uno');assert.equal(s.data.uno.declared[0],false);assert.deepEqual(s.data.hands[0].map(c=>c.id),hand);
   s=play(s,0,'u1');assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[0],false);
 });
 
 test('a correct accusation draws exactly two for the target and preserves the ordinary turn',()=>{
   let s=play(fixture(),0,'u1');const turn=s.turn,deck=s.data.drawPile.length,all=inventory(s);s=accuse(s,1,0);
   assert.equal(s.turn,turn);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);assert.equal(s.data.drawPile.length,deck-2);assert.equal(s.data.uno.pending,null);assert.equal(s.data.uno.declared[0],false);
-  assert.equal(s.events.at(-2).kind,'uno-caught');assert.equal(s.events.at(-2).player,1);assert.equal(s.events.at(-2).target,0);assert.equal(s.events.at(-1).kind,'draw');assert.equal(s.events.at(-1).player,0);assert.deepEqual(inventory(s),all);E.validateState(s);
+  assert.equal(visible(s).at(-2).kind,'uno-caught');assert.equal(visible(s).at(-2).player,1);assert.equal(visible(s).at(-2).target,0);assert.equal(visible(s).at(-1).kind,'draw');assert.equal(visible(s).at(-1).player,0);assert.deepEqual(inventory(s),all);E.validateState(s);
 });
 
 test('accusations arriving after a declaration are neutral even with fresh commands',()=>{
@@ -84,7 +85,7 @@ test('ordinary play and pass preserve other players open situations',()=>{
 
 test('unrelated declarations leave the pending player catchable; repeated catches stay neutral',()=>{
   let s=fixture([['u1'],['u5','u7'],['u3']],{pending:0,turn:1});s=declare(s,2);assert.equal(s.data.uno.pending,0);assert.equal(s.data.uno.declared[2],true);s=declare(s,1);assert.equal(s.data.uno.pending,0);
-  s=accuse(s,1,0);const caught=s;s=accuse(s,1,0);assert.equal(s,caught);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);assert.equal(s.events.at(-2).kind,'uno-caught');
+  s=accuse(s,1,0);const caught=s;s=accuse(s,1,0);assert.equal(s,caught);assert.equal(s.data.hands[0].length,3);assert.equal(s.data.hands[1].length,2);assert.equal(visible(s).at(-2).kind,'uno-caught');
 });
 
 test('a penalty resets declaration and its own pending flag without touching another player drawn id',()=>{
@@ -102,11 +103,11 @@ test('manual bot reactions call or catch correctly while normal bot actions neve
   s=declare(s,0);assert.equal(E.botReaction(s,0),null);assert.equal(E.botReaction(s,1),null);s=fixture();assert.equal(E.botReaction(s,0),null);
 });
 
-test('legacy missing UNO state restores as auto, while malformed manual state is rejected',()=>{
-  const session=new Session(E,'uno',{seed:1,players:[{name:'P0'},{name:'P1'}]});const legacy=session.export();delete legacy.states[0].data.uno;E.validateState(legacy.states[0]);const restored=Session.restore(E,legacy);assert.deepEqual(E.reactions(restored.current,0),[]);
-  let s=fixture([['u1','u3'],['u5','u7']],{mode:'auto'});delete s.data.uno;s=play(s,0,'u1');assert(s.events.some(e=>e.kind==='uno'));assert.equal(s.data.uno.mode,'auto');assert.deepEqual(E.reactions(s,1),[]);
-  for(const change of [u=>u.mode='bad',u=>u.declared=[false],u=>u.declared[0]='yes',u=>u.pending=-1,u=>u.pending=.5,u=>u.pending=2,u=>u.pending=0,u=>u.declared[0]=true]){const bad=create();change(bad.data.uno);assert.throws(()=>E.validateState(bad));}
-  const pending=fixture([['u1'],['u5','u7']],{pending:0,turn:1});pending.data.uno.mode='auto';assert.throws(()=>E.validateState(pending));
+test('new UNO schema rejects missing state and malformed manual situations',()=>{
+ const session=new Session(E,'uno',{seed:1,players:[{name:'P0'},{name:'P1'}]}),saved=session.export();
+ delete saved.states[0].data.uno;assert.throws(()=>E.validateState(saved.states[0]));assert.throws(()=>Session.restore(E,saved));
+ for(const change of [u=>u.mode='bad',u=>u.declared=[false],u=>u.declared[0]='yes',u=>u.pending=-1,u=>u.pending=.5,u=>u.pending=2,u=>u.pending=0,u=>u.declared[0]=true]){const bad=create();change(bad.data.uno);assert.throws(()=>E.validateState(bad));}
+ const pending=fixture([['u1'],['u5','u7']],{pending:0,turn:1});pending.data.uno.mode='auto';assert.throws(()=>E.validateState(pending));
 });
 
 test('36 complete manual games cover all player counts/presets and immutable Session restore',t=>{
@@ -118,7 +119,7 @@ test('36 complete manual games cover all player counts/presets and immutable Ses
         const pending=session.current.data.uno.pending,order=Array.from({length:count},(_,i)=>i);
         if(seed%2===0&&pending!==null)order.sort((a,b)=>(b===pending)-(a===pending));
         const actor=order.find(p=>E.botReaction(session.current,p));if(actor===undefined)break;
-        session.act(actor,E.botReaction(session.current,actor));reactions++;E.validateState(session.current);assert(!session.current.events.some(e=>['false-uno','false-accusation'].includes(e.kind)));
+        session.act(actor,E.botReaction(session.current,actor));reactions++;E.validateState(session.current);assert(!visible(session.current).some(e=>['false-uno','false-accusation'].includes(e.kind)));
       }
       const action=E.botAction(session.current);assert(action);assert(['play','draw','pass'].includes(action.type));session.act(session.current.turn,action);E.validateState(session.current);assert.deepEqual(inventory(session.current),original);
     }
@@ -133,7 +134,7 @@ test('a captured reaction never attaches to a later ordinary episode; a new inde
   let s=fixture([['u1','u3'],['u5','u7'],['u26','u28']]);const old=E.reactions(s,1).find(a=>a.type==='accuse-uno'&&a.target===0);
   s=accuse(s,1,0);const penalized=s;assert.equal(accuse(s,2,0),penalized);
   s=play(s,0,'u1');assert.equal(act(s,1,old),s,'old episode stays a no-op after fresh game state');
-  s=accuse(s,2,1);assert.equal(s.events.at(-2).kind,'false-accusation');assert.equal(s.data.hands[2].length,4);
+  s=accuse(s,2,1);assert.equal(visible(s).at(-2).kind,'false-accusation');assert.equal(s.data.hands[2].length,4);
 });
 
 test('session no-op reactions do not add snapshots and resolved episodes survive restore',()=>{
@@ -173,7 +174,7 @@ test('a timely declaration beats late/fresh accusations and protocol rejects for
 test('bots wait three seconds after readiness and missing readiness has a bounded ten-second fallback',()=>{
   for(const acknowledge of [true,false]){const {clock,authority,clients,send,session}=onlineFixture({bots:[false,true]});try{
     send(0,'play');authority.scheduleBot({delay:10});if(acknowledge)clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
-    clock.advance((acknowledge?3000:13000)-1);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);assert.equal(session.current.events.at(-2).kind,'uno-caught');assert.equal(session.current.data.hands[0].length,3);
+    clock.advance((acknowledge?3000:13000)-1);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);assert.equal(visible(session.current).at(-2).kind,'uno-caught');assert.equal(session.current.data.hands[0].length,3);
   }finally{authority.dispose();}}
 });
 test('a resolved reaction remains neutral with a new command id, stale revision and durable receipt without an extra commit',async()=>{

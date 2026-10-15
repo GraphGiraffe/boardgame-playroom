@@ -8,8 +8,9 @@ const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain
 for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
 const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
-const act = (s, action) => E.applyAction(s, s.turn, action);
-const actions = s => E.legalActions(s, s.turn);
+const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle});
+const act = (s, action) => {if(!s.unitPosition)return E.applyAction(s,s.turn,action);if(!actions(s).some(candidate=>Object.entries(action).every(([key,value])=>candidate[key]===value)))throw Error('ACTION_UNAVAILABLE');const changed=unoRules.reduce(s,s.turn,action),n=changed.position;n.move=(s.move||0)+1;n.winner=n.winners[0]??null;n.players.forEach((player,index)=>player.score=n.data.points[index]);n.events=[...s.events,...changed.events.map((event,index)=>({...event,id:(s.events.at(-1)?.id||0)+index+1,revision:n.move}))];return n;};
+const actions = s => s.unitPosition?unoRules.actions(s,s.turn).map(choice=>choice.command):E.legalActions(s,s.turn);
 const types = s => actions(s).map(a => a.type);
 const has = (s, query) => actions(s).some(a => Object.entries(query).every(([k, v]) => a[k] === v));
 let fixtureId = 0;
@@ -18,7 +19,7 @@ const dominoRules=require('../packs/domino/domain/game.js')({shuffle:E.shuffle})
 const tile = (a, b) => ({ id: `fixture-${fixtureId++}`, a, b });
 const card = (suit, rank) => ({ id: `${suit}${rank}`, suit, rank });
 function unoState(hands, top = uno('red', '5'), drawPile = []) {
-  const s = create('uno', hands.length); s.turn = 0;
+  const s = create('uno', hands.length);Object.assign(s,{turn:0,playerCount:hands.length,winners:[],revision:0,unitPosition:true});
   Object.assign(s.data, { hands, discard: [top], drawPile, color: top.color, drawn: null, noDraw: false, stalled: 0 }); return s;
 }
 function dominoState(hands, chain, stock = []) {

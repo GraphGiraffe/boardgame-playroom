@@ -149,7 +149,7 @@ test('model start validates setup events and scoring without a Session or engine
 
 test('each migrated pack definition executes in isolation with explicit deterministic ports',()=>{
  const entries={tictactoe:null,yatzy:'PlayroomYatzyCategories',battleship:'PlayroomBattleshipGeometry',pexeso:'deck',
-  oldmaid:'deck',gofish:'deck',ludo:'PlayroomLudoBoard',snakes:null,domino:null,checkers:'PlayroomCheckersBoard',durak:'durak'};
+  oldmaid:'deck',gofish:'deck',ludo:'PlayroomLudoBoard',snakes:null,domino:null,checkers:'PlayroomCheckersBoard',durak:'durak',uno:null};
  for(const [id,dependency]of Object.entries(entries)){
   const context=vm.createContext({}),base=path.join(packs,'packs',id),manifest=JSON.parse(fs.readFileSync(base+'/manifest.json'));
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);

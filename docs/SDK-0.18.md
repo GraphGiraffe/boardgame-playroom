@@ -45,3 +45,10 @@ Library записывает librarySummary до сериализованной 
 `model.start(options)` возвращает `{position,events}`, `model.create(options)` — Position. Начальные комплекты/прочие игровые факты сохраняются так же, как факты хода. Runtime продвигает revision после каждого apply. Необязательные Definition.score/observe возвращают очки и разрешённую память бота; наблюдения бота не становятся частью viewer projection.
 
 Каноническая команда содержит только параметры domain. Presentation.choice/action добавляют подсказки и MessageRef отдельно; Protocol.command строит игровую команду по разрешённой проекции, не по списку исключённых UI-полей. PlayerReference связывается с roster перед локализацией, имен в domain нет.
+
+
+### Независимые реакции
+
+Definition может объявить reactions(Position, actor) с теми же `{command, visibility}`, reactionControl(Position, actor, command), reactionWindows(Position), botReaction(projection, actor, actions, memory). Обычные legalActions/botAction не включают реакции; availableActions/project включают обе группы. public reactions доступны на Столе при отдельном actor. reactionControl возвращает kind/episode/target/independent/ignore; необязательный command нормализует аргументы по правилам игры. Повтор разрешённого старого эпизода — no-op без revision/фактов. reactionWindows описывает owner/revision/humanMs/botMs/fallbackMs; время и тип клиента принадлежат authority.
+
+Presentation.choice может вернуть MessageRef в confirmation/targetPrompt и другие подписи; host форматирует их после projection. Presentation.event может дать notice (title/detail refs, tone), speech, sound и public target. Domain не знает имён участников и DOM. UNO-schema требует явных ситуаций; legacy missing state не восстанавливается скрытым fallback.

@@ -30,7 +30,7 @@
     const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
       data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
-    function decorated(action,projection,players) { return {...presentation.choice?.(action,projection),...action, label:text(presentation.action(action,projection),players)}; }
+    function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
     function presentEvent(value,players) {
       const description=presentation.event(value),params={...description.message.params};
@@ -40,7 +40,9 @@
         ...(description.presentation?{presentation:description.presentation}:{}),
         ...(description.transfer?{transfer:description.transfer}:{}),
         ...(description.speech?{speech:{...description.speech,...(description.speech.text?{text:text(description.speech.text,players)}:{})}}:{}),
-        ...(description.sound!==undefined?{sound:description.sound}:{})};
+        ...(description.sound!==undefined?{sound:description.sound}:{}),
+        ...(description.target!==undefined?{target:description.target}:{}),
+        ...(description.notice?{notice:{...description.notice,title:text(description.notice.title,players),detail:text(description.notice.detail,players)}}:{})};
     }
     return {
       id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent,
@@ -59,14 +61,19 @@
       },
       validateState(state) { model.validate(position(state)); },
       resolveAction(state,actor,action) {
-        const command=model.legalActions(position(state),actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));
+        const input=model.reactionControl(position(state),actor,action)?.command||action;
+        const command=model.availableActions(position(state),actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
         return command?decorated(command,model.project(position(state),actor),state.players):null;
       },
-      legal(state, actor) { const projection=model.project(position(state),actor);return projection.actions.map(command=>decorated(command,projection,state.players)); },
+      legal(state, actor) { const projection=model.project(position(state),actor);return model.legalActions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
+      reactions(state,actor) { const projection=model.project(position(state),actor);return model.reactions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
+      reactionWindows(state) { return model.reactionWindows(position(state)).filter(window=>!state.players[window.owner].bot); },
+      reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
+      botReaction(state,actor) { const command=model.botReaction(position(state),actor);return command?decorated(command,model.project(position(state),actor),state.players):null; },
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.
-        const legal = model.legalActions(position(state), actor).find(candidate =>
+        const legal = model.availableActions(position(state), actor).find(candidate =>
           Object.keys(candidate).every(key => JSON.stringify(candidate[key]) === JSON.stringify(action[key])));
         const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal);
         state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;

@@ -270,3 +270,26 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
   const malformed=JSON.parse(JSON.stringify(a));malformed.files['rules.js']='globalThis.TabletopCore.register({id:"tictactoe",name:"Fake",min:2,max:2,presets:[{id:"classic"}],create(){},legal(){return[]},apply(){}});';
   assert.throws(()=>manager.prepare(malformed),/API 3/);
 });
+
+test('portable reactions have independent episodes, authorized public choices and no implicit bot turns',()=>{
+ const Random=require('../core/random.js');
+ const definition=require('../packs/uno/domain/game.js')({shuffle:Random.shuffle});
+ const model=new GameModel(definition);
+ const initial=model.create({playerCount:3,firstPlayer:0,preset:'quick',rng:17,options:{unoMode:'manual'}});
+ assert(model.legalActions(initial,0).every(action=>!action.type.includes('uno')));
+ assert.equal(model.legalActions(initial,1).length,0);
+ assert.equal(model.reactions(initial,1).length,3);
+ assert.equal(model.botAction(initial,1),null);
+ assert.equal(model.botReaction(initial,1),null);
+ const table=model.projectTable(initial,1);
+ assert.equal(table.actions.length,3);assert(table.data.hands.flat().every(card=>card.hidden));
+ const command=table.actions.find(action=>action.type==='declare-uno');
+ assert.equal(model.commandFor(initial,1,command,'table').episode,0);
+ const changed=model.apply(initial,1,command);
+ assert.equal(changed.position.turn,0);assert.equal(changed.position.revision,1);
+ assert.equal(changed.events[0].type,'uno.early-call');assert.equal(changed.events[0].text,undefined);
+ const repeat=model.apply(changed.position,1,command);assert.deepEqual(repeat.position,changed.position);assert.deepEqual(repeat.events,[]);
+ assert.equal(model.reactionControl(changed.position,1,command).ignore,true);
+ assert.throws(()=>model.commandFor(initial,1,{type:'declare-uno',episode:999},'table'),coded('TABLE_ACTION_UNAVAILABLE'));
+ assert.equal(model.project(changed.position,-1).data.uno.situations,undefined);
+});

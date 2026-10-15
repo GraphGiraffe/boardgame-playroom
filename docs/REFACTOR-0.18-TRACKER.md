@@ -17,9 +17,9 @@
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
-| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и 11 паков перенесены; UNO впереди |
+| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и все 12 паков перенесены; окончательный SDK cutover впереди |
 | F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | History и общий CommandProcessor перенесены; выбранные authority/durable/table проверки прошли |
-| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды 11 моделей / приватные карточные choices; UNO впереди |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды всех 12 моделей / приватные карточные choices; UNO реакции независимы от очереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
@@ -53,7 +53,7 @@
 | gofish | 36/52/54/books/ask/response/repeat/empty stock | API 3 / 0.2.0; domain/scene/locales; публичные сообщения, приватные choices |
 | oldmaid | 35/54/53/pairs/hidden draw/out order/points | API 3 / 0.2.0; stateVersion 4 с points; публичный слепой draw, приватные руки |
 | durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | API 3 / 0.5.0; domain/cards/game/scene/locales; составной заход, переводы и скрытая раздача |
-| uno | 108 cards/color/penalty/manual-auto/declarations/protection | Впереди |
+| uno | 108 cards/color/penalty/manual-auto/declarations/protection | API 3 / 0.5.0 / stateVersion 2; domain/scene/locales; реакции/окна/эпизоды и приватная рука |
 | checkers | forced chain/king/promotion/deferred capture/draw | API 3 / 0.4.0; domain/board/scene/locales; семантический capture вместо разбора подписи |
 | domino | endpoints/orientation/stock/pass/fish/score/long chain | API 3 / 0.4.0; domain/scene/locales; явный ascending result и начисление очков |
 | snakes | 64/100/bounce/link once/same-cell pawns/die | API 3 / 0.4.0; domain/scene/locales, переносимая motion route |
@@ -211,3 +211,16 @@ UNO/Дурак, общие screen/history/input/room controllers, все сем�
 Проверено: `case/rc2-games` — 28/28; после исправления старых fixtures `case/views,case/pack-models,case/model-contract` — 34/34. `case/rc2-games-browser` — 3/3. Compact-hand дополнительно проверяется после замены raw kind на semantic type в assertions: продуктовые события теперь типизированы, отображаемые подписи по-прежнему формирует presentation.
 
 Итог среза 11: `case/compact-hand` — 35/35; `case/pack-models,case/model-contract` — 20/20, включая новый запрет приватных карточных действий Стола. Все subtests зелёные, пропусков нет.
+
+## Дополнительный сценарий личного экрана со Столом
+
+F36: локально скрываемое поле, единые зоны личной руки/карточек, около 1/3 освобождённой области под руку, равномерная адаптивная сетка соперников с понятной очередью. Точное описание/проверки — заключительный раздел AUDIT-0.18. Включён в 0.18, реализация в общем screen/layout этапе; ещё не готов.
+
+
+## Двенадцатый срез: UNO и переносимые реакции
+
+Все 12 паков имеют чистые domain, presentation, locale, Web renderer. UNO 0.5.0 / API 3 / stateVersion 2 сохраняет 108 карт, добор/штраф последней карты, ручной/автоматический UNO и независимые ситуации участников. Отсутствующее legacy UNO-state теперь отклоняется: новый формат требует явные ситуации. Искусственные неполные колоды unit tests проверяют чистый reducer; полная модель всегда требует 108 канонических карт.
+
+GameModel объявляет reactions/reactionControl/reactionWindows/botReaction отдельно от обычного хода. Domain не читает часы и тип игрока; authority задаёт сроки и фильтрует окна ботов. Проекция Стола содержит публичные выкрики/обвинения, без карточных choices. Presentation переводит speech/notice/target metadata; опубликованные события не содержат готового текста. Исправлен host loader: manifest scope явно передаёт engineApi/stateVersion, не подменяет schema на 1.
+
+Проверено: выбранные core engine/pack-models — 41/41; UNO rules/feedback/reactions включая 36 полных партий и сетевые сроки — 31/31 (в группе games 38/46 первоначальные 8 сбоев относились к view fixtures); затем `case/views,case/model-contract` — 27/27. Браузерные `case/uno-social,case/uno-drag,case/network-feedback-browser` — 32/32. Пропусков нет. Общие controllers/assets/compiler/locales/cutover и итоговая приёмка RC остаются впереди.

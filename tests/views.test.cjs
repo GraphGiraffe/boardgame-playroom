@@ -234,7 +234,7 @@ test('manual UNO controls are constant and accusations use public player context
   state.data.uno.mode = 'auto';
   assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/);
   delete state.data.uno;
-  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/, 'legacy games keep automatic mode');
+  assert.throws(()=>E.validateState(state), 'the new API requires explicit UNO state');
   vm.runInContext(fs.readFileSync(path.join(root, 'packs/uno/manifest.js'), 'utf8'), sandbox);
   const setting = sandbox.PlayroomCatalog.uno.settings.find(item => item.key === 'unoMode');
   assert.equal(setting.default, 'manual');

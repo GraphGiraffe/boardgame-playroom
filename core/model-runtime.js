@@ -17,7 +17,9 @@
         ['create','validate','actions','reduce','project','result'].every(key => typeof definition[key] === 'function') &&
         (definition.bot === undefined || typeof definition.bot === 'function') &&
         (definition.observe === undefined || typeof definition.observe === 'function') &&
-        (definition.score === undefined || typeof definition.score === 'function'), 'MODEL_INVALID');
+        (definition.score === undefined || typeof definition.score === 'function') &&
+        ['reactions','reactionControl','reactionWindows','botReaction'].every(key=>
+          definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
       Object.freeze(this);
@@ -53,10 +55,10 @@
       check(Array.isArray(values)&&values.length===position.playerCount&&values.every(value=>integer(value,0,Number.MAX_SAFE_INTEGER)),'SCORE_INVALID');
       return snapshot(values);
     }
-    #choices(position, actor) {
+    #choices(position, actor, kind = 'actions') {
       this.validate(position);
       if (position.status !== 'playing' || !integer(actor, 0, position.playerCount - 1)) return Object.freeze([]);
-      const choices = this.#definition.actions(snapshot(position), actor);
+      const choices = this.#definition[kind]?.(snapshot(position), actor) || [];
       check(Array.isArray(choices) && choices.every(choice => record(choice) &&
         ['public','private'].includes(choice.visibility)), 'ACTION_INVALID');
       const signatures = choices.map(choice => command(choice.command));
@@ -66,15 +68,44 @@
     legalActions(position, actor) {
       return snapshot(this.#choices(position, actor).map(choice => choice.command));
     }
+    reactions(position, actor) {
+      return snapshot(this.#choices(position,actor,'reactions').map(choice=>choice.command));
+    }
+    availableActions(position, actor) {
+      return snapshot([...this.legalActions(position,actor),...this.reactions(position,actor)]);
+    }
+    reactionControl(position, actor, action) {
+      if(!this.#definition.reactionControl)return null;
+      this.validate(position);
+      if(position.status!=='playing'||!integer(actor,0,position.playerCount-1))return null;
+      const value=this.#definition.reactionControl?.(snapshot(position),actor,snapshot(action))??null;
+      if(value===null)return null;
+      check(record(value)&&['answer','challenge','advance','independent'].includes(value.kind)&&
+        (value.ignore===undefined||typeof value.ignore==='boolean')&&
+        (value.independent===undefined||typeof value.independent==='boolean')&&
+        (value.episode===undefined||integer(value.episode,0,position.revision??0)), 'REACTION_INVALID');
+      if(value.command!==undefined)command(value.command);
+      return snapshot(value);
+    }
+    reactionWindows(position) {
+      this.validate(position);
+      const windows=this.#definition.reactionWindows?.(snapshot(position))||[];
+      check(Array.isArray(windows)&&windows.length<=position.playerCount&&new Set(windows.map(value=>value.id)).size===windows.length&&windows.every(value=>
+        record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&
+        integer(value.owner,0,position.playerCount-1)&&integer(value.revision,0,position.revision??0)&&
+        integer(value.humanMs,0,60000)&&integer(value.botMs,value.humanMs,60000)&&integer(value.fallbackMs,0,60000)), 'REACTION_WINDOW_INVALID');
+      return snapshot(windows);
+    }
     commandFor(position, actor, action, surface = 'player') {
       check(['player','table'].includes(surface), 'ACTION_INVALID');
       const signature = command(action);
-      const found = this.#choices(position, actor).find(choice =>
+      const found = [...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].find(choice =>
         (surface !== 'table' || choice.visibility === 'public') && command(choice.command) === signature);
       check(found !== undefined, surface === 'table' ? 'TABLE_ACTION_UNAVAILABLE' : 'ACTION_UNAVAILABLE');
       return found.command;
     }
     apply(position, actor, action) {
+      if(this.reactionControl(position,actor,action)?.ignore)return snapshot({position,events:[]});
       const legal = this.commandFor(position, actor, action);
       const result = this.#definition.reduce(snapshot(position), actor, legal);
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
@@ -94,21 +125,31 @@
         ...(position.preset!==undefined?{preset:position.preset}:{}),
         ...(position.revision!==undefined?{revision:position.revision}:{}),
         winners:position.winners, data,
-        actions:this.legalActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
+        actions:this.availableActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
     }
     projectTable(position, actor, events = []) {
       const projected = this.project(position, -1, events);
       if (!integer(actor, 0, position.playerCount - 1)) actor = -1;
       return snapshot({...projected, actor,
-        actions:this.#choices(position, actor).filter(choice => choice.visibility === 'public').map(choice => choice.command)});
+        actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command)});
     }
     botAction(position, actor) {
-      const projection = this.project(position, actor), actions = projection.actions;
+      const projection = this.project(position, actor), actions = this.legalActions(position,actor);
       if (!actions.length) return null;
       const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
       const chosen = this.#definition.bot?.(projection, actor, actions, memory) ?? actions[0];
       const found = actions.find(value => command(value) === command(chosen));
       check(found !== undefined, 'BOT_ACTION_INVALID');
+      return found;
+    }
+    botReaction(position,actor) {
+      const actions=this.reactions(position,actor);
+      if(!actions.length||!this.#definition.botReaction)return null;
+      const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
+      const chosen=this.#definition.botReaction(this.project(position,actor),actor,actions,memory);
+      if(chosen==null)return null;
+      const found=actions.find(value=>command(value)===command(chosen));
+      check(found!==undefined,'BOT_REACTION_INVALID');
       return found;
     }
     result(position) {

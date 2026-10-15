@@ -83,7 +83,7 @@
     prepare(value){
       const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
-      const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,adaptModel:spec=>{
+      const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,adaptModel:spec=>{
         if(m.engineApi!==3||typeof this.modelAdapter!=='function')throw Error('Недоступен адаптер модели API 3');
         return this.modelAdapter(this.engine,spec);
       }})};
