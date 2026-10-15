@@ -1,20 +1,12 @@
 ---
 name: app-development
-description: Develop the PlayRoom application, hub, shared engine or pack integration using current project contracts.
+description: Develop PlayRoom application or shared runtime, including the staged 0.18 separation of rules, application, presentation and Web UI.
 ---
 
-# PlayRoom application development
+# Application and runtime development
 
-Use only for the PlayRoom application. Establish selected app and companion roots, branches, SHA pair, dirty state and the current handoff. Read docs/DEVELOPER-INDEX.md and the relevant linked contract before editing. Route UI work to app-ui-layout, transport/recovery to app-connections, validation to app-validation and publication to app-release-pages.
+Read the selected app developer index and relevant live contracts. Keep core mechanisms generic, application orchestration behind ports, Web UI in app adapters and game rules/resources in the packs repository. Use [refactoring contracts](../../references/REFACTOR-0.18.md) for GameModel, Session/events, Table, themes/locales or API migration. Track feature parity and pending boundaries; a plan is not implementation.
 
-Keep core/ generic; app/ owns the hub, lobby, saved library and pack adapters. Rules, manifests, assets and game-specific views belong to the companion pack repository. Do not introduce game-name switches in the engine to hide a pack defect. Preserve engineApi/viewApi/stateVersion compatibility and exact-version save/replay semantics.
+Route network/recovery to app-connections, geometry/input to app-ui-layout, check selection to app-validation and independent publication to app-release-pages. Reuse model/permission/asset/metric entities instead of game-name switches or copied logic. Honor user decisions and approved API breaks while keeping published versions immutable.
 
-Work in a focused task branch. Plugin development belongs to its isolated tooling branch and must not change the release branch or deploy the application. Record user corrections in the appropriate maintained project design/authoring document; the latest explicit decision overrides an old plan. Do not reconstruct decisions from a compacted summary when the exact log is available.
-
-## Local tools
-
-Read [tools](../../references/TOOLS.md) before using the bundled MCP or CLI. Pass explicit app and pack checkout roots; never guess a sibling path in a worktree. Inspect both repositories and read their current AGENTS.md, CONTRIBUTING.md and relevant design contracts. The repo documentation is authoritative over this plugin. Use repository-workflow for GitHub operations and cleanup. Preserve active services, unrelated edits, published versions and pinned companion SHAs.
-
-## RC4 corrections
-
-Apply [RC4 constraints](../../references/RC4.md) whenever editing catalog, lobby, rules, effects or layout. The selected repositories and latest user decisions remain authoritative.
+Follow [workflow](../../references/WORKFLOW.md). Read [tools](../../references/TOOLS.md) only when using the plugin CLI/MCP, and [existing mechanics](../../references/RC4.md) when changing their behavior.

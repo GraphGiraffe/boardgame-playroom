@@ -1,20 +1,14 @@
 ---
 name: app-validation
-description: Choose and run focused local PlayRoom tests or the final joint release check without duplicate Actions.
+description: Select explicit PlayRoom test blocks or cases, validate builds and evidence, and prevent implicit full-suite release checks.
 ---
 
-# Validation and builds
+# Explicit checks and evidence
 
-Plan first with plan_validation: docs, core, layout, hands, motion, network, pairing, storage, rules, standalone, release, setup or build. A plan is not a passed check. Execute through tools/playroom.py run only for the authorized area. It uses project scripts, not a replacement test suite. The focused runner prepares exactly the chosen companion packs to avoid stale installed-packs.js.
+Read current docs/TESTING.md and the selected app tests/blocks.cjs. Choose the smallest sufficient blocks/subblocks/cases for the actual change. Every release requires explicit selectors or none; omission must fail and all/full/* are not shortcuts. A full composition means explicitly listing current blocks when required by the risk or acceptance. See [workflow](../../references/WORKFLOW.md).
 
-Use setup only for missing dependencies/browser. Doc-only and plugin-only work needs package/parsing/tool verification, not 775 application checks. Application-only verification does not establish pack gameplay. Full release gate: bash scripts/codex/check.sh --full --packs-dir PACKS_REPO/packs. Record exact app/pack SHAs, command, result, environment and generated artifact hashes. Reuse valid evidence when inputs are unchanged; full remote checks are reserved for a required release gate or explicit need.
+Use plan_validation with exact roots and checks when overriding an area or planning a release. --list/plan is read-only selection, not a pass. The local runner prepares the exact selected companion source packs for gameplay tests. Do not run a second full gate through the other repo. Documentation/plugin changes need their own parsing/package/CLI/MCP checks, not application/network/game suites.
 
-For captures use --capture-dir on a profile that supports PLAYROOM_CAPTURE_DIR; inspect the generated files, do not assume every scenario produces an image. Build all games/PWA only when needed for a deliverable. Keep dist/, generated installed packs, screenshots, logs and secrets outside commits. After a changed source/build step, regenerate archive and checksums together.
+Always verify produced artifacts and SHA256. Record source SHAs, command/selection, result and limits. none is deliberate omission, not green tests. Setup/browser installation is only for missing prerequisites; use repository browser discovery and bounded waits. Reuse evidence only while relevant inputs are unchanged.
 
-## Local tools
-
-Read [tools](../../references/TOOLS.md) before using the bundled MCP or CLI. Pass explicit app and pack checkout roots; never guess a sibling path in a worktree. Inspect both repositories and read their current AGENTS.md, CONTRIBUTING.md and relevant design contracts. The repo documentation is authoritative over this plugin. Use repository-workflow for GitHub operations and cleanup. Preserve active services, unrelated edits, published versions and pinned companion SHAs.
-
-## RC4 corrections
-
-Apply [RC4 constraints](../../references/RC4.md) whenever editing catalog, lobby, rules, effects or layout. The selected repositories and latest user decisions remain authoritative.
+Read [tools](../../references/TOOLS.md) for CLI/MCP contracts; [refactoring](../../references/REFACTOR-0.18.md) lists implemented versus pending interfaces. Captures exist only for supporting scenarios; inspect the actual files.
