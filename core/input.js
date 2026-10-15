@@ -48,7 +48,8 @@
       if(s.segment){
         const cell=pointed?.closest('[data-grid-index]'),board=cell?.closest('[data-drag-boundary]');
         if(board){const columns=Number(board.dataset.gridColumns)||10,index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
-          pointed=board.querySelector('[data-grid-index="'+index+'"]')||pointed;
+          const origin=board.querySelector('[data-grid-index="'+index+'"]');
+          pointed=origin?.matches('[data-drop-piece]')?origin:origin?.querySelector('[data-drop-piece]')||origin||pointed;
         }
       }
       const el = pointed?.closest('[data-drop-piece]');
@@ -64,7 +65,8 @@
       const left = Math.max(0, Math.min(root.innerWidth - s.width, s.x - s.offsetX));
       const top = Math.max(0, Math.min(root.innerHeight - s.height, s.y - s.offsetY));
       s.ghost.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-      hoverAt(s, s.x, s.y);
+      const target=hoverAt(s, s.x, s.y);
+      if(s.ghost.classList.contains('playroom-composite-ghost'))s.ghost.classList.toggle('playroom-drag-invalid',!target);
     }
     function takeCapture(s) {
       try { capture.setPointerCapture(s.id); } catch (_) { /* Document listeners still observe an uncaptured pointer. */ }

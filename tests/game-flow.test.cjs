@@ -31,6 +31,19 @@ test('Local and network mode call the exact same motion engine and preferences',
   network.cancel();assert.deepEqual(calls.at(-1),['cancel']);
 });
 
+test('A pack minimum viewing time applies at instant and animated speeds',async()=>{
+  const previous=globalThis.document;
+  globalThis.document={querySelector:()=>({dataset:{presentationWait:'35'}})};
+  try{
+    for(const animationSpeed of ['instant','fast']){
+      const flow=new Flow.GameFlow({options:()=>({animationSpeed}),motion:{play:()=>Promise.resolve()}});
+      const start=performance.now();
+      await flow.play(null);
+      assert(performance.now()-start>=30,`${animationSpeed} skipped the minimum viewing time`);
+    }
+  }finally{globalThis.document=previous;}
+});
+
 test('Only newer, same-session projected events can trigger network presentation',()=>{
   const first={sessionId:'s',authorityEpoch:'a',revision:7,events:[{id:11,kind:'play',player:0}]};
   const next={sessionId:'s',authorityEpoch:'a',revision:8,events:[...first.events,{id:12,kind:'draw',player:1}]};

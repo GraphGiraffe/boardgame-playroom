@@ -53,6 +53,19 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
       return Math.hypot((a.left+a.right-b.left-b.right)/2,(a.top+a.bottom-b.top-b.bottom)/2);
     }));
     assert(baseOffsets.every(offset=>offset<1.5),`base pieces must sit on their circles: ${baseOffsets.join(', ')}`);
+    const rings=await page.locator('.ludo-pawn').first().evaluate(pawn=>{
+      pawn.classList.add('is-playable');
+      const playable=getComputedStyle(pawn),available={radius:playable.borderRadius,shadow:playable.boxShadow,outline:playable.outlineStyle};
+      pawn.classList.add('is-selected');
+      const selected=getComputedStyle(pawn),chosen={radius:selected.borderRadius,shadow:selected.boxShadow,outline:selected.outlineStyle};
+      return {available,chosen};
+    });
+    assert.equal(rings.available.radius,'50%');
+    assert.equal(rings.chosen.radius,'50%');
+    assert.notEqual(rings.available.shadow,'none');
+    assert.notEqual(rings.chosen.shadow,rings.available.shadow);
+    assert.equal(rings.available.outline,'none');
+    assert.equal(rings.chosen.outline,'none');
     if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-game.png')});
     await page.setViewportSize({width:320,height:740});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'badges do not widen the phone layout');

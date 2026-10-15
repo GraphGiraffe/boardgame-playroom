@@ -38,11 +38,9 @@
     capture(context){const pace=this.pace();return pace.duration&&this.motion?.capture?this.motion.capture(context):null;}
     play(snapshot,{draws=[]}={}){
       const pace=this.pace();
-      if(!pace.duration){
-        const wait=Number(globalThis.document?.querySelector('[data-presentation-wait]')?.dataset.presentationWait)||0;
-        if(wait>0)return new Promise(resolve=>setTimeout(resolve,Math.min(wait,2000)));
-      }
-      return Promise.resolve(this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws}));
+      const wait=Number(globalThis.document?.querySelector('[data-presentation-wait]')?.dataset.presentationWait)||0;
+      const motion=Promise.resolve(this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws}));
+      return wait>0?Promise.all([motion,new Promise(resolve=>setTimeout(resolve,Math.min(wait,2000)))]).then(()=>{}):motion;
     }
     cancel(){this.motion?.cancel?.();}
   }

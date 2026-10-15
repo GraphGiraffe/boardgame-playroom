@@ -72,6 +72,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      const projected=E.project(state,0),actions=E.legalActions(state,0),scene=PlayroomViews.render(projected,0,actions,{viewState:{fleet}});
      document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Морской бой',state:projected,viewer:0,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
      const field=document.querySelector('.battle-fields').getBoundingClientRect(),board=document.querySelector('.battle-panel.is-active .battle-grid').getBoundingClientRect();
+     if(getComputedStyle(document.querySelector('.battleship-scene .game-field-content')).overflowX!=='clip')issues.push(`${fleet} horizontal overflow is not clipped`);
      if(board.left<field.left-1||board.right>field.right+1||board.top<field.top-1||board.bottom>field.bottom+1)issues.push(`${fleet} clipped board=${board.x},${board.y},${board.width},${board.height} field=${field.x},${field.y},${field.width},${field.height}`);
      if(Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
      const counters=[...document.querySelectorAll('.battle-panel.is-active .fleet-indicator')];if(!counters.length)issues.push(`${fleet} counters missing`);
@@ -89,7 +90,11 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(document.querySelector('.view-error')||document.querySelector('[data-action]:not([disabled])'))issues.push(game+' public actions');
     if(game==='yatzy'&&document.querySelectorAll('.shared-die').length!==5)issues.push('missing public dice');
     if(game==='ludo'&&document.querySelectorAll('.shared-die').length!==1)issues.push('missing public die');
-    if(game==='battleship'&&document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
+    if(game==='battleship'){
+     if(document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
+     if(!document.querySelector('[data-view-preference="followOpponent"]'))issues.push('missing spectator auto-switch');
+     if(document.querySelector('.battle-fields')?.dataset.presentationWait!=='750')issues.push('missing minimum shot viewing time');
+    }
    }return issues;
   });assert.deepEqual(publicViews,[]);
   for(const id of ['ludo','yatzy']){
