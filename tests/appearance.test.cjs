@@ -20,6 +20,8 @@ test('built-in themes are immutable and have the same semantic slots and asset f
   assert.deepEqual(service.list().map(item=>item.id), ['light','dark']);
   assert.deepEqual(Object.keys(presets[0].palette), Object.keys(presets[1].palette));
   assert.deepEqual(Object.keys(presets[0].skins), Object.keys(assets));
+  const messages=require('../locales/ru/themes.json');
+  for(const slot of Object.keys(presets[0].palette))assert.equal(typeof messages['themes.color.'+slot],'string','Missing theme editor label: '+slot);
   const original = copy(catalog.builtin('light'));
   assert.throws(()=>{catalog.builtin('light').palette['surface.canvas']='#000000';}, TypeError);
   for(const id of ['light','dark']) {

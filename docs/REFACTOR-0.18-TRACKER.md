@@ -2,7 +2,7 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: выполнены десять разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-15: выполнены пятнадцать разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
@@ -38,7 +38,7 @@
 | F30 | Результаты/показатели/места/аватар | result-team-medallions-browser, game-screen, rc2-games | Статика |
 | F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Статика; общий каталог нужен |
 | F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Статика; живая старая PWA — приёмка выпуска |
-| F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Модель и Web проверены; AssetResolver / все материалы впереди |
+| F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Модель, Web и локальный AssetResolver подключены; материалы общих семейств проверены, полный аудит палитр впереди |
 | F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes + Крестики-нолики: metadata/rules/actions/events/aria | Модель и первый пак; остальные тексты впереди |
 | F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Сборки HTML/PWA/паков, SHA и browser boot passed |
 
@@ -246,3 +246,16 @@ Authority передаёт разрешённый переносимый SceneMo
 SceneModel теперь пересобирается после authority action filtering: пауза, история и окно реакции не оставляют активных commands в переносимой сцене. История Стола различает audience и текущего actor: смена actor не сбрасывает курсор/границу.
 
 Проверено: pack-models/model-contract/game-screen — 30/30 до дополнительных regression cases; game-screen/authority/model-contract — 36/36; network/table с новым Scene grants — 7/7; views — 15/15. Browser first-player + Ludo teams — 2/2; results geometry — 1/1. Старые статические fixtures теперь явно объявляют команды, а пример открытого Домино проецирует openHands в модели, не подменяет один из двух DTO. Compiler, все asset families, полный каталог приложения, room/pairing separation и cutover остаются впереди.
+
+
+## Пятнадцатый срез: общие компоненты и локальные материалы
+
+Канонический shared/components/game-components.js содержит artboard, карты main/compact, кубики flat/raised и числовые грани, шашки/дамки, домино, геометрию клеток, силуэт корабля, счётчики и шаблон таблицы. RoundToken остаётся отдельным каноническим компонентом. Потребители подключены: общий UI, карточные паки, Шашки, Домино, Лудо/Змеи, Ятзи и game-feedback. Баблы используют общую таблицу классов/CSS; стандартные звуки читаются из shared/sounds/standard-sounds.json. ZIP общих ресурсов теперь включает исполняемые components.
+
+AssetResolver выбирает family/variant локально, сообщает fallback отсутствующего варианта и возвращает material bindings. Host resources закреплены provenance/SHA в core/shared-assets.json; без companion сборщик проверяет digest. Палитра имеет 101 слот, принятые light цвета/геометрия сохранены. Смена материалов не заменяет таблицу/скролл/ввод, не отправляет команду. Лудо/Змеи используют одни side/pawn slots; переносимая Ludo scene передаёт colorRole без HEX. Рецепты особых карточных лиц остаются в Web своего пака; общие artboard/resolver принадлежат семейству карты. Полный перенос UI цветов/текстов ещё впереди.
+
+Уточнение личного экрана: role=player, живое подключение и подключённый Стол обязательны одновременно. Локальная партия/hotseat, архив, зритель и Стол не получают переключатель даже с сохранённой preference. На потере связи/отключении Стола поле возвращается автоматически; кнопка исчезает и из настроек. Пауза остаётся сверху.
+
+Выбранные проверки: appearance/domain-foundation/game-screen/views — 44/44 до дополнительных cases; итог appearance/domain-foundation — 18/18. Game-screen — 11/11; unified-game-screen-browser — 5/5. Compact-hand/rc2-games-browser — 38/38; Ludo team markers — 1/1; после исправления compact recipe и подписей цветов итог compact-hand/appearance — 38/38. Artwork — 2/2 и checkers-drag/domino-layout — 22/22 при первоначальном извлечении без последующего изменения соответствующей геометрии. Это отдельные свидетельства затронутых контрактов, не финальная приёмка RC.
+
+Остаются compiler/loader cutover, services комнат/pairing/recovery, общие input/modal/navigation и полный каталог локализации. Выпуск 0.18-rc.1 и отдельный preview не запускались; стабильная пара не изменялась.

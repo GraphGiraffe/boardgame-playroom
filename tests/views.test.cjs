@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
   const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
   if(match){
     const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
@@ -62,7 +62,7 @@ test('standalone UI shares source and target policies without browser or game de
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
-  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0">0<\/span>/);
+  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0"[^>]*>0<\/span>/);
   assert.match(H.countBadge(7,'Рука',{hand:true}),/piece-count is-hand/);
   assert.doesNotMatch(H.hand([],0),/piece-count/);
   for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));

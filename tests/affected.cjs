@@ -10,7 +10,7 @@ module.exports = [
   {paths:['core/command-processor.js'],select:['case/authority','case/durable-authority','network/table','case/uno-reactions','case/uno-social']},
   {paths:['presentation/scheduler.js'],select:['case/game-flow','case/network-feedback-browser']},
   {paths:['core/random.js'],select:['core/domain','case/engine','case/session','case/rc2-games']},
-  {paths:['core/component-assets.js','core/component-assets.json'],select:['core/domain','case/artwork','case/first-medallion-browser','case/result-team-medallions-browser','case/rc2-games-browser']},
+  {paths:['core/component-assets.js','core/game-components.js','core/component-assets.json'],select:['core/domain','case/artwork','case/first-medallion-browser','case/result-team-medallions-browser','case/rc2-games-browser']},
   {paths:['core/ui.js','core/ui.css','application/history-controller.js','application/game-screen-controller.js','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/screen','ui','games','input/hands','network/resume','storage']},
   {paths:['app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},
   {paths:['app/saved-games.css','app/library.js','application/library.js'],select:['core/state','ui/history','ui/navigation','storage']},

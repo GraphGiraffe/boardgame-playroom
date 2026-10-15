@@ -37,7 +37,7 @@
       const panel=[...mount.querySelectorAll('.player-panel[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===speech.speaker);
       if(!panel)return;
       if(Number.isInteger(speech.target))mount.querySelector(`.player-panel[data-player-index="${speech.target}"]`)?.classList.add('is-addressed');
-      const bubble=mount.ownerDocument.createElement('span');bubble.className='game-speech is-game'+(speech.result==='success'?' is-success':speech.result==='error'?' is-error':'');bubble.setAttribute('role','status');
+      const bubble=mount.ownerDocument.createElement('span');bubble.className=root.TabletopUI.helpers.components.bubbleClass({kind:'game',result:speech.result});bubble.setAttribute('role','status');
       const message=speech.text||((speech.icon==='cards'?'Передано карт: ':'Нет карт')+(speech.count||''));bubble.setAttribute('aria-label',message);
       if(speech.icon==='cards'){const icon=mount.ownerDocument.createElement('span');icon.className='game-speech-icon';icon.innerHTML=root.TabletopUI?.icon?.('cards')||'▰';bubble.append(icon);const count=mount.ownerDocument.createElement('b');count.textContent=String(speech.count);bubble.append(count);}
       else if(speech.icon==='cross')bubble.textContent='✕';

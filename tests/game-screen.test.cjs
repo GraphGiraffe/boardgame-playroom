@@ -121,3 +121,13 @@ test('result metrics and teams use identifiers independent of labels, equal valu
  assert.equal(UI.teamFor({'custom-partners':{seatTeams:['ocean','sand','sand','ocean'],teams:[team,{id:'sand',label:'Песочные',color:'#e6ba52'}]}},'custom-partners',3).id,'ocean');
  assert.equal(UI.teamFor({invalid:{teams:null}},'invalid',0),null);
 });
+
+
+test('field toggle is exclusive to an interactive network player with a Table',()=>{
+ for(const [network,viewer,readOnly,allowed]of [[false,0,false,false],[true,-1,false,false],[true,0,true,false],[true,0,false,true]]){
+  const html=Screen.render({state:projected,viewer,network,readOnly,fieldToggle:{hidden:true}});
+  assert.equal(html.includes('data-command="toggle-field"'),allowed);
+  assert.equal(Screen.quickAccessMarkup().includes('data-command="toggle-field"'),allowed);
+  if(!allowed)assert.match(html,/data-command="history"/);
+ }
+});

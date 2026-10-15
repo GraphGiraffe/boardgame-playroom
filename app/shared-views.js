@@ -30,6 +30,7 @@
     const toast=text=>root.PlayroomAppBridge?.toast?.(text);
     const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!controller.draining&&!controller.queue.length&&controller.shown?.revision===client.snapshot?.revision&&!historyOpen&&!dialogOpen&&!modal.children.length&&(client.snapshot?.viewer>=0||client.snapshot?.role==='table'&&client.snapshot?.actor>=0);
     const historyCount=()=>controller.history.count;
+    const canHideField=s=>!readOnly&&connected&&s?.role==='player'&&s.viewer>=0&&surface!=='table'&&tableAvailable()&&V.supports(s.game,'player');
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;if(historyOpen){flow.cancel();transitionActive=false;}};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
     const eventText=s=>s.revision===0?'Начальная расстановка':s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
@@ -39,9 +40,9 @@
       if(!source)return;
       const s=historyOpen||readOnly?source:{...source,state:{...source.state,players:source.state.players.map((player,index)=>({...player,...(root.PlayroomNetworkLibrary?.playerMetadata?.(source.sessionId,index)||{})}))}};
       if(s.packVersion!==pack.manifest.version||s.game!==pack.manifest.id)throw Error('Версия представления не совпадает с партией.');
-      // A player uses the SAME combined scene as local bots/hot seat, not the reduced player surface.
-      // The table is public, and only the server's projected state may be rendered.
-      const hasTable=!readOnly&&s.viewer>=0&&tableAvailable()&&V.supports(s.game,'player');
+      // A personal surface is a connected network player's local preference.
+      // Local/hotseat, archives and public Table/spectator screens keep their field.
+      const hasTable=canHideField(s);
       const fieldHidden=hasTable&&!historyOpen&&H.viewPreferences(s.game,s.viewer).screenSurface==='player';
       const actual=s.viewer<0?'table':surface==='table'?'table':fieldHidden?'player':'combined';
       if(!V.supports(s.game,actual))throw Error('Этот пак не поддерживает выбранный экран.');
@@ -154,7 +155,7 @@
       if(replayTimer)replayTimer=setTimeout(playStep,Math.max(100,flow.pace().settle));
     }
     async function action(command){
-      if(command==='toggle-field'){const s=client.snapshot;if(!readOnly&&s.viewer>=0&&tableAvailable()){const prefs=H.viewPreferences(s.game,s.viewer);H.viewPreferences(s.game,s.viewer,'screenSurface',prefs.screenSurface==='player'?'combined':'player');input.cancel();selected=null;render();}return;}
+      if(command==='toggle-field'){const s=client.snapshot;if(canHideField(s)){const prefs=H.viewPreferences(s.game,s.viewer);H.viewPreferences(s.game,s.viewer,'screenSurface',prefs.screenSurface==='player'?'combined':'player');input.cancel();selected=null;render();}return;}
       if(command==='room'){root.PlayroomNetworkLibrary?.openRoom?.();return;}
       if(command==='pause'){if(!readOnly&&connected&&!client.pending&&!historyOpen&&client.snapshot?.viewer>=0){const receipt=await client.send({type:'session-pause',paused:!client.snapshot.paused,expectedControlRevision:client.snapshot.controlRevision||0});if(!receipt.ok)toast(receipt.message);render();}return;}
       switch(command){

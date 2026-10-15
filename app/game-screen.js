@@ -128,6 +128,7 @@
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
     statusExtra='',footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption='',roomAction=null,fieldToggle=null}={}){
+    fieldToggle=network&&!readOnly&&viewer>=0?fieldToggle:null;
     if(!state?.players)throw Error('Projected game state required');
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:'Результаты',name:'trophy'}:roomAction?{...roomAction,label:'Комната',name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||'Начальная расстановка'):footerText||'');

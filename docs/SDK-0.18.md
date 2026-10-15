@@ -66,3 +66,10 @@ Presentation.choice может вернуть MessageRef в confirmation/targetP
 SceneModel.players содержит `player` (или id), metrics `{id,kind,value,label,resultUsage}` и необязательный team `{id,label,color}`. kind задаёт points/wins/pieces явно, подпись не влияет на оформление. Host форматирует labels после privacy projection; сохраняются semantic IDs. hand-count имеет отдельный ID. Карточки и результаты используют общую функцию playerContent и не пересчитывают игровой результат в Web renderer. Result.metrics могут объявить `display: 'ranking'` для агрегата, используемого для места, без повторной строки текста. Остальные дополнения показываются только если их ID отсутствует среди видимых счётчиков.
 
 Для лобби manifest.teamLayouts задаёт отображение по выбранному preset: `{seatTeams:['a','b','a','b'],teams:[{id:'a',label:'...',color:'#...'},...]}`. Соответствие мест относится к конкретному паку; общий UI не вычисляет команды остатком от деления. SceneModel.turnOrder при необходимости задаёт публичную последовательность (UNO reverse). Authority пересчитывает сцены после фильтрации actions, поэтому сохранённый/paused кадр не содержит доступных commands.
+
+
+### Семейства компонентов
+
+PlayroomGameComponents / core/game-components.js — закреплённый shared/components/game-components.js: AssetResolver, artboard main/compact, cardFace, dieArt, checkerArt, dominoFace, boardCells, shipSilhouette, countBadge/scoreBadge, scoreTable и bubbleClass. Это Web rendering; правила его не импортируют. Resolver получает локальные catalog/skins/palette/renderers; отсутствующий вариант возвращает default и missing=true. Значения/ID/hidden/actions не зависят от оформления. Особое лицо карты передаёт trusted main/compact/width/height/variant через то же семейство; HTML не принимается из сетевых команд.
+
+core/shared-assets.json закрепляет JS/CSS, каталог и звуки. build.py синхронизирует явно выбранный companion source и проверяет digest автономно. Редактировать canonical shared, затем пересобрать host. Исходники компонентов включены в shared-assets ZIP; SVG-образцы не являются второй реализацией.

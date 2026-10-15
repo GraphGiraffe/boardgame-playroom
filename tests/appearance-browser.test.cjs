@@ -93,7 +93,10 @@ test('switching preserves local table, scrolling, history slider and an already 
     window.appearanceBoard=board;
     return {raw:localStorage.getItem('playroom.session.v1'),top:board.scrollTop,left:board.scrollLeft,rect:board.getBoundingClientRect().toJSON()};
   });
+  const materialBefore=await page.locator('.shared-die-art rect').first().evaluate(node=>getComputedStyle(node).fill);
   await choose(page,'dark');
+  const materialAfter=await page.locator('.shared-die-art rect').first().evaluate(node=>getComputedStyle(node).fill);
+  assert.notEqual(materialAfter,materialBefore,'The live shared die uses local theme material bindings');
   const after=await page.evaluate(()=>{const b=document.querySelector('.yatzy-board');return {same:b===window.appearanceBoard,raw:localStorage.getItem('playroom.session.v1'),top:b.scrollTop,left:b.scrollLeft,rect:b.getBoundingClientRect().toJSON()};});
   assert(after.same);assert.equal(after.raw,before.raw);assert.equal(after.top,before.top);assert.equal(after.left,before.left);assert.deepEqual(after.rect,before.rect);
   const colors=await page.evaluate(()=>{

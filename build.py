@@ -291,7 +291,7 @@ def read_source_pack(manifest_path):
         files["rules.js"] = "\n".join([*sources, files["rules.js"]])
     if manifest.get("sharedUi"):
         shared = pack.parent.parent / "shared"
-        files["view.js"] = (shared / "components/round-token.js").read_text(encoding="utf-8") + "\n" + (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
+        files["view.js"] = (shared / "components/round-token.js").read_text(encoding="utf-8") + "\n" + (shared / "components/game-components.js").read_text(encoding="utf-8") + "\n" + (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
         files["styles.css"] = (shared / "view-kit.css").read_text(encoding="utf-8") + "\n" + files["styles.css"]
         for name in manifest.get("sharedAssets", []):
             if not re.fullmatch(r"[a-z][a-z0-9-]*\.svg", name):
@@ -477,6 +477,34 @@ def sync_components(source_root):
             raise ValueError("Vendored component source is corrupt; rebuild with the selected source packs")
 
 
+def sync_shared_assets(source_root):
+    lock_path = ROOT / "core/shared-assets.json"
+    lock = parse_json(lock_path.read_text(encoding="utf-8"))
+    for entry in lock["entries"]:
+        target = ROOT / entry["target"]
+        source = source_root.parent / entry["source"] if source_root else None
+        if source and source.is_file():
+            raw = source.read_text(encoding="utf-8")
+            entry["sha256"] = hashlib.sha256(raw.encode()).hexdigest()
+            body = raw
+            if entry["format"] == "module":
+                data = json.dumps(parse_json(raw), ensure_ascii=False, separators=(",", ":"))
+                body = "(function(root){const value=" + data + ";if(typeof module==='object'&&module.exports)module.exports=value;root." + entry["globalName"] + "=value;})(globalThis);\n"
+            entry["renderedSha256"] = hashlib.sha256(body.encode()).hexdigest()
+            if target.suffix != ".json":
+                body = "// Vendored from playroom-paks/" + entry["source"] + "; sha256=" + entry["sha256"] + "\n" + body
+            target.write_text(body, encoding="utf-8")
+        else:
+            body = target.read_text(encoding="utf-8")
+            if target.suffix != ".json":
+                header, body = body.split("\n", 1)
+                if header != "// Vendored from playroom-paks/" + entry["source"] + "; sha256=" + entry["sha256"]:
+                    raise ValueError("Shared resource provenance mismatch: " + entry["target"])
+            if hashlib.sha256(body.encode()).hexdigest() != entry["renderedSha256"]:
+                raise ValueError("Shared resource is corrupt: " + entry["target"])
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist", help="Каталог результата (по умолчанию: dist/ рядом со скриптом)")
@@ -494,6 +522,7 @@ def main():
         parser.error("Выберите --all-games, --pwa или --prepare-dev для указанных паков")
     packs, source_root = read_packs(args.packs_dir) if args.packs_dir else ([], None)
     sync_components(source_root)
+    sync_shared_assets(source_root)
     if args.prepare_dev:
         prepare_dev(packs, source_root)
         if not args.all_games:

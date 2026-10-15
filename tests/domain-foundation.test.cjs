@@ -97,7 +97,7 @@ print(json.dumps(result,ensure_ascii=False))
   const E = require('../core/engine.js');
   const UI = require('../core/ui.js');
   const Packs = require('../core/packs.js');
-  const manager = new Packs({engine:E, views:UI.createRegistry(), catalog:{}, storage:{get:()=>null,set(){}}});
+  const manager = new Packs({modelAdapter:require('../core/model-registration.js').adapt,engine:E, views:UI.createRegistry(), catalog:{}, storage:{get:()=>null,set(){}}});
   for (const pair of bundles) {
     assert.deepEqual(pair.app, pair.packs);
     assert.match(pair.app.files['rules.js'], /DECK_SIZE_UNSUPPORTED/);
@@ -126,6 +126,21 @@ test('round token geometry is canonical in packs and the pinned host copy has th
   const canonical=require(path.join(packRoot,'shared/components/round-token.js'));
   const host=require('../core/ui.js').helpers;
   for(const value of [null,0,1,8,10,99,1000])for(const first of [false,true]){
-    assert.equal(host.roundTokenArt({value,first}),canonical.roundTokenArt({value,first}));
+    assert.equal(host.roundTokenArt({value,first}).replace(/ data-asset-(?:family|params)="[^"]*"/g,''),canonical.roundTokenArt({value,first}));
   }
+});
+
+test('shared component and sound resources are pinned to canonical sources and resolve skins locally',()=>{
+ const crypto=require('node:crypto'),packRoot=path.dirname(fs.realpathSync(path.join(root,'packs')));
+ const lock=JSON.parse(fs.readFileSync(path.join(root,'core/shared-assets.json'),'utf8'));
+ for(const item of lock.entries){const source=fs.readFileSync(path.join(packRoot,item.source),'utf8'),target=fs.readFileSync(path.join(root,item.target),'utf8');assert.equal(crypto.createHash('sha256').update(source).digest('hex'),item.sha256,item.source);const body=item.target.endsWith('.json')?target:target.split('\n').slice(1).join('\n');assert.equal(crypto.createHash('sha256').update(body).digest('hex'),item.renderedSha256,item.target);}
+ const canonical=require(path.join(packRoot,'shared/components/game-components.js')),host=require('../core/game-components.js'),catalog=require('../themes/assets.json');
+ for(const value of [null,1,6,12])for(const frame of ['flat','raised'])assert.equal(host.dieArt(value,{frame}),canonical.dieArt(value,{frame}));
+ for(const king of [false,true])assert.equal(host.checkerArt(king,true),canonical.checkerArt(king,true));
+ for(const variant of ['main','compact']){const recipe={main:'<div>A</div>',compact:'<div>B</div>',width:66,height:97,variant};assert.equal(host.cardFace(recipe),canonical.art(recipe,variant));}
+ for(const [a,b]of [[0,0],[1,6],[6,3]])assert.equal(host.dominoFace(a,b,270),canonical.dominoFace(a,b,270));
+ const resolver=new host.AssetResolver({catalog,skins:{die:'missing'},palette:{'material.die.face':'#123456'}});
+ assert.equal(resolver.resolve('die').variant,'classic');assert.equal(resolver.resolve('die').missing,true);assert.equal(resolver.resolve('die').materials.face,'#123456');
+ assert.throws(()=>resolver.resolve('constructor'),/ASSET_FAMILY_UNKNOWN/);assert.match(resolver.render('die',{value:6}),/viewBox="0 0 60 60"/);
+ assert.deepEqual(require('../core/standard-sounds.js'),JSON.parse(fs.readFileSync(path.join(packRoot,'shared/sounds/standard-sounds.json'),'utf8')));
 });
