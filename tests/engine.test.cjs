@@ -341,6 +341,7 @@ test('standalone audio library registers scoped pack overrides without a browser
 function packEnvironment(storage, viewsOverride) {
   const vm = require('node:vm'), fs = require('node:fs');
   const sandbox = {module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../core/random.js'), 'utf8'), sandbox);
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/engine.js'), 'utf8'), sandbox);
   const core = sandbox.module.exports, views = viewsOverride || require('../core/ui.js').createRegistry(), catalog = {};
   let raw = null;

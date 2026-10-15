@@ -97,6 +97,11 @@ def validate_manifest(manifest, label):
     for key, filename in {**ENTRY_POINTS, "sounds": "sounds.js"}.items():
         if key in manifest and manifest[key] != filename:
             raise ValueError(f"Неподдерживаемая точка входа {key}: {label}")
+    modules = manifest.get("sharedDomain", [])
+    if (not isinstance(modules, list) or len(modules) > 16
+            or any(not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name) for name in modules)
+            or len(set(modules)) != len(modules)):
+        raise ValueError(f"Некорректные sharedDomain: {label}")
     return manifest
 
 
@@ -216,6 +221,11 @@ def read_source_pack(manifest_path):
             mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             value = f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
         files[path.relative_to(pack).as_posix()] = value
+    modules = manifest.get("sharedDomain", [])
+    if modules:
+        domain = pack.parent.parent / "shared" / "domain"
+        sources = [local_file(name + ".js", domain / (name + ".js"), domain).read_text(encoding="utf-8") for name in modules]
+        files["rules.js"] = "\n".join([*sources, files["rules.js"]])
     if manifest.get("sharedUi"):
         shared = pack.parent.parent / "shared"
         files["view.js"] = (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]

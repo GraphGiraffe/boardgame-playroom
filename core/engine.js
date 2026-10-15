@@ -4,31 +4,14 @@
   const LEGACY_PACK_VERSION = '0.1.0';
   const packVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
   const clone = value => JSON.parse(JSON.stringify(value));
-  function seedValue(value) {
-    if (value == null) return (Math.random() * 4294967296) >>> 0;
-    let n = 2166136261;
-    for (const c of String(value)) n = Math.imul(n ^ c.charCodeAt(0), 16777619);
-    return n >>> 0;
-  }
-  function random(state) {
-    if (!state) return Math.random();
-    state.rng = (state.rng + 0x6D2B79F5) >>> 0;
-    let n = state.rng;
-    n = Math.imul(n ^ n >>> 15, n | 1);
-    n ^= n + Math.imul(n ^ n >>> 7, n | 61);
-    return ((n ^ n >>> 14) >>> 0) / 4294967296;
-  }
-  function shuffle(items, state) {
-    const out = items.slice();
-    for (let i = out.length - 1; i > 0; i--) {
-      const j = Math.floor(random(state) * (i + 1));
-      [out[i], out[j]] = [out[j], out[i]];
-    }
-    return out;
-  }
+  const Random = root.PlayroomRandom || (typeof require === 'function' ? require('./random.js') : null);
+  if (!Random) throw Error('Random module is required before the engine');
+  const seedValue = value => Random.seedValue(value, Math.random);
+  const random = state => Random.random(state, Math.random);
+  const shuffle = (items, state) => Random.shuffle(items, state, Math.random);
   function rollDie(sides = 6, state) {
     if (!Number.isInteger(sides) || sides < 2 || sides > 1000) throw Error('У кубика должно быть от 2 до 1000 граней');
-    return 1 + Math.floor(random(state) * sides);
+    return Random.rollDie(sides, state, Math.random);
   }
   function event(state, text, player = null, kind = 'action', extra = {}) {
     state.events.push({ id: (state.events.at(-1)?.id || 0) + 1, text, player, kind, ...extra });

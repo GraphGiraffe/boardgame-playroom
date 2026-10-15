@@ -1,6 +1,7 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
+  {paths:['core/random.js'],select:['core/domain','case/engine','case/session','case/rc2-games']},
   {paths:['core/ui.js','core/ui.css','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/screen','ui','games','input/hands','network/resume','storage']},
   {paths:['app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},
   {paths:['app/saved-games.css','app/library.js'],select:['core/state','ui/history','ui/navigation','storage']},
