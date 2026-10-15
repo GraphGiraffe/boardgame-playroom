@@ -66,7 +66,7 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
   assert.match(source,/caches\.open\(CACHE\)\)\.match\('\.\/index\.html'\)/);
   assert.match(source,/app\/vendor\/qrcode\.js/);

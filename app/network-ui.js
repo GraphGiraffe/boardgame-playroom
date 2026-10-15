@@ -25,6 +25,7 @@
   let reconnectStatus='',clientRecovery=null,resumeIntent=null;
   const connectionLabels={connecting:'Подключение',connected:'В игре',recovering:'Восстановление связи',invite:'Нужно новое приглашение'};
   let networkInMenu=false,presentationGeneration=0;
+  const tableAvailability=new WeakMap();
   const hasActiveRoom=()=>!!(hostRoomId||clientRoom);
   const clientConnected=()=>clientPeer?.pc?.connectionState==='connected'&&(!clientRecovery||clientRecovery.state==='connected');
   function parkNetworkView(){
@@ -49,7 +50,7 @@
     const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
     b.closeModal(true);document.getElementById('app').inert=false;
     const old=isHost?hostMount:clientMount;old?.destroy?.();
-    const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
+    const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',tableAvailable:()=>{const room=isHost?b.room():clientPresence||clientRoom;return !!room?.participants?.some(person=>person.role==='table'&&person.connected!==false);},connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
     if(isHost)hostMount=mounted;else clientMount=mounted;
     mounted.render();renderPresence();showDisconnectBanner();
   }
@@ -503,6 +504,8 @@
     if(hostAuthority&&hostRoomId){try{data=roomPresence(bridge().roomService.snapshot(hostRoomId));}catch(_){}}
     else if(clientGameClient&&clientPresence?.roomId===clientRoom?.id)data=clientPresence;
     if(!data)return;
+    const available=data.participants.some(person=>person.role==='table'&&person.connected!==false);
+    const mounted=hostMount||clientMount;if(mounted&&tableAvailability.get(mounted)!==available){tableAvailability.set(mounted,available);mounted.render();}
     const lost=clientPeer&&['disconnected','failed','closed'].includes(clientPeer.pc.connectionState);
     for(const p of data.participants){
       if(!Number.isSafeInteger(p.playerIndex)||p.playerIndex<0)continue;

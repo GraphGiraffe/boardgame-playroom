@@ -52,3 +52,10 @@ Library записывает librarySummary до сериализованной 
 Definition может объявить reactions(Position, actor) с теми же `{command, visibility}`, reactionControl(Position, actor, command), reactionWindows(Position), botReaction(projection, actor, actions, memory). Обычные legalActions/botAction не включают реакции; availableActions/project включают обе группы. public reactions доступны на Столе при отдельном actor. reactionControl возвращает kind/episode/target/independent/ignore; необязательный command нормализует аргументы по правилам игры. Повтор разрешённого старого эпизода — no-op без revision/фактов. reactionWindows описывает owner/revision/humanMs/botMs/fallbackMs; время и тип клиента принадлежат authority.
 
 Presentation.choice может вернуть MessageRef в confirmation/targetPrompt и другие подписи; host форматирует их после projection. Presentation.event может дать notice (title/detail refs, tone), speech, sound и public target. Domain не знает имён участников и DOM. UNO-schema требует явных ситуаций; legacy missing state не восстанавливается скрытым fallback.
+
+
+### Screen и history application layer
+
+`application/game-screen-controller.js` работает с client port (`snapshot`, `history(index)`, `send(action)`) и presentation callbacks. Он не читает DOM, engine registry, storage, сеть или часы глобального окружения. Контекст viewState имеет scope turn/match; выбранная карта проверяется по разрешённой руке. Ordered queue восстанавливает разрывы через тот же client port; cancel/dispose отсеивают поздние ответы. Synchronous local commits используют общий transition callback lifecycle с инъецированными часами.
+
+`application/history-controller.js` хранит live/frame/index/requested, защищает audience/session/pack/revision и отменяет устаревшие RPC. Маркер создаётся только явным `backfill(from,{origin:'backfill'})`; received/presented/reviewed раздельны. Web адаптеры управляют hotseat gate, focus, layout и локальными preferences. `state.scene` — уже разрешённый SceneModel из pack presentation, доступный будущим клиентам без Web renderer.

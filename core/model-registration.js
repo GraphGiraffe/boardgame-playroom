@@ -84,7 +84,7 @@
         }
         state.events=[...Events.append(state.events,changed.events,state.players.length,state.move)];
       },
-      project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data); },
+      project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data);out.scene=presentation.scene(out.modelProjection); },
       tableProjection(state, actor) { return model.projectTable(position(state),actor,state.events.filter(value=>value.visibility)); },
       tableChoices(state, actor) { const projection=model.projectTable(position(state),actor);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
       tableCommand(state, actor, action) { const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },

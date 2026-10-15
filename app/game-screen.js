@@ -14,12 +14,14 @@
   function addPlayerButton({disabled=false}={}){
     return iconButton('id="network-pair-button"','Подключить игрока или устройство','addPlayer',{disabled});
   }
+  let quickActions=[];
+  function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="Быстрые команды">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"'}={}){
     // Context actions grow to the left; help and settings keep the right edge.
     const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette'}]:[];
     const ordered=[...actions.filter(a=>a.name!=='help'),...appearance,...actions.filter(a=>a.name==='help')];
     if(showSettings)ordered.push({attrs:settingsAttrs,label:'Настройки',name:'settings'});
-    return ordered.map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
+    quickActions=ordered;return ordered.filter(action=>!action.hidden).map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
   const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"','Закрыть','close')}<h2>${esc(title)}</h2></header>`;
   function modalContent(content){
@@ -29,7 +31,7 @@
     return header+'<div class="modal-body">'+template.innerHTML+'</div>';
   }
   function patchChildren(parent,next){
-    const key=n=>n.nodeType===1?(n.id||(n.dataset.packId&&n.dataset.packVersion?`${n.dataset.packId}@${n.dataset.packVersion}`:'')||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
+    const key=n=>n.nodeType===1?(n.id||(n.dataset.packId&&n.dataset.packVersion?`${n.dataset.packId}@${n.dataset.packVersion}`:'')||n.getAttribute('data-room-drop')||n.getAttribute('data-participant-id')||n.getAttribute('data-player-index')&&'player:'+n.getAttribute('data-player-index')||n.getAttribute('data-command')||n.getAttribute('data-net-action')||''):'';
     function patch(parent,next){
       const old=[...parent.childNodes],used=new Set();let previous=null;
       for(const fresh of [...next.childNodes]){
@@ -128,7 +130,7 @@
   }
   function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:'К играм',icon:'back'},
-    statusExtra='',footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption='',roomAction=null}={}){
+    statusExtra='',footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel='очки',playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption='',roomAction=null,fieldToggle=null}={}){
     if(!state?.players)throw Error('Projected game state required');
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:'Результаты',name:'trophy'}:roomAction?{...roomAction,label:'Комната',name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||'Начальная расстановка'):footerText||'');
@@ -136,7 +138,8 @@
     return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?'Закрыть историю':'Вернуться к игре'):'К играм','back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         ...(primary?[{...primary,attrs:primary.attrs+' data-game-primary="true"'}]:[]),
-        {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML},
+        {attrs:'data-command="history"',label:'История ходов',name:'history',active:!!historyHTML,hidden:!!fieldToggle},
+        ...(fieldToggle?[{attrs:'data-command="toggle-field"',label:fieldToggle.hidden?'Показать поле':'Скрыть поле',name:'grid',active:fieldToggle.hidden}]:[]),
         ...(!readOnly?[{attrs:'data-command="pause"',label:pause?'Продолжить':'Пауза',name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
         {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
         {attrs:'data-command="rules"',label:'Правила игры',name:'help'}
@@ -192,10 +195,10 @@
         replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
   }
-  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
 });

@@ -11,7 +11,7 @@ module.exports = [
   {paths:['presentation/scheduler.js'],select:['case/game-flow','case/network-feedback-browser']},
   {paths:['core/random.js'],select:['core/domain','case/engine','case/session','case/rc2-games']},
   {paths:['core/component-assets.js','core/component-assets.json'],select:['core/domain','case/artwork','case/first-medallion-browser','case/result-team-medallions-browser','case/rc2-games-browser']},
-  {paths:['core/ui.js','core/ui.css','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/screen','ui','games','input/hands','network/resume','storage']},
+  {paths:['core/ui.js','core/ui.css','application/history-controller.js','application/game-screen-controller.js','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/screen','ui','games','input/hands','network/resume','storage']},
   {paths:['app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},
   {paths:['app/saved-games.css','app/library.js','application/library.js'],select:['core/state','ui/history','ui/navigation','storage']},
   {paths:['app/shared-views.js'],select:['core/screen','ui','network/resume','storage/history','input/feedback']},

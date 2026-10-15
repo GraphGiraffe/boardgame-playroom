@@ -81,3 +81,31 @@ test('the primary toolbar slot switches between room and results, including earl
  assert.match(Screen.addPlayerButton(),/ui-icon-button/);
  assert.match(Screen.addPlayerButton({disabled:true}),/ disabled/);
 });
+
+test('portable history rejects stale audiences and only marks explicitly received backfill',async()=>{
+ const History=require('../application/history-controller.js');
+ const base={kind:'snapshot',sessionId:'one',authorityEpoch:'epoch',game:'cards',packVersion:'1.0.0',viewer:0,revision:4,historyLength:5};
+ const pending=[],history=new History({read:index=>new Promise(resolve=>pending.push({index,resolve}))});
+ history.receive(base);history.markPresented(4);history.open=true;
+ const a=history.seek(1),b=history.seek(3);pending[1].resolve({...base,kind:'history',revision:3});await b;
+ pending[0].resolve({...base,kind:'history',revision:1});assert.equal(await a,null);assert.equal(history.index,3);
+ assert.equal(history.boundary,null);assert.equal(history.backfill(2,{origin:'scrub'}),false);
+ assert.equal(history.backfill(2),true);history.select(0,{...base,revision:0});assert.equal(history.boundary,2);
+ history.select(4,base);assert.equal(history.boundary,null);
+ assert.throws(()=>history.select(2,{...base,viewer:1,revision:2}),/HISTORY_FRAME_INVALID/);
+ const late=history.seek(2);history.close();pending[2].resolve({...base,revision:2});assert.equal(await late,null);
+ assert.equal(history.index,null);assert.equal(history.progress.presentedRevision,4);
+});
+
+test('one screen queue presents every recovered revision once and separates selection from projections',async()=>{
+ const Controller=require('../application/game-screen-controller.js'),shown=[];
+ const frame=revision=>({kind:'snapshot',sessionId:'one',authorityEpoch:'epoch',game:'cards',packVersion:'1.0.0',viewer:0,revision,historyLength:revision+1,state:{turn:0,data:{hands:[[{id:'card'}],[]]}}});
+ const client={snapshot:frame(0),history:async revision=>({...frame(revision),kind:'history'}),send:action=>action};
+ const controller=new Controller({client,present:async(before,next,{show})=>{show();shown.push(next.revision);}});
+ controller.selection='card';const context=controller.context(frame(0),{scope:'match'});context.viewState.field='mine';
+ client.snapshot=frame(3);await controller.enqueue(client.snapshot);await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(shown,[1,2,3]);assert.equal(controller.shown.revision,3);assert.equal(controller.busy,false);
+ assert.equal(controller.context(frame(3),{scope:'match'}).viewState.field,'mine');assert.equal(controller.selection,'card');
+ const gone=frame(4);gone.state.data.hands[0]=[];controller.context(gone,{scope:'match'});assert.equal(controller.selection,null);
+ assert.deepEqual(controller.send({type:'next'}),{type:'next'});controller.dispose();assert.throws(()=>controller.send({type:'next'}),/SCREEN_CLOSED/);
+});

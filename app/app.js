@@ -57,7 +57,7 @@
   const catalog = globalThis.PlayroomCatalog || {};
   const animationPresets=Flow.presets;
   let settings = {sound:false, volume:.6, animationSpeed:'normal', quickPlay:false,autoPass:false};
-  let viewState = {}, viewIdentity = '';
+  let viewState = {};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
   let sessionId = null, hubTab = 'games', savedFilter='all', networkSaved=[], networkSavedState='idle', networkSavedTicket=0;
   let hubEditing=false;
@@ -69,6 +69,13 @@
   let input = null, packUI = null, playerTargets = null, feedbackSession = null;
   const feedback=new globalThis.PlayroomGameFeedback({mount:()=>document.querySelector('#app .table-shell')});
   let transition = null, replayTicket = 0, awaitingPass = false;
+  const localPort={get snapshot(){return session?localFrame(session.current,gate!==null?-1:viewer):null;},
+    history:index=>localFrame(session.states[index],viewer,[]),
+    send(action,{actor=viewer}={}){const client=localClient(actor);return client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));}};
+  const screenController=new globalThis.PlayroomGameScreenController({client:localPort,report:error=>toast(error.message)});
+  function localFrame(state,shownViewer,actions=[]){return {kind:'snapshot',protocolVersion:1,sessionId:sessionId||String(session.createdAt),authorityEpoch:'local:'+session.createdAt,
+    game:session.game,packVersion:session.packVersion,viewer:shownViewer,revision:state.move,historyLength:session.states.length,state:E.project(state,shownViewer),actions,paused};}
+
   try {
     const stored=JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}');
     if(typeof stored?.sound==='boolean')settings.sound=stored.sound;
@@ -425,8 +432,14 @@
     if (!session) return renderHub();
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state), passProtected=handoffDelay()>0;
-    const shownViewer=gate!==null?-1:viewer, projected=E.project(state,shownViewer);
-    const identity=[sessionId,state.game,shownViewer,...(catalog[state.game]?.capabilities?.viewStateScope==='match'?[]:[state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
+    const shownViewer=gate!==null?-1:viewer,frame=localFrame(state,shownViewer,actions),projected=frame.state;
+    screenController.history.receive(localFrame(session.current,shownViewer));
+    screenController.history.open=historyOpen;
+    if(replay)screenController.history.select(replayIndex,frame);
+    screenController.selection=selected;
+    const context=screenController.context(frame,{scope:catalog[state.game]?.capabilities?.viewStateScope});
+    selected=context.selected;viewState=context.viewState;
+
     projected.players=projected.players.map(p=>({...p,local:!p.bot}));
     if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
@@ -488,6 +501,7 @@
   }
   function presentationReady(){
     if(!session||isReplay()||transition||paused)return;
+    screenController.history.markPresented(session.current.move);
     for(const window of E.reactionWindows(session.current)){
       if(window.owner===viewer&&reactionShownAt?.id!==window.id)reactionShownAt={id:window.id,at:Date.now()};
       const client=localClient(window.owner),snapshot=client.snapshot();
@@ -509,7 +523,7 @@
   }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
-    transition=null;clearTimeout(run.timer);flow.cancel();
+    transition=null;screenController.cancelTransition();flow.cancel();
     if(session!==run.session)return;
     if(isPass()&&session.current.turn!==run.beforeTurn&&session.current.status!=='finished'&&!session.current.players[session.current.turn]?.bot&&session.current.turn!==viewer){
       awaitingPass=true;
@@ -525,16 +539,15 @@
     try {
       const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom});
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
-      else {const client=localClient(actor),receipt=client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
+      else {const receipt=screenController.send(action,{actor});if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
       feedback.accept(E.project(session.current,viewer).events,[],session.game,{duration:Math.max(220,timing.duration+200)});
       save();input?.cancel();
       if(catalog[session.game]?.capabilities?.quietActions?.includes(action.type)){renderTable(false,true);return;}
-      const run={session,beforeTurn,timer:null};transition=run;
-      renderTable();
-      Promise.all([flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}),feedback.whenIdle()]).then(()=>{
-        if(transition===run)run.timer=setTimeout(()=>finishAction(run),timing.settle);
-      }).catch(()=>finishAction(run));
+      screenController.transition({context:{session,beforeTurn},capture:()=>snapshot,
+        render(run){transition=run;renderTable();},
+        play:shot=>Promise.all([flow.play(shot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}),feedback.whenIdle()]),
+        settle:timing.settle,finish:run=>finishAction(run)});
     } catch(error){toast(error.message||'Это действие сейчас недоступно');void previewSound('error',session?.game);}
   }
   function openModal(content,className='',{keepAudio=false}={}) {
@@ -702,7 +715,7 @@
     const profile=nickname||`<label class="field"><span>Имя игрока</span><input id="setting-player-name" maxlength="24" autocomplete="nickname" value="${esc(playerProfile?.name||'')}" placeholder="Введите имя"></label>`;
     const soundOptions=audio.catalog().map(c=>`<option value="|${esc(c.id)}">${esc(c.label)}</option>`).join('');
     const packSounds=Object.entries(catalog).filter(([,pack])=>pack.sounds).map(([id,pack])=>`<optgroup label="${esc(meta(id)?.name||id)}">${Object.entries(pack.sounds).map(([cue,def])=>`<option value="${esc(id)}|${esc(cue)}">${esc(def.label||cue)}</option>`).join('')}</optgroup>`).join('');
-    openModal(`${modalHead('Настройки')}${options.sharedRules||settingsRoom||session&&screen==='table'?`<button class="btn secondary" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('help')} Правила игры</button>`:''}${profile}${globalThis.PlayroomAppearanceUI.settingsButton()}
+    openModal(`${modalHead('Настройки')}${GameScreen.quickAccessMarkup()}${options.sharedRules||settingsRoom||session&&screen==='table'?`<button class="btn secondary" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('help')} Правила игры</button>`:''}${profile}${globalThis.PlayroomAppearanceUI.settingsButton()}
       <label class="switch"><span>Звук действий</span><input type="checkbox" id="setting-sound" ${settings.sound?'checked':''}></label>
       ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>Автоматическая передача хода</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
       <label class="switch"><span>Ход одним нажатием</span><input type="checkbox" id="setting-quick-play" aria-describedby="setting-quick-play-description" ${settings.quickPlay?'checked':''}></label>
@@ -710,7 +723,7 @@
       <label class="field"><span>Анимация</span><select id="setting-speed" aria-describedby="setting-speed-description">${Object.entries(animationPresets).map(([id,p])=>`<option value="${id}" ${settings.animationSpeed===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div>
       <details class="settings-details"><summary>Проверить звук</summary><div class="sound-preview"><label class="field"><span>Библиотека звуков</span><select id="sound-preview" data-sound-control ${settings.sound?'':'disabled'}><optgroup label="Стандартные">${soundOptions}</optgroup>${packSounds}</select></label><button class="btn secondary" data-command="sound-preview" data-sound-control ${settings.sound?'':'disabled'} aria-label="Прослушать выбранный звук">${icon('play')}</button></div></details>
       <details class="settings-details"><summary>О настройках</summary>${!nickname?'<p class="lead">Имя подставляется в новые комнаты. Никнейм в конкретной комнате можно изменить отдельно.</p>':''}<p class="lead" id="setting-quick-play-description">Однозначный ход выполняется сразу. Если действию нужен цвет или цель, сначала выберите их.</p><p class="lead" id="setting-speed-description">${animationPresets[settings.animationSpeed].description}</p><p class="lead">Настройки сохраняются на этом устройстве. Системное уменьшение анимации также учитывается.</p></details>
-      <button class="btn secondary" data-command="fullscreen" style="width:100%">${icon('full')} На весь экран</button>${session&&screen==='table'?`<button class="btn plain" data-start="${session.game}" style="width:100%;margin-top:10px">${icon('reset')} Настроить новую партию</button>`:''}`);
+      ${session&&screen==='table'?`<button class="btn plain" data-start="${session.game}" style="width:100%;margin-top:10px">${icon('reset')} Настроить новую партию</button>`:''}`);
   }
   function showCardHelp() {
     const cards=[...document.querySelectorAll('.own-hand .hand-card[data-tooltip]')],seen=new Set();
@@ -887,7 +900,7 @@
     if(button.hasAttribute('data-edit-toggle')){hubEditing=!hubEditing;filter='all';renderHub();return;}
     if(button.dataset.editStep){editHubStep(button.dataset.editId,Number(button.dataset.editStep));return;}
     if(button.dataset.editCategory){const manager=globalThis.PlayroomPackManager,id=button.dataset.editCategory,groups=['favorites','normal','hidden'],next=groups[(groups.indexOf(manager.category(id))+1)%groups.length];moveHubGame(id,next);return;}
-    if(button.dataset.command){commands[button.dataset.command]?.();return;}
+    if(button.dataset.command){if(button.hasAttribute('data-quick-shortcut'))closeModal(true);commands[button.dataset.command]?.();return;}
     if(button.dataset.favorite){try{globalThis.PlayroomPackManager.toggleFavorite(button.dataset.favorite);renderHub();}catch(error){toast(error.message);}return;}
     if(button.dataset.recentStart){setup(button.dataset.recentStart);return;}
     if(button.dataset.start){setup(button.dataset.start);return;}
@@ -991,7 +1004,7 @@
   let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
     resumeSession(sessionId);
-    if(navigation.viewState&&typeof navigation.viewState==='object')viewState=navigation.viewState;
+    if(navigation.viewState&&typeof navigation.viewState==='object'){viewState=navigation.viewState;screenController.viewState=viewState;}
     if(navigation.scroll){const board=$('#app [data-scene-scroll]');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
   }else render();
   if(globalThis.PlayroomRemotePacks){

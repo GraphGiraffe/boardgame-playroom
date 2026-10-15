@@ -470,7 +470,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         }
         const fs=require('node:fs'),Authority=require('../core/authority.js');
         const session=Session.restore(E,fixture()),snapshot=new Authority(session).connect(0).snapshot();
-        const def={manifest:JSON.parse(fs.readFileSync(root+'/packs/uno/manifest.json','utf8')),view:fs.readFileSync(root+'/packs/uno/view.js','utf8'),styles:fs.readFileSync(root+'/packs/uno/styles.css','utf8'),rules:['Правила UNO']};
+        const bundles={};require('node:vm').runInNewContext(fs.readFileSync(root+'/installed-packs.js','utf8'),bundles);const bundle=bundles.PlayroomInstalledPacks.find(item=>item.manifest.id==='uno');const def={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:['Правила UNO']};
         await page.evaluate(({snapshot,def})=>{
           snapshot.state.status='finished';
           const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('No actions during modal test');}};
