@@ -26,8 +26,8 @@
     const values=summary?.values??state.players.map((_,index)=>winners.includes(index)?1:0);
     if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||value<0))throw Error('Некорректный итог пака');
     if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isSafeInteger(value)||value<0)))throw Error('Некорректная статистика пака');
-    const order=summary?.order==='asc'?'asc':'desc',places=values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
-    state.result={label:summary?.label||'Победа',values,places,order,...(summary?.details?{detailLabel:summary.detailLabel||'Показатель',details:summary.details}:{})};
+    const order=summary?.order==='asc'?'asc':'desc',places=summary?.places||values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
+    state.result={label:summary?.label||'Победа',values,places,order,...(summary?.metricId?{metricId:summary.metricId,metrics:clone(summary.metrics)}:{}),...(summary?.details?{detailLabel:summary.detailLabel||'Показатель',details:summary.details,...(summary.detailMetricId?{detailMetricId:summary.detailMetricId}:{})}:{})};
   }
   function finish(state, winner, text, points = 1) {
     complete(state,winner,points);

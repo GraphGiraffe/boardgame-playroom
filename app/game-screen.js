@@ -98,10 +98,10 @@
       const indicators=Array.isArray(content.indicators)?UI.indicators(content.indicators.map(({icon,value,size,label})=>({icon,value,size,label}))):'';
       const primary=`<span class="result-core-counters">${hand}${shown.map(UI.scoreBadge).join('')}</span>${indicators}`;
       const resultValue=Number.isSafeInteger(value)?value:Number.isFinite(player.score)?player.score:0;
-      const shownValue=shown.some(counter=>counter.value===resultValue&&counter.kind!=='wins')||state.result?.label==='Победа';
+      const shownValue=state.result?.metricId?shown.some(counter=>(counter.id||counter.kind)===state.result.metricId):shown.some(counter=>counter.value===resultValue&&counter.kind!=='wins')||state.result?.label==='Победа';
       const extra=[];
       if(state.preset!=='teams'&&!shownValue)extra.push(`${state.result?.label||scoreLabel}: ${resultValue}`);
-      const shownDetail=shown.some(counter=>counter.kind==='pieces'&&counter.value===detail)||content.handCount===detail&&/карт|рук/i.test(state.result?.detailLabel||'');
+      const shownDetail=state.result?.detailMetricId?shown.some(counter=>(counter.id||counter.kind)===state.result.detailMetricId):shown.some(counter=>counter.kind==='pieces'&&counter.value===detail)||content.handCount===detail&&/карт|рук/i.test(state.result?.detailLabel||'');
       if(Number.isSafeInteger(detail)&&!shownDetail)extra.push(`${state.result.detailLabel}: ${detail}`);
       return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span></div>`;
     }).join('');

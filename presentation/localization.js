@@ -43,6 +43,7 @@
 
   class Translator {
     #catalogs;
+    #numbers=new Map(); #plurals=new Map();
     constructor({catalogs, locale = 'ru', fallback = 'ru'} = {}) {
       this.#catalogs = catalogCopy(catalogs);
       if (!Object.hasOwn(this.#catalogs, fallback)) throw new LocalizationError('FALLBACK_MISSING');
@@ -65,7 +66,8 @@
         if (typeof params.count !== 'number' || !Number.isFinite(params.count)) {
           throw new LocalizationError('PLURAL_COUNT_REQUIRED', key);
         }
-        const category = new Intl.PluralRules(source).select(params.count);
+        const rules=this.#plurals.get(source)||new Intl.PluralRules(source);this.#plurals.set(source,rules);
+        const category = rules.select(params.count);
         template = entry[category] ?? entry.other;
       }
       return template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_, name) => {
@@ -73,7 +75,9 @@
             typeof params[name] === 'number' && !Number.isFinite(params[name])) {
           throw new LocalizationError('MESSAGE_PARAMETER_INVALID', key);
         }
-        return typeof params[name] === 'number' ? new Intl.NumberFormat(source).format(params[name]) : String(params[name]);
+        if(typeof params[name]!=='number')return String(params[name]);
+        const numbers=this.#numbers.get(source)||new Intl.NumberFormat(source);this.#numbers.set(source,numbers);
+        return numbers.format(params[name]);
       });
     }
 

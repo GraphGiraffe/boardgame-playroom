@@ -25,7 +25,7 @@ test('hidden boards and hands remain private in projected state',()=>{
   s.openHands=openHands;const spectator=E.project(s,-1),table=E.projectTable(s,s.turn);
   assert.deepEqual(table.data,spectator.data);
   assert(table.data.ships.flat(2).every(cell=>cell===null),'both fleets stay hidden on Table');
-  assert.deepEqual(table.tableActions,[],'unmigrated rules cannot infer public controls');
+  assert.deepEqual(table.tableActions,E.legalActions(s).map(({type,cell})=>({type,cell})),'only public shots are granted');
  }
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}
@@ -146,7 +146,7 @@ test('board game avatars keep the standard light palette',()=>{
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);const G=require('../packs/battleship/domain/geometry.js');let seed={rng:23};do{privateChanged.data.ships[1-actor]=G.autoPlace(seed,[],G.fleets[s.preset],true,E.random);}while(!privateChanged.data.ships[1-actor].flat().includes(cell));assert(E.validateState(privateChanged));assert.deepEqual(E.botAction(privateChanged),action);
  assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
@@ -227,4 +227,18 @@ test('Pexeso bot choice is invariant under permutations of never-revealed faces'
     const a=E.botAction(state),b=E.botAction(altered);
     assert.deepEqual(b,a,'unknown card faces must never influence a bot mistake');
   }
+});
+
+test('Battleship Table can fire for either authorized actor without exposing either fleet',()=>{
+ let state=create('battleship');
+ for(let i=0;i<2;i++){state=play(state,{type:'auto'});state=play(state,{type:'ready'});}
+ for(const actor of [0,1]){
+  state.turn=actor;
+  const projection=E.projectTable(state,actor),scene=V.render(projection,-1,projection.tableActions,{surface:'table',viewState:{fleet:actor===0?'enemy':'own'}});
+  assert.equal((scene.match(/data-action=/g)||[]).length,100,'public shots on the opponent field');
+  assert(!scene.includes('aria-label="undefined"'));assert(projection.data.ships.flat(2).every(cell=>cell===null));
+  const next=E.applyTableAction(state,actor,projection.tableActions[0]);assert.equal(next.data.shots[actor].length,1);
+ }
+ const spectator=V.render(E.project(state,-1),-1,[],{surface:'table'});
+ assert(!spectator.includes('data-action='));
 });

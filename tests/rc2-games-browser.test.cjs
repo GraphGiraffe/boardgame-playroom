@@ -104,7 +104,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      let state=E.createGame(id,{players,seed:17}),before;
      const measure=()=>{const projected=E.project(state,state.turn),actions=E.legalActions(state),scene=PlayroomViews.render(projected,state.turn,actions);
       document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game.name,state:projected,viewer:state.turn,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
-      const f=document.querySelector('.layout-field').getBoundingClientRect(),a=document.querySelector('.layout-actions')?.getBoundingClientRect();return {field:[f.left,f.top,f.width,f.height],actions:a?.height||0};};
+      const node=document.querySelector('.layout-field');if(!node)throw Error(id+' scene: '+document.querySelector('#app').textContent);const f=node.getBoundingClientRect(),a=document.querySelector('.layout-actions')?.getBoundingClientRect();return {field:[f.left,f.top,f.width,f.height],actions:a?.height||0};};
      before=measure();const action=E.botAction(state);if(!action)continue;state=E.applyAction(state,state.turn,action);const after=measure();
      if(before.field.some((value,i)=>Math.abs(value-after.field[i])>2))issues.push(`${id} field shifted after action: ${before.field} -> ${after.field}`);
      if(before.actions&&after.actions&&Math.abs(before.actions-after.actions)>2)issues.push(`${id} actions changed height: ${before.actions} -> ${after.actions}`);

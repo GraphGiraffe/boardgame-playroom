@@ -15,7 +15,8 @@
       check(record(definition) && definition.contractVersion === 1 && identifier(definition.id) &&
         integer(definition.minPlayers, 1, 32) && integer(definition.maxPlayers, definition.minPlayers, 32) &&
         ['create','validate','actions','reduce','project','result'].every(key => typeof definition[key] === 'function') &&
-        (definition.bot === undefined || typeof definition.bot === 'function'), 'MODEL_INVALID');
+        (definition.bot === undefined || typeof definition.bot === 'function') &&
+        (definition.observe === undefined || typeof definition.observe === 'function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
       Object.freeze(this);
@@ -73,6 +74,8 @@
       check(record(data), 'PROJECTION_INVALID');
       return snapshot({contractVersion:1, game:this.id, viewer, actor:viewer, audience:viewer < 0 ? 'public' : 'player',
         playerCount:position.playerCount, turn:position.turn, status:position.status,
+        ...(position.preset!==undefined?{preset:position.preset}:{}),
+        ...(position.revision!==undefined?{revision:position.revision}:{}),
         winners:position.winners, data,
         actions:this.legalActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
     }
@@ -85,7 +88,8 @@
     botAction(position, actor) {
       const projection = this.project(position, actor), actions = projection.actions;
       if (!actions.length) return null;
-      const chosen = this.#definition.bot?.(projection, actor, actions) ?? actions[0];
+      const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
+      const chosen = this.#definition.bot?.(projection, actor, actions, memory) ?? actions[0];
       const found = actions.find(value => command(value) === command(chosen));
       check(found !== undefined, 'BOT_ACTION_INVALID');
       return found;

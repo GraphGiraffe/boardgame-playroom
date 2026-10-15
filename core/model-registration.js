@@ -8,7 +8,7 @@
   'use strict';
   const Localization = root.PlayroomLocalization || require('../presentation/localization.js');
   root.PlayroomLocalization = Localization;
-  function adapt(engine, {definition, presentation, locales, version}) {
+  function adapt(engine, {definition, presentation, locales, version, stateVersion=1}) {
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
@@ -16,7 +16,7 @@
     const metadata = presentation.metadata;
     const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
-      data:state.data,rng:state.rng});
+      data:state.data,rng:state.rng,preset:state.preset,revision:state.move});
     function decorated(action,projection) { return {...action, label:text(presentation.action(action,projection))}; }
     const Events=root.PlayroomEvents||require('./events.js');
     function presentEvent(value,players) {
@@ -28,7 +28,7 @@
         ...(description.sound!==undefined?{sound:description.sound}:{})};
     }
     return {
-      id:model.id, version, modelContractVersion:1, model, presentEvent,
+      id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent,
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label)})),
@@ -59,7 +59,9 @@
       bot(state, actor) { const chosen = model.botAction(position(state), actor); return chosen ? decorated(chosen,model.project(position(state),actor)) : null; },
       result(state) {
         const summary = model.result(position(state));
-        return {label:text(presentation.metric(summary.metrics[0].id)), values:[...summary.metrics[0].values]};
+        const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
+        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],places:summary.places,metrics,
+          ...(metrics[1]?{detailLabel:metrics[1].label,detailMetricId:metrics[1].id,details:metrics[1].values}:{})};
       }
     };
   }

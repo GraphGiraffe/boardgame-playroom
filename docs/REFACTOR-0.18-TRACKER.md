@@ -2,7 +2,7 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: выполнены восемь разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-15: выполнены девять разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
@@ -47,9 +47,9 @@
 | Пак | Особенности, которые нельзя потерять | Перенос |
 | --- | --- | --- |
 | ludo | 1–3 dice/exit/guarantee/safe/capture/team help/stack/finish triangle | Впереди |
-| battleship | russian/classic/setup/manual/auto/ready/ship drag/observer follow | Впереди |
+| battleship | russian/classic/setup/manual/auto/ready/ship drag/observer follow | Domain/геометрия/scene/locales; API 3 / 0.2.0; публичные выстрелы, приватная расстановка |
 | yatzy | 15 categories/3 rolls/hold/release/upper bonus/scroll | Независимая модель/схема/scene/locales, API 3 / 0.2.0; выбранные проверки прошли |
-| pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Общая колода |
+| pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Domain/scene/locales; API 3 / 0.2.0; отдельная память бота |
 | gofish | 36/52/54/books/ask/response/repeat/empty stock | Общая колода |
 | oldmaid | 35/54/53/pairs/hidden draw/out order/points | Общая колода с исключением |
 | durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | Общая колода |
@@ -164,3 +164,14 @@ History владеет последовательностью immutable реви
 
 
 Финальная фиксация срезов 7–8: после переноса platform/web adapter выбранные Node группы дали **117/117** и **44/44**; реальные IndexedDB/recovery/artwork — **10/10**, ошибок/пропусков нет. PWA hashed shell — **1/1**. Сборка dist/refactor-0.18-services, SHA256SUMS **5/5**; извлечённый SDK ZIP действительно импортирует модели/processor/journal/recovery/scheduler и выполняет ход/compact restore с явными часами. Полный финальный набор 0.18 не запускался. Работа продолжается по оставшимся строкам реестра.
+
+
+## Девятый срез: перенос Морского боя и Пексесо
+
+- `core/model,case/rc2-games,case/views,case/game-screen,core/localization` — 73/73, fail/skipped 0.
+- Новые проверки: headless VM без ambient RNG/часов/engine/DOM; публичные выстрелы за обоих игроков Стола; запрет доступа к расстановке; no-sinking privacy; память Пексесо отдельно от viewer projection.
+- Прежний fixture бота Морского боя удалял флот и стал недопустимым по новой схеме; теперь он заменяет флот на другой корректный с сохранением наблюдённого попадания.
+- Полный рефакторинг не завершён: остальные domain, контроллеры, полный каталог ассетов/текстов и cutover остаются в плане. Публикация не выполнялась.
+
+- Браузерные `case/rc2-games-browser` — 3/3; `case/result-team-medallions-browser` — 1/1; `network/table` — 6/6. Исправлено дублирование панели полей в Table surface.
+- `build.py --prepare-dev --all-games --packs-dir ../playroom-paks/packs` и SHA256SUMS — 4/4 разработческих артефакта.
