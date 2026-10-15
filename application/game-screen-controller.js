@@ -22,7 +22,7 @@
    this.intake=this.intake.then(async()=>{if(this.closed||epoch!==this.epoch||this.history.open||frame.revision<this.queued)return;
     for(let index=this.queued+1;index<frame.revision;index++){
      const item=await this.client.history(index);if(this.closed||epoch!==this.epoch||this.history.open)return;
-     if(item?.kind!=='history'||item.revision!==index||!['sessionId','authorityEpoch','viewer','role','actor','game','packVersion'].every(key=>item[key]===frame[key]))throw Error('HISTORY_FRAME_INVALID');
+     if(item?.kind!=='history'||item.revision!==index||!['sessionId','authorityEpoch','viewer','role','game','packVersion'].every(key=>item[key]===frame[key]))throw Error('HISTORY_FRAME_INVALID');
      this.queue.push({...frame,...item,kind:'snapshot',actions:[],historyLength:frame.historyLength});this.queued=index;
     }
     this.queue.push(frame);this.queued=frame.revision;void this.drain();

@@ -297,7 +297,7 @@ test('player hands render every hidden piece and score units agree with the rule
         assert.equal((content.handHTML.match(/class="piece-back /g)||[]).length,state.data.hands[index].length,game);
         assert.equal(content.handCount,state.data.hands[index].length);
         assert.equal(content.open,false);
-        if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
+        if(game==='domino'){const open=E.project({...state,openHands:true},0);const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
       }
     }
     for(const viewer of [-1,0,1]){
@@ -355,7 +355,7 @@ test('relative seats keep indices, own hands and canonical spectator order',()=>
 });
 test('compact pack badges use numeric positions and mutually exclusive accessible roles',()=>{
   const snakes=make('snakes');snakes.data.positions=[0,16];
-  const html=render(snakes);assert.match(html,/data-motion-counter="position">0<\/span>/);assert.match(html,/data-motion-counter="position">16<\/span>/);
+  const html=render(snakes);assert.match(html,/data-motion-counter="position" aria-label="Клетка: 0"/);assert.match(html,/data-motion-counter="position" aria-label="Клетка: 16"/);
   const durak=make('durak');durak.data.taking=true;
   const taken=render(durak);assert.match(taken,/data-ui-icon="takeCards"/);assert.doesNotMatch(taken,/data-ui-icon="shield"/);assert.match(taken,/aria-label="Берёт"/);
   durak.data.taking=false;assert.match(render(durak),/data-ui-icon="shield"/);

@@ -2,7 +2,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomHistoryController=api;})(globalThis,function(){
  'use strict';
  const revision=value=>Number.isSafeInteger(value)&&value>=0;
- const same=(a,b)=>['sessionId','authorityEpoch','game','packVersion','viewer','role','actor'].every(key=>a?.[key]===b?.[key]);
+ const same=(a,b)=>['sessionId','authorityEpoch','game','packVersion','viewer','role'].every(key=>a?.[key]===b?.[key]);
  class HistoryController {
   constructor({read,changed=()=>{},reviewed=()=>{}}={}){this.read=read;this.changed=changed;this.reviewed=reviewed;this.live=null;this.open=false;this.index=null;this.requested=null;this.frame=null;this.ticket=0;this.boundary=null;this.visited=false;this.progress={receivedRevision:-1,presentedRevision:-1,reviewedRevision:null};}
   receive(frame){if(!revision(frame?.revision))throw Error('HISTORY_REVISION_INVALID');if(this.live&&!same(frame,this.live))this.reset();this.live=frame;this.progress.receivedRevision=Math.max(this.progress.receivedRevision,frame.revision);}

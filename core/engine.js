@@ -224,7 +224,7 @@
     const out = project(state, -1), projection = forState(state).tableProjection?.(state, actor);
     out.tableActor = projection?.actor ?? -1;
     out.tableActions = forState(state).tableChoices?.(state,actor) ?? projection?.actions ?? [];
-    if (projection) out.modelProjection = projection;
+    if (projection) {out.modelProjection = projection;out.scene=forState(state).scene(projection,state.players);}
     return out;
   }
   function tableCommand(state, actor, action) {

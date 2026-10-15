@@ -235,3 +235,14 @@ application/HistoryController владеет курсором/запросом/t
 Authority передаёт разрешённый переносимый SceneModel; UNO объявляет порядок игроков при reverse. Русские строки новых Web адаптеров ещё входят в будущий общий вынос каталога приложения. Room/pairing orchestration, полный AssetResolver, семантические metrics, compiler и API cutover остаются незавершёнными.
 
 Проверено: game-screen/game-flow/client-history — 16/16 до дополнения lifecycle; итог game-screen/authority/model-contract — 35/35. Local history layout — 24/24; client history — 3/3; network feedback — 7/7. Unified screen + UNO handoff — 20/20, затем новый personal layout — 5/5 (2/4/6 игроков, возврат поля, privacy, равные размеры, shortcuts). Финальные source build/SHA и полный выбранный gate — на окончательной паре RC.
+
+
+## Четырнадцатый срез: единые показатели, команды и результаты
+
+Все 12 SceneModel объявляют метрики с явными id/kind/value/label; generic playerContent строит счётчики из них. Повторные подсчёты в восьми Web views удалены. Результаты читают тот же SceneModel, без вызова игрового Web renderer и без сравнения чисел/русских подписей. Дополнительная строка определяется по metric IDs; ranking-only агрегат командного Лудо не дублируется. Позиция Змей отображается общим масштабируемым счётчиком вместо особого badge, motion counter имеет семантический ID.
+
+Команды принадлежат паку: Ludo manifest задаёт teamLayouts с явными seatTeams/teams IDs; лобби/карточки/результаты используют декларацию, без modulo и проверки имени preset в общем UI. Team layout передаётся в public room game descriptor. Domain геометрия Лудо, шрифт, раскладка на финише и SVG жетонов не менялись.
+
+SceneModel теперь пересобирается после authority action filtering: пауза, история и окно реакции не оставляют активных commands в переносимой сцене. История Стола различает audience и текущего actor: смена actor не сбрасывает курсор/границу.
+
+Проверено: pack-models/model-contract/game-screen — 30/30 до дополнительных regression cases; game-screen/authority/model-contract — 36/36; network/table с новым Scene grants — 7/7; views — 15/15. Browser first-player + Ludo teams — 2/2; results geometry — 1/1. Старые статические fixtures теперь явно объявляют команды, а пример открытого Домино проецирует openHands в модели, не подменяет один из двух DTO. Compiler, все asset families, полный каталог приложения, room/pairing separation и cutover остаются впереди.

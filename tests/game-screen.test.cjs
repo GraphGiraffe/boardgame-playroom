@@ -24,12 +24,13 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
 test('team results place the shared team disc behind each medal while solo results stay unchanged',()=>{
   const state={...projected,preset:'teams',status:'finished',winner:0,winners:[0,2],result:{places:[1,2,1,2],values:[8,5,8,5]},players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}]};
   const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
-  const html=Screen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges});
+  const playerContent=state.players.map((_,index)=>({team:teamBadges[index%2]}));
+  const html=Screen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent});
   assert.equal((html.match(/class="result-awards"/g)||[]).length,4);
   assert.equal((html.match(/class="player-medallion is-team"/g)||[]).length,4);
   assert.equal((html.match(/class="player-medallion is-place/g)||[]).length,4);
   assert.match(html,/Команда синяя/);assert.match(html,/Команда красная/);
-  assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо',teamBadges}).match(/player-medallion is-team/g)||[]).length,0);
+  assert.equal((Screen.resultMarkup({state:{...state,preset:'individual'},viewer:0,gameName:'Лудо'}).match(/player-medallion is-team/g)||[]).length,0);
 });
 
 test('results reuse the first-player disc, under a medal when one is awarded',()=>{
@@ -40,7 +41,7 @@ test('results reuse the first-player disc, under a medal when one is awarded',()
   const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
   assert.match(noMedal,/class="result-awards"><span class="result-place-text"[^>]*>4<\/span><span class="player-medallion is-first"/);
   assert.match(noMedal,/class="player-medallion is-first"/);
-  const teams=Screen.resultMarkup({state:{...state,preset:'teams'},viewer:0,gameName:'Лудо',teamBadges:[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}]});
+  const teams=Screen.resultMarkup({state:{...state,preset:'teams'},viewer:0,gameName:'Лудо',playerContent:[{team:{id:'blue',label:'синяя',color:'#668fad'}},{team:{id:'red',label:'красная',color:'#ce735d'}}]});
   assert.match(teams,/class="player-medallion is-team"[^>]*aria-label="Команда синяя · первый ход"/);
   assert.equal((teams.match(/class="player-medallion is-first"/g)||[]).length,0);
 });
@@ -108,4 +109,15 @@ test('one screen queue presents every recovered revision once and separates sele
  assert.equal(controller.context(frame(3),{scope:'match'}).viewState.field,'mine');assert.equal(controller.selection,'card');
  const gone=frame(4);gone.state.data.hands[0]=[];controller.context(gone,{scope:'match'});assert.equal(controller.selection,null);
  assert.deepEqual(controller.send({type:'next'}),{type:'next'});controller.dispose();assert.throws(()=>controller.send({type:'next'}),/SCREEN_CLOSED/);
+});
+
+test('result metrics and teams use identifiers independent of labels, equal values and preset names',()=>{
+ const UI=require('../core/ui.js'),team={id:'ocean',label:'Лазурные',color:'#668fad'};
+ const state={status:'finished',winner:0,winners:[0],turn:0,move:2,firstPlayer:0,preset:'custom-partners',players:[{name:'А',score:5},{name:'Б',score:0}],data:{},
+  scene:{players:[{player:0,team,metrics:[{id:'points',kind:'points',value:5,label:'Любое название'}]},{player:1,metrics:[{id:'points',kind:'points',value:0,label:'Другое'}]}]},
+  result:{places:[1,2],metrics:[{id:'points',label:'Итог',values:[5,0]},{id:'other',label:'Ничья разрешена по',values:[5,1]}]}};
+ const html=Screen.resultMarkup({state,viewer:0,gameName:'Пример'});
+ assert.match(html,/Команда Лазурные · первый ход/);assert.doesNotMatch(html,/Итог: 5/);assert.match(html,/Ничья разрешена по: 5/);
+ assert.equal(UI.teamFor({'custom-partners':{seatTeams:['ocean','sand','sand','ocean'],teams:[team,{id:'sand',label:'Песочные',color:'#e6ba52'}]}},'custom-partners',3).id,'ocean');
+ assert.equal(UI.teamFor({invalid:{teams:null}},'invalid',0),null);
 });

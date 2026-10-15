@@ -586,7 +586,7 @@
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const rules=defaultRules(gameId,g);
     const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||'Игрок'};
-    room=roomService.create({name:'Комната '+host.nickname,host,game:{id:gameId,name:g.name,version:active.version},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+    room=roomService.create({name:'Комната '+host.nickname,host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     lobbyParticipantId=host.id;room=roomService.configure(room.id,host.id,{transportMode:'hotseat'});
     for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
     renderLobby();
@@ -663,7 +663,7 @@
       const gameId=typeof form==='string'?form:form.elements.gameId.value,g=meta(gameId),active=activatePack(gameId);
       if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error('Этот пак пока не поддерживает сетевую игру.');
       const rules=defaultRules(gameId,g);
-      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version},rules,
+      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
         constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       closeModal(true);renderLobby();
     }catch(error){toast(error.message);}
@@ -740,11 +740,8 @@
   }
   function showResult() {
     if(!session||session.current.status!=='finished'||screen!=='table')return;
-    const state=session.current,winner=state.winner;
-    const shownViewer=isPass()?-1:viewer;
-    let playerContent=[];
-    try{playerContent=V.get(session.game)?.render(E.project(state,shownViewer),shownViewer,[],{})?.playerContent||[];}catch(_){}
-    openModal(GameScreen.resultMarkup({state,viewer:shownViewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки',teamBadges:catalog[session.game]?.teamBadges,playerContent}),'result-modal',{keepAudio:true});
+    const shownViewer=isPass()?-1:viewer,state=E.project(session.current,shownViewer);
+    openModal(GameScreen.resultMarkup({state,viewer:shownViewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки'}),'result-modal',{keepAudio:true});
   }
   function captureHistoryOrigin(kind){return {kind,session,sessionId,viewer,gate,paused,awaitingPass,screen,hubTab,scrollY:window.scrollY};}
   function restoreHistoryOrigin(){const origin=historyOrigin;if(!origin)return;historyOrigin=null;session=origin.session;sessionId=origin.sessionId;viewer=origin.viewer;gate=origin.gate;paused=origin.paused;awaitingPass=origin.awaitingPass;screen=origin.screen;hubTab=origin.hubTab;return origin;}

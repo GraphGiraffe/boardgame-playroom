@@ -59,3 +59,10 @@ Presentation.choice может вернуть MessageRef в confirmation/targetP
 `application/game-screen-controller.js` работает с client port (`snapshot`, `history(index)`, `send(action)`) и presentation callbacks. Он не читает DOM, engine registry, storage, сеть или часы глобального окружения. Контекст viewState имеет scope turn/match; выбранная карта проверяется по разрешённой руке. Ordered queue восстанавливает разрывы через тот же client port; cancel/dispose отсеивают поздние ответы. Synchronous local commits используют общий transition callback lifecycle с инъецированными часами.
 
 `application/history-controller.js` хранит live/frame/index/requested, защищает audience/session/pack/revision и отменяет устаревшие RPC. Маркер создаётся только явным `backfill(from,{origin:'backfill'})`; received/presented/reviewed раздельны. Web адаптеры управляют hotseat gate, focus, layout и локальными preferences. `state.scene` — уже разрешённый SceneModel из pack presentation, доступный будущим клиентам без Web renderer.
+
+
+### Метрики, команда и результат
+
+SceneModel.players содержит `player` (или id), metrics `{id,kind,value,label,resultUsage}` и необязательный team `{id,label,color}`. kind задаёт points/wins/pieces явно, подпись не влияет на оформление. Host форматирует labels после privacy projection; сохраняются semantic IDs. hand-count имеет отдельный ID. Карточки и результаты используют общую функцию playerContent и не пересчитывают игровой результат в Web renderer. Result.metrics могут объявить `display: 'ranking'` для агрегата, используемого для места, без повторной строки текста. Остальные дополнения показываются только если их ID отсутствует среди видимых счётчиков.
+
+Для лобби manifest.teamLayouts задаёт отображение по выбранному preset: `{seatTeams:['a','b','a','b'],teams:[{id:'a',label:'...',color:'#...'},...]}`. Соответствие мест относится к конкретному паку; общий UI не вычисляет команды остатком от деления. SceneModel.turnOrder при необходимости задаёт публичную последовательность (UNO reverse). Authority пересчитывает сцены после фильтрации actions, поэтому сохранённый/paused кадр не содержит доступных commands.

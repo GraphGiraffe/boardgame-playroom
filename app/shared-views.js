@@ -111,8 +111,7 @@
     playerTargets=new root.PlayroomPlayerTarget({selected:()=>selected,actions:()=>usable()?client.snapshot.actions:[],commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
     function result(){
       const snapshot=client.snapshot;if(snapshot?.state?.status!=='finished')return;
-      const playerContent=V.get(snapshot.state.game)?.render(snapshot.state,snapshot.viewer,[],{})?.playerContent||[];
-      show(GameScreen.resultMarkup({state:snapshot.state,viewer:snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',teamBadges:pack.manifest.teamBadges,playerContent,network:true}));
+      show(GameScreen.resultMarkup({state:snapshot.state,viewer:snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||'очки',network:true}));
     }
     async function viewHistory(index,{animate=false}={}){
       if(!historyOpen||!client.snapshot)return;

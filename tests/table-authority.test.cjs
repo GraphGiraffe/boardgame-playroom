@@ -15,7 +15,7 @@ const definition={...base,id:'table-access-test',
  reduce:(state,actor,action)=>({position:{...state,turn:1-actor,data:{...state.data,die:action.type==='roll'?2:3}},events:[]}),
  project:(state,viewer)=>({die:state.data.die,hands:state.data.hands.map((hand,owner)=>owner===viewer?hand:hand.map(()=>({hidden:true})))})};
 E.register(globalThis.PlayroomModelRegistration.adapt(E,{definition,
- presentation:{...presentation,action:()=>({key:'tictactoe.board.label',params:{}})},
+ presentation:{...presentation,scene:projection=>({contractVersion:1,id:'test-table',family:'board',players:[],die:projection.data.die}),action:()=>({key:'tictactoe.board.label',params:{}})},
  locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'}));
 function session(){return new Session(E,definition.id,{seed:'PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});}
 const request=(connection,action={type:'roll'},id='roll-1')=>P.command(connection.snapshot(),action,id);
@@ -128,4 +128,17 @@ test('MessagePort awaits durable Table commands and carries only public snapshot
   assert((await client.send({type:'roll'})).ok);assert.equal(authority.revision,1);publicOnly(client.snapshot);
   const frame=await client.history(0);publicOnly(frame);assert.deepEqual(frame.actions,[]);
  }finally{client.close();stop();authority.dispose();}
+});
+
+test('portable scene controls follow authority grants and Table actor changes do not change its audience',async()=>{
+ const E=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js');require('../packs/tictactoe/rules.js');
+ const session=new Session(E,'tictactoe',{seed:17,players:[{name:'A'},{name:'B'}]}),authority=new Authority(session),table=authority.connectTable([0,1]),player=authority.connect(0);
+ try{
+  const initial=table.snapshot();assert.equal(initial.actor,0);assert.equal(initial.state.scene.cells.filter(cell=>cell.command).length,9);
+  assert(table.dispatch(P.command(initial,{type:'place',cell:4},'scene-table-1')).ok);
+  const next=table.snapshot();assert.equal(next.actor,1);assert(P.sameAudience(initial,next));assert.equal(next.state.scene.cells.filter(cell=>cell.command).length,8);
+  const own=player.snapshot();assert((await player.dispatch(P.command(own,{type:'session-pause',paused:true,expectedControlRevision:own.controlRevision},'scene-pause'))).ok);
+  const paused=table.snapshot();assert.deepEqual(paused.actions,[]);assert(paused.state.scene.cells.every(cell=>cell.command===null));
+  assert(table.history(0).state.scene.cells.every(cell=>cell.command===null));
+ }finally{authority.dispose();}
 });

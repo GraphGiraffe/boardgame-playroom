@@ -129,7 +129,13 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
     const label=counter.label||(counter.kind==='wins'?'Победы':counter.kind==='pieces'?'Фишки':'Очки');
-    return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.kind==='pieces'?roundTokenArt({value:counter.value}):counter.value}</span>`;
+    return `<span class="player-score is-${counter.kind}" data-score-kind="${counter.kind}" data-score-id="${esc(counter.id||counter.kind)}" data-motion-counter="${esc(counter.id||counter.kind)}" aria-label="${esc(label)}: ${counter.value}" title="${esc(label)}: ${counter.value}">${counter.kind==='pieces'?roundTokenArt({value:counter.value}):counter.value}</span>`;
+  }
+  function teamFor(layouts,preset,seat){
+    const layout=layouts?.[preset];
+    if(!layout||!Array.isArray(layout.seatTeams)||layout.seatTeams.length>32||!Array.isArray(layout.teams)||layout.teams.length>16||!Number.isInteger(seat)||seat<0)return null;
+    const team=layout.teams.find(team=>team&&typeof team.id==='string'&&team.id===layout.seatTeams[seat]);
+    return team&&typeof team.label==='string'&&typeof team.color==='string'?team:null;
   }
   function playerMedallion({first=false,team=null,place=null}={}) {
     if(!first&&!team&&place==null)return '';
@@ -140,16 +146,18 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{
-      const cards=state.data.hands?.[index],open=cards?.some(card=>!card.hidden);
+      const semantic=state.scene?.players?.find(player=>(player.player??player.id)===index);
+      const metrics=semantic?.metrics?.filter(metric=>['points','wins','pieces'].includes(metric.kind));
+      const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
       const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?back(options.kind||'card'):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
-      return {handHTML,indicators:options.indicators?.(index,person)||[],...(options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||'очки',countLabel:options.countLabel||'в руке',...(cards?{handCount:cards.length}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+      return {handHTML,indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||'очки',countLabel:options.countLabel||'в руке',...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
-    const counters=content.counters??[{kind:content.scoreLabel==='победы'?'wins':'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
+    const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
     return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
@@ -198,7 +206,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if (!Localization) throw Error('Localization module is required');
     return new Localization.Translator({catalogs});
   }
-  const helpers = {viewApi:2,translator,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){

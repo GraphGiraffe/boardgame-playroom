@@ -32,6 +32,7 @@
       data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
     function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
+    function presentScene(projection,players){const scene=presentation.scene(projection);return {...scene,players:(scene.players||[]).map(person=>({...person,metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
     function presentEvent(value,players) {
       const description=presentation.event(value),params={...description.message.params};
       if(value.actor!==null)params.player=players[value.actor].name;
@@ -45,7 +46,7 @@
         ...(description.notice?{notice:{...description.notice,title:text(description.notice.title,players),detail:text(description.notice.detail,players)}}:{})};
     }
     return {
-      id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent,
+      id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label)})),
@@ -84,7 +85,7 @@
         }
         state.events=[...Events.append(state.events,changed.events,state.players.length,state.move)];
       },
-      project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data);out.scene=presentation.scene(out.modelProjection); },
+      project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data);out.scene=presentScene(out.modelProjection,state.players); },
       tableProjection(state, actor) { return model.projectTable(position(state),actor,state.events.filter(value=>value.visibility)); },
       tableChoices(state, actor) { const projection=model.projectTable(position(state),actor);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
       tableCommand(state, actor, action) { const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },

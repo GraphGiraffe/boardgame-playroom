@@ -12,8 +12,8 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     await page.goto(server.url);
     await page.evaluate(()=>{
       const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
-      const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
-      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges}),'result-modal');
+      const teams=[{id:'blue',label:'синяя',color:'#668fad'},{id:'red',label:'красная',color:'#ce735d'}];const playerContent=state.players.map((_,index)=>({team:teams[index%2]}));
+      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent}),'result-modal');
     });
     const badges=await page.locator('.result-awards').evaluateAll(wrappers=>wrappers.map(wrapper=>{
       const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect(),symbol=team.querySelector('svg')?.getBoundingClientRect(),disc=team.querySelectorAll('circle')[1];
