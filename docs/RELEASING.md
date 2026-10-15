@@ -1,6 +1,16 @@
 # Выпуск приложения и коллекции
 
-Текущая пара: приложение 0.17.4 и паки 0.6.2. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+Текущая пара: приложение 0.17.5 и паки 0.6.3. Версии игр независимы. main хранит выпуск, dev — интеграцию. Исторические теги и опубликованные файлы неизменяемы. Для этой пары применяется [раздельный порядок публикации](PACK-PUBLICATION-0.17.md): сначала проверенный каталог паков и production R2 binding, затем выпуск оболочки; после перехода игры могут обновляться без Pages deployment.
+
+## Выпущенная пара 0.17.5 / 0.6.3
+
+Лудо 0.1.12 выделяет фишки кругом. Морской бой 0.1.6 сохраняет ручной выбор поля между ходами, даёт зрителю автопоказ, держит результат выстрела минимум 750 мс и исправляет перетаскивание кораблей. Формат состояния игр не менялся; сохранения привязаны к точной версии пака.
+
+Паки прошли [task PR #56](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/56) и [release PR #57](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/57). [GitHub Release `v0.6.3`](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.3) закреплён за `3da95e68057f68e3e052663fe71cf16d92510701`. Все 15 скачанных файлов прошли `SHA256SUMS`. Адресные публикации R2 [Лудо #38661734775](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38661734775) и [Морского боя #38661893354](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38661893354) изменили только указанный пак каждая; итоговый снимок каталога `4475de4172e51e838bc015b28e081a2798c09147f533c12b80abbce601b64293` содержит версии 0.1.12 / 0.1.6.
+
+Приложение прошло [task PR #104](https://github.com/GraphGiraffe/boardgame-playroom/pull/104) и [release PR #105](https://github.com/GraphGiraffe/boardgame-playroom/pull/105). [GitHub Release `v0.17.5`](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.5) закреплён за `1aedea74bebf2caade1447b26f04cc516b3c6dba`. Локально и в [Actions gate #38662059672](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38662059672) прошли только явно выбранные `case/game-flow,case/rc2-games,case/rc2-games-browser,case/ludo-team-markers-browser,case/uno-drag` — 42/42 с точным SHA паков; пять скачанных файлов релиза прошли `SHA256SUMS`.
+
+После [preflight #38662683804](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38662683804) один [production deploy #38662908337](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38662908337) опубликовал deployment `0735cbc3-3347-4fc8-8e49-2982a00bdb50` со статусом `published`. Независимый read-only [postflight #38666962478](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38666962478) подтвердил этот deployment на основном адресе `playroom-hod-test.pages.dev`, binding `PLAYROOM_PACKS` и отключённые автоматические Git-деплои.
 
 ## Выпущенная пара 0.17.4 / 0.6.2
 
