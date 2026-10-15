@@ -30,7 +30,7 @@ Domain не импортирует UI, transport, storage или глобаль�
 - UiSelection: context ID (match/viewer/phase), source ID, target mode; invalidation задаётся семантикой, а не очисткой всего при каждом turn.
 - PresentationPlan: ordered effects, minimum visible time, completion/cancel; чтение DOM не определяет policy. Reaction-ready следует после нужного показа.
 
-Версии API назначаются при согласовании executable схем. В первом переносе новые структуры ещё не заменяют текущие engineApi 1/2 и viewApi 2.
+В четвёртом срезе назначен engineApi 3 для переносимой модели; viewApi 2 и внешний Session envelope пока сохраняются через временный адаптер. Остальные паки ещё используют engineApi 1/2. Это промежуточная миграция, не финальный runtime 0.18.
 
 ## ThemePreset и AssetResolver
 
@@ -81,3 +81,30 @@ Catalog — отдельные data-файлы namespace/locale, без испо
 Семейства skins пока содержат только classic: выбора несуществующих вариантов нет. Атрибуты `data-skin-*` и каталог — точка подключения будущего AssetResolver; переключение палитры внутри каждого SVG/data-image, все pack-specific surfaces и полное разделение view/domain не объявляются завершёнными. Принятое старое поле Лудо и игровые цвета не заменяются этим срезом.
 
 Регрессии `ui/appearance` проверяют preview/cancel/save/reload/delete, immutable builtins, геометрию редактора 320/390/740 px, контраст таблицы в dark, сохранность DOM/двух осей scroll/истории/открытой настройки/сохранения и отсутствие игровой команды на projected client. Проверка projected client использует настоящий authority/client через LocalTransport; это не повторная проверка WebRTC reconnect.
+
+
+## Четвёртый срез: независимые правила, события, проекции и сцена
+
+`core/model-runtime.js` содержит GameModel и ModelError. Он не импортирует UI, локализацию, storage, transport, часы или RNG. GameDefinition contractVersion=1 предоставляет create/validate/actions/reduce/project/result и необязательный bot. Модель принимает и возвращает immutable JSON, проверяет состояние, команды, переходы, события и результаты. Ambient randomness отсутствует; порт случайности для следующих игр будет добавлен явно.
+
+| Контракт | Реализованная форма |
+| --- | --- |
+| Position | playerCount, turn, status, winners, data |
+| ActionChoice | command={type, параметры}, visibility=public/private |
+| Transition | position + events; исходное состояние не меняется |
+| Event draft | type, actor/null, params, visibility={kind:public} либо {kind:players,players:[индексы]}; необязательный publicEvent |
+| Projection | contractVersion, game, viewer, actor, audience, playerCount, turn, status, winners, явные data/actions/events |
+| Result | winners, places, metrics=[{id,values}]; места определяют правила |
+| Scene Крестиков-ноликов | board geometry, стабильные cell IDs, owner/mark/command/MessageRef, player marks и типизированные metrics |
+
+Команда сравнивается по каноническому JSON с упорядоченными ключами; label/confirmation не входят в модель. Дополнительные поля не проходят как легальное действие. Rules выбирают исход и публикуют типизированные события. projectEvents фильтрует приватные параметры **до** presentation/перевода, publicEvent — отдельное безопасное событие. Нормализация неизвестного viewer даёт Зрителя. bot получает разрешённую проекцию и список канонических команд; его выбор снова проверяется.
+
+**Стол — Зритель плюс публичные действия игроков.** projectTable сохраняет зрительские data/events и viewer=-1, добавляет отдельный actor и только публичные команды. Приватность определяется объявлением правила, включая аргументы и доступность, а не названием игры или видимостью результата. Руки видны рубашками либо лицами в режиме открытых рук; кубики публичны; обе расстановки Морского боя скрыты во время партии. Полный контракт и состояние сетевого подключения — [MULTIVIEW](MULTIVIEW.md).
+
+`app/model-adapter.js` связывает GameModel с существующим Session/engine envelope и Translator. Это временная граница миграции: создаёт старые UI labels вне domain, передаёт канонические команды, публикует события и переводит первый result metric для старого экрана результатов. Адаптер сейчас принимает только публичные события; private drafts запрещены до переноса Session projection/event IDs. Canonical draft ещё не имеет durable ID/revision: их продолжает назначать Session. Персистентный event pipeline, все result metrics/tie-break facts и сетевое действие Стола остаются следующими этапами. При окончательном переходе адаптер и старые runtime контракты удаляются.
+
+`core/packs.js` получает modelAdapter как внедрённый порт от Web bootstrap; scoped PlayroomPack.adaptModel возвращает описание для scoped TabletopCore.register. Staging не изменяет основной реестр. В core нет импорта app/presentation. Node-хост перед raw source registration загружает app/model-adapter.js; загрузчик может получить свой modelAdapter. Web entrypoint/precache содержат runtime и адаптер. Remote catalog и authority whitelist поддерживают engineApi 3/modelProjection.
+
+Эталон — Крестики-нолики 0.2.0, engineApi=3, stateVersion=1: domain/game.js, presentation/scene.js, locales/ru/game.json и Web view.js. Знак X назначен фактическому первому игроку; renderer не выводит знак из индекса. Форма сохранённого board/marks не меняется, packVersion остаётся точной. Старая оболочка отклоняет engineApi 3. Другие игры ещё не перенесены.
+
+Source manifest sourceModules задаёт упорядоченные rules/view модули и JSON locales; оба сборщика встраивают их в автономные entrypoints, удаляют служебное поле и сохраняют исходники в files. Результат не зависит от соседнего checkout/CDN. Оба сборщика пока содержат одинаковый compiler helper; тест проверяет равенство результата и отказ некорректных путей/локалей. Объединение compiler/validators — отдельный этап контейнера.

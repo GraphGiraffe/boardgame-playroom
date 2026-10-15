@@ -8,6 +8,7 @@ const CORE=[
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './app/appearance.css','./app/appearance-models.js','./app/appearance-web.js','./app/appearance-ui.js',
   './core/ui.css','./core/input.css','./core/motion.css','./core/tooltips.css',
+  './core/model-runtime.js','./app/model-adapter.js',
   './core/random.js','./core/engine.js','./core/game-flow.js','./core/hand-overflow.js','./core/audio.js','./core/session.js','./core/protocol.js','./core/authority.js','./core/ui.js','./core/player-target.js','./core/tag-registry.js','./core/tags.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
   './app/version.js','./app/views.js','./app/remote-catalog.js','./app/pack-manager.js','./app/library.js','./app/multiplayer.js','./app/network-session-store.js','./app/network-client-history.js','./app/pairing.js','./app/acoustic-pairing.js' ,'./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/vendor/qrcode.js','./app/vendor/LICENSE.qrcode','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./app/session-client.js','./app/game-screen.js','./app/lobby-view.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
   './app/transports/webrtc.js','./app/transports/local.js'

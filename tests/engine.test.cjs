@@ -91,6 +91,8 @@ test('projection protects hands, stock, RNG, drawn identity and private event pa
     assert.equal(p.events.at(-1).text, 'secret card');
     const pile = game === 'domino' ? 'stock' : 'drawPile'; assert(spectator.data[pile].every(c => c.hidden));
     s.openHands = true; assert.deepEqual(E.project(s, 0).data.hands, s.data.hands);
+    for (const viewer of [-1, 99, 0.5, null, undefined, '0']) assert.deepEqual(E.project(s, viewer).data.hands, s.data.hands);
+    s.openHands = false;
     for (const viewer of [-1, 99, 0.5, null, undefined, '0']) assert(E.project(s, viewer).data.hands.flat().every(c => c.hidden));
     p.players[0].name = 'changed'; assert.equal(s.players[0].name, 'P0');
   }
@@ -363,7 +365,7 @@ test('offline packs validate metadata, entries and assets before registry mutati
   const parsed = manager.parse(source);
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null);assert(Object.isFrozen(parsed.files));
   const bad = modify => {const b=JSON.parse(JSON.stringify(source));modify(b);return b;};
-  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=3),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
+  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=4),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
   for(const b of [bad(b=>b.files['view.js']='throw Error("broken view")'),bad(b=>b.files['rules.js']='('),bad(b=>b.files['styles.css']='.x{background:url(https://example.invalid/x.png)}'),bad(b=>b.files['styles.css']='@import "https://example.invalid/x.css";')]) assert.throws(()=>manager.prepare(b));
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null,'failed prepare cannot persist or activate');
   assert.throws(()=>manager.install(source),/подготовьте/);

@@ -189,7 +189,7 @@
     const out = clone(state), pack = forState(state);
     if (!Number.isInteger(viewer) || viewer < 0 || viewer >= state.players.length) viewer = -1;
     delete out.rng;
-    if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || (out.openHands && viewer >= 0) ? hand : hidden(hand));
+    if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || out.openHands ? hand : hidden(hand));
     for (const key of ['drawPile', 'stock']) if (out.data[key]) out.data[key] = hidden(out.data[key]);
     out.events = out.events.map(e => {
       if (e.privateTo != null && !(Array.isArray(e.privateTo)?e.privateTo.includes(viewer):e.privateTo===viewer)) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind, sound:e.publicSound??null };
@@ -197,6 +197,18 @@
     });
     if (pack.project) pack.project(out, viewer, state);
     return out;
+  }
+  function projectTable(state, actor) {
+    const out = project(state, -1), projection = forState(state).tableProjection?.(state, actor);
+    out.tableActor = projection?.actor ?? -1;
+    out.tableActions = projection?.actions ?? [];
+    if (projection) out.modelProjection = projection;
+    return out;
+  }
+  function applyTableAction(state, actor, action) {
+    const authorize = forState(state).tableCommand;
+    if (!authorize) throw Error('Пак не объявил публичные действия Стола');
+    return applyAction(state, actor, authorize(state, actor, action));
   }
   function botAction(state, actor = state.turn) {
     if (!activePlayer(state, actor) || actor !== state.turn) return null;
@@ -237,7 +249,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, project, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, project, projectTable, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

@@ -210,7 +210,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
   const actionGroups=({start='',primary='',end='',exclusive=false})=>`<div class="game-action-bar"${exclusive?' data-exclusive="true"':''}><div data-action-position="start"${exclusive?' inert aria-hidden="true"':''}>${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end"${exclusive?' inert aria-hidden="true"':''}>${end}</div></div>`;
-  const helpers = {viewApi:2,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  function translator(catalogs) {
+    const Localization = globalThis.PlayroomLocalization;
+    if (!Localization) throw Error('Localization module is required');
+    return new Localization.Translator({catalogs});
+  }
+  const helpers = {viewApi:2,translator,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){
@@ -218,6 +223,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const anchor=point=>point&&typeof point==='object'&&typeof point.anchor==='string'&&/^[\w-]{1,80}$/.test(point.anchor)&&(point.label===undefined||typeof point.label==='string');
     if(!value||typeof value!=='object'||typeof value.trigger!=='string'||typeof value.entity!=='string'||!Number.isInteger(value.player)||value.player<0||typeof value.counter!=='string'||!anchor(value.origin)||!Array.isArray(value.steps)||value.steps.length>100||!value.steps.every(anchor)||(value.jump!==undefined&&!anchor(value.jump)))throw Error('Invalid motion sequence');
     return ` data-motion-sequence="${esc(JSON.stringify(value))}"`;
+  }
+  // Public Table commands are supplied by the authority/model projection.
+  // Layout does not grant a spectator the identity of an acting player.
+  function tableCommands(state, actions) {
+    return (state?.tableActions || []).filter(command => actions.some(action =>
+      Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
   function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
@@ -227,9 +238,9 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if(['content','scroll'].includes(value.fieldSizing)&&value.fieldAspect!==undefined)throw Error('Content fields cannot set fieldAspect');
     if(value.actionReserve!==undefined&&typeof value.actionReserve!=='boolean')throw Error('Invalid action reserve');
     const className=typeof value.className==='string'?value.className:'';
-    if(surface==='table')actions=[];
+    if(surface==='table')actions=tableCommands(state,actions);
     const e={...value.elements},content=value.playerContent;
-    if(value.actionReserve&&surface!=='table'&&!e.actions)e.actions='<div class="scene-actions"></div>';
+    if(value.actionReserve&&(surface!=='table'||state?.modelProjection?.audience==='public')&&!e.actions)e.actions='<div class="scene-actions"></div>';
     if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.team!==undefined&&p.team!==null&&(!p.team||typeof p.team.label!=='string'||typeof p.team.color!=='string'))||(p.indicators!==undefined&&!validIndicators(p.indicators))||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.icon!==undefined&& !['sword','shield','takeCards'].includes(b.icon)))))))))throw Error('Invalid player content');
     if(value.fieldGroups!==undefined){
       const groups=value.fieldGroups;
@@ -242,7 +253,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       e.participants=`<div class="players-panels opponent-hands">${seatOrder(state.players.length,viewer).map(i=>playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
-    const slots=elementNames.filter(name=>e[name]&&!((self||surface==='table')&&['actions','hand'].includes(name))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
+    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
     return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
@@ -259,7 +270,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return '<p class="scene-hint">Этот игровой пакет не загружен.</p>';const allowedActions=surface==='table'?[]:actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions}); }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return '<p class="scene-hint">Этот игровой пакет не загружен.</p>';const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions}); }
         catch (_) { return '<p class="scene-hint" role="alert">Не удалось показать игру. Вернитесь к списку игр и обновите этот пак.</p>'; }
       },
       cover(id){

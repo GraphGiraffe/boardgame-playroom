@@ -1,4 +1,5 @@
 'use strict';
+require('../app/model-adapter.js');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const E=require('../core/engine.js'),ids=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid','durak'];
 for(const id of ids)require(`../packs/${id}/rules.js`);
@@ -20,6 +21,12 @@ test('new packs, deck sizes and Durak variants finish with valid states',()=>{
 
 test('hidden boards and hands remain private in projected state',()=>{
  let s=create('battleship',2,'russian');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const sea=E.project(s,0);assert(sea.data.ships[0].flat().some(Number.isInteger));assert(sea.data.ships[1].flat().every(x=>x===null));
+ for(const openHands of [false,true]){
+  s.openHands=openHands;const spectator=E.project(s,-1),table=E.projectTable(s,s.turn);
+  assert.deepEqual(table.data,spectator.data);
+  assert(table.data.ships.flat(2).every(cell=>cell===null),'both fleets stay hidden on Table');
+  assert.deepEqual(table.tableActions,[],'unmigrated rules cannot infer public controls');
+ }
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}
 });

@@ -41,7 +41,7 @@
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error('Некорректные id или версия пакета');
     if(m.tileTheme!==undefined&&!['green','coral','blue','gold','violet'].includes(m.tileTheme))throw Error('Некорректная тема карточки пака');
     if(m.viewApi!==2)throw Error('Пакет требует API интерфейса 2; обновите пак');
-    if(![1,2].includes(m.engineApi)||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
+    if(![1,2,3].includes(m.engineApi)||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error('Пакет требует другую версию API движка');
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error('У пакета отсутствует название');
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error('Слишком много файлов в пакете');
     for(const path of paths){if(!pathOK(path)||typeof bundle.files[path]!=='string')throw Error('Некорректный путь или содержимое файла: '+path);if(!/\.(?:js|css|svg|json|txt|md)$/i.test(path))asset(bundle,path);}
@@ -74,16 +74,19 @@
     });
   }
   class Packs {
-    constructor({engine=root.TabletopCore,views=root.PlayroomViews,catalog=root.PlayroomCatalog,storage,document=root.document}={}){
+    constructor({engine=root.TabletopCore,views=root.PlayroomViews,catalog=root.PlayroomCatalog,storage,document=root.document,modelAdapter=root.PlayroomModelAdapter?.adapt}={}){
       if(!engine?.registerVersion||!engine?.activatePack||!views?.register||!views?.get||!views?.remove||!record(catalog))throw Error('Нужны движок, UI registry и каталог пакетов');
-      this.engine=engine;this.views=views;this.catalog=catalog;this.document=document;this.storage=storage||{get:()=>root.localStorage?.getItem(STORAGE),set:value=>root.localStorage?.setItem(STORAGE,value)};
+      this.engine=engine;this.views=views;this.catalog=catalog;this.document=document;this.modelAdapter=modelAdapter;this.storage=storage||{get:()=>root.localStorage?.getItem(STORAGE),set:value=>root.localStorage?.setItem(STORAGE,value)};
       this._items=new Map();this._active=new Map();this._bundled=new Set();this._removed=new Set();this._styles=new Map();this.warnings=[];
     }
     parse(value){return parse(value);}
     prepare(value){
       const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
-      const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version})};
+      const scope={PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,adaptModel:spec=>{
+        if(m.engineApi!==3||typeof this.modelAdapter!=='function')throw Error('Недоступен адаптер модели API 3');
+        return this.modelAdapter(this.engine,spec);
+      }})};
       const deny=()=>{throw Error('Регистрация версий недоступна во время подготовки пакета');};
       scope.TabletopCore=scope.PlayroomEngine=Object.freeze({...this.engine,register:pack=>{if(rules||pack?.id!==m.id)throw Error('Пакет регистрирует неверную или повторную игру');rules=pack;return pack;},registerVersion:deny,activatePack:deny,unregisterVersion:deny});
       scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,register:(id,render,cover,options={})=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Некорректный интерфейс пакета');const surfaces=options?.surfaces||{};if(!record(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Некорректные представления пакета');view={render,cover,surfaces:{...surfaces}};}});
@@ -97,6 +100,7 @@
       }
       if(!rules||!view||typeof rules.name!=='string'||!Number.isInteger(rules.min)||!Number.isInteger(rules.max)||rules.min<1||rules.max<rules.min||rules.max>32||!Array.isArray(rules.presets)||!rules.presets.length||!rules.presets.every(p=>p&&typeof p.id==='string')||!['create','legal','apply'].every(method=>typeof rules[method]==='function'))throw Error('В пакете нет корректных правил и интерфейса');
       if((rules.version&&rules.version!==m.version)||(rules.stateVersion&&rules.stateVersion!==m.stateVersion))throw Error('Версия правил не совпадает с manifest');
+      if(m.engineApi===3&&rules.modelContractVersion!==1)throw Error('Пакет API 3 не содержит независимую модель правил');
       const compiled={bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:scope.PlayroomCatalog[m.id],styles:css};
       if(!record(compiled.catalog))throw Error('Некорректные метаданные интерфейса');
       const token=Object.freeze({id:m.id,version:m.version,manifest:clone(m)});prepared.set(token,{owner:this,compiled});return token;

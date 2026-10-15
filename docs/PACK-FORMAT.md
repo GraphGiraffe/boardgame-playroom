@@ -32,7 +32,7 @@
 ## Поля и ограничения
 
 - `id`: латинская строчная буква, затем буквы, цифры, `_` или `-`; до 64 символов.
-- `version`: SemVer. Новый код публикуется с новой версией. `engineApi` равен `1` или `2`, обязательный `viewApi` — `2`; `stateVersion` — положительное целое число.
+- `version`: SemVer. Новый код публикуется с новой версией. В опубликованной линии `engineApi` равен `1` или `2`; ветка 0.18 также поддерживает `3`, обязательный `viewApi` — `2`; `stateVersion` — положительное целое число.
 - `name`: непустое название до 120 символов. `category`, `tagline`, `badge`, `estimatedDuration`, `capabilities` и `settings` определяют карточку и форму запуска.
 - Обязательны `rules.js`, `view.js`, `styles.css`; необязательный звуковой вход — `sounds.js`. Имена точек входа сейчас фиксированы.
 - До 128 файлов, суммарный JSON до 4 MiB. У библиотеки дополнительно есть внутренний лимит 20 MiB, но реальная квота браузерного хранилища может быть ниже. При отказе записи установленная версия не заменяется.
@@ -63,3 +63,24 @@
 ## Дополнения RC.4
 
 Актуальные контракты каталога, лобби, персональных настроек, scroll-поля, индикаторов, событий и приватности: [RC4-CONTRACTS](RC4-CONTRACTS.md). Новые реализации должны соблюдать эти требования совместно с основным контрактом.
+
+
+## Разработка 0.18: engineApi 3 и исходные модули
+
+Новый API правил использует независимую GameDefinition contractVersion=1, а представление по-прежнему viewApi 2. Эталон — Крестики-нолики 0.2.0 в companion ветке. Старая оболочка API 3 не принимает; опубликованные паки не переписываются. Контракты и ограничения временного адаптера: [REFACTOR-0.18-CONTRACTS](REFACTOR-0.18-CONTRACTS.md).
+
+Исходный manifest может содержать:
+
+```json
+{
+  "sourceModules": {
+    "rules": ["domain/game.js", "presentation/scene.js"],
+    "view": ["presentation/scene.js"],
+    "locales": {"ru": ["locales/ru/game.json"]}
+  }
+}
+```
+
+Это инструкция source builder, не runtime fetch. Модули только из domain/presentation/ui и с расширением .js, локали — locales/<locale>/*.json; до 32 файлов в каждом списке/32 локалей. Повторы, неверные пути, одинаковые ключи в каталогах одной локали отклоняются. Builder включает ресурсы в PlayroomPackResources.locales, модули в порядке списка перед соответствующим entrypoint, сохраняет исходные файлы в files и удаляет sourceModules из поставленного manifest.
+
+Web bootstrap предоставляет PlayroomModelAdapter и PlayroomLocalization. Загрузчик внедряет порт modelAdapter; API 3 вызывает PlayroomPack.adaptModel(specification), затем scoped TabletopCore.register. Если порта нет или pack не объявил modelContractVersion=1, prepare отклоняется до установки. Для raw Node источников bootstrap приложения загружает app/model-adapter.js перед rules.js; core ZIP сам не импортирует Web/application код.

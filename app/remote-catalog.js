@@ -7,7 +7,7 @@
     if(!input||input.format!=='playroom-catalog'||input.version!==1||!SEMVER.test(input.collection)||!Array.isArray(input.packs)||input.packs.length>128)throw Error('Некорректный каталог паков');
     const seen=new Set();
     for(const item of input.packs){
-      if(!item||!ID.test(item.id)||!SEMVER.test(item.version)||!Number.isSafeInteger(item.stateVersion)||item.stateVersion<1||![1,2].includes(item.engineApi)||item.viewApi!==2||!HEX.test(item.sha256)||item.url!==`/api/packs/files/${item.id}/${item.version}/${item.sha256}.playroom-pack.json`)throw Error('Некорректная запись каталога');
+      if(!item||!ID.test(item.id)||!SEMVER.test(item.version)||!Number.isSafeInteger(item.stateVersion)||item.stateVersion<1||![1,2,3].includes(item.engineApi)||item.viewApi!==2||!HEX.test(item.sha256)||item.url!==`/api/packs/files/${item.id}/${item.version}/${item.sha256}.playroom-pack.json`)throw Error('Некорректная запись каталога');
       if(seen.has(item.id))throw Error('Повтор игры в каталоге');seen.add(item.id);
     }
     return input;

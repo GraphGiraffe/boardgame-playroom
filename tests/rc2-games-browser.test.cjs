@@ -2,6 +2,52 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+test('layered model renders assigned marks, public Table controls and projected client history',{timeout:45000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(fixture.url);
+  if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(form=>form.requestSubmit());}
+  const captures=path.join(root,'tmp_files/refactor-0.18-model');fs.mkdirSync(captures,{recursive:true});
+  for(const [width,height]of [[320,640],[390,740],[740,390]])for(const theme of ['light','dark']){
+   await page.setViewportSize({width,height});
+   const result=await page.evaluate(({theme})=>{
+    PlayroomAppearanceUI.runtime.service.select(theme);
+    const E=TabletopCore,session=new TabletopSession(E,'tictactoe',{seed:17,firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Аня'},{name:'Борис'}]});
+    const next=E.applyTableAction(session.current,1,{type:'place',cell:4});
+    const same=JSON.stringify(next)===JSON.stringify(E.applyAction(session.current,1,{type:'place',cell:4}));
+    const table=E.projectTable(next,0),actions=table.tableActions;
+    const scene=PlayroomViews.render(table,-1,actions,{surface:'table'});
+    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Крестики-нолики',state:table,viewer:-1,actions,scene,turnText:'Публичный стол'});
+    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    const publicHtml=PlayroomViews.render(E.project(next,-1),-1,[],{surface:'table'});
+    const replayHtml=PlayroomViews.render(table,-1,[],{surface:'table'});
+    return {same,mark:document.querySelectorAll('.ttt-cell')[4].classList.contains('cross'),
+      buttons:document.querySelectorAll('.ttt-cell[data-action]').length,
+      viewer:table.modelProjection.viewer,actor:table.modelProjection.actor,
+      readonly:!publicHtml.includes('data-action=')&&!replayHtml.includes('data-action='),
+      overflow:document.documentElement.scrollWidth>innerWidth+1};
+   },{theme});
+   assert.deepEqual(result,{same:true,mark:true,buttons:8,viewer:-1,actor:0,readonly:true,overflow:false});
+   if(width===390)await page.screenshot({path:path.join(captures,`table-${theme}-390.png`)});
+  }
+  await page.evaluate(async()=>{
+   const session=new TabletopSession(TabletopCore,'tictactoe',{seed:17,firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Аня'},{name:'Борис'}]});
+   const authority=new SessionAuthority(session),connection=authority.connect(1),client=new PlayroomSessionClient(PlayroomLocalTransport(connection));
+   await client.refresh();await client.send({type:'place',cell:4});
+   const mounted=PlayroomSharedViews.mount(client,PlayroomPacks.exportView('tictactoe',session.packVersion),{surface:'combined'});mounted.render();
+   window.modelNetwork={authority,client,mounted};
+  });
+  await page.locator('.network-game .ttt-cell.cross').waitFor();
+  assert.equal(await page.locator('.network-game .ttt-cell[data-action]').count(),0,'other player turn is read only');
+  const history=await page.evaluate(async()=>{
+   const {authority,client}=modelNetwork,frame=await client.transport.history(0);
+   return {revision:authority.revision,cell:client.snapshot.state.modelProjection.data.board[4],
+     initial:frame.state.modelProjection.data.board[4],secret:JSON.stringify(client.snapshot).includes('"rng"')};
+  });
+  assert.deepEqual(history,{revision:1,cell:1,initial:null,secret:false});assert.deepEqual(errors,[]);
+  await page.evaluate(()=>{modelNetwork.mounted.destroy();modelNetwork.client.close();modelNetwork.authority.dispose();});
+ }finally{await browser.close();await fixture.close();}
+});
 test('new game scenes preserve proportions, reachable controls and hands before and after a move',{timeout:120000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const page=await browser.newPage({viewport:{width:390,height:740}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}assert.equal(await page.locator('#modal-root .modal').count(),0);const games=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid'];

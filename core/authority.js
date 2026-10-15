@@ -55,7 +55,7 @@
       const visible=live?r.effects:previous?transfers(previous,state).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','openHands','data','events'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','openHands','data','events','modelProjection'])if(projected[key]!==undefined)safe[key]=projected[key];
       return freeze(clone({protocolVersion:1,kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions:live&&!r.paused&&viewer>=0&&!state.players[viewer]?.bot?s.engine.legalActions(state,viewer).filter(action=>this._reactionDecision(viewer,action)!=='REACTION_WAIT'):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}

@@ -17,9 +17,9 @@
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
-| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract | Статика |
+| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и Крестики-нолики перенесены; остальные впереди |
 | F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity | Статика |
-| F14 | Скрытые данные игрока/зрителя/стола | rc2-games, view-contract, authority | Статика |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт Стол = Зритель + публичные действия проверен; сетевой Table routing впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
@@ -39,7 +39,7 @@
 | F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Статика; общий каталог нужен |
 | F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Статика; живая старая PWA — приёмка выпуска |
 | F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Модель и Web проверены; AssetResolver / все материалы впереди |
-| F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes проверены; перенос остальных текстов впереди | Модель 6/6 |
+| F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes + Крестики-нолики: metadata/rules/actions/events/aria | Модель и первый пак; остальные тексты впереди |
 | F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Сборки HTML/PWA/паков, SHA и browser boot passed |
 
 ## Состояние паков
@@ -57,7 +57,7 @@
 | checkers | forced chain/king/promotion/deferred capture/draw | Впереди |
 | domino | endpoints/orientation/stock/pass/fish/score/long chain | Впереди |
 | snakes | 64/100/bounce/link once/same-cell pawns/die | Впереди |
-| tictactoe | assigned first/X-O/win/draw/bot/public | Первый кандидат нового API |
+| tictactoe | assigned first/X-O/win/draw/bot/public | Domain/scene/locales/Web разделены, engineApi 3, версия 0.2.0 в разработке |
 
 ## Проверенный первый срез
 
@@ -91,3 +91,24 @@
 - Автономный HTML в Chrome без HTTP/CDN: 12 игр, dark picker, editor с 54 цветом, page errors 0.
 
 Кадры разработческой проверки: `tmp_files/refactor-0.18-appearance/` (игнорируются Git). Обнаруженные при работе ошибки приоритета CSS на 320 px, старых hub overrides и светлых sticky cells Ятзи исправлены. Это приёмка данного среза; общий реестр F01–F35 и полный переход 0.18 ещё не закрыты. Release/Actions/deploy не запускались, публичная пара остаётся 0.17.6 / 0.6.5.
+
+
+## Четвёртый срез: независимая модель и эталонный пак
+
+Введён GameModel с immutable Position/ActionChoice/Transition/Projection/Result; события фильтруются до presentation. Крестики-нолики 0.2.0 перенесены на domain/presentation/locales/Web, engineApi 3. Существующий Session пока подключён временным app/model-adapter.js; staging, remote catalog, public projections и автономные builders учитывают новый API. Подробности и незакрытые границы — [контракты](REFACTOR-0.18-CONTRACTS.md#четвёртый-срез-независимые-правила-события-проекции-и-сцена).
+
+Решение владельца о Столе зафиксировано в MULTIVIEW.md: видимость Зрителя + явно публичные действия. Публичные кубики видны, закрытые руки рубашками/открытые лицами, обе расстановки Морского боя скрыты. Actor не повышает viewer. Сетевые role/actor binding/receipts/history и контроллер Стола остаются следующим этапом; обычный spectator connection read-only.
+
+Выбраны проверки по затронутым модулям, полный цикл и Actions не запускались:
+
+- `core/model,case/engine,case/session,case/view-contract,case/rc2-games,case/authority` — 112/112; после дополнительного запрета приватных событий до presentation повторный `core/model` — 11/11.
+- `case/rc2-games,case/packs-reconcile,case/domain-foundation,case/durable-authority,case/views` — 56/56; в том числе обе скрытые расстановки Морского боя на Столе при openHands=false/true.
+- `case/rc2-games-browser,ui/appearance` — 6/6: 320/390/740 px, light/dark, X назначенного первого игрока, public Table commands, spectator/replay read-only, реальный projected client через authority/transport и история.
+- В core/model проверяется весь достижимый граф независимым bitboard oracle: по 5478 позиций и 16167 переходов для каждого назначения первого игрока; immutable state, строгие команды, приватные события, бот, сохранение/повтор и равенство bundles двух builders.
+- Выбранные `remote pack loader checks` и `built PWA uses content-addressed` — 2/2; runtime/адаптер в PWA cache и integrity manifest.
+- `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-model` + SHA256SUMS — 5/5.
+- Companion standalone `bash scripts/codex/check.sh` — 12 паков, SHA 15 файлов.
+- Финальный `layered model renders` в `tests/rc2-games-browser.test.cjs` — 1/1; кадры без перекрывающего стартового диалога сохранены в `tmp_files/refactor-0.18-model/`.
+- Автономный HTML через file:// в Chrome: 12 игр, Крестики-нолики 0.2.0, X у назначенного первого игрока (индекс 1), 8 публичных команд после первого хода, dark theme, page errors 0.
+
+Это разработческий срез, не завершение 0.18. Опубликованные 0.17.6 / 0.6.5 не изменены. Общая миграция Session/events/results/authority, оставшиеся 11 паков, все материалы AssetResolver и финальное удаление старых контрактов остаются в реестре.
