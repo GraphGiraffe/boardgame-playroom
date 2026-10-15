@@ -21,7 +21,7 @@ fi
 cd -- "$playroom_root"
 node scripts/codex/browser.cjs >/dev/null
 shopt -s nullglob
-js_files=(app/*.js app/transports/*.js core/*.js dev/*.js dev/*.cjs scripts/*.cjs scripts/codex/*.cjs tests/*.cjs)
+js_files=(application/*.js presentation/*.js app/*.js app/transports/*.js core/*.js dev/*.js dev/*.cjs scripts/*.cjs scripts/codex/*.cjs tests/*.cjs)
 for script in "${js_files[@]}"; do node --check "$script"; done
 shopt -u nullglob
 for script in build.sh scripts/codex/*.sh; do bash -n "$script"; done

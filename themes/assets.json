@@ -1,0 +1,68 @@
+{
+  "card-face": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "card-back": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "die": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "ship": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "checker": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "round-token": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "domino": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "board": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "counter": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "bubble": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  },
+  "score-table": {
+    "default": "classic",
+    "variants": [
+      "classic"
+    ]
+  }
+}

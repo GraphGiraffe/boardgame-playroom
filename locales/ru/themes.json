@@ -1,0 +1,26 @@
+{
+  "themes.title": "Темы и скины",
+  "themes.light": "Светлая",
+  "themes.dark": "Тёмная",
+  "themes.custom": "Моя тема",
+  "themes.copy": "Создать копию",
+  "themes.name": "Название темы",
+  "themes.palette": "Палитра",
+  "themes.skins": "Скины",
+  "themes.preview": "Предпросмотр",
+  "themes.save": "Сохранить",
+  "themes.apply": "Применить",
+  "themes.rename": "Переименовать",
+  "themes.delete": "Удалить тему",
+  "themes.cancel": "Отмена",
+  "themes.local": "Оформление сохраняется на этом устройстве.",
+  "themes.builtin": "Стандартную тему можно использовать как основу своей.",
+  "themes.unavailable-skin": "Выбранный скин недоступен. Используется стандартный.",
+  "themes.saved": "Тема «{name}» сохранена.",
+  "themes.saved-count": {
+    "one": "Сохранена {count} тема",
+    "few": "Сохранены {count} темы",
+    "many": "Сохранено {count} тем",
+    "other": "Сохранено {count} темы"
+  }
+}

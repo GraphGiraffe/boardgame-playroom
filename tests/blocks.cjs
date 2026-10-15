@@ -2,6 +2,8 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file": "appearance.test.cjs", "profiles": ["app"], "subblock": "core/appearance"},
+    {"file": "localization.test.cjs", "profiles": ["app"], "subblock": "core/localization"},
     {"file": "domain-foundation.test.cjs", "profiles": [], "subblock": "core/domain"},
     {"file": "engine.test.cjs", "profiles": [], "subblock": "core/state"},
     {"file": "session.test.cjs", "profiles": ["app"], "subblock": "core/state"},

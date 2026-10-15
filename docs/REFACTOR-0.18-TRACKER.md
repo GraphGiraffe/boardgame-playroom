@@ -38,8 +38,8 @@
 | F30 | Результаты/показатели/места/аватар | result-team-medallions-browser, game-screen, rc2-games | Статика |
 | F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Статика; общий каталог нужен |
 | F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Статика; живая старая PWA — приёмка выпуска |
-| F33 | Themes/skins/editor/toolbar | Новый контракт; runtime ещё не реализован | Запланировано |
-| F34 | Locales/key/params/plural/aria/fallback | Новый контракт; полный перенос текстов впереди | Запланировано |
+| F33 | Themes/skins/editor/toolbar | appearance model + presets + repository port проверены; редактор и Web-подключение впереди | Модель 10/10 |
+| F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes проверены; перенос остальных текстов впереди | Модель 6/6 |
 | F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Сборки HTML/PWA/паков, SHA и browser boot passed |
 
 ## Состояние паков
@@ -69,3 +69,5 @@
 - В готовом автономном HTML: 12 зарегистрированных игр, создание/валидация/доступные действия 4 карточных игр, RNG загружен, page errors 0. PWA document/worker ссылаются на один хешированный RNG asset.
 
 Это приёмка извлечения RNG/колоды и подключения сборки. Полная приёмка 0.18, themes/locales UI и network/layout всех сценариев не выполнялась. Первоначальные ошибки загрузки VM и пути сборщика исправлены; перечисленные результаты относятся к исправленному коду. Артефакты разработческие, не опубликованы под прежними версиями.
+
+Второй срез: `core/appearance,core/localization` — 16/16. UI ещё не переключает палитру; тёмный пресет является данными для последующего renderer. Сохранение плана в удалённой dev подтверждено PR #116 (squash 27988f7). Разрешение владельца распространяется на коммиты, push, PR, релизы и деплой по обычным правилам проекта.
