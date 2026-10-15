@@ -426,7 +426,7 @@
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state), passProtected=handoffDelay()>0;
     const shownViewer=gate!==null?-1:viewer, projected=E.project(state,shownViewer);
-    const identity=[sessionId,state.game,shownViewer,state.turn].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
+    const identity=[sessionId,state.game,shownViewer,...(state.game==='battleship'?[]:[state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
     projected.players=projected.players.map(p=>({...p,local:!p.bot}));
     if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';

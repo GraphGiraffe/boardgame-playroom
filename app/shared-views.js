@@ -46,7 +46,7 @@
       if(selected!==null&&hand&&!hand.some(c=>c.id===selected))selected=null;
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
-      const identity=[s.game,s.viewer,s.state.turn].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
+      const identity=[s.game,s.viewer,...(s.game==='battleship'?[]:[s.state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:H.viewPreferences(s.game,s.viewer),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:newHistoryBoundary}):'';
       const markup=GameScreen.render({
