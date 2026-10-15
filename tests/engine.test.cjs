@@ -3,6 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { performance } = require('node:perf_hooks');
 const E = require('../core/engine.js');
+const packsRoot=require('node:fs').realpathSync(__dirname+'/../packs');
+const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain/standard-deck.js'));
 for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
 const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
@@ -25,7 +27,7 @@ function dominoState(hands, chain, stock = []) {
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; return s;
+  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};
@@ -201,15 +203,15 @@ test('durak beats by suit/rank or trump, attacker may add defense rank', () => {
 
 test('durak take permits throwing only matching ranks within start hand limit', () => {
   let s=durakState([[card('♠',7),card('♦',7),card('♣',7),card('♣',9)],[card('♠',6),card('♦',6)]]);
-  s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); assert.equal(s.turn,0); assert(!has(s,{card:'♣9'}));
+  const discarded=s.data.discard.length;s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); assert.equal(s.turn,0); assert(!has(s,{card:'♣9'}));
   s=act(s,{type:'attack',card:'♦7'}); assert.deepEqual(types(s),['done']); s=act(s,{type:'done'});
-  assert.equal(s.data.hands[1].length,4); assert.equal(s.data.discard.length,0); assert.equal(s.turn,0); assert.equal(s.data.table.length,0); assert.equal(s.data.attackLimit,4);
+  assert.equal(s.data.hands[1].length,4); assert.equal(s.data.discard.length,discarded); assert.equal(s.turn,0); assert.equal(s.data.table.length,0); assert.equal(s.data.attackLimit,4);
 });
 
 test('durak draws attacker first, trump last, and resolves last cards at end of bout', () => {
-  let s=durakState([[card('♠',7)],[card('♠',8)]],[card('♥',6),card('♦',10)]);
+  let s=durakState([[card('♠',7)],[card('♠',8)]],[card('♥',6),card('♦',10)]);const discarded=s.data.discard.length;
   s=act(s,{type:'attack',card:'♠7'}); assert.equal(s.status,'playing'); s=act(s,{type:'defend',card:'♠8',target:0}); assert.equal(s.status,'playing');
-  s=act(s,{type:'done'}); assert.deepEqual(s.data.hands[0].map(c=>c.id),['♦10','♥6']); assert.equal(s.data.discard.length,2); assert.equal(s.winner,1);
+  s=act(s,{type:'done'}); assert.deepEqual(s.data.hands[0].map(c=>c.id),['♦10','♥6']); assert.equal(s.data.discard.length,discarded+2); assert.equal(s.winner,1);
   s=durakState([[card('♠',7)],[card('♠',8)]]); s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'defend',card:'♠8',target:0}); s=act(s,{type:'done'});
   assert.equal(s.status,'finished'); assert.equal(s.winner,null);
   s=durakState([[card('♠',7)],[card('♠',6)]]); s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); s=act(s,{type:'done'}); assert.equal(s.winner,0);

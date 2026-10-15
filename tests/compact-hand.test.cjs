@@ -270,13 +270,13 @@ test('Compact card hands preserve readable previews and each game’s play contr
       const p = await exposedPoint(card(page,'♠6'));
       await page.mouse.click(p.x,p.y,{clickCount:2}); await expectMove(page,1);
       const s = await state(page); assert.equal(s.data.table.length,1); assert.equal(s.data.table[0].attack.id,'♠6');
-      assert.equal(s.events.filter(e=>e.kind==='attack').length,1);
+      assert.equal(s.events.filter(e=>e.type==='durak.attacked').length,1);
     });
     await check('An upward Durak touch swipe commits the chosen legal card once', {saved: durakFixture(), touch:true}, async ({page,context}) => {
       const cdp = await context.newCDPSession(page), p = await exposedPoint(card(page,'♠6'));
       await touch(cdp,'touchStart',p); await touch(cdp,'touchMove',{x:p.x,y:p.y-60}); await touch(cdp,'touchEnd'); await expectMove(page,1);
       const s = await state(page); assert.equal(s.data.table.length,1); assert.equal(s.data.table[0].attack.id,'♠6');
-      assert.equal(s.events.filter(e=>e.kind==='attack').length,1);
+      assert.equal(s.events.filter(e=>e.type==='durak.attacked').length,1);
     });
     await check('A Durak card that can defend two attacks still requires an explicit target', {saved: durakFixture(6,true), touch:true}, async ({page}) => {
       assert.equal(await card(page,'♠14').getAttribute('data-action'),null);
@@ -316,7 +316,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
         await assertDurakTableFit(page,pairCount,openHands,'before defense');
         if (pairCount !== 6) return;
         const p = await exposedPoint(card(page,defense)); await page.touchscreen.tap(p.x,p.y); await expectMove(page,1);
-        let s = await state(page); Core.validateState(s); assert.equal(s.data.table.at(-1).defense.id,defense); assert.equal(s.events.filter(e=>e.kind==='defend').length,1);
+        let s = await state(page); Core.validateState(s); assert.equal(s.data.table.at(-1).defense.id,defense); assert.equal(s.events.filter(e=>e.type==='durak.defended').length,1);
         await page.locator('[data-command=pass-device]:not(:disabled)').tap();
         if (await page.locator('.handoff [data-command=unlock]').count()) await page.locator('.handoff [data-command=unlock]').tap();
         await assertDurakTableFit(page,pairCount,openHands,'after defense',ownCount-1);

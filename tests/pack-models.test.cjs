@@ -149,15 +149,15 @@ test('model start validates setup events and scoring without a Session or engine
 
 test('each migrated pack definition executes in isolation with explicit deterministic ports',()=>{
  const entries={tictactoe:null,yatzy:'PlayroomYatzyCategories',battleship:'PlayroomBattleshipGeometry',pexeso:'deck',
-  oldmaid:'deck',gofish:'deck',ludo:'PlayroomLudoBoard',snakes:null,domino:null,checkers:'PlayroomCheckersBoard'};
+  oldmaid:'deck',gofish:'deck',ludo:'PlayroomLudoBoard',snakes:null,domino:null,checkers:'PlayroomCheckersBoard',durak:'durak'};
  for(const [id,dependency]of Object.entries(entries)){
   const context=vm.createContext({}),base=path.join(packs,'packs',id),manifest=JSON.parse(fs.readFileSync(base+'/manifest.json'));
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
   const files=['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file));
-  if(dependency==='deck')files.push(path.join(packs,'shared/domain/standard-deck.js'));
+  if(['deck','durak'].includes(dependency))files.push(path.join(packs,'shared/domain/standard-deck.js'));
   files.push(...manifest.sourceModules.rules.map(file=>path.join(base,file)));
   for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
-  const dependencySource=dependency==='deck'?'PlayroomPackDomain.standardDeck':dependency||'undefined';
+  const dependencySource=dependency==='durak'?'{Deck:PlayroomPackDomain.standardDeck,Cards:PlayroomDurakCards}':dependency==='deck'?'PlayroomPackDomain.standardDeck':dependency||'undefined';
   const result=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
    const definition=globalThis.PlayroomPackDefinition||PlayroomPackDefinitionFactory({rollDie:PlayroomRandom.rollDie,random:PlayroomRandom.random,shuffle:PlayroomRandom.shuffle},${dependencySource});
    const model=new PlayroomModelRuntime.GameModel(definition),preset=PlayroomPackPresentation.metadata.presets[0].id;
@@ -170,4 +170,21 @@ test('each migrated pack definition executes in isolation with explicit determin
   assert.equal(result.initialTurn,1,id+' first player');
   for(const key of ['TabletopCore','document','localStorage','window','fetch'])assert.equal(context[key],undefined,id+' '+key);
  }
+});
+
+
+test('Durak Table allows public responses and masks all hands without private card choices',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js');
+ const base=path.join(packs,'packs/durak'),Deck=require(path.join(packs,'shared/domain/standard-deck.js'));
+ const model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle},{Deck,Cards:require(base+'/domain/cards.js')}));
+ let state=model.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17,options:{variant:'throwin',deck:54}});
+ const first=model.legalActions(state,0).find(action=>action.type==='attack');assert(first);
+ assert(model.projectTable(state,0).actions.every(action=>!action.card));
+ state=model.apply(state,0,first).position;
+ const table=model.projectTable(state,state.turn);assert(table.data.hands.flat().every(card=>card.hidden));
+ assert(table.actions.some(action=>action.type==='take'));assert(!table.actions.some(action=>action.card));
+ assert.throws(()=>model.commandFor(state,state.turn,model.legalActions(state,state.turn).find(action=>action.card),'table'));
+ const changed=model.apply(state,state.turn,{type:'take'});
+ assert(changed.events.every(event=>event.type.startsWith('durak.')));
+ assert(changed.events.every(event=>!Object.hasOwn(event,'text')));
 });

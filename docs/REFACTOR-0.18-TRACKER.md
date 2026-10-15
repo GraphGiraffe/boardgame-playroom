@@ -17,9 +17,9 @@
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
-| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и 10 паков перенесены; UNO и Дурак впереди |
+| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и 11 паков перенесены; UNO впереди |
 | F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | History и общий CommandProcessor перенесены; выбранные authority/durable/table проверки прошли |
-| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды 10 моделей / приватные карточные choices; UNO и Дурак впереди |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды 11 моделей / приватные карточные choices; UNO впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
@@ -52,7 +52,7 @@
 | pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Domain/scene/locales; API 3 / 0.2.0; отдельная память бота |
 | gofish | 36/52/54/books/ask/response/repeat/empty stock | API 3 / 0.2.0; domain/scene/locales; публичные сообщения, приватные choices |
 | oldmaid | 35/54/53/pairs/hidden draw/out order/points | API 3 / 0.2.0; stateVersion 4 с points; публичный слепой draw, приватные руки |
-| durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | Общая колода |
+| durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | API 3 / 0.5.0; domain/cards/game/scene/locales; составной заход, переводы и скрытая раздача |
 | uno | 108 cards/color/penalty/manual-auto/declarations/protection | Впереди |
 | checkers | forced chain/king/promotion/deferred capture/draw | API 3 / 0.4.0; domain/board/scene/locales; семантический capture вместо разбора подписи |
 | domino | endpoints/orientation/stock/pass/fish/score/long chain | API 3 / 0.4.0; domain/scene/locales; явный ascending result и начисление очков |
@@ -195,3 +195,19 @@ GameModel.start возвращает начальный Transition с факта
 UNO/Дурак, общие screen/history/input/room controllers, все семейства AssetResolver, полный каталог приложения, единый compiler и окончательный cutover ещё не завершены. Публичные версии не изменены; releases/deploy/Actions не запускались.
 
 - После разделения Table choices и canonical protocol: `case/model-contract,case/authority,case/durable-authority,network/table` — 37/37.
+
+
+## Уточнение выпуска от владельца
+
+После завершения всего рефакторинга и итоговой приёмки выпустить **PlayRoom 0.18-rc.1** (SemVer артефактов: `0.18.0-rc.1`) как предварительный релиз. Развернуть в отдельном **Cloudflare Pages preview**, адрес передать владельцу в чате. Стабильный production deploy и указатель каталога паков не переключать.
+
+Для RC проверить независимые immutable версии приложения/паков, preview bindings и изоляцию каталога RC от production. До и после публикации сверить стабильный адрес и версии/контрольные суммы; preview должен использовать совместимую RC коллекцию. Полный финальный прогон — один раз явно перечисленными блоками на окончательной паре исходников; обычные текущие срезы продолжают проверяться точечно. Данный запрос заменяет production-публикацию на финальном этапе плана preview-публикацией RC; остальные критерии рефакторинга сохраняются.
+
+
+## Одиннадцатый срез: независимый Дурак
+
+Все варианты, размеры колод и завершения перенесены в чистую модель; правила карт и ролей отдельно от оформления/текстов. Domain сохраняет полную колоду и детерминированный RNG. Стол видит закрытые руки; карточные choices приватны, ответы «Беру»/«Бито» публичны. Составной заход/отмена/переводы/добор и роли не меняются. PlayerListReference форматирует участников в presentation.
+
+Проверено: `case/rc2-games` — 28/28; после исправления старых fixtures `case/views,case/pack-models,case/model-contract` — 34/34. `case/rc2-games-browser` — 3/3. Compact-hand дополнительно проверяется после замены raw kind на semantic type в assertions: продуктовые события теперь типизированы, отображаемые подписи по-прежнему формирует presentation.
+
+Итог среза 11: `case/compact-hand` — 35/35; `case/pack-models,case/model-contract` — 20/20, включая новый запрет приватных карточных действий Стола. Все subtests зелёные, пропусков нет.

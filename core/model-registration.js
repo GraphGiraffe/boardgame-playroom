@@ -13,6 +13,10 @@
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
     function bindParticipants(value,players){
+      if(value?.kind==='player-list-reference'){
+        if(!Array.isArray(value.indices)||value.indices.some(index=>!Number.isInteger(index)||!players[index]))throw Error('PLAYER_REFERENCE_INVALID');
+        return new Intl.ListFormat(translator.locale,{type:'conjunction'}).format(value.indices.map(index=>players[index].name));
+      }
       if(value?.kind==='player-reference'){
         if(!Number.isInteger(value.index)||!players[value.index])throw Error('PLAYER_REFERENCE_INVALID');
         return players[value.index].name;
