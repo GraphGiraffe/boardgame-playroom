@@ -45,7 +45,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         const capture=async name=>{if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${name}-${width}x${height}.png`)});}};await capture('hub');
         const nav=page.locator('.side-nav');
         assert.equal(await nav.isVisible(),true);
-        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Как играть']);
+        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Темы и скины']);
         for (const button of await nav.locator('button').all()) {
           const b=await button.boundingBox(); assert(b.width>=44&&b.height>=44&&b.x>=0&&b.x+b.width<=width+1);
         }
@@ -53,7 +53,9 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(nav.locator('[data-command=sessions]'));
         await page.locator('.saved-games-list').waitFor();
         assert.equal(await page.locator('.saved-empty').isVisible(),true);await capture('sessions');
-        await press(nav.locator('[data-command=help]')); await page.locator('.help-grid').waitFor();await capture('help');
+        await press(nav.locator('[data-appearance-editor]'));await page.locator('.appearance-editor').waitFor();await capture('appearance');
+        await press(page.locator('.appearance-dialog [data-appearance-action=close]'));
+        await press(page.locator('.topbar [data-command=help]'));await page.locator('.help-grid').waitFor();await capture('help');
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
         for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}

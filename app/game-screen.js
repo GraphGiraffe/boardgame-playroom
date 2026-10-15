@@ -16,7 +16,8 @@
   }
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"'}={}){
     // Context actions grow to the left; help and settings keep the right edge.
-    const ordered=[...actions.filter(a=>a.name!=='help'),...actions.filter(a=>a.name==='help')];
+    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette'}]:[];
+    const ordered=[...actions.filter(a=>a.name!=='help'),...appearance,...actions.filter(a=>a.name==='help')];
     if(showSettings)ordered.push({attrs:settingsAttrs,label:'Настройки',name:'settings'});
     return ordered.map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }

@@ -38,7 +38,7 @@
 | F30 | Результаты/показатели/места/аватар | result-team-medallions-browser, game-screen, rc2-games | Статика |
 | F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Статика; общий каталог нужен |
 | F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Статика; живая старая PWA — приёмка выпуска |
-| F33 | Themes/skins/editor/toolbar | appearance model + presets + repository port проверены; редактор и Web-подключение впереди | Модель 10/10 |
+| F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Модель и Web проверены; AssetResolver / все материалы впереди |
 | F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes проверены; перенос остальных текстов впереди | Модель 6/6 |
 | F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Сборки HTML/PWA/паков, SHA и browser boot passed |
 
@@ -51,7 +51,7 @@
 | yatzy | 15 categories/3 rolls/hold/release/upper bonus/scroll | Впереди |
 | pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Общая колода |
 | gofish | 36/52/54/books/ask/response/repeat/empty stock | Общая колода |
-| oldmaid | 35/51/53/pairs/hidden draw/out order/points | Общая колода с исключением |
+| oldmaid | 35/54/53/pairs/hidden draw/out order/points | Общая колода с исключением |
 | durak | 3 variants/decks/jokers/compose/undo/transfer/limits/refill | Общая колода |
 | uno | 108 cards/color/penalty/manual-auto/declarations/protection | Впереди |
 | checkers | forced chain/king/promotion/deferred capture/draw | Впереди |
@@ -70,4 +70,24 @@
 
 Это приёмка извлечения RNG/колоды и подключения сборки. Полная приёмка 0.18, themes/locales UI и network/layout всех сценариев не выполнялась. Первоначальные ошибки загрузки VM и пути сборщика исправлены; перечисленные результаты относятся к исправленному коду. Артефакты разработческие, не опубликованы под прежними версиями.
 
-Второй срез: `core/appearance,core/localization` — 16/16. UI ещё не переключает палитру; тёмный пресет является данными для последующего renderer. Сохранение плана в удалённой dev подтверждено PR #116 (squash 27988f7). Разрешение владельца распространяется на коммиты, push, PR, релизы и деплой по обычным правилам проекта.
+Второй срез: `core/appearance,core/localization` — 16/16. Независимые модели и JSON каталоги; Web-подключение добавлено третьим срезом. Сохранение плана в удалённой dev подтверждено PR #116 (squash 27988f7). Разрешение владельца распространяется на коммиты, push, PR, релизы и деплой по обычным правилам проекта.
+
+
+## Третий срез: оформление в Web UI
+
+Редактор/переключатель тем подключён к локальному сервису; фиксирует 54 слот палитры. Навигация сохраняет справку в верхней панели. Ни игровая команда, ни перезапись сохранения, ни remount сцены при переключении не требуются. Детали и границы — [контракты](REFACTOR-0.18-CONTRACTS.md#третий-срез-web-адаптер-и-редактор-оформления).
+
+Проверки выполняются выбранными сценариями, без полного цикла правил/сети. Фактические команды и результаты третьего среза:
+
+- `core/appearance,core/localization,case/game-screen` — 23/23.
+- `case/rc2-games-browser` — 2/2 (геометрия сцен и устойчивость таблицы).
+- `case/rc2-hub-browser,case/unified-game-screen-browser` — 5/5.
+- `ui/appearance,case/mobile-navigation` — 15/15, включая подслучаи навигации на шести viewport; прежнее ожидание боковой справки обновлено под согласованный редактор.
+- `case/result-team-medallions-browser,case/pack-update-notice-browser` — 2/2; медали сохраняют различие цветов и компоновку при смене темы, непрочитанные обновления сохраняют состояние.
+- Финальный совместный запуск перечисленных узких selectors: 47/47, fail/skipped 0.
+- Выбранная проверка `built PWA uses content-addressed` из `tests/pwa.test.cjs` — passed; новые runtime/CSS присутствуют в index, SW и integrity manifest под хешированными именами.
+- Сборка `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-appearance` и `sha256sum -c SHA256SUMS` — 5/5.
+- Companion `bash scripts/codex/check.sh` — 41 JS, 12 автономных паков, SHA 15 файлов.
+- Автономный HTML в Chrome без HTTP/CDN: 12 игр, dark picker, editor с 54 цветом, page errors 0.
+
+Кадры разработческой проверки: `tmp_files/refactor-0.18-appearance/` (игнорируются Git). Обнаруженные при работе ошибки приоритета CSS на 320 px, старых hub overrides и светлых sticky cells Ятзи исправлены. Это приёмка данного среза; общий реестр F01–F35 и полный переход 0.18 ещё не закрыты. Release/Actions/deploy не запускались, публичная пара остаётся 0.17.6 / 0.6.5.

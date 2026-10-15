@@ -1,8 +1,9 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
-  {paths:['application/appearance.js','themes/'],select:['core/appearance']},
-  {paths:['presentation/localization.js','locales/'],select:['core/localization']},
+  {paths:['app/appearance-ui.js','app/appearance-web.js','app/appearance.css'],select:['ui/appearance']},
+  {paths:['application/appearance.js','themes/'],select:['core/appearance','ui/appearance']},
+  {paths:['presentation/localization.js','locales/'],select:['core/localization','ui/appearance']},
   {paths:['core/random.js'],select:['core/domain','case/engine','case/session','case/rc2-games']},
   {paths:['core/ui.js','core/ui.css','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/screen','ui','games','input/hands','network/resume','storage']},
   {paths:['app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},

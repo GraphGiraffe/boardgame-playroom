@@ -25,6 +25,13 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     assert(badges[0].symbolOffset<1,'first-player symbol stays centered on its team disc');
     assert.equal(badges[0].symbolWidth,22,'first-player artwork scales with the disc');
     assert(badges.every(b=>b.medal===22&&b.team===22&&b.exposedRight>=4&&b.exposedRight<=6&&b.exposedBottom>=2&&b.exposedBottom<=4&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek uniformly from below the medal: '+JSON.stringify(badges));
+    const colors=()=>page.locator('.result-awards .is-place').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node.querySelectorAll('circle')[1]).fill));
+    const lightMedals=await colors();
+    assert.equal(new Set(lightMedals).size,2,'gold and silver keep distinct material colors');
+    for(const id of ['dark','light']){
+      await page.evaluate(id=>PlayroomAppearanceUI.runtime.service.select(id),id);
+      assert.deepEqual(await colors(),lightMedals,'theme switching preserves canonical medal colors');
+    }
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
     await page.setViewportSize({width:320,height:740});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);

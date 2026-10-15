@@ -43,6 +43,7 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file": "appearance-browser.test.cjs", "profiles": [], "subblock": "ui/appearance"},
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
