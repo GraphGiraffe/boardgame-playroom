@@ -18,8 +18,8 @@
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
 | F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и Крестики-нолики перенесены; остальные впереди |
-| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity | Статика |
-| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт Стол = Зритель + публичные действия проверен; сетевой Table routing впереди |
+| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | Общий pipeline сохранён и подключён к Столу; извлечение CommandProcessor впереди |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт и сетевой Table routing для Крестиков-ноликов проверены; остальные паки впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
@@ -112,3 +112,19 @@
 - Автономный HTML через file:// в Chrome: 12 игр, Крестики-нолики 0.2.0, X у назначенного первого игрока (индекс 1), 8 публичных команд после первого хода, dark theme, page errors 0.
 
 Это разработческий срез, не завершение 0.18. Опубликованные 0.17.6 / 0.6.5 не изменены. Общая миграция Session/events/results/authority, оставшиеся 11 паков, все материалы AssetResolver и финальное удаление старых контрактов остаются в реестре.
+
+
+## Пятый срез: сетевой Стол и единая привязка прав
+
+Политика `application/session-access.js` используется при старте партии, для устройства хоста и при authenticated resume. Authority разделяет viewer/actor; grant Стола выдаёт только хост, интерфейс получает зрительские данные и явно публичные команды. Доставка и durable receipts используют существующий pipeline, но ACK/history сохраняют публичную проекцию. Новых схем БД и runtime зависимостей нет. Неперенесённые паки остаются без управления Стола.
+
+Проверено выбранными сценариями:
+
+- `network/table,case/authority,case/durable-authority,core/model` — 37/37: приватность, публичные кубики, запрет приватного выбора/ботов/подмены actor, read-only история, grants, duplicate/stale/collision, потеря ACK, восстановление квитанции, MessagePort async pipeline.
+- `network/table,case/authority,case/durable-authority,case/network-resume,case/network-next-match,case/host-recovery,case/network-store-integrity,case/webrtc-transport` — 50/50.
+- `case/network-main-app,case/network-session-store-browser` — 7/7: обычный WebRTC/UNO и новый Стол в трёх отдельных контекстах Chrome, публичные ходы Крестиков-ноликов с Table/телефона, архив без ввода; настоящая IndexedDB и reload с повторным ACK без нового хода.
+- `case/network-reconnect-browser,case/network-host-recovery-browser` — 4/4: действующие сценарии восстановления соединения и комнаты не потеряны.
+- `built PWA uses content-addressed` — 1/1; новый application-модуль попадает в PWA, получает хешированный URL и integrity. Обнаруженный пропуск каталога в сборке исправлен чтением entrypoint refs из index.html.
+- `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-table` и SHA256SUMS — 5/5.
+
+Полный цикл/Actions/release/deploy не запускались. Физические устройства и внешние сети этим прогоном не проверены. Следующие этапы: canonical Session/events/CommandProcessor, полное представление results/metrics и перенос остальных 11 паков, включая их public actions/reactions. Временный адаптер и прежние форматы будут удалены при общем переходе; публикация остаётся 0.17.6 / 0.6.5.

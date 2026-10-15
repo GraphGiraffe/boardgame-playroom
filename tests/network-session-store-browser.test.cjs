@@ -3,6 +3,34 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+test('Table public commands survive IndexedDB reload with player receipts and public duplicate ACKs',{timeout:30000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const context=await browser.newContext(),page=await context.newPage();await page.goto(fixture.url);
+  const before=await page.evaluate(async()=>{
+   const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'});
+   const session=new TabletopSession(TabletopCore,'tictactoe',{seed:'TABLE-PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});
+   await store.create({sessionId:'table-browser',room:{id:'table-room',name:'Table',game:{id:session.game,version:session.packVersion}},session});
+   const authority=new SessionAuthority(session,{sessionId:'table-browser',authorityEpoch:'before-reload',persistence:{commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)}});
+   const table=authority.connectTable([0,1]),command=PlayroomProtocol.command(table.snapshot(),{type:'place',cell:4},'table-place');
+   const receipt=await table.dispatch(command);sessionStorage.setItem('table-test-command',JSON.stringify(command));
+   const out={ok:receipt.ok,revision:authority.revision,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role};authority.dispose();return out;
+  });
+  assert.deepEqual(before,{ok:true,revision:1,viewer:-1,role:'table'});await page.reload();
+  const after=await page.evaluate(async()=>{
+   const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'}),saved=await store.load('table-browser',TabletopCore,TabletopSession);
+   const authority=new SessionAuthority(saved.session,{sessionId:saved.sessionId,authorityEpoch:'after-reload',restoredReceipts:saved.receipts,persistence:{commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)}});
+   try{
+    const table=authority.connectTable([0,1]),receipt=await table.dispatch(JSON.parse(sessionStorage.getItem('table-test-command'))),frame=table.history(0);
+    return {duplicate:receipt.duplicate,revision:authority.revision,steps:saved.session.states.length,
+     receiptActor:saved.receipts[0].viewer,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role,
+     cell:receipt.snapshot.state.modelProjection.data.board[4],historyActions:frame.state.modelProjection.actions.length,
+     secret:JSON.stringify(receipt).includes('TABLE-PRIVATE-SEED')};
+   }finally{authority.dispose();}
+  });
+  assert.deepEqual(after,{duplicate:true,revision:1,steps:2,receiptActor:0,viewer:-1,role:'table',cell:0,historyActions:0,secret:false});
+ }finally{await browser.close();await fixture.close();}
+});
 const fixture=()=>{
   const E=globalThis.TabletopCore;
   E.register({id:'network-store-fixture',name:'Network store fixture',min:2,max:2,presets:[{id:'basic'}],

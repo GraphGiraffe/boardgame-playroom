@@ -68,6 +68,7 @@ module.exports = {
     {"file": "network-client-history-browser.test.cjs", "profiles": ["app", "smoke"], "subblock": "storage/history"},
   ]},
   network: {label: "Сетевые партии", cases: [
+    {"file":"table-authority.test.cjs","profiles":[],"subblock":"network/table"},
     {"file": "authority.test.cjs", "profiles": ["app"], "subblock": "network/authority"},
     {"file": "multiplayer-lobby.test.cjs", "profiles": ["app", "smoke"], "subblock": "network/authority"},
     {"file": "presence-transport.test.cjs", "profiles": ["app"], "subblock": "network/authority"},

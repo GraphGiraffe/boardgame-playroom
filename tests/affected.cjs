@@ -1,6 +1,7 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
+  {paths:['application/session-access.js'],select:['network/table','case/network-main-app']},
   {paths:['core/model-runtime.js','app/model-adapter.js'],select:['core/model','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
   {paths:['app/appearance-ui.js','app/appearance-web.js','app/appearance.css'],select:['ui/appearance']},
   {paths:['application/appearance.js','themes/'],select:['core/appearance','ui/appearance']},

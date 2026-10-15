@@ -13,6 +13,47 @@ function server(){
 async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
+test('main app: public Table over WebRTC shares moves with a player without gaining private viewer rights',{timeout:90000},async()=>{
+ const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),tc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),pc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});
+ const host=await hc.newPage(),table=await tc.newPage(),phone=await pc.newPage(),errors=[];host._url=url;table._url=url;phone._url=url;
+ for(const page of [host,table,phone]){page.setDefaultTimeout(10000);page.on('pageerror',error=>errors.push(error.message));}
+ try{
+  await profile(host,'Анна');await profile(table,'Стол');await profile(phone,'Борис');
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode]').check();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
+  async function join(page){
+   await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();
+   const offer=await value(host,'#net-host-token');
+   await page.locator('#network-join-button').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+   await page.locator('#net-client-token').waitFor();
+   await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+   await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(form=>form.requestSubmit());
+   await page.locator('.lobby-shell').waitFor();
+  }
+  await join(phone);await phone.locator('[data-net-seat]:not([disabled])').first().click();await join(table);
+  await table.locator('[data-net-action=table]').click();
+  await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(person=>!person.isHost&&person.role==='table'));
+  await host.evaluate(()=>{
+   const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});
+   b.renderLobby();
+  });
+  await host.locator('[data-command=lobby-ready]').click();await phone.locator('[data-net-action=ready]').click();
+  await host.locator('[data-command=lobby-start]:not([disabled])').click();
+  await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
+  await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
+  await phone.locator('.ttt-cell[data-action]').first().waitFor();await phone.locator('.ttt-cell').nth(0).click();
+  await host.locator('.ttt-cell.nought').waitFor();
+  await table.locator('.ttt-cell[data-action]').first().waitFor();await table.locator('.ttt-cell').nth(1).click();
+  await table.waitForFunction(()=>document.querySelectorAll('.ttt-cell.cross').length===2);
+  assert.equal(await table.locator('.network-game').getAttribute('data-viewer'),'-1');
+  assert.equal(await host.locator('.network-game').getAttribute('data-viewer'),'0');
+  await table.locator('[data-command=history]').click();await table.locator('#replay-range').waitFor();
+  assert.equal(await table.locator('.ttt-cell[data-action]').count(),0);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();await new Promise(resolve=>s.close(resolve));}
+});
+
 test('main app: two browsers join UNO lobby, ready, countdown and share a move',{timeout:90000,skip:!hasUno},async()=>{
   const externalUrl=process.env.PLAYROOM_URL||'';
   const hosted=externalUrl?{s:null,url:externalUrl}:await server();

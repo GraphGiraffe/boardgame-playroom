@@ -7,7 +7,7 @@
 | Слои и загрузка | [Архитектура](DEVELOPER-ARCHITECTURE.md) | index.html, app/app.js, core/ |
 | UI и жесты | [Интерфейс](DEVELOPER-UI.md), [дизайн](UI-DESIGN-SYSTEM.md) | app/game-screen.js, app/shared-views.js, core/input.js |
 | Правила и история | [Игровой цикл](DEVELOPER-GAMEPLAY.md) | core/engine.js, core/session.js, core/authority.js |
-| Сеть и восстановление | [Сетевой контракт](DEVELOPER-MULTIPLAYER.md) | app/multiplayer.js, app/network-ui.js, app/transports/webrtc.js |
+| Сеть и восстановление | [Сетевой контракт](DEVELOPER-MULTIPLAYER.md) | application/session-access.js, app/multiplayer.js, app/network-ui.js, app/transports/webrtc.js |
 | Приглашения | [Pairing](DEVELOPER-PAIRING.md) | app/pairing.js, app/acoustic-pairing.js, app/qr-scanner.js |
 | Сохранения и паки | [Данные](DEVELOPER-DATA.md) | app/library.js, app/network-session-store.js, app/network-client-history.js, core/packs.js |
 | Проверки и релиз | [Workflow](DEVELOPER-WORKFLOW.md), [выпуск](RELEASING.md) | scripts/codex/, build.py, .github/workflows/ |

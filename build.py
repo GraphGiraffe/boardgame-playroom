@@ -388,6 +388,10 @@ def ensure_dev_icons():
 def pwa_runtime_items(packs=(), remote_catalog=False):
     """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
     paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js"}
+    # Entry points remain authoritative when portable modules move to new layers.
+    document = (ROOT / "index.html").read_text(encoding="utf-8")
+    urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
+    paths.update(ROOT / name for name in urls if name != "installed-packs.js")
     for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "core/*.js", "core/*.css", "icons/*.svg"):
         paths.update(ROOT.glob(pattern))
     items = []
@@ -402,7 +406,6 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
     # Ship only content-addressed shell assets. Canonical source paths remain
     # in the source archive and standalone HTML, not in the deployment bundle.
     document = dict(items)["index.html"].decode("utf-8")
-    urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
     aliases = {name: str(Path(name).with_name(Path(name).stem + "." + hashlib.sha256(content).hexdigest()[:16] + Path(name).suffix))
                for name, content in items if name in urls}
     for name, alias in aliases.items():

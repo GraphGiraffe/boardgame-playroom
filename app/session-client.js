@@ -10,7 +10,7 @@
     accept(snapshot){
       if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==1||!Number.isSafeInteger(snapshot.revision))return false;
       if(this.snapshot&&(snapshot.sessionId!==this.snapshot.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error('Исполнитель изменился. Откройте новую ссылку.');
-      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||snapshot.viewer!==this.snapshot.viewer||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
+      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||!P.sameAudience(snapshot,this.snapshot)||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
       if((snapshot.reactionRevision!==undefined&&(!Number.isSafeInteger(snapshot.reactionRevision)||snapshot.reactionRevision<0))||(snapshot.paused!==undefined&&typeof snapshot.paused!=='boolean')||(snapshot.controlRevision!==undefined&&(!Number.isSafeInteger(snapshot.controlRevision)||snapshot.controlRevision<0)))return false;
       const initial=!this.snapshot;
       if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0))return false;
@@ -29,7 +29,7 @@
       if(this.closed)throw Error('Подключение закрыто.');
       const previous=this.snapshot;
       if(!snapshot||snapshot.kind!=='snapshot'||snapshot.protocolVersion!==1||!Number.isSafeInteger(snapshot.revision)||
-        (previous&&(['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>snapshot[k]!==previous[k])||
+        (previous&&((['sessionId','authorityEpoch','game','packVersion'].some(k=>snapshot[k]!==previous[k])||!P.sameAudience(snapshot,previous))||
           snapshot.revision<previous.revision||(snapshot.controlRevision||0)<(previous.controlRevision||0))))throw Error('Состояние подключения изменилось. Нужно новое приглашение.');
       this.recovering=true;
       try{

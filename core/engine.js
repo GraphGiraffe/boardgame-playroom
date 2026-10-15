@@ -205,10 +205,13 @@
     if (projection) out.modelProjection = projection;
     return out;
   }
-  function applyTableAction(state, actor, action) {
+  function tableCommand(state, actor, action) {
     const authorize = forState(state).tableCommand;
     if (!authorize) throw Error('Пак не объявил публичные действия Стола');
-    return applyAction(state, actor, authorize(state, actor, action));
+    return authorize(state, actor, action);
+  }
+  function applyTableAction(state, actor, action) {
+    return applyAction(state, actor, tableCommand(state, actor, action));
   }
   function botAction(state, actor = state.turn) {
     if (!activePlayer(state, actor) || actor !== state.turn) return null;
@@ -249,7 +252,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, project, projectTable, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

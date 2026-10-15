@@ -108,3 +108,16 @@ Catalog — отдельные data-файлы namespace/locale, без испо
 Эталон — Крестики-нолики 0.2.0, engineApi=3, stateVersion=1: domain/game.js, presentation/scene.js, locales/ru/game.json и Web view.js. Знак X назначен фактическому первому игроку; renderer не выводит знак из индекса. Форма сохранённого board/marks не меняется, packVersion остаётся точной. Старая оболочка отклоняет engineApi 3. Другие игры ещё не перенесены.
 
 Source manifest sourceModules задаёт упорядоченные rules/view модули и JSON locales; оба сборщика встраивают их в автономные entrypoints, удаляют служебное поле и сохраняют исходники в files. Результат не зависит от соседнего checkout/CDN. Оба сборщика пока содержат одинаковый compiler helper; тест проверяет равенство результата и отказ некорректных путей/локалей. Объединение compiler/validators — отдельный этап контейнера.
+
+
+## Пятый срез: роль и команды сетевого Стола
+
+- `application/session-access.js`: отдельная политика room participant → player/spectator/Table capability, без DOM/transport/названий игр. Начало партии и authenticated resume используют одну привязку, включая исходные playerIndex восстановленных мест.
+- `SessionAuthority.connectTable(actors)`: host-owned grant. Viewer=-1 остаётся публичным; actor — отдельный исполнитель публичной команды. Роль и grants нельзя назначить командой клиента. Действия ботов, приватные команды и session-pause через Table capability запрещены.
+- `PlayroomProtocol.command`: actor включается только для role=table; обычное подключение не может выбрать чужой actor. role/sameAudience проверяются при client accept/reconcile, восстановлении pending и чтении history. Протокол пока использует прежний envelope version=1 в разработческой ветке; окончательная версия будет согласована при общем cutover 0.18.
+- Успешные Table commands используют тот же Session.prepare/durable commit/commitPrepared/ACK. Ключ прежнего receipts store остаётся sessionId + executing player index + commandId; signature включает actor. Для Table ACK проектируется через публичную binding, а не через actor. Repeated command/recovery возвращает квитанцию без второго перехода.
+- History очищает outer actions и вложенные modelProjection/tableActions. Public data/effects/cues фильтруются по viewer=-1; получение права действовать не открывает приватные данные.
+- PWA builder получает JS/CSS entrypoints из index.html независимо от каталога слоя; пути проходят существующую проверку файла/границ и получают content hash/integrity.
+- SharedViews включает public live controls по роли/actor и обычным pending/transition/history gates. MessagePort server теперь ожидает asynchronous result перед postMessage, как требует durable pipeline; presentation-ready доступен тем же портом.
+
+Подробности прав и ограничений — [MULTIVIEW](MULTIVIEW.md#сетевая-привязка-в-разработке-018). Публичный ввод проверен в Крестиках-ноликах; остальные паки ещё требуют переноса деклараций. Полный CommandProcessor, canonical event IDs/visibility pipeline и окончательное удаление временного Session/model adapter остаются впереди.

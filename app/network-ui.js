@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore,ClientHistory=root.PlayroomNetworkClientHistory;
+  const SessionAccess=root.PlayroomSessionAccess,W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore,ClientHistory=root.PlayroomNetworkClientHistory;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const bridge=()=>root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
@@ -648,10 +648,7 @@
           }
           const room=bridge().roomService.snapshot(roomId);
           if(room.phase==='playing'&&hostAuthority){
-            const occupied=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);
-            const viewer=occupied.find(seat=>seat.participantId===id)?.playerIndex??occupied.findIndex(seat=>seat.participantId===id);
-            if(!participant(room,id))throw Error('Участник удалён из комнаты.');
-            switchable.set(hostAuthority.connect(viewer));
+            switchable.set(SessionAccess.connect(hostAuthority,room,id));
           }
         }
         if(result?.ok&&(command?.type==='resume'||command?.type==='join')){
@@ -900,11 +897,11 @@
       }});
       for(const person of roomPresence(room).participants)if(person.playerIndex>=0)hostAuthority.setViewerConnected?.(person.playerIndex,person.connected);
       for(const item of connectedHostPeers){
-        const viewer=occupied.find(seat=>seat.participantId===item.roomConnection?.participantId)?.playerIndex??occupied.findIndex(seat=>seat.participantId===item.roomConnection?.participantId);
-        item.switchable.completedHistory=null;item.switchable.set(hostAuthority.connect(viewer));
+        const id=item.roomConnection?.participantId;
+        if(!id||!participant(room,id))continue;
+        item.switchable.completedHistory=null;item.switchable.set(SessionAccess.connect(hostAuthority,room,id));
       }
-      const hostViewer=room.hostMode==='table'?-1:occupied.findIndex(s=>s.participantId===room.ownerId);
-      const local=LocalTransport(hostAuthority.connect(hostViewer));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      const local=LocalTransport(SessionAccess.connect(hostAuthority,room,room.ownerId));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
       if(generation===presentationGeneration)mountNetworkView(true);hostAuthority.scheduleBot({onError:error=>toast(error.message)});notifyPresence(room);
     }catch(error){
       hostGameClient?.close?.();hostGameClient=null;
@@ -1118,7 +1115,7 @@
         void backfillClientHistory(snapshot,clientTransport,clientRoom.id,clientParticipantId);
       }
       if(resumeIntent){const intent=resumeIntent;resumeIntent=null;
-        if(intent.roomId===clientRoom.id&&intent.participantId===clientParticipantId&&['sessionId','authorityEpoch','viewer','game','packVersion'].every(k=>intent.snapshot[k]===snapshot[k])){
+        if(intent.roomId===clientRoom.id&&intent.participantId===clientParticipantId&&(['sessionId','authorityEpoch','game','packVersion'].every(k=>intent.snapshot[k]===snapshot[k])&&root.PlayroomProtocol.sameAudience(intent.snapshot,snapshot))){
           if(intent.pending)clientGameClient.pending=intent.pending;
           mountNetworkView(false);if(intent.historyIndex!==null)void clientMount?.openHistory(intent.historyIndex);
         }else mountNetworkView(false);

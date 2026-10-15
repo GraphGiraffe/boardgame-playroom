@@ -27,7 +27,7 @@
     feedback.start(client.snapshot?.events||[]);
     let liveStatus=client.snapshot?.state?.status||'playing';
     const toast=text=>root.PlayroomAppBridge?.toast?.(text);
-    const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!draining&&!frames.length&&shownLive?.revision===client.snapshot?.revision&&!historyOpen&&!dialogOpen&&!modal.children.length&&client.snapshot?.viewer>=0;
+    const usable=()=>!client.snapshot?.paused&&!readOnly&&connected&&!client.pending&&!transitionActive&&!draining&&!frames.length&&shownLive?.revision===client.snapshot?.revision&&!historyOpen&&!dialogOpen&&!modal.children.length&&(client.snapshot?.viewer>=0||client.snapshot?.role==='table'&&client.snapshot?.actor>=0);
     const historyCount=()=>Math.max(0,(client.snapshot?.historyLength||1)-1);
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;if(historyOpen){flow.cancel();transitionActive=false;}};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
@@ -54,7 +54,7 @@
         state:s.state,viewer:s.viewer,actions:current?s.actions:[],scoreLabel:pack.catalog.scoreLabel||'очки',
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?'Просмотр истории':readOnly?'Сохранённая сетевая партия':!connected?'Связь потеряна · ожидаем подключение':finished?'Партия завершена':live.paused?'Пауза':(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?'Ожидаем объявления':turn?`Ходит ${turn.name}`:'Ожидание хода',
-        turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?'Публичный стол':s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
+        turnExtra:historyOpen?`Ход ${historyIndex} из ${historyCount()}`:`Ход ${s.state.move+1} · ${s.viewer<0?(s.role==='table'?'Публичный стол':'Зритель'):s.state.data.hands?(s.state.openHands?'Руки открыты':'Руки скрыты'):'Открытое поле'}`,
         historyHTML,historyCaption:eventText(s)||'Начальная расстановка',readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,roomAction:!readOnly?{attrs:'data-command="room"'}:null,footerText:eventText(s)||'Новая партия',footerTitle:eventText(s)||'Новая партия',
         statusExtra:client.pending&&client.deliveryError?'<button class="text-btn network-retry" data-command="retry">Повторить отправку</button>':'',
         footerAction:readOnly?{command:'home',label:'К моим партиям',icon:'back'}:finished?{command:'rematch',label:'К комнате',icon:'back'}:{command:'home',label:'К играм',icon:'back'}
@@ -134,7 +134,7 @@
       try{result=await client.history(pos);}catch(error){if(ticket!==historyTicket||!historyOpen||destroyed)return;historyRequested=null;render();throw error;}
       if(ticket!==historyTicket||!historyOpen||destroyed)return;
       historyRequested=null;
-      if(result.kind!=='history'||result.viewer!==client.snapshot.viewer||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.game!==client.snapshot.game||result.packVersion!==client.snapshot.packVersion||result.revision!==pos||result.revision>client.snapshot.revision){render();throw Error('Некорректная история.');}
+      if(result.kind!=='history'||!root.PlayroomProtocol.sameAudience(result,client.snapshot)||result.sessionId!==client.snapshot.sessionId||result.authorityEpoch!==client.snapshot.authorityEpoch||result.game!==client.snapshot.game||result.packVersion!==client.snapshot.packVersion||result.revision!==pos||result.revision>client.snapshot.revision){render();throw Error('Некорректная история.');}
       const change=animate?Flow.eventAction(historySnapshot,result):null,shot=change?flow.capture({actor:change.actor,action:change.action,viewer:result.viewer}):null;
       historyIndex=pos;historySnapshot=result;transitionActive=!!shot;
       if(newHistoryBoundary!==null&&pos<newHistoryBoundary)historyVisitedBoundary=true;
