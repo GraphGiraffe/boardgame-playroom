@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js');
-const Store=require('../app/network-session-store.js');
+const Store=require('../platform/web/session-store.js');
 
 E.register({id:'lan01-integrity',name:'LAN-01 integrity',min:2,max:2,presets:[{id:'default'}],
   create(state){state.data={count:0,secret:'PRIVATE-INTEGRITY'};},

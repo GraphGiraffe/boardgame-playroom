@@ -30,9 +30,23 @@
       const visible = value.visibility.kind === 'public' ||
         integer(viewer, 0, playerCount - 1) && value.visibility.players.includes(viewer);
       const allowed = visible ? value : value.publicEvent;
-      return allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params}] : [];
+      return allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params,
+        ...(value.id!==undefined?{id:value.id,revision:value.revision}:{})}] : [];
     }));
   }
 
-  return Object.freeze({validate:event,project:projectEvents});
+  function append(events, drafts, playerCount, revision) {
+    check(Array.isArray(events)&&Array.isArray(drafts)&&integer(revision,0,Number.MAX_SAFE_INTEGER),'EVENT_INVALID');
+    let id=events.at(-1)?.id||0;
+    check(integer(id,0,Number.MAX_SAFE_INTEGER-drafts.length),'EVENT_INVALID');
+    check(events.at(-1)?.revision===undefined||events.at(-1).revision<=revision,'EVENT_REVISION_INVALID');
+    const added=drafts.map(value=>{
+      event(value,playerCount);
+      check(value.id===undefined&&value.revision===undefined,'EVENT_ID_RESERVED');
+      return snapshot({...value,id:++id,revision});
+    });
+    return Object.freeze([...events,...added]);
+  }
+
+  return Object.freeze({validate:event,project:projectEvents,append});
 });

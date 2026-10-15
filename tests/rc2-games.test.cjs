@@ -1,5 +1,5 @@
 'use strict';
-require('../app/model-adapter.js');
+require('../core/model-registration.js');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const E=require('../core/engine.js'),ids=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid','durak'];
 for(const id of ids)require(`../packs/${id}/rules.js`);
@@ -93,7 +93,7 @@ test('Akulina draws the chosen hidden card and rejects an invalid index',()=>{
 });
 test('automatic fleets leave gaps in both rulesets and Yatzy totals include the bonus',()=>{
  for(const preset of ['classic','russian']){let s=create('battleship',2,preset);s=play(s,{type:'auto'});for(const [i,ship] of s.data.ships[0].entries())for(const cell of ship)for(const other of s.data.ships[0].slice(i+1).flat())assert(Math.abs(cell%10-other%10)>1||Math.abs(Math.floor(cell/10)-Math.floor(other/10))>1);}
- let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
+ let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};s.data.round=7;const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
 });
 
 test('new pack actions have playable common sound cues and do not replay old events',()=>{
@@ -216,4 +216,15 @@ test('Yatzy permits releasing a held die before the third roll',()=>{
 });
 test('RC4 Yatzy score sounds distinguish numeric, special and yatzy only after scoring',()=>{
  for(const [key,sound]of [['ones','success'],['pair','success.special'],['yatzy','success.yatzy']]){let s=create('yatzy');s.data.rolls=3;s.data.dice=[1,1,1,1,1];const cursor=s.events.at(-1).id;s=play(s,{type:'score',key});assert(E.soundCues(s,0,cursor).some(c=>c.id===sound));}
+});
+
+
+test('Pexeso bot choice is invariant under permutations of never-revealed faces',()=>{
+  for(let move=0;move<30;move++){
+    const state=create('pexeso');state.move=move;
+    state.data.flipped=[0];state.data.phase='second';state.data.seen={0:state.data.board[0].id,1:state.data.board[1].id};
+    const altered=E.clone(state),tail=altered.data.board.slice(2).reverse();altered.data.board.splice(2,tail.length,...tail);
+    const a=E.botAction(state),b=E.botAction(altered);
+    assert.deepEqual(b,a,'unknown card faces must never influence a bot mistake');
+  }
 });

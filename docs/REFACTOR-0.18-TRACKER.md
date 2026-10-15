@@ -2,7 +2,7 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: выполнены шесть разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-15: выполнены восемь разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
@@ -11,20 +11,20 @@
 | F03 | Установка, версии, quarantine — core/packs.js, pack-manager | view-contract, packs-reconcile | Статика |
 | F04 | Каталог/скачивание/SHA — remote-catalog, pack route | packs-reconcile, pwa | Статика |
 | F05 | Удаление одного/старых/всех паков и зависимых партий | rc2-games, ui; отказ сетевого архива отдельно | Статика; уточнить failure fixture |
-| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Session history/codec выделены и проверены; перенос library/очистки впереди |
+| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Session/history/codec и portable library с индексом перенесены; сохранность удаления/квоты проверена |
 | F07 | Профиль/имя/роль/место/бот — multiplayer | player-profile, multiplayer-lobby | Статика |
 | F08 | Команды/первый игрок/готовность/отсчёт/правила | multiplayer-lobby, ludo-team-markers-browser, lobby-layout-browser | Статика |
 | F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
 | F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
 | F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
 | F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и Крестики-нолики перенесены; остальные впереди |
-| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | Staging/invalidation выделены в History; pipeline сохранён; CommandProcessor впереди |
+| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | History и общий CommandProcessor перенесены; выбранные authority/durable/table проверки прошли |
 | F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Контракт и сетевой Table routing для Крестиков-ноликов проверены; остальные паки впереди |
 | F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
 | F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
 | F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
 | F18 | WebRTC/presence/ошибки/восстановление | webrtc-transport, presence-transport, network-reconnect-browser | Статика |
-| F19 | Хостовый журнал/lock/reload | host-recovery, network-session-store-browser, network-host-recovery-browser | Статика |
+| F19 | Хостовый журнал/lock/reload | host-recovery, network-session-store-browser, network-host-recovery-browser | Delta journal, pure recovery и Web adapter перенесены; выбранные проверки прошли |
 | F20 | Клиентский архив/backfill/read marker | network-client-history, network-client-history-browser | Статика |
 | F21 | Replay/scrub/return/новый участок | history-library-layout-browser, network-client-history-browser | Статика |
 | F22 | Source/target/адресат/выбор карты | drag, player-target, uno-drag | Статика |
@@ -48,7 +48,7 @@
 | --- | --- | --- |
 | ludo | 1–3 dice/exit/guarantee/safe/capture/team help/stack/finish triangle | Впереди |
 | battleship | russian/classic/setup/manual/auto/ready/ship drag/observer follow | Впереди |
-| yatzy | 15 categories/3 rolls/hold/release/upper bonus/scroll | Впереди |
+| yatzy | 15 categories/3 rolls/hold/release/upper bonus/scroll | Независимая модель/схема/scene/locales, API 3 / 0.2.0; выбранные проверки прошли |
 | pexeso | 36/52/54/reveal/flip/close/seen/mismatch/turn | Общая колода |
 | gofish | 36/52/54/books/ask/response/repeat/empty stock | Общая колода |
 | oldmaid | 35/54/53/pairs/hidden draw/out order/points | Общая колода с исключением |
@@ -141,3 +141,26 @@ History владеет последовательностью immutable реви
 - Разработческая сборка: `python3 build.py --pwa --all-games --packs-dir ../playroom-paks/packs --output-dir dist/refactor-0.18-session`; файлы не публикуются под прежними версиями. SHA256SUMS — **5/5**. Готовый playroom-all-games.html через file:// в Chrome: новые модули загружены, ход Крестиков-ноликов и compact restore с явными часами прошли, page errors 0.
 
 Этот срез не завершает Session/events/CommandProcessor и не меняет API/байты опубликованных паков. Полный pipeline приватных событий остаётся закрыт временным адаптером. Остальные 11 domain/presentation, общие metrics/results, AssetResolver и финальный переход ещё в плане. Actions/release/deploy не запускались; опубликованная пара 0.17.6 / 0.6.5 остаётся базой сравнения.
+
+
+## Седьмой срез: processor, типизированный журнал, scheduler и Ятзи
+
+Контракты — раздел седьмого среза REFACTOR-0.18-CONTRACTS.md. Основной выбранный прогон:
+`core/model,core/localization,case/rc2-games,case/session,case/authority,case/durable-authority,network/table,case/game-flow` — **100/100**. Включены headless Ятзи с явным RNG, приватный факт без перевода до проекции/звук/повтор, вложенные MessageRef, отмена scheduler, bot-memory privacy и существующие сохранения/правила.
+
+Отдельная браузерная регрессия `Yatzy keeps` — **1/1**, общий узел таблицы/scroll сохранён. Предыдущие ошибки нового HTTP entrypoint (presentation/scheduler не проходил whitelist fixture), пути перенесённого SDK и временного layout scroll исправлены. Неуспешные/прерванные прогоны не считаются приёмкой. Окончательные browser и packaging результаты этого среза записываются вместе с точной парой SHA в PR.
+
+Остальная работа ведётся до полного выполнения AUDIT-0.18.md, без объявления этой части готовой 0.18. Старые опубликованные релизы не изменены.
+
+
+## Восьмой срез: canonical token, library header и delta journal
+
+- `core/domain,core/model,case/views,case/rc2-games,case/game-screen` — **69/69**: byte/digest parity shared token и host SDK, pure models и текущие правила/сцены.
+- `core/session-runtime,case/network-store-integrity,case/session,case/durable-authority` — **45/45**: metadata list без restore, quota/stale deletion, delta storage линейного числа фактов, gap/tail rejection, durable receipts.
+- `case/network-session-store-browser,case/network-host-recovery-browser,case/unified-game-screen-browser,case/network-feedback-browser,case/history-library-layout-browser` — **43/43**: IndexedDB/reload/retry, приватный viewer хоста, slider/focus, архив без новых ходов, эффекты/реакции и отсутствие прежнего сброса layout.
+- Bootstrap fixtures явно загружают Protocol/Components/Scheduler; ранее выявленные ошибки зависимостей исправлены. Отдельные проверки истории 320 px и очереди rapid remote revisions — 1/1 каждая.
+
+Эти результаты относятся к исходникам среза до чистого переноса IndexedDB adapter в platform/web; после переноса Node recovery/integrity/durable — 19/19. Итоговый browser/package bootstrap для нового пути фиксируется в PR перед commit. Полный финальный прогон и релиз 0.18 ещё впереди.
+
+
+Финальная фиксация срезов 7–8: после переноса platform/web adapter выбранные Node группы дали **117/117** и **44/44**; реальные IndexedDB/recovery/artwork — **10/10**, ошибок/пропусков нет. PWA hashed shell — **1/1**. Сборка dist/refactor-0.18-services, SHA256SUMS **5/5**; извлечённый SDK ZIP действительно импортирует модели/processor/journal/recovery/scheduler и выполняет ход/compact restore с явными часами. Полный финальный набор 0.18 не запускался. Работа продолжается по оставшимся строкам реестра.

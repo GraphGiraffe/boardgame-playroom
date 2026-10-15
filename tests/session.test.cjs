@@ -307,3 +307,20 @@ test('a prepared move cannot commit after its participant metadata changes',()=>
   const session=create(),candidate=session.prepare(0,{type:'advance'});session.setPlayerMetadata(0,{name:'New'});
   assert.throws(()=>session.commitPrepared(candidate),/current/);assert.equal(session.current.move,0);step(session);assert.equal(session.current.players[0].name,'New');
 });
+
+
+test('library metadata index lists and finds references without loading a full history',()=>{
+  const Library=require('../application/library.js'),values=new Map();
+  const store={get length(){return values.size;},key:index=>[...values.keys()][index],getItem:key=>values.get(key)??null,
+    setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+  const library=new Library(()=>store,Core,Session,null,{idFactory:()=> 'indexed-game'}),session=create({seed:'index'});
+  for(let i=0;i<20;i++)step(session);
+  library.activate(session,library.newId());
+  const NoRestore={packVersionOf:Session.packVersionOf,restore(){throw Error('list must not decode history');}};
+  const fresh=new Library(()=>store,Core,NoRestore),row=fresh.list()[0];
+  assert.equal(row.move,20);assert.equal(row.invalid,undefined);assert.equal(row.game,session.game);
+  assert.deepEqual(fresh.references(session.game,session.packVersion),['indexed-game']);
+  row.players[0]='changed';assert.notEqual(fresh.list()[0].players[0],'changed');
+  step(session);library.write(session,'indexed-game');assert.equal(fresh.list()[0].move,21);
+  library.remove('indexed-game');assert.deepEqual(fresh.list(),[]);
+});

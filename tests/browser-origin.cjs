@@ -12,7 +12,7 @@ async function serveBrowserFixture(root){
     try { const u=new URL(req.url,'http://localhost');relative=decodeURIComponent(u.pathname==='/'?'index.html':u.pathname.slice(1)); }
     catch(_){res.writeHead(400);res.end();return;}
     const file=path.resolve(root,relative);
-    const allowed=relative==='index.html'||/^installed-packs(?:\.[a-f0-9]{16})?\.js$/.test(relative)||relative==='manifest.webmanifest'||relative==='sw.js'||['app/','core/','application/','packs/','icons/'].some(prefix=>relative.startsWith(prefix));
+    const allowed=relative==='index.html'||/^installed-packs(?:\.[a-f0-9]{16})?\.js$/.test(relative)||relative==='manifest.webmanifest'||relative==='sw.js'||['app/','core/','application/','presentation/','platform/','packs/','icons/'].some(prefix=>relative.startsWith(prefix));
     if(!allowed||!file.startsWith(root+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){
       res.writeHead(404);res.end();return;
     }

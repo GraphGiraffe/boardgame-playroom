@@ -7,7 +7,7 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
   page.on('pageerror',e=>errors.push(e.message));
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><button id="network-pair-button">Хост</button><button id="network-join-button">Гость</button><div id="app"></div><div id="modal-root"></div></body></html>');
   for(const css of ['app/styles.css','app/lobby.css','app/design-system.css'])await page.addStyleTag({content:read(css)});
-  for(const script of ['core/ui.js','app/game-screen.js','app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
+  for(const script of ['core/component-assets.js','core/ui.js','app/game-screen.js','app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
   await page.addScriptTag({content:`
     globalThis.__testState={microphone:${microphone},share:${share},standalone:${standalone},candidate:${candidate},addresses:${JSON.stringify(addresses)}};
     const original=globalThis.PlayroomAcousticPairing;

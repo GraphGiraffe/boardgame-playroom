@@ -85,7 +85,7 @@
   const unlockAudio = () => {if(settings.sound&&!document.hidden)void audio.unlock();};
   document.addEventListener('pointerdown',unlockAudio,{capture:true,passive:true});
   document.addEventListener('keydown',unlockAudio,{capture:true});
-  const flow=new Flow.GameFlow({options:()=>settings,motion:Motion,reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const flow=new Flow.GameFlow({options:()=>settings,motion:Motion,presentation:()=>({minimumVisibleMs:Flow.viewingTime(catalog[session?.game]?.capabilities,session?.current)}),reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
   const pace=()=>flow.pace();
   HandOverflow.attach(document);
   document.body.classList.toggle('reduced-motion',pace().duration===0);
@@ -421,20 +421,18 @@
   function playersMarkup(state,actions=[]) {
     return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||'очки',playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
   }
-  function renderTable(animate=false,preserveYatzy=false) {
+  function renderTable(animate=false,preserveField=false) {
     if (!session) return renderHub();
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state), passProtected=handoffDelay()>0;
     const shownViewer=gate!==null?-1:viewer, projected=E.project(state,shownViewer);
-    const identity=[sessionId,state.game,shownViewer,...(state.game==='battleship'?[]:[state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
+    const identity=[sessionId,state.game,shownViewer,...(catalog[state.game]?.capabilities?.viewStateScope==='match'?[]:[state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
     projected.players=projected.players.map(p=>({...p,local:!p.bot}));
     if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
     const turnText=replay?'Просмотр истории':transition?'Показываем ход…':finished?'Партия завершена':paused?'Пауза':turnPlayer?.bot?`${turnPlayer.name} думает…`:isPass()?`Ходит ${turnPlayer?.name}`:'Ваш ход';
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
     const eventText=replay&&replayIndex===0?'Начальная расстановка':lastEvent(projected)?.text||'Выберите доступное действие на столе';
-    const scoreBoard=state.game==='yatzy'?$('#app .yatzy-board'):null;
-    const scoreScroll=scoreBoard?{top:scoreBoard.scrollTop,left:scoreBoard.scrollLeft}:null;
     const markup=GameScreen.render({
       gameName:game.name,subtitle:session.options.presetLabel||'Основной набор',
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||'очки',
@@ -447,14 +445,10 @@
       footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
     });
-    if(scoreBoard&&state.game==='yatzy'){
-      const template=document.createElement('template');template.innerHTML=markup;
-      GameScreen.patchChildren($('#app'),template.content);
-    }else $('#app').innerHTML=markup;
+    GameScreen.update($('#app'),markup);
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     HandOverflow.sync($('#app'));
     ensureRoomButton();GameScreen.layoutScene($('#app'));
-    const nextScoreBoard=$('#app .yatzy-board');if(scoreScroll&&nextScoreBoard){nextScoreBoard.scrollTop=scoreScroll.top;nextScoreBoard.scrollLeft=scoreScroll.left;}
     feedback.refresh();playerTargets?.refresh();
     if(replay)turnNotice.reset();
     else turnNotice.observe({sessionId:sessionId||session.createdAt,revision:state.move,turn:state.turn,viewer,status:state.status,paused,active:screen==='table'&&!transition&&gate===null&&!document.hidden,mount:$('#app')});
@@ -535,7 +529,7 @@
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
       feedback.accept(E.project(session.current,viewer).events,[],session.game,{duration:Math.max(220,timing.duration+200)});
       save();input?.cancel();
-      if(session.game==='yatzy'&&action.type==='hold'){renderTable(false,true);return;}
+      if(catalog[session.game]?.capabilities?.quietActions?.includes(action.type)){renderTable(false,true);return;}
       const run={session,beforeTurn,timer:null};transition=run;
       renderTable();
       Promise.all([flow.play(snapshot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}),feedback.whenIdle()]).then(()=>{
@@ -959,7 +953,7 @@
   });
   window.addEventListener('pagehide',()=>{
     stopSounds();if(session)save();
-    try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?viewState:{},scroll:screen==='table'?{top:$('#app .yatzy-board')?.scrollTop||0,left:$('#app .yatzy-board')?.scrollLeft||0}:null}));}catch(_){}
+    try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?viewState:{},scroll:screen==='table'?{top:$('#app [data-scene-scroll]')?.scrollTop||0,left:$('#app [data-scene-scroll]')?.scrollLeft||0}:null}));}catch(_){}
   });
   packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onCatalog(){
     rememberPackUpdates('read');rememberPackUpdates('dismissed');if(screen==='hub')renderHub();
@@ -998,7 +992,7 @@
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
     resumeSession(sessionId);
     if(navigation.viewState&&typeof navigation.viewState==='object')viewState=navigation.viewState;
-    if(navigation.scroll){const board=$('#app .yatzy-board');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
+    if(navigation.scroll){const board=$('#app [data-scene-scroll]');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
   }else render();
   if(globalThis.PlayroomRemotePacks){
     void globalThis.PlayroomRemotePacks.load().then(async catalog=>{

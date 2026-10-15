@@ -51,6 +51,13 @@
     }
     patch(parent,next);
   }
+  const pendingScroll=new WeakMap();
+  function update(host,markup){
+    const scrollers=[...host.querySelectorAll('[data-scene-scroll],.hand-track,.hand-scroll')].map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
+    const template=host.ownerDocument.createElement('template');template.innerHTML=markup;
+    patchChildren(host,template.content);
+    pendingScroll.set(host,scrollers);
+  }
   function updateModal(modal,content){
     const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
     const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
@@ -187,6 +194,8 @@
     }
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
+    for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
+    pendingScroll.delete(host);
   }
-  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
 });

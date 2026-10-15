@@ -65,3 +65,12 @@ test('catalogs contain all built-in theme names and work in a non-DOM client',()
   assert.equal(context.document,undefined);
   assert.equal(context.localStorage,undefined);
 });
+
+
+test('nested message references format after projection and reject cycles',()=>{
+  const {Translator}=require('../presentation/localization.js');
+  const t=new Translator({catalogs:{ru:{category:'Пара',score:'{category} · {points}'}}});
+  assert.equal(t.format({key:'score',params:{category:{key:'category'},points:12}}),'Пара · 12');
+  const cyclic={key:'score',params:{points:12}};cyclic.params.category=cyclic;
+  assert.throws(()=>t.format(cyclic),error=>error.code==='MESSAGE_REFERENCE_INVALID');
+});

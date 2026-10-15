@@ -78,8 +78,18 @@
     }
 
     format(reference) {
-      if (!record(reference)) throw new LocalizationError('MESSAGE_REFERENCE_INVALID');
-      return this.text(reference.key, reference.params);
+      const ancestors=new Set();
+      const format=value=>{
+        if(!record(value)||ancestors.has(value)||ancestors.size>=32)throw new LocalizationError('MESSAGE_REFERENCE_INVALID');
+        ancestors.add(value);
+        const params=value.params??{};
+        if(!record(params))throw new LocalizationError('MESSAGE_REFERENCE_INVALID');
+        const resolved=Object.fromEntries(Object.entries(params).map(([key,item])=>[key,record(item)?format(item):item]));
+        const text=this.text(value.key,resolved);
+        ancestors.delete(value);
+        return text;
+      };
+      return format(reference);
     }
 
     withLocale(locale) {

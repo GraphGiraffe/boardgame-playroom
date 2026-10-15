@@ -1,4 +1,10 @@
-(function(root,factory){const P=root.PlayroomProtocol||(typeof require==='function'?require('./protocol.js'):null),api=factory(P);if(typeof module==='object'&&module.exports)module.exports=api;root.SessionAuthority=api;})(typeof globalThis!=='undefined'?globalThis:this,function(P){
+(function(root,factory){
+  const P=root.PlayroomProtocol||(typeof require==='function'?require('./protocol.js'):null);
+  const Processor=root.PlayroomCommandProcessor||(typeof require==='function'?require('./command-processor.js'):null);
+  const api=factory(P,Processor);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  root.SessionAuthority=api;
+})(globalThis,function(P,Processor){
   'use strict';
   const records=new WeakMap();
   const {clone,freeze,canonical}=P;
@@ -31,6 +37,21 @@
       }
       records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[],paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
     }
+    _processor() {
+      const r=records.get(this);
+      return r.processor ||= new Processor({
+        persistence:r.persistence,
+        begin:()=>{r.busy=true;},end:()=>this._idle(),
+        commit:next=>r.session.commitPrepared(next),
+        remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
+        publish:(before,next)=>{
+          r.effects=transfers(before,next).map((draw,i)=>({id:`${next.move}:draw:${i}`,revision:next.move,...draw}));
+          this._publish();if(r.persistence)this.scheduleBot();
+        },
+        reject:(code,command)=>({ok:false,code,message:text[code],commandId:command.commandId,revision:this.revision}),
+        fence:()=>{r.disposed=true;}
+      });
+    }
     get revision(){return records.get(this).session.current.move;}
     connect(viewer=-1){
       const r=records.get(this);
@@ -52,7 +73,7 @@
         snapshot:()=>{requireOpen();return this._snapshot(viewer,undefined,binding);},
         history:(index)=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.states.length)throw Error('Invalid history index');return this._snapshot(viewer,index,binding);},
         presentationReady:message=>this._presentationReady(binding,message),
-        dispatch:command=>r.persistence?this._dispatchDurable(binding,command):this._dispatch(binding,command),
+        dispatch:command=>this._dispatch(binding,command),
         subscribe:listener=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');binding.listeners.add(listener);return ()=>binding.listeners.delete(listener);},
         close:()=>{binding.closed=true;binding.listeners.clear();r.bindings.delete(binding);}
       });
@@ -153,93 +174,33 @@
       const s=records.get(this).session;
       return binding.role==='table'?s.engine.tableCommand(s.current,actor,action):action;
     }
-    _dispatch(binding,command){
+    _dispatch(binding,command,internalBot=false){
       const r=records.get(this),s=r.session;
-      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:this._snapshot(binding.viewer,undefined,binding)}:{})});
+      const snapshot=()=>this._snapshot(binding.viewer,undefined,binding);
+      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
+        revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:snapshot()}:{})});
       if(binding.closed||r.disposed)return reject('CLOSED');
       if(!P.validate(command))return reject('BAD_COMMAND');
       if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
+      // A restored durable authority may replay an existing receipt across epochs.
+      if(!r.persistence&&command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
+      const access=this._commandActor(binding,command,internalBot);
+      if(access.code)return reject(access.code);
+      const actor=access.actor,key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
+      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:snapshot()}):reject('ID_CONFLICT');
       if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
-      const access=this._commandActor(binding,command);if(access.code)return reject(access.code);const actor=access.actor;
-      const key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
-      // Check identity BEFORE revision: retry after a lost ack must return its receipt.
-      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer,undefined,binding)}):reject('ID_CONFLICT');
       if(r.stopRequested)return reject('PAUSED');
       if(r.busy)return reject('BUSY');
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
-      let receipt;
       const decision=this._reactionDecision(actor,command.action);
-      if(decision)receipt={...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})};
-      else if(command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action))receipt=reject('STALE');
-      else {
-        r.busy=true;
-        try{s.act(actor,this._actionFor(binding,actor,command.action));r.effects=transfers(s.states.at(-2),s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));receipt={ok:true,code:'OK',commandId:command.commandId,revision:this.revision};}
-        catch(_){receipt=reject('ILLEGAL');}
-        // A rejected command also has a stable receipt; do not store a stale snapshot.
-        const {snapshot,...result}=receipt;r.receipts.set(key,{signature,receipt:freeze(result)});
-        try{if(receipt.ok)this._publish();}finally{this._idle();}
-        return freeze({...receipt,snapshot:this._snapshot(binding.viewer,undefined,binding)});
-      }
-      const {snapshot,...result}=receipt;r.receipts.set(key,{signature,receipt:freeze(result)});return receipt;
-    }
-    // Network-only path: stage the transition, wait for atomic journal + receipt
-    // commit, and only then change the live Session or publish a snapshot.
-    async _dispatchDurable(binding,command,internalBot=false){
-      const r=records.get(this),s=r.session;
-      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
-        revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:this._snapshot(binding.viewer,undefined,binding)}:{})});
-      if(binding.closed||r.disposed)return reject('CLOSED');
-      if(!P.validate(command))return reject('BAD_COMMAND');
-      if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
-      const access=this._commandActor(binding,command,internalBot);if(access.code)return reject(access.code);const actor=access.actor;
-      const key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
-      // An old epoch may only resolve an already-committed command. It must
-      // never authorize a NEW action after restoring the host.
-      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer,undefined,binding)}):reject('ID_CONFLICT');
-      if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
-      if(r.stopRequested)return reject('PAUSED');
-      if(r.busy)return reject('BUSY');
-      if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
-      if(r.paused)return reject('PAUSED');
-      r.busy=true;
-      let committed=false;
-      try{
-        let receipt,next;
-        const decision=this._reactionDecision(actor,command.action);
-        if(decision)receipt={...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})};
-        else if(command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action))receipt=reject('STALE');
-        else {
-          try{next=s.prepare(actor,this._actionFor(binding,actor,command.action));}catch(_){receipt=reject('ILLEGAL');}
-        }
-        if(next){
-          const before=s.current,revision=before.move;
-          receipt={ok:true,code:'OK',commandId:command.commandId,revision:next.move};
-          await r.persistence.commit({sessionId:r.sessionId,previousRevision:revision,nextState:next,
-            viewer:actor,commandId:command.commandId,signature,receipt});
-          committed=true;
-          s.commitPrepared(next);
-          r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));
-        }else{
-          const {snapshot,...result}=receipt;
-          await r.persistence.recordReceipt({sessionId:r.sessionId,viewer:actor,commandId:command.commandId,signature,receipt:result});
-        }
-        const {snapshot,...result}=receipt;
-        r.receipts.set(key,{signature,receipt:freeze(result)});
-        if(receipt.ok){this._publish();this.scheduleBot();}
-        return freeze({...result,snapshot:this._snapshot(binding.viewer,undefined,binding)});
-      }catch(_){
-        if(committed){
-          // The journal already contains the step: never claim it was rolled
-          // back. Fence this authority until host recovery reloads the disk.
-          r.disposed=true;
-          return freeze({ok:false,code:'RECOVERY_REQUIRED',message:text.RECOVERY_REQUIRED,
-            commandId:command.commandId,revision:this.revision});
-        }
-        return reject('STORAGE_ERROR');
-      }
-      finally{this._idle();}
+      const rejection=decision?{...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})}:
+        command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action)?reject('STALE'):null;
+      const result=this._processor().execute({sessionId:r.sessionId,actor,command,signature,before:s.current,rejection,
+        prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action))});
+      const reply=receipt=>freeze({...receipt,...(!r.disposed?{snapshot:snapshot()}:{})});
+      return result&&typeof result.then==='function'?result.then(reply):reply(result);
     }
     async _pause(binding,command,signature,key,reject){
       const r=records.get(this);
@@ -278,7 +239,7 @@
     async actBotAsync(actor,action){
       const r=records.get(this);
       if(r.disposed||r.busy||r.paused||!r.session.current.players[actor]?.bot)throw Error('Invalid bot actor');
-      const receipt=await this._dispatchDurable({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
+      const receipt=await this._dispatch({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
       if(!receipt.ok)throw Error(receipt.message);return r.session.current;
     }
     _publish(){
@@ -304,7 +265,15 @@
       },wait);
     }
     // Host-only entrypoint; never attached to a client capability.
-    actBot(actor,action){const r=records.get(this),s=r.session;if(r.persistence)throw Error('Durable bot actions require a committed async transition');if(r.disposed||r.busy||r.paused||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');const decision=this._reactionDecision(actor,action);if(decision)throw Error(text[decision]);const before=s.current;r.busy=true;try{s.act(actor,action);r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));this._publish();}finally{this._idle();}return s.current;}
+    actBot(actor,action){
+      const r=records.get(this),s=r.session;
+      if(r.persistence)throw Error('Durable bot actions require a committed async transition');
+      if(r.disposed||r.busy||r.paused||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');
+      const command=P.command(this._snapshot(actor),action,uid());
+      const receipt=this._dispatch({viewer:actor,closed:false},command,true);
+      if(!receipt.ok)throw Error(receipt.message);
+      return s.current;
+    }
     dispose(){const r=records.get(this);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;for(const b of r.bindings){b.closed=true;b.listeners.clear();}r.bindings.clear();}
   }
   SessionAuthority.transfers=transfers;

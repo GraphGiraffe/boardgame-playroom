@@ -139,7 +139,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(game==='battleship'){
      if(document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
      if(!document.querySelector('[data-view-preference="followOpponent"]'))issues.push('missing spectator auto-switch');
-     if(document.querySelector('.battle-fields')?.dataset.presentationWait!=='750')issues.push('missing minimum shot viewing time');
+     if(PlayroomGameFlow.viewingTime(PlayroomCatalog.battleship.capabilities,{data:{phase:'battle'}})!==750)issues.push('missing minimum shot viewing time');
     }
    }return issues;
   });assert.deepEqual(publicViews,[]);

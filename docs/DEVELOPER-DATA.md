@@ -6,8 +6,8 @@
 
 | Данные | Модуль | Граница |
 | --- | --- | --- |
-| Локальные партии, история и метаданные библиотеки | app/library.js, core/session.js | Полная локальная Session; точный packVersion |
-| Сетевая партия хоста и receipts | app/network-session-store.js | IndexedDB; приватная authority, commit до ACK |
+| Локальные партии, история и метаданные библиотеки | application/library.js, app/library.js, core/session.js | Полная локальная Session; точный packVersion |
+| Сетевая партия хоста и receipts | platform/web/session-store.js + application/host-recovery.js | IndexedDB; приватная authority, commit до ACK |
 | История клиента | app/network-client-history.js | Только проекции данного viewer; отдельные Session |
 | Право возврата | RoomService/ResumeStore в app/multiplayer.js | Приватный room-scoped токен, не публичный профиль |
 | Установленные версии | core/packs.js, app/pack-manager.js | Доверенные исходники правил, view и ресурсы |

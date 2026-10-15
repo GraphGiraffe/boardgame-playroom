@@ -291,7 +291,7 @@ def read_source_pack(manifest_path):
         files["rules.js"] = "\n".join([*sources, files["rules.js"]])
     if manifest.get("sharedUi"):
         shared = pack.parent.parent / "shared"
-        files["view.js"] = (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
+        files["view.js"] = (shared / "components/round-token.js").read_text(encoding="utf-8") + "\n" + (shared / "view-kit.js").read_text(encoding="utf-8") + "\n" + files["view.js"]
         files["styles.css"] = (shared / "view-kit.css").read_text(encoding="utf-8") + "\n" + files["styles.css"]
         for name in manifest.get("sharedAssets", []):
             if not re.fullmatch(r"[a-z][a-z0-9-]*\.svg", name):
@@ -346,7 +346,7 @@ def source_files():
     for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
-    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "application/*.js", "presentation/*.js", "themes/*.json", "locales/*/*.json", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
+    for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "application/*.js", "presentation/*.js", "platform/web/*.js", "themes/*.json", "locales/*/*.json", "docs/*.md", "tests/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
         paths.update(ROOT.glob(pattern))
     for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
@@ -460,6 +460,23 @@ def write_zip(destination, items):
             archive.writestr(info, content)
 
 
+def sync_components(source_root):
+    lock = parse_json((ROOT / "core/component-assets.json").read_text(encoding="utf-8"))
+    target = ROOT / "core/component-assets.js"
+    marker = "// Vendored from playroom-paks/" + lock["source"] + "; sha256="
+    source = (source_root.parent / lock["source"]) if source_root else None
+    if source and source.is_file():
+        content = source.read_text(encoding="utf-8")
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        target.write_text(marker + digest + "\n" + content, encoding="utf-8")
+        lock["sha256"] = digest
+        (ROOT / "core/component-assets.json").write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    else:
+        header, content = target.read_text(encoding="utf-8").split("\n", 1)
+        if header != marker + lock["sha256"] or hashlib.sha256(content.encode()).hexdigest() != lock["sha256"]:
+            raise ValueError("Vendored component source is corrupt; rebuild with the selected source packs")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist", help="Каталог результата (по умолчанию: dist/ рядом со скриптом)")
@@ -476,6 +493,7 @@ def main():
     if args.packs_dir and not (args.all_games or args.prepare_dev or args.pwa):
         parser.error("Выберите --all-games, --pwa или --prepare-dev для указанных паков")
     packs, source_root = read_packs(args.packs_dir) if args.packs_dir else ([], None)
+    sync_components(source_root)
     if args.prepare_dev:
         prepare_dev(packs, source_root)
         if not args.all_games:
@@ -488,11 +506,12 @@ def main():
     page, archive, core_archive = output / "playroom.html", output / "playroom-source.zip", output / "tabletop-core.zip"
     page.write_text(html, encoding="utf-8")
     write_zip(archive, [("playroom/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in files])
-    core_files = [path for path in files if path.parent == ROOT / "core"]
-    core_items = [("tabletop-core/" + path.name, path.read_bytes()) for path in core_files]
+    core_files = [path for path in files if path.parts[len(ROOT.parts)] in {"core", "application", "presentation", "themes", "locales"}]
+    core_items = [("tabletop-core/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in core_files]
     contract = ROOT / "docs" / "PACKS.md"
     if contract.is_file():
         core_items.append(("tabletop-core/docs/PACKS.md", contract.read_bytes()))
+    core_items.append(("tabletop-core/docs/SDK-0.18.md", (ROOT / "docs/SDK-0.18.md").read_bytes()))
     write_zip(core_archive, core_items)
     artifacts = [page, archive, core_archive]
     if complete_html is not None:

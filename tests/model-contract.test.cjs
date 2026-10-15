@@ -1,5 +1,5 @@
 'use strict';
-require('../app/model-adapter.js');
+require('../core/model-registration.js');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
@@ -152,7 +152,9 @@ test('the integration bridge preserves assigned marks, results, scores and exact
     assert.equal(session.current.players[firstPlayer].score,1);assert.equal(session.current.rng,rng);
     assert.equal(session.current.packVersion,'0.2.0');assert.equal(session.current.data.marks[firstPlayer],'X');
     assert.deepEqual(session.current.result.values,[0,1].map(player=>player===firstPlayer?1:0));
-    assert.equal(session.current.events.at(-1).message.key,'tictactoe.events.won');
+    assert.equal(session.current.events.at(-1).type,'tictactoe.won');
+    assert.equal(session.current.events.at(-1).text,undefined);
+    assert.equal(session.view(firstPlayer).events.at(-1).message.key,'tictactoe.events.won');
     assert(!Object.keys(session.current).some(key=>key.startsWith('__')));
     const restored=Session.restore(E,JSON.parse(session.serialize()));
     assert.deepEqual(restored.current,session.current);
@@ -161,19 +163,38 @@ test('the integration bridge preserves assigned marks, results, scores and exact
   }
 });
 
-test('the temporary bridge rejects private events before presentation or state mutation',()=>{
-  const E=require('../core/engine.js');require('../packs/tictactoe/rules.js');
-  const state=E.createGame('tictactoe',{seed:17,players:[{name:'A'},{name:'B'}],firstPlayerMode:'assigned',firstPlayer:0});
-  const before=JSON.stringify(state);let described=0;
-  const privateModel={...definition,reduce(position,actor,command){
+test('canonical private events persist without presentation and project before translation, sound or replay',()=>{
+  const E=require('../core/engine.js'),Session=require('../core/session.js');
+  const described=[];
+  const privateModel={...definition,id:'private-model-fixture',reduce(position,actor,command){
     const changed=definition.reduce(position,actor,command);
-    return {...changed,events:[{type:'private.reveal',actor,params:{secret:'hidden'},visibility:{kind:'players',players:[actor]}}]};
+    return {...changed,events:[
+      {type:'private.reveal',actor,params:{secret:'PRIVATE-CARD'},visibility:{kind:'players',players:[actor]}},
+      {type:'private.reveal',actor,params:{secret:'PRIVATE-OTHER'},visibility:{kind:'players',players:[actor]},
+        publicEvent:{type:'tictactoe.placed',actor,params:{mark:'X',cell:0},visibility:{kind:'public'}}}
+    ]};
   }};
-  const adapted=globalThis.PlayroomModelAdapter.adapt(E,{definition:privateModel,
-    presentation:{...presentation,event(){described++;throw Error('must not translate private parameters');}},
-    locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.2.0'});
-  assert.throws(()=>adapted.apply(state,0,{type:'place',cell:0}),coded('ADAPTER_PRIVATE_EVENT_UNSUPPORTED'));
-  assert.equal(described,0);assert.equal(JSON.stringify(state),before);
+  const adapted=globalThis.PlayroomModelRegistration.adapt(E,{definition:privateModel,
+    presentation:{...presentation,event(value){
+      described.push(value.params.secret||'public');
+      return value.type==='private.reveal'?{kind:'move',message:{key:'tictactoe.events.placed',params:{mark:value.params.secret,cell:1}}}:presentation.event(value);
+    }},locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.2.0'});
+  E.register(adapted);
+  const session=new Session(E,adapted.id,{seed:17,players:[{name:'A'},{name:'B'}],firstPlayerMode:'assigned',firstPlayer:0});
+  session.act(0,{type:'place',cell:0});assert.deepEqual(described,[]);
+  assert.equal(session.current.events.at(-1).revision,1);
+  for(const viewer of [-1,1]){
+    const view=session.view(viewer);assert(!JSON.stringify(view).includes('PRIVATE-'));
+    assert.equal(view.events.at(-1).type,'tictactoe.placed');
+    assert.equal(view.events.at(-1).id,session.current.events.at(-1).id);
+    assert.equal(E.soundCues(session.current,viewer,1).length,1);
+  }
+  assert(described.every(value=>value==='public'));
+  assert(JSON.stringify(session.view(0)).includes('PRIVATE-CARD'));
+  const restored=Session.restore(E,JSON.parse(session.serialize()));
+  assert.deepEqual(restored.export(),session.export());
+  assert(!JSON.stringify(restored.view(-1,1)).includes('PRIVATE-'));
+  assert.equal(restored.current.events.at(-1).text,undefined);
 });
 
 test('authority preserves model projections, idempotency and read-only spectators without leaking authority fields',()=>{

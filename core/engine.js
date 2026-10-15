@@ -14,9 +14,9 @@
     return Random.rollDie(sides, state, Math.random);
   }
   function event(state, text, player = null, kind = 'action', extra = {}) {
-    state.events.push({ id: (state.events.at(-1)?.id || 0) + 1, text, player, kind, ...extra });
+    state.events.push({ id: (state.events.at(-1)?.id || 0) + 1, revision:state.move, text, player, kind, ...extra });
   }
-  function finish(state, winner, text, points = 1) {
+  function complete(state, winner, points = 1) {
     state.status = 'finished';
     const winners = Array.isArray(winner) ? [...new Set(winner)] : winner == null ? [] : [winner];
     state.winner = winners[0] ?? null;
@@ -28,19 +28,33 @@
     if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isSafeInteger(value)||value<0)))throw Error('Некорректная статистика пака');
     const order=summary?.order==='asc'?'asc':'desc',places=values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
     state.result={label:summary?.label||'Победа',values,places,order,...(summary?.details?{detailLabel:summary.detailLabel||'Показатель',details:summary.details}:{})};
-    event(state, text || (!winners.length ? 'Ничья' : `${state.players[winners[0]].name} побеждает`), state.winner, 'finish');
+  }
+  function finish(state, winner, text, points = 1) {
+    complete(state,winner,points);
+    event(state, text || (state.winner===null?'Ничья':`${state.players[state.winner].name} побеждает`), state.winner, 'finish');
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
   // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
+  function projectedEvents(state,viewer) {
+    const pack=forState(state);
+    return state.events.flatMap(raw=>{
+      if(raw.visibility){
+        const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
+        return Events.project([raw],viewer,state.players.length).map(value=>pack.presentEvent(value,state.players));
+      }
+      if(raw.privateTo!=null&&!(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer))
+        return [{id:raw.id,...(raw.revision!==undefined?{revision:raw.revision}:{}),text:raw.publicText||'Игрок совершил скрытое действие',player:raw.player,kind:raw.kind,sound:raw.publicSound??null}];
+      const value={...raw};delete value.privateTo;delete value.publicText;delete value.publicSound;
+      return [value];
+    });
+  }
   function soundCues(state, viewer, afterEventId = 0) {
     const fallback = {move:'move',play:'move',action:'move',draw:'draw',take:'draw',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'notify'};
-    return state.events.filter(e => e.id > afterEventId).flatMap(raw => {
-      const visible=raw.privateTo==null||(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer);
-      const e=visible?raw:{...raw,sound:raw.publicSound??null};
-      const id = e.kind === 'finish'
-        ? state.winner == null ? 'draw-game' : viewer < 0 || !Number.isInteger(viewer) || viewer >= state.players.length ? 'notify' : (state.winners || [state.winner]).includes(viewer) ? 'victory' : 'defeat'
-        : e.sound===null?null:e.sound?.id || fallback[e.kind];
-      return id ? [{id, eventId:e.id, ...(e.sound?.target != null ? {target:e.sound.target} : {})}] : [];
+    return projectedEvents(state,viewer).filter(e=>e.id>afterEventId).flatMap(e=>{
+      const id=e.kind==='finish'
+        ? state.winner==null?'draw-game':viewer<0||viewer>=state.players.length?'notify':(state.winners||[state.winner]).includes(viewer)?'victory':'defeat'
+        : e.sound===null?null:e.sound?.id||fallback[e.kind];
+      return id?[{id,eventId:e.id,...(e.sound?.target!=null?{target:e.sound.target}:{})}]:[];
     });
   }
   const hidden = cards => cards.map(() => ({ hidden: true }));
@@ -61,6 +75,10 @@
     const checked = checkedPack(pack);
     if (registry.has(checked.id)) throw Error(`Набор ${checked.id} уже зарегистрирован`);
     versions.set(checked.id + '@' + checked.version, checked);registry.set(checked.id, checked);return checked;
+  }
+  function registerModel(specification){
+    const registration=root.PlayroomModelRegistration||(typeof require==='function'?require('./model-registration.js'):null);
+    return register(registration.adapt(api,specification));
   }
   function activatePack(pack) {
     const checked = registerVersion(pack, {replace:true});registry.set(checked.id, checked);return checked;
@@ -108,6 +126,11 @@
     assertState(record(state.data) && Array.isArray(state.events), 'данные и события');
     let last = 0;
     for (const e of state.events) {
+      if(e.visibility){
+        const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
+        assertState(record(e)&&int(e.id,last+1,Number.MAX_SAFE_INTEGER)&&int(e.revision,0,state.move),'событие');
+        Events.validate(e,state.players.length);last=e.id;continue;
+      }
       assertState(record(e) && int(e.id, last + 1, Number.MAX_SAFE_INTEGER) && typeof e.text === 'string' && typeof e.kind === 'string' && (e.player === null || int(e.player, 0, state.players.length - 1)), 'событие');
       assertState(e.privateTo == null || int(e.privateTo, 0, state.players.length - 1) || (Array.isArray(e.privateTo)&&e.privateTo.length>0&&new Set(e.privateTo).size===e.privateTo.length&&e.privateTo.every(i=>int(i,0,state.players.length-1))), 'видимость события');
       for(const sound of [e.sound,e.publicSound])assertState(sound == null || (record(sound) && typeof sound.id === 'string' && /^[a-z][a-z0-9_.-]{0,63}$/.test(sound.id) && (sound.target == null || int(sound.target, 0, state.players.length - 1))), 'звук события');
@@ -191,10 +214,7 @@
     delete out.rng;
     if (out.data.hands) out.data.hands = out.data.hands.map((hand, index) => index === viewer || out.openHands ? hand : hidden(hand));
     for (const key of ['drawPile', 'stock']) if (out.data[key]) out.data[key] = hidden(out.data[key]);
-    out.events = out.events.map(e => {
-      if (e.privateTo != null && !(Array.isArray(e.privateTo)?e.privateTo.includes(viewer):e.privateTo===viewer)) return { id: e.id, text: e.publicText || 'Игрок совершил скрытое действие', player: e.player, kind: e.kind, sound:e.publicSound??null };
-      const event = { ...e }; delete event.privateTo; delete event.publicText;delete event.publicSound; return event;
-    });
+    out.events = projectedEvents(state,viewer);
     if (pack.project) pack.project(out, viewer, state);
     return out;
   }
@@ -252,7 +272,7 @@
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

@@ -4,7 +4,7 @@
   function install(definition){
     const {manifest,view,styles,assets={}}=definition;
     if(!manifest||typeof manifest.id!=='string'||typeof view!=='string'||typeof styles!=='string')throw Error('Нет представления пака.');
-    const catalog={[manifest.id]:manifest},scope={PlayroomViews:V,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error('Ресурс отсутствует');return assets[path];}})};
+    const catalog={[manifest.id]:manifest},scope={PlayroomViews:V,PlayroomComponents:root.PlayroomComponents,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error('Ресурс отсутствует');return assets[path];}})};
     // A trusted view module executes here. The remote client does not receive Session or rules code.
     Function('globalThis','"use strict";\n'+view)(scope);
     let style=document.querySelector?.('style[data-shared-pack="'+manifest.id+'"]');
@@ -17,7 +17,7 @@
     let viewState={},viewIdentity='',presentationTurn=null,newHistoryBoundary=null,historyVisitedBoundary=false;
     let selected=null,connected=initialConnected,historyOpen=false,historyIndex=null,historyRequested=null,historySnapshot=null,historyTicket=0,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,destroyed=false,historyPause=null;
-    const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
+    const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.()||{},motion:root.PlayroomMotion,presentation:()=>({minimumVisibleMs:Flow.viewingTime(pack.manifest.capabilities,(shownLive||client.snapshot)?.state)}),reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     let shownLive=client.snapshot,animationTicket=0,transitionActive=false,lastPresented=-1,lastReviewed=null;
     let frames=[],draining=false,intake=Promise.resolve(),queuedRevision=shownLive?.revision??-1,presentedWindow=null;
     const stopMotion=()=>{animationTicket++;transitionActive=false;draining=false;frames=[];queuedRevision=client.snapshot?.revision??-1;flow.cancel();};
@@ -46,7 +46,7 @@
       if(selected!==null&&hand&&!hand.some(c=>c.id===selected))selected=null;
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
-      const identity=[s.game,s.viewer,...(s.game==='battleship'?[]:[s.state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
+      const identity=[s.game,s.viewer,...(pack.manifest.capabilities?.viewStateScope==='match'?[]:[s.state.turn])].join(':');if(identity!==viewIdentity){viewIdentity=identity;viewState={};}
       const scene=V.render(s.state,s.viewer,current?s.actions:[],{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:H.viewPreferences(s.game,s.viewer),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({index:historyRequested??historyIndex??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:newHistoryBoundary}):'';
       const markup=GameScreen.render({
@@ -75,10 +75,7 @@
           const selector='[data-command="'+command+'"]',button=app.querySelector(selector),next=template.content.querySelector(selector);
           button.disabled=next.disabled;button.innerHTML=next.innerHTML;button.setAttribute('aria-label',next.getAttribute('aria-label'));
         }
-      }else if(app.querySelector('.yatzy-board')&&s.game==='yatzy'){
-        const template=document.createElement('template');template.innerHTML=markup;
-        GameScreen.patchChildren(app,template.content);
-      }else app.innerHTML=markup;
+      }else GameScreen.update(app,markup);
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       const historyPanel=app.querySelector('.history-panel');
       if(historyPanel)historyPanel.setAttribute('aria-busy',historySnapshot&&historyRequested===null?'false':'true');

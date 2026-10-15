@@ -114,3 +114,18 @@ print(json.dumps(result,ensure_ascii=False))
     }
   }
 });
+
+
+test('round token geometry is canonical in packs and the pinned host copy has the same digest and output',()=>{
+  const crypto=require('node:crypto');
+  const packRoot=path.dirname(fs.realpathSync(path.join(root,'packs')));
+  const source=fs.readFileSync(path.join(packRoot,'shared/components/round-token.js'),'utf8');
+  const lock=JSON.parse(fs.readFileSync(path.join(root,'core/component-assets.json'),'utf8'));
+  assert.equal(crypto.createHash('sha256').update(source).digest('hex'),lock.sha256);
+  assert.equal(fs.readFileSync(path.join(root,'core/component-assets.js'),'utf8').split('\n').slice(1).join('\n'),source);
+  const canonical=require(path.join(packRoot,'shared/components/round-token.js'));
+  const host=require('../core/ui.js').helpers;
+  for(const value of [null,0,1,8,10,99,1000])for(const first of [false,true]){
+    assert.equal(host.roundTokenArt({value,first}),canonical.roundTokenArt({value,first}));
+  }
+});

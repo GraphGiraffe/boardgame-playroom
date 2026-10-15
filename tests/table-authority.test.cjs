@@ -1,5 +1,5 @@
 'use strict';
-require('../app/model-adapter.js');
+require('../core/model-registration.js');
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {MessageChannel}=require('node:worker_threads');
 const E=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js');
@@ -14,7 +14,7 @@ const definition={...base,id:'table-access-test',
   {command:{type:'play',card:state.data.hands[actor][0].id},visibility:'private'}]:[],
  reduce:(state,actor,action)=>({position:{...state,turn:1-actor,data:{...state.data,die:action.type==='roll'?2:3}},events:[]}),
  project:(state,viewer)=>({die:state.data.die,hands:state.data.hands.map((hand,owner)=>owner===viewer?hand:hand.map(()=>({hidden:true})))})};
-E.register(globalThis.PlayroomModelAdapter.adapt(E,{definition,
+E.register(globalThis.PlayroomModelRegistration.adapt(E,{definition,
  presentation:{...presentation,action:()=>({key:'tictactoe.board.label',params:{}})},
  locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'}));
 function session(){return new Session(E,definition.id,{seed:'PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});}

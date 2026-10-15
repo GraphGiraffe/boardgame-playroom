@@ -1,9 +1,11 @@
 (function(root,factory){
   'use strict';
-  const api=factory();
+  const Journal=root.PlayroomJournal||(typeof require==='function'?require('../../core/journal.js'):null);
+  const Recovery=root.PlayroomHostRecovery||(typeof require==='function'?require('../../application/host-recovery.js'):null);
+  const api=factory(Journal,Recovery);
   if(typeof module==='object'&&module.exports)module.exports=api;
   root.PlayroomNetworkSessionStore=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(){
+})(typeof globalThis!=='undefined'?globalThis:this,function(Journal,Recovery){
   'use strict';
   const DB_NAME='playroom.network-host.v1',DB_VERSION=1;
   const isId=value=>typeof value==='string'&&value.length>0&&value.length<=128;
@@ -21,8 +23,8 @@
       const hash=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));
       return 'sha256:'+Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
     }
-    constructor({indexedDB=globalThis.indexedDB,name=DB_NAME}={}){
-      this.indexedDB=indexedDB;this.name=name;this.database=null;
+    constructor({indexedDB=globalThis.indexedDB,name=DB_NAME,now=()=>Date.now()}={}){
+      this.indexedDB=indexedDB;this.name=name;this.database=null;this.now=now;
     }
     async open(){
       if(this.database)return this.database;
@@ -79,9 +81,10 @@
       if(recovery&&(recovery.version!==1||recovery.room?.id!==room.id||
           recovery.room?.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))
         throw Error('Некорректная приватная копия комнаты.');
-      const timestamp=Date.now();
+      const timestamp=this.now();
       const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
         game:session.game,packVersion:session.packVersion,packDigest,room:clone(room),
+        eventStorage:'delta-v1',eventCursor:Journal.cursor(session.current.events),
         recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,finished:session.current.status==='finished',createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
       return {sessionId,revision:0};
@@ -103,9 +106,10 @@
           if(entry.game!==nextState.game||entry.packVersion!==(nextState.packVersion||'0.1.0')){
             abort(Error('Версия игры в сохранении не совпадает.'));return;
           }
-          tx.objectStore('steps').add({sessionId,revision:nextState.move,state:clone(nextState)});
+          const step=entry.eventStorage==='delta-v1'?Journal.encode(nextState,entry.eventCursor):{state:clone(nextState)};
+          tx.objectStore('steps').add({sessionId,revision:nextState.move,...step});
           tx.objectStore('receipts').add({sessionId,viewer,commandId,signature,receipt:clone(receipt)});
-          sessions.put({...entry,revision:nextState.move,finished:nextState.status==='finished',updatedAt:Math.max(Date.now(),entry.updatedAt)});
+          sessions.put({...entry,revision:nextState.move,finished:nextState.status==='finished',...(entry.eventStorage==='delta-v1'?{eventCursor:step.eventTail}:{}),updatedAt:Math.max(this.now(),entry.updatedAt)});
         };
       });
       return receipt;
@@ -182,53 +186,9 @@
         receipts.onsuccess=()=>{values.receipts=receipts.result;};
         done(values);
       });
-      if(!stored.record)return null;
-      const {record}=stored,steps=(stored.steps||[]).sort((a,b)=>a.revision-b.revision);
-       if(record.format!=='playroom-network-host'||record.version!==1||record.initial?.version!==1||
-           (record.packDigest!=null&&!/^sha256:[0-9a-f]{64}$/.test(record.packDigest))||
-          !isId(record.roomId)||record.room?.id!==record.roomId||
-          record.room?.game?.id!==record.game||record.room.game.version!==record.packVersion||
-          (record.recovery&&(record.recovery.version!==1||record.recovery.room?.id!==record.roomId||
-            record.recovery.room?.ownerId!==record.room.ownerId))||
-          record.initial.game!==record.game||record.initial.packVersion!==record.packVersion||
-          steps.length!==record.revision||steps.some((step,i)=>step.revision!==i+1||step.sessionId!==sessionId))
-        throw Error('Сетевое сохранение повреждено. Данные не удалены.');
-      // A committed step without its receipt (or a receipt without its step)
-      // makes lost-ACK recovery ambiguous. Fail closed instead of resuming a
-      // journal in which a previously acknowledged action could run twice.
-      const accepted=new Set(),commandIds=new Set();
-      for(const row of stored.receipts||[]){
-        const key=row?.viewer+':'+row?.commandId,receipt=row?.receipt;
-        if(row?.sessionId!==sessionId||!Number.isInteger(row.viewer)||row.viewer<0||
-            !isId(row.commandId)||typeof row.signature!=='string'||!row.signature||
-            receipt?.commandId!==row.commandId||typeof receipt.ok!=='boolean'||
-            commandIds.has(key))
-          throw Error('Журнал квитанций повреждён. Данные не удалены.');
-        commandIds.add(key);
-        if(receipt.ok){
-          if(!Number.isSafeInteger(receipt.revision)||receipt.revision<1||
-              receipt.revision>record.revision||accepted.has(receipt.revision))
-            throw Error('Несогласованные подтверждения ходов. Данные не удалены.');
-          accepted.add(receipt.revision);
-        }
-      }
-      if(accepted.size!==record.revision)
-        throw Error('Неполный журнал подтверждений ходов. Данные не удалены.');
-      const controls=record.controlReceipts||[],controlRevision=record.controlRevision||0;
-      if(!Array.isArray(controls)||controls.length>20000||!Number.isSafeInteger(controlRevision)||controlRevision<0||(record.paused!==undefined&&typeof record.paused!=='boolean'))throw Error('Повреждена пауза');
-      const controlKeys=new Set();let previousControl=0;
-      for(const row of controls){const key=row?.viewer+':'+row?.commandId,r=row?.receipt;
-        if(!Number.isInteger(row?.viewer)||(row.viewer<0&&!(row.viewer===-1&&r?.host===true))||row.viewer>=record.initial.states[0].players.length||!isId(row.commandId)||typeof row.signature!=='string'||!r?.control||!r.ok||r.commandId!==row.commandId||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision||!Number.isSafeInteger(r.controlRevision)||r.controlRevision<previousControl||r.controlRevision>previousControl+1||controlKeys.has(key))throw Error('Повреждены подтверждения паузы');
-        previousControl=r.controlRevision;controlKeys.add(key);
-      }
-      if(previousControl!==controlRevision)throw Error('Несогласованная пауза');
-      const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
-        states:[...record.initial.states,...steps.map(step=>step.state)]};
-       return {paused:!!record.paused,controlRevision:record.controlRevision||0,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
-         packDigest:record.packDigest||null,
-        session:Session.restore(engine,saved),
-        receipts:clone([...(stored.receipts||[]),...(record.controlReceipts||[])]),sessionId,revision:record.revision};
+      return Recovery.restore(stored,sessionId,engine,Session);
     }
+
     async list(){
       return this.transaction(['sessions'],'readonly',(tx,done)=>{
         const request=tx.objectStore('sessions').getAll();

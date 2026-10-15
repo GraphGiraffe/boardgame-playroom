@@ -141,3 +141,29 @@ History не знает игры, игроков, хранилища или ча
 Bootstrap загружает model-values перед events/model-runtime/history, session-codec и history перед Session. CommonJS использует те же исходники через require. Entry points включены в автономный HTML, core/source ZIP и PWA cache/integrity.
 
 Границы среза: typed event draft/projector выделены из GameModel без смены схемы; canonical durable event IDs/revisions, единый приватный event store, CommandProcessor, Result/Metric presentation и перенос остальных 11 паков ещё впереди. Временный model-adapter по-прежнему **отклоняет приватные события**; нельзя считать их поддержанными только потому, что отдельный projector умеет players/publicEvent. Старый формат/session facade будет удалён при общем переходе 0.18, legacy runtime в финальный выпуск не переносится.
+
+
+## Седьмой срез: единый processor, приватные факты и Ятзи
+
+Текущий контракт заменяет ограничения срезов 4–6: файл app/model-adapter.js удалён. Регистрация независимых определений находится в SDK core/model-registration.js; CommonJS-пак вызывает engine.registerModel, автономный контейнер — предоставленную регистрацию. Приложение UI не является зависимостью правил.
+
+- CommandProcessor один для ordinary/durable команд и ходов ботов. Общие preflight/access/idempotency/reaction/stale проверки остаются authority policy; processor выполняет prepare → persistence → commit → remember → publish, через порты. Ошибка записи не меняет live state; ошибка после записи закрывает authority с RECOVERY_REQUIRED. Управление паузой имеет отдельную controlRevision.
+- Events.append назначает последовательные ID и revision фактам GameModel. Полный приватный факт хранится у хоста без перевода и дублирующей text-строки. Projector разрешает аудиторию и publicEvent до presentEvent, MessageRef, звука и replay. SDK больше не отклоняет приватные события. Различайте это с ещё не перенесёнными string events остальных паков.
+- PresentationScheduler принимает Clock и minimumVisibleMs, не читает DOM. Отмена освобождает таймер и ожидание даже при незавершившемся renderer. GameFlow получает presentation policy через порт. Фаза/задержка/quietActions/viewStateScope принадлежат capabilities пака; общие app/shared-views больше не ветвятся по имени Ятзи/Морского боя.
+- GameScreen.update использует общий DOM patcher и восстанавливает scroll существующих узлов после layout; горячие обновления сохраняют элемент таблицы и захват ввода. Особая история slider пока сохраняет существующий контроллер до его полного извлечения.
+- Ятзи 0.2.0 / engineApi 3: domain/categories — одна схема и числовой подсчёт; domain/game — immutable rules с явным RNG; presentation/scene — модель строк/preview/metrics; locales/ru — все тексты правил/таблицы/событий; Web renderer не извлекает score из label. Выход/бонус/ничья/нулевая категория/три броска/hold/release сохранены; команды публичны для Стола.
+- Translator.format поддерживает вложенные MessageRef с пределом глубины и защитой от цикла. Вложенные ссылки форматируются после проекции.
+- Риск A18 подтверждён чтением ботом неизвестных d.board лиц в выборе ошибки. Исправлено: бот Пексесо использует только seen и слепые индексы; перестановка невидимых лиц не меняет решение.
+
+Это часть общего перехода: ещё десять игр требуют полного нового domain/presentation/locales, а единый ScreenController/HistoryController, новые repository/index, AssetResolver, компоненты и финальный container/cutover остаются в плане. Перенесённый фасад Session пока связывает прежнюю внешнюю форму кадра и новый GameModel; новый runtime ещё не опубликован.
+
+
+## Восьмой срез: реальные общие компоненты и репозитории
+
+- RoundToken/first symbol/number marks имеют канонический исходник shared/components/round-token.js в паках. UI и оба pack builder используют этот исходник; host copy закреплена core/component-assets.json SHA256, sync проверяет provenance. Запасные рисунки Лудо/Змей удалены. SVG/шрифт/оптическая поправка принятых элементов не менялись.
+- application/library.js — сервис библиотеки через storage/engine/Session/ID ports. app/library.js — Web ID source и перевод сообщений. Library пишет небольшой librarySummary перед payload одной операцией; list/references читают заголовок без Session.restore. Full validation остаётся в open; индекс не даёт игровых прав и не является проверкой всего payload. Квота/смена active/архивирование/удаление со старой вкладки сохранены.
+- core/journal.js кодирует новые факты delta-v1; запись IndexedDB хранит state без повторного полного journal, eventBase/eventTail и receipt атомарно. Cursor в header сверяется при recovery. Хвосты исторических кадров и полный live журнал восстанавливаются без создания квадратичной цепочки prefix arrays.
+- application/host-recovery.js — чистая проверка журнала, receipts/control/room/version и восстановление через engine/Session ports. platform/web/session-store.js — IndexedDB/Web Locks adapter; прежний app/network-session-store.js удалён. У adapter есть явный now port. Остальная orchestration сети пока в app/network-ui.js.
+- SDK ZIP сохраняет пути core/application/presentation и JSON ресурсов, чтобы CommonJS imports не теряли зависимости. Инструкции — SDK-0.18.md. Старые опубликованные ZIP/теги не изменяются.
+
+Проверка синтетического журнала на 256 ходов: 256 новых фактов записываются ровно один раз, JSON шагов меньше 1/10 прежнего массива full-prefix кадров. Это измерение данного fixture, не обещание десятикратного уменьшения всей БД/памяти приложения. Header list отдельно проверен с Session.restore, который намеренно выбрасывает исключение: метаданные читаются без него.

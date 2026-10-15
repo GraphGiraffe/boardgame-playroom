@@ -109,3 +109,25 @@ test('a clock failure cannot undo a committed move or corrupt its compact save c
   time=30;step(session);assert.equal(session.updatedAt,30);
   for(const invalid of [null,{now:1},{now:()=>NaN},{now:()=>-1}])assert.throws(()=>create(invalid),/clock/);
 });
+
+
+test('durable journal stores each fact once and rejects a missing delta before recovery',()=>{
+  const Journal=require('../core/journal.js');
+  const initial={states:[{move:0,data:{count:0},events:[{id:1,text:'start'}]}]};
+  let events=[...initial.states[0].events],tail=1;const rows=[],full=[];
+  for(let revision=1;revision<=256;revision++){
+    events=[...events,{id:revision+1,revision,text:'Public action '+revision}];
+    const state={move:revision,data:{count:revision},events};full.push(state);
+    const step=Journal.encode(state,tail);rows.push({...step,revision});tail=step.eventTail;
+  }
+  assert.equal(rows.reduce((sum,row)=>sum+row.state.events.length,0),256);
+  assert(JSON.stringify(rows).length<JSON.stringify(full).length/10);
+  const restored=Journal.restore(initial,rows,tail);
+  assert.equal(restored.length,257);assert.deepEqual(restored.at(-1),full.at(-1));
+  assert(restored.slice(0,-1).every(state=>state.events.length<=4));
+  assert(restored.every((state,index)=>state.data.count===index));
+  const corrupt=structuredClone(rows);corrupt[100].eventBase--;
+  assert.throws(()=>Journal.restore(initial,corrupt,tail),error=>error.code==='JOURNAL_EVENT_GAP');
+  assert.throws(()=>Journal.restore(initial,rows,tail+1),error=>error.code==='JOURNAL_TAIL_INVALID');
+  restored.at(-1).events[0].text='changed';assert.equal(initial.states[0].events[0].text,'start');
+});
