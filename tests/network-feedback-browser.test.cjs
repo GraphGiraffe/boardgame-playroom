@@ -286,3 +286,25 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.evaluate(()=>qaGame.destroy());
   }finally{await page.close();await browser.close();}
 });
+
+ test('skip cue shakes only the affected card, respects reduced motion, expires and is not replayed',{timeout:20000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const page=await fixture(browser);try{
+    await page.evaluate(()=>{
+      document.querySelector('#app').innerHTML='<div class="table-shell"><article class="player-panel" data-player-index="0">A</article><article class="player-panel" data-player-index="1">B</article></div>';
+      window.skipSounds=[];window.skipEvents=[{id:1,feedback:{kind:'skip',player:1}}];
+      window.skipFeedback=new PlayroomGameFeedback({play:ids=>skipSounds.push(ids)});skipFeedback.start([]);
+      skipFeedback.accept(skipEvents,[{eventId:1,id:'attack.skip'}],'uno',{duration:1});
+    });
+    assert.equal(await page.locator('.is-turn-skipped').getAttribute('data-player-index'),'1');
+    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'player-turn-skipped');
+    assert.equal(await page.locator('.game-notice,.game-speech').count(),0,'skip has no layout-shifting message');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.notEqual(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+    await page.waitForFunction(()=>!document.querySelector('.is-turn-skipped'));
+    await page.evaluate(()=>skipFeedback.accept(skipEvents,[{eventId:1,id:'attack.skip'}],'uno'));
+    assert.deepEqual(await page.evaluate(()=>skipSounds),[['attack.skip']]);
+    assert.equal(await page.locator('.is-turn-skipped').count(),0);
+  }finally{await page.close();await browser.close();}
+ });

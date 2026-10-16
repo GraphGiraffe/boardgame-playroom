@@ -49,14 +49,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return [value];
     });
   }
+  // One primary cue per committed action; facts remain separate for speech and replay.
   function soundCues(state, viewer, afterEventId = 0) {
-    const fallback = {move:'move',play:'move',action:'move',draw:'draw',take:'draw',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'notify'};
-    return projectedEvents(state,viewer).filter(e=>e.id>afterEventId).flatMap(e=>{
+    const fallback={move:'move',play:'move',action:'move',draw:'draw',take:'take',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'pass'};
+    const semantic={skip:'attack.skip',pass:'pass',discard:'discard',draw:'draw',take:'take',reverse:'reverse'};
+    const priorities={skip:90,discard:70,reverse:75,pass:60,take:55,draw:40};
+    const sounds={'penalty':85,'uno.call':80,'attack.capture':75,'success.special':65,'success.yatzy':65,'success':60,'mismatch':50};
+    const actions=new Map();
+    for(const e of projectedEvents(state,viewer).filter(e=>e.id>afterEventId)){
       const id=e.kind==='finish'
         ? state.winner==null?'draw-game':viewer<0||viewer>=state.players.length?'notify':(state.winners||[state.winner]).includes(viewer)?'victory':'defeat'
-        : e.sound===null?null:e.sound?.id||fallback[e.kind];
-      return id?[{id,eventId:e.id,...(e.sound?.target!=null?{target:e.sound.target}:{})}]:[];
-    });
+        : e.sound===null?null:e.sound?.id||semantic[e.feedback?.kind]||fallback[e.kind];
+      if(!id)continue;
+      const priority=e.kind==='finish'?100:priorities[e.feedback?.kind]||sounds[id]||({draw:40,capture:75,roll:30}[e.kind]??10);
+      const revision=e.revision??e.id,previous=actions.get(revision);
+      const target=e.sound?.target??e.feedback?.player;
+      if(!previous||priority>previous.priority)actions.set(revision,{priority,cue:{id,eventId:e.id,...(target!=null?{target}:{})}});
+    }
+    return [...actions.values()].map(value=>value.cue);
   }
   const hidden = cards => cards.map(() => ({ hidden: true }));
   function checkedPack(pack) {

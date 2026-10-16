@@ -20,7 +20,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(silent)return;
       const fresh=cues.filter(c=>additions.some(e=>e.id===c.eventId)&&typeof c.id==='string');
       if(fresh.length)this.play(fresh.map(c=>c.id),pack);
-      for(const event of additions)if(event.speech)this.queue.push({speech:event.speech,duration:Math.max(220,Number(duration)||this.duration)});
+      for(const event of additions)if(event.speech||event.feedback?.kind==='skip')this.queue.push({speech:event.speech,feedback:event.feedback,duration:Math.max(event.feedback?.kind==='skip'?700:220,Number(duration)||this.duration)});
       if(!this.active)this.next();
     }
     next(){
@@ -34,6 +34,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const mount=this.mount();if(!mount)return;
       mount.querySelectorAll('.game-notice,.game-speech').forEach(node=>node.remove());
       mount.querySelectorAll('.player-panel.is-addressed').forEach(node=>node.classList.remove('is-addressed'));
+      const skipped=this.active?.feedback?.kind==='skip'?this.active.feedback.player:null;
+      mount.querySelectorAll('.player-panel[data-player-index]').forEach(panel=>panel.classList.toggle('is-turn-skipped',Number(panel.dataset.playerIndex)===skipped));
       const speech=this.active?.speech;if(!speech)return;
       const panel=[...mount.querySelectorAll('.player-panel[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===speech.speaker);
       if(!panel)return;

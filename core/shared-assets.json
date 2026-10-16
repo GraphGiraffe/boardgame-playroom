@@ -12,16 +12,16 @@
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "9eaef4eb252a0d8b4d2e3e07ea9795a1d4a212eb76852a08671467b1981124d5",
-      "renderedSha256": "9eaef4eb252a0d8b4d2e3e07ea9795a1d4a212eb76852a08671467b1981124d5"
+      "sha256": "0385093fe8529809e6bcbc90f2d9f37f20b643e721b9b1aa8029d4175aadd55f",
+      "renderedSha256": "0385093fe8529809e6bcbc90f2d9f37f20b643e721b9b1aa8029d4175aadd55f"
     },
     {
       "source": "shared/sounds/standard-sounds.json",
       "target": "core/standard-sounds.js",
       "format": "module",
       "globalName": "PlayroomStandardSounds",
-      "sha256": "33119d74ea0c910699b02498971d50df15cde3b273dd4c69f925316dd5719614",
-      "renderedSha256": "dc904fe9951eef006e6d2fb87d5f04f7e0b2f44bbba59415f4205ef12ba8d71f"
+      "sha256": "d7bb3387fb04922282ac99a2e730ac6a03acd32859b7822a4fc8b14413df7f32",
+      "renderedSha256": "524852b045367c762069822581778eb8efea62fcded8095298d7cc1ad25c3c6f"
     },
     {
       "source": "shared/assets/catalog.json",

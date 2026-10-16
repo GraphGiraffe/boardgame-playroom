@@ -34,9 +34,9 @@ async function layout(page,{handCount=7}={}) {
     if(!dock)errors.push('missing dedicated bottom dock');
     else if(dock.closest('.layout-self')!==hand.closest('.layout-self'))errors.push('actions and hand separated');
     const deck=document.querySelector('.stock-button'),discard=document.querySelector('.uno-discard'),direction=document.querySelector('.uno-direction'),center=document.querySelector('.uno-center'),opponents=document.querySelector('.opponent-hands');
-    const arrow=r(direction),field=r(center);
-    if(Math.abs(arrow.x+arrow.width/2-field.x-field.width/2)>1)errors.push('direction not centered above the piles');
-    if(arrow.bottom>field.top+1)errors.push('direction not above piles');
+    const arrow=direction?r(direction):null,field=r(center);
+    if(arrow&&Math.abs(arrow.x+arrow.width/2-field.x-field.width/2)>1)errors.push('direction not centered above the piles');
+    if(arrow&&arrow.bottom>field.top+1)errors.push('direction not above piles');
     for(const mini of document.querySelectorAll('.mini-hand'))for(const card of mini.querySelectorAll('.uno-card,.piece-back')){
       const m=r(mini),c=r(card),parent=r(mini.closest('.opponent-hand'));
       if(c.top<m.top||c.bottom>m.bottom||c.top<parent.top||c.bottom>parent.bottom)errors.push('opponent card clipped vertically');
@@ -115,7 +115,8 @@ test('Responsive UNO utilities, turn direction and complete opponent cards stay 
             for(const [selector,rect] of Object.entries(current))for(const [axis,value] of Object.entries(rect))if(typeof value==='number')assert(Math.abs(value-baselines[mode][selector][axis])<=1,`table or dock shifts for ${handCount} cards / ${variant}: ${selector} ${axis}: ${value} / ${baselines[mode][selector][axis]}`);
             await layout(page,{handCount});
             assert.deepEqual(await page.locator('.opponent-hand[data-player-index]').evaluateAll(els=>els.map(el=>el.dataset.playerIndex)),order,'player positions must not reorder with turn direction');
-            assert.equal(await page.locator('.uno-direction').getAttribute('data-direction'),variant==='reverse'?'-1':'1');
+            if(players===2)assert.equal(await page.locator('.uno-direction').count(),0,'duel has no turn-direction arrow');
+            else assert.equal(await page.locator('.uno-direction').getAttribute('data-direction'),variant==='reverse'?'-1':'1');
             if(variant==='closed')assert(await page.locator('.opponent-hands .piece-back').count()>0);
             if(variant==='paused')assert.equal(await page.locator('.uno-call').isEnabled(),false);
             if(variant==='wild')assert.equal(await page.locator('.color-choice').count(),4);

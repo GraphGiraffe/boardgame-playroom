@@ -32,7 +32,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const noticeElement=$('#toast');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
-  const turnNotice=GameScreen.turnNotice({play:()=>{if(settings.sound&&!document.hidden)void audio.play('turn',{volume:.45});},reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const turnNotice=GameScreen.turnNotice({play:()=>{if(settings.sound&&!document.hidden&&!audio.busy)void audio.play('turn',{volume:.45});},reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
   const appVersion=globalThis.PlayroomAppVersion||globalThis.PlayroomMessages.text("ui.app.8d699d8c65b0");
   const PACK_NOTICES_KEY='playroom.pack-update-notices.v1';
   let packNotices={dismissed:[],read:[]},flashPacksOnHub=false;
@@ -88,6 +88,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   try { const saved = library.current(); if (saved) { session = saved.session; sessionId = saved.id; } }
   catch (_) { loadWarning=globalThis.PlayroomMessages.text("ui.app.3f69ce8ef70a"); }
   const audio = new globalThis.TabletopAudio({enabled:settings.sound,volume:settings.volume});
+  let audioRequest=0,audioPending=false;
   const audioVersions = new Map();
   for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
   const unlockAudio = () => {if(settings.sound&&!document.hidden)void audio.unlock();};
@@ -176,7 +177,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     soundTicket++;
     if(!settings.sound||document.hidden||gate!==null)return;
     const cues=E.soundCues(after,viewer,before.events.at(-1)?.id||0);
-    const ids=cues.map(c=>c.id).filter((id,i,all)=>i===0||id!==all[i-1]);
+    const ids=cues.map(c=>c.id);
     if(ids.length)void audio.sequence(ids,{pack:after.game});
   }
   async function previewSound(id='move',pack) {
@@ -892,10 +893,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   globalThis.PlayroomNetworkLibrary?.configureHostPorts({rooms:roomService});
   globalThis.PlayroomAppBridge=Object.freeze({showSessions,showHub:()=>leaveTable('games'),parkLocalSession:()=>{if(room?.transportMode==='hotseat')leaveLobby();else if(screen==='table')leaveTable('games');},returnHostedRoomToLobby,restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
+    get busy(){return audioPending||audio.busy;},
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
-      const ordered=ids.filter((id,i)=>i===0||id!==ids[i-1]);
-      void audio.unlock().then(ok=>{if(ok&&settings.sound&&!document.hidden)void audio.sequence(ordered,{pack});});},
-    stop:()=>audio.stop()
+      const ordered=ids.slice(),request=++audioRequest;audioPending=true;
+      void audio.unlock().then(async ok=>{if(request!==audioRequest)return;if(ok&&settings.sound&&!document.hidden)await audio.sequence(ordered,{pack});if(request===audioRequest)audioPending=false;});},
+    stop:()=>{audioRequest++;audioPending=false;audio.stop();}
   }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService:publicRooms,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,modalHead,showSettings,rememberGame});
   let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){

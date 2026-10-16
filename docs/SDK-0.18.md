@@ -95,3 +95,9 @@ engineApi 3 и network protocol 2 обязательны. API 1/2 не испо�
 RC: канал `0.18-rc.1` в R2 (`channels/0.18-rc.1/catalog/...`) и явный `operation=preview, pack_channel=0.18-rc.1`. Общие immutable `files/id/version/hash` адреса сохраняются. Preview не переключает production pointer или canonical deployment. Для публикации проверенных artifacts требуется явное `checks=none`; build использует выбранные блоки. Обязательные SHA/проверки доступа и smoke нельзя отключить.
 
 Порядок физических мест не меняется при reverse UNO: `scene.turnOrder` описывает очередь, направление показывается отдельным индикатором. Перестановка карточек при изменении направления сбивала бы жесты и привычные позиции игроков.
+
+## Оповещения публичных действий
+
+Presentation может вернуть `feedback: {kind, player}` для `skip`, `pass`, `discard`, `draw`, `take`, `reverse`. Domain определяет факт по правилам; UI не выводит пропуск из смены turn или отсутствия кнопок. Эти метаданные передаются только после audience projection. `Core.soundCues` выбирает один основной cue на revision, приоритет: finish, skip, penalty, UNO, reverse/capture, discard, pass, take, draw, обычные действия. Явный `sound` задаёт вариант, `sound: null` оставляет событие без звука. Отдельные revisions сохраняют отдельные cues даже при одинаковом id.
+
+Web GameFeedback выделяет карточку skip красным и встряхивает 700 мс, без оверлея и сдвига вёрстки. Reduced motion отключает движение, но сохраняет цвет; история/reconnect/повторный ACK не запускают эффект. При активном звуке действия сигнал своего хода не накладывается. Общие источники — shared/sounds/standard-sounds.json и shared/components/game-components.css репозитория паков.

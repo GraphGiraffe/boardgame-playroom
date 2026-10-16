@@ -33,6 +33,7 @@
       this._context=null;this._contextPromise=null;this._master=null;this._graph=[];this._packs=new Map();this._buffers=new Map();this._noise=null;
       this._groups=new Set();this._voices=new Set();this._generation=0;this._waits=new Set();
     }
+    get busy() {return this._groups.size>0;}
     setEnabled(enabled) { this.enabled=!!enabled;if(!this.enabled)this.stop();return this; }
     setVolume(volume) {
       this.volume=clamp(volume,0,1,this.volume);

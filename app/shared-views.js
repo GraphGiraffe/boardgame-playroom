@@ -25,7 +25,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const controller=new root.PlayroomGameScreenController({client,present:presentFrame,visible:()=>!document.hidden,report:error=>toast(globalThis.PlayroomMessages.error(error)),changed(){if(destroyed)return;render();const status=controller.shown?.state.status||liveStatus;if(liveStatus==='playing'&&status==='finished')result();liveStatus=status;}});
     const stopMotion=()=>{animationTicket++;transitionActive=false;controller.cancel();flow.cancel();};
     const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
-    const turnNotice=GameScreen.turnNotice({play:()=>audio?.play?.(['turn'],pack.manifest.id),reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
+    const turnNotice=GameScreen.turnNotice({play:()=>{if(!audio?.busy)audio?.play?.(['turn'],pack.manifest.id);},reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
     const feedback=new root.PlayroomGameFeedback({mount:()=>app.querySelector('.table-shell'),play:(ids,id)=>audio?.play?.(ids,id)});
     feedback.start(client.snapshot?.events||[]);
     let liveStatus=client.snapshot?.state?.status||'playing';
