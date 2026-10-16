@@ -181,3 +181,7 @@ Preview запускает production smoke до/после и сравнива�
 ### 0.18-rc.2: исправления пользовательской приёмки
 
 Приложение 0.18.0-rc.2 / коллекция 0.7.0-rc.2 опубликованы prerelease и в [изолированное preview](https://c68c76a1.playroom-hod-test.pages.dev). Проверены source SHA, release SHA256, защищённые runtime bytes, 12 R2 файлов и offline; production сохранил 0.17.6 / 0.6.5. Проверки выбраны адресно, публикации checks=none. [Матрица замечаний и доказательства](RC-0.18.0-rc.2.md).
+
+### Повторная проверка уже загруженного preview
+
+Через `prerelease.yml` передать `operation=preflight`, `checks=none`, точные `release`, `deployment` и непустой `pack_channel`. В отличие от preflight без канала, этот путь требует успешный preview deployment, сверяет его commit с immutable release, проверяет артефакт и полный protected/offline runtime, сравнивает production до/после. Не вызывает upload или provider mutations. Итоговый отчёт: `status=preview-verified`, `uploaded=false`, `productionUnchanged=true`. Применять при неудачной проверке после upload; опубликованный runtime не переписывается.

@@ -35,7 +35,7 @@ on:
         description: Published release tag (for deploy)
         type: string
       deployment:
-        description: Protected production fallback ID for deploy, or target for rollback
+        description: Production fallback/rollback ID, or existing preview ID for read-only preflight
         type: string
 permissions:
   contents: read

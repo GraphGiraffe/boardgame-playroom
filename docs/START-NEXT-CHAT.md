@@ -1,11 +1,13 @@
-# Первое сообщение для нового чата
+# ХОД 0.18 — продолжение после RC5
 
 Продолжи разработку ХОД / PlayRoom 0.18 в `/home/ivan/python/other/BoardGames`.
 
 Сначала прочитай:
 - `playroom/docs/HANDOFF-0.18.md` — состояние, принятый дизайн, точные RC/preview и следующие шаги;
 - `playroom/docs/ROADMAP.md` — план;
-- `playroom/docs/DEVELOPER-INDEX.md`, `REFACTOR-0.18-TRACKER.md`, `RC-0.18.0-rc.4.md`, `RC-0.18.0-rc.5.md` и AGENTS.md обоих репозиториев.
+- AGENTS.md обоих репозиториев.
+
+Индекс `playroom/docs/DEVELOPER-INDEX.md`, реестр `REFACTOR-0.18-TRACKER.md`, отчёты `RC-0.18.0-rc.4.md` / `RC-0.18.0-rc.5.md` и исходный аудит открывай по необходимости конкретной задачи; не перечитывай всю историческую документацию при старте.
 
 Репозитории: приложение `playroom` / `GraphGiraffe/boardgame-playroom`; игры и ассеты `playroom-paks` / `GraphGiraffe/boardgame-playroom-paks`. Они независимы. Проверь живые ветки/status/remote перед работой. Коммиты, push, PR и выпуск разрешены по правилам проекта. Новые RC — только защищённое Pages preview и отдельный R2 channel, стабильную 0.17.6 / 0.6.5 не переключать без новой задачи.
 

@@ -155,13 +155,16 @@ class Pages:
             raise ValueError('Cloudflare rejected the operation')
         return data['result']
 
-    def production_target(self, deployment):
+    def deployment_target(self, deployment, environment):
         if not re.fullmatch(r'[a-f0-9-]{36}', deployment):
             raise ValueError('Invalid deployment ID')
         target = self.api(suffix='/deployments/'+deployment)
-        if target.get('environment') != 'production' or target.get('latest_stage', {}).get('status') != 'success':
-            raise ValueError('Rollback requires a successful production deployment')
+        if target.get('environment') != environment or target.get('latest_stage', {}).get('status') != 'success':
+            raise ValueError('Expected a successful '+environment+' deployment')
         return target
+
+    def production_target(self, deployment):
+        return self.deployment_target(deployment, 'production')
 
     def manual_uploads(self, project):
         source = project.get('source') or {}
@@ -197,6 +200,41 @@ def smoke(url, runtime=None, online_only=False, report_path=None):
 def save_report(args,report):
     target=getattr(args,'report',None)
     if target:target.write_text(json.dumps(report,indent=2)+'\n')
+
+
+def github_release_assets(tag, directory):
+    repo = required('GITHUB_REPOSITORY')
+    release = json.loads(subprocess.check_output(['gh', 'release', 'view', tag, '--repo', repo, '--json', 'tagName,isDraft,targetCommitish']))
+    if release['isDraft'] or release['tagName'] != tag:
+        raise ValueError('Release must already be published')
+    subprocess.run(['gh', 'release', 'download', tag, '--repo', repo, '--pattern', 'playroom-pwa.zip', '--pattern', 'SHA256SUMS', '--dir', str(directory)], check=True)
+    sha = subprocess.check_output(['git', 'rev-list', '-n', '1', tag], text=True).strip()
+    if not re.fullmatch(r'[a-f0-9]{40}', sha):
+        raise ValueError('Release requires an exact source commit')
+    return directory/'playroom-pwa.zip', directory/'SHA256SUMS', sha
+
+
+def verify_existing_preview(pages, args, report, origin, previous):
+    if not args.deployment or not args.release:
+        raise ValueError('Preview verification requires deployment, release and pack channel')
+    target = pages.deployment_target(args.deployment, 'preview')
+    with tempfile.TemporaryDirectory(prefix='playroom-preview-verify-') as directory:
+        directory = Path(directory)
+        public, sums, sha = github_release_assets(args.release, directory)
+        if target.get('deployment_trigger', {}).get('metadata', {}).get('commit_hash') != sha:
+            raise ValueError('Preview commit differs from release')
+        prepare(public, sums, private_wrapper(args), directory/'site', args.pack_channel)
+        before, preview, after = (directory/name for name in ('before.json', 'preview.json', 'after.json'))
+        report.update(status='preview-recheck', previewDeployment=target['id'], previewUrl=target['url'], release=args.release, commit=sha, packChannel=args.pack_channel)
+        save_report(args, report)
+        smoke(origin, online_only=True, report_path=before)
+        smoke(target['url'], directory/'site', report_path=preview)
+        smoke(origin, online_only=True, report_path=after)
+        baseline, current = json.loads(before.read_text()), json.loads(after.read_text())
+        if baseline != current or pages.api().get('canonical_deployment', {}).get('id') != previous:
+            raise ValueError('Production changed during preview verification')
+        report.update(status='preview-verified', productionBefore=baseline, productionAfter=current, previewVerified=json.loads(preview.read_text()), productionUnchanged=True, uploaded=False)
+    return report
 
 
 def run(args):
@@ -236,6 +274,8 @@ def run(args):
             worker = Path(tmp)/'_worker.js'
             worker.write_bytes(wrap_private_worker(private['_worker.js']))
             subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(worker)], check=True)
+        if args.pack_channel:
+            return verify_existing_preview(pages, args, report, expected, previous)
         target = pages.production_target(args.deployment) if args.deployment else None
         smoke(target['url'] if target else expected)
         report.update(status='preflight-passed', productionBranch=production, verifiedDeployment=target['id'] if target else previous)
@@ -274,13 +314,7 @@ def run(args):
             if public.name != 'playroom-pwa.zip':
                 raise ValueError('Expected release asset playroom-pwa.zip')
         else:
-            repo = required('GITHUB_REPOSITORY')
-            release = json.loads(subprocess.check_output(['gh', 'release', 'view', args.release, '--repo', repo, '--json', 'tagName,isDraft,targetCommitish']))
-            if release['isDraft'] or release['tagName'] != args.release:
-                raise ValueError('Release must already be published')
-            subprocess.run(['gh', 'release', 'download', args.release, '--repo', repo, '--pattern', 'playroom-pwa.zip', '--pattern', 'SHA256SUMS', '--dir', str(tmp)], check=True)
-            public, sums = tmp/'playroom-pwa.zip', tmp/'SHA256SUMS'
-            sha = subprocess.check_output(['git', 'rev-list', '-n', '1', args.release], text=True).strip()
+            public, sums, sha = github_release_assets(args.release, tmp)
         if not re.fullmatch(r'[a-f0-9]{40}', sha):
             raise ValueError('Release requires an exact source commit')
         catalog_channel=getattr(args,'pack_channel','')
