@@ -340,6 +340,9 @@ def sync_shared_assets(source_root):
     for entry in lock["entries"]:
         target = ROOT / entry["target"]
         source = source_root.parent / entry["source"] if source_root else None
+        marker = "Vendored from playroom-paks/" + entry["source"] + "; sha256="
+        def provenance(digest):
+            return "/* " + marker + digest + " */" if target.suffix == ".css" else "// " + marker + digest
         if source and source.is_file():
             raw = source.read_text(encoding="utf-8")
             entry["sha256"] = hashlib.sha256(raw.encode()).hexdigest()
@@ -349,13 +352,13 @@ def sync_shared_assets(source_root):
                 body = "(function(root){const value=" + data + ";if(typeof module==='object'&&module.exports)module.exports=value;root." + entry["globalName"] + "=value;})(globalThis);\n"
             entry["renderedSha256"] = hashlib.sha256(body.encode()).hexdigest()
             if target.suffix != ".json":
-                body = "// Vendored from playroom-paks/" + entry["source"] + "; sha256=" + entry["sha256"] + "\n" + body
+                body = provenance(entry["sha256"]) + "\n" + body
             target.write_text(body, encoding="utf-8")
         else:
             body = target.read_text(encoding="utf-8")
             if target.suffix != ".json":
                 header, body = body.split("\n", 1)
-                if header != "// Vendored from playroom-paks/" + entry["source"] + "; sha256=" + entry["sha256"]:
+                if header != provenance(entry["sha256"]):
                     raise ValueError("Shared resource provenance mismatch: " + entry["target"])
             if hashlib.sha256(body.encode()).hexdigest() != entry["renderedSha256"]:
                 raise ValueError("Shared resource is corrupt: " + entry["target"])

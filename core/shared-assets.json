@@ -5,15 +5,15 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91",
-      "renderedSha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91"
+      "sha256": "5025b294a1cc5354c1f2854f8c44d014d3f90d931929a043a97660d6e141c780",
+      "renderedSha256": "5025b294a1cc5354c1f2854f8c44d014d3f90d931929a043a97660d6e141c780"
     },
     {
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "9450dfaeec5c526a83baff2636eccb0557a54af1cd128b598672e06119ab11fe",
-      "renderedSha256": "9450dfaeec5c526a83baff2636eccb0557a54af1cd128b598672e06119ab11fe"
+      "sha256": "3cf6695d40788f13e63ecb507a071dc6280484d9c9e2024f22328f6c231292c6",
+      "renderedSha256": "3cf6695d40788f13e63ecb507a071dc6280484d9c9e2024f22328f6c231292c6"
     },
     {
       "source": "shared/sounds/standard-sounds.json",

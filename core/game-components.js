@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/game-components.js; sha256=93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91
+// Vendored from playroom-paks/shared/components/game-components.js; sha256=5025b294a1cc5354c1f2854f8c44d014d3f90d931929a043a97660d6e141c780
 // Canonical scalable Web component geometry. Values, visibility and actions are external.
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameComponents=api;})(globalThis,function(){
  'use strict';
@@ -15,7 +15,7 @@ function countBadge(count,label=globalThis.PlayroomMessages.text("ui.game-compon
     return `<span class="piece-count${corner?' is-corner':''}${hand?' is-hand':''}${hand&&count>=100?' is-long-count':''}" data-piece-count="${count}" aria-label="${esc(label)}: ${count}">${count}</span>`;
   }
 function shipSilhouette(size){const width=16+size*9;return `<svg class="fleet-ship-icon" width="${width}" height="20" viewBox="0 0 ${width} 20" aria-hidden="true"><path d="M2 11H${width-3}l-5 7H8Z" fill="currentColor"/><path d="M5 10H${width-8}" fill="none" stroke="currentColor" stroke-width="2"/>${Array.from({length:size},(_,i)=>`<rect x="${7+i*9}" y="4" width="4" height="6" rx="1" fill="currentColor"/>`).join('')}</svg>`;}
-const checkerArt=(king,movable)=>`<svg class="checker-art" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="56" r="42" fill="var(--checker-shadow)"/><circle cx="50" cy="49" r="42" fill="var(--checker-fill)" stroke="var(--checker-edge)" stroke-width="7"/><circle cx="50" cy="49" r="31" fill="none" stroke="var(--checker-ring)" stroke-width="4"/>${king?'<path d="M27 60 23 37 37 47 50 29 63 47 77 37 73 60ZM29 66H71" fill="none" stroke="var(--checker-mark)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>':''}${movable?'<circle cx="83" cy="17" r="11" fill="#f2d276" stroke="#fffcdf" stroke-width="4"/>':''}</svg>`;
+const checkerArt=(king,movable)=>`<svg class="checker-art" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="56" r="42" fill="var(--checker-shadow)"/><circle cx="50" cy="49" r="42" fill="var(--checker-fill)" stroke="var(--checker-edge)" stroke-width="7"/><circle cx="50" cy="49" r="31" fill="none" stroke="var(--checker-ring)" stroke-width="4"/>${king?'<path d="M27 60 23 37 37 47 50 29 63 47 77 37 73 60ZM29 66H71" fill="none" stroke="var(--checker-mark)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>':''}</svg>`;
 const dots={0:[],1:[4],2:[0,8],3:[0,4,8],4:[0,2,6,8],5:[0,2,4,6,8],6:[0,2,3,5,6,8],7:[0,2,3,4,5,6,8],8:[0,1,2,3,5,6,7,8],9:[0,1,2,3,4,5,6,7,8]};
 const half=n=>`<span class="domino-half" aria-hidden="true">${Array.from({length:9},(_,i)=>`<i class="${(dots[n]||dots[9]).includes(i)?'pip':''}"></i>`).join('')}</span>`;
 

@@ -153,7 +153,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
-    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const badges=(content.badges||[]).map(b=>`<span class="player-status-badge ${typeof b==='object'&&['success','danger'].includes(b.tone)?'is-'+b.tone:''}"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
     const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee")}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';

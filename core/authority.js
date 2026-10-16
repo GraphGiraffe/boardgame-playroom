@@ -89,7 +89,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
       if(safe.modelProjection)safe.scene=s.engine.get(s.game,s.packVersion).scene(safe.modelProjection,safe.players);
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return freeze(clone({protocolVersion:2,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      return freeze(clone({protocolVersion:2,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){

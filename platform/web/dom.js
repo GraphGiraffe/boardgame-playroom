@@ -12,8 +12,10 @@
           if(node.nodeType===3){if(node.textContent!==fresh.textContent)node.textContent=fresh.textContent;}
           else if(node.nodeType===1){
             const focused=node===node.ownerDocument.activeElement;
+            const transient=['is-turn-skipped','is-addressed'].filter(name=>node.classList.contains(name));
             for(const a of [...node.attributes])if(!fresh.hasAttribute(a.name)&&!(focused&&a.name==='value'))node.removeAttribute(a.name);
             for(const a of fresh.attributes)if(!(focused&&a.name==='value')&&node.getAttribute(a.name)!==a.value)node.setAttribute(a.name,a.value);
+            if(transient.length)node.classList.add(...transient);
             if(!focused&&'value' in node&&node.tagName==='INPUT')node.value=fresh.value;
             patch(node,fresh);
           }
