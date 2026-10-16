@@ -198,11 +198,12 @@ for ref in refs:
  assert re.search(r'\\.[a-f0-9]{16}\\.(js|css)$',ref),ref
  assert hashlib.sha256(items[ref]).hexdigest()[:16] in ref
  assert re.sub(r'\\.[a-f0-9]{16}(?=\\.(js|css)$)', '', ref) not in items, ref
- assert "'./"+ref+"'" in worker
+ assert "'./"+ref+"'" in worker or '"./'+ref+'"' in worker
  assert './'+ref in json.loads(re.search(r'const INTEGRITY=(.*?);',worker).group(1))
 # Every precached URL exists; integrity covers only shipped assets.
 core=json.loads('['+re.search(r'const CORE=\\[(.*?)\\];',worker,re.S).group(1).replace("'",'"')+']')
 assert all(ref=='./' or ref[2:] in items for ref in core)
+assert {'./'+ref for ref in refs} <= set(core), 'Every HTML script/style entrypoint must be precached'
 assert all(ref[2:] in items for ref in json.loads(re.search(r'const INTEGRITY=(.*?);',worker).group(1)))
 assert items==dict(build.pwa_runtime_items())
 cache=lambda output: re.search(r"const CACHE='([^']+)'",output['sw.js'].decode()).group(1)
@@ -451,4 +452,27 @@ for tamper,empty_env in ((False,False),(True,False),(False,True)):
   assert 'env_vars' not in pages.patches[0]['deployment_configs']['preview']
 `;
  execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
+});
+
+
+test('built remote-catalog PWA starts and opens all preset avatars offline',{timeout:30000},async()=>{
+ const os=require('node:os'),http=require('node:http'),{execFileSync}=require('node:child_process'),{chromium,executablePath}=require('../scripts/codex/browser.cjs');
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-offline-avatar-'));
+ execFileSync('python3',['-c','import build,sys;from pathlib import Path;build.write_directory(Path(sys.argv[1]),build.pwa_runtime_items(remote_catalog=True))',directory],{cwd:root,stdio:'pipe'});
+ const server=http.createServer((req,res)=>{
+  if(req.url.startsWith('/api/')){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({format:'playroom-catalog',version:1,collection:'test',packs:[]}));}
+  const file=path.resolve(directory,req.url==='/'?'index.html':req.url.slice(1).split('?')[0]);
+  if(!file.startsWith(directory+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);return res.end();}
+  res.writeHead(200,{'Content-Type':({'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json','.webmanifest':'application/manifest+json'})[path.extname(file)]||'application/octet-stream'});res.end(fs.readFileSync(file));
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser;
+ try{
+  browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});const context=await browser.newContext({playroomProfile:false}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('http://127.0.0.1:'+server.address().port+'/');await page.locator('#profile-form').waitFor();await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
+  await context.setOffline(true);await page.reload();await page.locator('#profile-form').waitFor();
+  await page.locator('[data-avatar-picker]').click();assert.equal(await page.locator('.avatar-options img').count(),48);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.avatar-options img')].every(img=>img.complete&&img.naturalWidth===256));
+  await page.locator('[data-avatar-option=circle-red]').click();await page.locator('#profile-form input').fill('Иван');await page.locator('#profile-form').evaluate(form=>form.requestSubmit());
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),'circle-red');assert.deepEqual(errors,[]);
+ }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });

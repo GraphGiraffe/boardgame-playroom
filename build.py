@@ -270,8 +270,17 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
     originals = dict(items)
     items = [(name, document.encode("utf-8") if name == "index.html" else content) for name, content in items]
     worker = originals["sw.js"].decode("utf-8")
+    worker = re.sub(r"const CACHE='[^']+';", "const CACHE='playroom-pwa-v" + _app_version + "';", worker, count=1)
     for name, alias in aliases.items():
         worker = worker.replace("'./" + name + "'", "'./" + alias + "'")
+    # Every executable/style entrypoint must be precached, including newly
+    # added modules absent from the source worker's auxiliary-file list.
+    core_match = re.search(r"const CORE=\[(.*?)\];", worker, re.S)
+    if not core_match:
+        raise ValueError("Service worker CORE list is missing")
+    core_urls = set(re.findall(r"['\"]([^'\"]+)['\"]", core_match.group(1)))
+    core_urls.update("./" + aliases.get(name, name) for name in urls)
+    worker = worker[:core_match.start()] + "const CORE=" + json.dumps(sorted(core_urls)) + ";" + worker[core_match.end():]
     items = [(name, worker.encode("utf-8") if name == "sw.js" else content) for name, content in items]
     items = [(aliases.get(name, name), content) for name, content in items]
     # A rebuild of the same version must not write into the active worker cache.

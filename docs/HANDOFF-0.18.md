@@ -5,9 +5,9 @@
 ## 1. Выпуски и адреса
 
 - Стабильная линия: приложение **0.17.6**, коллекция **0.6.5**. Основной адрес `https://playroom-hod-test.pages.dev` защищён существующим шлюзом. Стабильную версию этим RC не переключаем.
-- Новый кандидат: приложение **0.18.0-rc.4**, коллекция **0.7.0-rc.4**, изолированный каталог **0.18-rc.4**. Сведения о завершённой публикации, URL и SHA приведены в разделе «Результат публикации» в конце документа.
+- Новый кандидат: приложение **0.18.0-rc.5**, коллекция **0.7.0-rc.4**, изолированный каталог **0.18-rc.4**. Сведения о завершённой публикации, URL и SHA приведены в разделе «Результат публикации» в конце документа.
 - Предыдущий подтверждённый preview RC3: `https://d6db03cc.playroom-hod-test.pages.dev`; app commit `d6ef43e508af32045cdc7ea31343b00116d1b1be`, packs commit `13e46333ea6d733148fe2eb1222c5f6835973764`.
-- RC — кандидат для проверки. Финальный стабильный 0.18 ещё не объявлен.
+- RC5 — приложение с исправлением offline; паки остаются RC4. RC — кандидат для проверки. Финальный стабильный 0.18 ещё не объявлен.
 
 ## 2. Репозитории и владельцы
 
@@ -29,7 +29,7 @@
 3. `playroom/docs/AUDIT-0.18.md` — утверждённый аудит и исходные требования.
 4. `playroom/docs/REFACTOR-0.18-TRACKER.md` — реестр F01–F35 и хронология переноса. Ранние «осталось» не означают, что это до сих пор не сделано; смотреть заключительный срез и новые RC.
 5. `playroom/docs/REFACTOR-0.18-CONTRACTS.md`, `SDK-0.18.md` — границы и API.
-6. `playroom/docs/RC-0.18.0-rc.{1,2,3,4}.md` — изменения и свидетельства каждого RC. Текущий отчёт — RC4.
+6. `playroom/docs/RC-0.18.0-rc.{1,2,3,4,5}.md` — изменения и свидетельства каждого RC. Текущие отчёты — RC4 (функции) и RC5 (offline hotfix).
 7. `playroom/docs/RC4-CONTRACTS.md`, `GAME-ELEMENTS-API.md`, `UI-DESIGN-SYSTEM.md`, `MULTIVIEW.md` — действующие UI/visibility контракты.
 8. `playroom/docs/TESTING.md`, `RELEASING.md`, `PACK-PUBLICATION-0.17.md` — проверки и раздельная публикация.
 9. `playroom-paks/docs/AUTHORING.md`, `REFACTOR-0.18.md` — разработка паков.
@@ -100,12 +100,16 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 ## 7. Публикация и восстановление
 
 1. Зафиксировать оба исходника и провести PR в dev. Собрать артефакты на точных финальных SHA; `release-info.json` закрепляет app/packs commits, канал и выбранные проверки.
-2. Создать **prerelease** `v0.7.0-rc.4` и `v0.18.0-rc.4` с файлами и SHA256SUMS. Не трогать старые теги.
+2. Создать **prerelease** для новых неизданных версий. Для текущей пары используются `v0.7.0-rc.4` (уже опубликован) и `v0.18.0-rc.5` с файлами и SHA256SUMS. Не трогать старые теги.
 3. Packs workflow `.github/workflows/packs-publish.yml`: `checks=none`, `release=v0.7.0-rc.4`, `channel=0.18-rc.4`; для нового канала проверить необходимость `bootstrap=true`. Не оставлять channel пустым: пустой = production.
-4. App gateway `.github/workflows/prerelease.yml`: `operation=preview`, `checks=none`, `release=v0.18.0-rc.4`, `pack_channel=0.18-rc.4`. Используется существующий защищённый Pages проект/закрытая обёртка. Main/production pointer не переключать.
+4. App gateway `.github/workflows/prerelease.yml`: `operation=preview`, `checks=none`, `release=v0.18.0-rc.5`, `pack_channel=0.18-rc.4`. Используется существующий защищённый Pages проект/закрытая обёртка. Main/production pointer не переключать.
 5. Скачать `pages-deployment-report`, проверить `status`, exact commit/version/channel, 12 packs hashes, protection/runtime/offline и **productionUnchanged=true**. URL нового deployment записать в конце этого документа и в START-NEXT-CHAT.md.
 
 Доступ GitHub может отличаться у `gh` и git HTTPS; пользователь подтвердил исправление `gh auth status`. Не выводить токены/пароли. Не менять работающий системный прокси ради одного процесса; при необходимости изолировать env только команды. Закрытые wrapper/password/Worker/credentials не входят в публичные ZIP или Markdown.
+
+## RC5: системное исправление offline
+
+Все HTML JS/CSS entrypoints теперь автоматически входят в precache CORE, а не только в INTEGRITY; версия cache берётся builder из package.json. Старый ручной список пропустил три модуля аватаров; ошибка воспроизведена локально и покрыта настоящим offline reload/выбором всех 48 пресетов. См. RC-0.18.0-rc.5.md. Это отдельный immutable app release; коллекция и ассеты остаются RC4. Для следующих новых entrypoints проверять и CORE, и integrity.
 
 ## 8. Что делать дальше
 
@@ -120,6 +124,59 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 
 Пользователь даёт точные русские визуальные правки; «фиксируем» означает сохранить принятое решение/ассет в версии. Не выкидывать одобренное при следующей итерации. Скрины прикладывать изображениями, каждый с отдельной подписью; HTML при необходимости приложить файлом. Отделять «изменено», «проверено», «закоммичено», «загружено», «выпущено», «задеплоено». Не утверждать публикацию до live evidence. Частые краткие обновления без лишних согласований. Инструкции Benjamin Plus: один пакет независимых read-only probes, короткие выводы, точечные проверки; не повторять полные тесты по умолчанию.
 
+## 10. Инструменты и тонкости сопровождения
+
+### Навыки
+
+Доступные плагины: `playroom-app-dev` и `playroom-paks-dev` (на момент передачи 0.2.0). Читать SKILL.md из текущего каталога доступных навыков, не зашивать навсегда путь версии в cache. Для общего приложения — `app-development`, UI — `app-ui-layout`, сети — `app-connections`, проверок — `app-validation`, Pages — `app-release-pages`. Для паков — `pack-development`, `pack-rules`, `pack-ui-assets`, `pack-validation-release`. При необходимости repository-workflow: discovery → task → PR/CI; stable release skill не означает разрешение переключить production в RC-задаче. Для создания/правки растровых персонажей использовать imagegen; точную SVG геометрию игровых компонентов редактировать в коде. Не использовать новый imagegen для каждого изменения размера уже принятого ассета.
+
+### Git, gh и сеть
+
+- На момент работы `gh` имел недействительный токен в hosts.yml при работающем git HTTPS. Пользователь затем исправил `gh auth status`; не считать это постоянной неисправностью. Проверять отдельно `gh api user` и git push/remote.
+- При необходимости разрешённой операции можно получить credential через `git credential fill` и передать password как **переменную окружения только дочернего процесса gh**, без печати, сохранения токена и изменения hosts.yml. В этом сеансе временный helper `/tmp/playroom-gh.py` делал именно это; сам файл не содержит credential, но не является обязательной частью репозитория.
+- В сеансе запросы через существующий SOCKS-прокси иногда давали connection reset; для отдельных GitHub процессов работал прямой маршрут с `env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy ...`. Не менять системный прокси, профили, TUN, работающие сервисы или соединение пользователя.
+- При 504 на merge **не повторять мутацию вслепую**: прочитать `gh pr view --json state,mergeCommit`. Оба RC4 PR были подтверждены MERGED после временной ошибки ответа. Проверять remote SHA, не только локальный git log.
+- Сохранять многострочные PR/release descriptions в файле и передавать `--body-file`/`--notes-file`. Не подставлять тексты через shell command substitution и не использовать JSON.stringify как shell quoting.
+- Готовность PR/push не запускает тесты автоматически; Actions запускаются вручную по выбранной операции. Проверить required checks на фактическом HEAD, не предполагать, что старый gate относится к новому коммиту. `main` не нужен для RC: теги prerelease закрепляются на проверенном dev SHA.
+
+### Компиляция и ассеты
+
+- Правила и Web ассеты игры менять в `playroom-paks/packs/<id>`. Приложение подключает их через `python3 build.py --prepare-dev --packs-dir ../playroom-paks/packs`; `packs`/`installed-packs.js`/`app/version.js` генерируются и игнорируются Git.
+- Канонический compiler: packs `shared/pack_compiler.py`; app `tooling/pack_compiler.py` должен совпадать побайтно, digest в `tooling/compiler-lock.json` обновляется вместе с ним. Нельзя править только один builder.
+- Общие ресурсы паков вендорятся в app по `core/shared-assets.json`/`core/component-assets.json` с digest. Некоторые vendored core файлы **намеренно коммитятся** для автономной сборки приложения. Не смешивать их с игнорируемыми сгенерированными previews/installed packs. В частности `core/character-assets.js` содержит offline каталог с data URI и не должен быть удалён как «случайный base64».
+- Смена содержимого уже опубликованного ассета/пака требует новой версии. Новые самостоятельные ZIP ассетов включены в SHA256SUMS и Release. Импорт игровых JSON в приложении и импорт произвольных asset ZIP — разные возможности; последняя пока не сделана.
+- При переиздании same-version build нельзя перезаписывать опубликованные Release файлы. Итоговый runtime/PWA должен соответствовать exact source SHA в release-info.json; поздний docs-only handoff commit может быть новее тега, но не меняет опубликованный runtime.
+
+### Проверки и браузер
+
+- `tests/blocks.cjs` — реестр: каждый `*.test.cjs` ровно в одном блоке, незарегистрированные/дубли отвергаются runner. Новый regression помещать в существующий подходящий файл либо регистрировать новый ровно один раз.
+- `npm test` запускает всё. Для патча использовать `node scripts/codex/test.cjs case/...,block/subblock`, сначала `--list` при сомнении. Сквозные миграции могут обосновывать явный полный набор, но это не default.
+- Проверять не только исходный view, но и compiled JSON/экспорт для сетевого клиента. У Пексесо legacy тесты стандартной колоды должны выбирать `deck:'52'`; default теперь cartoon. При проверке подделанного GameModel state валидатор бросает POSITION_INVALID, а не возвращает false.
+- `scripts/codex/browser.cjs` ищет доступный Chrome и оборачивает Playwright. Обычно автозаполняет тестовый профиль; `playroomProfile:false` нужен для первого ввода имени. Для persistence предпочтителен `tests/browser-origin.cjs` с временным loopback HTTP origin, не file:// localStorage.
+- Браузер в ограниченной среде может требовать отдельно разрешённого запуска. Если автоматическая проверка разрешения истекла по таймауту, это не доказательство запрета; допустим один повтор. Не выдавать непройденный/прерванный тест за зелёный.
+- Фиксировать viewport, тему и состояние. Скриншоты сохранять в `tmp_files`, прикладывать в чат изображениями. Примеры RC4: `tmp_files/rc4-review/` и `tmp_files/rc2-presentation/`. Временные `/tmp/rc4-*.cjs` использовались для визуального согласования; это вспомогательные сеансовые сценарии, не обязательная часть проекта или замена зарегистрированным tests.
+
+### Публикация/наблюдение
+
+- App build с `--remote-catalog` даёт PWA, читающую защищённый каталог; standalone all-games HTML содержит выбранные source packs. Не подменять один тип артефакта другим при проверке.
+- GitHub Release, публикация R2 и Pages deployment — три разных шага. Для нового канала R2 используется bootstrap; пустой channel выбирает production и недопустим для RC. App gateway preview требует `pack_channel`, не production deploy.
+- Все workflow должны получать явный `checks`; публикация immutable артефактов — `none`. Это сознательный пропуск повторного запуска source tests, **не** пропуск SHA/build/protected smoke.
+- В Pages используются прежний проект, private wrapper, Access/R2 binding и секреты Actions. Не копировать закрытый Worker/password/access kit в Git/Release/Markdown. Не создавать новый проект Pages ради ошибки распространения.
+- Ожидать конкретный run ID, например `gh run watch ID --interval 30 --exit-status`; не запускать workflow повторно, пока не известен результат текущего. Если после загрузки smoke встретил временный 404, сначала проверить уже созданный deployment, не плодить новые uploads.
+- Итоговый artifact `pages-deployment-report` содержит URL/commit/channel и `productionUnchanged`; перед финальным ответом сверить его и downloadable release SHA256. Стабильность production дополнительно подтверждается неизменными main SHA и production pointer. Фоновый мониторинг/планировщик без необходимости не добавлять.
+
+### Новый чат
+
+Не переносить всю старую историю и не форкать её: торможение связано именно с объёмом контекста. Достаточно START-NEXT-CHAT.md и этого документа. Создавать через штатный Codex CLI/app-server API; не писать SQLite/registry вручную и не останавливать текущий App/Remote ради создания чата. Отдельно проверить, что новый thread получил правильный cwd, начальное сообщение со ссылкой на preview и ответ; не объявлять появление в UI проверенным только по локальному thread ID.
+
 ## Результат публикации
 
-Заполняется после подтверждённого выпуска и preview. До заполнения этот раздел не является свидетельством завершённой публикации RC4.
+Текущий принимаемый app candidate — RC5; записи RC4 ниже сохраняют исходные SHA и причину нового immutable выпуска.
+
+GitHub prereleases опубликованы и скачанные assets проверены:
+
+- App `v0.18.0-rc.4`, source `0bcc858679b3b8532adcaeb9dba4d06587d0cc69`, PR [#125](https://github.com/GraphGiraffe/boardgame-playroom/pull/125). Release: https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.4 — 7 assets, 6 строк SHA256SUMS проверены.
+- Packs `v0.7.0-rc.4`, source `44117ebd3bc6019f6649548d57d7458034f814d3`, PR [#70](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/70). Release: https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.4 — 19 assets, 18 строк SHA256SUMS проверены. Отдельные ZIP characters/cartoon-deck присутствуют.
+- R2 channel `0.18-rc.4`, workflow [38924971864](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38924971864) — success, exact packs source SHA совпадает.
+- RC4 Pages workflow [38925410305](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38925410305) — failed на offline после единственного upload. Не принятый preview: e5f9fa7f-dfba-4a23-9c39-c676ac091217. Причина/исправление — RC5; runtime RC4 не переписывался.
+- Main до preview: app `c07e22e622485d20978bd223e3b2134c4fffd0b2`, packs `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`. Production остаётся 0.17.6 / 0.6.5.
