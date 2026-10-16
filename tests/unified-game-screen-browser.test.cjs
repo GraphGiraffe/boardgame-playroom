@@ -33,7 +33,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       },{snapshot,frames,def,readOnly:width===740});
       await page.evaluate(()=>qaGame.openHistory(4));
       await page.locator('#replay-range').evaluate(slider=>{window.qaSlider=slider;slider.focus();slider.value='0';slider.dispatchEvent(new Event('input',{bubbles:true}));});
-      await page.waitForFunction(()=>document.querySelector('.turn-extra')?.textContent==='Ход 0 из 4');
+      await page.waitForFunction(()=>document.querySelector('.replay-badge')?.textContent==='0 / 4'&&document.querySelector('.turn-extra')?.textContent==='Ход '+qaFrames[0].state.timeline.turn);
       assert.equal(await page.locator('.table-status .status-event').textContent(),'Начальная расстановка');
       assert.equal(await page.locator('.history-panel .history-caption').count(),0,'History uses the shared top status caption');
       assert.equal(await page.evaluate(()=>qaSlider===document.querySelector('#replay-range')&&qaSlider===document.activeElement),true,'Input and focus must survive asynchronous rendering');
@@ -46,7 +46,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
         await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:from,y}]});
         await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:to,y}]});
       }else{await page.mouse.move(from,y);await page.mouse.down();await page.mouse.move(to,y,{steps:8});}
-      await page.waitForFunction(()=>document.querySelector('.turn-extra')?.textContent==='Ход 4 из 4');
+      await page.waitForFunction(()=>document.querySelector('.replay-badge')?.textContent==='4 / 4'&&document.querySelector('.turn-extra')?.textContent==='Ход '+qaFrames[4].state.timeline.turn);
       assert.notEqual(await page.locator('.scene').innerHTML(),initialScene,'The board must change while pointer is held');
       assert.equal(await page.evaluate(()=>qaSlider===document.querySelector('#replay-range')),true);
       if(touch)await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});else await page.mouse.up();
@@ -56,9 +56,9 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       await page.evaluate(()=>{qaSlider.value='3';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===2);
       await page.evaluate(()=>qaRequests[1].resolve(qaFrames[3]));
-      await page.waitForFunction(()=>document.querySelector('.turn-extra')?.textContent==='Ход 3 из 4');
+      await page.waitForFunction(()=>document.querySelector('.replay-badge')?.textContent==='3 / 4'&&document.querySelector('.turn-extra')?.textContent==='Ход '+qaFrames[3].state.timeline.turn);
       await page.evaluate(()=>qaRequests[0].resolve(qaFrames[1]));
-      assert.equal(await page.locator('.turn-extra').textContent(),'Ход 3 из 4','Late frame cannot roll the scene back');
+      assert.equal(await page.locator('.replay-badge').textContent(),'3 / 4','Late frame cannot roll the scene back');
       const lastScene=await page.locator('.scene').innerHTML();
       await page.evaluate(()=>{qaSlider.value='2';qaSlider.dispatchEvent(new Event('change',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===3);

@@ -194,7 +194,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const client=localClient(player),snapshot=client.snapshot();if(snapshot.paused===value)return;
     void Promise.resolve(client.dispatch(Protocol.command(snapshot,{type:'session-pause',paused:value,expectedControlRevision:snapshot.controlRevision},'local-control-'+(++commandSequence)))).then(receipt=>{if(!receipt.ok)toast(receipt.message);}).catch(error=>toast(globalThis.PlayroomMessages.error(error)));
   }
-  function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;flow.cancel();if(stopAudio)stopSounds(); }
+  function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;feedback.clear();flow.cancel();if(stopAudio)stopSounds(); }
   const {orderedVisibleGames,tile,recentGameCard,hubFilterMarkup,renderHub,moveHubGame,editHubStep,hubDropAt,savedGamesMarkup,refreshNetworkSaved,updateSavedPanel}=globalThis.PlayroomHubPresenter.create({get $(){return $;},set $(value){$=value;},get E(){return E;},set E(value){E=value;},get GameScreen(){return GameScreen;},set GameScreen(value){GameScreen=value;},get Tags(){return Tags;},set Tags(value){Tags=value;},get V(){return V;},set V(value){V=value;},get appVersion(){return appVersion;},set appVersion(value){appVersion=value;},get brand(){return brand;},set brand(value){brand=value;},get cancelBot(){return cancelBot;},get catalog(){return catalog;},set catalog(value){catalog=value;},get esc(){return esc;},set esc(value){esc=value;},get feedback(){return feedback;},set feedback(value){feedback=value;},get filter(){return filter;},set filter(value){filter=value;},get flashPacksOnHub(){return flashPacksOnHub;},set flashPacksOnHub(value){flashPacksOnHub=value;},get hubEditing(){return hubEditing;},set hubEditing(value){hubEditing=value;},get hubFilters(){return hubFilters;},set hubFilters(value){hubFilters=value;},get hubTab(){return hubTab;},set hubTab(value){hubTab=value;},get icon(){return icon;},set icon(value){icon=value;},get input(){return input;},set input(value){input=value;},get interruptAction(){return interruptAction;},get isPass(){return isPass;},set isPass(value){isPass=value;},get latestPacks(){return latestPacks;},get library(){return library;},set library(value){library=value;},get loadWarning(){return loadWarning;},set loadWarning(value){loadWarning=value;},get meta(){return meta;},set meta(value){meta=value;},get networkSaved(){return networkSaved;},set networkSaved(value){networkSaved=value;},get networkSavedState(){return networkSavedState;},set networkSavedState(value){networkSavedState=value;},get networkSavedTicket(){return networkSavedTicket;},set networkSavedTicket(value){networkSavedTicket=value;},get packNotices(){return packNotices;},set packNotices(value){packNotices=value;},get packUpdates(){return packUpdates;},get playerTargets(){return playerTargets;},set playerTargets(value){playerTargets=value;},get savedFilter(){return savedFilter;},set savedFilter(value){savedFilter=value;},get screen(){return screen;},set screen(value){screen=value;},get session(){return session;},set session(value){session=value;},get updateKey(){return updateKey;},set updateKey(value){updateKey=value;}});
 
 
@@ -344,9 +344,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       gameName:game.name,subtitle:session.options.presetLabel||globalThis.PlayroomMessages.text("ui.app.4da4da9da138"),
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
-      turnText,turnExtra:replay?globalThis.PlayroomMessages.text("ui.app.6b2967c4f4fe",{p0:String(replayIndex),p1:String(session.states.length-1)}):globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
+      turnText,turnExtra:replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
-      scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn,preferences:TabletopUI.viewPreferences(state.game,shownViewer),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}${icon('play')}</button></div>`:''),
+      scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn,preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}${icon('play')}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
       beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.efcdf40bd477"),saved:storageOK,
@@ -363,13 +363,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!transition&&!replay&&gate===null)presentationReady();
     scheduleBot();scheduleAutoPass();
   }
+  function historyStart(){return session.current.timeline?.playStart??0;}
   function historyMarkup() {
     const idx=replayIndex??session.states.length-1;
     const chooser=historyOrigin?.kind==='library'&&isPass()?`<label class="history-viewer">${globalThis.PlayroomMessages.text("ui.app.f54f58cf08df")}<select id="history-viewer" aria-label="${globalThis.PlayroomMessages.text("ui.app.55228669ae30")}">${session.current.players.map((p,i)=>`<option value="${i}" ${i===viewer?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
-    return chooser+GameScreen.historyMarkup({turnStarts:session.current.timeline?.starts||[],roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
+    return chooser+GameScreen.historyMarkup({minimum:historyStart(),turnStarts:session.current.timeline?.starts||[],roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
   }
   function scrubHistory(index) {
-    const slider=$('#replay-range'),focused=document.activeElement===slider;input?.cancel();stopReplay();replayIndex=Math.max(0,Math.min(session.states.length-1,index));selected=null;renderTable();
+    const slider=$('#replay-range'),focused=document.activeElement===slider;input?.cancel();stopReplay();replayIndex=Math.max(historyStart(),Math.min(session.states.length-1,index));selected=null;renderTable();
     if(slider){slider.value=String(replayIndex);$('#replay-range')?.replaceWith(slider);if(focused)slider.focus();}
   }
   function handoffDelay(){
@@ -673,18 +674,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function openHistory(from=null) {
     interruptAction();if(!historyOrigin)historyOrigin=captureHistoryOrigin('live');
-    setLocalPaused(true);gate=null;playerTargets?.cancel();feedback.clear();cancelBot();stopReplay();selected=null;historyOpen=true;replayIndex=from??session.states.length-1;renderTable();
+    setLocalPaused(true);gate=null;playerTargets?.cancel();feedback.clear();cancelBot();stopReplay();selected=null;historyOpen=true;replayIndex=Math.max(historyStart(),from??session.states.length-1);renderTable();
   }
   function startReplay() {
     stopReplay();const ticket=replayTicket;
-    if(replayIndex===session.states.length-1)replayIndex=0;
+    if(replayIndex===session.states.length-1)replayIndex=historyStart();
     const step=async()=>{
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
       const before=currentState(),after=session.states[replayIndex+1],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
       const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
-      replayIndex++;renderTable();playSounds(before,after);
-      await flow.play(snapshot,{draws:cardTransfers(before,after)});
+      feedback.start(E.project(before,viewer).events);feedback.accept(E.project(after,viewer).events,[],session.game,{mode:timing.mode,snapshot,motion:()=>flow.play(snapshot,{draws:cardTransfers(before,after)}),defer:true});
+      replayIndex++;renderTable();feedback.next();await feedback.whenIdle();
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
     replayTimer=setTimeout(step,pace().botDelay);renderTable();
@@ -721,10 +722,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'pass-device':transferDevice,
     history(){if(historyOpen)commands['history-close']();else openHistory();},
     'history-close':closeHistory,
-    'replay-round-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,-1);render();},
-    'replay-round-next'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,1);render();},
-    'replay-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,-1);render();},
-    'replay-next'(){const before=currentState();stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,1);render();playSounds(before,currentState());},
+    'replay-round-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,-1,historyStart());render();},
+    'replay-round-next'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,1,historyStart());render();},
+    'replay-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,-1,historyStart());render();},
+    'replay-next'(){const before=currentState();stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,1,historyStart());render();playSounds(before,currentState());},
     'replay-play'(){if(replayTimer){stopReplay();return render();}startReplay();},
     room:renderLobby,'room-hotseat-confirm'(){modalBack=null;setRoomOption('transportMode','hotseat',true);},
     pause(){interruptAction();stopSounds();setLocalPaused(!paused);cancelBot();render();},result:showResult,
@@ -775,7 +776,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(Date.now()<hubDropSuppress&&event.target.closest('.hub-edit-section')){event.preventDefault();return;}
     if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
     const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.261faa27d0a0"))}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
-    const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};screenController.viewState=viewState;renderTable();return;}
+    const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){if(!screenController.setPreference(preference.dataset.viewPreference,preference.dataset.viewValue))TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};screenController.viewState=viewState;renderTable();return;}
     const viewControl=event.target.closest('[data-view-key]');
     if(viewControl&&!viewControl.disabled&&screen==='table'){const {viewKey,viewValue}=viewControl.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;renderTable();}return;}
     if(event.target.closest('.player-target-menu'))return;

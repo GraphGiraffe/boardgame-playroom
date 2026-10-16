@@ -287,7 +287,8 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(distance(center(frames[0].pieces[0]), center(source)) < 65, 'Flight must start at the old hand card');
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45, 'Flight must arrive at discard');
       const accepted = trace.moves.find(move => move.move === 1), gate = trace.samples.find(sample => sample.gate);
-      assert(gate.t - accepted.t >= 1650, 'Slow curtain must wait for the 1100ms flight and 650ms observation pause');
+      const effects=require('../core/game-flow.js').effectTimes.slow;
+      assert(gate.t-accepted.t>=effects.flip*2+effects.reveal-100,'Privacy curtain waits for entry, shortened reveal hold and exit');
     });
 
     await check('Slow bot reveals only its played card and the next bot waits until staging is over', async open => {

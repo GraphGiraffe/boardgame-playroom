@@ -150,7 +150,7 @@ test('the integration bridge preserves assigned marks, results, scores and exact
     for(const cell of [0,3,1,4,2])session.act(session.current.turn,{type:'place',cell});
     assert(E.validateState(session.current));assert.equal(session.current.winner,firstPlayer);
     assert.equal(session.current.players[firstPlayer].score,1);assert.equal(session.current.rng,rng);
-    assert.equal(session.current.packVersion,'0.2.0-rc.1');assert.equal(session.current.data.marks[firstPlayer],'X');
+    assert.equal(session.current.packVersion,require('../packs/tictactoe/manifest.json').version);assert.equal(session.current.data.marks[firstPlayer],'X');
     assert.deepEqual(session.current.result.values,[0,1].map(player=>player===firstPlayer?1:0));
     assert.equal(session.current.events.at(-1).type,'tictactoe.won');
     assert.equal(session.current.events.at(-1).text,undefined);
@@ -292,4 +292,20 @@ test('portable reactions have independent episodes, authorized public choices an
  assert.equal(model.reactionControl(changed.position,1,command).ignore,true);
  assert.throws(()=>model.commandFor(initial,1,{type:'declare-uno',episode:999},'table'),coded('TABLE_ACTION_UNAVAILABLE'));
  assert.equal(model.project(changed.position,-1).data.uno.situations,undefined);
+});
+
+test('preparation is durable but does not create game turns; public projection exposes only its boundary',()=>{
+ const factory=require('../packs/battleship/domain/game.js'),G=require('../packs/battleship/domain/geometry.js'),Random=require('../core/random.js');
+ const game=new GameModel(factory({random:Random.random},G));
+ let state=game.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17});
+ assert.equal(state.timeline.preparing,true);
+ for(let player=0;player<2;player++)for(const type of ['auto','ready']){
+  state=game.apply(state,state.turn,{type}).position;
+  assert.equal(state.timeline.turn,1);assert.deepEqual(state.timeline.starts,[state.revision]);
+ }
+ assert.equal(state.timeline.preparing,false);assert.equal(state.timeline.playStart,4);
+ const publicView=game.project(state,-1);assert(publicView.data.ships.flat(2).every(cell=>cell===null));
+ state=game.apply(state,state.turn,game.legalActions(state,state.turn)[0]).position;
+ assert.equal(state.timeline.turn,2);assert.deepEqual(state.timeline.starts,[4,5]);
+ assert.equal(state.timeline.playStart,4);game.validate(state);
 });

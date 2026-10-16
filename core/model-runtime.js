@@ -9,8 +9,8 @@
   const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
   const event=Events.validate, projectEvents=Events.project;
   function validTimeline(value,revision,hasRounds){
-    const sequence=(starts,count)=>Array.isArray(starts)&&starts.length===count&&starts[0]===0&&starts.every((n,i)=>integer(n,0,revision)&&(!i||n>starts[i-1]));
-    if(!record(value)||!integer(value.turn,1,Number.MAX_SAFE_INTEGER)||!sequence(value.starts,value.turn))return false;
+    const sequence=(starts,count)=>Array.isArray(starts)&&starts.length===count&&starts[0]===(value.playStart??0)&&starts.every((n,i)=>integer(n,0,revision)&&(!i||n>starts[i-1]));
+    if(!record(value)||(value.playStart!==undefined&&!integer(value.playStart,0,revision))||(value.preparing!==undefined&&typeof value.preparing!=='boolean')||!integer(value.turn,1,Number.MAX_SAFE_INTEGER)||!sequence(value.starts,value.turn))return false;
     if(value.round!==undefined||value.roundStarts!==undefined)return hasRounds&&integer(value.round,1,Number.MAX_SAFE_INTEGER)&&sequence(value.roundStarts,value.round);
     return !hasRounds;
   }
@@ -26,7 +26,7 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['reactions','reactionControl','reactionWindows','botReaction'].every(key=>
+        ['preparing','reactions','reactionControl','reactionWindows','botReaction'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -51,7 +51,7 @@
       const created=this.#definition.create(snapshot(options));
       check(record(created),'POSITION_INVALID');
       const initial=created.position?created:{position:created,events:[]};
-      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
+      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.preparing?{preparing:!!this.#definition.preparing(initial.position),playStart:0}:{}),...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
       this.validate(transition.position);
       check(transition.position.playerCount===options.playerCount&&Array.isArray(transition.events),'POSITION_INVALID');
       for(const value of transition.events)event(value,options.playerCount);
@@ -122,8 +122,10 @@
       check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
       check((result.turnEnded===undefined||typeof result.turnEnded==='boolean')&&(result.roundEnded===undefined||typeof result.roundEnded==='boolean')&&(!result.roundEnded||result.turnEnded),'TRANSITION_INVALID');
       const revision=(position.revision??0)+1,timeline=JSON.parse(JSON.stringify(position.timeline||{turn:1,starts:[0]}));
-      if(result.turnEnded&&result.position.status==='playing'){timeline.turn++;timeline.starts.push(revision);}
-      if(result.roundEnded&&result.position.status==='playing'&&timeline.round){timeline.round++;timeline.roundStarts.push(revision);}
+      const wasPreparing=!!this.#definition.preparing?.(position),preparing=!!this.#definition.preparing?.(result.position);
+      if(this.#definition.preparing){timeline.preparing=preparing;if(wasPreparing){timeline.turn=1;timeline.starts=[revision];timeline.playStart=revision;if(timeline.round){timeline.round=1;timeline.roundStarts=[revision];}}}
+      if(!wasPreparing&&!preparing&&result.turnEnded&&result.position.status==='playing'){timeline.turn++;timeline.starts.push(revision);}
+      if(!wasPreparing&&!preparing&&result.roundEnded&&result.position.status==='playing'&&timeline.round){timeline.round++;timeline.roundStarts.push(revision);}
       const next={...result,position:{...result.position,revision,timeline}};
       this.validate(next.position);
       for (const value of result.events) event(value, position.playerCount);

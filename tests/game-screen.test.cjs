@@ -140,3 +140,15 @@ test('history navigates explicit turn and round boundaries while the slider rema
  assert.match(html,/max="12" value="5"/);assert.match(html,/data-command="replay-round-prev"/);assert.match(html,/data-command="replay-round-next"/);assert.match(html,/history-round-marker/);assert.match(html,/history-turn-marker/);
  assert.doesNotMatch(Screen.historyMarkup({index:5,count:12}),/data-command="replay-round-prev"/);
 });
+
+test('history clamps preparation and keeps its view controls separate from the live view',async()=>{
+ const History=require('../application/history-controller.js'),Controller=require('../application/game-screen-controller.js');
+ const live={sessionId:'s',game:'battleship',packVersion:'test',viewer:0,revision:8,historyLength:9,state:{turn:0,data:{},timeline:{turn:3,starts:[4,6,8],playStart:4}}};
+ const history=new History({read:async index=>({...live,revision:index})});history.receive(live);await history.enter(0);assert.equal(history.index,4);
+ assert.equal(History.boundaryIndex(4,8,[4,6,8],-1,4),4);
+ const html=Screen.historyMarkup({minimum:4,index:4,count:8,turnStarts:[4,6,8]});assert.match(html,/min="4" max="8" value="4"/);assert.match(html,/>0 \/ 4</);
+ const controller=new Controller({client:{snapshot:live}});controller.context(live);controller.viewState.fleet='own';
+ controller.history.open=true;controller.context(live);controller.viewState.fleet='enemy';controller.setPreference('followOpponent','off');
+ controller.context({...live,state:{...live.state,turn:1}});assert.equal(controller.viewState.fleet,'enemy');assert.equal(controller.preferences({followOpponent:'on'}).followOpponent,'off');
+ controller.history.open=false;controller.context(live);assert.equal(controller.viewState.fleet,'own');assert.equal(controller.preferences({followOpponent:'on'}).followOpponent,'on');
+});
