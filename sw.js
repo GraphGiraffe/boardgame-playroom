@@ -1,12 +1,12 @@
 'use strict';
 // API 3 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Older published releases remain immutable.
-const CACHE='playroom-pwa-v0.18.0-rc.1';
+const CACHE='playroom-pwa-v0.18.0-rc.5';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './app/hub-presenter.js',
   './application/upgrade-service.js','./app/upgrade-ui.js',
-  './core/messages.js',
+  './core/messages.js','./core/character-assets.js','./core/avatars.js','./app/avatar-picker.js',
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './app/appearance.css','./app/appearance-models.js','./app/appearance-web.js','./app/appearance-ui.js',
