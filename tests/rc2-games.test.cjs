@@ -189,17 +189,17 @@ test('Ludo star squares are safe while the next unmarked square can capture',()=
  s=play(s,{type:'move',owner:0,pawn:0,dieIndex:0});assert.equal(s.data.pawns[1][0],47);
 });
 test('Pexeso shows a mismatch through its animation, then closes it before the next turn',()=>{
- let s=create('pexeso',2,'easy'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
+ let s=create('pexeso',2,'easy','52'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
  s=play(s,{type:'flip',index:first});s=play(s,{type:'flip',index:second});
  assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
  assert(E.legalActions(s).every(a=>a.type==='flip'));
  const projected=E.project(s,1),animated=V.render(projected,1,[],{presentationTurn:0}),settled=V.render(projected,1,[]);
- assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
+ assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"[^>]*><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
  assert.equal((settled.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length);
  s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
 });
 test('Pexeso bot sometimes overlooks a known pair',()=>{
- const s=create('pexeso',2,'easy'),pair=(a,b)=>a.rank===b.rank&&(['♥','♦'].includes(a.suit)===['♥','♦'].includes(b.suit));
+ const s=create('pexeso',2,'easy','52'),pair=(a,b)=>a.rank===b.rank&&(['♥','♦'].includes(a.suit)===['♥','♦'].includes(b.suit));
  const first=s.data.board.findIndex((a,i)=>s.data.board.some((b,j)=>i!==j&&pair(a,b))),second=s.data.board.findIndex((b,j)=>j!==first&&pair(s.data.board[first],b));
  s.data.seen[first]=s.data.board[first].id;s.data.seen[second]=s.data.board[second].id;
  const choices=new Set();for(let move=0;move<12;move++){s.move=move;choices.add(E.botAction(s).index===first||E.botAction(s).index===second?'known':'missed');}
@@ -241,4 +241,17 @@ test('Battleship Table can fire for either authorized actor without exposing eit
  }
  const spectator=V.render(E.project(state,-1),-1,[],{surface:'table'});
  assert(!spectator.includes('data-action='));
+});
+
+
+test('Pexeso cartoon deck defaults to exact character pairs and completes every preset',()=>{
+ for(const preset of ['easy','medium','hard','full']){
+  let state=create('pexeso',4,preset);assert.equal(state.data.deckSize,96);assert(E.validateState(state));
+  const counts=new Map();for(const card of state.data.board)counts.set(card.character,(counts.get(card.character)||0)+1);
+  assert([...counts.values()].every(n=>n===2));if(preset==='full')assert.equal(counts.size,48);
+  assert(E.project(state,-1).data.board.every(card=>card.hidden&&!card.character));
+  const forged=E.clone(state);forged.data.board[0].color='unknown';assert.throws(()=>E.validateState(forged),/POSITION_INVALID/);
+  let steps=0;while(state.status==='playing'&&steps++<3000)state=play(state);
+  assert.equal(state.status,'finished',preset);assert(E.validateState(state));
+ }
 });

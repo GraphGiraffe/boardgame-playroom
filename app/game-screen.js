@@ -9,6 +9,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const UI=root.TabletopUI||(typeof module==='object'&&module.exports?require('../core/ui.js'):null);
   const icon=UI.icon;
+  function tileTheme(manifest={}){
+    return ['green','coral','blue','gold','violet'].includes(manifest.tileTheme)?manifest.tileTheme:({cards:'green',board:'gold',dice:'violet'})[manifest.category]||'green';
+  }
+  function packRow({id,version='',name,manifest={},attrs='',selectable=false,controls='',detail=''}={}){
+    const tag=selectable?'button':'li',cover=root.PlayroomViews?.cover(id)||icon('board');
+    return `<${tag} ${selectable?'type="button"':''} class="pack-row ${selectable?'pack-item':'pack-entry'}" data-pack-id="${esc(id)}" data-pack-version="${esc(version)}" ${attrs}><span class="pack-art" data-theme="${tileTheme(manifest)}" aria-hidden="true">${cover}</span><span class="pack-summary"><strong>${esc(name||manifest.name||id)}</strong><small class="pack-version">${esc(id)} · ${esc(version)}</small>${detail}</span>${controls?`<div class="pack-row-controls">${controls}</div>`:''}</${tag}>`;
+  }
+  function fitCovers(host){
+    for(const svg of host?.querySelectorAll?.('.game-cover svg,.pack-art svg')||[]){
+      const art=svg.querySelector('[data-cover-art]');if(!art||typeof art.getBBox!=='function')continue;
+      const box=art.getBBox();if(!box.width||!box.height)continue;
+      const size=Math.max(box.width,box.height),pad=size*(svg.closest('.game-cover')?.02:.06),shadowPad=size*.06,shadow=svg.querySelector('[data-cover-shadow]');
+      if(shadow){shadow.setAttribute('cx',box.x+box.width/2);shadow.setAttribute('cy',box.y+box.height+shadowPad*.2);shadow.setAttribute('rx',box.width*.44);shadow.setAttribute('ry',shadowPad*.35);}
+      const bottomPad=shadow?Math.max(pad,shadowPad*.6):pad;
+      svg.setAttribute('viewBox',`${box.x-pad} ${box.y-pad} ${box.width+pad*2} ${box.height+pad+bottomPad}`);
+      svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+    }
+  }
   function iconButton(attrs,label,name,{disabled=false,active,className='',type='button'}={}){
     return `<button class="icon-btn ui-icon-button ${esc(className)}${active?' active':''}" type="${esc(type)}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" ${typeof active==='boolean'?`aria-pressed="${active}"`:''} ${disabled?'disabled':''}>${icon(name)}</button>`;
   }
@@ -17,10 +35,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   let quickActions=[];
   function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
-  function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"'}={}){
+  function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
     // Context actions grow to the left; help and settings keep the right edge.
-    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette'}]:[];
-    const ordered=[...actions.filter(a=>a.name!=='help'),...appearance,...actions.filter(a=>a.name==='help')];
+    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:compact}]:[];
+    const ordered=[...actions.filter(a=>a.name!=='help'),...appearance,...actions.filter(a=>a.name==='help').map(a=>({...a,hidden:compact||a.hidden}))];
     if(showSettings)ordered.push({attrs:settingsAttrs,label:globalThis.PlayroomMessages.text("ui.game-screen.985b5e0f2ccf"),name:'settings'});
     quickActions=ordered;return ordered.filter(action=>!action.hidden).map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
@@ -44,7 +62,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
     const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
     const top=anchor?.getBoundingClientRect().top;
-    patchChildren(modal,template.content);
+    patchChildren(modal,template.content);fitCovers(modal);
     if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
   }
   function roundText(round){return round&&Number.isSafeInteger(round.number)&&round.number>0?globalThis.PlayroomMessages.text(round.kind==='bout'?'progress.bout':round.limit?'progress.round-of':'progress.round',{number:round.number,...(round.limit?{limit:round.limit}:{})}):'';}
@@ -174,10 +192,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
+    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
+      const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',compact=w<640;
+      stage.dataset.seatMode=compact&&anchors?'corners':'ring';
+      const seatWidth=hands?(w-Math.max(60,w*.23)-12)/2:compact?(anchors?(w-6)/2:(w-Math.max(60,w*.23)-12)/2):Math.min(200,Math.max(110,w*.21));
+      stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,Math.floor(w/150))));
+      const seatHeight=anchors?Math.min(76,Math.max(54,h*.12)):hands?Math.min(180,Math.max(105,h*.24)):Math.min(100,Math.max(64,h*.17));
+      stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',Math.floor(seatHeight)+'px');
+      stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-60)/1.43))+'px');
+      stage.style.setProperty('--own-zone',stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?88:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32)))+'px':'0px');
+      stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
+      if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
   }
-  return Object.freeze({roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
 });

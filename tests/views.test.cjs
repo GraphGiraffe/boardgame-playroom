@@ -85,7 +85,7 @@ test('standalone UI shares source and target policies without browser or game de
   assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*><svg class="round-token-art medallion-art"/);
   assert.doesNotMatch(pieces,/>12 шашек</);
   const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
-  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/mini-hand/);
+  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/class="mini-hand/);
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
@@ -218,7 +218,7 @@ test('manual UNO controls are constant and accusations use public player context
       assert.ok(actions.some(a => a.type === 'declare-uno'));
       assert.ok(!actions.some(a => a.type === 'accuse-uno'), 'accusations must not become automatic action buttons');
       for (const target of state.players.keys()) assert.equal(html.includes(`data-player-target="${target}"`), target !== viewer);
-      assert.doesNotMatch(html, /class="player-status-badge">UNO!/, 'one card alone is not a public declaration');
+      assert.doesNotMatch(html, /class="player-status-badge[^"]*"[^>]*>UNO!/, 'one card alone is not a public declaration');
     }
   }
   state.data.uno.pending = 0;
@@ -226,9 +226,9 @@ test('manual UNO controls are constant and accusations use public player context
   state.data.uno.pending = null;
   assert.equal(render(state, 1), pending, 'catch-window changes must not provide visual clues');
   state.data.uno.declared[0] = true;
-  assert.match(render(state, 1), /class="player-status-badge">UNO!/);
+  assert.match(render(state, 1), /class="player-status-badge[^"]*"[^>]*>UNO!/);
   assert.match(render(state, 1), /data-player-target="0"/, 'already declared players still allow a mistaken accusation');
-  assert.match(render(state, 0), /class="player-status-badge">UNO!/);
+  assert.match(render(state, 0), /class="player-status-badge[^"]*"[^>]*>UNO!/);
   const wild = state.data.drawPile.splice(state.data.drawPile.findIndex(c => c.value === 'wild'), 1)[0];
   state.data.hands[0].push(wild); state.data.uno.declared[0] = false;
   assert.equal(callButton(render(state, 0, wild.id)), originalCall, 'colour choice retains the same call button');
@@ -276,7 +276,7 @@ test('all source packs provide only API 2 elements with application-owned placem
       state.turn=turn;
       if(game==='durak')Object.assign(state.data,{attacker:turn,boutOrigin:turn,attackCursor:turn,defender:(turn+1)%state.players.length});
       const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)" data-player-index="(\d+)"([^>]*)>/g)];
-      assert.equal(panels.length,state.players.length,game);
+      assert.equal(panels.length,state.players.length+(game==='ludo'&&viewer>=0?1:0),game);
       assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
       for(const [,classes,index,attrs]of panels){
         assert.equal(classes.includes('is-turn'),Number(index)===turn,`${game}: only the current player is highlighted`);

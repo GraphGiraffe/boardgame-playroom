@@ -47,9 +47,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // the next real move, retaining historical players and event attribution.
     setPlayerMetadata(index, metadata) {
       if (!Number.isInteger(index) || index < 0 || index >= this.current.players.length || !isRecord(metadata) ||
-          !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot'].includes(key)) ||
+          !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot','avatar'].includes(key)) ||
           (metadata.name !== undefined && (typeof metadata.name !== 'string' || !metadata.name.trim() || metadata.name.length > 40)) ||
-          (metadata.bot !== undefined && typeof metadata.bot !== 'boolean')) throw Error(globalThis.PlayroomMessages.text("ui.session.d1e2fa296dc9"));
+          (metadata.bot !== undefined && typeof metadata.bot !== 'boolean') ||
+          (metadata.avatar != null && (typeof metadata.avatar !== 'string' || !/^(crescent|triangle|square|circle|star|rectangle|diamond|hexagon)-(red|orange|yellow|green|blue|purple)$/.test(metadata.avatar)))) throw Error(globalThis.PlayroomMessages.text("ui.session.d1e2fa296dc9"));
       const record = records.get(this);
       record.playerMetadata ||= {};
       record.playerMetadata[index] = {...record.playerMetadata[index], ...clone(metadata)};
@@ -147,12 +148,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           const prior = index ? data.states[index - 1].players : state.players, changes = state.playerChanges || [];
           if (!Array.isArray(changes) || (!index && changes.length) || new Set(changes.map(change => change?.index)).size !== changes.length ||
               changes.some(change => !isRecord(change) || !Number.isInteger(change.index) || change.index < 0 || change.index >= state.players.length ||
-                Object.keys(change).some(key => !['index','name','bot'].includes(key)) || Object.keys(change).length < 2 ||
+                Object.keys(change).some(key => !['index','name','bot','avatar'].includes(key)) || Object.keys(change).length < 2 ||
                 (change.name !== undefined && (typeof change.name !== 'string' || !change.name.trim() || change.name.length > 40)) ||
-                (change.bot !== undefined && typeof change.bot !== 'boolean'))) throw Error('Invalid player changes');
-          const expected = prior.map(player => ({name:player.name,bot:player.bot}));
+                (change.bot !== undefined && typeof change.bot !== 'boolean') ||
+                (change.avatar != null && (typeof change.avatar !== 'string' || !/^(crescent|triangle|square|circle|star|rectangle|diamond|hexagon)-(red|orange|yellow|green|blue|purple)$/.test(change.avatar))))) throw Error('Invalid player changes');
+          const expected = prior.map(player => ({name:player.name,bot:player.bot,avatar:player.avatar||null}));
           for (const {index:player,...metadata} of changes) Object.assign(expected[player], metadata);
-          if (state.players.some((player, p) => player.name !== expected[p].name || player.bot !== expected[p].bot)) throw Error('Undeclared player changes');
+          if (state.players.some((player, p) => player.name !== expected[p].name || player.bot !== expected[p].bot || (player.avatar||null)!==(expected[p].avatar||null))) throw Error('Undeclared player changes');
         }
         if ((options.preset !== undefined && options.preset !== initial.preset) ||
             Boolean(options.openHands) !== initial.openHands ||

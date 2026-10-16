@@ -5,8 +5,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "5025b294a1cc5354c1f2854f8c44d014d3f90d931929a043a97660d6e141c780",
-      "renderedSha256": "5025b294a1cc5354c1f2854f8c44d014d3f90d931929a043a97660d6e141c780"
+      "sha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df",
+      "renderedSha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df"
     },
     {
       "source": "shared/components/game-components.css",
@@ -43,6 +43,14 @@
       "format": "text",
       "sha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d",
       "renderedSha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d"
+    },
+    {
+      "source": "shared/asset-packs/characters/catalog.json",
+      "target": "core/character-assets.js",
+      "format": "module",
+      "globalName": "PlayroomCharacterAssets",
+      "sha256": "aa2d117904018ff528ea443858b101d30fb22672dd7f40a66b4e89ee494f5014",
+      "renderedSha256": "7284169e4e25ce364eaf2e3a77cf2f82697223273604e9d7cb385892b325d681"
     }
   ]
 }

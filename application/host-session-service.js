@@ -5,7 +5,7 @@
     constructor({engine,Session,Authority,store,packs,fingerprint,recovery,idFactory}){Object.assign(this,{engine,Session,Authority,store,packs,fingerprint,recovery,idFactory});}
     async start(room,{restored=null,rosterReady=Promise.resolve()}={}){
       const occupied=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);
-      const players=occupied.map(seat=>{const person=room.participants.find(value=>value.id===seat.participantId);if(!person)throw Error('HOST_PARTICIPANT_MISSING');return {name:person.nickname,bot:!!person.bot};});
+      const players=occupied.map(seat=>{const person=room.participants.find(value=>value.id===seat.participantId);if(!person)throw Error('HOST_PARTICIPANT_MISSING');return {name:person.nickname,bot:!!person.bot,...(person.avatar?{avatar:person.avatar}:{})};});
       if(players.length<room.constraints.min)throw Error('HOST_PLAYERS_REQUIRED');
       if(room.recovery&&!restored)throw Error('HOST_RECOVERY_REQUIRED');
       this.packs.activate(room.game.id,room.game.version);

@@ -81,7 +81,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function roomPresence(room){
     const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
     return {kind:'room-presence',roomId:room.id,revision:room.revision,participants:room.participants
-      .map(p=>({id:p.id,nickname:p.nickname,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost,bot:!!p.bot,local:!!p.local,hasConnected:Number.isFinite(p.joinedAt),replacement:p.replacement||null,playerIndex:occupied.find(s=>s.participantId===p.id)?.playerIndex??occupied.findIndex(s=>s.participantId===p.id)}))};
+      .map(p=>({id:p.id,nickname:p.nickname,avatar:p.avatar||null,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost,bot:!!p.bot,local:!!p.local,hasConnected:Number.isFinite(p.joinedAt),replacement:p.replacement||null,playerIndex:occupied.find(s=>s.participantId===p.id)?.playerIndex??occupied.findIndex(s=>s.participantId===p.id)}))};
   }
   function playerMetadata(sessionId,index){
     let data;
@@ -109,6 +109,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const lost=clientPeer&&['disconnected','failed','closed'].includes(clientPeer.pc.connectionState);
     for(const p of data.participants){
       if(!Number.isSafeInteger(p.playerIndex)||p.playerIndex<0)continue;
+      for(const panel of shell.querySelectorAll(`.player-panel[data-player-index="${p.playerIndex}"]`)){
+        const avatar=panel.querySelector('.player-avatar-wrap>.avatar');
+        if(avatar&&avatar.dataset.avatar!==(p.avatar||'')){avatar.innerHTML=root.PlayroomAvatars.content(p.avatar,p.nickname);avatar.dataset.avatar=p.avatar||'';}
+      }
       const panel=shell.querySelector(`.player-panel[data-player-index="${p.playerIndex}"]`),role=panel?.querySelector('.participant-role');
       if(!role)continue;
       const connected=lost&&(p.isHost||p.id===clientParticipantId)?false:p.connected;
@@ -240,7 +244,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       subscribe:listener=>switchable.subscribe(listener),
       presentationReady:message=>switchable.presentationReady(message),
       dispatch:async command=>{
-        const result=await switchable.dispatch(command);
+        const result=await (command?.type==='avatar'?roomConnection.dispatch(command):switchable.dispatch(command));
         if((command?.type==='resume'||command?.type==='join')&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
@@ -372,7 +376,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   async function joinRoom(form){
     try{
-      const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value});
+      const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value,avatar:b.profile()?.avatar||null});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2e76e709d3bb"));
       clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;
       if(result.resumeToken){
@@ -461,7 +465,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
-  async function roomCommand(command){try{if(!clientConnected())throw Error(globalThis.PlayroomMessages.text("ui.network-ui.436623fc1c3a"));const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;renderClientLobby();}}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  async function roomCommand(command){try{if(!clientConnected())throw Error(globalThis.PlayroomMessages.text("ui.network-ui.436623fc1c3a"));const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;if(!clientGameClient)renderClientLobby();}}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
     const generation=++presentationGeneration;
@@ -755,7 +759,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
-  root.PlayroomNetworkLibrary=Object.freeze({configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
+  root.PlayroomNetworkLibrary=Object.freeze({setAvatar:avatar=>roomCommand({type:'avatar',avatar}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},

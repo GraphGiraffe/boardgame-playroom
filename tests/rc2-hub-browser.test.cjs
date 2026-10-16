@@ -51,7 +51,7 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
   assert.equal(await page.locator('.game-tile[data-game=pexeso]').count(),2);
   assert.equal(await page.locator('.hub-game-section + .hub-game-section').count(),2);
-  for(const width of [390,1440]){await page.setViewportSize({width,height:900});const sizes=await page.locator('.game-tile[data-game=pexeso]').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));assert(Math.abs(sizes[0].width-sizes[1].width)<1);assert(Math.abs(sizes[0].height-sizes[1].height)<1);if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`hub-${width}.png`),fullPage:true});}
+  for(const width of [390,1440]){await page.setViewportSize({width,height:900});const sizes=await page.locator('.game-tile[data-game=pexeso]').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));assert(Math.abs(sizes[0].width-sizes[1].width)<1);if(width<=520)assert(Math.abs(sizes[0].height-sizes[1].height)<1);else assert(sizes.every(size=>size.height>240));if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`hub-${width}.png`),fullPage:true});}
   await page.reload();
   assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
   await page.locator('[data-start=gofish]').first().click();

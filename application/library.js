@@ -38,8 +38,8 @@
       return JSON.parse(JSON.stringify({formatVersion:1,game:session.game,packVersion:session.packVersion,
         createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
         players:state.players.map(player=>player.name),
-        participants:(session.options.lobbyConfig?.participants||state.players.map(player=>({nickname:player.name,bot:player.bot,local:true,role:'player'})))
-          .map(({nickname,name,bot,local,role})=>({nickname:nickname||name,bot:!!bot,local:!!local,role})),
+        participants:(session.options.lobbyConfig?.participants||state.players.map(player=>({nickname:player.name,avatar:player.avatar||null,bot:player.bot,local:true,role:'player'})))
+          .map(({nickname,name,avatar,bot,local,role})=>({nickname:nickname||name,avatar:avatar||null,bot:!!bot,local:!!local,role})),
         round,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
         outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null}));
     }

@@ -32,6 +32,8 @@ test('main app: public Table over WebRTC shares moves with a player without gain
    await page.locator('.lobby-shell').waitFor();
   }
   await join(phone);await phone.locator('[data-net-seat]:not([disabled])').first().click();await join(table);
+  await phone.locator('[data-net-action=settings]').click();await phone.locator('[data-avatar-picker]').click();await phone.locator('[data-avatar-option=star-yellow]').click();
+  await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(p=>p.nickname==='Борис'&&p.avatar==='star-yellow'));await phone.locator('.modal [data-command=close-modal]').click();
   await table.locator('[data-net-action=table]').click();
   await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(person=>!person.isHost&&person.role==='table'));
   await host.evaluate(()=>{
@@ -40,6 +42,10 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   });
   await host.locator('[data-command=lobby-ready]').click();await phone.locator('[data-net-action=ready]').click();
   await host.locator('[data-command=lobby-start]:not([disabled])').click();
+  await phone.locator('.network-game').waitFor();await phone.evaluate(()=>PlayroomNetworkLibrary.setAvatar('circle-blue'));
+  await host.waitForFunction(()=>{const b=PlayroomAppBridge;return b.roomService.snapshot(b.room().id).participants.some(p=>p.nickname==='Борис'&&p.avatar==='circle-blue');});
+  await phone.waitForFunction(()=>[...document.querySelectorAll('.player-avatar-wrap .avatar-art')].some(img=>img.getAttribute('src')===PlayroomAvatars.source('circle-blue')));
+  assert.equal(await phone.locator('.network-game').count(),1,'cosmetic update keeps the live game mounted');
   await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
   await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
   await phone.locator('.ttt-cell[data-action]').first().waitFor();await phone.locator('.ttt-cell').nth(0).click();
@@ -198,7 +204,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       await page.locator('.table-tools [data-command=settings]').click();
       for(const selector of ['#setting-sound','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
       assert.equal(await page.locator('#setting-auto-pass').count(),0,'hotseat option does not apply to network');
-      await page.locator('.modal [data-shared-rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
+      await page.locator('.modal [data-quick-shortcut][data-command=rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
     }
     const menuIdentity=await client.evaluate(()=>({id:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length}));
     await client.locator('.table-heading [data-command=home]').click();

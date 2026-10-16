@@ -102,7 +102,6 @@
 .hub-edit-section .game-tile.is-dragging{opacity:.55}
 .hub-edit-section .tile-edit-actions{position:relative;z-index:3;display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 12px}
 .hub-edit-section .tile-edit-actions button{min-width:38px;min-height:38px;padding:4px 7px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-weight:750}
-.hub-edit-section .tile-edit-actions [data-edit-category]{flex:1;min-width:85px;font-size:11px}
 .hub-edit-section .tile-edit-actions [data-edit-handle]{touch-action:none;cursor:grab;font-size:20px;line-height:1}
 .tile-favorite svg{width:25px;height:25px}
 .tile-favorite[aria-pressed="true"] svg[data-ui-icon="star"],.pack-display-actions [data-pack-favorite][aria-pressed="true"] svg[data-ui-icon="star"]{fill:currentColor}
@@ -118,12 +117,12 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 .filters{flex-wrap:wrap}.library-heading{align-items:flex-start;gap:12px}.collection-count{white-space:nowrap;padding-top:10px}.game-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,235px),1fr));align-items:stretch}.game-tile.featured{grid-column:span 2}.game-tile .tile-title,.game-tile .tile-description{overflow-wrap:anywhere}.game-tile .tile-content{min-width:0}.tile-favorite{position:absolute;top:12px;right:12px;z-index:4;width:42px;height:42px;border:1px solid var(--color-border-subtle,#d7dcca);border-radius:50%;background:var(--color-surface-panel,#fffdf0);color:#9b7a35;font-size:26px;line-height:1;display:grid;place-items:center;box-shadow:0 2px 5px #253c2420}.tile-favorite[aria-pressed=true]{background:var(--color-surface-selected,#f8e5a8);color:#704f19}.tile-top{right:60px;left:16px}.tile-top .pill{white-space:normal;line-height:1.2}
 @media(max-width:1020px){.game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.game-tile.featured{grid-column:span 2}}
 @media(max-width:760px){.game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.game-tile:last-child{grid-column:auto;display:flex;min-height:246px}.game-tile:last-child .game-cover{height:143px;padding:27px 12px 0}.game-tile:last-child .tile-content{padding:6px 16px 16px}.game-tile.featured{grid-column:span 2}}
-@media(max-width:520px){.library-heading{display:block}.collection-count{display:block;padding:2px 0 0}.filters{gap:4px}.filter{padding:8px 10px}.game-grid,.hub-edit-section .game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.game-tile,.game-tile:last-child,.game-tile.featured,.hub-edit-section .game-tile:last-child{grid-column:auto;display:flex;flex-direction:column;min-height:336px;height:336px;min-width:0}.game-tile .game-cover,.game-tile:last-child .game-cover,.game-tile.featured .game-cover,.hub-edit-section .game-tile:last-child .game-cover{height:96px;padding:0 8px}.game-tile .tile-content,.game-tile:last-child .tile-content,.game-tile.featured .tile-content,.hub-edit-section .game-tile:last-child .tile-content{padding:6px 10px 14px;flex:1;display:flex;flex-direction:column}.game-tile .tile-title,.game-tile.featured .tile-title{font-size:clamp(16px,4vw,20px);letter-spacing:-.4px}.game-tile .tile-description,.game-tile.featured .tile-description{font-size:11px;margin:4px 0 8px}.game-tile .tile-meta .meta-time{display:none}.game-tile .tile-bottom{gap:3px;margin-top:auto}.game-tile .tile-top{position:relative;left:auto;top:auto;right:auto;margin:8px 52px 0 8px;min-height:64px;flex-shrink:0;align-content:flex-start}.tile-top .pill{font-size:9px;padding:4px}.tile-favorite{top:8px;right:8px;width:44px;height:44px}.game-tile .play-button{flex-shrink:0}.hub-edit-section .tile-edit-actions{padding:0 6px 10px}}
+@media(max-width:520px){.hub-main{padding:16px 12px 26px}.library-heading{display:block}.collection-count{display:block;padding:2px 0}.filters{gap:4px}.filter{padding:8px 10px}.game-grid,.hub-edit-section .game-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.game-tile,.game-tile:last-child,.game-tile.featured,.hub-edit-section .game-tile:last-child{grid-column:auto;display:flex;flex-direction:column;min-height:0;height:clamp(172px,49vw,250px);min-width:0}.game-tile .game-cover,.game-tile:last-child .game-cover,.game-tile.featured .game-cover,.hub-edit-section .game-tile:last-child .game-cover{height:auto;min-height:48px;flex:1 1 0;padding:27px 7px 0}.game-tile .tile-content,.game-tile:last-child .tile-content,.game-tile.featured .tile-content,.hub-edit-section .game-tile:last-child .tile-content{padding:3px 9px 9px;flex:0 0 auto;display:flex;flex-direction:column}.game-tile .tile-title,.game-tile.featured .tile-title{font-size:clamp(16px,4.3vw,20px);line-height:1.1;letter-spacing:-.4px}.game-tile .tile-description,.game-tile.featured .tile-description{font-size:11px;line-height:1.3;margin:4px 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.game-tile .tile-meta .meta-time{display:none}.game-tile .tile-bottom{gap:3px;margin-top:3px}.game-tile .play-tile{width:30px;height:30px;flex:none}.game-tile .tile-top{position:absolute;left:7px;top:7px;right:41px;margin:0;min-height:0;align-content:flex-start}.tile-favorite{top:7px;right:7px;width:28px;height:28px}.tile-favorite:before{content:"";position:absolute;inset:-8px}.tile-favorite svg{width:20px;height:20px}.hub-edit-section .game-tile{height:auto;min-height:230px}.hub-edit-section .tile-edit-actions{padding:0 6px 8px}}
 .hub-game-section + .hub-game-section{border-top:1px solid var(--line);margin-top:24px;padding-top:24px}.hub-section-title{font-size:19px;line-height:1.25;margin:0 0 14px}
 @media(max-width:520px){.hub-game-section + .hub-game-section{margin-top:18px;padding-top:18px}.hub-section-title{font-size:17px}}
 
 /* Pack-owned palette tokens share the same library card, including recent games. */
-.game-tile[data-theme="green"]{background:var(--color-surface-tile-green,#e2ead7)}.game-tile[data-theme="coral"]{background:var(--color-surface-tile-coral,#f1dcd0)}.game-tile[data-theme="blue"]{background:var(--color-surface-tile-blue,#dbe9e8)}.game-tile[data-theme="gold"]{background:var(--color-surface-tile-gold,#f1e7c7)}.game-tile[data-theme="violet"]{background:var(--color-surface-tile-violet,#e5dfee)}
+.game-tile[data-theme="green"],.pack-art[data-theme="green"]{--tile-label-surface:var(--color-surface-tile-green,#e2ead7);background:var(--color-surface-tile-green,#e2ead7)}.game-tile[data-theme="coral"],.pack-art[data-theme="coral"]{--tile-label-surface:var(--color-surface-tile-coral,#f1dcd0);background:var(--color-surface-tile-coral,#f1dcd0)}.game-tile[data-theme="blue"],.pack-art[data-theme="blue"]{--tile-label-surface:var(--color-surface-tile-blue,#dbe9e8);background:var(--color-surface-tile-blue,#dbe9e8)}.game-tile[data-theme="gold"],.pack-art[data-theme="gold"]{--tile-label-surface:var(--color-surface-tile-gold,#f1e7c7);background:var(--color-surface-tile-gold,#f1e7c7)}.game-tile[data-theme="violet"],.pack-art[data-theme="violet"]{--tile-label-surface:var(--color-surface-tile-violet,#e5dfee);background:var(--color-surface-tile-violet,#e5dfee)}
 .game-tile.featured{color:var(--ink)}.game-tile.featured .tile-description{color:var(--muted)}.game-cover svg{display:block;width:100%;height:100%;object-fit:contain}.room-choice-divider{height:1px;width:100%;border:0;background:var(--line);margin:7px 0}
 
 /* RC4: four independent filter rows, shared semantic tag colors. */
@@ -142,3 +141,80 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 @media(max-width:360px){#app .topbar-tools>[data-command=fullscreen]{display:none}}
 
 .intro .hub-intro-actions{display:flex;flex-direction:column;align-items:stretch;justify-self:end;gap:12px;margin-top:16px;max-width:100%;min-width:0}.hub-intro-actions .btn{margin:0;max-width:100%}.hub-edit-toggle{width:44px;min-width:44px;height:44px;padding:0}
+
+@media(max-width:520px){.tile-top.tile-tags{gap:3px}.tile-tags .pill{min-height:24px;padding:3px 4px;font-size:9px;white-space:nowrap;line-height:1.1}.tile-tags .tag-type{width:24px;height:24px;padding:2px;flex:none}.tile-tags .tag-type svg{width:19px;height:19px}.tile-tags .tag-mechanic{max-width:none}.game-cover svg{overflow:hidden}}
+@media(max-width:350px){.hub-main{padding-inline:10px}.game-tile .tile-description{-webkit-line-clamp:1}}
+
+.type-badge{--type-size:44px;display:inline-flex;align-items:center;justify-content:center;width:var(--type-size);height:var(--type-size);aspect-ratio:1;border-radius:50%!important;flex:none;background:var(--color-surface-raised,#d4dfc4)}
+.type-badge-card{--type-size:32px;padding:4px!important}
+@media(max-width:520px){.tile-tags .type-badge-card{--type-size:24px;min-height:24px;padding:2px!important;border-radius:50%!important}}
+/* Shared card action geometry: top markers mirror the bottom Play glyph. */
+.game-tile{--tile-glyph-size:24px;--tile-play-size:43px;--tile-action-inset:18px;--tile-glyph-inset:calc(var(--tile-action-inset) + (var(--tile-play-size) - var(--tile-glyph-size))/2)}
+.game-tile .tile-content{padding-right:var(--tile-action-inset);padding-bottom:var(--tile-action-inset)}
+.game-tile .play-tile{width:var(--tile-play-size);height:var(--tile-play-size)}
+.game-tile .play-tile>svg{width:var(--tile-glyph-size);height:var(--tile-glyph-size);display:block}
+.game-tile .tile-favorite{padding:0;display:inline-grid;place-items:center;width:var(--tile-glyph-size);height:var(--tile-glyph-size);right:var(--tile-glyph-inset);top:var(--tile-glyph-inset)}
+.game-tile .tile-favorite>svg{width:calc(var(--tile-glyph-size) - 4px);height:calc(var(--tile-glyph-size) - 4px);display:block;margin:auto;vertical-align:initial}
+.game-tile .tile-favorite:before{content:"";position:absolute;inset:-11px}
+.game-tile .tile-top{left:var(--tile-glyph-inset);top:var(--tile-glyph-inset);right:calc(var(--tile-glyph-inset) + var(--tile-glyph-size) + 6px)}
+.game-tile .tile-tags .type-badge-card{--type-size:var(--tile-glyph-size);width:var(--type-size);height:var(--type-size);min-height:var(--type-size);padding:2px!important}
+.game-tile .type-badge-card svg{width:calc(var(--tile-glyph-size) - 4px);height:calc(var(--tile-glyph-size) - 4px)}
+@media(max-width:520px){.game-tile{--tile-play-size:30px;--tile-action-inset:9px}.game-tile .tile-tags .tag-mechanic{min-height:var(--tile-glyph-size)}}
+/* Compact shared header: type / player count / favorite. The whole tile starts the game. */
+.tile-card-header{display:grid;grid-template-columns:var(--tile-glyph-size) minmax(0,1fr) var(--tile-glyph-size);align-items:center;gap:4px;flex:none;position:relative;z-index:4;padding:var(--tile-action-inset) var(--tile-action-inset) 0}
+.game-tile .type-badge-card{--type-size:var(--tile-glyph-size);width:var(--type-size);height:var(--type-size);min-height:var(--type-size);padding:2px!important}
+.game-tile .tile-card-header .tile-favorite{position:relative;inset:auto}
+.tile-player-count{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;white-space:nowrap;color:var(--ink)}
+.tile-player-count svg{width:17px;height:17px;flex:none}
+.tile-mechanics{position:relative;z-index:3;display:flex;flex-wrap:nowrap;align-items:center;gap:4px;min-height:18px;margin:1px var(--tile-action-inset) 0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;flex:none}
+.tile-mechanics::-webkit-scrollbar{display:none}
+#app .tile-mechanics .pill{white-space:nowrap;flex:none;min-height:14px;padding:1px 5px;font-size:9px;line-height:1.1}
+.game-tile .game-cover{padding-top:0}
+@media(max-width:520px){.game-tile .game-cover,.game-tile:last-child .game-cover,.game-tile.featured .game-cover,.hub-edit-section .game-tile:last-child .game-cover{padding:4px 8px 0;min-height:40px}.tile-player-count{font-size:11px}.tile-player-count svg{width:15px;height:15px}.tile-mechanics{margin-top:1px;min-height:16px}.game-tile .tile-content{padding-top:4px}}
+/* Text has reserved rows; cover size never depends on wrapping in its description. */
+#app .game-tile .tile-content{
+ position:absolute;left:var(--tile-action-inset);right:var(--tile-action-inset);bottom:var(--tile-action-inset);
+ padding:0!important;z-index:3;display:block;
+}
+#app .game-tile .tile-title{
+ margin:0;line-height:1.1;height:1.1em;min-height:1.1em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+}
+#app .game-tile .tile-description{
+ margin:2px 0 0;font-size:var(--tile-caption-size);line-height:1.2;height:2.4em;min-height:2.4em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+}
+#app .game-tile .game-cover{
+ position:absolute;left:0;right:0;top:calc(var(--tile-action-inset) + var(--tile-glyph-size) + 16px);
+ bottom:calc(var(--tile-action-inset) + var(--tile-title-size)*1.1 + var(--tile-caption-size)*2.4 + 3px);height:auto!important;min-height:0!important;padding:0 6px!important;pointer-events:none;
+ mask-image:none;
+}
+
+#app .game-tile .tile-title{display:flex;align-items:flex-end;text-shadow:none}
+#app .game-tile .tile-title>span{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Fixed caption rows and a separate artwork area keep every card square. */
+#app .game-tile{--tile-title-size:clamp(14px,1.6vw,20px);--tile-caption-size:10.5px;height:auto;min-height:0;aspect-ratio:1;display:flex;flex-direction:column;grid-column:auto}
+#app .game-tile .tile-title{font-size:var(--tile-title-size)}
+@media(max-width:520px){#app .game-tile{--tile-title-size:clamp(12px,3.3vw,14px);--tile-caption-size:9.5px;height:auto;min-height:0;aspect-ratio:1}}
+
+/* Editing keeps the same card geometry; controls overlay its caption zone. */
+#app .hub-edit-section .game-tile{cursor:grab;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#app .hub-edit-section .game-tile.is-dragging{cursor:grabbing}
+#app .hub-edit-section .tile-edit-actions{position:absolute;left:var(--tile-action-inset);right:var(--tile-action-inset);bottom:var(--tile-action-inset);z-index:5;display:flex;justify-content:flex-end;align-items:center;gap:4px;padding:0;pointer-events:none}
+#app .hub-edit-section .tile-edit-actions button{pointer-events:auto;flex:none;min-width:32px;width:32px;min-height:36px;height:36px;padding:4px;box-shadow:0 2px 5px #20352d22}
+
+/* Scale the approved 178px card composition with its own content width. */
+#app .game-tile{container-type:inline-size;border-radius:14%;--tile-unit:calc(100cqw / 176);--tile-action-inset:calc(9 * var(--tile-unit));--tile-glyph-size:calc(24 * var(--tile-unit));--tile-title-size:calc(12.87 * var(--tile-unit));--tile-caption-size:calc(9.5 * var(--tile-unit))}
+#app .game-tile .tile-card-header{gap:calc(4 * var(--tile-unit))}
+#app .game-tile .type-badge-card{padding:calc(2 * var(--tile-unit))!important}
+#app .game-tile :is(.type-badge-card,.tile-favorite)>svg{width:calc(20 * var(--tile-unit));height:calc(20 * var(--tile-unit))}
+#app .game-tile .tile-favorite>svg{width:calc(18 * var(--tile-unit));height:calc(18 * var(--tile-unit))}
+#app .game-tile .tile-player-count{gap:calc(4 * var(--tile-unit));font-size:calc(11 * var(--tile-unit));line-height:1.2}
+#app .game-tile .tile-player-count svg{width:calc(15 * var(--tile-unit));height:calc(15 * var(--tile-unit))}
+#app .game-tile .tile-mechanics{gap:calc(4 * var(--tile-unit));min-height:calc(16 * var(--tile-unit));margin-top:var(--tile-unit)}
+#app .game-tile .tile-mechanics .pill{min-height:calc(14 * var(--tile-unit));padding:var(--tile-unit) calc(5 * var(--tile-unit));font-size:calc(9 * var(--tile-unit))}
+#app .game-tile .game-cover{top:calc(49 * var(--tile-unit));bottom:calc(var(--tile-action-inset) + var(--tile-title-size)*1.1 + var(--tile-caption-size)*2.4 + 3 * var(--tile-unit));padding:0 calc(6 * var(--tile-unit))!important}
+#app .game-tile .tile-title{letter-spacing:calc(-.4 * var(--tile-unit))}
+#app .game-tile .tile-description{margin-top:calc(2 * var(--tile-unit))}
+#app .hub-edit-section .tile-edit-actions{gap:calc(4 * var(--tile-unit))}
+#app .hub-edit-section .tile-edit-actions button{min-width:calc(32 * var(--tile-unit));width:calc(32 * var(--tile-unit));min-height:calc(36 * var(--tile-unit));height:calc(36 * var(--tile-unit));padding:calc(4 * var(--tile-unit));border-radius:calc(9 * var(--tile-unit))}
+#app .hub-edit-section .tile-edit-actions button svg{width:calc(22 * var(--tile-unit));height:calc(22 * var(--tile-unit))}
