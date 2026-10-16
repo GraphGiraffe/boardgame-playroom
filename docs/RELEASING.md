@@ -185,3 +185,5 @@ Preview запускает production smoke до/после и сравнива�
 ### Повторная проверка уже загруженного preview
 
 Через `prerelease.yml` передать `operation=preflight`, `checks=none`, точные `release`, `deployment` и непустой `pack_channel`. В отличие от preflight без канала, этот путь требует успешный preview deployment, сверяет его commit с immutable release, проверяет артефакт и полный protected/offline runtime, сравнивает production до/после. Не вызывает upload или provider mutations. Итоговый отчёт: `status=preview-verified`, `uploaded=false`, `productionUnchanged=true`. Применять при неудачной проверке после upload; опубликованный runtime не переписывается.
+
+Последняя подтверждённая пара кандидата — app 0.18.0-rc.5 / collection 0.7.0-rc.4, [preview](https://cc0f5728.playroom-hod-test.pages.dev); источник и полная проверка — [HANDOFF](HANDOFF-0.18.md#итог-подтверждённый-rc5-preview). Production неизменен.

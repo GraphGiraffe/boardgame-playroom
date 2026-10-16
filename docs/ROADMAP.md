@@ -141,3 +141,5 @@ RC8-UX-01/02, общая сцена/лобби, UI API 2, независимые
 ### Приёмка 0.18 RC5 · 2026-10-16
 
 RC4 preview выявил системный пропуск новых HTML entrypoints в offline CORE. Исправление builder/SW выделено в 0.18.0-rc.5 без переписывания опубликованных RC4 файлов. Коллекция 0.7.0-rc.4 / канал 0.18-rc.4 остаются прежними; ассеты/UI не меняются. Проверки и окончательный preview — [RC5](RC-0.18.0-rc.5.md), [HANDOFF](HANDOFF-0.18.md).
+
+**Подтверждённый preview RC5 / packs RC4: [https://cc0f5728.playroom-hod-test.pages.dev](https://cc0f5728.playroom-hod-test.pages.dev)**. Protected/runtime/12 pack hashes/offline passed, productionUnchanged=true; read-only проверка [38931148300](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38931148300). Подробная передача следующему чату — [HANDOFF](HANDOFF-0.18.md).
