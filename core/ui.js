@@ -257,8 +257,10 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         if(typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Invalid game view');
         const surfaces=options?.surfaces||{};
         if(typeof surfaces!=='object'||Array.isArray(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Invalid view surfaces');
-        packs.set(id,{render,cover,surfaces:Object.freeze({...surfaces})});
+        if(options.reveal!==undefined&&typeof options.reveal!=='function')throw Error('Invalid reveal renderer');
+        packs.set(id,{render,cover,reveal:options.reveal,surfaces:Object.freeze({...surfaces})});
       },
+      reveal(id,value){try{return packs.get(id)?.reveal?.(value)||'';}catch(_){return '';}},
       supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},

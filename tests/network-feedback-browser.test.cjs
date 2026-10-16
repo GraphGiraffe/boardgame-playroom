@@ -12,7 +12,7 @@ async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
   for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','platform/web/action-reveal.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
@@ -306,5 +306,40 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.evaluate(()=>skipFeedback.accept(skipEvents,[{eventId:1,id:'attack.skip'}],'uno'));
     assert.deepEqual(await page.evaluate(()=>skipSounds),[['attack.skip']]);
     assert.equal(await page.locator('.is-turn-skipped').count(),0);
+  }finally{await page.close();await browser.close();}
+ });
+
+ test('public card reveal pauses, flies to its destination and dice remain duplicated',{timeout:20000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const page=await fixture(browser);try{
+    await page.evaluate(definition=>{
+      PlayroomPackLoader.execute(definition.view,{PlayroomMessages,PlayroomViews,PlayroomComponents:globalThis.PlayroomComponents,TabletopUI,PlayroomCatalog:{uno:definition.manifest},PlayroomPack:{id:'uno',version:definition.manifest.version,asset:path=>definition.assets?.[path]}});
+      const style=document.createElement('style');style.textContent=definition.styles;document.head.append(style);
+      window.reveal={kind:'card',card:{id:'u1',color:'red',value:'7'},entity:'card-u1'};
+      document.querySelector('#app').innerHTML='<div class="table-shell"><div class="scene uno-scene" style="height:400px">'+PlayroomViews.reveal('uno',reveal)+'</div></div>';
+      window.largeFeedback=new PlayroomGameFeedback();largeFeedback.start([]);largeFeedback.accept([{id:1,reveal}],[],'uno',{duration:1});
+    },definition);
+    assert.equal(await page.locator('.action-reveal .uno-card').count(),1);
+    assert(await page.locator('.action-reveal .uno-card').evaluate(el=>el.getBoundingClientRect().width>120));
+    assert.equal(await page.locator('.scene [data-reveal-active]').count(),1);
+    assert.equal(await page.locator('.action-reveal [data-entity]').count(),0,'enlarged art cannot become a second playable card');
+    assert.equal(await page.locator('.action-reveal [data-action]').count(),0);
+    await page.evaluate(()=>PlayroomMotion.play({actor:0,viewer:0,action:{type:'play',card:'u1'},entities:new Map(),origin:{x:10,y:600,width:60,height:90},hands:new Map()},{duration:200}));
+    assert.equal(await page.locator('.playroom-motion-piece').count(),0,'ordinary motion does not duplicate the enlarged card flight');
+    assert.equal(await page.evaluate(()=>largeFeedback.active!==null),true);
+    await page.waitForFunction(()=>document.querySelector('.action-reveal-art')?.getAnimations().length>0);
+    await page.waitForFunction(()=>!document.querySelector('.action-reveal'));
+    assert.equal(await page.locator('[data-reveal-active]').count(),0);
+    assert.notEqual(await page.locator('.scene .uno-card').evaluate(el=>getComputedStyle(el).visibility),'hidden');
+    await page.evaluate(()=>{
+      largeFeedback.accept([{id:2,reveal:{kind:'dice',title:'Пара',dice:[{value:6},{value:6},{value:2,active:false},{value:3,active:false},{value:4,active:false}]}}],[],'yatzy',{duration:1});
+    });
+    assert.equal(await page.locator('.action-reveal-die').count(),5);assert.equal(await page.locator('.action-reveal-die.is-unused').count(),3);
+    assert.equal(await page.locator('[data-reveal-active]').count(),0,'dice are copies, no source is hidden');
+    assert.equal(await page.locator('.action-reveal-title').textContent(),'Пара');
+    assert(await page.locator('.action-reveal').evaluate(el=>el.scrollWidth<=innerWidth));
+    await page.evaluate(()=>largeFeedback.clear());assert.equal(await page.locator('.action-reveal').count(),0);
+    await page.evaluate(()=>largeFeedback.accept([{id:3,reveal}],[],'uno',{silent:true}));
+    assert.equal(await page.locator('.action-reveal').count(),0,'history/reconnect never creates a new reveal');
   }finally{await page.close();await browser.close();}
  });

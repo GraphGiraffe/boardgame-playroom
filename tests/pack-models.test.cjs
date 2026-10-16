@@ -232,3 +232,36 @@ test('a round limit is independent from actions and turns, including the assigne
  assert.deepEqual(state.timeline.starts,[0,1,2,3,4,5,6,7,8]);
  assert.throws(()=>model.validate({...state,timeline:{...state.timeline,round:2,roundStarts:[0,999]}}),error=>error.code==='POSITION_INVALID');
 });
+
+ test('Yatzy reveal uses the accepted category and precisely the participating public dice',()=>{
+  const C=require(path.join(packs,'packs/yatzy/domain/categories.js'));
+  for(const [dice,key,expected] of [
+    [[6,6,6,2,1],'pair',[true,true,false,false,false]],
+    [[2,5,2,5,5],'twoPairs',[true,true,true,true,false]],
+    [[4,4,4,4,1],'three',[true,true,true,false,false]],
+    [[2,5,2,1,5],'fives',[false,true,false,false,true]],
+    [[2,3,4,5,6],'smallStraight',[false,false,false,false,false]],
+    [[2,3,4,5,6],'largeStraight',[true,true,true,true,true]],
+    [[3,3,2,2,3],'fullHouse',[true,true,true,true,true]],
+    [[1,1,1,1,1],'yatzy',[true,true,true,true,true]]
+  ])assert.deepEqual(C.participation(dice,key),expected,key);
+  const Engine=require('../core/engine.js');require('../packs/yatzy/rules.js');
+  const start=Engine.createGame('yatzy',{players:[{name:'A'},{name:'B'}],preset:'classic',seed:17});
+  const rolled=Engine.applyAction(start,0,{type:'roll'});
+  assert(Engine.project(rolled,-1).events.every(event=>!event.reveal),'ordinary Yatzy rolls have no enlarged reveal');
+  const scored=Engine.applyAction(rolled,0,{type:'score',key:'pair'}),event=Engine.project(scored,-1).events.find(e=>e.type==='yatzy.scored');
+  assert.equal(event.reveal.title,'Пара');assert.deepEqual(event.reveal.dice.map(d=>d.value),rolled.data.dice);
+  assert.deepEqual(event.reveal.dice.map(d=>d.active),C.participation(rolled.data.dice,'pair'));
+ });
+
+ test('reveals contain only public played faces, never a private draw or hidden hand',()=>{
+  const E=require('../core/engine.js');for(const id of ['uno','oldmaid','gofish'])require('../packs/'+id+'/rules.js');
+  const players=[{name:'A'},{name:'B'}];
+  let u,play;for(let seed=1;seed<40;seed++){u=E.createGame('uno',{players,preset:'classic',seed});play=E.legalActions(u,u.turn).find(a=>a.type==='play');if(play)break;}assert(play);
+  const played=E.applyAction(u,u.turn,play),projection=E.project(played,-1),reveal=projection.events.find(e=>e.type==='uno.played').reveal;
+  assert.deepEqual(reveal.card,played.data.discard.at(-1));assert(projection.data.hands.flat().every(c=>c.hidden));
+  for(const id of ['oldmaid','gofish']){
+    const s=E.createGame(id,{players,preset:'classic',seed:23}),action=E.legalActions(s,s.turn)[0],n=E.applyAction(s,s.turn,action);
+    assert(E.project(n,-1).events.every(e=>!e.reveal),id+' private transfers remain hidden');
+  }
+ });
