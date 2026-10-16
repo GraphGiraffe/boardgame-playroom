@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/game-components.js; sha256=a1338dd8e9aff40f37c6a49942c9083e7836229591b590fcfc20e3c6940f206c
+// Vendored from playroom-paks/shared/components/game-components.js; sha256=93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91
 // Canonical scalable Web component geometry. Values, visibility and actions are external.
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameComponents=api;})(globalThis,function(){
  'use strict';
@@ -51,7 +51,7 @@ function card(value,attrs='disabled',extra=''){
   const rank=hidden?'':value.joker?globalThis.PlayroomMessages.text("ui.game-components.2f0a8ec85914"):({14:globalThis.PlayroomMessages.text("ui.game-components.7614b90a1064"),13:globalThis.PlayroomMessages.text("ui.game-components.130b874a5c04"),12:globalThis.PlayroomMessages.text("ui.game-components.55cea60d6cce"),11:globalThis.PlayroomMessages.text("ui.game-components.8b7b577aa31e")})[value.rank]||value.rank,suit=hidden?'':value.suit||'';
   const red=!hidden&&(value.color==='red'||suit==='♥'||suit==='♦');
   const label=hidden?globalThis.PlayroomMessages.text("ui.game-components.c13a6680430c"):value.joker?globalThis.PlayroomMessages.text("ui.game-components.232b69813cbf",{p0:String(red?globalThis.PlayroomMessages.text("ui.game-components.21b4d916f326"):globalThis.PlayroomMessages.text("ui.game-components.1ca9b6b05dfc"))}):`${rank} ${suit}`;
-  
+
   return `<${tag} class="shared-card ${hidden?'shared-card-back':''} ${red?'shared-red':''} ${extra}" ${tag==='button'?attrs:''} ${!hidden&&value.id?`data-entity="card-${H.esc(value.id)}"`:''} aria-label="${H.esc(label)}">${H.assetArt(hidden?'card-back':'card-face',{rank,suit,hidden,backUrl:hidden?source('card-back'):''},params=>cardFace(params))}</${tag}>`;
  }
 const cover=content=>H.svg(`<ellipse cx="151" cy="158" rx="112" ry="14" fill="#365e4720"/>${content}`);

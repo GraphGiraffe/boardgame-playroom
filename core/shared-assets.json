@@ -5,8 +5,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "a1338dd8e9aff40f37c6a49942c9083e7836229591b590fcfc20e3c6940f206c",
-      "renderedSha256": "a1338dd8e9aff40f37c6a49942c9083e7836229591b590fcfc20e3c6940f206c"
+      "sha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91",
+      "renderedSha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91"
     },
     {
       "source": "shared/components/game-components.css",
