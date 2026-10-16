@@ -417,11 +417,13 @@ from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('pages','scripts/pages-deploy.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-222222222222';sha='a'*40
 class Pages:
- def __init__(self):self.project='existing';self.uploads=[];self.patches=[]
+ def __init__(self):self.project='existing';self.uploads=[];self.patches=[];self.buckets={}
  def api(self,method='GET',suffix='',payload=None):
-  if method=='PATCH':self.patches.append(payload)
+  if method=='PATCH':
+   assert set(payload['deployment_configs']['preview'])=={'r2_buckets'}
+   self.patches.append(payload);self.buckets=payload['deployment_configs']['preview']['r2_buckets']
   if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha}}}]
-  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':{'KEEP':{'value':'value'}}}}}
+  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':{'KEEP':{'value':'value'}},'r2_buckets':self.buckets,'compatibility_date':None}}}
  def production_target(self,value):return {'id':value,'url':'https://existing.pages.dev'}
  def manual_uploads(self,project):pass
 for tamper in (False,True):
@@ -445,7 +447,8 @@ for tamper in (False,True):
    assert not tamper and report['productionUnchanged'] and report['previewVerified']['appVersion']=='0.18.0-rc.1'
   assert len(pages.uploads)==1 and len(stable_reads)==2
   assert pages.patches[0]['deployment_configs']['preview']['r2_buckets']['PLAYROOM_PACKS']['name']=='existing-packs'
-  assert pages.patches[0]['deployment_configs']['preview']['env_vars']['KEEP']['value']=='value'
+  assert pages.api()['deployment_configs']['preview']['env_vars']['KEEP']['value']=='value'
+  assert 'env_vars' not in pages.patches[0]['deployment_configs']['preview']
 `;
  execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
 });

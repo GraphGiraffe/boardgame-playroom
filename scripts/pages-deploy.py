@@ -141,7 +141,16 @@ class Pages:
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as error:
-            raise ValueError(f'Cloudflare request failed: HTTP {error.code}') from None
+            details=[]
+            try:
+                for item in json.loads(error.read(16384)).get('errors',[])[:3]:
+                    details.append(str(item.get('code',''))+': '+str(item.get('message',''))[:300])
+            except (ValueError,AttributeError):
+                pass
+            detail='; '.join(details)
+            for key,value in os.environ.items():
+                if len(value)>4 and any(mark in key for mark in ('TOKEN','SECRET','PASSWORD','WRAPPER_B64')):detail=detail.replace(value,'***')
+            raise ValueError(f'Cloudflare {method} {suffix or "project"} failed: HTTP {error.code}'+(' ('+detail+')' if detail else '')) from None
         if not data.get('success'):
             raise ValueError('Cloudflare rejected the operation')
         return data['result']
@@ -185,6 +194,11 @@ def smoke(url, runtime=None, online_only=False, report_path=None):
     subprocess.run(['node', str(ROOT/'scripts/pages-smoke.cjs')], env=env, check=True)
 
 
+def save_report(args,report):
+    target=getattr(args,'report',None)
+    if target:target.write_text(json.dumps(report,indent=2)+'\n')
+
+
 def run(args):
     required('PAGES_SMOKE_PASSWORD')
     pages = Pages()
@@ -198,7 +212,8 @@ def run(args):
     if expected != origin and expected not in ['https://'+d for d in project.get('domains', [])]:
         raise ValueError('Configured origin does not belong to the existing project')
     previous = project.get('canonical_deployment', {}).get('id')
-    report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation}
+    report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation, 'status':'started'}
+    save_report(args,report)
     if args.operation == 'preflight':
         source = project.get('source') or {}
         config = source.get('config') or {}
@@ -292,16 +307,30 @@ def run(args):
             baseline_file=tmp/'production-before.json'
             smoke(expected,online_only=True,report_path=baseline_file)
             production_before=json.loads(baseline_file.read_text())
+            report.update(status='preview-configuration',productionBefore=production_before);save_report(args,report)
             pages.manual_uploads(project)
             if catalog_channel:
                 configs=project.get('deployment_configs') or {}
                 binding=(configs.get('production') or {}).get('r2_buckets',{}).get('PLAYROOM_PACKS')
                 if not binding: raise ValueError('Production R2 binding is missing')
-                preview_config=dict(configs.get('preview') or {})
-                buckets=dict(preview_config.get('r2_buckets') or {});buckets['PLAYROOM_PACKS']=binding;preview_config['r2_buckets']=buckets
-                pages.api('PATCH',payload={'deployment_configs':{'preview':preview_config}})
-                if pages.api().get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed before preview upload')
+                # PATCH only writable R2 fields, never the full GET response (null/read-only settings).
+                preview_config=configs.get('preview') or {}
+                def bucket_fields(value):
+                    return {key:value[key] for key in ('name','jurisdiction') if value.get(key) is not None}
+                buckets={key:bucket_fields(value) for key,value in (preview_config.get('r2_buckets') or {}).items()}
+                buckets['PLAYROOM_PACKS']=bucket_fields(binding)
+                if preview_config.get('r2_buckets')!=buckets:
+                    pages.api('PATCH',payload={'deployment_configs':{'preview':{'r2_buckets':buckets}}})
+                actual=pages.api()
+                preview_actual=(actual.get('deployment_configs') or {}).get('preview') or {}
+                if (preview_actual.get('r2_buckets') or {}).get('PLAYROOM_PACKS',{}).get('name')!=binding['name']:
+                    raise ValueError('Preview R2 binding was not confirmed')
+                if preview_actual.get('env_vars')!=preview_config.get('env_vars'):
+                    raise ValueError('Preview environment variables changed')
+                if actual.get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed before preview upload')
+            report.update(status='preview-upload');save_report(args,report)
             preview = upload(preview_branch)
+            report.update(status='preview-uploaded',previewDeployment=preview['id'],previewUrl=preview['url']);save_report(args,report)
             if preview.get('environment') != 'preview':
                 raise ValueError('Expected preview deployment')
             preview_file=tmp/'preview-verification.json'
@@ -345,11 +374,14 @@ if __name__ == '__main__':
     parser.add_argument('--commit', help='Exact app commit SHA for local publication')
     parser.add_argument('--report', type=Path, default=Path('deploy-report.json'))
     args = parser.parse_args()
+    args.report.write_text(json.dumps({'operation':args.operation,'status':'starting'})+'\n')
     try:
         report = run(args)
         args.report.write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps(report))
     except Exception as error:
         # Never print raw provider responses, command environment or auth material.
-        print('Deployment failed: '+(str(error) if isinstance(error, ValueError) else type(error).__name__))
+        message=str(error) if isinstance(error, ValueError) else type(error).__name__
+        report=json.loads(args.report.read_text());report.update(status='failed',failedStage=report.get('status'),error=message);save_report(args,report)
+        print('Deployment failed: '+message)
         raise SystemExit(1)
