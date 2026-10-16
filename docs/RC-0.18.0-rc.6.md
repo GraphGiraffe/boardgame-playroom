@@ -28,3 +28,13 @@ node scripts/codex/test.cjs case/game-screen,case/game-flow,case/game-feedback,c
 Итог выбранного набора: **103/103**, exit 0, fail/cancelled/skipped 0. По блокам: core 22/22, input 32/32, games 26/26, UI 2/2, network 2/2, PWA 19/19. Это адресный набор, не полный цикл. Скриншоты просмотрены; итоговая запись — `tmp_files/rc6-review/rc6-ui-and-flips.mp4`.
 
 Публикация и exact runtime SHA фиксируются отдельным результатом после PR/сборки/проверки preview.
+
+
+## Подтверждённая публикация RC6 · 2026-10-17
+
+- App `v0.18.0-rc.6`, runtime `c3fb5e924ce1e78103ab3b2cfa01f11dc563ade4`, PR [#129](https://github.com/GraphGiraffe/boardgame-playroom/pull/129).
+- Коллекция `v0.7.0-rc.4`, source `44117ebd3bc6019f6649548d57d7458034f814d3`, канал `0.18-rc.4`; immutable паки/ассеты RC4 не переписывались и повторно не публиковались.
+- **Проверенный preview: https://b3d8ade9.playroom-hod-test.pages.dev**, deployment `b3d8ade9-147c-43bb-8011-fbeb626d6cf5`. Одна загрузка, workflow [38943639349](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38943639349) — success; `status=preview-verified`, `productionUnchanged=true`.
+- Проверены доступ/защита, exact runtime bytes RC6, hashes 12 паков, offline reload и сохранение localStorage. Production до/после одинаков: app 0.17.6 / collection 0.6.5; canonical `bddc9741-d208-42a8-adf6-ab8e8de655c9` не переключён.
+- Публичный GitHub Release содержит 7 assets. Локальные и повторно скачанные 6 SHA256 файлов совпали; CRC трёх ZIP passed. Артефакты собраны на exact runtime SHA после squash, без перезаписи прежних RC.
+- Выбранный source-набор — **103/103**, без fail/cancel/skip. Это адресная проверка, не полный цикл и не приёмка физических устройств.
