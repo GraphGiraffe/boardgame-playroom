@@ -21,3 +21,9 @@ RC4 GitHub prerelease и каталог паков опубликованы с �
 Итоговый адрес и точные доказательства — [HANDOFF](HANDOFF-0.18.md).
 
 `node scripts/codex/test.cjs case/pwa` — **18/18**, без fail/cancel/skip. Включены protected TLS bridge, update/install integrity, content-addressed CORE и настоящий offline выбор 48 аватаров.
+
+## Подтверждённая публикация
+
+[Preview](https://cc0f5728.playroom-hod-test.pages.dev), deployment `cc0f5728-375f-4e3a-94ef-3333571c9f68`. Runtime commit `0360c2eaee540d1476a09950b79dbca23cbfaa57`, packs commit `44117ebd3bc6019f6649548d57d7458034f814d3`. GitHub Release assets скачаны: 6/6 app SHA256 verified; 18/18 packs SHA256 verified ранее, архивы CRC passed.
+
+Одна загрузка RC5 [38929397250](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38929397250) создала deployment, но smoke прервался на чтении runtime asset. Отдельный read-only preflight с exact release/preview ID [38931148300](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38931148300) полностью прошёл: `preview-verified`, `uploaded=false`, `productionUnchanged=true`; защита, runtime bytes, 12 hashes, app RC5 / collection RC4, offline. Потребовалось обновление tooling, а не перепаковка runtime или повторный upload. PWA tooling regression — 19/19. Production app 0.17.6 / packs 0.6.5 и canonical deployment не переключались.

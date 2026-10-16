@@ -303,3 +303,5 @@ AssetResolver выбирает family/variant локально, сообщает
 Компоновки, меню, ассеты, аватары и новая колода описаны в [RC4](RC-0.18.0-rc.4.md). Сводка с точными выпусками и оставшимися работами — [HANDOFF-0.18](HANDOFF-0.18.md). Базовая миграция реализована; стабильный 0.18 ещё не объявляется.
 
 RC5: builder автоматически включает HTML entrypoints в offline CORE и синхронизирует cache version с package.json. Полная PWA регрессия, включая настоящий offline запуск с аватарами; исходники/ассеты RC4 не переписываются.
+
+Итог RC5: [preview](https://cc0f5728.playroom-hod-test.pages.dev), read-only verification [38931148300](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38931148300) success, productionUnchanged=true. Точная пара 0.18.0-rc.5 / 0.7.0-rc.4 и продолжение — HANDOFF-0.18.md.

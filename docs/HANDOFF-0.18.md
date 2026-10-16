@@ -5,7 +5,8 @@
 ## 1. Выпуски и адреса
 
 - Стабильная линия: приложение **0.17.6**, коллекция **0.6.5**. Основной адрес `https://playroom-hod-test.pages.dev` защищён существующим шлюзом. Стабильную версию этим RC не переключаем.
-- Новый кандидат: приложение **0.18.0-rc.5**, коллекция **0.7.0-rc.4**, изолированный каталог **0.18-rc.4**. Сведения о завершённой публикации, URL и SHA приведены в разделе «Результат публикации» в конце документа.
+- **Проверенный preview: https://cc0f5728.playroom-hod-test.pages.dev** — использовать этот адрес для дальнейшей приёмки.
+- Новый кандидат: приложение **0.18.0-rc.5**, коллекция **0.7.0-rc.4**, изолированный каталог **0.18-rc.4**. Публикация и полный protected/offline smoke подтверждены; URL и SHA — в разделе «Результат публикации» в конце документа.
 - Предыдущий подтверждённый preview RC3: `https://d6db03cc.playroom-hod-test.pages.dev`; app commit `d6ef43e508af32045cdc7ea31343b00116d1b1be`, packs commit `13e46333ea6d733148fe2eb1222c5f6835973764`.
 - RC5 — приложение с исправлением offline; паки остаются RC4. RC — кандидат для проверки. Финальный стабильный 0.18 ещё не объявлен.
 
@@ -190,4 +191,22 @@ GitHub prereleases опубликованы и скачанные assets про�
 - RC4 Pages workflow [38925410305](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38925410305) — failed на offline после единственного upload. Не принятый preview: e5f9fa7f-dfba-4a23-9c39-c676ac091217. Причина/исправление — RC5; runtime RC4 не переписывался.
 - Main до preview: app `c07e22e622485d20978bd223e3b2134c4fffd0b2`, packs `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`. Production остаётся 0.17.6 / 0.6.5.
 
-RC5 preview `cc0f5728-375f-4e3a-94ef-3333571c9f68` загружен workflow 38929397250; первичный smoke прерван при проверке runtime asset, после чего выполняется адресная read-only проверка того же deployment. Причина отдельного verifier — избежать дублирующих uploads при транспортном сбое.
+RC5 preview `cc0f5728-375f-4e3a-94ef-3333571c9f68` загружен workflow 38929397250; первичный smoke прерван при проверке runtime asset; адресная read-only проверка того же deployment **успешна**. Причина отдельного verifier — избежать дублирующих uploads при транспортном сбое.
+
+
+### Итог: подтверждённый RC5 preview
+
+- **URL: https://cc0f5728.playroom-hod-test.pages.dev**.
+- Приложение [v0.18.0-rc.5](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.5), runtime commit `0360c2eaee540d1476a09950b79dbca23cbfaa57`, PR [#126](https://github.com/GraphGiraffe/boardgame-playroom/pull/126). Скачанные 6 файлов из SHA256SUMS и CRC ZIP проверены.
+- Коллекция [v0.7.0-rc.4](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.4), packs commit `44117ebd3bc6019f6649548d57d7458034f814d3`; 19 assets, 18 SHA256 файлов, включая отдельные архивы персонажей и колоды. Канал `0.18-rc.4`; catalog SHA `cc314d22723526e6428bb6f054809e6a564654a47724efc24bfa1a397ca99cb9`.
+- Deployment `cc0f5728-375f-4e3a-94ef-3333571c9f68`, ровно один upload RC5 — workflow [38929397250](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38929397250). Его первичный smoke был прерван на runtime-read; повторного upload не делали.
+- Полная read-only проверка существующего deployment — **success** [38931148300](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38931148300), verifier source `11feda19bc72ad524056b3cd7b82dab8024f2f4c`, PR [#127](https://github.com/GraphGiraffe/boardgame-playroom/pull/127). Отчёт `status=preview-verified`, `uploaded=false`, `productionUnchanged=true`. Проверены пароль/доступ, exact runtime bytes, 12 паков/их hashes, версия RC5, offline и сохранение localStorage. Никакие smoke требования не отключались.
+- Production до/после одинаков: app 0.17.6, collection 0.6.5; canonical deployment `bddc9741-d208-42a8-adf6-ab8e8de655c9`. Main SHA также не менялись: app `c07e22e622485d20978bd223e3b2134c4fffd0b2`, packs `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`. Git automatic production builds=false, preview builds=none.
+- Source checks RC4: 92/92 core/model/rooms/views/session; 52/52 contracts/rules/recovery; 12/12 presentation; 3/3 profile/offline assets; 2/2 WebRTC; 1/1 hub, плюс 12×7×2 проверки геометрии. RC5 PWA — 18/18; tooling PWA — 19/19. Это перекрывающиеся адресные наборы, не суммировать как уникальные проверки и не называть полным прогоном.
+- Продолжать с актуального `dev` обоих репозиториев. Docs/tooling dev SHA может быть новее runtime release SHA; опубликованный runtime RC5 и пакеты RC4 неизменны. Последующее действие — пользовательская приёмка этого preview и точечные исправления, затем отдельное решение о stable 0.18.
+
+## Новый соседний чат
+
+Создан через штатный API и начат свежий интерактивный чат **«ХОД 0.18 — продолжение после RC5»**, ID `01a14587-cfb4-7392-95e2-2add5204070b`. Cwd `/home/ivan/python/other/BoardGames`; первый ход completed, чат подтверждён в стандартном интерактивном `thread/list`, source `vscode`. В стартовом сообщении есть https://cc0f5728.playroom-hod-test.pages.dev, пути handoff/roadmap и правила работы с репозиториями/деплоем. Агент подтвердил чтение документов, сохранил незавершённые изменения документации и ждёт задачи; изменений и публикаций не делал. Вся старая история не копировалась и fork не создавался.
+
+Если список чатов ещё не обновлён, найти по этому названию/ID; терминальный запасной путь — `codex resume 01a14587-cfb4-7392-95e2-2add5204070b` из папки BoardGames. Финальный docs-only PR фиксирует документы в dev; новый чат получит отдельное короткое сообщение о чистом состоянии и актуальном dev SHA после его слияния.
