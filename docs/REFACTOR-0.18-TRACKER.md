@@ -292,3 +292,7 @@ AssetResolver выбирает family/variant локально, сообщает
 ### Дополнение: крупный показ публичного хода
 
 Опциональный reveal из presentation и единый ActionReveal. Применение выбрано по смыслу для каждого пака (таблица SDK): UNO/Дурак/Домино — только публичная выкладка, Лудо/Змеи — кубики, Ятзи — только запись сочетания и точная active mask. Скрытые действия и обычные движения не увеличиваются. Очередь удерживает показ ≥1000 мс; карта летит к видимому назначению за 240 мс, кубики дублируются. Reduced motion/таймеры/отмена/сеть/восстановление учитываются, обычный card flight не дублируется. Проверки: models/feedback 14/14; дополнительные participation/privacy 3/3; browser skip/reveal 2/2.
+
+## Терминальный результат RC, 2026-10-16
+
+Все реализованные срезы выше вошли в immutable prereleases приложения 0.18.0-rc.1 / коллекции 0.7.0-rc.1. Последние дополнения skip/special sounds и public action reveal включены. **[Preview](https://51c9a867.playroom-hod-test.pages.dev)** проверено [Action #38846469923](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38846469923): access/runtime/12 pack hashes/offline passed, productionUnchanged=true. Main и стабильные 0.17.6 / 0.6.5 не переключались. Точные commit SHA, tests, assets, R2 snapshot, единственный preview upload и две остановленные до upload попытки — [RC report](RC-0.18.0-rc.1.md). Ранние пометки «впереди» в исторических срезах описывают состояние тех срезов; актуальное состояние — этот результат. Приёмка на реальных телефонах остаётся пользовательской приёмкой RC.

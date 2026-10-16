@@ -39,4 +39,40 @@
 
 Проверки нового показа: модели/feedback 14/14, дополнительные случаи участия кубиков/приватности 3/3; браузерные skip/reveal 2/2 (задержка, перелёт без дублирования, cleanup и silent restore). Полный состав не повторялся.
 
-Публикация пока не подтверждена. Точные commit/tag, assets SHA, Action и URL должны быть добавлены после фактического выпуска и успешного deploy-report.
+## Опубликованные файлы
+
+- Приложение: [v0.18.0-rc.1](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.1), commit `058f2d70f6fecba566574c428235c3dcbb946742`.
+- Коллекция: [v0.7.0-rc.1](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.1), commit `8ddcbc807b18387079fdf443de394417a9096eff`.
+- Оба GitHub Release помечены prerelease, не latest. Независимая загрузка из GitHub подтвердила все 6 файлов приложения и 16 файлов паков по SHA256SUMS, точную пару SHA в release-info.json, состав assets и prerelease flags. Отдельные SHA256SUMS доступны в каждом выпуске. Все ZIP CRC проверены при сборке.
+- PR исходной реализации: приложение #117, паки #64; дополнения сигналов/крупного показа: приложение #118, паки #65. Squash в dev; main не объединялся.
+- R2 [публикация #38845328382](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38845328382): запущена с checks=none, channel=0.18-rc.1, bootstrap=true. Успешно; снимок `df4a6532ff0b5d2910b8c0e3a170ac28bc506cae09f2663db1cd9b921737ff49`, обновлены ровно 12 RC паков.
+
+### Подготовка preview
+
+Первая [попытка #38845521677](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38845521677) прошла защищённый production baseline, но закончилась HTTP 400 при PATCH полной preview конфигурации; upload ещё не начинался, deployment не создан. [PR #119](https://github.com/GraphGiraffe/boardgame-playroom/pull/119) изменил только tooling: PATCH writable R2 name/jurisdiction, readback binding/env/canonical и сохранение отчёта при ошибке. 3/3 адресных policy теста, Python compile и diff check прошли. API контракт: [Cloudflare Pages edit](https://developers.cloudflare.com/api/resources/pages/subresources/projects/methods/edit/).
+
+[Повтор #38846037932](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38846037932) подтвердил preview R2 binding, но остановился до upload на проверке env_vars. [PR #120](https://github.com/GraphGiraffe/boardgame-playroom/pull/120) сравнивает пустые карты переменных семантически (null / {}); тест дополнен этим GET/PATCH round trip, а сохранение непустых ключей/значений и обнаружение смены production каталога остаются строгими. 3/3 policy сценария прошли.
+
+Новая попытка использует tooling SHA `398f1093e62c1e58a1639437903c8f704b0fab47` (dev) и прежние опубликованные immutable app/pack assets, исходную пару SHA и R2 снимок. Runtime и теги не переписаны. Первые две попытки не создали deployment.
+
+## Проверенный preview
+
+**[Открыть PlayRoom 0.18-rc.1](https://51c9a867.playroom-hod-test.pages.dev)**. [Workflow #38846469923](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38846469923) завершён success на tooling SHA `398f1093e62c1e58a1639437903c8f704b0fab47`. Статус скачанного `pages-deployment-report/deploy-report.json`: `preview-verified`, `productionUnchanged: true`. Скачанный отчёт независимо сопоставлен с опубликованными release assets.
+
+| Проверка | Результат |
+|---|---|
+| Проект | существующий `playroom-hod-test` |
+| Единственный созданный preview deployment | `51c9a867-a26a-4898-b6e8-fc93fb2fa1d3` |
+| Runtime | `0.18.0-rc.1`, commit `058f2d70f6fecba566574c428235c3dcbb946742` |
+| PWA ZIP SHA256 | `75f29e7f6fca9cdfa24568df7c26538f0b7562836d2d423480a16707d238e1b4` — совпал со скачанным GitHub asset |
+| Каталог | `0.7.0-rc.1`, канал `0.18-rc.1`, снимок `df4a6532ff0b5d2910b8c0e3a170ac28bc506cae09f2663db1cd9b921737ff49` |
+| Паки | 12/12 реально скачанных с preview файлов совпали с SHA256 опубликованных assets |
+| Защита | вход по существующему паролю; анонимный доступ к закрытым ресурсам запрещён |
+| Offline | PWA/service worker smoke прошёл |
+| Production до/после | `0.17.6 / 0.6.5`, полные отчёты версий/каталога/12 hashes идентичны |
+| Стабильный canonical deployment | `bddc9741-d208-42a8-adf6-ab8e8de655c9`, не переключался |
+| Публикация | checks=none, повторных source suites нет; byte/hash/access/offline checks обязательны |
+
+Первые две попытки остановились до upload. Успешная попытка выполнила ровно одну загрузку preview. Автоматические Git production/preview builds проверены и сохранены выключенными через manual_uploads. Production catalog pointer не переключался; immutable prerelease keys доступны рядом со стабильными файлами.
+
+Реальная пользовательская приёмка RC на телефонах ещё предстоит; это предварительный выпуск, основной сайт остаётся стабильным.
