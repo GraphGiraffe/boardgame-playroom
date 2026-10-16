@@ -37,10 +37,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
     // Context actions grow to the left; help and settings keep the right edge.
-    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:compact}]:[];
+    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:true}]:[];
     const ordered=[...actions.filter(a=>a.name!=='help'),...appearance,...actions.filter(a=>a.name==='help').map(a=>({...a,hidden:compact||a.hidden}))];
     if(showSettings)ordered.push({attrs:settingsAttrs,label:globalThis.PlayroomMessages.text("ui.game-screen.985b5e0f2ccf"),name:'settings'});
-    quickActions=ordered;return ordered.filter(action=>!action.hidden).map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
+    quickActions=ordered;return [...ordered.filter(action=>!action.hidden&&action.name!=='settings').slice(0,3),...ordered.filter(action=>action.name==='settings')].map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
   const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"',globalThis.PlayroomMessages.text("ui.game-screen.a7a4033657e8"),'close')}<h2>${esc(title)}</h2></header>`;
   function modalContent(content){
@@ -66,9 +66,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
   }
   function roundText(round){return round&&Number.isSafeInteger(round.number)&&round.number>0?globalThis.PlayroomMessages.text(round.kind==='bout'?'progress.bout':round.limit?'progress.round-of':'progress.round',{number:round.number,...(round.limit?{limit:round.limit}:{})}):'';}
-  function participantsMarkup(state){return state?.players?`<span class="resume-participants">${state.players.map((player,index)=>`<span class="${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}">${UI.helpers.participantIcon(player)}${esc(player.name)}</span>`).join(' · ')}</span>`:'';}
-  function resumeCard({title,detail,state=null,network=false,connected=true,action='data-command="resume"',leave=''}){
-    return `<section class="resume-banner ${network?'network-resume-card':''}"><div><span class="pill">${network?globalThis.PlayroomMessages.text("ui.game-screen.6fa8cb59219b"):globalThis.PlayroomMessages.text("ui.game-screen.02d339ef14d5")}</span><strong>${esc(title)}</strong><p>${esc(detail)}${roundText(state?.scene?.round)?' · '+esc(roundText(state.scene.round)):''}${state?.timeline?' · '+esc(globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn})):''}</p>${participantsMarkup(state)}</div><div class="resume-actions">${leave?iconButton(leave,globalThis.PlayroomMessages.text("ui.game-screen.5af791bedf3a"),'exit'):''}${iconButton(action,connected?globalThis.PlayroomMessages.text("ui.game-screen.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.game-screen.2de34a1774f6"),connected?'play':'reset',{className:'resume-primary'})}</div></section>`;
+  function participantsMarkup(state){return state?.players?`<div class="resume-participants">${state.players.map((player,index)=>`<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}">${UI.avatar(player,index)}<span>${UI.helpers.participantIcon(player)}${esc(player.name)}</span></span>`).join('')}</div>`:'';}
+  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,action='data-command="resume"',leave=''}){
+    const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
+    const progress=roundText(state?.scene?.round)||(state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
+    const game=[gameName,progress].filter(Boolean).join(' · '),room=[kind,roomName].filter(Boolean).join(' · ');
+    const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:'';
+    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><strong class="resume-game" title="${esc(game)}">${esc(game)}</strong></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state)}</section>`;
   }
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
@@ -138,8 +142,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {attrs:'data-command="history"',label:globalThis.PlayroomMessages.text("ui.game-screen.c9d00b5b5cd1"),name:'history',active:!!historyHTML,hidden:!!fieldToggle},
         ...(fieldToggle?[{attrs:'data-command="toggle-field"',label:fieldToggle.hidden?globalThis.PlayroomMessages.text("ui.game-screen.4df59b1750a8"):globalThis.PlayroomMessages.text("ui.game-screen.af36d13ed774"),name:'grid',active:fieldToggle.hidden}]:[]),
         ...(!readOnly?[{attrs:'data-command="pause"',label:pause?globalThis.PlayroomMessages.text("ui.game-screen.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.game-screen.65530fd463ea"),name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
-        {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full'},
-        {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help'}
+        {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full',hidden:true},
+        {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
       <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc([roundText(state.scene?.round),state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}${statusExtra}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
@@ -195,12 +199,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
       const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',compact=w<640;
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
-      const seatWidth=hands?(w-Math.max(60,w*.23)-12)/2:compact?(anchors?(w-6)/2:(w-Math.max(60,w*.23)-12)/2):Math.min(200,Math.max(110,w*.21));
+      let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
+      const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
+      const opponentHands=stage.dataset.opponentHands==='true',edge=stage.dataset.seatStyle==='edge';
+      const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
+      if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));
+      const seatWidth=edge?Math.max(120,Math.min(260,w-12,h-ownZone-2*seatHeight-24)):compact?(w-6)/2:Math.min(200,Math.max(110,w*.21));
       stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,Math.floor(w/150))));
-      const seatHeight=anchors?Math.min(76,Math.max(54,h*.12)):hands?Math.min(180,Math.max(105,h*.24)):Math.min(100,Math.max(64,h*.17));
-      stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',Math.floor(seatHeight)+'px');
-      stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-60)/1.43))+'px');
-      stage.style.setProperty('--own-zone',stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?88:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32)))+'px':'0px');
+      stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',seatHeight+'px');
+      stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-48)/1.43))+'px');
+      stage.style.setProperty('--own-zone',ownZone+'px');
+      if(anchors&&compact){const fieldSize=Math.max(40,Math.min(w,h-ownZone-2*seatHeight-30));stage.style.setProperty('--anchor-field-size',Math.floor(fieldSize)+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
       if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}

@@ -55,15 +55,21 @@
   }
   function styledClone(el) {
     const clone = el.cloneNode(true), sourceNodes = [el, ...el.querySelectorAll('*')], cloneNodes = [clone, ...clone.querySelectorAll('*')];
+    // Resolve inherited visibility in the state the animation will display.
+    // Explicitly hidden descendants stay hidden; a hidden wrapper must not
+    // bake its temporary visibility into every child of a card back.
+    const visibility=el.style.getPropertyValue('visibility'),priority=el.style.getPropertyPriority('visibility');
+    const reveal=root.getComputedStyle(el).visibility==='hidden';
+    if(reveal)el.style.setProperty('visibility','visible','important');
     // Freeze resolved styles so a domino retains its board orientation and
     // inherited CSS variables even when its clone leaves the game container.
-    for (let i = 0; i < sourceNodes.length; i++) {
+    try { for (let i = 0; i < sourceNodes.length; i++) {
       const style = root.getComputedStyle(sourceNodes[i]);
       cloneNodes[i].style.cssText = [...style].map(key => `${key}:${style.getPropertyValue(key)};`).join('');
       cloneNodes[i].style.setProperty('animation', 'none', 'important');
       cloneNodes[i].style.setProperty('transition', 'none', 'important');
       cloneNodes[i].style.setProperty('pointer-events', 'none', 'important');
-    }
+    }} finally {if(reveal){if(visibility)el.style.setProperty('visibility',visibility,priority);else el.style.removeProperty('visibility');}}
     stripInteraction(clone);
     const style = root.getComputedStyle(el), width = el.offsetWidth || parseFloat(style.width), height = el.offsetHeight || parseFloat(style.height);
     const origin = style.transformOrigin.split(' ').map(Number.parseFloat), ox = origin[0] || 0, oy = origin[1] || 0;
@@ -130,8 +136,11 @@
       if (!from || !anchor) continue;
       for (let i = 0; i < cue.count; i++) {
         const el = cue.to==='table'?(i===cue.count-1?publicNow.filter(el=>el.closest('[data-motion-table]')).at(-1):null):cue.player === snapshot.viewer ? handCards[ownIndex++] : null;
-        const to = el ? clampRect(rectOf(el), rectOf(el.closest(handSelector))) : anchor;
-        if (!to) continue;
+        const target = el ? clampRect(rectOf(el), rectOf(el.closest(handSelector))) : anchor;
+        if (!target) continue;
+        const ratio=(parseFloat(snapshot.stockBack?.style.width)/parseFloat(snapshot.stockBack?.style.height))||from.width/from.height;
+        const width=Math.min(target.width,target.height*ratio),height=width/ratio;
+        const to={x:target.x+(target.width-width)/2,y:target.y+(target.height-height)/2,width,height};
         flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: cueDelay + i * duration * .3 });
       }
       cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
@@ -227,7 +236,7 @@
           for(const [node,angle]of [[front,0],[reverse,180]]){Object.assign(node.style,{position:'absolute',inset:'0',left:'0',top:'0',width:'100%',height:'100%',transform:`rotateY(${angle}deg)`,backfaceVisibility:'hidden',visibility:'visible'});rotor.append(node);}
           mover.append(rotor);layer.append(mover);
           const entry={el:face,visibility:face.style.getPropertyValue('visibility'),priority:face.style.getPropertyPriority('visibility')};restore.push(entry);face.style.setProperty('visibility','hidden','important');
-          const flip=flipTimes.flip,hold=flipTimes.pair,total=(opening?flip:0)+(close?hold+flip:0);flipEnd=Math.max(flipEnd,total);
+          const flip=flipTimes.flip,hold=flipTimes.pair+(!opening&&effects.some(el=>el.dataset.motionEffect==='flip')?flip:0),total=(opening?flip:0)+(close?hold+flip:0);flipEnd=Math.max(flipEnd,total);
           if(opening&&close){
             // The two sides are the old back and new face: open, hold, close.
             animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},{transform:'rotateY(180deg)',offset:flip/total},{transform:'rotateY(180deg)',offset:(flip+hold)/total},{transform:'rotateY(360deg)',offset:1}],{duration:total,fill:'both',easing:'linear'}));

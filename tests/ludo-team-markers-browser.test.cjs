@@ -34,8 +34,15 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-lobby.png')});}
     await page.locator('[data-command=lobby-start]').click();
     await page.locator('.ludo-board').waitFor();
-    const game=await inspect('.player-panel .player-medallion.is-team');
-    assert.equal(game.length,4,'game cards keep all four team badges');
+    await page.locator('.table-tools [data-command=settings]').click();
+    await page.locator('#setting-seating').selectOption('circle');await page.locator('.modal [data-command=close-modal]').click();
+    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'edge');
+    await page.locator('.table-tools [data-command=settings]').click();
+    await page.locator('#setting-seating').selectOption('anchors');await page.locator('.modal [data-command=close-modal]').click();
+    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'anchors');
+    const game=await inspect('.seat-group .player-panel .player-medallion.is-team');
+    assert.equal(game.length,4,'anchored game cards keep all four team badges');
+    assert.equal(await page.locator('.layout-self .player-medallion.is-team').count(),1,'own controls repeat the same team badge');
     assert(game.every(item=>item.width===lobby[0].width&&item.viewBox===lobby[0].viewBox),'lobby and game reuse the same disc artwork');
     assert.equal(game.filter(item=>item.rings===1).length,1);
     const symbols=await page.locator('.ludo-safe-star,.ludo-start-arrow').evaluateAll(elements=>elements.map(el=>{

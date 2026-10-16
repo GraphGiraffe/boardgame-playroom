@@ -66,3 +66,16 @@ test('presentation cancellation releases its waiter and timer even when a render
   assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:{default:750,phases:{setup:0}}}},{data:{phase:'setup'}}),0);
   assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:750}},{data:{}}),750);
 });
+
+
+test('Whole actions use the UNO reveal budget without adding it to long presentations',async()=>{
+  for(const [animationSpeed,minimum]of Object.entries({instant:200,fast:660,normal:1060,slow:1600})){
+    const timers=new Map();let id=0,finished=false;
+    const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+    let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve)).then(()=>finished=true);
+    assert.equal([...timers.values()][0].ms,minimum);
+    [...timers.values()][0].fn();await Promise.resolve();assert.equal(finished,false,'long motion must finish');
+    complete();await pending;assert.equal(timers.size,0);
+    const cancelled=flow.present(()=>new Promise(()=>{}));flow.cancel();await cancelled;assert.equal(timers.size,0);
+  }
+});

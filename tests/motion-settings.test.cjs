@@ -301,7 +301,8 @@ test('Animation presets persist and stage real card flights before the next acto
       const trace = await stopTrace(page), frames = playedFrames(trace);
       assert(frames.length >= 10);
       assert(frames.some(frame => frame.pieces[0].face === '9'), 'Bot flight must show the card it actually played');
-      assert(center(frames[0].pieces[0]).y < center(destination).y - 20, 'Bot card must start at the opponent side');
+      const origin=await page.locator('.player-panel[data-player-index="1"] .mini-hand').boundingBox();
+      assert(distance(center(frames[0].pieces[0]),center(origin))<65,'Bot card must start at its actual edge seat');
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45);
       assert(frames.every(frame => frame.busy));
       const next = trace.moves.find(move => move.move === 2);

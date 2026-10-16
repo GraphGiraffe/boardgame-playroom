@@ -38,7 +38,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   class GameFlow {
     constructor({options=()=>({}),motion=null,reducedMotion=()=>false,presentation=()=>({}),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)}}={}){
-      this.options=options;this.motion=motion;this.reducedMotion=reducedMotion;this.presentation=presentation;this.scheduler=new Scheduler(clock);
+      this.options=options;this.motion=motion;this.reducedMotion=reducedMotion;this.presentation=presentation;this.scheduler=new Scheduler(clock);this.actions=new Scheduler(clock);
     }
     get quickPlay(){return quickPlay(this.options());}
     pace(){return timing(this.options(),this.reducedMotion());}
@@ -47,7 +47,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const pace=this.pace();
       return this.scheduler.play(()=>this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws,effects:effectTimes[pace.mode]}),Math.min(minimumVisibleMs,effectTimes[pace.mode].reveal));
     }
-    cancel(){this.scheduler.cancel();this.motion?.cancel?.();}
+    present(effect){
+      const pace=this.pace(),times=effectTimes[pace.mode];
+      return this.actions.play(effect,(pace.duration?2*times.flip:0)+times.reveal);
+    }
+    cancel(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
   }
   return Object.freeze({presets,effectTimes,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
 });

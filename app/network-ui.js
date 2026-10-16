@@ -183,7 +183,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
     if(hasActiveRoom()&&networkInMenu){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
-      if(parent){const markup=root.PlayroomGameScreen.resumeCard({state:(clientGameClient||hostGameClient)?.snapshot?.state,title:room?.game?.name||globalThis.PlayroomMessages.text("ui.network-ui.3a73248bdd79"),detail:globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String((room?.name||'')+' · '),p1:String(hostRoomId?globalThis.PlayroomMessages.text("ui.network-ui.6cfc7f8c9cd5"):connectionLabels[clientRecovery?.state||(connected?'connected':'connecting')])}),network:true,connected,action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
+      if(parent){const markup=root.PlayroomGameScreen.resumeCard({state:(clientGameClient||hostGameClient)?.snapshot?.state,gameName:room?.game?.name||'',roomName:room?.name||'',network:true,connected,action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
         const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+connected+':'+(room?.name||'')+':'+(clientRecovery?.state||'')+':'+((clientGameClient||hostGameClient)?.snapshot?.revision??'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);document.querySelector('.network-resume-card').dataset.renderKey=key;}
       }
     }
@@ -191,14 +191,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");intro.querySelector('.lobby-actions')?.appendChild(btn);}
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
-    if(gameShell&&hostAuthority&&!document.getElementById('network-pair-button')){
-      const tools=gameShell.querySelector('.table-tools')||gameShell.querySelector('.table-header')||gameShell;
-      const primary=tools.querySelector('[data-game-primary]');
-      if(primary)primary.insertAdjacentHTML('afterend',root.PlayroomGameScreen.addPlayerButton());
-      else tools.insertAdjacentHTML('afterbegin',root.PlayroomGameScreen.addPlayerButton());
-    }
     const room=b.room?.(),lobby=$('.lobby-shell');
-    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.closest('.table-shell')&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.network-ui.3a73248bdd79"));node.innerHTML=root.PlayroomGameScreen.icon('room');tools.prepend(node);}
+    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.closest('.table-shell')&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.network-ui.3a73248bdd79"));node.innerHTML=root.PlayroomGameScreen.icon('room');const full=tools.querySelector('[data-command=fullscreen]');if(full)full.remove();tools.prepend(node);}
     if(room&&room.transportMode!=='hotseat'&&lobby){
       ensureHostSubscription(room);
       const card=lobby.querySelector('.lobby-grid .lobby-card');
