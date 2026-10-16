@@ -1,4 +1,4 @@
-/* Vendored from playroom-paks/shared/components/game-components.css; sha256=3cf6695d40788f13e63ecb507a071dc6280484d9c9e2024f22328f6c231292c6 */
+/* Vendored from playroom-paks/shared/components/game-components.css; sha256=c25f5ba781f1a5b03c13950189e31b375b2ed072354ba89367936b261d9e9573 */
 .game-speech{position:fixed;z-index:60;display:inline-flex;align-items:center;justify-content:center;gap:4px;max-width:min(180px,70vw);min-width:24px;min-height:24px;padding:4px 8px;border:1px solid var(--color-border-subtle,#90b088);border-radius:13px;background:var(--color-bubble-game,#e6f2df);color:var(--color-text-primary,#244c35);box-shadow:0 4px 10px #183b2b25;font:700 clamp(13px,1.5vw,16px)/1.3 system-ui;white-space:normal;pointer-events:none}
 .game-speech:after{content:'';position:absolute;bottom:-5px;left:12px;width:7px;height:7px;transform:rotate(45deg);border-right:1px solid var(--color-border-subtle,#90b088);border-bottom:1px solid var(--color-border-subtle,#90b088);background:inherit}
 .game-speech.is-chat{background:var(--color-bubble-chat,#fffdf4);border-color:var(--color-border-subtle,#d8dacd);color:var(--color-text-primary,#283c30)}
@@ -13,7 +13,7 @@ body.reduced-motion .game-speech,.reduced-motion .game-speech{animation:none!imp
 body.reduced-motion .player-panel.is-turn-skipped,.reduced-motion .player-panel.is-turn-skipped{animation:none!important;background:var(--color-material-bubble-error,#f4c9c0)!important;box-shadow:inset 0 0 0 2px #b64d43!important}
 @media(prefers-reduced-motion:reduce){.player-panel.is-turn-skipped{animation:none!important;background:var(--color-material-bubble-error,#f4c9c0)!important;box-shadow:inset 0 0 0 2px #b64d43!important}}
 
-.action-reveal{position:fixed;inset:0;z-index:55;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none;padding:16px;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--color-surface-panel,#f4f2e8) 82%,transparent) 0%,transparent 66%)}
+.action-reveal{position:fixed;inset:0;z-index:55;display:block;overflow:clip;pointer-events:none;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--color-surface-panel,#f4f2e8) 82%,transparent) 0%,transparent 66%)}
 .action-reveal-title{max-width:90vw;padding:8px 14px;border-radius:14px;background:var(--color-surface-raised,#fffaf0);color:var(--color-text-primary,#244c35);font-size:clamp(16px,4vw,24px);text-align:center}
 .action-reveal-art{width:min(36vw,150px,calc(70dvh - 67px));transform-origin:center;filter:drop-shadow(0 8px 12px #142e3038)}
 .action-reveal-art.scene{display:block!important;min-height:0!important;max-height:none!important;height:auto!important;padding:0!important;margin:0!important;overflow:visible!important;aspect-ratio:auto!important;background:none!important;border:0!important}
@@ -31,3 +31,5 @@ body.reduced-motion .player-panel.is-turn-skipped,.reduced-motion .player-panel.
 :is(.game-scene,.app-game-layout) :is(.is-playable,.is-selected){outline:var(--interaction-ring-width,3px) solid var(--ui-action-outline,var(--color-interaction-available,#638658))!important;outline-offset:2px}
 :is(.game-scene,.app-game-layout) .is-selected{outline-color:var(--color-interaction-selected,#d3aa45)!important;outline-offset:3px}
 [data-interaction-shape="circle"]{--interaction-ring-width:clamp(2px,.32em,4px)}
+
+.action-reveal-content{position:absolute;left:var(--reveal-x,50%);top:var(--reveal-y,50%);transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:12px;max-width:calc(100vw - 24px)}

@@ -175,7 +175,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(clientAudioListener&&!document.getElementById('net-client-acoustic-listen'))stopClientAudio();
     const b=bridge();if(!b)return;
     const intro=$('.intro');
-    if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions';wrap.style.marginTop='16px';wrap.innerHTML=("<button class=\"btn secondary\" id=\"network-join-button\" type=\"button\">"+globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b")+"</button>");intro.appendChild(wrap);}
+    if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions hub-intro-actions';wrap.innerHTML=("<button class=\"btn secondary\" id=\"network-join-button\" type=\"button\">"+globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b")+"</button>");intro.appendChild(wrap);}
 
     if(hasActiveRoom()&&networkInMenu){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');

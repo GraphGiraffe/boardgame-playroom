@@ -16,7 +16,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
     cards:'<path d="m4.5 6-1.4 11a3 3 0 0 0 2.6 3.3l8.9 1.3a3 3 0 0 0 3.4-2.4M4 20a3 3 0 0 0 2.3 2l7.9 1.1"/><g transform="rotate(10 13 10.4)"><rect x="7" y="2" width="12" height="16.8" rx="2.4"/><path d="M10.5 7h5l-3.6 6.8"/></g>',
-    board:"<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M9 3v18M15 3v18M3 9h18M3 15h18\"/>",
+    board:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/><path d="M3 3h6v6H3zm12 0h6v6h-6zM9 9h6v6H9zM3 15h6v6H3zm12 0h6v6h-6z" fill="currentColor" stroke="none"/>',
     pieces:"<circle cx=\"9\" cy=\"14\" r=\"7\"/><path d=\"M7 5a7 7 0 1 1 12 11M5 14a4 4 0 0 0 4 4\"/>",
     solitaire:"<rect x=\"2\" y=\"3\" width=\"6\" height=\"9\" rx=\"1\"/><rect x=\"10\" y=\"3\" width=\"6\" height=\"9\" rx=\"1\"/><path d=\"M4 15v6h6m2-6v6h6m0-18h4v9h-4\"/>",
     words:"<path d=\"m3 19 6-14 6 14M5 14h8M17 5h5m-2.5 0v14\"/>",
@@ -61,7 +61,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     reset:'<path d="M3 10a9 9 0 1 1 2 8M3 3v7h7"/>',
     save:'<path d="M5 3h12l4 4v14H3V3Zm3 0v6h8V3M7 21v-8h10v8"/>',
     rules:'<path d="M12 5C8 2 4 2 2 3v16c3-1 7 0 10 2 3-2 7-3 10-2V3c-2-1-6-1-10 2Zm0 0v16M5 7l4 1m-4 3 4 1m6-4 4-1m-4 5 4-1"/>',
-    edit:'<path d="m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-3-3L5 16Zm0 0h16"/>',
+    edit:'<path d="m14 5 5 5M4 20l1-6L16 3a2.12 2.12 0 0 1 3 0l2 2a2.12 2.12 0 0 1 0 3L10 19Zm1-6 5 5"/>',
 addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v8m-4-4h8"/>',
     stop:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
         connect:'<rect x="2" y="4" width="12" height="10" rx="2"/><path d="M5 18h5M8 14v4M18 3v6M15 6h6"/><rect x="14" y="11" width="7" height="10" rx="1"/>',

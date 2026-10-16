@@ -83,7 +83,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','data','events','modelProjection','scene'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','data','events','modelProjection','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
       const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
       if(safe.modelProjection)safe.modelProjection={...safe.modelProjection,actions:safe.modelProjection.actions.filter(command=>
         actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};

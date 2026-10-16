@@ -3,12 +3,21 @@
   'use strict';
   class ActionReveal {
     constructor({mount=()=>root.document?.querySelector('.table-shell')}={}){this.mount=mount;this.host=null;this.value=null;this.hidden=null;this.animation=null;this.entered=false;this.timing=null;}
+    position(){
+      if(!this.host)return;
+      const mount=this.mount(),field=mount?.querySelector('.layout-field'),rect=(field||mount)?.getBoundingClientRect();
+      if(!rect)return;
+      const width=root.innerWidth||rect.right,height=root.innerHeight||rect.bottom;
+      const left=Math.max(0,rect.left),top=Math.max(0,rect.top),right=Math.min(width,rect.right),bottom=Math.min(height,rect.bottom);
+      const x=right>left?(left+right)/2:width/2,y=bottom>top?(top+bottom)/2:height/2;
+      this.host.style.setProperty('--reveal-x',x+'px');this.host.style.setProperty('--reveal-y',y+'px');
+    }
     target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>el.dataset.entity===this.value?.entity&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'));}
     restore(){if(!this.hidden)return;const {el,value,priority}=this.hidden;el.style.setProperty('visibility',value,priority);el.removeAttribute('data-reveal-active');this.hidden=null;}
     hideTarget(){const el=this.target();if(this.hidden?.el===el)return;this.restore();if(el){this.hidden={el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')};el.setAttribute('data-reveal-active','');el.style.setProperty('visibility','hidden','important');}}
     show(value,pack){
       const mount=this.mount();if(!mount||!value){this.clear();return;}
-      if(this.value===value&&this.host?.isConnected){this.hideTarget();return;}
+      if(this.value===value&&this.host?.isConnected){this.hideTarget();this.position();return;}
       this.clear();this.value=value;
       const doc=mount.ownerDocument,host=doc.createElement('div');host.className='action-reveal';host.setAttribute('role','status');
       if(value.title){const title=doc.createElement('strong');title.className='action-reveal-title';title.textContent=value.title;host.append(title);}
@@ -23,7 +32,7 @@
         art.innerHTML=markup;art.classList.add('scene',pack+'-scene');
         for(const node of art.querySelectorAll('*')){for(const attr of [...node.attributes])if(attr.name==='id'||attr.name.startsWith('data-')||attr.name.startsWith('on'))node.removeAttribute(attr.name);node.setAttribute('tabindex','-1');if('disabled'in node)node.disabled=true;}
       }else{this.value=null;return;}
-      host.append(art);doc.body.append(host);this.host=host;this.hideTarget();
+      const content=doc.createElement('div');content.className='action-reveal-content';for(const child of [...host.children])content.append(child);content.append(art);host.append(content);doc.body.append(host);this.host=host;this.hideTarget();this.position();this.reposition=()=>this.position();root.addEventListener?.('resize',this.reposition);root.addEventListener?.('scroll',this.reposition,true);this.observer=root.ResizeObserver?new root.ResizeObserver(this.reposition):null;this.observer?.observe(mount);const field=mount.querySelector('.layout-field');if(field)this.observer?.observe(field);
     }
     async enter(snapshot,timing){
       if(this.entered||!this.host)return;this.entered=true;this.timing=timing;
@@ -49,7 +58,7 @@
       }
       if(this.value===value)this.clear();
     }
-    clear(){this.animation?.cancel();this.animation=null;this.restore();this.host?.remove();this.host=null;this.value=null;this.entered=false;this.timing=null;}
+    clear(){root.removeEventListener?.('resize',this.reposition);root.removeEventListener?.('scroll',this.reposition,true);this.observer?.disconnect();this.observer=null;this.animation?.cancel();this.animation=null;this.restore();this.host?.remove();this.host=null;this.value=null;this.entered=false;this.timing=null;}
   }
   return ActionReveal;
 });

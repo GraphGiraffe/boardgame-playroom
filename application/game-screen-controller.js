@@ -10,8 +10,16 @@
   get busy(){return this.draining||!!this.queue.length||!!this.operation;}
   get frame(){return this.history.open&&this.history.frame?this.history.frame:this.shown;}
   get current(){return !this.history.open&&!this.busy&&this.shown?.revision===this.client?.snapshot?.revision;}
+  preferences(base){return this.history.open?{...base,...this.historyPreferences}:base;}
+  setPreference(key,value){if(!this.history.open)return false;this.historyPreferences={...this.historyPreferences,[key]:value};return true;}
   context(frame,{scope='turn',identity=frame.sessionId}={}){
-   const key=[identity,frame.game,frame.packVersion,frame.viewer,...(scope==='match'?[]:[frame.state.turn])].join(':');
+   const reviewing=this.history.open;
+   if(reviewing!==!!this.reviewing){
+    if(reviewing){this.liveView={identity:this.identity,viewState:this.viewState};this.identity=null;this.viewState={};this.historyPreferences={};}
+    else{this.identity=this.liveView?.identity??null;this.viewState=this.liveView?.viewState||{};this.liveView=null;this.historyPreferences={};}
+    this.reviewing=reviewing;
+   }
+   const key=[identity,frame.game,frame.packVersion,frame.viewer,...(scope==='match'||reviewing?[]:[frame.state.turn])].join(':');
    if(this.identity!==key){this.identity=key;this.viewState={};}
    const hand=frame.state.data.hands?.[frame.viewer];if(this.selection!==null&&hand&&!hand.some(card=>card.id===this.selection))this.selection=null;
    return {selected:this.selection,viewState:this.viewState};
