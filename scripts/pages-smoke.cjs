@@ -39,7 +39,7 @@ async function main(){
   network.on('Network.responseReceivedExtraInfo',event=>{
    for(const cookie of event.blockedCookies||[])cookieBlocks.push(...cookie.blockedReasons);
   });
-  page.on('pageerror',()=>errors.push('page-error'));
+  page.on('pageerror',error=>errors.push({name:error.name,site:error.stack?.match(/(?:app|core|application|platform|presentation)\/[A-Za-z0-9_.\/-]+\.js:\d+:\d+/)?.[0]||null}));
   page.on('requestfailed',request=>{
    const target=new URL(request.url());
    if(target.origin===origin)failedRequests.push({path:target.pathname.replace(/[^a-zA-Z0-9_./-]/g,''),type:request.resourceType(),reason:request.failure()?.errorText||null});
@@ -166,7 +166,8 @@ async function main(){
   }
   await page.evaluate(()=>localStorage.setItem('playroom-deploy-probe','preserved'));
   stage='offline';await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
-  if(await page.evaluate(()=>localStorage.getItem('playroom-deploy-probe'))!=='preserved'||errors.length)throw Error('Offline smoke failed');
+  const preserved=await page.evaluate(()=>localStorage.getItem('playroom-deploy-probe'))==='preserved';
+  if(!preserved||errors.length){console.log('Offline diagnostics: '+JSON.stringify({preserved,errors,workerFailures,workerResponses:workerResponses.slice(-12),failedRequests:failedRequests.slice(-12)}));throw Error('Offline smoke failed');}
   console.log('Protected runtime and offline smoke passed.');
  }finally{if(browser)await browser.close();await tunnel.close();}
 }

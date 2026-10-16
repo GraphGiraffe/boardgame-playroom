@@ -90,7 +90,7 @@
 cd /home/ivan/python/other/BoardGames/playroom
 python3 build.py --prepare-dev --packs-dir ../playroom-paks/packs
 node scripts/codex/test.cjs case/player-profile,case/rc2-presentation-browser
-python3 build.py --packs-dir ../playroom-paks/packs --all-games --pwa --remote-catalog --output-dir dist/rc4
+python3 build.py --packs-dir ../playroom-paks/packs --all-games --pwa --remote-catalog --output-dir dist/rc5
 cd ../playroom-paks
 python3 build.py --output-dir dist/rc4
 ```
@@ -163,11 +163,15 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 - Все workflow должны получать явный `checks`; публикация immutable артефактов — `none`. Это сознательный пропуск повторного запуска source tests, **не** пропуск SHA/build/protected smoke.
 - В Pages используются прежний проект, private wrapper, Access/R2 binding и секреты Actions. Не копировать закрытый Worker/password/access kit в Git/Release/Markdown. Не создавать новый проект Pages ради ошибки распространения.
 - Ожидать конкретный run ID, например `gh run watch ID --interval 30 --exit-status`; не запускать workflow повторно, пока не известен результат текущего. Если после загрузки smoke встретил временный 404, сначала проверить уже созданный deployment, не плодить новые uploads.
+- При сбое smoke после upload не создавать новый preview вслепую. Для готового RC5 preview поддержан read-only gateway: `operation=preflight`, `checks=none`, `release=v0.18.0-rc.5`, `deployment=cc0f5728-375f-4e3a-94ef-3333571c9f68`, `pack_channel=0.18-rc.4`. Он сверяет commit с release, скачивает и проверяет PWA, выполняет полный smoke готового preview и online baseline production до/после; не вызывает upload/PATCH. Отчёт: `uploaded=false`, `productionUnchanged=true`.
+- `release-info.json` сейчас создаётся выпускным шагом отдельно от build.py: exact app/packs SHA, версии, канал, выбор проверок. Его SHA добавляется в SHA256SUMS; не брать старый файл из переиспользованного output dir. Для нового кандидата выбирать отдельный свежий выходной каталог.
 - Итоговый artifact `pages-deployment-report` содержит URL/commit/channel и `productionUnchanged`; перед финальным ответом сверить его и downloadable release SHA256. Стабильность production дополнительно подтверждается неизменными main SHA и production pointer. Фоновый мониторинг/планировщик без необходимости не добавлять.
 
 ### Новый чат
 
 Не переносить всю старую историю и не форкать её: торможение связано именно с объёмом контекста. Достаточно START-NEXT-CHAT.md и этого документа. Создавать через штатный Codex CLI/app-server API; не писать SQLite/registry вручную и не останавливать текущий App/Remote ради создания чата. Отдельно проверить, что новый thread получил правильный cwd, начальное сообщение со ссылкой на preview и ответ; не объявлять появление в UI проверенным только по локальному thread ID.
+
+Для автоматического создания нового интерактивного чата проверен штатный `codex app-server --listen stdio://`: `initialize` → `initialized` → `thread/start` с cwd контейнера → `thread/name/set` → `turn/start` с START-NEXT-CHAT → `thread/read` для подтверждения. Схемы текущей версии CLI доступны через `codex app-server generate-json-schema --out /tmp/...`. Прямой stdio сервер не перезапускает действующий daemon. `codex exec` не выбран: его source может не входить в стандартный список интерактивных чатов. Этот путь не требует ручной правки SQLite/проектов.
 
 ## Результат публикации
 
@@ -180,3 +184,5 @@ GitHub prereleases опубликованы и скачанные assets про�
 - R2 channel `0.18-rc.4`, workflow [38924971864](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38924971864) — success, exact packs source SHA совпадает.
 - RC4 Pages workflow [38925410305](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38925410305) — failed на offline после единственного upload. Не принятый preview: e5f9fa7f-dfba-4a23-9c39-c676ac091217. Причина/исправление — RC5; runtime RC4 не переписывался.
 - Main до preview: app `c07e22e622485d20978bd223e3b2134c4fffd0b2`, packs `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`. Production остаётся 0.17.6 / 0.6.5.
+
+RC5 preview `cc0f5728-375f-4e3a-94ef-3333571c9f68` загружен workflow 38929397250; первичный smoke прерван при проверке runtime asset, после чего выполняется адресная read-only проверка того же deployment. Причина отдельного verifier — избежать дублирующих uploads при транспортном сбое.

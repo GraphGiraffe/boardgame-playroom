@@ -476,3 +476,34 @@ test('built remote-catalog PWA starts and opens all preset avatars offline',{tim
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),'circle-red');assert.deepEqual(errors,[]);
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });
+
+test('existing preview verification pins the release and never uploads or changes production',()=>{
+ const {execFileSync}=require('node:child_process');
+ execFileSync('python3',['-c',`import importlib.util,json,tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('pages','scripts/pages-deploy.py');pages=importlib.util.module_from_spec(spec);spec.loader.exec_module(pages)
+sha='a'*40
+class ReadOnlyPages:
+ def deployment_target(self,ident,environment):
+  assert environment=='preview'
+  return {'id':ident,'url':'https://preview.example','deployment_trigger':{'metadata':{'commit_hash':sha}}}
+ def api(self,*args,**kwargs):
+  assert not args and not kwargs,'No provider mutation or upload is allowed'
+  return {'canonical_deployment':{'id':'stable'}}
+with tempfile.TemporaryDirectory() as d:
+ root=Path(d);args=SimpleNamespace(deployment='preview-id',release='v0.18.0-rc.5',pack_channel='0.18-rc.4',report=root/'report.json')
+ seen=[]
+ def smoke(url,*args,**kwargs):
+  seen.append(url);kwargs['report_path'].write_text(json.dumps({'appVersion':'0.17.6' if url=='https://stable.example' else '0.18.0-rc.5'}))
+ with patch.object(pages,'github_release_assets',return_value=(root/'public.zip',root/'SHA256SUMS',sha)),patch.object(pages,'prepare'),patch.object(pages,'private_wrapper',return_value=b'private'),patch.object(pages,'smoke',side_effect=smoke):
+  result=pages.verify_existing_preview(ReadOnlyPages(),args,{},'https://stable.example','stable')
+  assert result['productionUnchanged'] and not result['uploaded'] and result['status']=='preview-verified'
+  assert seen==['https://stable.example','https://preview.example','https://stable.example']
+  with patch.object(pages,'github_release_assets',return_value=(root/'public.zip',root/'SHA256SUMS','b'*40)):
+   try:pages.verify_existing_preview(ReadOnlyPages(),args,{},'https://stable.example','stable')
+   except ValueError as error:assert 'commit' in str(error)
+   else:raise AssertionError('Wrong release must be rejected')
+`],{cwd:root,stdio:'pipe'});
+});
