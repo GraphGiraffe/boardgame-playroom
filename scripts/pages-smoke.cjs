@@ -19,7 +19,9 @@ async function main(){
  async function get(context,target,headers={}){
   if(new URL(target).origin!==origin)throw Error('Unexpected asset origin');
   for(let attempt=0;;attempt++){
-   const response=await context.request.get(target,{headers:{...headers,...accessHeaders},maxRedirects:0});
+   let response;
+   try{response=await context.request.get(target,{headers:{...headers,...accessHeaders},maxRedirects:0});}
+   catch(error){if(attempt===4)throw error;console.log('Retrying scoped asset request after transport failure: '+new URL(target).pathname.replace(/[^a-zA-Z0-9_./-]/g,''));await new Promise(resolve=>setTimeout(resolve,2000*(attempt+1)));continue;}
    if(![404,502,503,504].includes(response.status())||attempt===4)return response;
    await new Promise(resolve=>setTimeout(resolve,2000*(attempt+1)));
   }

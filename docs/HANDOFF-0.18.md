@@ -38,7 +38,7 @@
 
 ## 4. Что сделано в 0.18 до RC4
 
-- Все 12 игр перенесены на engineApi 3: чистые детерминированные domain, отдельные presentation и locale JSON, Web view. Старые API 1/2 больше не загружаются; предусмотрено полное обновление с сохранением возможности экспорта исходных данных.
+- Все 12 игр перенесены на engineApi 3: чистые детерминированные domain, отдельные presentation и locale JSON, Web view. Старые **engineApi 1/2** больше не загружаются; предусмотрено полное обновление с сохранением возможности экспорта исходных данных.
 - Общие Session/history/codec/events/CommandProcessor, durable authority/ACK/retry, application services комнат/подключения/recovery/истории выделены из Web-кода. Платформенные порты остаются отдельно.
 - `shared/pack_compiler.py` паков — канонический compiler; приложение использует закреплённую SHA копию `tooling/pack_compiler.py` и lock. Ассеты приложения вендорятся с provenance из паков.
 - Общие SVG круглый диск, фишки/счётчики/медали/первый игрок/команды, веер/стопка, кубики, карты, домино, шашки, баблы, таблица Ятзи и стандартные звуки. Лудо и Змеи используют одну фишку; старое принятое поле Лудо сохранено, финишные фишки раскладываются треугольником. Масштабирование из общего artboard, без текстовых смещений при изменении размера.
@@ -139,6 +139,10 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 - Сохранять многострочные PR/release descriptions в файле и передавать `--body-file`/`--notes-file`. Не подставлять тексты через shell command substitution и не использовать JSON.stringify как shell quoting.
 - Готовность PR/push не запускает тесты автоматически; Actions запускаются вручную по выбранной операции. Проверить required checks на фактическом HEAD, не предполагать, что старый gate относится к новому коммиту. `main` не нужен для RC: теги prerelease закрепляются на проверенном dev SHA.
 
+### Разные версии контрактов — не смешивать
+
+Текущие правила `engineApi=3`; Web view и Elements scene остаются `viewApi/api=2`, чистый model contractVersion=1, сеть protocolVersion=2, игровой JSON formatVersion=1, asset-pack formatVersion=1, профиль version=1 (avatar — добавочное поле). Число 2 само по себе не означает legacy. `stateVersion` индивидуален у каждой игры; Пексесо теперь 3. Не поднимать все эти номера одновременно и не удалять актуальный Web API 2 как «старый движок».
+
 ### Компиляция и ассеты
 
 - Правила и Web ассеты игры менять в `playroom-paks/packs/<id>`. Приложение подключает их через `python3 build.py --prepare-dev --packs-dir ../playroom-paks/packs`; `packs`/`installed-packs.js`/`app/version.js` генерируются и игнорируются Git.
@@ -161,6 +165,7 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 - App build с `--remote-catalog` даёт PWA, читающую защищённый каталог; standalone all-games HTML содержит выбранные source packs. Не подменять один тип артефакта другим при проверке.
 - GitHub Release, публикация R2 и Pages deployment — три разных шага. Для нового канала R2 используется bootstrap; пустой channel выбирает production и недопустим для RC. App gateway preview требует `pack_channel`, не production deploy.
 - Все workflow должны получать явный `checks`; публикация immutable артефактов — `none`. Это сознательный пропуск повторного запуска source tests, **не** пропуск SHA/build/protected smoke.
+- Защищённый smoke ограничивает API запросы одним origin; временные transport errors и 404/5xx читающих GET повторяются ограниченно. Проверки пароля, доступа, bytes/SHA и offline не ослабляются; в диагностике только тип ошибки/путь, без cookies/password.
 - В Pages используются прежний проект, private wrapper, Access/R2 binding и секреты Actions. Не копировать закрытый Worker/password/access kit в Git/Release/Markdown. Не создавать новый проект Pages ради ошибки распространения.
 - Ожидать конкретный run ID, например `gh run watch ID --interval 30 --exit-status`; не запускать workflow повторно, пока не известен результат текущего. Если после загрузки smoke встретил временный 404, сначала проверить уже созданный deployment, не плодить новые uploads.
 - При сбое smoke после upload не создавать новый preview вслепую. Для готового RC5 preview поддержан read-only gateway: `operation=preflight`, `checks=none`, `release=v0.18.0-rc.5`, `deployment=cc0f5728-375f-4e3a-94ef-3333571c9f68`, `pack_channel=0.18-rc.4`. Он сверяет commit с release, скачивает и проверяет PWA, выполняет полный smoke готового preview и online baseline production до/после; не вызывает upload/PATCH. Отчёт: `uploaded=false`, `productionUnchanged=true`.
@@ -181,7 +186,7 @@ GitHub prereleases опубликованы и скачанные assets про�
 
 - App `v0.18.0-rc.4`, source `0bcc858679b3b8532adcaeb9dba4d06587d0cc69`, PR [#125](https://github.com/GraphGiraffe/boardgame-playroom/pull/125). Release: https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.4 — 7 assets, 6 строк SHA256SUMS проверены.
 - Packs `v0.7.0-rc.4`, source `44117ebd3bc6019f6649548d57d7458034f814d3`, PR [#70](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/70). Release: https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.4 — 19 assets, 18 строк SHA256SUMS проверены. Отдельные ZIP characters/cartoon-deck присутствуют.
-- R2 channel `0.18-rc.4`, workflow [38924971864](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38924971864) — success, exact packs source SHA совпадает.
+- R2 channel `0.18-rc.4`, workflow [38924971864](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38924971864) — success, exact packs source SHA совпадает; catalog snapshot `cc314d22723526e6428bb6f054809e6a564654a47724efc24bfa1a397ca99cb9`.
 - RC4 Pages workflow [38925410305](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38925410305) — failed на offline после единственного upload. Не принятый preview: e5f9fa7f-dfba-4a23-9c39-c676ac091217. Причина/исправление — RC5; runtime RC4 не переписывался.
 - Main до preview: app `c07e22e622485d20978bd223e3b2134c4fffd0b2`, packs `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c`. Production остаётся 0.17.6 / 0.6.5.
 
