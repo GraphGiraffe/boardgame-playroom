@@ -325,7 +325,7 @@ def run(args):
                 preview_actual=(actual.get('deployment_configs') or {}).get('preview') or {}
                 if (preview_actual.get('r2_buckets') or {}).get('PLAYROOM_PACKS',{}).get('name')!=binding['name']:
                     raise ValueError('Preview R2 binding was not confirmed')
-                if preview_actual.get('env_vars')!=preview_config.get('env_vars'):
+                if (preview_actual.get('env_vars') or {})!=(preview_config.get('env_vars') or {}):
                     raise ValueError('Preview environment variables changed')
                 if actual.get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed before preview upload')
             report.update(status='preview-upload');save_report(args,report)

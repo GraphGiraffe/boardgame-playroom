@@ -423,10 +423,10 @@ class Pages:
    assert set(payload['deployment_configs']['preview'])=={'r2_buckets'}
    self.patches.append(payload);self.buckets=payload['deployment_configs']['preview']['r2_buckets']
   if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha}}}]
-  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':{'KEEP':{'value':'value'}},'r2_buckets':self.buckets,'compatibility_date':None}}}
+  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':({} if self.patches else None) if empty_env else {'KEEP':{'value':'value'}},'r2_buckets':self.buckets,'compatibility_date':None}}}
  def production_target(self,value):return {'id':value,'url':'https://existing.pages.dev'}
  def manual_uploads(self,project):pass
-for tamper in (False,True):
+for tamper,empty_env in ((False,False),(True,False),(False,True)):
  pages=Pages();stable_reads=[]
  def prepare(public,sums,wrapper,destination,catalog_channel=''):
   assert catalog_channel=='0.18-rc.1';destination.mkdir();return {'sha256':'b'*64}
@@ -447,7 +447,7 @@ for tamper in (False,True):
    assert not tamper and report['productionUnchanged'] and report['previewVerified']['appVersion']=='0.18.0-rc.1'
   assert len(pages.uploads)==1 and len(stable_reads)==2
   assert pages.patches[0]['deployment_configs']['preview']['r2_buckets']['PLAYROOM_PACKS']['name']=='existing-packs'
-  assert pages.api()['deployment_configs']['preview']['env_vars']['KEEP']['value']=='value'
+  assert (pages.api()['deployment_configs']['preview']['env_vars'] or {})==({} if empty_env else {'KEEP':{'value':'value'}})
   assert 'env_vars' not in pages.patches[0]['deployment_configs']['preview']
 `;
  execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
