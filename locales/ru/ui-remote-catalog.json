@@ -1,0 +1,14 @@
+{
+  "ui.remote-catalog.75fccc8516b6": "Версия или API пака не совпадают с каталогом",
+  "ui.remote-catalog.f5fc3d7faf71": "Контрольная сумма пака не совпала",
+  "ui.remote-catalog.fb6f028993b8": "Пак слишком большой",
+  "ui.remote-catalog.40a73e8f9f18": "Не удалось скачать пак: {p0}",
+  "ui.remote-catalog.b01d9b44b6a3": "Проверка SHA256 недоступна",
+  "ui.remote-catalog.3456539518cb": "Новая версия этого пака не найдена",
+  "ui.remote-catalog.174d1503aba8": "Каталог слишком большой",
+  "ui.remote-catalog.fe3b5e2914ec": "Каталог недоступен: {p0}",
+  "ui.remote-catalog.a1dc0b587e18": "Сеть недоступна",
+  "ui.remote-catalog.dd2d739e7aa6": "Повтор игры в каталоге",
+  "ui.remote-catalog.bb5762ca842a": "Некорректная запись каталога",
+  "ui.remote-catalog.ccf73f07ce71": "Некорректный каталог паков"
+}

@@ -47,7 +47,7 @@
       let pointed=doc.elementFromPoint(x, y);
       if(s.segment){
         const cell=pointed?.closest('[data-grid-index]'),board=cell?.closest('[data-drag-boundary]');
-        if(board){const columns=Number(board.dataset.gridColumns)||10,index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
+        if(board){const columns=Number(board.dataset.gridColumns);if(!Number.isInteger(columns)||columns<1)return null;const index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
           const origin=board.querySelector('[data-grid-index="'+index+'"]');
           pointed=origin?.matches('[data-drop-piece]')?origin:origin?.querySelector('[data-drop-piece]')||origin||pointed;
         }
@@ -261,7 +261,7 @@
     listen(root, 'blur', cancel);
     listen(root, 'resize', cancel);
     listen(doc, 'visibilitychange', () => { if (doc.hidden) cancel(); });
-    return { handleClick, cancel, destroy() { cancel(); disposed = true; suppress = null; handlers.forEach(remove => remove()); } };
+    return { handleClick, cancel, invalidate(){if(!active||!['scrolling','scroll'].includes(active.phase)&&!active.scrollOnly)cancel();}, destroy() { cancel(); disposed = true; suppress = null; handlers.forEach(remove => remove()); } };
   }
   return { attach };
 });

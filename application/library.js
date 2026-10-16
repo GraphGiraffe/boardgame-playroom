@@ -34,13 +34,13 @@
       this.storage=storage;this.engine=engine;this.Session=Session;this.packs=packs;this.idFactory=idFactory;
     }
     summary(session){
-      const state=session.current;
+      const state=session.current,round=this.engine.project?.(state,-1)?.scene?.round||null;
       return JSON.parse(JSON.stringify({formatVersion:1,game:session.game,packVersion:session.packVersion,
         createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
         players:state.players.map(player=>player.name),
         participants:(session.options.lobbyConfig?.participants||state.players.map(player=>({nickname:player.name,bot:player.bot,local:true,role:'player'})))
           .map(({nickname,name,bot,local,role})=>({nickname:nickname||name,bot:!!bot,local:!!local,role})),
-        move:state.move,finished:state.status==='finished',
+        round,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
         outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null}));
     }
     version(saved) { return this.Session.packVersionOf?.(saved) || saved.packVersion || '0.1.0'; }

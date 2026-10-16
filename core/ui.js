@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 (function (root, factory) {
   'use strict';
   const Components=root.PlayroomComponents||(typeof require==='function'?require('./component-assets.js'):null);
@@ -7,6 +8,7 @@
   root.TabletopUI = UI;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (Components,GameComponents) {
   'use strict';
+  const tokenLayout=globalThis.PlayroomTokenLayout||(typeof require==='function'?require('./token-layout.js'):null);
   const {firstSymbol,numberPath,numberMark}=Components;
   const assetArt=(family,params,fallback)=>{const output=globalThis.PlayroomAssetResolver?globalThis.PlayroomAssetResolver.render(family,params):fallback(params);const end=output.indexOf('>');return output.slice(0,end)+` data-asset-family="${esc(family)}"${family==='score-table'?'':` data-asset-params="${esc(JSON.stringify(params))}"`}`+output.slice(end);};
   const roundTokenArt=params=>assetArt('round-token',params||{},Components.roundTokenArt);
@@ -85,7 +87,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   const {art}=GameComponents;
   const countBadge=(value,label,options={})=>assetArt('counter',{value,label,...options},params=>GameComponents.countBadge(params.value,params.label,params));
   const shipSilhouette=size=>assetArt('ship',{size},params=>GameComponents.shipSilhouette(params.size));
-  const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="Закрытая карта">${assetArt('card-back',{main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99},GameComponents.cardFace)}</span>`;
+  const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="${globalThis.PlayroomMessages.text("ui.ui.c13a6680430c")}">${assetArt('card-back',{main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99},GameComponents.cardFace)}</span>`;
   // Display indices only: game indices and private hands remain unchanged.
   function seatOrder(count,viewer=-1,sequence=null){
     const own=Number.isInteger(viewer)&&viewer>=0&&viewer<count;
@@ -94,7 +96,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
-    return `<div class="opponent-hands">${seatOrder(state.players.length,viewer,state.scene?.turnOrder).map(i => {
+    return `<div class="opponent-hands">${seatOrder(state.players.length,viewer).map(i => {
       const p=state.players[i];
       const cards=state.data.hands[i]||[],open=cards.some(c=>!c.hidden),visible=open?cards:cards.slice(0,5);
       const attrs=options.playerAttrs?.(i,p)||'',badge=options.playerBadge?.(i,p)||'';
@@ -103,14 +105,14 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const caption=options.cardLabel?.(c);
         return `<span class="public-card" data-public-card-index="${index}">${caption!=null?`<span class="public-card-caption" aria-hidden="true">${esc(caption)}</span>`:''}${cardRender(c,'disabled',{variant:'compact',surface:'opponent',interactive:false})}</span>`;
       }).join('');
-      return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} карт${open?', открытая рука':''}">${pieces}</div></div>`;
+      return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} ${globalThis.PlayroomMessages.text("ui.ui.aba0cb7c22ba")}${open?globalThis.PlayroomMessages.text("ui.ui.c155161522ac"):''}">${pieces}</div></div>`;
     }).join('')}</div>`;
   }
   function participantIcon(person={}, {network=false}={}) {
     const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local?'hand':'player';
     const status=network&&!person.bot&&!person.local&&typeof person.connected==='boolean'&&(person.connected||person.hasConnected||Number.isFinite(person.joinedAt))?(person.connected?'online':'offline'):'neutral';
-    const label=({grid:'Стол',eye:'Зритель',bot:'Бот',hand:'Hotseat',player:network?'Сетевой игрок':'Игрок'})[role]+(person.isHost?' · хост':'')+(status==='online'?' · в сети':status==='offline'?' · нет связи':'')+(person.replacement?' · игрок на замену':'');
-    const replacement=person.replacement?`Замена${person.replacement.previousName?' '+person.replacement.previousName:''}${person.replacement.accepted===false?' · ожидает подтверждения':''}`:'';
+    const label=globalThis.PlayroomMessages.text("ui.ui.be876869eb2e",{p0:String(({grid:globalThis.PlayroomMessages.text("ui.ui.da639244db1d"),eye:globalThis.PlayroomMessages.text("ui.ui.9ae566816505"),bot:globalThis.PlayroomMessages.text("ui.ui.aa691043b447"),hand:'Hotseat',player:network?globalThis.PlayroomMessages.text("ui.ui.c0562fc31385"):globalThis.PlayroomMessages.text("ui.ui.f54f58cf08df")})[role]),p1:String(person.isHost?globalThis.PlayroomMessages.text("ui.ui.32c4ccc5277d"):''),p2:String(status==='online'?globalThis.PlayroomMessages.text("ui.ui.b74f9d035c25"):status==='offline'?globalThis.PlayroomMessages.text("ui.ui.1a19fe2fb654"):''),p3:String(person.replacement?globalThis.PlayroomMessages.text("ui.ui.389e565be3fa"):'')});
+    const replacement=person.replacement?globalThis.PlayroomMessages.text("ui.ui.f4420ff3ee50",{p0:String(person.replacement.previousName?' '+person.replacement.previousName:''),p1:String(person.replacement.accepted===false?globalThis.PlayroomMessages.text("ui.ui.b8f9ffc5334a"):'')}):'';
     return `<span class="participant-role is-${status}" data-participant-role="${role}" data-connection="${status}" role="${replacement?'button':'img'}" aria-label="${esc(replacement?`${label} · ${replacement}`:label)}" title="${esc(replacement||label)}"${replacement?` tabindex="0" data-tooltip="${esc(replacement)}" data-player-replacement="true"`:''}>${icon(role)}${person.isHost?icon('host'):''}${person.replacement?icon('replacement'):''}</span>`;
   }
   function viewPreferences(game,viewer,key,value){const storageKey='playroom.view-preferences.v1:'+game+':'+viewer;try{const data=JSON.parse(globalThis.localStorage.getItem(storageKey)||'{}');if(key&&/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(key)&&typeof value==='string'&&value.length<=80){data[key]=value;globalThis.localStorage.setItem(storageKey,JSON.stringify(data));}return data&&typeof data==='object'?data:{};}catch(_){return {};}}
@@ -122,7 +124,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
-    const label=counter.label||(counter.kind==='wins'?'Победы':counter.kind==='pieces'?'Фишки':'Очки');
+    const label=counter.label||(counter.kind==='wins'?globalThis.PlayroomMessages.text("ui.ui.8e5f4bb5654f"):counter.kind==='pieces'?globalThis.PlayroomMessages.text("ui.ui.24b775243171"):globalThis.PlayroomMessages.text("ui.ui.6cc0ad965516"));
     return assetArt('counter',{style:'score',...counter,label},params=>GameComponents.scoreBadge(params,{roundTokenArt:Components.roundTokenArt}));
   }
   function teamFor(layouts,preset,seat){
@@ -131,13 +133,13 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const team=layout.teams.find(team=>team&&typeof team.id==='string'&&team.id===layout.seatTeams[seat]);
     return team&&typeof team.label==='string'&&(typeof team.color==='string'||typeof team.colorRole==='string')?team:null;
   }
-  function playerMedallion({first=false,team=null,place=null}={}) {
+  function playerMedallion({first=false,team=null,place=null,layout=null}={}) {
     if(!first&&!team&&place==null)return '';
-    const label=team?(first?`Команда ${team.label} · первый ход`:`Команда ${team.label}`):first?'Первый ход':`Место ${place}`;
+    const label=team?(first?globalThis.PlayroomMessages.text("ui.ui.5a0a57b96032",{p0:String(team.label)}):globalThis.PlayroomMessages.text("ui.ui.a0547497e28d",{p0:String(team.label)})):first?globalThis.PlayroomMessages.text("ui.ui.374e683d6421"):globalThis.PlayroomMessages.text("ui.ui.5e20b8d4db80",{p0:String(place)});
     const tone=team?'team':place!=null?'place':'first';
     const literal=team&&/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(team.color||'')?team.color:'';
     const color=team&&/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(team.colorRole||'')?'var(--color-'+team.colorRole.replaceAll('.','-')+','+(literal||'currentColor')+')':literal;
-    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color?` style="--medallion-color:${esc(color)}"`:''}>${roundTokenArt({value:place,first})}</span>`;
+    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color||layout?` style="${color?`--medallion-color:${esc(color)};`:''}${layout?`left:${layout.x}px;top:${layout.y}px;z-index:${layout.z};`:''}"`:''}>${roundTokenArt({value:place,first})}</span>`;
   }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{
@@ -146,27 +148,27 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
       const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?back(options.kind||'card'):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
-      return {handHTML,indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||'очки',countLabel:options.countLabel||'в руке',...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+      return {handHTML,indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const badges=(content.badges||[]).map(b=>`<span class="player-status-badge"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
-    const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||'очки'}];
+    const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee")}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
-    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}"`:''}>
-      <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="Действия игрока ${esc(person.name)}"`:''}>
-      <span class="player-avatar-wrap"><span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''} aria-hidden="true">${esc(person.name.slice(0,1))}</span>${playerMedallion({first:state.firstPlayer===index,team:content.team})}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own?' · вы':''}</strong><span class="player-turn-position" aria-label="Игровое место ${index+1}">${index+1}</span></span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,`Рука ${person.name} (${content.countLabel||'в руке'})`,{hand:true}):''}${[...counters].sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
-      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="Рука ${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
+    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
+      <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(globalThis.PlayroomMessages.text("ui.ui.ccc8d5ca0326",{name:person.name}))}"`:''}>
+      <span class="player-avatar-wrap"><span class="avatar p${index}"${color?` style="background:${esc(color)}"`:''} aria-hidden="true">${esc(person.name.slice(0,1))}</span>${playerMedallion({first:state.firstPlayer===index,team:content.team})}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):''}</strong><span class="player-turn-position" aria-label="${globalThis.PlayroomMessages.text("ui.ui.ec2c9f35dee9")}${index+1}">${index+1}</span></span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${[...counters].sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
+      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
   }
-  function hand(content, count, hint='Подсвеченные карты можно разыграть', extraControlHTML='', options={}) {
+  function hand(content, count, hint=globalThis.PlayroomMessages.text("ui.ui.473a2525ab0a"), extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles';
     let body=cards?cards.join(''):content;
     if(fan){
       body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
     }
-    return `<section class="own-hand" data-hand-count="${count}" aria-label="Ваша рука"><div class="hand-heading"><strong>Ваша рука</strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || '<span class="empty-hand">Все карты на столе</span>'}</div></section>`;
+    return `<section class="own-hand" data-hand-count="${count}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.2d10172eed3f")}"><div class="hand-heading"><strong>${globalThis.PlayroomMessages.text("ui.ui.2d10172eed3f")}</strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || ("<span class=\"empty-hand\">"+globalThis.PlayroomMessages.text("ui.ui.8c687618fd99")+"</span>")}</div></section>`;
   }
   function source(id, actions, selected, options = {}) {
     const key = options.key || 'card', value = String(id);
@@ -201,7 +203,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if (!Localization) throw Error('Localization module is required');
     return new Localization.Translator({catalogs});
   }
-  const helpers = {viewApi:2,assetArt,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
+  const helpers = {viewApi:2,tokenLayout,assetArt,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){
@@ -216,7 +218,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[]}={}) {
+  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
@@ -226,6 +228,11 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const className=typeof value.className==='string'?value.className:'';
     if(surface==='table')actions=tableCommands(state,actions);
     const e={...value.elements},content=value.playerContent;
+    // A hidden public field must not take a selected private card's targets away.
+    if(surface==='player'&&selection!==null){
+      const missing=actions.filter(action=>String(action.card)===String(selection)&&!(e.actions||'').includes(actionAttr(action)));
+      if(missing.length)e.actions=(e.actions||'')+actionBar(missing);
+    }
     if(value.actionReserve&&(surface!=='table'||state?.modelProjection?.audience==='public')&&!e.actions)e.actions='<div class="scene-actions"></div>';
     if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.team!==undefined&&p.team!==null&&(!p.team||typeof p.team.label!=='string'||(typeof p.team.color!=='string'&&typeof p.team.colorRole!=='string')))||(p.indicators!==undefined&&!validIndicators(p.indicators))||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.icon!==undefined&& !['sword','shield','takeCards'].includes(b.icon)))))))))throw Error('Invalid player content');
     if(value.fieldGroups!==undefined){
@@ -236,7 +243,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const unified=!!state?.players;
     let self='';
     if(unified){
-      e.participants=`<div class="players-panels opponent-hands">${seatOrder(state.players.length,viewer,state.scene?.turnOrder).map(i=>playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
+      e.participants=`<div class="players-panels opponent-hands">${seatOrder(state.players.length,viewer).map(i=>playerPanel(state,i,viewer,content?.[i]||{},actions)).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
@@ -256,12 +263,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return '<p class="scene-hint">Этот игровой пакет не загружен.</p>';const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions}); }
-        catch (_) { return '<p class="scene-hint" role="alert">Не удалось показать игру. Вернитесь к списку игр и обновите этот пак.</p>'; }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected}); }
+        catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); }
       },
       cover(id){
         try { return packs.get(id)?.cover?.() || ''; }
-        catch (_) { return '<span class="scene-hint">Предпросмотр недоступен</span>'; }
+        catch (_) { return ("<span class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.dfbd4a35e748")+"</span>"); }
       },
       helpers
     };

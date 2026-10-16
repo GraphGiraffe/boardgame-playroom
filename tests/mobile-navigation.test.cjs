@@ -20,7 +20,7 @@ function serveSavedGames() {
     const pathname=new URL(req.url,'http://localhost').pathname;
     const rel=pathname==='/'?'index.html':pathname.slice(1);
     const filename=path.resolve(root,rel);
-    const allowed=rel==='index.html'||rel==='installed-packs.js'||['app/','core/','application/','presentation/','platform/','packs/'].some(prefix=>rel.startsWith(prefix));
+    const allowed=rel==='index.html'||rel==='installed-packs.js'||['core/messages.js','app/','core/','application/','presentation/','platform/','packs/'].some(prefix=>rel.startsWith(prefix));
     if(!allowed||!filename.startsWith(root+path.sep)||!fs.existsSync(filename)||!fs.statSync(filename).isFile()){
       res.writeHead(404);res.end();return;
     }

@@ -8,6 +8,13 @@
   'use strict';
   const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
   const event=Events.validate, projectEvents=Events.project;
+  function validTimeline(value,revision,hasRounds){
+    const sequence=(starts,count)=>Array.isArray(starts)&&starts.length===count&&starts[0]===0&&starts.every((n,i)=>integer(n,0,revision)&&(!i||n>starts[i-1]));
+    if(!record(value)||!integer(value.turn,1,Number.MAX_SAFE_INTEGER)||!sequence(value.starts,value.turn))return false;
+    if(value.round!==undefined||value.roundStarts!==undefined)return hasRounds&&integer(value.round,1,Number.MAX_SAFE_INTEGER)&&sequence(value.roundStarts,value.round);
+    return !hasRounds;
+  }
+
 
   class GameModel {
     #definition;
@@ -18,6 +25,7 @@
         (definition.bot === undefined || typeof definition.bot === 'function') &&
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
+        (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
         ['reactions','reactionControl','reactionWindows','botReaction'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
@@ -30,7 +38,8 @@
         Array.isArray(position.winners) && new Set(position.winners).size === position.winners.length &&
         position.winners.every(player => integer(player, 0, position.playerCount - 1)) &&
         (position.status === 'finished' || position.winners.length === 0) && record(position.data) &&
-        (position.revision===undefined||integer(position.revision,0,Number.MAX_SAFE_INTEGER)), 'POSITION_INVALID');
+        (position.revision===undefined||integer(position.revision,0,Number.MAX_SAFE_INTEGER))&&
+        (position.timeline===undefined||validTimeline(position.timeline,position.revision??0,this.#definition.rounds===true)), 'POSITION_INVALID');
       const value = snapshot(position);
       check(this.#definition.validate(value) === true, 'POSITION_INVALID');
       return true;
@@ -42,7 +51,7 @@
       const created=this.#definition.create(snapshot(options));
       check(record(created),'POSITION_INVALID');
       const initial=created.position?created:{position:created,events:[]};
-      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0}};
+      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
       this.validate(transition.position);
       check(transition.position.playerCount===options.playerCount&&Array.isArray(transition.events),'POSITION_INVALID');
       for(const value of transition.events)event(value,options.playerCount);
@@ -110,7 +119,12 @@
       const result = this.#definition.reduce(snapshot(position), actor, legal);
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
-      const next={...result,position:{...result.position,revision:(position.revision??0)+1}};
+      check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
+      check((result.turnEnded===undefined||typeof result.turnEnded==='boolean')&&(result.roundEnded===undefined||typeof result.roundEnded==='boolean')&&(!result.roundEnded||result.turnEnded),'TRANSITION_INVALID');
+      const revision=(position.revision??0)+1,timeline=JSON.parse(JSON.stringify(position.timeline||{turn:1,starts:[0]}));
+      if(result.turnEnded&&result.position.status==='playing'){timeline.turn++;timeline.starts.push(revision);}
+      if(result.roundEnded&&result.position.status==='playing'&&timeline.round){timeline.round++;timeline.roundStarts.push(revision);}
+      const next={...result,position:{...result.position,revision,timeline}};
       this.validate(next.position);
       for (const value of result.events) event(value, position.playerCount);
       return snapshot(next);
@@ -124,7 +138,7 @@
         playerCount:position.playerCount, turn:position.turn, status:position.status,
         ...(position.preset!==undefined?{preset:position.preset}:{}),
         ...(position.revision!==undefined?{revision:position.revision}:{}),
-        winners:position.winners, data,
+        winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
         actions:this.availableActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
     }
     projectTable(position, actor, events = []) {

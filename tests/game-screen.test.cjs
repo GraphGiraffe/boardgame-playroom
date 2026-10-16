@@ -131,3 +131,12 @@ test('field toggle is exclusive to an interactive network player with a Table',(
   if(!allowed)assert.match(html,/data-command="history"/);
  }
 });
+
+test('history navigates explicit turn and round boundaries while the slider remains action based',()=>{
+ const History=require('../application/history-controller.js');
+ assert.equal(History.boundaryIndex(5,12,[0,3,8],-1),3);assert.equal(History.boundaryIndex(5,12,[0,3,8],1),8);
+ assert.equal(History.boundaryIndex(3,12,[0,3,8],-1),0);assert.equal(History.boundaryIndex(8,12,[0,3,8],1),12);
+ const html=Screen.historyMarkup({index:5,count:12,turnStarts:[0,3,6,8],roundStarts:[{revision:0,number:1},{revision:8,number:2}]});
+ assert.match(html,/max="12" value="5"/);assert.match(html,/data-command="replay-round-prev"/);assert.match(html,/data-command="replay-round-next"/);assert.match(html,/history-round-marker/);assert.match(html,/history-turn-marker/);
+ assert.doesNotMatch(Screen.historyMarkup({index:5,count:12}),/data-command="replay-round-prev"/);
+});

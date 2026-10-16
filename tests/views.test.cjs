@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '..');
 const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
   const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
   if(match){
     const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
@@ -19,6 +19,7 @@ for (const file of ['core/random.js','core/model-values.js','core/events.js','co
       catalogs[locale]=Object.assign({},...files.map(name=>JSON.parse(fs.readFileSync(path.join(base,name),'utf8'))));
     }
     sandbox.PlayroomPackResources={locales:catalogs};
+    for(const name of manifest.sharedDomain||[])vm.runInContext(fs.readFileSync(path.join(path.dirname(sharedKit),'domain',name+'.js'),'utf8'),sandbox,{filename:name});
     for(const name of manifest.sourceModules?.[match[2]]||[])vm.runInContext(fs.readFileSync(path.join(base,name),'utf8'),sandbox,{filename:name});
   }
   vm.runInContext(fs.readFileSync(file.startsWith('shared/')?path.join(path.dirname(sharedKit),file.slice(7)):path.join(root, file), 'utf8'), sandbox, { filename: file });

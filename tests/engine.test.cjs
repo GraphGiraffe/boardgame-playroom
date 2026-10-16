@@ -8,14 +8,14 @@ const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain
 for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
 const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
-const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle});
+const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
 const act = (s, action) => {if(!s.unitPosition)return E.applyAction(s,s.turn,action);if(!actions(s).some(candidate=>Object.entries(action).every(([key,value])=>candidate[key]===value)))throw Error('ACTION_UNAVAILABLE');const changed=unoRules.reduce(s,s.turn,action),n=changed.position;n.move=(s.move||0)+1;n.winner=n.winners[0]??null;n.players.forEach((player,index)=>player.score=n.data.points[index]);n.events=[...s.events,...changed.events.map((event,index)=>({...event,id:(s.events.at(-1)?.id||0)+index+1,revision:n.move}))];return n;};
 const actions = s => s.unitPosition?unoRules.actions(s,s.turn).map(choice=>choice.command):E.legalActions(s,s.turn);
 const types = s => actions(s).map(a => a.type);
 const has = (s, query) => actions(s).some(a => Object.entries(query).every(([k, v]) => a[k] === v));
 let fixtureId = 0;
 const uno = (color, value) => ({ id: `fixture-${fixtureId++}`, color, value });
-const dominoRules=require('../packs/domino/domain/game.js')({shuffle:E.shuffle});
+const dominoRules=require('../packs/domino/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
 const tile = (a, b) => ({ id: `fixture-${fixtureId++}`, a, b });
 const card = (suit, rank) => ({ id: `${suit}${rank}`, suit, rank });
 function unoState(hands, top = uno('red', '5'), drawPile = []) {
@@ -24,7 +24,7 @@ function unoState(hands, top = uno('red', '5'), drawPile = []) {
 }
 function dominoState(hands, chain, stock = []) {
   // Minimal local-rule fixtures deliberately omit the rest of the double-six deck.
-  return {playerCount:hands.length,turn:0,status:'playing',winners:[],data:{hands,chain,stock,passes:0}};
+  return {playerCount:hands.length,turn:0,status:'playing',winners:[],data:{ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js')).create(hands.length,0),hands,chain,stock,passes:0}};
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
@@ -347,7 +347,7 @@ test('standalone audio library registers scoped pack overrides without a browser
 // separate core so version switching cannot affect the built-in game tests.
 function packEnvironment(storage, viewsOverride) {
   const vm = require('node:vm'), fs = require('node:fs');
-  const sandbox = {module:{exports:{}}};
+  const sandbox = {module:{exports:{}},PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/random.js'), 'utf8'), sandbox);
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/engine.js'), 'utf8'), sandbox);
   const core = sandbox.module.exports, views = viewsOverride || require('../core/ui.js').createRegistry(), catalog = {};
@@ -357,8 +357,8 @@ function packEnvironment(storage, viewsOverride) {
   return {core, views, catalog, store, manager};
 }
 function installFixture(version = '0.1.0', increment = 1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:1,viewApi:2,stateVersion:1},files:{
-    'rules.js':`(function(root){const E=root.TabletopCore;E.register({id:'install-fixture',name:'Fixture',min:2,max:2,presets:[{id:'standard',label:'Standard'}],create(s){s.data={count:0};},legal(){return[{type:'advance',label:'Advance'}];},apply(s,actor){s.data.count+=${increment};s.turn=1-actor;E.event(s,'Moved',actor);},validateState(s){E.assertState(Number.isInteger(s.data.count)&&s.data.count>=0&&s.data.count%${increment}===0,'fixture');}});})(globalThis);`,
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:3,viewApi:2,stateVersion:1},files:{
+    'rules.js':require('./pack-fixture.cjs').rules({id:'install-fixture',version,key:'count',step:increment,preset:'standard',action:'advance'}),
     'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:2,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
     'styles.css':'.fixture { background-image: url("assets/icon.svg"); }',
     'assets/icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1"/></svg>'
@@ -406,7 +406,7 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   const mixed=oldSession.export();mixed.states[1].packVersion='0.2.0';assert.throws(()=>Session.restore(core,mixed),/Сохранение/);
   const missing=oldSession.export();missing.packVersion=missing.options.packVersion='9.0.0';assert.throws(()=>Session.restore(core,missing),e=>e.code==='PACK_VERSION_MISSING'&&e.packVersion==='9.0.0');
   const legacy=oldSession.export();delete legacy.packVersion;delete legacy.options.packVersion;legacy.states.forEach(s=>{delete s.packVersion;delete s.packStateVersion;});
-  assert.equal(Session.packVersionOf(legacy),'0.1.0');assert.equal(Session.restore(core,legacy).packVersion,'0.1.0');
+  assert.equal(Session.packVersionOf(legacy),undefined);assert.throws(()=>Session.restore(core,legacy),/Сохранение|формат/);
 });
 
 test('pack quota failure and failed view activation preserve installed registries and persisted bytes', () => {

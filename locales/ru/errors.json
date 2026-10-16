@@ -1,0 +1,12 @@
+{
+  "errors.UNKNOWN": "Не удалось выполнить действие. Повторите выбор.",
+  "errors.UPDATE_NOT_READY": "Обновление пока недоступно.",
+  "errors.UPDATE_BUSY": "Сначала сохраните партию и выйдите в меню.",
+  "errors.UPDATE_FAILED": "Не удалось активировать обновление.",
+  "errors.HOST_PARTICIPANT_MISSING": "Не найден участник игрового места.",
+  "errors.HOST_PLAYERS_REQUIRED": "Недостаточно игроков для запуска.",
+  "errors.HOST_RECOVERY_REQUIRED": "Не загружена сохранённая партия.",
+  "errors.HOST_STORAGE_REQUIRED": "Хранилище сетевой партии недоступно.",
+  "errors.HOST_SEATS_CHANGED": "Изменена связь мест с сохранённой партией.",
+  "errors.VERSION_MISMATCH": "Версии приложений различаются. Установите одинаковый выпуск и создайте новое приглашение."
+}

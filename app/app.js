@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 (function () {
   'use strict';
   const E = globalThis.TabletopCore || globalThis.PlayroomEngine;
@@ -26,13 +27,13 @@
   const packs = globalThis.PlayroomPacks;
   const library = new globalThis.PlayroomLibrary(() => localStorage, E, Session, packs);
   try { globalThis.PlayroomPackManager?.reconcile?.(packs,library); }
-  catch (error) { globalThis.PlayroomPackLoadError ||= error.message || 'Не удалось сверить версии паков.'; }
+  catch (error) { globalThis.PlayroomPackLoadError ||= globalThis.PlayroomMessages.error(error) || globalThis.PlayroomMessages.text("ui.app.d95699cb8f67"); }
   const $ = selector => document.querySelector(selector);
   const noticeElement=$('#toast');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const GameScreen=globalThis.PlayroomGameScreen,icon=GameScreen.icon;
   const turnNotice=GameScreen.turnNotice({play:()=>{if(settings.sound&&!document.hidden)void audio.play('turn',{volume:.45});},reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
-  const appVersion=globalThis.PlayroomAppVersion||'неизвестна';
+  const appVersion=globalThis.PlayroomAppVersion||globalThis.PlayroomMessages.text("ui.app.8d699d8c65b0");
   const PACK_NOTICES_KEY='playroom.pack-update-notices.v1';
   let packNotices={dismissed:[],read:[]},flashPacksOnHub=false;
   try {const saved=JSON.parse(localStorage.getItem(PACK_NOTICES_KEY)||'{}');for(const key of ['dismissed','read'])if(Array.isArray(saved[key]))packNotices[key]=saved[key].filter(value=>typeof value==='string').slice(-128);}catch(_){}
@@ -50,8 +51,8 @@
     const before=packUpdates().map(updateKey).join('|');
     void globalThis.PlayroomRemotePacks?.load().then(()=>{if(screen==='hub'&&before!==packUpdates().map(updateKey).join('|'))renderHub();});
   }
-  const brand = '<span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>ХОД<small>β</small>';
-  const botNames = ['Мика','Тео','Луна','Ника','Лев','Рэй','Сэм','Кира'];
+  const brand = ("<span class=\"brand-mark\" aria-hidden=\"true\"><i></i><i></i><i></i><i></i></span>"+globalThis.PlayroomMessages.text("ui.app.b0baccea2c88")+"<small>β</small>");
+  const botNames = [globalThis.PlayroomMessages.text("ui.app.36302a922e97"),globalThis.PlayroomMessages.text("ui.app.3ad0ecbb5a38"),globalThis.PlayroomMessages.text("ui.app.b25f2c7cdbc5"),globalThis.PlayroomMessages.text("ui.app.a5a387d440e4"),globalThis.PlayroomMessages.text("ui.app.0aa6b765f067"),globalThis.PlayroomMessages.text("ui.app.1a859840b361"),globalThis.PlayroomMessages.text("ui.app.4fc735b61b2f"),globalThis.PlayroomMessages.text("ui.app.df75e7040e09")];
   const randomBotName = () => {const used=new Set(room?.participants.filter(p=>p.bot).map(p=>p.nickname));const available=botNames.filter(name=>!used.has(name));return available[Math.floor(Math.random()*available.length)]||botNames[0];};
   const Tags=globalThis.PlayroomTags,hubFilters={type:'',mechanic:'',format:''};
   const catalog = globalThis.PlayroomCatalog || {};
@@ -72,8 +73,8 @@
   const localPort={get snapshot(){return session?localFrame(session.current,gate!==null?-1:viewer):null;},
     history:index=>localFrame(session.states[index],viewer,[]),
     send(action,{actor=viewer}={}){const client=localClient(actor);return client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));}};
-  const screenController=new globalThis.PlayroomGameScreenController({client:localPort,report:error=>toast(error.message)});
-  function localFrame(state,shownViewer,actions=[]){return {kind:'snapshot',protocolVersion:1,sessionId:sessionId||String(session.createdAt),authorityEpoch:'local:'+session.createdAt,
+  const screenController=new globalThis.PlayroomGameScreenController({client:localPort,report:error=>toast(globalThis.PlayroomMessages.error(error))});
+  function localFrame(state,shownViewer,actions=[]){return {kind:'snapshot',protocolVersion:2,sessionId:sessionId||String(session.createdAt),authorityEpoch:'local:'+session.createdAt,
     game:session.game,packVersion:session.packVersion,viewer:shownViewer,revision:state.move,historyLength:session.states.length,state:E.project(state,shownViewer),actions,paused};}
 
   try {
@@ -85,7 +86,7 @@
     settings.animationSpeed=Flow.speed(stored?.animationSpeed!==undefined?stored.animationSpeed:stored?.motion===false?'instant':'normal');
   } catch (_) {}
   try { const saved = library.current(); if (saved) { session = saved.session; sessionId = saved.id; } }
-  catch (_) { loadWarning='Не удалось восстановить сохранение. Исходная запись сохранена; остальные партии доступны в «Моих партиях».'; }
+  catch (_) { loadWarning=globalThis.PlayroomMessages.text("ui.app.3f69ce8ef70a"); }
   const audio = new globalThis.TabletopAudio({enabled:settings.sound,volume:settings.volume});
   const audioVersions = new Map();
   for(const [id,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(id,pack.sounds);
@@ -101,7 +102,7 @@
   function defaultRules(gameId,g){
     let saved={};
     try{saved=JSON.parse(localStorage.getItem(lastRulesKey)||'{}')?.[gameId]||{};}catch(_){}
-    const presets=g.presets?.length?g.presets:[{id:'default',label:'Классический'}];
+    const presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text("ui.app.a39ad47c9222")}];
     const preset=presets.find(item=>item.id===saved.preset)||presets[0];
     const fields=catalog[gameId]?.settings||[];
     saved.options={...(catalog[gameId]?.legacyPresets?.[saved.preset]||{}),...(saved.options||{})};
@@ -155,21 +156,21 @@
   document.addEventListener('click',event=>{if(event.target.closest('#toast [data-command="dismiss-notice"]')){event.preventDefault();event.stopImmediatePropagation();dismissNotice();}},true);
   function toast(message) {
     clearTimeout(noticeTimer);noticeTimer=setTimeout(dismissNotice,6000);
-    noticeElement.innerHTML=`<span>${esc(message)}</span><button class="icon-btn" data-command="dismiss-notice" aria-label="Закрыть сообщение" title="Закрыть сообщение">${icon('close')}</button>`;noticeElement.classList.add('show');noticeElement.setAttribute('role','alert');placeNotice();
+    noticeElement.innerHTML=`<span>${esc(message)}</span><button class="icon-btn" data-command="dismiss-notice" aria-label="${globalThis.PlayroomMessages.text("ui.app.935e004f83bf")}" title="${globalThis.PlayroomMessages.text("ui.app.935e004f83bf")}">${icon('close')}</button>`;noticeElement.classList.add('show');noticeElement.setAttribute('role','alert');placeNotice();
     const modal=noticeElement.closest('.modal');if(modal)modal.scrollTop=0;
   }
   const updateBanner=$('#update-banner'),updateDetail=$('#update-detail');
   globalThis.PlayroomPWA?.setUpdateGuard(()=>screen==='hub'&&!room&&!transition&&!$('#modal-root').children.length&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()&&save());
   window.addEventListener('playroom-update-ready',()=>{updateBanner.hidden=false;updateDetail.textContent='';});
   $('#update-now')?.addEventListener('click',async()=>{
-    const button=$('#update-now');button.disabled=true;updateDetail.textContent='Проверяем открытые окна…';
-    try{await globalThis.PlayroomPWA.activateUpdate();updateDetail.textContent='Обновляем приложение…';}
-    catch(error){updateDetail.textContent=error.message;button.disabled=false;}
+    const button=$('#update-now');button.disabled=true;updateDetail.textContent=globalThis.PlayroomMessages.text("ui.app.ca2c48f1d3e1");
+    try{await globalThis.PlayroomPWA.activateUpdate();updateDetail.textContent=globalThis.PlayroomMessages.text("ui.app.40c739dffde5");}
+    catch(error){updateDetail.textContent=globalThis.PlayroomMessages.error(error);button.disabled=false;}
   });
   function save() {
     if (!session||historyOrigin?.kind==='library') return true;
     try { library.write(session,sessionId); storageOK = true; loadWarning=''; return true; }
-    catch (_) { toast('Не удалось сохранить партию: хранилище браузера заполнено или недоступно. Освободите место, удалив ненужные партии.'); storageOK = false; return false; }
+    catch (_) { toast(globalThis.PlayroomMessages.text("ui.app.efc8dc649fa3")); storageOK = false; return false; }
   }
   function playSounds(before,after) {
     soundTicket++;
@@ -190,128 +191,20 @@
     if(!session||historyOrigin?.kind==='library')return;
     const player=session.current.players.findIndex(p=>!p.bot);if(player<0)return;
     const client=localClient(player),snapshot=client.snapshot();if(snapshot.paused===value)return;
-    void Promise.resolve(client.dispatch(Protocol.command(snapshot,{type:'session-pause',paused:value,expectedControlRevision:snapshot.controlRevision},'local-control-'+(++commandSequence)))).then(receipt=>{if(!receipt.ok)toast(receipt.message);}).catch(error=>toast(error.message));
+    void Promise.resolve(client.dispatch(Protocol.command(snapshot,{type:'session-pause',paused:value,expectedControlRevision:snapshot.controlRevision},'local-control-'+(++commandSequence)))).then(receipt=>{if(!receipt.ok)toast(receipt.message);}).catch(error=>toast(globalThis.PlayroomMessages.error(error)));
   }
   function stopReplay(stopAudio=true) { clearTimeout(replayTimer); replayTimer=null;replayTicket++;flow.cancel();if(stopAudio)stopSounds(); }
-  function orderedVisibleGames(){
-    const p=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
-    const order=id=>{const i=p.order.indexOf(id);return i<0?p.order.length+E.GAMES.findIndex(g=>g.id===id):i;};
-    return E.GAMES.filter(g=>!p.hidden.includes(g.id)).sort((a,b)=>order(a.id)-order(b.id));
-  }
-  function tile(g, featured, editing=false) {
-    const info=catalog[g.id]||{},favorite=globalThis.PlayroomPackManager?.displayPreferences().favorites.includes(g.id);
-    const theme=['green','coral','blue','gold','violet'].includes(info.tileTheme)?info.tileTheme:({cards:'green',board:'gold',dice:'violet'})[info.category]||'green';
-    return `<article class="game-tile ${featured?'featured':''}${editing?' is-editing':''}" data-theme="${theme}" data-game="${g.id}" ${editing?'draggable="true"':''}>
-      <div class="tile-top tile-tags">${Tags.forPack(info).map(t=>`<span class="pill tag-${t.kind}" aria-label="${esc(t.label)}" title="${esc(t.label)}">${t.kind==='type'?icon(t.icon):esc(t.label)}</span>`).join('')}</div>
-      ${editing?'':`<button class="tile-favorite" data-favorite="${esc(g.id)}" aria-label="${favorite?'Убрать из избранного':'Добавить в избранное'}: ${esc(g.name)}" aria-pressed="${!!favorite}" title="${favorite?'Убрать из избранного':'Добавить в избранное'}">${icon('star')}</button>`}
-      <div class="game-cover">${V.cover ? V.cover(g.id) : ''}</div>
-      <div class="tile-content"><h2 class="tile-title">${esc(g.name)}</h2><p class="tile-description">${esc(info.tagline || g.description)}</p>
-      <div class="tile-bottom"><div class="tile-meta"><span>${icon('people')} ${g.min===g.max?g.min:g.min+'–'+g.max}</span><span class="meta-time">· ${esc(info.estimatedDuration||'Своя партия')}</span></div><span class="play-tile">${featured?'За стол ':''}${icon(featured?'arrow':'play')}</span></div></div>
-      ${editing?`<div class="tile-edit-actions" role="group" aria-label="Порядок и раздел: ${esc(g.name)}"><button type="button" data-edit-handle aria-label="Перетащить ${esc(g.name)}">⠿</button><button type="button" data-edit-step="-1" data-edit-id="${esc(g.id)}" aria-label="Поднять ${esc(g.name)}">${icon('up')}</button><button type="button" data-edit-step="1" data-edit-id="${esc(g.id)}" aria-label="Опустить ${esc(g.name)}">${icon('down')}</button><button type="button" data-edit-category="${esc(g.id)}" aria-label="Сменить раздел: ${esc(g.name)}">${esc(({favorites:'Избранное',normal:'Игры',hidden:'Скрытые'})[globalThis.PlayroomPackManager.category(g.id)])}</button></div>`:`<button class="tile-hit" data-start="${g.id}" aria-label="Играть в ${esc(g.name)}"></button>`}</article>`;
-  }
-  function recentGameCard(g){return `<div class="game-grid">${tile(g,false)}</div>`;}
-  function hubFilterMarkup(){
-    const visible=orderedVisibleGames(),tags=new Set(visible.flatMap(g=>Tags.forPack(catalog[g.id]).map(t=>t.id)));
-    const button=(attrs,label,body,active,disabled=false)=>`<button type="button" class="filter ${active?'active':''}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" aria-pressed="${!!active}" ${disabled?'disabled':''}>${body}</button>`;
-    const formats=[['solo','Соло','player'],['duel','Дуэль','duel'],['three','Три','three'],['2+','2 и более'],['3+','3 и более'],['4+','4 и более'],['6+','6 и более'],['teams','Команды','teams']];
-    return `<div class="hub-filters"><div class="filters filter-scope" role="group" aria-label="Библиотека">${button('data-filter="all"','Все игры','Все',filter==='all')}${button('data-filter="favorites"','Избранное',icon('star'),filter==='favorites')}</div><div class="filters filter-format" role="group" aria-label="Состав игроков">${formats.map(([id,label,glyph])=>button(`data-format="${id}"`,label,glyph?icon(glyph):id,hubFilters.format===id,!visible.some(g=>Tags.matches(g,catalog[g.id],id)))).join('')}</div>${['type','mechanic'].map(kind=>`<div class="filters filter-${kind}" role="group" aria-label="${kind==='type'?'Тип игры':'Механика'}">${Tags.entries.filter(t=>t.kind===kind&&tags.has(t.id)).map(t=>button(`data-tag-kind="${kind}" data-tag="${t.id}"`,t.label,kind==='type'?icon(t.icon):esc(t.label),hubFilters[kind]===t.id)).join('')}</div>`).join('')}</div>`;
-  }
-  function renderHub() {
-    interruptAction();input?.cancel();playerTargets?.cancel();feedback.clear();cancelBot(); latestPacks();
-    const updates=packUpdates(),unread=updates.some(item=>!packNotices.read.includes(updateKey(item))),newUpdates=updates.filter(item=>!packNotices.dismissed.includes(updateKey(item)));
-    const flashPacks=flashPacksOnHub&&unread;flashPacksOnHub=false;
-    const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
-    const games=orderedVisibleGames().filter(g=>(filter!=='favorites'||preferences.favorites.includes(g.id))&&Tags.matches(g,catalog[g.id],hubFilters.format)&&['type','mechanic'].every(kind=>!hubFilters[kind]||Tags.forPack(catalog[g.id]).some(t=>t.id===hubFilters[kind])));
-    const hiddenCount=E.GAMES.filter(g=>preferences.hidden.includes(g.id)).length;
-    const filtering=filter!=='all'||Object.values(hubFilters).some(Boolean);
-    const collectionCount=hubEditing?`ВСЕГО: ${E.GAMES.length} · СКРЫТО: ${hiddenCount}`:filtering?`ПО ФИЛЬТРУ: ${games.length} · СКРЫТО: ${hiddenCount}`:`ПОКАЗАНО: ${E.GAMES.length-hiddenCount} · СКРЫТО: ${hiddenCount}`;
-    let lastGameId;try{lastGameId=localStorage.getItem('playroom.last-game.v1');}catch(_){}
-    const lastGame=filter==='all'?games.find(g=>g.id===(lastGameId||session?.game)):null;
-    const favorites=filter==='all'?games.filter(g=>preferences.favorites.includes(g.id)):[];
-    const others=filter==='all'?games.filter(g=>!preferences.favorites.includes(g.id)):games;
-    const editSections=hubEditing?['favorites','normal','hidden'].map(group=>{
-      const labels={favorites:'Избранные',normal:'Игры',hidden:'Скрытые'},items=globalThis.PlayroomPackManager.ordered(E.GAMES.map(g=>g.id),preferences).map(id=>E.GAMES.find(g=>g.id===id)).filter(g=>globalThis.PlayroomPackManager.category(g.id,preferences)===group);
-      return `<section class="hub-game-section hub-edit-section" data-edit-drop="${group}" aria-label="${labels[group]}"><h2 class="hub-section-title">${labels[group]}</h2><div class="game-grid">${items.map(g=>tile(g,false,true)).join('')}</div>${items.length?'':'<p class="hub-edit-empty">Перетащите сюда игру</p>'}</section>`;
-    }).join(''):'';
-    const sections=hubEditing?editSections:filter==='all'?`${lastGame?`<section class="hub-game-section recent-section" aria-label="Последняя игра">${recentGameCard(lastGame)}</section>`:''}${favorites.length?`<section class="hub-game-section favorites-section" aria-label="Избранные игры"><div class="game-grid">${favorites.map(g=>tile(g,false)).join('')}</div></section>`:''}<section class="hub-game-section other-section" aria-label="Остальные игры"><div class="game-grid">${others.map(g=>tile(g,false)).join('')}</div></section>`:`<section class="game-grid" aria-label="Коллекция игр">${games.map((g,i)=>tile(g,i===0)).join('')}</section>`;
-    $('#app').innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
-      <nav class="side-nav" aria-label="Основная навигация"><button class="nav-item ${hubTab==='games'?'current':''}" data-command="home">${icon('grid')}Все игры</button><button class="nav-item ${hubTab==='sessions'?'current':''}" data-command="sessions">${icon('history')}Мои партии</button><button class="nav-item" data-appearance-editor>${icon('palette')}${esc(globalThis.PlayroomAppearanceUI.text('themes.title'))}</button></nav>
-      <div class="sidebar-note"><span class="little-dice">${icon('dice')}</span>Хороший повод<br>собраться за столом.<br><br><span class="eyebrow" style="font-size:8px">PLAYROOM / ${esc(appVersion)}</span></div></aside>
-      <main class="hub-main"><header class="topbar"><span class="eyebrow muted">ИГРЫ В ХОРОШЕЙ КОМПАНИИ</span><button class="brand mobile-brand" data-command="home" aria-label="ХОД — главная">${brand}</button>
-      <div class="topbar-tools ui-toolbar">${GameScreen.toolbar([
-        {attrs:'data-command="packs"',label:unread?'Паки игр: есть непросмотренные обновления':'Паки игр',name:'layers',className:`pack-hub-button${unread?' has-unread':''}${flashPacks?' flash-unread':''}`},
-        {attrs:'data-command="fullscreen"',label:'Полный экран',name:'full'},
-        {attrs:'data-command="help"',label:'Как играть',name:'help'}
-      ])}</div></header>
-      ${hubTab==='sessions'?`<div id="saved-games-panel">${savedGamesMarkup()}</div>`:`${newUpdates.length?`<div class="pack-update-notice" role="status"><span>${newUpdates.length===1?'Доступно обновление одного пака':`Доступны обновления паков: ${newUpdates.length}`}</span><button type="button" class="btn secondary" data-command="packs">Посмотреть</button><button type="button" class="icon-btn" data-command="dismiss-pack-updates" aria-label="Закрыть уведомление об обновлениях паков">${icon('close')}</button></div>`:''}<section class="intro"><h1>Маленький стол.<br><span>Большая компания.</span></h1><p>Любимые настолки, всегда под рукой. <br>Сыграйте с ботом или передайте <br>телефон другу. Следующий ход — ваш.</p></section>
-      ${loadWarning?`<p class="recovery-note" role="alert">${esc(loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="Закрыть предупреждение">${icon('close')}</button></p>`:''}
-      ${session?GameScreen.resumeCard({title:(session.current.status==='finished'?'Последняя партия':'Ваш стол всё ещё ждёт')+' · '+meta(session.game).name,detail:session.current.status==='finished'?'Результат и история сохранены':`Ход ${session.current.move+1} · ${isPass()?'Игра вместе':'Игра с ботами'}`}):''}
-      <div class="library-heading">${hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${collectionCount}</span><button type="button" class="btn secondary hub-edit-toggle" data-edit-toggle aria-pressed="${hubEditing}">${icon(hubEditing?'check':'edit')} ${hubEditing?'Готово':'Изменить порядок'}</button></div></div>
-      ${sections}${!E.GAMES.length?'<div class="packs-empty-hub"><h2>Начните с первой игры</h2><p>Приложение готово. Добавьте файл пака: в нём есть правила, компоненты и оформление вашей игры.</p><button class="btn" data-command="packs">Установить пак игры</button></div>':!games.length?'<p class="lead">В этой категории пока нет игр.</p>':''}`}
-      <footer class="hub-footer"><span class="hub-footer-brand">${icon('hand')}<span class="hub-footer-lines"><span>Сделано для игры, а не для спешки</span><span class="eyebrow">PLAYROOM / ${esc(appVersion)}</span></span></span><span>Без регистрации.<br class="mobile-text"> Даже без интернета.</span></footer></main></div>`;
-    if(hubTab==='sessions')refreshNetworkSaved();
-  }
-  function moveHubGame(id,group,beforeId=null){
-    globalThis.PlayroomPackManager.moveGame(id,group,beforeId,E.GAMES.map(game=>game.id));
-    renderHub();
-  }
-  function editHubStep(id,step){
-    const manager=globalThis.PlayroomPackManager,prefs=manager.displayPreferences(),group=manager.category(id,prefs);
-    const ids=manager.ordered(E.GAMES.map(game=>game.id),prefs).filter(item=>manager.category(item,prefs)===group),at=ids.indexOf(id),to=at+step;
-    if(to<0||to>=ids.length)return;
-    moveHubGame(id,group,step<0?ids[to]:ids[to+1]||null);
-  }
-  function hubDropAt(id,target){
-    const section=target?.closest?.('[data-edit-drop]');if(!section)return;
-    const card=target.closest('.game-tile[data-game]');
-    if(card?.dataset.game===id)return;
-    moveHubGame(id,section.dataset.editDrop,card?.dataset.game||null);
-  }
-  function savedGamesMarkup(){
-    let local=[];
-    try{local=library.list();}catch(_){return '<p class="recovery-note" role="alert">Хранилище локальных партий недоступно. Записи не изменены.</p>';}
-    const date=value=>new Date(value).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    const entries=[...local.map(x=>({...x,kind:'local'})),...networkSaved.map(x=>({...x,kind:'network'}))]
-      .filter(x=>savedFilter==='all'||x.kind===savedFilter).sort((a,b)=>b.updatedAt-a.updatedAt||Number(b.active)-Number(a.active));
-    const cards=entries.map(entry=>{
-      const network=entry.kind==='network',host=entry.role!=='client',blocked=entry.invalid||entry.missingPack;
-      const name=entry.invalid?'Сохранение':meta(entry.game)?.name||entry.game;
-      const id=network?(host?entry.sessionId:'client:'+entry.id):entry.id;
-      const status=network?'Сетевая · '+(host?'Хост':'Клиент'):'Локальная · '+(entry.missingPack?'Нужен пак':entry.invalid?'Ошибка сохранения':entry.finished?'Завершена':'На паузе');
-      const count=network?Number(entry.revision)||0:Number(entry.move)||0;
-      const summary=network?entry.name:(entry.mode==='pass'?'На одном устройстве':'С ботами')+' · '+(entry.preset||'Основной набор');
-      const details=blocked?`<p>${entry.missingPack?'Партия создана с несовместимой версией игры '+esc(entry.packVersion)+'. Можно удалить её с устройства.':'Запись сохранена без изменений.'}</p>`:
-        `<p class="saved-players">${(entry.participants||entry.players?.map(nickname=>({nickname,role:'player',local:!network}))||[]).map(p=>`<span class="saved-participant">${globalThis.TabletopUI.helpers.participantIcon({...p,local:!network&&!p.bot||p.local},{network})}<span class="${(!network&&!p.bot||network&&(entry.participantId&&p.id===entry.participantId||host&&p.isHost||p.local&&!p.bot))?'saved-self':''}">${esc(p.nickname||p.name)}</span></span>`).join(' · ')}</p>${summary?`<p class="saved-summary">${esc(summary)}</p>`:''}${entry.result?`<p class="saved-result">${esc(entry.result)}</p>`:''}<p>Версия игры: ${esc(entry.packVersion)} · Последний ход: ${esc(date(entry.updatedAt))}</p>${network&&!host&&entry.savedFrames<entry.revision+1?'<p>Часть истории ещё не загружена</p>':''}`;
-      const history=network?`data-network-history="${esc(id)}"`:`data-history-id="${esc(id)}"`;
-      const continuation=network?`data-network-continue="${esc(id)}"`:`data-resume-id="${esc(id)}"`;
-      const label=network&&!host?'Присоединиться к партии':'Продолжить партию';
-      return `<article class="saved-game" ${network?`data-network-session-id="${esc(id)}"`:`data-session-id="${esc(id)}"`}><div><div class="saved-status"><span class="pill">${status}</span>${blocked?'':`<span class="muted">${count} действий</span>`}</div><h2>${esc(name)}</h2>${details}</div><div class="saved-game-actions">
-        ${entry.missingPack?`<button class="icon-btn" data-command="packs" aria-label="Установить пак" title="Установить пак">${icon('layers')}</button>`:blocked?'':`<button class="icon-btn saved-history" ${history} aria-label="История партии" title="История партии">${icon('history')}</button><button class="icon-btn saved-continue" ${continuation} aria-label="${entry.finished?'Партия завершена':label}" title="${entry.finished?'Партия завершена':label}" ${entry.finished?'disabled':''}>${icon('play')}</button>`}
-        ${`<button class="icon-btn saved-delete" data-delete-id="${esc(id)}" ${network?'data-delete-network="true"':''} aria-label="Удалить партию ${esc(name)}" title="Удалить партию">${icon('trash')}</button>`}</div></article>`;
-    }).join('');
-    const filters=[['all','Все'],['local','Локальные'],['network','Сетевые']].map(([value,label])=>
-      `<button type="button" class="filter ${savedFilter===value?'active':''}" data-saved-filter="${value}" aria-pressed="${savedFilter===value}">${label}</button>`).join('');
-    const note=networkSavedState==='loading'?'<p class="saved-network-info" role="status">Загружаем сетевые сохранения…</p>':
-      networkSavedState==='error'?'<p class="recovery-note" role="alert">Сетевой архив этого браузера недоступен. Локальные партии не затронуты.</p>':'';
-    return `<header class="saved-heading"><div><h1>Мои партии</h1><p>Сохранённые локальные и сетевые партии, повторы и продолжение игры.</p></div><div class="saved-heading-actions"><button class="btn secondary" data-clear-games ${local.length+networkSaved.length?'':'disabled'}>${icon('trash')} Удалить все партии</button><button class="btn" data-command="home">Новая партия ${icon('arrow')}</button></div></header>
-      <div class="saved-filter-bar" role="group" aria-label="Тип партии">${filters}</div>${note}
-      <section class="saved-games-list" aria-label="Сохранённые партии">${entries.length?cards:'<div class="saved-empty"><h2>Пока нет партий</h2><p>Начните игру или проверьте другой раздел.</p><button class="btn" data-command="home">Выбрать игру</button></div>'}</section>`;
-  }
-  async function refreshNetworkSaved(){
-    const ticket=++networkSavedTicket;networkSavedState='loading';networkSaved=[];
-    try{
-      const records=await globalThis.PlayroomNetworkLibrary?.list?.()||[];
-      if(ticket!==networkSavedTicket||hubTab!=='sessions'||screen!=='hub')return;
-      networkSaved=records;networkSavedState='ready';
-    }catch(_){if(ticket!==networkSavedTicket)return;networkSavedState='error';}
-    if(ticket===networkSavedTicket&&screen==='hub'&&hubTab==='sessions'){
-      updateSavedPanel();
-    }
-  }
-  function updateSavedPanel(){
-    const panel=$('#saved-games-panel');if(!panel)return;
-    const position=window.scrollY;panel.innerHTML=savedGamesMarkup();window.scrollTo(0,position);
-  }
+  const {orderedVisibleGames,tile,recentGameCard,hubFilterMarkup,renderHub,moveHubGame,editHubStep,hubDropAt,savedGamesMarkup,refreshNetworkSaved,updateSavedPanel}=globalThis.PlayroomHubPresenter.create({get $(){return $;},set $(value){$=value;},get E(){return E;},set E(value){E=value;},get GameScreen(){return GameScreen;},set GameScreen(value){GameScreen=value;},get Tags(){return Tags;},set Tags(value){Tags=value;},get V(){return V;},set V(value){V=value;},get appVersion(){return appVersion;},set appVersion(value){appVersion=value;},get brand(){return brand;},set brand(value){brand=value;},get cancelBot(){return cancelBot;},get catalog(){return catalog;},set catalog(value){catalog=value;},get esc(){return esc;},set esc(value){esc=value;},get feedback(){return feedback;},set feedback(value){feedback=value;},get filter(){return filter;},set filter(value){filter=value;},get flashPacksOnHub(){return flashPacksOnHub;},set flashPacksOnHub(value){flashPacksOnHub=value;},get hubEditing(){return hubEditing;},set hubEditing(value){hubEditing=value;},get hubFilters(){return hubFilters;},set hubFilters(value){hubFilters=value;},get hubTab(){return hubTab;},set hubTab(value){hubTab=value;},get icon(){return icon;},set icon(value){icon=value;},get input(){return input;},set input(value){input=value;},get interruptAction(){return interruptAction;},get isPass(){return isPass;},set isPass(value){isPass=value;},get latestPacks(){return latestPacks;},get library(){return library;},set library(value){library=value;},get loadWarning(){return loadWarning;},set loadWarning(value){loadWarning=value;},get meta(){return meta;},set meta(value){meta=value;},get networkSaved(){return networkSaved;},set networkSaved(value){networkSaved=value;},get networkSavedState(){return networkSavedState;},set networkSavedState(value){networkSavedState=value;},get networkSavedTicket(){return networkSavedTicket;},set networkSavedTicket(value){networkSavedTicket=value;},get packNotices(){return packNotices;},set packNotices(value){packNotices=value;},get packUpdates(){return packUpdates;},get playerTargets(){return playerTargets;},set playerTargets(value){playerTargets=value;},get savedFilter(){return savedFilter;},set savedFilter(value){savedFilter=value;},get screen(){return screen;},set screen(value){screen=value;},get session(){return session;},set session(value){session=value;},get updateKey(){return updateKey;},set updateKey(value){updateKey=value;}});
+
+
+
+
+
+
+
+
+
+
 
   function leaveTable(tab='games') {
     if(historyOrigin)restoreHistoryOrigin();
@@ -323,8 +216,8 @@
     closeModal(true);flashPacksOnHub=true;render();refreshPackUpdates();
   }
   function resumeSession(id=sessionId,{history=false}={}) {
-    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату через лобби.');
-    if(!id)return toast('Выберите игру — ваш стол появится здесь.');
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast(globalThis.PlayroomMessages.text("ui.app.ed9bf8ddc81a"));
+    if(!id)return toast(globalThis.PlayroomMessages.text("ui.app.34c23d3e2ac3"));
     try {
       if(history){openLibraryHistory(id);return;}
       interruptAction();input?.cancel();cancelBot();stopReplay();
@@ -339,7 +232,7 @@
       viewer=isPass()&&!session.current.players[session.current.turn]?.bot?session.current.turn:session.current.players.findIndex(p=>!p.bot);gate=needsGate(session.current)?viewer:null;
       setLocalPaused(false);closeModal(true);render();
       if(session.current.status==='finished')openHistory();
-    } catch(error) {toast('Не удалось открыть партию. '+error.message);}
+    } catch(error) {toast(globalThis.PlayroomMessages.text("ui.app.893a6738231c",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
   function restoreSessionLobby(){
     const saved=session.options.lobbyConfig,players=session.current.players;
@@ -352,7 +245,7 @@
     catch(_){
       // Legacy saves still open. Rebuild a locked view from the actual session.
       const g=meta(session.game),host={id:playerProfile.id,nickname:playerProfile.name};
-      let draft=roomService.create({name:'Комната '+host.nickname,host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      let draft=roomService.create({name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       draft=roomService.configure(draft.id,host.id,{transportMode:'hotseat'});
       const hostIndex=Math.max(0,players.findIndex(p=>!p.bot));
       if(hostIndex)draft=roomService.moveParticipant(draft.id,host.id,host.id,draft.seats[hostIndex].id);
@@ -367,7 +260,7 @@
   }
   function askDelete(id) {
     const entry=library.list().find(entry=>entry.id===id);if(!entry)return;
-    openModal(PlayroomGameScreen.deleteConfirmation({name:entry.invalid?'Это сохранение':meta(entry.game)?.name||entry.game,confirmAttrs:`data-delete-confirm="${esc(id)}"`}));
+    openModal(PlayroomGameScreen.deleteConfirmation({name:entry.invalid?globalThis.PlayroomMessages.text("ui.app.02c17edea60f"):meta(entry.game)?.name||entry.game,confirmAttrs:`data-delete-confirm="${esc(id)}"`}));
   }
   function refreshSavedGameRecovery(){
     try{
@@ -375,15 +268,15 @@
       if(saved&&!session){session=saved.session;sessionId=saved.id;}
       loadWarning='';
     }catch(_){
-      loadWarning='Не удалось восстановить сохранение. Исходная запись сохранена; остальные партии доступны в «Моих партиях».';
+      loadWarning=globalThis.PlayroomMessages.text("ui.app.3f69ce8ef70a");
     }
   }
   async function deleteNetworkSession(id){
-    try{await globalThis.PlayroomNetworkLibrary.remove(id);closeModal(true);await refreshNetworkSaved();}catch(error){toast(error.message);}
+    try{await globalThis.PlayroomNetworkLibrary.remove(id);closeModal(true);await refreshNetworkSaved();}catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
   function askDeleteNetwork(id){
     const entry=networkSaved.find(entry=>(entry.role==='client'?'client:'+entry.id:entry.sessionId)===id);if(!entry)return;
-    openModal(PlayroomGameScreen.deleteConfirmation({name:meta(entry.game)?.name||entry.game||'Это сохранение',network:true,confirmAttrs:`data-delete-network-confirm="${esc(id)}"`}));
+    openModal(PlayroomGameScreen.deleteConfirmation({name:meta(entry.game)?.name||entry.game||globalThis.PlayroomMessages.text("ui.app.02c17edea60f"),network:true,confirmAttrs:`data-delete-network-confirm="${esc(id)}"`}));
   }
   function deleteSession(id) {
     const position=window.scrollY;
@@ -394,11 +287,11 @@
         try {
           globalThis.PlayroomPackManager?.reconcile?.(packs,library);
           for(const [packId,pack] of Object.entries(catalog))if(pack.sounds)audio.registerPack(packId,pack.sounds);
-        }catch(error){globalThis.PlayroomPackLoadError=error.message||'Не удалось пересчитать версии паков.';}
+        }catch(error){globalThis.PlayroomPackLoadError=globalThis.PlayroomMessages.error(error)||globalThis.PlayroomMessages.text("ui.app.36788568657c");}
       }
       refreshSavedGameRecovery();
       screen='hub';hubTab='sessions';closeModal(true);render();window.scrollTo(0,position);
-    } catch (_) {toast('Не удалось удалить партию: хранилище браузера недоступно.');}
+    } catch (_) {toast(globalThis.PlayroomMessages.text("ui.app.f148bfcf7409"));}
   }
   function clearDeletedSession(){
     if(sessionId&&library.records().some(record=>record.id===sessionId))return;
@@ -406,12 +299,12 @@
     refreshSavedGameRecovery();
   }
   async function askClearGames(){
-    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату.');
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast(globalThis.PlayroomMessages.text("ui.app.8f8a5c5c96ff"));
     try{
       const local=library.records(),network=await globalThis.PlayroomNetworkLibrary.list({strict:true});
       if(!local.length&&!network.length)return;
-      openModal(`${modalHead('Удалить все партии?')}<p class="lead">Все ${local.length+network.length} сохранённых партий и их истории будут удалены с этого устройства. Паки игр останутся.</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">Оставить</button><button class="btn coral" data-clear-games-confirm>${icon('trash')} Удалить все партии</button></div>`);
-    }catch(error){toast(error.message);}
+      openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.e4d80efec0d1"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.app.7e258bdf13d6")}${local.length+network.length} ${globalThis.PlayroomMessages.text("ui.app.06448ac94275")}</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">${globalThis.PlayroomMessages.text("ui.app.97b65905439a")}</button><button class="btn coral" data-clear-games-confirm>${icon('trash')} ${globalThis.PlayroomMessages.text("ui.app.787b30e70b0f")}</button></div>`);
+    }catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
   async function clearGames(){
     try{
@@ -419,14 +312,14 @@
       for(const entry of network)await globalThis.PlayroomNetworkLibrary.remove(entry.role==='client'?'client:'+entry.id:entry.sessionId);
       for(const record of library.records())library.remove(record.id);
       clearDeletedSession();closeModal(true);renderHub();
-    }catch(error){toast('Не удалось очистить все партии: '+error.message);renderHub();}
+    }catch(error){toast(globalThis.PlayroomMessages.text("ui.app.969afd6c7829",{p0:String(globalThis.PlayroomMessages.error(error))}));renderHub();}
   }
   function activeActions(state) {
     if (transition||isReplay()||gate!==null||paused||state.status==='finished'||state.players[viewer]?.bot) return [];
     const actions=localClient(viewer).snapshot().actions;return awaitingPass?actions.filter(action=>E.reactions?.(state,viewer).some(reaction=>Protocol.canonical(reaction)===Protocol.canonical(action))):actions;
   }
   function playersMarkup(state,actions=[]) {
-    return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||'очки',playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
+    return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
   }
   function renderTable(animate=false,preserveField=false) {
     if (!session) return renderHub();
@@ -443,20 +336,20 @@
     projected.players=projected.players.map(p=>({...p,local:!p.bot}));
     if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
-    const turnText=replay?'Просмотр истории':transition?'Показываем ход…':finished?'Партия завершена':paused?'Пауза':turnPlayer?.bot?`${turnPlayer.name} думает…`:isPass()?`Ходит ${turnPlayer?.name}`:'Ваш ход';
+    const turnText=replay?globalThis.PlayroomMessages.text("ui.app.a92c2f3c7ff1"):transition?globalThis.PlayroomMessages.text("ui.app.fadac501dd8a"):finished?globalThis.PlayroomMessages.text("ui.app.64f3ad19b9c6"):paused?globalThis.PlayroomMessages.text("ui.app.65530fd463ea"):turnPlayer?.bot?globalThis.PlayroomMessages.text("ui.app.f96994dfc267",{p0:String(turnPlayer.name)}):isPass()?globalThis.PlayroomMessages.text("ui.app.6e352d281a89",{p0:String(turnPlayer?.name)}):globalThis.PlayroomMessages.text("ui.app.12d5fb57ada4");
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
-    const eventText=replay&&replayIndex===0?'Начальная расстановка':lastEvent(projected)?.text||'Выберите доступное действие на столе';
+    const eventText=replay&&replayIndex===0?globalThis.PlayroomMessages.text("ui.app.03f70ecc37a6"):lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.bcb4a1cfa013");
     const markup=GameScreen.render({
-      gameName:game.name,subtitle:session.options.presetLabel||'Основной набор',
-      state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||'очки',
+      gameName:game.name,subtitle:session.options.presetLabel||globalThis.PlayroomMessages.text("ui.app.4da4da9da138"),
+      state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
-      turnText,turnExtra:replay?`Ход ${replayIndex} из ${session.states.length-1}`:`Ход ${state.move+1} · ${!state.data.hands?'Открытое поле':session.options.openHands?'Руки открыты':'Руки скрыты'}`,
+      turnText,turnExtra:replay?globalThis.PlayroomMessages.text("ui.app.6b2967c4f4fe",{p0:String(replayIndex),p1:String(session.states.length-1)}):globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
-      scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn,preferences:TabletopUI.viewPreferences(state.game,shownViewer),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>Стол подождёт</h2><p>Партия на паузе. Можно сделать вдох.</p><button class="btn" data-command="pause">Продолжить ${icon('play')}</button></div>`:''),
+      scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn,preferences:TabletopUI.viewPreferences(state.game,shownViewer),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}${icon('play')}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
-      beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"','Передать ход','arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
-      footerText:eventText,footerTitle:lastEvent(projected)?.text||'Новая партия',saved:storageOK,
-      footerAction:{command:finished?'result':'pause',label:finished?'Результаты':paused?'Продолжить':'Пауза',icon:finished?'arrow':paused?'play':'pause'}
+      beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
+      footerText:eventText,footerTitle:lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.efcdf40bd477"),saved:storageOK,
+      footerAction:{command:finished?'result':'pause',label:finished?globalThis.PlayroomMessages.text("ui.app.24735a7161d9"):paused?globalThis.PlayroomMessages.text("ui.app.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.app.65530fd463ea"),icon:finished?'arrow':paused?'play':'pause'}
     });
     GameScreen.update($('#app'),markup);
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
@@ -471,8 +364,8 @@
   }
   function historyMarkup() {
     const idx=replayIndex??session.states.length-1;
-    const chooser=historyOrigin?.kind==='library'&&isPass()?`<label class="history-viewer">Игрок<select id="history-viewer" aria-label="Смотреть историю за игрока">${session.current.players.map((p,i)=>`<option value="${i}" ${i===viewer?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
-    return chooser+GameScreen.historyMarkup({index:idx,count:session.states.length-1,playing:!!replayTimer});
+    const chooser=historyOrigin?.kind==='library'&&isPass()?`<label class="history-viewer">${globalThis.PlayroomMessages.text("ui.app.f54f58cf08df")}<select id="history-viewer" aria-label="${globalThis.PlayroomMessages.text("ui.app.55228669ae30")}">${session.current.players.map((p,i)=>`<option value="${i}" ${i===viewer?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
+    return chooser+GameScreen.historyMarkup({turnStarts:session.current.timeline?.starts||[],roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
   }
   function scrubHistory(index) {
     const slider=$('#replay-range'),focused=document.activeElement===slider;input?.cancel();stopReplay();replayIndex=Math.max(0,Math.min(session.states.length-1,index));selected=null;renderTable();
@@ -512,14 +405,14 @@
     if($('.handoff'))return;
     const player=session.current.players[gate];
     $('.table-shell').inert=true;
-    $('#app').insertAdjacentHTML('beforeend',`<section class="handoff" role="dialog" aria-modal="true" aria-label="Передача хода"><div class="handoff-content"><div class="handoff-art" aria-hidden="true"><span>✦</span><span>✦</span></div><span class="eyebrow muted">ПЕРЕДАЙТЕ УСТРОЙСТВО</span><h2>${esc(player.name)}, ваш ход</h2><p>Карты закрыты. Убедитесь, что телефон<br>у нужного игрока, и откройте свою руку.</p><button class="btn" data-command="unlock">Я ${esc(player.name)} · открыть ${icon('eye')}</button></div>${GameScreen.iconButton('data-command="home"','Вернуться к играм','back',{className:'handoff-nav'})}</section>`);
+    $('#app').insertAdjacentHTML('beforeend',`<section class="handoff" role="dialog" aria-modal="true" aria-label="${globalThis.PlayroomMessages.text("ui.app.56a282293bf5")}"><div class="handoff-content"><div class="handoff-art" aria-hidden="true"><span>✦</span><span>✦</span></div><span class="eyebrow muted">${globalThis.PlayroomMessages.text("ui.app.bb21addcf210")}</span><h2>${esc(player.name)}, ${globalThis.PlayroomMessages.text("ui.app.1cb39990173e")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.7d875df45719")}<br>${globalThis.PlayroomMessages.text("ui.app.d0aa0a02cf67")}</p><button class="btn" data-command="unlock">${globalThis.PlayroomMessages.text("ui.app.90089f1a1dc7")}${esc(player.name)} · ${globalThis.PlayroomMessages.text("ui.app.ca7cd7cf82b3")}${icon('eye')}</button></div>${GameScreen.iconButton('data-command="home"',globalThis.PlayroomMessages.text("ui.app.6a186c342109"),'back',{className:'handoff-nav'})}</section>`);
     $('.handoff .btn')?.focus();
   }
   function render(animate=false) { screen==='hub'?renderHub():screen==='lobby'?renderLobby():renderTable(animate); }
   function scheduleBot() {
     cancelBot();
     if(transition||!session||screen!=='table'||isReplay()||paused||gate!==null||document.hidden||$('#modal-root').children.length||session.current.status==='finished')return;
-    localAuthority().scheduleBot({delay:pace().botDelay,run:(actor,action)=>act(actor,action),onError(error){paused=true;render();toast(error.message);}});
+    localAuthority().scheduleBot({delay:pace().botDelay,run:(actor,action)=>act(actor,action),onError(error){paused=true;render();toast(globalThis.PlayroomMessages.error(error));}});
   }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
@@ -542,14 +435,15 @@
       else {const receipt=screenController.send(action,{actor});if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
       selected=null;playerTargets?.cancel();playSounds(beforeState,session.current);
       feedback.accept(E.project(session.current,viewer).events,[],session.game,{duration:Math.max(220,timing.duration+200)});
-      save();input?.cancel();
+      save();input?.invalidate();
       if(catalog[session.game]?.capabilities?.quietActions?.includes(action.type)){renderTable(false,true);return;}
       screenController.transition({context:{session,beforeTurn},capture:()=>snapshot,
         render(run){transition=run;renderTable();},
         play:shot=>Promise.all([flow.play(shot,{draws:cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer))}),feedback.whenIdle()]),
         settle:timing.settle,finish:run=>finishAction(run)});
-    } catch(error){toast(error.message||'Это действие сейчас недоступно');void previewSound('error',session?.game);}
+    } catch(error){toast(globalThis.PlayroomMessages.error(error)||globalThis.PlayroomMessages.text("ui.app.691a0701dfac"));void previewSound('error',session?.game);}
   }
+  const localModal=new globalThis.PlayroomDOM.ModalController({host:$('#modal-root'),background:$('#app')});
   function openModal(content,className='',{keepAudio=false}={}) {
     const existing=className&&$('#modal-root .'+className);
     if(existing&&(className==='room-setup-modal'||className==='pack-manager-modal')){GameScreen.updateModal(existing,content);return;}
@@ -559,7 +453,7 @@
     if(!template.content.querySelector('.modal-head')){
       const title=template.content.querySelector('h2');if(title){const text=title.textContent;title.remove();content=GameScreen.modalHead(text)+template.innerHTML;}
     }
-    $('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${GameScreen.modalContent(content)}</section></div>`;
+    localModal.open(`<div class="modal-backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${GameScreen.modalContent(content)}</section></div>`);
     placeNotice();
     const heading=$('.modal h2'); if(heading){heading.id='dialog-title';$('.modal').setAttribute('aria-labelledby','dialog-title');}
     $('.modal button,.modal input,.modal select')?.focus();
@@ -570,23 +464,23 @@
 
     const back=modalBack;modalBack=null;
     if(back&&!ignoreBack){back();return;}
-    stopSounds();$('#modal-root').innerHTML='';placeNotice();$('#app').inert=false;modalReturn?.focus?.();scheduleBot();scheduleAutoPass();
+    stopSounds();localModal.close();placeNotice();$('#app').inert=false;modalReturn?.focus?.();scheduleBot();scheduleAutoPass();
     window.dispatchEvent(new Event('playroom:game-options'));
   }
   const modalHead = GameScreen.modalHead;
   function ensureRoomButton(){
     const tools=$('#app .topbar-tools')||$('#app .table-tools');
     if(!tools||tools.closest('.table-shell')||!room||tools.querySelector('[data-command="room"]'))return;
-    const node=document.createElement('button');node.className='icon-btn';node.dataset.command='room';node.setAttribute('aria-label','Комната');node.title='Комната';node.innerHTML=icon('room');tools.prepend(node);
+    const node=document.createElement('button');node.className='icon-btn';node.dataset.command='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.app.3a73248bdd79"));node.title=globalThis.PlayroomMessages.text("ui.app.3a73248bdd79");node.innerHTML=icon('room');tools.prepend(node);
   }
   new MutationObserver(ensureRoomButton).observe($('#app'),{subtree:true,childList:true});
   function setup(gameId,draft=null) {
-    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала покиньте текущую сетевую комнату через лобби.');
+    if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast(globalThis.PlayroomMessages.text("ui.app.ed9bf8ddc81a"));
     if(room)leaveLobby();
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const rules=defaultRules(gameId,g);
-    const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||'Игрок'};
-    room=roomService.create({name:'Комната '+host.nickname,host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+    const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df")};
+    room=roomService.create({name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     lobbyParticipantId=host.id;room=roomService.configure(room.id,host.id,{transportMode:'hotseat'});
     for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
     renderLobby();
@@ -604,7 +498,7 @@
     const state=room,isHost=state.ownerId===lobbyParticipantId;
     openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,canStart:isHost&&roomService.canStart(state.id),countdown:lobbyCountdown??3,notice:state.phase==='lobby'&&state.participants.find(p=>p.id===lobbyParticipantId)?.rulesNotice?latestRoomEvent('rules-changed')?.text||'':''}),'room-setup-modal');
     PlayroomLobbyView.bindFirst($('#modal-root .lobby-shell'),id=>{room=roomService.configure(room.id,lobbyParticipantId,{firstParticipantId:id});renderLobby();});
-    PlayroomLobbyView.bindDrag($('#modal-root .lobby-shell'),{canMove:()=>isHost&&state.phase==='lobby'&&!state.recovery,move(id,slot){room=roomService.moveParticipant(room.id,lobbyParticipantId,id,slot==='spectator'?null:slot);renderLobby();},onError:error=>toast(error.message)});
+    PlayroomLobbyView.bindDrag($('#modal-root .lobby-shell'),{canMove:()=>isHost&&state.phase==='lobby'&&!state.recovery,move(id,slot){room=roomService.moveParticipant(room.id,lobbyParticipantId,id,slot==='spectator'?null:slot);renderLobby();},onError:error=>toast(globalThis.PlayroomMessages.error(error))});
   }
   function cycleRoomSeat(id){
     const seat=room.seats.find(s=>s.id===id),p=room.participants.find(p=>p.id===seat.participantId);
@@ -615,7 +509,7 @@
   function setRoomOption(key,value,confirmed=false){
     if(key==='transportMode'&&value==='hotseat'){
       const guests=room.participants.filter(p=>!p.isHost&&!p.bot&&!p.local);
-      if(guests.length&&!confirmed){openModal(`${modalHead('Перейти в локальную игру?')}<p>Подключённые участники будут отключены, их места освободятся. Боты и правила сохранятся.</p><button class="btn" data-command="room-hotseat-confirm">Перейти</button>`);modalBack=renderLobby;return;}
+      if(guests.length&&!confirmed){openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.2bb9f7eecf7e"))}<p>${globalThis.PlayroomMessages.text("ui.app.b295b77d55d0")}</p><button class="btn" data-command="room-hotseat-confirm">${globalThis.PlayroomMessages.text("ui.app.91f7bab0648a")}</button>`);modalBack=renderLobby;return;}
       globalThis.PlayroomNetworkLibrary?.leaveHostRoom?.(room.id,{preserveRoom:true});
       for(const p of guests)room=roomService.kick(room.id,lobbyParticipantId,p.id);
     }
@@ -625,8 +519,8 @@
   function startHotSeat(){
     room=roomService.prepareStart(room.id,lobbyParticipantId);dismissNotice();
     const seats=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),players=seats.map(s=>{const p=room.participants.find(p=>p.id===s.participantId);return {name:p.nickname,bot:!!p.bot};});
-    if(!players.some(p=>!p.bot))throw Error('Нужно хотя бы одно место игрока');
-    if(room.firstPlayerMode==='assigned'&&!seats.some(s=>s.participantId===room.firstParticipantId))throw Error('Выберите первого игрока');
+    if(!players.some(p=>!p.bot))throw Error(globalThis.PlayroomMessages.text("ui.app.dc875925c351"));
+    if(room.firstPlayerMode==='assigned'&&!seats.some(s=>s.participantId===room.firstParticipantId))throw Error(globalThis.PlayroomMessages.text("ui.app.467f6abb2682"));
     activatePack(room.game.id,room.game.version);
     const mode=players.filter(p=>!p.bot).length>1?'pass':'solo',next=new Session(E,room.game.id,{players,mode,lobbyConfig:roomService.snapshot(room.id),preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:room.rules.openHands,firstPlayerMode:room.firstPlayerMode||'rules',firstPlayer:seats.findIndex(s=>s.participantId===room.firstParticipantId),...(room.rules.options||{})});
     if(!save())return;session=next;sessionId=library.newId();library.activate(next,sessionId);storageOK=true;
@@ -636,47 +530,47 @@
     viewer=mode==='solo'?players.findIndex(p=>!p.bot):next.current.players[next.current.turn].bot?players.findIndex(p=>!p.bot):next.current.turn;
     gate=needsGate(next.current)?viewer:null;closeModal(true);render();presentationReady();
   }
-  function updateLobbyNickname(form){try{room=roomService.rename(room.id,lobbyParticipantId,form.elements.nickname.value);renderLobby();}catch(error){toast(error.message);}}
-  function showRoomHuman(seatId){const seat=room.seats.find(s=>s.id===seatId),p=room.participants.find(p=>p.id===seat?.participantId);openModal(`${modalHead(p?'Имя в комнате':'Добавить игрока')}<form id="room-human-form" data-seat="${esc(seatId)}" ${p?'data-rename="true"':''}><label class="field">Имя<input name="nickname" maxlength="24" required value="${esc(p?.nickname||'Игрок')}"></label><button class="icon-btn" aria-label="${p?'Сохранить имя':'Добавить игрока'}" type="submit">${icon(p?'save':'addPlayer')}</button></form>`);modalBack=renderLobby;}
-  function claimLobbySeat(seatId){const occupant=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId);if(room.ownerId===lobbyParticipantId&&!room.recovery&&occupant&&(occupant.bot||room.transportMode==='hotseat')){showRoomHuman(seatId);return;}if(room.transportMode==='hotseat'&&!room.seats.find(s=>s.id===seatId)?.participantId){showRoomHuman(seatId);return;}try{room=roomService.claimSeat(room.id,lobbyParticipantId,seatId);renderLobby();}catch(error){toast(error.message);}}
-  function kickLobbyParticipant(targetId){try{room=roomService.kick(room.id,lobbyParticipantId,targetId);renderLobby();}catch(error){toast(error.message);}}
+  function updateLobbyNickname(form){try{room=roomService.rename(room.id,lobbyParticipantId,form.elements.nickname.value);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function showRoomHuman(seatId){const seat=room.seats.find(s=>s.id===seatId),p=room.participants.find(p=>p.id===seat?.participantId);openModal(`${modalHead(p?globalThis.PlayroomMessages.text("ui.app.11903af3c69a"):globalThis.PlayroomMessages.text("ui.app.c524c19c7ef4"))}<form id="room-human-form" data-seat="${esc(seatId)}" ${p?'data-rename="true"':''}><label class="field">${globalThis.PlayroomMessages.text("ui.app.1da7e9372e2f")}<input name="nickname" maxlength="24" required value="${esc(p?.nickname||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df"))}"></label><button class="icon-btn" aria-label="${p?globalThis.PlayroomMessages.text("ui.app.59322ea5e71f"):globalThis.PlayroomMessages.text("ui.app.c524c19c7ef4")}" type="submit">${icon(p?'save':'addPlayer')}</button></form>`);modalBack=renderLobby;}
+  function claimLobbySeat(seatId){const occupant=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId);if(room.ownerId===lobbyParticipantId&&!room.recovery&&occupant&&(occupant.bot||room.transportMode==='hotseat')){showRoomHuman(seatId);return;}if(room.transportMode==='hotseat'&&!room.seats.find(s=>s.id===seatId)?.participantId){showRoomHuman(seatId);return;}try{room=roomService.claimSeat(room.id,lobbyParticipantId,seatId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function kickLobbyParticipant(targetId){try{room=roomService.kick(room.id,lobbyParticipantId,targetId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function showRoomRules(){
     const state=roomService.snapshot(room.id),game=meta(state.game.id);
     const rows=state.rules.display||Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],!!catalog[state.game.id]?.capabilities?.hands);
-    openModal(modalHead(game.name+' · правила')+PlayroomLobbyView.rulesMarkup(state,rows,game));modalBack=renderLobby;
+    openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.ee9cd4deefad",{p0:String(game.name)}))),p1:String(PlayroomLobbyView.rulesMarkup(state,rows,game,catalog[state.game.id]?.settings||[]))}));modalBack=renderLobby;
   }
-  function showRoomHelp(){openModal(modalHead('Комната · справка')+PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)));modalBack=renderLobby;}
+  function showRoomHelp(){openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)))}));modalBack=renderLobby;}
   function showRoomRulesEditor(){
-    const state=roomService.snapshot(room.id),g=meta(state.game.id),presets=g.presets?.length?g.presets:[{id:'default',label:'Классический'}],fields=catalog[state.game.id]?.settings||[];
-    openModal(`${modalHead('Правила · '+g.name)}<form id="room-rules-form" data-game="${esc(state.game.id)}"><div class="start-options">${[['firstPlayerMode','Игрок №1',[['rules','По правилам','rules'],['random','Случайно','shuffle'],['assigned','Назначить','first']]],['seatOrder','Порядок',[['normal','Нормальный','arrow'],['random','Случайно','shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div><label class="field"><span>Набор правил</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<label class="field" data-rule-field="${esc(field.key)}"><span>${esc(field.label)}</span><select name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></label>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>Открытые руки</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">Просмотреть правила</button><button class="btn" type="submit">${icon('save')} Сохранить правила</button></div></form>`);syncRuleVisibility($('#room-rules-form'));
+    const state=roomService.snapshot(room.id),g=meta(state.game.id),presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text("ui.app.a39ad47c9222")}],fields=catalog[state.game.id]?.settings||[];
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.803a31d997e9",{p0:String(g.name)}))}<form id="room-rules-form" data-game="${esc(state.game.id)}"><div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.b5d827de5168")}</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<div class="field rule-field" data-rule-field="${esc(field.key)}"><label for="rule-${esc(field.key)}">${esc(field.label)}</label>${PlayroomLobbyView.fieldHelp(field.help)}<select id="rule-${esc(field.key)}" name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></div>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.957e469d885d")}</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}>${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText('openHands'))}</label>`:''}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);syncRuleVisibility($('#room-rules-form'));
   }
   function syncRuleVisibility(form){if(!form)return;for(const field of catalog[form.dataset.game]?.settings||[]){const row=form.querySelector('[data-rule-field="'+field.key+'"]');if(row)row.hidden=!!field.visibleWhen&&!Object.entries(field.visibleWhen).every(([key,value])=>form.elements['option-'+key]?.value===String(value));}}
   function showRoomGameEditor(){
     if(!room||roomService.snapshot(room.id).phase!=='lobby'||room.ownerId!==lobbyParticipantId)return;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{favorites:[]};
     const available=orderedVisibleGames().filter(g=>V.supports(g.id,'player')&&V.supports(g.id,'table')).sort((a,b)=>Number(preferences.favorites.includes(b.id))-Number(preferences.favorites.includes(a.id)));
-    if(!available.length)return toast('Нет установленных игр с сетевым режимом.');
-    openModal(`${modalHead('Сменить игру в комнате')}<div class="room-choice-list">${available.map((g,i)=>`${i&&preferences.favorites.includes(available[i-1].id)&&!preferences.favorites.includes(g.id)?'<hr class="room-choice-divider">':''}<button class="pack-item" data-room-game="${esc(g.id)}"><strong>${esc(g.name)}</strong><small>${esc(g.id)} · ${esc(g.version||'')}</small></button>`).join('')}</div>`);modalBack=renderLobby;
+    if(!available.length)return toast(globalThis.PlayroomMessages.text("ui.app.631826417487"));
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.3bba8537ff5d"))}<div class="room-choice-list">${available.map((g,i)=>`${i&&preferences.favorites.includes(available[i-1].id)&&!preferences.favorites.includes(g.id)?'<hr class="room-choice-divider">':''}<button class="pack-item" data-room-game="${esc(g.id)}"><strong>${esc(g.name)}</strong><small>${esc(g.id)} · ${esc(g.version||'')}</small></button>`).join('')}</div>`);modalBack=renderLobby;
   }
   function updateRoomGame(form){
     try{
       const gameId=typeof form==='string'?form:form.elements.gameId.value,g=meta(gameId),active=activatePack(gameId);
-      if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error('Этот пак пока не поддерживает сетевую игру.');
+      if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error(globalThis.PlayroomMessages.text("ui.app.5d39a9ae84f6"));
       const rules=defaultRules(gameId,g);
       room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
         constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       closeModal(true);renderLobby();
-    }catch(error){toast(error.message);}
+    }catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
-  function updateRoomRules(form){try{const rules=roomRulesFromForm(form);room=roomService.configure(room.id,lobbyParticipantId,{firstPlayerMode:rules.firstPlayerMode,seatOrder:rules.seatOrder});room=roomService.updateRules(room.id,lobbyParticipantId,rules);rememberRules(room.game.id,rules);closeModal(true);renderLobby();}catch(error){toast(error.message);}}
-  function toggleLobbyReady(){try{const me=room.participants.find(p=>p.id===lobbyParticipantId);room=roomService.setReady(room.id,lobbyParticipantId,!me?.ready);renderLobby();}catch(error){toast(error.message);}}
-  function becomeLobbySpectator(){try{room=roomService.becomeSpectator(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(error.message);}}
+  function updateRoomRules(form){try{const rules=roomRulesFromForm(form);room=roomService.configure(room.id,lobbyParticipantId,{firstPlayerMode:rules.firstPlayerMode,seatOrder:rules.seatOrder});room=roomService.updateRules(room.id,lobbyParticipantId,rules);rememberRules(room.game.id,rules);closeModal(true);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function toggleLobbyReady(){try{const me=room.participants.find(p=>p.id===lobbyParticipantId);room=roomService.setReady(room.id,lobbyParticipantId,!me?.ready);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function becomeLobbySpectator(){try{room=roomService.becomeSpectator(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function startLobbyCountdown(){
     try{
       if(room.transportMode==='hotseat')return startHotSeat();
       room=roomService.beginCountdown(room.id,lobbyParticipantId,{seconds:3});lobbyCountdown=3;renderLobby();clearInterval(lobbyTimer);
       lobbyTimer=setInterval(()=>{const step=roomService.tick(room.id);room=step.room;lobbyCountdown=step.remaining;if(step.started){clearInterval(lobbyTimer);lobbyTimer=null;renderLobby();}else renderLobby();},250);
-    }catch(error){toast(error.message);}
+    }catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
   function leaveLobby(){
     if(screen==='table')save();clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;
@@ -684,52 +578,53 @@
     room=null;lobbyParticipantId=null;cancelBot();closeModal(true);screen='hub';flashPacksOnHub=true;renderHub();refreshPackUpdates();
   }
   function showPlayerNamePrompt(){
-    openModal(`<header class="modal-head"><h2>Как вас называть?</h2></header><p class="lead">Имя используется по умолчанию в локальных и сетевых партиях. В конкретной комнате никнейм можно поменять отдельно.</p><form id="profile-form"><label class="field"><span>Имя игрока</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="Например, Иван" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">${icon('save')} Сохранить</button></form>`);
+    openModal(`<header class="modal-head"><h2>${globalThis.PlayroomMessages.text("ui.app.773b1abc7b8c")}</h2></header><p class="lead">${globalThis.PlayroomMessages.text("ui.app.5418cf79756a")}</p><form id="profile-form"><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.f189892b63a9")}</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="${globalThis.PlayroomMessages.text("ui.app.fec0b28c091d")}" required></label><button class="btn" type="submit" style="width:100%;margin-top:14px">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.b4d30cae5289")}</button></form>`);
   }
-  function savePlayerProfile(form){try{playerProfile=profileStore.save(form.elements.playerName.value);closeModal(true);render();}catch(error){toast(error.message);}}
+  function savePlayerProfile(form){try{playerProfile=profileStore.save(form.elements.playerName.value);closeModal(true);render();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function showRules(gameId=($('#modal-root .room-setup-modal,#room-rules-form')?room?.game?.id:session?.game)) {
     const returnBack=modalBack,fromRoom=!!room&&(!!$('#modal-root .room-setup-modal,#room-rules-form')||modalBack===renderLobby);
     if(!gameId)return showHelp();const g=meta(gameId),roomRules=fromRoom&&room?.game?.id===gameId?room.rules:null;
     const chosenRules=roomRules?(()=>{
-      const fields=catalog[gameId]?.settings||[],details=[roomRules.presetLabel||roomRules.preset||'Основной набор'];
+      const fields=catalog[gameId]?.settings||[],details=[roomRules.presetLabel||roomRules.preset||globalThis.PlayroomMessages.text("ui.app.4da4da9da138")];
       for(const field of fields){const value=roomRules.options?.[field.key],option=field.options?.find(item=>item.value===value);if(option)details.push(field.label+': '+option.label);}
-      if(catalog[gameId]?.capabilities?.hands)details.push('Открытые руки: '+(roomRules.openHands?'да':'нет'));
+      if(catalog[gameId]?.capabilities?.hands)details.push(globalThis.PlayroomMessages.text("ui.app.6df5478139aa",{p0:String(roomRules.openHands?globalThis.PlayroomMessages.text("ui.app.cdc5ed90cb4b"):globalThis.PlayroomMessages.text("ui.app.dc9337ff5b42"))}));
       return details;
     })():null;
 
     const rules=Array.isArray(g.rules)?g.rules:[String(g.rules||g.description)];
-    openModal(`${modalHead(g.name+' · правила')}<p class="lead">${esc(g.description)}</p>${chosenRules?`<div class="rules-mode-note"><strong>Выбрано в комнате</strong><ul style="margin:7px 0 0;padding-left:18px">${chosenRules.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></div>`:''}<ol class="rules-list">${rules.map(r=>`<li>${esc(r)}</li>`).join('')}</ol><p class="rules-mode-note">Доступные действия подсвечиваются. Проведите по руке влево или вправо, чтобы посмотреть остальные карты. История сохраняет каждый шаг партии.</p><p class="pack-line">Пак ${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} игрока</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">Понятно</button>`);
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.ee9cd4deefad",{p0:String(g.name)}))}<p class="lead">${esc(g.description)}</p>${chosenRules?`<div class="rules-mode-note"><strong>${globalThis.PlayroomMessages.text("ui.app.8f68487ed201")}</strong><ul style="margin:7px 0 0;padding-left:18px">${chosenRules.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></div>`:''}${PlayroomLobbyView.gameRulesMarkup(g,catalog[gameId]?.settings||[])}<p class="rules-mode-note">${globalThis.PlayroomMessages.text("ui.app.840dedadf9ac")}</p><p class="pack-line">${globalThis.PlayroomMessages.text("ui.app.a61be19c4d76")}${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} ${globalThis.PlayroomMessages.text("ui.app.71d648b599c5")}</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">${globalThis.PlayroomMessages.text("ui.app.e2ce86b38fd5")}</button>`);
     if(returnBack)modalBack=returnBack;else if(fromRoom)modalBack=renderLobby;
   }
   function showHelp() {
-    openModal(`${modalHead('Ваш карманный стол')}<div class="help-grid">
-      <div class="help-item">${icon('people')}<p><strong>С ботами или вместе</strong>Боты готовы в любой момент. В режиме «Передаём телефон» закрытая заставка скрывает руку между ходами.</p></div>
-      <div class="help-item">${icon('hand')}<p><strong>Все действия — на столе</strong>В домино выберите костяшку и подсвеченное место или удерживайте её, чтобы перетащить. Листайте руку горизонтальным свайпом. Подсветка подскажет возможные ходы.</p></div>
-      <div class="help-item">${icon('history')}<p><strong>Отвлеклись? Отмотайте</strong>Кнопка истории открывает повтор: двигайте ползунок, смотрите по одному ходу или запустите воспроизведение.</p></div>
-      <div class="help-item">${icon('save')}<p><strong>Каждому столу своё место</strong>В «Моих партиях» хранятся игры на паузе и завершённые партии. Продолжайте любую или смотрите историю. Новые игры сохраняются отдельно.</p></div>
-      <div class="help-item">${icon('layers')}<p><strong>Место для новых игр</strong>Каждая игра — отдельный пак со своими правилами, наборами и оформлением. Сетевая комната соединяет устройства напрямую; приглашение можно передать ссылкой или QR-кодом.</p></div></div><button class="btn" data-command="close-modal" style="width:100%;margin-top:25px">Всё, играем ${icon('arrow')}</button>`);
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.d721c75def08"))}<div class="help-grid">
+      <div class="help-item">${icon('people')}<p><strong>${globalThis.PlayroomMessages.text("ui.app.a6d0cdfe334a")}</strong>${globalThis.PlayroomMessages.text("ui.app.d7dba9d443ad")}</p></div>
+      <div class="help-item">${icon('hand')}<p><strong>${globalThis.PlayroomMessages.text("ui.app.817e795ac107")}</strong>${globalThis.PlayroomMessages.text("ui.app.eddbc452360d")}</p></div>
+      <div class="help-item">${icon('history')}<p><strong>${globalThis.PlayroomMessages.text("ui.app.f6c8472ceb1a")}</strong>${globalThis.PlayroomMessages.text("ui.app.8d87bdfc36e3")}</p></div>
+      <div class="help-item">${icon('save')}<p><strong>${globalThis.PlayroomMessages.text("ui.app.2d7e6a75f0ae")}</strong>${globalThis.PlayroomMessages.text("ui.app.64e5f1e7ba99")}</p></div>
+      <div class="help-item">${icon('layers')}<p><strong>${globalThis.PlayroomMessages.text("ui.app.9f485e78fa98")}</strong>${globalThis.PlayroomMessages.text("ui.app.9128a0f992ff")}; ${globalThis.PlayroomMessages.text("ui.app.50e140dd89b0")}</p></div></div><button class="btn" data-command="close-modal" style="width:100%;margin-top:25px">${globalThis.PlayroomMessages.text("ui.app.72e2d50dff4c")}${icon('arrow')}</button>`);
   }
   function showSettings(options={}) {
     const settingsRoom=options.room||(room?roomService.snapshot(room.id):null);
     const nickname=settingsRoom?PlayroomLobbyView.nicknameMarkup(settingsRoom,options.participantId||lobbyParticipantId||playerProfile?.id,!!options.client):null;
-    const profile=nickname||`<label class="field"><span>Имя игрока</span><input id="setting-player-name" maxlength="24" autocomplete="nickname" value="${esc(playerProfile?.name||'')}" placeholder="Введите имя"></label>`;
+    const profile=nickname||`<label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.f189892b63a9")}</span><input id="setting-player-name" maxlength="24" autocomplete="nickname" value="${esc(playerProfile?.name||'')}" placeholder="${globalThis.PlayroomMessages.text("ui.app.4098056e6278")}"></label>`;
     const soundOptions=audio.catalog().map(c=>`<option value="|${esc(c.id)}">${esc(c.label)}</option>`).join('');
     const packSounds=Object.entries(catalog).filter(([,pack])=>pack.sounds).map(([id,pack])=>`<optgroup label="${esc(meta(id)?.name||id)}">${Object.entries(pack.sounds).map(([cue,def])=>`<option value="${esc(id)}|${esc(cue)}">${esc(def.label||cue)}</option>`).join('')}</optgroup>`).join('');
-    openModal(`${modalHead('Настройки')}${GameScreen.quickAccessMarkup()}${options.sharedRules||settingsRoom||session&&screen==='table'?`<button class="btn secondary" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('help')} Правила игры</button>`:''}${profile}${globalThis.PlayroomAppearanceUI.settingsButton()}
-      <label class="switch"><span>Звук действий</span><input type="checkbox" id="setting-sound" ${settings.sound?'checked':''}></label>
-      ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>Автоматическая передача хода</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
-      <label class="switch"><span>Ход одним нажатием</span><input type="checkbox" id="setting-quick-play" aria-describedby="setting-quick-play-description" ${settings.quickPlay?'checked':''}></label>
-      <div class="settings-grid"><label class="field"><span>Громкость</span><select id="setting-volume" data-sound-control ${settings.sound?'':'disabled'}>${[[.3,'Тихо'],[.6,'Средне'],[1,'Громко']].map(([value,label])=>`<option value="${value}" ${settings.volume===value?'selected':''}>${label}</option>`).join('')}</select></label>
-      <label class="field"><span>Анимация</span><select id="setting-speed" aria-describedby="setting-speed-description">${Object.entries(animationPresets).map(([id,p])=>`<option value="${id}" ${settings.animationSpeed===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div>
-      <details class="settings-details"><summary>Проверить звук</summary><div class="sound-preview"><label class="field"><span>Библиотека звуков</span><select id="sound-preview" data-sound-control ${settings.sound?'':'disabled'}><optgroup label="Стандартные">${soundOptions}</optgroup>${packSounds}</select></label><button class="btn secondary" data-command="sound-preview" data-sound-control ${settings.sound?'':'disabled'} aria-label="Прослушать выбранный звук">${icon('play')}</button></div></details>
-      <details class="settings-details"><summary>О настройках</summary>${!nickname?'<p class="lead">Имя подставляется в новые комнаты. Никнейм в конкретной комнате можно изменить отдельно.</p>':''}<p class="lead" id="setting-quick-play-description">Однозначный ход выполняется сразу. Если действию нужен цвет или цель, сначала выберите их.</p><p class="lead" id="setting-speed-description">${animationPresets[settings.animationSpeed].description}</p><p class="lead">Настройки сохраняются на этом устройстве. Системное уменьшение анимации также учитывается.</p></details>
-      ${session&&screen==='table'?`<button class="btn plain" data-start="${session.game}" style="width:100%;margin-top:10px">${icon('reset')} Настроить новую партию</button>`:''}`);
+    const quick=GameScreen.quickAccessMarkup();
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.985b5e0f2ccf"))}${quick}${!quick.includes('data-command="rules"')&&(options.sharedRules||settingsRoom||session&&screen==='table')?`<button class="btn secondary" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('help')} ${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}</button>`:''}${profile}${globalThis.PlayroomAppearanceUI.settingsButton()}
+      <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.21093ba6355d")}</span><input type="checkbox" id="setting-sound" ${settings.sound?'checked':''}></label>
+      ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
+      <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.b10ca6a74592")}</span><input type="checkbox" id="setting-quick-play" aria-describedby="setting-quick-play-description" ${settings.quickPlay?'checked':''}></label>
+      <div class="settings-grid"><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.77e13b86fbed")}</span><select id="setting-volume" data-sound-control ${settings.sound?'':'disabled'}>${[[.3,globalThis.PlayroomMessages.text("ui.app.a884586f7f7d")],[.6,globalThis.PlayroomMessages.text("ui.app.709ce533ba0a")],[1,globalThis.PlayroomMessages.text("ui.app.251ddcd158f4")]].map(([value,label])=>`<option value="${value}" ${settings.volume===value?'selected':''}>${label}</option>`).join('')}</select></label>
+      <label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.62af90477d26")}</span><select id="setting-speed" aria-describedby="setting-speed-description">${Object.entries(animationPresets).map(([id,p])=>`<option value="${id}" ${settings.animationSpeed===id?'selected':''}>${p.label}</option>`).join('')}</select></label></div>
+      <details class="settings-details"><summary>${globalThis.PlayroomMessages.text("ui.app.2a1b034b41db")}</summary><div class="sound-preview"><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.12c1d95abaf7")}</span><select id="sound-preview" data-sound-control ${settings.sound?'':'disabled'}><optgroup label="${globalThis.PlayroomMessages.text("ui.app.5d74e9a8efa5")}">${soundOptions}</optgroup>${packSounds}</select></label><button class="btn secondary" data-command="sound-preview" data-sound-control ${settings.sound?'':'disabled'} aria-label="${globalThis.PlayroomMessages.text("ui.app.7c5ead6299f2")}">${icon('play')}</button></div></details>
+      <details class="settings-details"><summary>${globalThis.PlayroomMessages.text("ui.app.e2d7a2109816")}</summary>${!nickname?("<p class=\"lead\">"+globalThis.PlayroomMessages.text("ui.app.d940e6fdee3b")+"</p>"):''}<p class="lead" id="setting-quick-play-description">${globalThis.PlayroomMessages.text("ui.app.b5d22d15d394")}</p><p class="lead" id="setting-speed-description">${animationPresets[settings.animationSpeed].description}</p><p class="lead">${globalThis.PlayroomMessages.text("ui.app.b42de89d2283")}</p></details>
+      ${session&&screen==='table'?`<button class="btn plain" data-start="${session.game}" style="width:100%;margin-top:10px">${icon('reset')} ${globalThis.PlayroomMessages.text("ui.app.b3490a21344b")}</button>`:''}`);
   }
   function showCardHelp() {
     const cards=[...document.querySelectorAll('.own-hand .hand-card[data-tooltip]')],seen=new Set();
     const entries=cards.filter(card=>{const text=card.dataset.tooltip;if(seen.has(text))return false;seen.add(text);return true;});
     const details=entries.map(card=>`<li><strong>${esc(card.getAttribute('aria-label'))}</strong><p>${esc(card.dataset.tooltip)}</p></li>`).join('');
-    openModal(`${modalHead('Карты в вашей руке')}<p class="lead">На компьютере наведите курсор на карту, чтобы увидеть её действие. Здесь собраны подсказки для текущей руки.</p><ul class="card-help-list">${details||'<li>В руке пока нет открытых карт.</li>'}</ul>`);
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.b7f6f3448201"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.app.9751c986689e")}</p><ul class="card-help-list">${details||("<li>"+globalThis.PlayroomMessages.text("ui.app.91e23b5cc854")+"</li>")}</ul>`);
   }
   function showPlayerActions(target) {
     if(transition||isReplay()||paused||gate!==null||!session)return;
@@ -741,7 +636,7 @@
   function showResult() {
     if(!session||session.current.status!=='finished'||screen!=='table')return;
     const shownViewer=isPass()?-1:viewer,state=E.project(session.current,shownViewer);
-    openModal(GameScreen.resultMarkup({state,viewer:shownViewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||'очки'}),'result-modal',{keepAudio:true});
+    openModal(GameScreen.resultMarkup({state,viewer:shownViewer,gameName:meta(session.game).name,scoreLabel:meta(session.game).scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee")}),'result-modal',{keepAudio:true});
   }
   function captureHistoryOrigin(kind){return {kind,session,sessionId,viewer,gate,paused,awaitingPass,screen,hubTab,scrollY:window.scrollY};}
   function restoreHistoryOrigin(){const origin=historyOrigin;if(!origin)return;historyOrigin=null;session=origin.session;sessionId=origin.sessionId;viewer=origin.viewer;gate=origin.gate;paused=origin.paused;awaitingPass=origin.awaitingPass;screen=origin.screen;hubTab=origin.hubTab;return origin;}
@@ -754,7 +649,7 @@
   function closeHistory(){stopReplay();const origin=restoreHistoryOrigin();historyOpen=false;replayIndex=null;selected=null;setLocalPaused(paused);render();if(origin?.kind==='library')requestAnimationFrame(()=>window.scrollTo(0,origin.scrollY));}
   function stopLocalMatch(){
     if(!session||session.current.status!=='playing'||room?.transportMode!=='hotseat'||room.phase!=='playing')return;
-    if(!confirm('Сохранить партию и вернуться в лобби? Её можно будет продолжить из «Моих партий».'))return;
+    if(!confirm(globalThis.PlayroomMessages.text("ui.app.986b3d9186b8")))return;
     interruptAction();cancelBot();stopReplay();
     if(!save())return;
     setLocalPaused(true);gate=null;awaitingPass=false;
@@ -792,8 +687,8 @@
     try {
       if(document.fullscreenElement)await document.exitFullscreen();
       else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();
-      else {const enabled=document.documentElement.classList.toggle('fullscreen-fallback');toast(enabled?'Экран развёрнут. Для скрытия панели браузера добавьте страницу на экран «Домой».':'Обычный режим экрана.');}
-    }catch(_){toast('Браузер ограничил полный экран. Используйте меню браузера или добавьте страницу на экран «Домой».');}
+      else {const enabled=document.documentElement.classList.toggle('fullscreen-fallback');toast(enabled?globalThis.PlayroomMessages.text("ui.app.2bce29e3ceaa"):globalThis.PlayroomMessages.text("ui.app.a225326b7ef6"));}
+    }catch(_){toast(globalThis.PlayroomMessages.text("ui.app.a2c8210f6267"));}
   }
   const commands={
     'dismiss-notice':dismissNotice,
@@ -808,10 +703,10 @@
     'room-rules':showRoomRulesEditor,'room-change-game':showRoomGameEditor,
     'lobby-ready':toggleLobbyReady,
     'lobby-spectator':becomeLobbySpectator,
-    'lobby-table':()=>{try{room=roomService.claimTable(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(error.message);}},
+    'lobby-table':()=>{try{room=roomService.claimTable(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}},
     'stop-local-match':stopLocalMatch,
     'lobby-start':startLobbyCountdown,
-    'lobby-leave':()=>{if(room?.transportMode==='network'&&room.phase==='playing'&&!confirm('Покинуть комнату? Соединения всех участников будут закрыты. Партия сохранится.'))return;leaveLobby();},
+    'lobby-leave':()=>{if(room?.transportMode==='network'&&room.phase==='playing'&&!confirm(globalThis.PlayroomMessages.text("ui.app.15bd355dbb93")))return;leaveLobby();},
     'close-modal':closeModal,
     'room-rules-view':showRoomRules,
     'room-help':showRoomHelp,
@@ -820,8 +715,10 @@
     'pass-device':transferDevice,
     history(){if(historyOpen)commands['history-close']();else openHistory();},
     'history-close':closeHistory,
-    'replay-prev'(){stopReplay();replayIndex=Math.max(0,replayIndex-1);render();},
-    'replay-next'(){const before=currentState();stopReplay();replayIndex=Math.min(session.states.length-1,replayIndex+1);render();playSounds(before,currentState());},
+    'replay-round-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,-1);render();},
+    'replay-round-next'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,1);render();},
+    'replay-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,-1);render();},
+    'replay-next'(){const before=currentState();stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,1);render();playSounds(before,currentState());},
     'replay-play'(){if(replayTimer){stopReplay();return render();}startReplay();},
     room:renderLobby,'room-hotseat-confirm'(){modalBack=null;setRoomOption('transportMode','hotseat',true);},
     pause(){interruptAction();stopSounds();setLocalPaused(!paused);cancelBot();render();},result:showResult,
@@ -871,7 +768,7 @@
   document.addEventListener('click',event=>{
     if(Date.now()<hubDropSuppress&&event.target.closest('.hub-edit-section')){event.preventDefault();return;}
     if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
-    const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead('Игрок на замену')}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
+    const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.261faa27d0a0"))}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
     const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};renderTable();return;}
     const viewControl=event.target.closest('[data-view-key]');
     if(viewControl&&!viewControl.disabled&&screen==='table'){const {viewKey,viewValue}=viewControl.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;renderTable();}return;}
@@ -881,8 +778,8 @@
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
     if(!button||button.disabled)return;
     if(button.dataset.roomGame){updateRoomGame(button.dataset.roomGame);return;}
-    if(button.dataset.roomCycle){try{cycleRoomSeat(button.dataset.roomCycle);}catch(error){toast(error.message);}return;}
-    if(button.dataset.roomBot){try{room=roomService.setLocalSeat(room.id,lobbyParticipantId,button.dataset.roomBot,{kind:'bot',nickname:button.dataset.botName});renderLobby();}catch(error){toast(error.message);}return;}
+    if(button.dataset.roomCycle){try{cycleRoomSeat(button.dataset.roomCycle);}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}
+    if(button.dataset.roomBot){try{room=roomService.setLocalSeat(room.id,lobbyParticipantId,button.dataset.roomBot,{kind:'bot',nickname:button.dataset.botName});renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}
     if(button.dataset.savedFilter){savedFilter=button.dataset.savedFilter;updateSavedPanel();return;}
     if(button.hasAttribute('data-clear-games-confirm')){void clearGames();return;}
     if(button.hasAttribute('data-clear-games')){void askClearGames();return;}
@@ -890,15 +787,15 @@
     if(button.dataset.resumeId){resumeSession(button.dataset.resumeId);return;}
     if(button.dataset.deleteNetworkConfirm){void deleteNetworkSession(button.dataset.deleteNetworkConfirm);return;}
     if(button.dataset.deleteNetwork){askDeleteNetwork(button.dataset.deleteId);return;}
-    if(button.dataset.deleteId){try{askDelete(button.dataset.deleteId);}catch(_){toast('Не удалось прочитать сохранения.');}return;}
+    if(button.dataset.deleteId){try{askDelete(button.dataset.deleteId);}catch(_){toast(globalThis.PlayroomMessages.text("ui.app.6b8c3ec1a675"));}return;}
     if(button.dataset.deleteConfirm){deleteSession(button.dataset.deleteConfirm);return;}
     if(button.dataset.lobbySeat){claimLobbySeat(button.dataset.lobbySeat);return;}
     if(button.dataset.kickParticipant){kickLobbyParticipant(button.dataset.kickParticipant);return;}
     if(button.hasAttribute('data-edit-toggle')){hubEditing=!hubEditing;filter='all';renderHub();return;}
     if(button.dataset.editStep){editHubStep(button.dataset.editId,Number(button.dataset.editStep));return;}
     if(button.dataset.editCategory){const manager=globalThis.PlayroomPackManager,id=button.dataset.editCategory,groups=['favorites','normal','hidden'],next=groups[(groups.indexOf(manager.category(id))+1)%groups.length];moveHubGame(id,next);return;}
-    if(button.dataset.command){if(button.hasAttribute('data-quick-shortcut'))closeModal(true);commands[button.dataset.command]?.();return;}
-    if(button.dataset.favorite){try{globalThis.PlayroomPackManager.toggleFavorite(button.dataset.favorite);renderHub();}catch(error){toast(error.message);}return;}
+    if(button.dataset.command){if(button.hasAttribute('data-quick-shortcut')&&button.dataset.command!=='fullscreen')closeModal(true);commands[button.dataset.command]?.();return;}
+    if(button.dataset.favorite){try{globalThis.PlayroomPackManager.toggleFavorite(button.dataset.favorite);renderHub();}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}
     if(button.dataset.recentStart){setup(button.dataset.recentStart);return;}
     if(button.dataset.start){setup(button.dataset.start);return;}
     if(button.dataset.rules){showRules(button.dataset.rules);return;}
@@ -909,7 +806,7 @@
     input.handleClick(event);
   });
   document.addEventListener('submit',event=>{
-    if(event.target.id==='room-human-form'){event.preventDefault();try{room=event.target.dataset.rename?roomService.renameLocalSeat(room.id,lobbyParticipantId,event.target.dataset.seat,event.target.elements.nickname.value):roomService.setLocalSeat(room.id,lobbyParticipantId,event.target.dataset.seat,{kind:'human',nickname:event.target.elements.nickname.value});renderLobby();}catch(error){toast(error.message);}}
+    if(event.target.id==='room-human-form'){event.preventDefault();try{room=event.target.dataset.rename?roomService.renameLocalSeat(room.id,lobbyParticipantId,event.target.dataset.seat,event.target.elements.nickname.value):roomService.setLocalSeat(room.id,lobbyParticipantId,event.target.dataset.seat,{kind:'human',nickname:event.target.elements.nickname.value});renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
     else if(event.target.id==='profile-form'){event.preventDefault();savePlayerProfile(event.target);}
     else if(event.target.id==='lobby-nickname-form'){event.preventDefault();updateLobbyNickname(event.target);}
     else if(event.target.id==='room-rules-form'){event.preventDefault();updateRoomRules(event.target);}
@@ -918,8 +815,8 @@
   document.addEventListener('change',event=>{
     if(event.target.id==='history-viewer'&&historyOrigin?.kind==='library'){stopReplay();viewer=Number(event.target.value);renderTable();return;}
     if(event.target.closest('#room-rules-form')){syncRuleVisibility(event.target.form);return;}
-    try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(error.message);renderLobby();return;}
-    if(event.target.id==='setting-player-name'){try{playerProfile=profileStore.save(event.target.value);}catch(error){toast(error.message);}}
+    try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(globalThis.PlayroomMessages.error(error));renderLobby();return;}
+    if(event.target.id==='setting-player-name'){try{playerProfile=profileStore.save(event.target.value);}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
     if(['setting-sound','setting-speed','setting-quick-play','setting-auto-pass','setting-volume'].includes(event.target.id)){
       if(event.target.id==='setting-sound'){settings.sound=event.target.checked;soundTicket++;audio.setEnabled(settings.sound);document.querySelectorAll('[data-sound-control]').forEach(el=>el.disabled=!settings.sound);}
       else if(event.target.id==='setting-volume'){settings.volume=Number(event.target.value);audio.setVolume(settings.volume);}
@@ -976,12 +873,12 @@
   }});
   function restoreHostedRoom(roomId){
     const recovered=roomService.snapshot(roomId);
-    if(!playerProfile?.id||recovered.ownerId!==playerProfile.id)throw Error('Другой профиль не может продолжить комнату хоста.');
-    if(room&&room.id!==roomId)throw Error('Сначала завершите текущую комнату.');
+    if(!playerProfile?.id||recovered.ownerId!==playerProfile.id)throw Error(globalThis.PlayroomMessages.text("ui.app.8630b139d1a0"));
+    if(room&&room.id!==roomId)throw Error(globalThis.PlayroomMessages.text("ui.app.d9c4d77947b6"));
     room=recovered;lobbyParticipantId=playerProfile.id;screen='lobby';lobbyCountdown=null;
   }
   function returnHostedRoomToLobby(roomId){
-    if(room?.id!==roomId)throw Error('Комната хоста изменена.');
+    if(room?.id!==roomId)throw Error(globalThis.PlayroomMessages.text("ui.app.e48ad673e8fd"));
     room=roomService.snapshot(roomId);lobbyCountdown=null;screen='lobby';
     closeModal(true);renderLobby();
   }
@@ -991,13 +888,15 @@
     renderHub();
   }
   function showSessions(){screen='hub';hubTab='sessions';closeModal(true);renderHub();}
+  const publicRooms=Object.freeze(Object.fromEntries(Object.getOwnPropertyNames(Object.getPrototypeOf(Multiplayer.RoomService.prototype)).filter(name=>name!=='constructor'&&!name.startsWith('_')&&!['exportRecovery','restoreRecovery','setDurableResume'].includes(name)&&typeof roomService[name]==='function').map(name=>[name,roomService[name].bind(roomService)])));
+  globalThis.PlayroomNetworkLibrary?.configureHostPorts({rooms:roomService});
   globalThis.PlayroomAppBridge=Object.freeze({showSessions,showHub:()=>leaveTable('games'),parkLocalSession:()=>{if(room?.transportMode==='hotseat')leaveLobby();else if(screen==='table')leaveTable('games');},returnHostedRoomToLobby,restoreHostedRoom,rollbackHostedRoom,gameOptions:()=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const ordered=ids.filter((id,i)=>i===0||id!==ids[i-1]);
       void audio.unlock().then(ok=>{if(ok&&settings.sound&&!document.hidden)void audio.sequence(ordered,{pack});});},
     stop:()=>audio.stop()
-  }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,modalHead,showSettings,rememberGame});
+  }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService:publicRooms,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,modalHead,showSettings,rememberGame});
   let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
     resumeSession(sessionId);
@@ -1009,10 +908,10 @@
       if(!catalog)return;
       if(!packs.list().length)for(const item of catalog.packs){
         try{await globalThis.PlayroomRemotePacks.install(item.id,{activate:true});}
-        catch(error){loadWarning='Не удалось установить '+item.id+': '+error.message;}
+        catch(error){loadWarning=globalThis.PlayroomMessages.text("ui.app.f59d35944a49",{p0:String(item.id),p1:String(globalThis.PlayroomMessages.error(error))});}
       }
       if(screen==='hub')renderHub();
     });
   }
-  if(!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
+  if(!globalThis.PlayroomUpgradeUI?.show()&&!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
 })();

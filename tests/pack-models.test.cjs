@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..'),packs=path.dirname(fs.realpathSync(path.
 test('Yatzy rules, category schema and presentation execute without engine or browser globals',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  for(const file of ['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
+  for(const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
     .concat(['domain/categories.js','domain/game.js','presentation/scene.js'].map(file=>path.join(packs,'packs/yatzy',file)))){
     vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   }
@@ -49,7 +49,7 @@ test('Yatzy model preserves held dice, limits three throws and accepts a numeric
 test('Battleship runs headless, keeps setup private and grants only public fire commands',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  const files=['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
+  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
     .concat(['domain/geometry.js','domain/game.js','presentation/scene.js'].map(file=>path.join(packs,'packs/battleship',file)));
   for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   const result=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
@@ -153,13 +153,13 @@ test('each migrated pack definition executes in isolation with explicit determin
  for(const [id,dependency]of Object.entries(entries)){
   const context=vm.createContext({}),base=path.join(packs,'packs',id),manifest=JSON.parse(fs.readFileSync(base+'/manifest.json'));
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  const files=['core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file));
-  if(['deck','durak'].includes(dependency))files.push(path.join(packs,'shared/domain/standard-deck.js'));
+  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file));
+  for(const file of manifest.sharedDomain||[])files.push(path.join(packs,'shared/domain',file+'.js'));
   files.push(...manifest.sourceModules.rules.map(file=>path.join(base,file)));
   for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   const dependencySource=dependency==='durak'?'{Deck:PlayroomPackDomain.standardDeck,Cards:PlayroomDurakCards}':dependency==='deck'?'PlayroomPackDomain.standardDeck':dependency||'undefined';
   const result=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
-   const definition=globalThis.PlayroomPackDefinition||PlayroomPackDefinitionFactory({rollDie:PlayroomRandom.rollDie,random:PlayroomRandom.random,shuffle:PlayroomRandom.shuffle},${dependencySource});
+   const definition=globalThis.PlayroomPackDefinition||PlayroomPackDefinitionFactory({rollDie:PlayroomRandom.rollDie,random:PlayroomRandom.random,shuffle:PlayroomRandom.shuffle,ending:globalThis.PlayroomPackDomain?.endPolicy},${dependencySource});
    const model=new PlayroomModelRuntime.GameModel(definition),preset=PlayroomPackPresentation.metadata.presets[0].id;
    const initial=model.create({playerCount:2,firstPlayer:1,preset,rng:17,openHands:false,options:{deck:54}});
    const actor=initial.turn,action=model.botAction(initial,actor),changed=model.apply(initial,actor,action);
@@ -187,4 +187,48 @@ test('Durak Table allows public responses and masks all hands without private ca
  const changed=model.apply(state,state.turn,{type:'take'});
  assert(changed.events.every(event=>event.type.startsWith('durak.')));
  assert(changed.events.every(event=>!Object.hasOwn(event,'text')));
+});
+
+test('race endings honor the assigned first-player boundary, ties and complete finish order',()=>{
+ const Ending=require(path.join(packs,'shared/domain/end-policy.js')),{GameModel}=require('../core/model-runtime.js');
+ for(const mode of ['winner','round','last']){
+  const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>1,ending:Ending}));
+  let state=JSON.parse(JSON.stringify(model.create({playerCount:4,firstPlayer:2,preset:'classic',rng:17,options:{endMode:mode}})));
+  state.turn=0;state.data.positions.fill(99);const initial=JSON.stringify(state);
+  let next=model.apply(state,0,{type:'roll'}).position;assert.equal(JSON.stringify(state),initial);
+  assert.equal(next.status,mode==='winner'?'finished':'playing');
+  if(mode==='round'){next=model.apply(next,1,{type:'roll'}).position;assert.equal(next.status,'finished');assert.deepEqual(next.winners,[0,1]);assert.deepEqual(model.result(next).places,[1,1,2,2]);}
+  if(mode==='last'){
+   for(const actor of [1,2,3]){assert.equal(next.turn,actor);next=model.apply(next,actor,{type:'roll'}).position;}
+   assert.equal(next.status,'finished');assert.deepEqual(model.result(next).places,[1,2,3,4]);assert.deepEqual(next.winners,[0]);
+  }
+ }
+ const model=new GameModel(require(path.join(packs,'packs/ludo/domain/game.js'))({rollDie:()=>1,ending:Ending},require(path.join(packs,'packs/ludo/domain/board.js'))));
+ let state=JSON.parse(JSON.stringify(model.create({playerCount:4,firstPlayer:2,preset:'teams',rng:17,options:{endMode:'last'}})));
+ state.turn=2;state.data.pawns[0].fill(57);state.data.pawns[2]=[57,57,57,56];state.data.phase='move';state.data.dice=[1];state.data.used=[false];
+ let next=model.apply(state,2,{type:'move',owner:2,pawn:3,dieIndex:0}).position;
+ assert.equal(next.status,'playing');assert.equal(next.turn,3);assert.deepEqual(next.data.ending.groups,[[0,2]]);
+ assert.deepEqual(Ending.places(next.data.ending,[4,0,4,0]),[1,2,1,2]);
+});
+
+test('card-game continuation skips finished hands and terminates for each supported ending',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js'),Deck=require(path.join(packs,'shared/domain/standard-deck.js')),ending=require(path.join(packs,'shared/domain/end-policy.js'));
+ for(const id of ['uno','domino','oldmaid'])for(const endMode of ['winner','last']){
+  const definition=require(path.join(packs,'packs',id,'domain/game.js'))({shuffle:Random.shuffle,random:Random.random,ending},Deck),model=new GameModel(definition);
+  let state=model.create({playerCount:4,firstPlayer:1,preset:id==='uno'?'quick':'classic',rng:17,options:{endMode}}),steps=0;
+  while(state.status==='playing'&&steps++<3000){assert(state.data.hands[state.turn].length,id+' must skip finished hands');state=model.apply(state,state.turn,model.botAction(state,state.turn)).position;}
+  assert.equal(state.status,'finished',id+'/'+endMode);assert(model.result(state).places.every(place=>Number.isInteger(place)&&place>=1));
+  if(endMode==='last'&&id==='oldmaid')assert.equal(state.data.hands.filter(hand=>hand.length).length,1);
+  if(endMode==='last'&&id==='uno'&&state.data.ending.groups.length)assert.equal(state.data.hands.filter(hand=>hand.length).length,1);
+ }
+});
+
+test('a round limit is independent from actions and turns, including the assigned first player',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
+ const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>1,ending:Ending}));
+ let state=model.create({playerCount:3,firstPlayer:2,preset:'classic',rng:17,options:{maxRounds:3}});
+ for(let action=0;action<9;action++){assert.equal(state.turn,(2+action)%3);state=model.apply(state,state.turn,{type:'roll'}).position;}
+ assert.equal(state.status,'finished');assert.equal(state.revision,9);assert.equal(state.timeline.turn,9);assert.equal(state.data.ending.round,3);assert.deepEqual(state.data.ending.starts,[0,3,6]);
+ assert.deepEqual(state.timeline.starts,[0,1,2,3,4,5,6,7,8]);
+ assert.throws(()=>model.validate({...state,timeline:{...state.timeline,round:2,roundStarts:[0,999]}}),error=>error.code==='POSITION_INVALID');
 });

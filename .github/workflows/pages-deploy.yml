@@ -2,6 +2,12 @@ name: Protected Pages publication
 on:
   workflow_call:
     inputs:
+      checks:
+        type: string
+        required: true
+      pack_channel:
+        type: string
+        default: ''
       operation:
         type: string
         required: true
@@ -13,11 +19,18 @@ on:
         default: ''
   workflow_dispatch:
     inputs:
+      checks:
+        description: 'Publication uses already verified assets; explicitly select none'
+        type: string
+        required: true
       operation:
         type: choice
         options: [deploy, preview, rollback, preflight]
         default: deploy
         required: true
+      pack_channel:
+        description: Isolated pack catalog channel for preview only
+        type: string
       release:
         description: Published release tag (for deploy)
         type: string
@@ -47,6 +60,10 @@ jobs:
       CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
       CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
     steps:
+      - name: Require explicit publication check selection
+        env:
+          CHECKS: ${{ inputs.checks }}
+        run: test "$CHECKS" = none || { echo 'Select checks=none; source checks belong to the candidate build.' >&2; exit 2; }
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -65,7 +82,8 @@ jobs:
           OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'preflight' }}
           RELEASE: ${{ inputs.release }}
           DEPLOYMENT: ${{ inputs.deployment }}
-        run: python3 scripts/pages-deploy.py "$OPERATION" --release "$RELEASE" --deployment "$DEPLOYMENT"
+          PACK_CHANNEL: ${{ inputs.pack_channel }}
+        run: python3 scripts/pages-deploy.py "$OPERATION" --release "$RELEASE" --deployment "$DEPLOYMENT" --pack-channel "$PACK_CHANNEL"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

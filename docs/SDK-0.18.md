@@ -1,6 +1,6 @@
-# SDK в разработке 0.18
+# SDK 0.18 · кандидат API 3
 
-`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Новый SDK ещё не опубликован.
+`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия кандидата — 0.18.0-rc.1. Сведения об опубликованных файлах и проверках находятся в отчёте RC.
 
 ## Независимые модули
 
@@ -73,3 +73,25 @@ SceneModel.players содержит `player` (или id), metrics `{id,kind,valu
 PlayroomGameComponents / core/game-components.js — закреплённый shared/components/game-components.js: AssetResolver, artboard main/compact, cardFace, dieArt, checkerArt, dominoFace, boardCells, shipSilhouette, countBadge/scoreBadge, scoreTable и bubbleClass. Это Web rendering; правила его не импортируют. Resolver получает локальные catalog/skins/palette/renderers; отсутствующий вариант возвращает default и missing=true. Значения/ID/hidden/actions не зависят от оформления. Особое лицо карты передаёт trusted main/compact/width/height/variant через то же семейство; HTML не принимается из сетевых команд.
 
 core/shared-assets.json закрепляет JS/CSS, каталог и звуки. build.py синхронизирует явно выбранный companion source и проверяет digest автономно. Редактировать canonical shared, затем пересобрать host. Исходники компонентов включены в shared-assets ZIP; SVG-образцы не являются второй реализацией.
+
+## Границы платформы
+
+`application/rooms`, `client-connection-service`, `host-session-service`, `history-sync-service`, `recovery-coordinator`, `pwa-update-coordinator`, `upgrade-service` принимают порты. Они не создают DOM/IndexedDB/RTC или ambient RNG. `platform/web/identity-store`, `session-store`, `dom`, `pack-loader` — Web реализации. HTML-представление и обработка жестов отделены от GameModel и Session; нативный клиент может заменить их, не перенося Web UI. Trusted `pack-loader` исполняет установленный JS и **не является sandbox**.
+
+## Действие, ход, раунд
+
+Transition содержит `turnEnded:boolean` и при объявленном цикле `roundEnded:boolean`. Каждый пак задаёт границы по своим правилам; сравнение actor/turn не является общей политикой SDK. GameModel хранит JSON `timeline:{turn,starts}`; при `definition.rounds:true` также `round,roundStarts`. `revision` — номер действия. Ни звук, ни анимация, ни hold/selection сами по себе не завершают ход.
+
+Presentation может объявлять `scene.round:{number,limit:null|integer,starts:[revision]}` для своих счётчиков (например, Ятзи). Для cycle-пака это представление берётся из публичного timeline. Числа/границы — публичные семантические данные; локализованные подписи создаются клиентом. Пак с меняющейся очередью может не объявлять раунды (UNO).
+
+Свои окончания, ограничение раундов и пояснения объявляются в manifest `settings` (`key`, `default`, `options`, `help`); reducer реализует их и возвращает окончательный Result. Если есть только один вариант окончания, setting не объявляется. Приложение не содержит switch по game id для конца партии. Общая pure библиотека `shared/domain/end-policy.js` предоставляет применимую к гонкам фиксированную границу круга и порядок финиша; карточные паки используют только подходящие операции.
+
+Каждый preset содержит MessageRef description. JSON каталог пака содержит основные правила и описание режимов; справка UI затем добавляет настройки с индивидуальными пояснениями.
+
+## Переход и публикация
+
+engineApi 3 и network protocol 2 обязательны. API 1/2 не исполняются в новом runtime. Старые данные не переписываются; подтверждение полного обновления отдельно от загрузки, исходные данные можно выгрузить. Опубликованные старые файлы и теги неизменны.
+
+RC: канал `0.18-rc.1` в R2 (`channels/0.18-rc.1/catalog/...`) и явный `operation=preview, pack_channel=0.18-rc.1`. Общие immutable `files/id/version/hash` адреса сохраняются. Preview не переключает production pointer или canonical deployment. Для публикации проверенных artifacts требуется явное `checks=none`; build использует выбранные блоки. Обязательные SHA/проверки доступа и smoke нельзя отключить.
+
+Порядок физических мест не меняется при reverse UNO: `scene.turnOrder` описывает очередь, направление показывается отдельным индикатором. Перестановка карточек при изменении направления сбивала бы жесты и привычные позиции игроков.

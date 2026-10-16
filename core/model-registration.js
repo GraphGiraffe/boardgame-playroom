@@ -29,10 +29,10 @@
     const metadata = presentation.metadata;
     const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
-      data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
+      timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
     function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
-    function presentScene(projection,players){const scene=presentation.scene(projection);return {...scene,players:(scene.players||[]).map(person=>({...person,metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
+    function presentScene(projection,players){const scene=presentation.scene(projection);return {...scene,...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
     function presentEvent(value,players) {
       const description=presentation.event(value),params={...description.message.params};
       if(value.actor!==null)params.player=players[value.actor].name;
@@ -49,13 +49,13 @@
       id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
-      presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label)})),
+      presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
       rules:metadata.rules.map(text),
       create(state, options) {
         const initial = model.start({playerCount:state.players.length, preset:state.preset,
           firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
         const created=initial.position;
-        state.turn = created.turn; state.data = engine.clone(created.data);if(created.rng!==undefined)state.rng=created.rng;
+        state.timeline=engine.clone(created.timeline);state.turn = created.turn; state.data = engine.clone(created.data);if(created.rng!==undefined)state.rng=created.rng;
         const scores=model.score(created);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
         if(created.status==='finished')engine.complete(state,created.winners.length>1?created.winners:created.winners[0]??null,scores?0:1);
         state.events=[...Events.append(state.events,initial.events,state.players.length,state.move)];
@@ -77,7 +77,7 @@
         const legal = model.availableActions(position(state), actor).find(candidate =>
           Object.keys(candidate).every(key => JSON.stringify(candidate[key]) === JSON.stringify(action[key])));
         const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal);
-        state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;
+        state.timeline=engine.clone(changed.position.timeline);state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;
         const scores=model.score(changed.position);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
         if(changed.position.status==='finished'){
           const winners=changed.position.winners;

@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 (function (root) {
   'use strict';
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -28,7 +29,7 @@
   }
   class Session {
     constructor(engine, game, options = {}, runtime = {}) {
-      if (!isRecord(options)) throw new Error('Некорректные параметры сессии');
+      if (!isRecord(options)) throw new Error(globalThis.PlayroomMessages.text("ui.session.d42d73265b68"));
       const packVersion = options.packVersion || engine.get(game).version || '0.1.0';
       const ownedOptions = freeze(clone({...options, packVersion})), now=clockPort(runtime), createdAt=readTime(now);
       records.set(this, {engine, game, options: ownedOptions, now, createdAt, updatedAt: createdAt,
@@ -48,7 +49,7 @@
       if (!Number.isInteger(index) || index < 0 || index >= this.current.players.length || !isRecord(metadata) ||
           !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot'].includes(key)) ||
           (metadata.name !== undefined && (typeof metadata.name !== 'string' || !metadata.name.trim() || metadata.name.length > 40)) ||
-          (metadata.bot !== undefined && typeof metadata.bot !== 'boolean')) throw Error('Некорректные данные участника');
+          (metadata.bot !== undefined && typeof metadata.bot !== 'boolean')) throw Error(globalThis.PlayroomMessages.text("ui.session.d1e2fa296dc9"));
       const record = records.get(this);
       record.playerMetadata ||= {};
       record.playerMetadata[index] = {...record.playerMetadata[index], ...clone(metadata)};
@@ -96,7 +97,7 @@
     }
     act(actor, action) { return this.commitPrepared(this.prepare(actor, action)); }
     view(player, index = this.states.length - 1) {
-      if (!Number.isInteger(index)) throw new Error('Номер снимка должен быть целым числом');
+      if (!Number.isInteger(index)) throw new Error(globalThis.PlayroomMessages.text("ui.session.ae7a7f8eb000"));
       const state = this.states[Math.max(0, Math.min(index, this.states.length - 1))];
       return this.engine.project(state, player);
     }
@@ -114,11 +115,11 @@
         game: this.game, packVersion:this.packVersion, options, createdAt: this.createdAt, updatedAt: this.updatedAt,
         states: codec.states, journal, nodes: codec.nodes});
     }
-    static packVersionOf(saved) { return saved?.packVersion || (saved?.version === 1 && (saved.options?.packVersion || saved.states?.[0]?.packVersion)) || '0.1.0'; }
+    static packVersionOf(saved) { return saved?.packVersion; }
     static restore(engine, saved, runtime = {}) {
       if (!isRecord(saved) || saved.format !== 'playroom-session' || ![1, 2].includes(saved.version) ||
           typeof saved.game !== 'string' || !Array.isArray(saved.states) || !saved.states.length) {
-        throw new Error('Сохранение имеет неподдерживаемый формат');
+        throw new Error(globalThis.PlayroomMessages.text("ui.session.a423ffa2da9e"));
       }
       let data;
       try {
@@ -130,6 +131,7 @@
             !Number.isSafeInteger(data.createdAt) || data.createdAt < 0 ||
             !Number.isSafeInteger(data.updatedAt) || data.updatedAt < data.createdAt) throw Error('Invalid envelope');
         const packVersion = Session.packVersionOf(data);
+        if(typeof packVersion!=='string'||!packVersion)throw Error('PACK_VERSION_REQUIRED');
         engine.get(data.game, packVersion);
         if (options.packVersion !== undefined && options.packVersion !== packVersion) throw Error('Inconsistent pack version');
         options.packVersion = packVersion;data.packVersion = packVersion;
@@ -156,8 +158,8 @@
             Boolean(options.openHands) !== initial.openHands ||
             (options.players && options.players.length !== initial.players.length)) throw Error('Inconsistent options');
       } catch (error) {
-        if (error.code === 'PACK_VERSION_MISSING') { error.message = 'Сохранение требует установленный пакет: ' + error.message; throw error; }
-        throw new Error('Сохранение повреждено или несовместимо с текущими правилами');
+        if (error.code === 'PACK_VERSION_MISSING') { error.message = globalThis.PlayroomMessages.text("ui.session.071e658556c9",{p0:String(error.message)}); throw error; }
+        throw new Error(globalThis.PlayroomMessages.text("ui.session.2bd4c477be41"));
       }
       const session = Object.create(Session.prototype);
       // Explicit fields prevent imported keys from replacing methods/getters or

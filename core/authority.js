@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 (function(root,factory){
   const P=root.PlayroomProtocol||(typeof require==='function'?require('./protocol.js'):null);
   const Processor=root.PlayroomCommandProcessor||(typeof require==='function'?require('./command-processor.js'):null);
@@ -10,15 +11,9 @@
   const {clone,freeze,canonical}=P;
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
-  const text={REACTION_IGNORED:'Реакция уже обработана или пока недоступна.',REACTION_WAIT:'Дайте игроку завершить объявление.',PAUSED:'Партия на паузе.',BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Это подключение не позволяет выполнить действие.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.',RECOVERY_REQUIRED:'Ход записан в хранилище, но интерфейс исполнителя не удалось обновить. Перезагрузите страницу хоста и восстановите комнату из сетевого сохранения.'};
+  const text={REACTION_IGNORED:globalThis.PlayroomMessages.text("ui.authority.5f23a122ff2d"),REACTION_WAIT:globalThis.PlayroomMessages.text("ui.authority.3872543a6282"),PAUSED:globalThis.PlayroomMessages.text("ui.authority.85620a4ad1ea"),BAD_COMMAND:globalThis.PlayroomMessages.text("ui.authority.acdb0b2cb886"),WRONG_SESSION:globalThis.PlayroomMessages.text("ui.authority.a0c9ab47df94"),WRONG_EPOCH:globalThis.PlayroomMessages.text("ui.authority.059dd3ee0afc"),READ_ONLY:globalThis.PlayroomMessages.text("ui.authority.c1945508163a"),STALE:globalThis.PlayroomMessages.text("ui.authority.3071d856a05b"),ILLEGAL:globalThis.PlayroomMessages.text("ui.authority.190d437d1355"),ID_CONFLICT:globalThis.PlayroomMessages.text("ui.authority.a19dbd4bae20"),CLOSED:globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"),BUSY:globalThis.PlayroomMessages.text("ui.authority.08135f979c63"),RECEIPT_LIMIT:globalThis.PlayroomMessages.text("ui.authority.a7cd175031c4"),STORAGE_ERROR:globalThis.PlayroomMessages.text("ui.authority.852785addf93"),RECOVERY_REQUIRED:globalThis.PlayroomMessages.text("ui.authority.06ab5f697dcc")};
   function transfers(before,after,events=after.events){
-    if(!before.data.hands||!after.data.hands)return [];
-    const explicit=events.filter(e=>e.id>(before.events.at(-1)?.id||0)&&e.transfer).map(e=>({...e.transfer,...(e.privateTo!=null?{privateTo:e.privateTo}:{})}));
-    const owners=new Map(),table=new Set(),groups=new Map();
-    before.data.hands.forEach((h,p)=>h.forEach(c=>owners.set(c.id,p)));
-    const visit=v=>{if(v&&typeof v==='object'){if(v.id)table.add(v.id);else Object.values(v).forEach(visit);}};visit(before.data.table);
-    after.data.hands.forEach((h,p)=>h.forEach(c=>{const prev=owners.get(c.id);if(prev===p)return;const from=prev!==undefined?'hand':table.has(c.id)?'table':'stock',key=`${p}:${from}:${prev??''}`;if(!groups.has(key))groups.set(key,{player:p,count:0,from,...(prev!==undefined?{fromPlayer:prev}:{})});groups.get(key).count++;}));
-    return [...explicit,...[...groups.values()].filter(c=>!explicit.some(e=>!e.to&&e.player===c.player&&e.from===c.from&&e.fromPlayer===c.fromPlayer))];
+    return events.filter(event=>event.id>(before.events.at(-1)?.id||0)&&event.transfer).map(event=>({...event.transfer,...(event.privateTo!=null?{privateTo:event.privateTo}:{})}));
   }
   class SessionAuthority {
     constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0}={}){
@@ -94,7 +89,7 @@
         actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
       if(safe.modelProjection)safe.scene=s.engine.get(s.game,s.packVersion).scene(safe.modelProjection,safe.players);
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return freeze(clone({protocolVersion:1,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      return freeze(clone({protocolVersion:2,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -222,15 +217,15 @@
     _idle(){const r=records.get(this);r.busy=false;for(const resolve of r.idleWaiters.splice(0))resolve();}
     stopForLobby(){
       const r=records.get(this);if(r.stopPromise)return r.stopPromise;
-      if(r.disposed)return Promise.reject(Error('Подключение закрыто.'));
+      if(r.disposed)return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c")));
       r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
       r.stopPromise=(async()=>{
         try{
           if(r.busy)await new Promise(resolve=>r.idleWaiters.push(resolve));
-          if(r.disposed)throw Error('Подключение закрыто.');
+          if(r.disposed)throw Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"));
           const command=P.command(this._snapshot(-1),{type:'session-pause',paused:true,expectedControlRevision:r.controlRevision},uid());
           const receipt=await this._pause({viewer:-1,host:true},command,canonical(command),`host:${command.commandId}`,code=>({ok:false,code,message:text[code]}));
-          if(!receipt.ok)throw Error(receipt.message||'Не удалось сохранить партию.');
+          if(!receipt.ok)throw Error(receipt.message||globalThis.PlayroomMessages.text("ui.authority.05bb0383c4c2"));
           return receipt;
         }catch(error){r.stopRequested=false;if(bots)this.scheduleBot(bots);throw error;}
         finally{r.stopPromise=null;}

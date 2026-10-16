@@ -2,45 +2,47 @@
 
 [Утверждённый план](AUDIT-0.18.md) · [границы контрактов](REFACTOR-0.18-CONTRACTS.md).
 
-Состояние на 2026-10-15: выполнены пятнадцать разработческих срезов; таблица описывает сохранность функций, не объявляет новую версию проверенной. «Статика» означает наличие реализации/сценария, а не успешный запуск на новом коде. Перед переносом сценария уточняется его fixture и критерий. Релизы/деплой 0.17.6 / 0.6.5 остаются базой сравнения.
+Состояние на 2026-10-16: код кандидата 0.18.0-rc.1 / 0.7.0-rc.1 реализован. Локальная проверка завершена с точечными повторами; [отчёт RC](RC-0.18.0-rc.1.md). Публикация ещё не подтверждена. Production остаётся 0.17.6 / 0.6.5. Ни наличие кода, ни ранее успешный срез не заменяют итоговый прогон этой пары.
+
+Старые разделы ниже сохраняют хронологию; их пометки «впереди» относятся к соответствующему срезу. Текущие владельцы и границы описаны в SDK и разделе «Заключительный срез».
 
 | ID | Функция / владелец сейчас | Проверка / свидетельство для переноса | Состояние |
 | --- | --- | --- | --- |
-| F01 | Hub: категории, порядок, скрытие, избранное — app/app.js, pack-manager | rc2-hub-browser, pack-update-notice-browser | Статика; перенос впереди |
-| F02 | Фильтры/последняя игра/версия — app/app.js | rc2-hub-browser, ui | Статика |
-| F03 | Установка, версии, quarantine — core/packs.js, pack-manager | view-contract, packs-reconcile | Статика |
-| F04 | Каталог/скачивание/SHA — remote-catalog, pack route | packs-reconcile, pwa | Статика |
-| F05 | Удаление одного/старых/всех паков и зависимых партий | rc2-games, ui; отказ сетевого архива отдельно | Статика; уточнить failure fixture |
-| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Session/history/codec и portable library с индексом перенесены; сохранность удаления/квоты проверена |
-| F07 | Профиль/имя/роль/место/бот — multiplayer | player-profile, multiplayer-lobby | Статика |
-| F08 | Команды/первый игрок/готовность/отсчёт/правила | multiplayer-lobby, ludo-team-markers-browser, lobby-layout-browser | Статика |
-| F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Статика |
-| F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Перенесён; domain/engine/session passed |
-| F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Подключён; domain/rc2-games passed |
-| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Независимая модель и все 12 паков перенесены; окончательный SDK cutover впереди |
-| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | History и общий CommandProcessor перенесены; выбранные authority/durable/table проверки прошли |
-| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Публичные команды всех 12 моделей / приватные карточные choices; UNO реакции независимы от очереди |
-| F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Статика |
-| F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Статика |
-| F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Статика |
-| F18 | WebRTC/presence/ошибки/восстановление | webrtc-transport, presence-transport, network-reconnect-browser | Статика |
-| F19 | Хостовый журнал/lock/reload | host-recovery, network-session-store-browser, network-host-recovery-browser | Delta journal, pure recovery и Web adapter перенесены; выбранные проверки прошли |
-| F20 | Клиентский архив/backfill/read marker | network-client-history, network-client-history-browser | Статика |
-| F21 | Replay/scrub/return/новый участок | history-library-layout-browser, network-client-history-browser | Статика |
-| F22 | Source/target/адресат/выбор карты | drag, player-target, uno-drag | Статика |
-| F23 | Ship drag/move/rotate/outside/цельный контур | rc2-games-browser + rc2-games | Статика; ручной touch повторить при переносе |
-| F24 | Устойчивый scroll/pointer/focus | hand-navigation, hand-overflow-browser, mobile-navigation | Статика; сетевое обновление во время жеста уточнить |
-| F25 | Motion/flip/roll/очередь/minimum wait | game-flow, motion-effects, motion-settings, network-feedback-browser | Статика |
-| F26 | Баблы/адресат/success/error — game-feedback | game-feedback, uno-feedback, network-feedback-browser | Статика |
-| F27 | UNO окна/пауза/сеть/повтор/штраф | uno-reactions, uno-social, authority | Статика |
-| F28 | Звук/темп/reduced-motion/мой ход | game-flow, game-feedback, motion-settings | Статика |
-| F29 | Карточки/счётчики/знаки/команды | game-screen, first-medallion-browser, ludo-team-markers-browser | Статика |
-| F30 | Результаты/показатели/места/аватар | result-team-medallions-browser, game-screen, rc2-games | Статика |
-| F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Статика; общий каталог нужен |
-| F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Статика; живая старая PWA — приёмка выпуска |
-| F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Модель, Web и локальный AssetResolver подключены; материалы общих семейств проверены, полный аудит палитр впереди |
-| F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes + Крестики-нолики: metadata/rules/actions/events/aria | Модель и первый пак; остальные тексты впереди |
-| F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Сборки HTML/PWA/паков, SHA и browser boot passed |
+| F01 | Hub: категории, порядок, скрытие, избранное — app/app.js, pack-manager | rc2-hub-browser, pack-update-notice-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F02 | Фильтры/последняя игра/версия — app/app.js | rc2-hub-browser, ui | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F03 | Установка, версии, quarantine — core/packs.js, pack-manager | view-contract, packs-reconcile | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F04 | Каталог/скачивание/SHA — remote-catalog, pack route | packs-reconcile, pwa | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F05 | Удаление одного/старых/всех паков и зависимых партий | rc2-games, ui; отказ сетевого архива отдельно | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F06 | Локальные сохранения/полная очистка/паки остаются | session, history-library-layout-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F07 | Профиль/имя/роль/место/бот — multiplayer | player-profile, multiplayer-lobby | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F08 | Команды/первый игрок/готовность/отсчёт/правила | multiplayer-lobby, ludo-team-markers-browser, lobby-layout-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F09 | Hotseat/закрытая рука/передача/пауза/продолжение | ui, quick-play, unified-game-screen-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F10 | Детерминизм seed/shuffle/dice — engine | engine + domain-foundation | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F11 | Колода 36/52/54 и исключение Акулины — 4 rules.js | domain-foundation + rc2-games | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F12 | Legal/apply/validate/projection — engine + 12 паков | engine, rc2-games, view-contract, core/model | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F13 | Prepare/durable commit/ACK/retry — authority/session/store | authority, durable-authority, network-store-integrity, network/table | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F14 | Скрытые данные игрока/зрителя/стола | core/model, rc2-games, authority | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F15 | Room: замена ботом/возврат/следующая партия | network-resume, network-next-match, multiplayer-lobby | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F16 | Текст/QR/камера/share — pairing/PWA/scanner | pairing, qr-pairing-browser, pairing-methods-browser, pwa-share | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F17 | Звуковое подключение/ручной адрес/отмена | acoustic-pairing, acoustic-webrtc-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F18 | WebRTC/presence/ошибки/восстановление | webrtc-transport, presence-transport, network-reconnect-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F19 | Хостовый журнал/lock/reload | host-recovery, network-session-store-browser, network-host-recovery-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F20 | Клиентский архив/backfill/read marker | network-client-history, network-client-history-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F21 | Replay/scrub/return/новый участок | history-library-layout-browser, network-client-history-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F22 | Source/target/адресат/выбор карты | drag, player-target, uno-drag | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F23 | Ship drag/move/rotate/outside/цельный контур | rc2-games-browser + rc2-games | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F24 | Устойчивый scroll/pointer/focus | hand-navigation, hand-overflow-browser, mobile-navigation | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F25 | Motion/flip/roll/очередь/minimum wait | game-flow, motion-effects, motion-settings, network-feedback-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F26 | Баблы/адресат/success/error — game-feedback | game-feedback, uno-feedback, network-feedback-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F27 | UNO окна/пауза/сеть/повтор/штраф | uno-reactions, uno-social, authority | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F28 | Звук/темп/reduced-motion/мой ход | game-flow, game-feedback, motion-settings | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F29 | Карточки/счётчики/знаки/команды | game-screen, first-medallion-browser, ludo-team-markers-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F30 | Результаты/показатели/места/аватар | result-team-medallions-browser, game-screen, rc2-games | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F31 | Все семьи ассетов/масштаб/веер/стопка | artwork, first-medallion-browser, result-team-medallions-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F32 | PWA/offline/update/несколько окон | pwa, pwa-share, rc2-hub-browser | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F33 | Themes/skins/editor/toolbar | appearance model + Web adapter + native editor/picker; ui/appearance | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F34 | Locales/key/params/plural/aria/fallback | Translator + ru common/themes + Крестики-нолики: metadata/rules/actions/events/aria | Реализовано; покрыто совместным прогоном и точечными повторами |
+| F35 | Автономный HTML/PWA/пак/архив/SHA | build.py обоих репозиториев, standalone check, pwa | Реализовано; покрыто совместным прогоном и точечными повторами |
 
 ## Состояние паков
 
@@ -259,3 +261,26 @@ AssetResolver выбирает family/variant локально, сообщает
 Выбранные проверки: appearance/domain-foundation/game-screen/views — 44/44 до дополнительных cases; итог appearance/domain-foundation — 18/18. Game-screen — 11/11; unified-game-screen-browser — 5/5. Compact-hand/rc2-games-browser — 38/38; Ludo team markers — 1/1; после исправления compact recipe и подписей цветов итог compact-hand/appearance — 38/38. Artwork — 2/2 и checkers-drag/domino-layout — 22/22 при первоначальном извлечении без последующего изменения соответствующей геометрии. Это отдельные свидетельства затронутых контрактов, не финальная приёмка RC.
 
 Остаются compiler/loader cutover, services комнат/pairing/recovery, общие input/modal/navigation и полный каталог локализации. Выпуск 0.18-rc.1 и отдельный preview не запускались; стабильная пара не изменялась.
+
+## Заключительный срез · 2026-10-16
+
+- Единый compiler паков: `shared/pack_compiler.py` и закреплённая SHA копия `tooling/`. Оба builder создают одинаковый bundle; пример автора тоже engineApi 3.
+- RoomService, ClientConnectionService, RecoveryCoordinator, HostSessionService и HistorySyncService находятся в `application/`; Web identity/IndexedDB/WebLocks/WebRTC, pairing/hub presenters остаются адаптерами.
+- Общий DOM ListController/ModalController сохраняет узлы, прокрутку и focus. Изменение партии инвалидирует выбор/drag, но сохраняет активную прокрутку.
+- GameModel/Session/authority передают только явные проекции и публичные команды. Удалены эвристики скрытия рук и вычисления переноса карт по изменению скрытых массивов. Сеть использует protocol 2 и проверяет hello до команд.
+- Круглые компоненты, клеточное размещение, веер/стопка и треугольник финиша используют канонические источники. Все семьи компонентов имеют material/skin hooks. Русский UI/aria/error вынесен в JSON, форматирование — через Translator.
+- При скрытом поле личного сетевого игрока остаются кубики и выбранные приватные цели; расстановка Морского боя не допускает скрытие поля. Без подключённого Стола, при disconnect, на локальном/публичном/архивном экране функции нет. История остаётся в настройках; пауза — также наверху.
+- API 1/2 больше не загружается. UpgradeService показывает полное обновление один раз; можно выгрузить исходные localStorage и IndexedDB архивы, без удаления данных. Смешанные сетевые протоколы отклоняются.
+
+### Дополнения владельца к правилам и истории
+
+- У каждого пака своя применимость завершения: Лудо/Змеи — до победителя, последний раунд, до последнего; UNO/Домино/Акулина/Дурак — два подходящих варианта. В остальных играх действует естественное завершение. При единственном варианте настройка отсутствует.
+- Ограничение раундов: Лудо/Змеи (без предела либо 3/5/10/20/50), Ятзи (3/5/10/15). Пак может объявить своё условие и допустимые значения через settings; общий UI не интерпретирует условие вместо правил.
+- Отдельны action revision, ход (`timeline.turn`) и объявленный паком раунд. Первая карта Пексесо, переброс/фиксация Ятзи, расстановка флота и добор без окончания хода не увеличивают номер хода. В Дураке ход завершается взятием/отбоем; раунд полного круга не объявляется. UNO не объявляет раунды из-за меняющегося направления и пропусков.
+- Раунды отображаются для Лудо, Змей, Ятзи, Домино, Акулины и Рыбы. Номер и границы определяются паком и сохраняются/восстанавливаются вместе с партией.
+- Слайдер истории остаётся по действиям; `<` / `>` переходят по ходам, `≪` / `≫` — по раундам. В утолщённой линии светлые точки ходов и черточки раундов; при совпадении границ приоритет у черточки. Граница догрузки независима.
+- Мои партии и карточки возврата показывают ход/раунд; остановившийся игрок подчёркнут. У каждого правила есть пояснение рядом с настройкой. Общая справка: основные правила → режимы → настраиваемые правила.
+
+### Проверка и выпуск
+
+Выбран единственный заключительный состав `core,input,games,ui,storage,network,pairing`: все блоки затронуты заменой API/протокола и UI; это явный выбор для этой сквозной миграции, а не новый default выпуска. Полный прогон в packs повторно не запускается. Контрольные суммы двух сборок проверяются отдельно. RC получает отдельный catalog channel и Pages preview; production pointer и canonical deployment должны остаться прежними.

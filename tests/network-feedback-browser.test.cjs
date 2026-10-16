@@ -12,7 +12,7 @@ async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
   for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
@@ -71,7 +71,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
     const finish=structuredClone(projected);
-    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.players[1].score=148;finish.state.move=finish.revision;
+    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.winners=[1];finish.state.players[1].score=148;finish.state.scene.players.find(player=>(player.player??player.id)===1).metrics.find(metric=>metric.kind==='points').value=148;finish.state.move=finish.revision;
     finish.events.push({id:3,kind:'finish',player:1,text:'Джон побеждает'});finish.state.events=finish.events;
     finish.cues=[{id:'defeat',eventId:3}];
     await page.evaluate(next=>qaClient.emit(next),finish);

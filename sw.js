@@ -1,18 +1,21 @@
 'use strict';
-// API 2 shell cache: replace UI assets without deleting authoritative
-// IndexedDB journals or client history. Published RC9 remains immutable.
-const CACHE='playroom-pwa-v0.17.6';
+// API 3 shell cache: replace UI assets without deleting authoritative
+// IndexedDB journals or client history. Older published releases remain immutable.
+const CACHE='playroom-pwa-v0.18.0-rc.1';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
+  './app/hub-presenter.js',
+  './application/upgrade-service.js','./app/upgrade-ui.js',
+  './core/messages.js',
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './app/appearance.css','./app/appearance-models.js','./app/appearance-web.js','./app/appearance-ui.js',
   './core/ui.css','./core/input.css','./core/motion.css','./core/tooltips.css',
   './core/model-values.js','./core/events.js','./core/model-runtime.js','./core/model-registration.js',
   './core/history.js','./core/session-codec.js',
-  './core/random.js','./core/engine.js','./presentation/scheduler.js','./core/game-flow.js','./core/hand-overflow.js','./core/audio.js','./core/session.js','./core/protocol.js','./application/session-access.js','./core/command-processor.js','./core/authority.js','./core/component-assets.js','./core/game-components.js','./core/game-components.css','./core/standard-sounds.js','./core/ui.js','./core/player-target.js','./core/tag-registry.js','./core/tags.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
-  './app/version.js','./app/views.js','./app/remote-catalog.js','./app/pack-manager.js','./application/library.js','./app/library.js','./app/multiplayer.js','./core/journal.js','./application/host-recovery.js','./platform/web/session-store.js','./app/network-client-history.js','./app/pairing.js','./app/acoustic-pairing.js' ,'./app/vendor/ggwave.js','./app/pwa.js','./app/qr.js','./app/vendor/qrcode.js','./app/vendor/LICENSE.qrcode','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./app/session-client.js','./application/history-controller.js','./application/game-screen-controller.js','./app/game-screen.js','./app/lobby-view.js','./app/game-feedback.js','./app/shared-views.js','./app/network-ui.js','./app/app.js',
-  './app/transports/webrtc.js','./app/transports/local.js'
+  './core/random.js','./core/engine.js','./presentation/scheduler.js','./core/game-flow.js','./core/hand-overflow.js','./core/audio.js','./core/session.js','./core/protocol.js','./application/session-access.js','./core/command-processor.js','./core/authority.js','./core/component-assets.js','./core/game-components.js','./core/game-components.css','./core/standard-sounds.js','./core/token-layout.js','./core/ui.js','./core/player-target.js','./core/tag-registry.js','./core/tags.js','./platform/web/pack-loader.js','./core/packs.js','./core/input.js','./core/motion.js','./core/tooltips.js',
+  './app/version.js','./app/views.js','./app/remote-catalog.js','./app/pack-manager.js','./application/library.js','./app/library.js','./application/rooms.js','./platform/web/identity-store.js','./app/multiplayer.js','./core/journal.js','./application/host-recovery.js','./platform/web/session-store.js','./app/network-client-history.js','./app/pairing.js','./app/acoustic-pairing.js' ,'./app/vendor/ggwave.js','./application/pwa-update-coordinator.js','./app/pwa.js','./app/qr.js','./app/vendor/qrcode.js','./app/vendor/LICENSE.qrcode','./app/vendor/jsqr.js','./app/vendor/LICENSE.jsqr','./app/qr-scanner.js','./application/client-connection-service.js','./app/session-client.js','./application/history-controller.js','./application/game-screen-controller.js','./platform/web/dom.js','./app/game-screen.js','./app/lobby-view.js','./app/game-feedback.js','./app/shared-views.js','./application/history-sync-service.js','./application/host-session-service.js','./app/pairing-presenter.js','./app/network-ui.js','./app/app.js',
+  './application/recovery-coordinator.js','./app/transports/webrtc.js','./app/transports/local.js'
 ];
 
 function pairingTokenFromUrl(href){

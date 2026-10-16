@@ -5,8 +5,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "42856c7b0916d154db771226ee81095fff7344dd31371503552f7c08f192c9e4",
-      "renderedSha256": "42856c7b0916d154db771226ee81095fff7344dd31371503552f7c08f192c9e4"
+      "sha256": "a1338dd8e9aff40f37c6a49942c9083e7836229591b590fcfc20e3c6940f206c",
+      "renderedSha256": "a1338dd8e9aff40f37c6a49942c9083e7836229591b590fcfc20e3c6940f206c"
     },
     {
       "source": "shared/components/game-components.css",
@@ -29,6 +29,20 @@
       "format": "text",
       "sha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a",
       "renderedSha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a"
+    },
+    {
+      "source": "shared/locales/ru/components.json",
+      "target": "locales/ru/ui-game-components.json",
+      "format": "text",
+      "sha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab",
+      "renderedSha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab"
+    },
+    {
+      "source": "shared/domain/token-layout.js",
+      "target": "core/token-layout.js",
+      "format": "text",
+      "sha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d",
+      "renderedSha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d"
     }
   ]
 }

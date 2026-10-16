@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 (function(root,factory){
   'use strict';
   const api=factory(root);
@@ -30,19 +31,19 @@
         const packet=acoustic()?.unpack(token.slice(COMPACT_PREFIX.length));
         if(!packet||!['offer','answer'].includes(packet.kind))throw Error('Invalid compact token');
         return {v:3,kind:packet.kind,signal:packet.signal,compact:true,ip:packet.ip,port:packet.port};
-      }catch(_){throw Error('Некорректное компактное приглашение ХОД.');}
+      }catch(_){throw Error(globalThis.PlayroomMessages.text("ui.pairing.85e054c0e772"));}
     }
-    if(typeof token!=='string'||!token.startsWith(TOKEN_PREFIX))throw Error('Некорректное приглашение ХОД.');
+    if(typeof token!=='string'||!token.startsWith(TOKEN_PREFIX))throw Error(globalThis.PlayroomMessages.text("ui.pairing.574aa061dfff"));
     let value;try{
       const bytes=base64ToBytes(token.slice(TOKEN_PREFIX.length));
       const json=decoder?decoder.decode(bytes):Buffer.from(bytes).toString('utf8');
       value=JSON.parse(json);
-    }catch(_){throw Error('Некорректное приглашение ХОД.');}
-    if(!value||value.v!==2||!['offer','answer'].includes(value.kind)||typeof value.signal!=='string')throw Error('Неподдерживаемое приглашение ХОД.');
+    }catch(_){throw Error(globalThis.PlayroomMessages.text("ui.pairing.574aa061dfff"));}
+    if(!value||value.v!==2||!['offer','answer'].includes(value.kind)||typeof value.signal!=='string')throw Error(globalThis.PlayroomMessages.text("ui.pairing.24c81854279e"));
     return value;
   }
   function fromSignal(kind,signal,{address,port=null,legacy=false}={}){
-    if(!['offer','answer'].includes(kind)||typeof signal!=='string')throw Error('Некорректные данные подключения.');
+    if(!['offer','answer'].includes(kind)||typeof signal!=='string')throw Error(globalThis.PlayroomMessages.text("ui.pairing.ca713836345d"));
     // Audio, QR and text use exactly the same compressed ICE/DTLS bytes.
     // Legacy PR2 remains a fallback for non-IPv4, mDNS or unsupported SDP.
     if(!legacy){
@@ -56,8 +57,8 @@
   }
   function protocolUrl(token){decode(token);return 'web+playroom:pair/'+token;}
   function shareText(token){
-    const value=decode(token),label=value.kind==='offer'?'приглашение':'ответ';
-    return 'ХОД · '+label+'\n'+MARKER+token+'\n'+protocolUrl(token);
+    const value=decode(token),label=value.kind==='offer'?globalThis.PlayroomMessages.text("ui.pairing.5e964db0649c"):globalThis.PlayroomMessages.text("ui.pairing.7b9de65d1672");
+    return globalThis.PlayroomMessages.text("ui.pairing.060f4456bc05",{p0:String(label),p1:String(MARKER),p2:String(token),p3:String(protocolUrl(token))});
   }
   function extract(value){
     if(!value)return null;

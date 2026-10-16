@@ -17,7 +17,7 @@ const coded=code=>error=>error.code===code;
 test('rules and scenes execute headlessly without engine, DOM, clock, storage or ambient RNG',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  for(const file of ['core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file)).concat([path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')])){
+  for(const file of ['core/messages.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file)).concat([path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')])){
     vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   }
   const value=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
@@ -150,7 +150,7 @@ test('the integration bridge preserves assigned marks, results, scores and exact
     for(const cell of [0,3,1,4,2])session.act(session.current.turn,{type:'place',cell});
     assert(E.validateState(session.current));assert.equal(session.current.winner,firstPlayer);
     assert.equal(session.current.players[firstPlayer].score,1);assert.equal(session.current.rng,rng);
-    assert.equal(session.current.packVersion,'0.2.0');assert.equal(session.current.data.marks[firstPlayer],'X');
+    assert.equal(session.current.packVersion,'0.2.0-rc.1');assert.equal(session.current.data.marks[firstPlayer],'X');
     assert.deepEqual(session.current.result.values,[0,1].map(player=>player===firstPlayer?1:0));
     assert.equal(session.current.events.at(-1).type,'tictactoe.won');
     assert.equal(session.current.events.at(-1).text,undefined);
@@ -273,7 +273,7 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
 
 test('portable reactions have independent episodes, authorized public choices and no implicit bot turns',()=>{
  const Random=require('../core/random.js');
- const definition=require('../packs/uno/domain/game.js')({shuffle:Random.shuffle});
+ const definition=require('../packs/uno/domain/game.js')({shuffle:Random.shuffle,ending:require(require('node:path').join(require('node:fs').realpathSync(__dirname+'/../packs'),'../shared/domain/end-policy.js'))});
  const model=new GameModel(definition);
  const initial=model.create({playerCount:3,firstPlayer:0,preset:'quick',rng:17,options:{unoMode:'manual'}});
  assert(model.legalActions(initial,0).every(action=>!action.type.includes('uno')));

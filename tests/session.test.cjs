@@ -5,6 +5,7 @@ const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 
 Core.register({
+  project(out,viewer,state){const data=Core.clone(state.data);out.data={...data,hands:data.hands.map((hand,index)=>viewer===index?hand:hand.map(()=>({hidden:true}))),drawPile:data.drawPile.map(()=>({hidden:true}))};},
   id: 'session-fixture', name: 'Session fixture', min: 2, max: 2,
   description: 'Deterministic session integration fixture', rules: ['Advance one step'],
   presets: [{id: 'standard', label: 'Standard'}], scoreLabel: 'points',

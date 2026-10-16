@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const UI=require('../core/ui.js'),E=require('../core/engine.js'),Packs=require('../core/packs.js'),Session=require('../core/session.js');
-function bundle(version='0.1.0',multi=true){return {format:'playroom-pack',formatVersion:1,manifest:{id:'view-fixture',name:'View fixture',version,engineApi:1,viewApi:2,stateVersion:1},files:{'rules.js':`globalThis.TabletopCore.register({id:'view-fixture',name:'View fixture',min:2,max:2,presets:[{id:'classic'}],create(s){s.data={value:0};},legal(){return [{type:'add'}];},apply(s){s.data.value++;s.turn=1-s.turn;}});`,'view.js':`globalThis.PlayroomViews.register('view-fixture',()=>({api:2,family:'board',elements:{field:'<p>combined ${version}</p>'}}),null,${multi?`{surfaces:{table:()=>({api:2,family:'board',elements:{field:'<p>table ${version}</p>'}}),player:()=>({api:2,family:'board',elements:{field:'<p>player ${version}</p>'}})}}`:'{}'});`,'styles.css':'.view-fixture{display:block}'}};}
+function bundle(version='0.1.0',multi=true){return {format:'playroom-pack',formatVersion:1,manifest:{id:'view-fixture',name:'View fixture',version,engineApi:3,viewApi:2,stateVersion:1},files:{'rules.js':require('./pack-fixture.cjs').rules({id:'view-fixture',name:'View fixture',version}),'view.js':`globalThis.PlayroomViews.register('view-fixture',()=>({api:2,family:'board',elements:{field:'<p>combined ${version}</p>'}}),null,${multi?`{surfaces:{table:()=>({api:2,family:'board',elements:{field:'<p>table ${version}</p>'}}),player:()=>({api:2,family:'board',elements:{field:'<p>player ${version}</p>'}})}}`:'{}'});`,'styles.css':'.view-fixture{display:block}'}};}
 function env(){let raw;const views=UI.createRegistry(),manager=new Packs({engine:E,views,catalog:{},document:null,storage:{get:()=>raw,set:s=>raw=s}});return {views,manager};}
 test('API 2 registration remains combined-only; old HTML and optional surfaces fail closed',()=>{const v=UI.createRegistry();v.register('old',()=>'<p>Old</p>');assert.equal(v.supports('old','combined'),true);assert.equal(v.supports('old','player'),false);assert.doesNotMatch(v.render({game:'old'},0,[],{surface:'combined'}),/Old/);assert.doesNotMatch(v.render({game:'old'},0,[],{surface:'player'}),/Old/);assert.throws(()=>v.register('bad',()=>'',null,{surfaces:{player:'not a function'}}));});
 test('surface registration survives portable install, version activation and reboot',()=>{const {manager,views}=env();manager.bootstrap([bundle('0.1.0',false),bundle('0.2.0')]);assert.equal(views.supports('view-fixture','table'),true);assert.match(views.render({game:'view-fixture'},-1,[],{surface:'table'}),/table 0.2.0/);manager.activate('view-fixture','0.1.0');assert.equal(views.supports('view-fixture','player'),false);manager.activate('view-fixture','0.2.0');assert.equal(views.supports('view-fixture','player'),true);const payload=manager.exportView('view-fixture','0.2.0');assert.ok(!JSON.stringify(payload).includes('create(s)'));assert.equal(payload.manifest.version,'0.2.0');assert.equal(JSON.parse(manager.exportPack('view-fixture','0.1.0')).manifest.version,'0.1.0');});
@@ -34,7 +34,7 @@ test('pack assets survive export to a remote view without rules or external requ
   value.files['view.js']=`const asset=globalThis.PlayroomPack.asset('assets/piece.svg');globalThis.PlayroomViews.register('view-fixture',()=>({api:2,family:'board',elements:{field:'<img src="'+asset+'" alt="Piece">'}}));`;
   const {manager,views}=env();manager.install(manager.prepare(value));
   const definition=manager.exportView('view-fixture'),remote=UI.createRegistry(),nodes=[];
-  const scope={PlayroomViews:remote,TabletopUI:UI,document:{querySelector:()=>nodes[0],createElement:()=>({dataset:{}}),head:{appendChild:n=>nodes.push(n)}}};
+  const scope={PlayroomMessages:require('../core/messages.js'),PlayroomPackLoader:require('../platform/web/pack-loader.js'),PlayroomViews:remote,TabletopUI:UI,document:{querySelector:()=>nodes[0],createElement:()=>({dataset:{}}),head:{appendChild:n=>nodes.push(n)}}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../app/shared-views.js'),'utf8'),scope);
   scope.PlayroomSharedViews.install(definition);
   assert.equal(remote.render({game:'view-fixture'},-1,[]),views.render({game:'view-fixture'},-1,[]));
@@ -44,4 +44,13 @@ test('pack assets survive export to a remote view without rules or external requ
   assert.match(definition.assets['assets/piece.svg'],/^data:image\/svg\+xml/);
   assert.ok(!Object.hasOwn(definition,'files'));assert.doesNotMatch(JSON.stringify(definition),/create\(s\)/);
   delete value.files['assets/piece.svg'];assert.throws(()=>manager.prepare(value),/Ресурс|ресурс/);
+});
+
+test('a personal surface keeps authorized targets for a selected private hand card',()=>{
+ const state={game:'test',players:[{name:'A'},{name:'B'}],turn:0,scene:{players:[]},data:{}};
+ const actions=[{type:'play',card:'d12',side:'left',label:'Слева'},{type:'play',card:'d12',side:'right',label:'Справа'}];
+ const scene={api:2,family:'cards',elements:{field:'<div>Public chain</div>',hand:'<button>Private hand</button>',actions:UI.actionButton(actions[0])}};
+ const html=UI.composeScene(scene,{surface:'player',state,viewer:0,actions,selection:'d12'});
+ assert.equal((html.match(/&quot;side&quot;:&quot;left&quot;/g)||[]).length,1);assert.equal((html.match(/&quot;side&quot;:&quot;right&quot;/g)||[]).length,1);
+ assert(!UI.composeScene(scene,{surface:'player',state,viewer:0,actions,selection:null}).includes('Справа'));
 });

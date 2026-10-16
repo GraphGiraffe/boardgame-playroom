@@ -1,6 +1,6 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomProtocol=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  const version=1, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+  const version=2, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
   const clone=x=>JSON.parse(JSON.stringify(x));
   const freeze=x=>{if(x&&typeof x==='object'&&!Object.isFrozen(x)){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
   const canonical=x=>JSON.stringify(x,(_,v)=>record(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);

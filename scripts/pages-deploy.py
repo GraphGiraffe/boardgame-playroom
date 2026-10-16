@@ -70,7 +70,7 @@ def private_wrapper(args):
     return output.getvalue()
 
 
-def prepare(public, sums, wrapper, destination):
+def prepare(public, sums, wrapper, destination, catalog_channel=""):
     matches = re.findall(r'^([a-f0-9]{64})\s+\*?playroom-pwa\.zip$', Path(sums).read_text(), re.M)
     if len(matches) != 1 or hashlib.sha256(Path(public).read_bytes()).hexdigest() != matches[0]:
         raise ValueError('Release checksum mismatch')
@@ -116,7 +116,7 @@ def prepare(public, sums, wrapper, destination):
         raise ValueError('Deployment destination must be empty')
     destination.mkdir(parents=True, exist_ok=True)
     files.update(private)
-    files['_worker.js'] = wrap_private_worker(files['_worker.js'])
+    files['_worker.js'] = wrap_private_worker(files['_worker.js'], catalog_channel)
     for name, content in files.items():
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -175,8 +175,10 @@ class Pages:
         return target
 
 
-def smoke(url, runtime=None, online_only=False):
+def smoke(url, runtime=None, online_only=False, report_path=None):
     env = dict(os.environ, PLAYROOM_DEPLOY_URL=url)
+    if report_path:
+        env['PLAYROOM_SMOKE_REPORT'] = str(report_path)
     if runtime:
         env['PLAYROOM_DEPLOY_DIR'] = str(runtime)
     env['PLAYROOM_SMOKE_ONLINE_ONLY'] = '1' if online_only else '0'
@@ -266,9 +268,12 @@ def run(args):
             sha = subprocess.check_output(['git', 'rev-list', '-n', '1', args.release], text=True).strip()
         if not re.fullmatch(r'[a-f0-9]{40}', sha):
             raise ValueError('Release requires an exact source commit')
-        digest = prepare(public, sums, private_wrapper(args), tmp/'site')
+        catalog_channel=getattr(args,'pack_channel','')
+        if catalog_channel and args.operation!='preview':
+            raise ValueError('An isolated catalog is permitted only for preview')
+        digest = prepare(public, sums, private_wrapper(args), tmp/'site', catalog_channel)
         subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(tmp/'site/_worker.js')], check=True)
-        report.update(release=args.release, commit=sha, sha256=digest['sha256'], source='local' if args.public else 'github-release')
+        report.update(packChannel=catalog_channel, release=args.release, commit=sha, sha256=digest['sha256'], source='local' if args.public else 'github-release')
         run_id = os.environ.get('GITHUB_RUN_ID') or 'local-'+uuid.uuid4().hex[:12]
         preview_branch = 'verify-'+run_id
         if preview_branch == production:
@@ -284,10 +289,29 @@ def run(args):
             return max(matches, key=lambda d:d.get('created_on',''))
         # A preview is an explicit operation only. Production deploy uploads once.
         if args.operation == 'preview':
+            baseline_file=tmp/'production-before.json'
+            smoke(expected,online_only=True,report_path=baseline_file)
+            production_before=json.loads(baseline_file.read_text())
+            pages.manual_uploads(project)
+            if catalog_channel:
+                configs=project.get('deployment_configs') or {}
+                binding=(configs.get('production') or {}).get('r2_buckets',{}).get('PLAYROOM_PACKS')
+                if not binding: raise ValueError('Production R2 binding is missing')
+                preview_config=dict(configs.get('preview') or {})
+                buckets=dict(preview_config.get('r2_buckets') or {});buckets['PLAYROOM_PACKS']=binding;preview_config['r2_buckets']=buckets
+                pages.api('PATCH',payload={'deployment_configs':{'preview':preview_config}})
+                if pages.api().get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed before preview upload')
             preview = upload(preview_branch)
             if preview.get('environment') != 'preview':
                 raise ValueError('Expected preview deployment')
-            smoke(preview['url'], tmp/'site')
+            preview_file=tmp/'preview-verification.json'
+            smoke(preview['url'], tmp/'site',report_path=preview_file)
+            after_file=tmp/'production-after.json'
+            smoke(expected,online_only=True,report_path=after_file)
+            production_after=json.loads(after_file.read_text())
+            if production_before!=production_after: raise ValueError('Production runtime or catalog changed during preview')
+            report.update(productionBefore=production_before,productionAfter=production_after,previewVerified=json.loads(preview_file.read_text()),productionUnchanged=True)
+            if pages.api().get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed during preview deployment')
             report.update(status='preview-verified', previewDeployment=preview['id'], previewUrl=preview['url'])
             return report
         if pages.api().get('canonical_deployment', {}).get('id') != previous:
@@ -311,6 +335,7 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--pack-channel', default='')
     parser.add_argument('operation', choices=['deploy', 'preview', 'rollback', 'preflight'])
     parser.add_argument('--release')
     parser.add_argument('--deployment')

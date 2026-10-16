@@ -3,7 +3,12 @@
  'use strict';
  const revision=value=>Number.isSafeInteger(value)&&value>=0;
  const same=(a,b)=>['sessionId','authorityEpoch','game','packVersion','viewer','role'].every(key=>a?.[key]===b?.[key]);
+ function boundaryIndex(index,count,starts,direction){
+  const positions=[...new Set([0,...(starts||[]).filter(value=>Number.isSafeInteger(value)&&value>=0&&value<=count),count])].sort((a,b)=>a-b);
+  return direction<0?positions.filter(value=>value<index).at(-1)??0:positions.find(value=>value>index)??count;
+ }
  class HistoryController {
+  static boundaryIndex=boundaryIndex;
   constructor({read,changed=()=>{},reviewed=()=>{}}={}){this.read=read;this.changed=changed;this.reviewed=reviewed;this.live=null;this.open=false;this.index=null;this.requested=null;this.frame=null;this.ticket=0;this.boundary=null;this.visited=false;this.progress={receivedRevision:-1,presentedRevision:-1,reviewedRevision:null};}
   receive(frame){if(!revision(frame?.revision))throw Error('HISTORY_REVISION_INVALID');if(this.live&&!same(frame,this.live))this.reset();this.live=frame;this.progress.receivedRevision=Math.max(this.progress.receivedRevision,frame.revision);}
   get count(){return Math.max(0,(this.live?.historyLength??(this.live?.revision??0)+1)-1);}

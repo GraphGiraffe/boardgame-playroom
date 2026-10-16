@@ -52,3 +52,9 @@ Recovery проверяет snapshot каждые 5 секунд в видимо
 ## Разработка 0.18: публичное управление Стола
 
 Общая политика `application/session-access.js` назначает capability по подтверждённому участнику комнаты при старте и resume. `connectTable(actors)` выдаётся хостом; данные остаются viewer=-1, actor проверяется отдельно. Public command проходит обычный durable journal, ACK и история остаются публичными. Зритель не получает управление при смене layout; `sameAudience` учитывает роль. Крестики-нолики engineApi 3 — первый подключённый пак; остальные ещё не объявляют публичные команды. Детали grants/receipts/ограничений — [MULTIVIEW](MULTIVIEW.md#сетевая-привязка-в-разработке-018).
+
+## Контракт 0.18
+
+Network protocol 2 обязателен: hello/ready проверяется до команд и snapshots. Room/application orchestration вынесены в application/rooms, client-connection-service, recovery-coordinator, host-session-service, history-sync-service; WebRTC, identity, IndexedDB и locks остаются портами. Клиентская библиотека получает проекции и публичные presence; исходные room maps и host recovery tokens не публикуются через UI bridge.
+
+Table сохраняет viewer=-1 и отдельного actor для разрешённых public choices; spectator не имеет actor. Скрытие поля — только личная preference подключённого сетевого игрока при подключённом Table. Disconnect возвращает поле. Действия/ходы/раунды и границы догрузки независимы; client archive хранит только разрешённую сторону.

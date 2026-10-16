@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 /* Shared game-loop presentation policy. A transport supplies a projected snapshot;
    it never changes the input, timing or animation contract. */
 (function(root,factory){
@@ -8,10 +9,10 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(Scheduler){
   'use strict';
   const presets=Object.freeze({
-    instant:Object.freeze({label:'Мгновенный',duration:0,settle:100,botDelay:220,description:'Без анимаций, с небольшой паузой между действиями.'}),
-    fast:Object.freeze({label:'Быстрый',duration:220,settle:80,botDelay:300,description:'Все анимации, короткие перемещения и паузы.'}),
-    normal:Object.freeze({label:'Средний',duration:520,settle:160,botDelay:650,description:'Все анимации в спокойном обычном темпе.'}),
-    slow:Object.freeze({label:'Медленный',duration:1100,settle:650,botDelay:1200,description:'Плавные перемещения и длинные паузы, чтобы рассмотреть ход.'})
+    instant:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.8ccdd302cc82"),duration:0,settle:100,botDelay:220,description:globalThis.PlayroomMessages.text("ui.game-flow.7a9797cec6ab")}),
+    fast:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.1827190b896f"),duration:220,settle:80,botDelay:300,description:globalThis.PlayroomMessages.text("ui.game-flow.7eec92696d24")}),
+    normal:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.84ab7f7de9c0"),duration:520,settle:160,botDelay:650,description:globalThis.PlayroomMessages.text("ui.game-flow.0378708df51b")}),
+    slow:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.6e503025a34b"),duration:1100,settle:650,botDelay:1200,description:globalThis.PlayroomMessages.text("ui.game-flow.f113b5c47975")})
   });
   const speed=value=>Object.hasOwn(presets,value)?value:'normal';
   const quickPlay=options=>!!options?.quickPlay;
