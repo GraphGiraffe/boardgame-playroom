@@ -137,15 +137,15 @@ test('RC3 Battleship history retains field and automatic viewing controls withou
  }
 }));
 
-test('RC4 circular seats enlarge hands, keep player geometry equal and preserve a clear public field',{timeout:60000},async()=>fixture(async page=>{
+test('RC6 circular seats align hands to edges, keep player geometry equal and preserve a clear public field',{timeout:60000},async()=>fixture(async page=>{
  for(const game of ['oldmaid','gofish','ludo','uno'])for(const [width,height]of [[320,740],[390,740],[740,390],[1090,900],[1440,900]]){
   await page.setViewportSize({width,height});await scene(page,game);
   const geometry=await page.evaluate(()=>{
-   const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel')],boxes=cards.map(n=>n.getBoundingClientRect());
-   return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
+   const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel')],boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
+   return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
   });assert.equal(geometry.seating,'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
-  for(const b of geometry.boxes){assert(Math.abs(b.w-geometry.boxes[0].w)<1&&Math.abs(b.h-geometry.boxes[0].h)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
-  if(['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.mini.every(w=>w>28),'hands must grow');assert(geometry.boxes.reduce((area,b)=>area+b.w*b.h,0)>geometry.field.w*geometry.field.h,'player areas have priority');}
+  for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
+  if(['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
   if(game==='ludo'){assert.equal(geometry.copies,1);assert.equal(await page.locator('.seat-group [data-player-index="0"].is-turn').count(),1);assert.equal(await page.locator('.layout-self [data-player-index="0"].is-turn').count(),1);}
   if([390,1090].includes(width))await page.screenshot({path:path.join(shots,`rc4-${game}-${width}.png`)});
  }
@@ -155,9 +155,9 @@ test('RC4 local seating can be changed without actions, ownership changes or rev
  await page.locator('.table-tools [data-command=settings]').click();
  assert.equal(await page.locator('.settings-personal [data-appearance-picker]').count(),0);
  for(const width of [320,390,1090]){await page.setViewportSize({width,height:900});assert(await page.locator('[data-quick-shortcut]').evaluateAll(nodes=>nodes.every(n=>Math.abs(n.getBoundingClientRect().y-nodes[0].getBoundingClientRect().y)<1)));}
- await page.locator('#setting-seating').selectOption('row');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');
+ await page.locator('#setting-seating').selectOption('row');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions('uno').seating),'auto','another game keeps its own default');
  await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-seating').selectOption('circle');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
- assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seating),'circle');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'circle');
+ assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.oldmaid),'circle');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'circle');
 }));
 test('RC4 phone tiles preserve square geometry, symmetrical header and readable artwork',{timeout:45000},async()=>fixture(async page=>{
  for(const width of [320,390,520]){
@@ -167,5 +167,36 @@ test('RC4 phone tiles preserve square geometry, symmetrical header and readable 
    return {game:card.dataset.game,ratio:c.height/c.width,favSize:fav.width,typeSize:t.width,radius:getComputedStyle(type).borderRadius,edge:Math.abs(t.left-c.left-(c.right-fav.right)),top:Math.abs(t.top-fav.top),artFill:Math.max(art.width/s.width,art.height/s.height),legacyPlay:!!card.querySelector('.play-tile')};
   }));for(const v of values){assert(Math.abs(v.ratio-1)<.01,JSON.stringify(v));assert.equal(v.typeSize,v.favSize);assert.equal(v.radius,'50%');assert(v.edge<1&&v.top<1,JSON.stringify(v));assert(v.artFill>.7&&v.artFill<1.1,JSON.stringify(v));assert.equal(v.legacyPlay,false);}
   await page.screenshot({path:path.join(shots,`rc4-hub-${width}.png`),fullPage:true});
+ }
+}));
+
+test('RC6 repeated Pexeso mismatches keep both flip sides visible and preserve matched pairs',{timeout:45000},async()=>fixture(async page=>{
+ for(const deck of ['cartoon','52']){
+  await scene(page,'pexeso',{deck});
+  const result=await page.evaluate(async()=>{
+   const cards=rcSession.current.data.board,key=c=>c.character||c.rank+'-'+(['♥','♦'].includes(c.suit)?'red':'black');
+   const mate=cards.findIndex((c,i)=>i>0&&key(c)===key(cards[0])),mismatches=cards.map((c,i)=>i).filter(i=>i!==0&&i!==mate),samples=[];
+   async function flip(index){
+    const beforeTurn=rcSession.current.turn,action={type:'flip',index},shot=PlayroomMotion.capture({actor:beforeTurn,viewer:0,action});
+    rcSession.act(beforeTurn,action);rcUI={presentationTurn:beforeTurn};rcRender();
+    const pending=PlayroomMotion.play(shot,{duration:220,effects:PlayroomGameFlow.effectTimes.fast});
+    for(let frame=0;frame<6;frame++){await new Promise(requestAnimationFrame);samples.push([...document.querySelectorAll('[data-motion-kind=flip] button')].every(n=>getComputedStyle(n).visibility==='visible'));}
+    await pending;rcUI={};rcRender();
+    samples.push([...document.querySelectorAll('.pexeso-slot .pexeso-face')].every(n=>getComputedStyle(n).visibility==='visible'));
+   }
+   await flip(0);await flip(mate);
+   const first=mismatches[0],second=mismatches.find(i=>key(cards[i])!==key(cards[first]));
+   for(let cycle=0;cycle<3;cycle++){await flip(first);await flip(second);}
+   return {visible:samples.every(Boolean),matched:document.querySelectorAll('.pexeso-slot.matched').length,layers:document.querySelectorAll('.playroom-motion-layer').length};
+  });assert.equal(result.visible,true,deck);assert.equal(result.matched,2,deck);assert.equal(result.layers,0);
+ }
+}));
+
+test('RC6 shared seating composes every installed game without page overflow',{timeout:30000},async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ for(const game of await page.evaluate(()=>TabletopCore.GAMES.map(game=>game.id))){
+  await scene(page,game);
+  const value=await page.evaluate(()=>{const stage=document.querySelector('.app-game-layout'),field=stage?.querySelector('.layout-field');return {error:!!document.querySelector('.scene [role=alert]'),field:field?.getBoundingClientRect().width||0,overflow:document.documentElement.scrollWidth>innerWidth+1};});
+  assert.equal(value.error,false,game);assert(value.field>40,game);assert.equal(value.overflow,false,game);
  }
 }));

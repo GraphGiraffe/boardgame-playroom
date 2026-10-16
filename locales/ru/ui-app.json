@@ -260,9 +260,12 @@
   "ui.app.seating.label": "Рассадка игроков",
   "ui.app.seating.circle": "По кругу",
   "ui.app.seating.row": "В ряд",
-  "ui.app.seating.local": "Только на этом устройстве",
+  "ui.app.seating.local": "Для этой игры, только на этом устройстве",
   "ui.app.tile.players": "Игроков: {count}",
   "avatars.choose": "Выбрать аватар",
   "avatars.letter": "Буква имени",
-  "avatars.close": "Закрыть"
+  "avatars.close": "Закрыть",
+  "ui.app.seating.anchors": "По углам",
+  "ui.resume.connected": "Соединение активно",
+  "ui.resume.disconnected": "Нет соединения"
 }

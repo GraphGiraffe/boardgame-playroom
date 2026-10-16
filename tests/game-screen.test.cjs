@@ -162,3 +162,23 @@ test('packs describe hand priority and physical seats without changing game iden
  assert.throws(()=>UI.composeScene({...descriptor,layout:{seats:['north']}},{state}),/layout policy/);
  const cards=UI.composeScene({...descriptor,family:'cards',layout:{focus:'hands'}},{state,viewer:0});assert.match(cards,/data-layout-focus="hands"/);assert.doesNotMatch(cards,/data-action=/);
 });
+
+
+test('Continuation cards share two summary lines and an independent avatar row',()=>{
+  const state={players:[{name:'Иван'},{name:'Кира',bot:true}],turn:1,status:'playing',timeline:{turn:8},scene:{round:{kind:'round',number:4}}};
+  for(const network of [false,true]){
+    const html=Screen.resumeCard({state,network,roomName:'Комната Иван',gameName:'Морской бой',leave:network?'data-net-action="leave-active"':''});
+    assert.match(html,/Морской бой · Раунд 4/);assert.doesNotMatch(html,/Ход 8/);
+    assert.match(html,/class="resume-person saved-current-turn"/);assert.equal((html.match(/class="avatar /g)||[]).length,2);
+    assert.equal(html.includes('connection-light'),network);assert.match(html,/resume-actions.*resume-participants/s);
+  }
+  assert.match(Screen.resumeCard({state,network:true,connected:false}),/is-disconnected/);
+});
+
+test('Toolbar exposes at most three context actions and keeps overflow in settings',()=>{
+  const actions=['room','history','pause','full','help'].map(name=>({name,label:name,attrs:'data-command="'+name+'"'}));
+  const html=Screen.toolbar(actions);
+  assert.equal((html.match(/<button/g)||[]).length,4);
+  assert.doesNotMatch(html,/data-command="full"/);
+  assert.match(Screen.quickAccessMarkup(),/data-command="full"/);
+});

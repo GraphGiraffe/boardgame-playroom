@@ -197,7 +197,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       assert.equal(await page.locator('.table-shell.network-game .scene .opponent-hand').count(),1);
       assert.equal(await page.locator('.table-shell.network-game .scene .own-hand').count(),1);
       assert.equal(await page.locator('.table-tools [data-command=history] svg').count(),1);
-      assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),1);
+      assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),0);
       assert.equal(await page.locator('.opponent-hand .uno-art-face').count(),0,'Opponent private card faces must stay hidden');
     }
     for(const page of [host,client]){
@@ -275,8 +275,12 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
         [...document.querySelectorAll(selector)].some(node=>!node.disabled&&!node.closest('[inert]')&&node.getClientRects().length),ordinaryAction,{timeout:10000});
       return page;
     }));
-    assert.equal(await host.locator('.table-tools #network-pair-button').innerHTML(),addPlayerIcon);
-    assert.equal(await host.locator('.table-tools #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    assert.equal(await host.locator('.table-tools #network-pair-button').count(),0);
+    assert.equal(await host.locator('.table-tools button').count(),4);
+    await host.locator('.table-tools [data-command=settings]').click();
+    assert.equal(await host.locator('.modal #network-pair-button').innerHTML(),addPlayerIcon);
+    assert.equal(await host.locator('.modal #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    await host.locator('.modal [data-command=close-modal]').click();
     for(const exit of ['guest','host']){
       const primaryPositions=await Promise.all([host,client].map(async page=>{
         assert.equal(await page.locator('.table-tools [data-command=room]').count(),1);

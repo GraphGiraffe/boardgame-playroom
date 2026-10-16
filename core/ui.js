@@ -218,7 +218,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='circle'}={}) {
+  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto'}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
@@ -229,7 +229,9 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const circular=seating!=='row'&&surface!=='player'&&((state?.players?.length||0)>=3||layout.seats&&(state?.players?.length||0)>=2);
+    const strategy=seating==='row'?'row':seating==='circle'?'circle':layout.seats?'anchors':(state?.players?.length||0)>=3?'circle':'row';
+    const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
+    const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
     if(surface==='table')actions=tableCommands(state,actions);
     const e={...value.elements},content=value.playerContent;
@@ -255,7 +257,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const groups=new Map();
         for(const panel of panels){
           const relative=viewer>=0?(panel.player-viewer+state.players.length)%state.players.length:panel.player;
-          const seat=layout.seats?.[panel.player]||['south','west','north','east'][Math.round(relative*4/state.players.length)%4];
+          const seat=(anchored?layout.seats?.[panel.player]:null)||['south','west','north','east'][Math.round(relative*4/state.players.length)%4];
           if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push(panel.html.replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?' data-seat-copy="true"':''}`));
         }
         e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${html.join('')}</div>`).join('')}</div>`;
@@ -263,7 +265,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}"${layout.seats?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="${!!layout.seats}" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function createRegistry() {
@@ -281,7 +283,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.().seating||'circle'}); }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
         catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); }
       },
       cover(id){

@@ -5,6 +5,28 @@ const path=require('node:path');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
 
+test('Flip backs remain visible inside their clones and draws keep the stock aspect ratio',{timeout:30000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage();
+    await page.setContent('<style>*{box-sizing:border-box}.scene{width:390px;height:740px}.slot{position:relative;width:70px;height:100px}.face,.back{display:block;width:100%;height:100%}.back{position:absolute;inset:0;visibility:hidden;transform:rotateY(-90deg)}.back button{width:100%;height:100%}.stock-button{position:absolute;left:100px;top:300px;width:70px;height:100px;padding:0;border:0}.piece-back{display:block;width:100%;height:100%;background:green}.mini-hand{position:absolute;left:20px;top:40px;width:130px;height:44px}</style><div class="scene"><div class="slot" data-motion-effect="flip" data-motion-trigger="flip" data-motion-key="index" data-motion-value="0" data-motion-close="true"><span class="face" data-motion-face><button>Public face</button></span><span class="back" data-motion-back><button>Public back</button></span></div><button class="stock-button" data-motion-stock><span class="piece-back"></span></button><div data-player-index="1"><div class="mini-hand"></div></div></div>');
+    await page.addScriptTag({path:path.join(root,'core/motion.js')});
+    const result=await page.evaluate(async()=>{
+      const flip=PlayroomMotion.play({action:{type:'flip',index:1},entities:new Map(),flips:new Map()},{duration:300,effects:{flip:300,pair:200}});
+      const sides=[...document.querySelectorAll('[data-motion-kind=flip]>div>* button')].map(n=>getComputedStyle(n).visibility);
+      PlayroomMotion.cancel();await flip;document.querySelector('.slot').remove();
+      const shot=PlayroomMotion.capture({actor:1,viewer:0,action:{type:'draw'}}),draw=PlayroomMotion.play(shot,{duration:500,draws:[{player:1,count:1,from:'stock'}]});
+      const piece=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]'),samples=[];
+      for(const fraction of [.05,.5,.95]){for(const a of document.getAnimations()){a.pause();a.currentTime=a.effect.getTiming().duration*fraction;}const r=piece.getBoundingClientRect();samples.push(r.width/r.height);}
+      PlayroomMotion.cancel();await draw;
+      return {sides,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length};
+    });
+    assert.deepEqual(result.sides,['visible','visible']);
+    assert(result.samples.every(ratio=>Math.abs(ratio-result.sourceRatio)<.01),JSON.stringify(result));
+    assert.equal(result.layers,0);
+  }finally{await browser.close();}
+});
+
 test('Motion effects move only public pieces and clean up at completion or cancellation',{timeout:90000},async t=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,run){await t.test(name,async()=>{
