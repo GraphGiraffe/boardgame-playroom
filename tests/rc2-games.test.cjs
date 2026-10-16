@@ -1,4 +1,5 @@
 'use strict';
+require('../core/model-registration.js');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const E=require('../core/engine.js'),ids=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid','durak'];
 for(const id of ids)require(`../packs/${id}/rules.js`);
@@ -20,6 +21,12 @@ test('new packs, deck sizes and Durak variants finish with valid states',()=>{
 
 test('hidden boards and hands remain private in projected state',()=>{
  let s=create('battleship',2,'russian');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const sea=E.project(s,0);assert(sea.data.ships[0].flat().some(Number.isInteger));assert(sea.data.ships[1].flat().every(x=>x===null));
+ for(const openHands of [false,true]){
+  s.openHands=openHands;const spectator=E.project(s,-1),table=E.projectTable(s,s.turn);
+  assert.deepEqual(table.data,spectator.data);
+  assert(table.data.ships.flat(2).every(cell=>cell===null),'both fleets stay hidden on Table');
+  assert.deepEqual(table.tableActions,E.legalActions(s).map(({type,cell})=>({type,cell})),'only public shots are granted');
+ }
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}
 });
@@ -86,7 +93,7 @@ test('Akulina draws the chosen hidden card and rejects an invalid index',()=>{
 });
 test('automatic fleets leave gaps in both rulesets and Yatzy totals include the bonus',()=>{
  for(const preset of ['classic','russian']){let s=create('battleship',2,preset);s=play(s,{type:'auto'});for(const [i,ship] of s.data.ships[0].entries())for(const cell of ship)for(const other of s.data.ships[0].slice(i+1).flat())assert(Math.abs(cell%10-other%10)>1||Math.abs(Math.floor(cell/10)-Math.floor(other/10))>1);}
- let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
+ let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};s.data.round=7;const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
 });
 
 test('new pack actions have playable common sound cues and do not replay old events',()=>{
@@ -139,13 +146,13 @@ test('board game avatars keep the standard light palette',()=>{
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);const G=require('../packs/battleship/domain/geometry.js');let seed={rng:23};do{privateChanged.data.ships[1-actor]=G.autoPlace(seed,[],G.fleets[s.preset],true,E.random);}while(!privateChanged.data.ships[1-actor].flat().includes(cell));assert(E.validateState(privateChanged));assert.deepEqual(E.botAction(privateChanged),action);
  assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
 test('Akulina draw shows both participants to everyone, while the card stays private',()=>{
@@ -209,4 +216,29 @@ test('Yatzy permits releasing a held die before the third roll',()=>{
 });
 test('RC4 Yatzy score sounds distinguish numeric, special and yatzy only after scoring',()=>{
  for(const [key,sound]of [['ones','success'],['pair','success.special'],['yatzy','success.yatzy']]){let s=create('yatzy');s.data.rolls=3;s.data.dice=[1,1,1,1,1];const cursor=s.events.at(-1).id;s=play(s,{type:'score',key});assert(E.soundCues(s,0,cursor).some(c=>c.id===sound));}
+});
+
+
+test('Pexeso bot choice is invariant under permutations of never-revealed faces',()=>{
+  for(let move=0;move<30;move++){
+    const state=create('pexeso');state.move=move;
+    state.data.flipped=[0];state.data.phase='second';state.data.seen={0:state.data.board[0].id,1:state.data.board[1].id};
+    const altered=E.clone(state),tail=altered.data.board.slice(2).reverse();altered.data.board.splice(2,tail.length,...tail);
+    const a=E.botAction(state),b=E.botAction(altered);
+    assert.deepEqual(b,a,'unknown card faces must never influence a bot mistake');
+  }
+});
+
+test('Battleship Table can fire for either authorized actor without exposing either fleet',()=>{
+ let state=create('battleship');
+ for(let i=0;i<2;i++){state=play(state,{type:'auto'});state=play(state,{type:'ready'});}
+ for(const actor of [0,1]){
+  state.turn=actor;
+  const projection=E.projectTable(state,actor),scene=V.render(projection,-1,projection.tableActions,{surface:'table',viewState:{fleet:actor===0?'enemy':'own'}});
+  assert.equal((scene.match(/data-action=/g)||[]).length,100,'public shots on the opponent field');
+  assert(!scene.includes('aria-label="undefined"'));assert(projection.data.ships.flat(2).every(cell=>cell===null));
+  const next=E.applyTableAction(state,actor,projection.tableActions[0]);assert.equal(next.data.shots[actor].length,1);
+ }
+ const spectator=V.render(E.project(state,-1),-1,[],{surface:'table'});
+ assert(!spectator.includes('data-action='));
 });

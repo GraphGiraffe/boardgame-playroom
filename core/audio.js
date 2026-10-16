@@ -8,32 +8,8 @@
   const LIMITS = {groups:8, voices:32, sequence:12, notes:24, duration:5, sampleBytes:2 * 1024 * 1024};
   const idPattern = /^[a-z][a-z0-9_.-]{0,63}$/;
   const clamp = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
-  const note = (frequency, at=0, duration=.12, wave='sine', gain=.15, to=frequency) => ({frequency, at, duration, wave, gain, to});
-  const defaults = {
-    move:{label:'Ход',notes:[note(660,0,.09,'triangle',.16,480),note(980,.025,.065,'sine',.075)]},
-    draw:{label:'Взять карту',notes:[note(1600,0,.045,'noise',.12,950),note(520,.025,.1,'sine',.12,700)]},
-    victory:{label:'Победа',notes:[note(523,0,.2,'triangle',.12),note(659,.11,.2,'triangle',.12),note(784,.22,.2,'triangle',.12),note(1047,.34,.38,'sine',.17),note(784,.34,.36,'sine',.08)]},
-    defeat:{label:'Поражение',notes:[note(440,0,.2,'triangle',.12),note(349,.13,.23,'triangle',.12),note(262,.28,.34,'sine',.15)]},
-    'draw-game':{label:'Ничья',notes:[note(523,0,.23,'sine',.12),note(659,0,.23,'sine',.08),note(523,.21,.28,'triangle',.1)]},
-    'attack.light':{label:'Лёгкая атака · +2',notes:[note(300,0,.1,'triangle',.18,220),note(600,.09,.14,'triangle',.16,420)]},
-    'attack.heavy':{label:'Сильная атака · +4',notes:[note(190,0,.17,'triangle',.21,90),note(1400,0,.08,'noise',.11,500),note(380,.1,.15,'triangle',.17,250),note(570,.2,.2,'triangle',.14,330)]},
-    'attack.skip':{label:'Пропуск хода',notes:[note(880,0,.065,'sine',.14),note(440,.1,.13,'triangle',.14,330)]},
-    'attack.capture':{label:'Взятие фишки',notes:[note(220,0,.15,'triangle',.2,90),note(1800,0,.055,'noise',.14,700),note(880,.045,.13,'sine',.09)]},
-    attack:{label:'Атака',notes:[note(260,0,.13,'triangle',.19,160),note(1100,.015,.045,'noise',.08)]},
-    defend:{label:'Защита',notes:[note(700,0,.18,'sine',.13),note(1050,.015,.2,'sine',.075)]},
-    reverse:{label:'Смена направления',notes:[note(420,0,.13,'sine',.14,800),note(800,.1,.19,'sine',.14,420)]},
-    dice:{label:'Бросок кубика',notes:[note(1700,0,.035,'noise',.13),note(280,.012,.06,'triangle',.13),note(2000,.06,.035,'noise',.11),note(240,.1,.06,'triangle',.14),note(1300,.15,.045,'noise',.1),note(200,.22,.11,'triangle',.17)]},
-    climb:{label:'Подъём',notes:[note(440,0,.13,'sine',.13),note(554,.07,.13,'sine',.13),note(659,.14,.13,'sine',.13),note(880,.21,.2,'sine',.14)]},
-    fall:{label:'Спуск',notes:[note(740,0,.13,'sine',.13),note(587,.07,.13,'sine',.13),note(440,.14,.13,'sine',.13),note(294,.21,.2,'triangle',.14)]},
-    penalty:{label:'Штраф',notes:[note(330,0,.11,'triangle',.15),note(330,.14,.11,'triangle',.15),note(247,.28,.19,'triangle',.13)]},
-    success:{label:'Пара / комплект / очки',notes:[note(660,0,.09),note(880,.08,.15)]},
-    'success.special':{label:'Особая комбинация',notes:[note(523,0,.13),note(659,.09,.13),note(880,.18,.2)]},
-    'success.yatzy':{label:'Ятзи',notes:[note(523,0,.14),note(659,.1,.14),note(784,.2,.14),note(1047,.3,.3)]},
-    mismatch:{label:'Нет совпадения',notes:[note(400,0,.1,'sine',.08),note(330,.1,.13,'sine',.08)]},
-    error:{label:'Действие недоступно',notes:[note(240,0,.11,'triangle',.1)]},
-    notify:{label:'Уведомление',notes:[note(784,0,.2,'sine',.12),note(1047,.07,.24,'sine',.075)]},
-    turn:{label:'Ваш ход',notes:[note(740,0,.075,'sine',.075),note(988,.085,.10,'sine',.065)]}
-  };
+  const defaults=root.PlayroomStandardSounds||(typeof require==='function'?require('./standard-sounds.js'):null);
+  if(!defaults)throw Error('Standard sound resources are required');
   function normalize(definition, id) {
     if (!definition || typeof definition !== 'object') throw new TypeError('Invalid sound: ' + id);
     const label = typeof definition.label === 'string' ? definition.label.slice(0,120) : id;

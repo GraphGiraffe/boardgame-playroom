@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const source=fs.readFileSync(path.join(__dirname,'../app/transports/webrtc.js'),'utf8');
+const source=['core/messages.js','core/protocol.js','application/recovery-coordinator.js','app/transports/webrtc.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
 
 test('two browser pages connect by manual WebRTC offer/answer and exchange RPC', {timeout:30000}, async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});

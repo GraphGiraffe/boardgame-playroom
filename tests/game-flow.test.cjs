@@ -32,16 +32,14 @@ test('Local and network mode call the exact same motion engine and preferences',
 });
 
 test('A pack minimum viewing time applies at instant and animated speeds',async()=>{
-  const previous=globalThis.document;
-  globalThis.document={querySelector:()=>({dataset:{presentationWait:'35'}})};
-  try{
+  {
     for(const animationSpeed of ['instant','fast']){
-      const flow=new Flow.GameFlow({options:()=>({animationSpeed}),motion:{play:()=>Promise.resolve()}});
+      const flow=new Flow.GameFlow({options:()=>({animationSpeed}),motion:{play:()=>Promise.resolve()},presentation:()=>({minimumVisibleMs:35})});
       const start=performance.now();
       await flow.play(null);
       assert(performance.now()-start>=30,`${animationSpeed} skipped the minimum viewing time`);
     }
-  }finally{globalThis.document=previous;}
+  }
 });
 
 test('Only newer, same-session projected events can trigger network presentation',()=>{
@@ -54,4 +52,17 @@ test('Only newer, same-session projected events can trigger network presentation
   assert.equal(Flow.eventAction(first,{...next,authorityEpoch:'new'}),null);
   assert.equal(Flow.eventAction(null,next),null);
   assert.deepEqual(Flow.eventAction({...first,state:{turn:1}},{...next,events:first.events}),{actor:1,action:{type:'action'},events:[]});
+});
+
+
+test('presentation cancellation releases its waiter and timer even when a renderer never finishes',async()=>{
+  const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0;
+  const scheduler=new Scheduler({setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
+  const first=scheduler.play(()=>new Promise(()=>{}),750);assert.equal(timers.size,1);
+  scheduler.cancel();await first;await scheduler.whenIdle();assert.equal(timers.size,0);
+  const next=scheduler.play(()=>Promise.resolve(),200);assert.equal(timers.size,1);
+  [...timers.values()][0].fn();await next;assert.equal(timers.size,0);
+  assert.throws(()=>scheduler.play(()=>{},-1),/DELAY_INVALID/);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:{default:750,phases:{setup:0}}}},{data:{phase:'setup'}}),0);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:750}},{data:{}}),750);
 });

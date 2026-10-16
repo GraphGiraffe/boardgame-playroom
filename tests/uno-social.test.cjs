@@ -29,7 +29,7 @@ function fixture({counts = [2, 2], turn = 0, pending = null, declared = [], mode
   data.hands = counts.map((count, i) => specs[i].slice(0, count).map(([color, value]) => take(color, value)));
   data.drawPile = [...pool.values()];
   data.color = 'red'; data.direction = 1; data.drawn = null; data.noDraw = false; data.stalled = 0;
-  data.uno = {mode: unoMode, declared: counts.map((_, i) => !!declared[i]), pending};
+  data.uno = {mode:unoMode,declared:counts.map((_,i)=>!!declared[i]),pending,episode:0,calls:[],penalties:[],situations:counts.map((count,i)=>({episode:0,open:unoMode==='manual'&&count===1&&!declared[i],settled:false,called:false}))};
   state.turn = turn;
   Core.validateState(state);
   return saved;
@@ -38,7 +38,7 @@ async function read(page) {
   return page.evaluate(() => TabletopSession.restore(TabletopCore,
     JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
 }
-async function state(page) { return (await read(page)).states.at(-1); }
+async function state(page) { const raw=(await read(page)).states.at(-1);return {...raw,events:Core.project(raw,-1).events}; }
 async function ready(page) {
   await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') === 'false');
 }
@@ -303,10 +303,10 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       }
     });
 
-    await check('Auto mode keeps automatic UNO and restores legacy sessions without manual controls', async open => {
-      for (const legacy of [false, true]) {
+    await check('Auto mode keeps automatic UNO without manual controls', async open => {
+      for (const preset of ['classic','quick']) {
         const saved = fixture({unoMode: 'auto'});
-        if (legacy) { delete saved.options.unoMode; delete saved.states[0].data.uno; }
+        saved.options.preset=preset;saved.states[0].preset=preset;
         const {page} = await open(saved); await resume(page);
         assert.equal(await page.locator('[data-player-target]').count(), 0);
         assert.equal(await page.locator('.scene [data-action]').evaluateAll(nodes =>

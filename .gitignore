@@ -11,3 +11,6 @@ installed-packs.js
 app/version.js
 icons/icon-192.png
 icons/icon-512.png
+
+app/appearance-models.js
+tmp_files/

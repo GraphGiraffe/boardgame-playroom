@@ -3,7 +3,9 @@ from pathlib import Path
 import re
 
 
-def wrap_private_worker(source):
+def wrap_private_worker(source, catalog_channel=""):
+    if catalog_channel and not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,63}",catalog_channel):
+        raise ValueError("Invalid catalog channel")
     text = source.decode("utf-8")
     pattern = re.compile(r"\bexport\s+default\b")
     if len(pattern.findall(text)) != 1:
@@ -23,4 +25,6 @@ export default {
   }
 };
 """
+    import json
+    route = route.replace("const PlayroomPackRoute={", "const PlayroomPackCatalogPrefix=" + json.dumps("channels/"+catalog_channel+"/" if catalog_channel else "") + ";\nconst PlayroomPackRoute={")
     return (route + "\n" + text + "\n" + adapter).encode("utf-8")

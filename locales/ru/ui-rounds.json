@@ -1,0 +1,9 @@
+{
+  "progress.round": "Раунд {number}",
+  "progress.round-of": "Раунд {number} / {limit}",
+  "progress.round-start": "Начало раунда {number}",
+  "progress.bout": "Взятка {number}",
+  "progress.turn": "Ход {number}",
+  "progress.prev-round": "Предыдущий раунд",
+  "progress.next-round": "Следующий раунд"
+}

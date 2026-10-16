@@ -2,6 +2,12 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
+    {"file":"session-runtime.test.cjs","profiles":["app"],"subblock":"core/session-runtime"},
+    {"file":"model-contract.test.cjs","profiles":[],"subblock":"core/model"},
+    {"file": "appearance.test.cjs", "profiles": ["app"], "subblock": "core/appearance"},
+    {"file": "localization.test.cjs", "profiles": ["app"], "subblock": "core/localization"},
+    {"file": "domain-foundation.test.cjs", "profiles": [], "subblock": "core/domain"},
     {"file": "engine.test.cjs", "profiles": [], "subblock": "core/state"},
     {"file": "session.test.cjs", "profiles": ["app"], "subblock": "core/state"},
     {"file": "view-contract.test.cjs", "profiles": ["app"], "subblock": "core/packs"},
@@ -40,6 +46,7 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file": "appearance-browser.test.cjs", "profiles": [], "subblock": "ui/appearance"},
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
@@ -63,6 +70,7 @@ module.exports = {
     {"file": "network-client-history-browser.test.cjs", "profiles": ["app", "smoke"], "subblock": "storage/history"},
   ]},
   network: {label: "Сетевые партии", cases: [
+    {"file":"table-authority.test.cjs","profiles":[],"subblock":"network/table"},
     {"file": "authority.test.cjs", "profiles": ["app"], "subblock": "network/authority"},
     {"file": "multiplayer-lobby.test.cjs", "profiles": ["app", "smoke"], "subblock": "network/authority"},
     {"file": "presence-transport.test.cjs", "profiles": ["app"], "subblock": "network/authority"},

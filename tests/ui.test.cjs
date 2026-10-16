@@ -36,8 +36,8 @@ async function clickMove(page,game){
   else {const card=page.locator('.hand-track .is-playable').first();await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
 }
 function installableCounter(version='0.1.0',step=1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:1,viewApi:2,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
-    'rules.js':`(function(E){E.register({id:'qa-counter',name:'Счётчик',version:'${version}',min:2,max:2,presets:[{id:'classic',label:'Основной'}],rules:['Добавляйте очки по очереди.'],create(s){s.data={count:0};},legal(){return [{type:'add',label:'Добавить'}];},apply(s,actor){s.data.count+=${step};s.turn=(actor+1)%s.players.length;E.event(s,'Добавлено '+${step},actor,'move');}});})(globalThis.TabletopCore);`,
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:3,viewApi:2,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
+    'rules.js':require('./pack-fixture.cjs').rules({id:'qa-counter',name:'Счётчик',version,key:'count',step}),
     'view.js':`globalThis.PlayroomViews.register('qa-counter',(s,v,actions)=>({api:2,family:'board',className:'qa-counter-scene',elements:{field:'<div data-view-version="${version}"><output class="qa-count">'+s.data.count+'</output></div>',actions:globalThis.PlayroomViews.helpers.actionBar(actions)}}));`,
     'styles.css':`.qa-counter-scene{display:flex;justify-content:center;align-items:center}.qa-count{font-size:48px;color:${step===1?'#245440':'#a44238'}}`
   }};
@@ -258,7 +258,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.deepEqual(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').map(c=>({ids:c.ids,pack:c.pack}))),[{ids:['move'],pack:'uno'}]);
       await page.locator('.uno-call').click();await page.waitForSelector('.scene[aria-busy=false]');
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
-      const live=await saved(page);assert.equal(live.states.at(-1).events.at(-1).sound.id,'uno.call');assert.equal(await move(page),2);
+      const live=await saved(page);assert.equal(E.project(live.states.at(-1),0).events.at(-1).sound.id,'uno.call');assert.equal(await move(page),2);
       await exposedClick(page,page.locator('.own-hand [data-select="'+illegal.id+'"]'));
       await exposedClick(page,page.locator('.own-hand [data-select="'+illegal.id+'"]'));
       assert.deepEqual(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').map(c=>c.ids)),[['move'],['uno.call']],'rerenders cannot repeat a committed event cue');
@@ -456,7 +456,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         await page.goto(server.url);
         // A desktop hub also needs an actual scrollable background to catch leaks.
         await page.evaluate(()=>document.querySelector('#app').style.minHeight='2400px');
-        const screens=[['packs','[data-command=packs]'],['settings','.topbar-tools [data-command=settings]'],['help','.side-nav [data-command=help]'],['setup','[data-start=uno]'],['rules',null],['pairing','#network-join-button']];
+        const screens=[['packs','[data-command=packs]'],['settings','.topbar-tools [data-command=settings]'],['help','.topbar-tools [data-command=help]'],['setup','[data-start=uno]'],['rules',null],['pairing','#network-join-button']];
         for(const [name,selector] of screens){
           if(name==='rules'){await page.locator('[data-start=uno]').first().click();await page.locator('[data-command=room-rules-view]').click();}
           else await page.locator(selector).first().click();
@@ -470,7 +470,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         }
         const fs=require('node:fs'),Authority=require('../core/authority.js');
         const session=Session.restore(E,fixture()),snapshot=new Authority(session).connect(0).snapshot();
-        const def={manifest:JSON.parse(fs.readFileSync(root+'/packs/uno/manifest.json','utf8')),view:fs.readFileSync(root+'/packs/uno/view.js','utf8'),styles:fs.readFileSync(root+'/packs/uno/styles.css','utf8'),rules:['Правила UNO']};
+        const bundles={};require('node:vm').runInNewContext(fs.readFileSync(root+'/installed-packs.js','utf8'),bundles);const bundle=bundles.PlayroomInstalledPacks.find(item=>item.manifest.id==='uno');const def={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:['Правила UNO']};
         await page.evaluate(({snapshot,def})=>{
           snapshot.state.status='finished';
           const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('No actions during modal test');}};
@@ -478,7 +478,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         },{snapshot,def});
         for(const command of ['rules','result']){
           // Keyboard activation isolates modal scrolling from table footer layout.
-          if(command==='rules'){await page.locator('.network-game [data-command=settings]').first().click();await page.locator('.modal [data-shared-rules]').click();}else await page.locator('.network-game [data-command='+command+']').first().press('Enter');
+          if(command==='rules'){await page.locator('.network-game [data-command=settings]').first().click();await page.locator('.modal [data-shared-rules],.modal [data-quick-shortcut][data-command=rules]').first().click();}else await page.locator('.network-game [data-command='+command+']').first().press('Enter');
           await checkDialog('network '+command);
           await page.locator('.shared-modal-backdrop [data-command=close-modal]').first().click();
           await page.evaluate(()=>scrollTo(0,0));await gesture(3,height/2,100);

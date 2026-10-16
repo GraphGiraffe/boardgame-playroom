@@ -163,3 +163,9 @@ npx wrangler pages deploy /path/to/verified-runtime --project-name playroom-hod-
 ```
 
 Токен/аккаунт задаются через окружение. Не загружайте публичный PWA ZIP поверх защищённого сайта без прежней приватной обёртки. Веб drag-and-drop загрузка недоступна в Git-integrated Pages проекте; прямой deploy через Wrangler сохраняет интеграцию. Финальный результат подтверждает проверка origin/release-info и отчёт deploy-report.json.
+
+## 0.18 RC: без изменения стабильного сайта
+
+Кандидат выпускается из проверенной dev пары отдельными prerelease tags приложения/коллекции. Main и production остаются стабильными. Порядок: выбранные тесты → сборки/SHA → PR в dev → immutable artifacts/releases → packs-publish с channel=0.18-rc.1 → prerelease gateway operation=preview, pack_channel=0.18-rc.1. Для публикации уже проверенных assets явно указывается checks=none; проверка байтов/защиты/offline обязательна. Автоматические Git builds сохраняются выключенными.
+
+Preview запускает production smoke до/после и сравнивает версии/каталог/hash, помимо canonical deployment. Паковые prerelease нельзя публиковать в пустой production channel. Точные свидетельства — [отчёт 0.18 RC](RC-0.18.0-rc.1.md). Старые команды preview в исторических разделах ниже/выше требуют дополнить обязательным checks=none и отдельным RC channel; отсутствие выбора не запускает публикацию.

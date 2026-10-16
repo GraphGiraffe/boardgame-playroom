@@ -46,6 +46,7 @@ const next = Core.applyAction(state, state.turn, Core.botAction(state));
 ## Браузер
 
 ```html
+<script src="core/random.js"></script>
 <script src="core/engine.js"></script>
 <script src="packs/snakes/rules.js"></script>
 <script src="core/session.js"></script>

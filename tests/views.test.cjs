@@ -10,8 +10,19 @@ const root = path.resolve(__dirname, '..');
 const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/engine.js', ...games.map(g => `packs/${g}/rules.js`), 'core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
-  vm.runInContext(fs.readFileSync(file==='shared/view-kit.js'?sharedKit:path.join(root, file), 'utf8'), sandbox, { filename: file });
+for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+  const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
+  if(match){
+    const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
+    sandbox.PlayroomPack={...manifest,asset:()=>'',adaptModel:spec=>sandbox.PlayroomModelRegistration.adapt(sandbox.TabletopCore,spec)};
+    const catalogs={};for(const [locale,files]of Object.entries(manifest.sourceModules?.locales||{})){
+      catalogs[locale]=Object.assign({},...files.map(name=>JSON.parse(fs.readFileSync(path.join(base,name),'utf8'))));
+    }
+    sandbox.PlayroomPackResources={locales:catalogs};
+    for(const name of manifest.sharedDomain||[])vm.runInContext(fs.readFileSync(path.join(path.dirname(sharedKit),'domain',name+'.js'),'utf8'),sandbox,{filename:name});
+    for(const name of manifest.sourceModules?.[match[2]]||[])vm.runInContext(fs.readFileSync(path.join(base,name),'utf8'),sandbox,{filename:name});
+  }
+  vm.runInContext(fs.readFileSync(file.startsWith('shared/')?path.join(path.dirname(sharedKit),file.slice(7)):path.join(root, file), 'utf8'), sandbox, { filename: file });
 }
 const E = sandbox.TabletopCore, V = sandbox.PlayroomViews;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -52,7 +63,7 @@ test('standalone UI shares source and target policies without browser or game de
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
-  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0">0<\/span>/);
+  assert.match(H.countBadge(0,'Колода <&'),/data-piece-count="0" aria-label="Колода &lt;&amp;: 0"[^>]*>0<\/span>/);
   assert.match(H.countBadge(7,'Рука',{hand:true}),/piece-count is-hand/);
   assert.doesNotMatch(H.hand([],0),/piece-count/);
   for(const count of [-1,1.5,NaN,'7'])assert.throws(()=>H.countBadge(count));
@@ -100,14 +111,15 @@ test('private hands/decks do not leak identities; public hands retain every card
     const state = make(game), hand = state.data.hands[1];
     const stock = state.data.drawPile || state.data.stock;
     hand.push(...stock.splice(1, Math.min(12, stock.length - 1)));
-    hand.forEach((card, i) => { card.id = `SECRET_HAND_${i}`; });
-    stock.forEach((card, i) => { card.id = `SECRET_STOCK_${i}`; });
-    assert.doesNotMatch(render(state, 0), /SECRET_/, `${game}: hidden hand or stock identity leaked`);
-    assert.doesNotMatch(render(state, -1), /SECRET_/, `${game}: handoff identity leaked`);
+    const hidden=render(state,0),handoff=render(state,-1);
+    for(const card of [...hand,...stock])for(const html of [hidden,handoff]){
+      assert(!html.includes('card-'+card.id+'"')&&!html.includes('tile-'+card.id+'"'),game+': private component identity leaked');
+    }
+
     state.openHands = true;
     const html = render(state, 0);
     for (const card of hand) assert.ok(html.includes(`-${card.id}"`), `${game}: public card omitted`);
-    assert.doesNotMatch(html, /SECRET_STOCK_/, `${game}: public-hands mode leaked stock`);
+    for(const card of stock)assert(!html.includes('card-'+card.id+'"')&&!html.includes('tile-'+card.id+'"'),game+': public-hands mode leaked stock');
   }
 });
 
@@ -223,7 +235,7 @@ test('manual UNO controls are constant and accusations use public player context
   state.data.uno.mode = 'auto';
   assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/);
   delete state.data.uno;
-  assert.doesNotMatch(render(state, 0), /uno-call|data-player-target|uno-manual-hint/, 'legacy games keep automatic mode');
+  assert.throws(()=>E.validateState(state), 'the new API requires explicit UNO state');
   vm.runInContext(fs.readFileSync(path.join(root, 'packs/uno/manifest.js'), 'utf8'), sandbox);
   const setting = sandbox.PlayroomCatalog.uno.settings.find(item => item.key === 'unoMode');
   assert.equal(setting.default, 'manual');
@@ -262,6 +274,7 @@ test('all source packs provide only API 2 elements with application-owned placem
     const state=make(game,'classic',E.get(game).max);
     for(const turn of state.players.keys())for(const viewer of [-1,...state.players.keys()]){
       state.turn=turn;
+      if(game==='durak')Object.assign(state.data,{attacker:turn,boutOrigin:turn,attackCursor:turn,defender:(turn+1)%state.players.length});
       const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)" data-player-index="(\d+)"([^>]*)>/g)];
       assert.equal(panels.length,state.players.length,game);
       assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
@@ -285,7 +298,7 @@ test('player hands render every hidden piece and score units agree with the rule
         assert.equal((content.handHTML.match(/class="piece-back /g)||[]).length,state.data.hands[index].length,game);
         assert.equal(content.handCount,state.data.hands[index].length);
         assert.equal(content.open,false);
-        if(game==='domino'){const open=clone(projected);open.data.hands[index]=state.data.hands[index];const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
+        if(game==='domino'){const open=E.project({...state,openHands:true},0);const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
       }
     }
     for(const viewer of [-1,0,1]){
@@ -343,7 +356,7 @@ test('relative seats keep indices, own hands and canonical spectator order',()=>
 });
 test('compact pack badges use numeric positions and mutually exclusive accessible roles',()=>{
   const snakes=make('snakes');snakes.data.positions=[0,16];
-  const html=render(snakes);assert.match(html,/data-motion-counter="position">0<\/span>/);assert.match(html,/data-motion-counter="position">16<\/span>/);
+  const html=render(snakes);assert.match(html,/data-motion-counter="position" aria-label="Клетка: 0"/);assert.match(html,/data-motion-counter="position" aria-label="Клетка: 16"/);
   const durak=make('durak');durak.data.taking=true;
   const taken=render(durak);assert.match(taken,/data-ui-icon="takeCards"/);assert.doesNotMatch(taken,/data-ui-icon="shield"/);assert.match(taken,/aria-label="Берёт"/);
   durak.data.taking=false;assert.match(render(durak),/data-ui-icon="shield"/);

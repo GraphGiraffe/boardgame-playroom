@@ -1,0 +1,48 @@
+{
+  "formatVersion": 1,
+  "entries": [
+    {
+      "source": "shared/components/game-components.js",
+      "target": "core/game-components.js",
+      "format": "text",
+      "sha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91",
+      "renderedSha256": "93fe25d0099f7094bcff4a79123ed14671cca4026506e9f83d4cba1681cceb91"
+    },
+    {
+      "source": "shared/components/game-components.css",
+      "target": "core/game-components.css",
+      "format": "text",
+      "sha256": "9eaef4eb252a0d8b4d2e3e07ea9795a1d4a212eb76852a08671467b1981124d5",
+      "renderedSha256": "9eaef4eb252a0d8b4d2e3e07ea9795a1d4a212eb76852a08671467b1981124d5"
+    },
+    {
+      "source": "shared/sounds/standard-sounds.json",
+      "target": "core/standard-sounds.js",
+      "format": "module",
+      "globalName": "PlayroomStandardSounds",
+      "sha256": "33119d74ea0c910699b02498971d50df15cde3b273dd4c69f925316dd5719614",
+      "renderedSha256": "dc904fe9951eef006e6d2fb87d5f04f7e0b2f44bbba59415f4205ef12ba8d71f"
+    },
+    {
+      "source": "shared/assets/catalog.json",
+      "target": "themes/assets.json",
+      "format": "text",
+      "sha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a",
+      "renderedSha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a"
+    },
+    {
+      "source": "shared/locales/ru/components.json",
+      "target": "locales/ru/ui-game-components.json",
+      "format": "text",
+      "sha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab",
+      "renderedSha256": "c6e22a5dce36e340b944a79fd7efaf5dfb6f24c078e41ca9b4c3cc2ad7eb7cab"
+    },
+    {
+      "source": "shared/domain/token-layout.js",
+      "target": "core/token-layout.js",
+      "format": "text",
+      "sha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d",
+      "renderedSha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d"
+    }
+  ]
+}

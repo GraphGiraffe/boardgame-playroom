@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPlayerTarget=api;})(typeof globalThis==='undefined'?this:globalThis,function(){
   'use strict';
   class PlayerTarget {
@@ -17,15 +18,15 @@
       if(!actions.length){this.cancel();return;}if(!host){return;}if(!trigger){this.cancel();return;}
       this.menu?.remove();for(const node of host.querySelectorAll(`[data-player-target="${this.active}"]`))node.setAttribute('aria-expanded','true');
       const menu=trigger.ownerDocument.createElement('div');menu.className='player-target-menu';menu.setAttribute('role','menu');
-      const cards=actions.every(a=>a.targetChoice==='card'&&Number.isSafeInteger(a.cardIndex));if(cards){menu.classList.add('is-card-choice');menu.setAttribute('aria-label','Выберите закрытую карту');}
-      actions.forEach(action=>{const button=trigger.ownerDocument.createElement('button');button.type='button';button.className='scene-button';button.setAttribute('role','menuitem');if(cards){button.innerHTML=globalThis.TabletopUI.back();button.setAttribute('aria-label',`Вытянуть карту ${action.cardIndex+1}`);button.dataset.cardIndex=action.cardIndex;}else button.textContent=action.targetPrompt||action.label||'Выполнить';button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();const current=this.available(this.active).find(a=>JSON.stringify(a)===JSON.stringify(action));this.cancel();if(current)this.commit(current);});menu.appendChild(button);});
+      const cards=actions.every(a=>a.targetChoice==='card'&&Number.isSafeInteger(a.cardIndex));if(cards){menu.classList.add('is-card-choice');menu.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.player-target.5c7fb855375c"));}
+      actions.forEach(action=>{const button=trigger.ownerDocument.createElement('button');button.type='button';button.className='scene-button';button.setAttribute('role','menuitem');if(cards){button.innerHTML=globalThis.TabletopUI.back();button.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.player-target.fdc04aaf2460",{p0:String(action.cardIndex+1)}));button.dataset.cardIndex=action.cardIndex;}else button.textContent=action.targetPrompt||action.label||globalThis.PlayroomMessages.text("ui.player-target.50799cfd526a");button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();const current=this.available(this.active).find(a=>JSON.stringify(a)===JSON.stringify(action));this.cancel();if(current)this.commit(current);});menu.appendChild(button);});
       const panel=trigger.closest?.('.player-panel');
       (panel||trigger.ownerDocument.body).appendChild(menu);this.menu=menu;menu.querySelector('button')?.focus();
       if(cards){
         const field=host.querySelector('[data-game-element="field"]');if(field){
           const heading=trigger.ownerDocument.createElement('div');heading.className='card-choice-heading';
-          heading.innerHTML=(trigger.querySelector('.avatar')?.outerHTML||'')+'<span>Выберите карту</span>';
-          const close=trigger.ownerDocument.createElement('button');close.type='button';close.className='icon-btn';close.setAttribute('aria-label','Отмена');close.innerHTML=globalThis.TabletopUI.icon('close');close.addEventListener('click',e=>{e.stopPropagation();this.cancel(true);});heading.appendChild(close);menu.prepend(heading);
+          heading.innerHTML=(trigger.querySelector('.avatar')?.outerHTML||'')+("<span>"+globalThis.PlayroomMessages.text("ui.player-target.b7639ddbebdd")+"</span>");
+          const close=trigger.ownerDocument.createElement('button');close.type='button';close.className='icon-btn';close.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.player-target.8fbe9b75cbdf"));close.innerHTML=globalThis.TabletopUI.icon('close');close.addEventListener('click',e=>{e.stopPropagation();this.cancel(true);});heading.appendChild(close);menu.prepend(heading);
           field.appendChild(menu);menu.classList.add('in-field');return;
         }
       }

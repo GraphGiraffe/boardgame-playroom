@@ -4,12 +4,12 @@
 
 | Блок | Подблоки |
 | --- | --- |
-| core | state, packs, screen |
+| core | state, session-runtime, model, domain, appearance, localization, packs, screen |
 | input | gestures, motion, hands, feedback |
 | games | layout, actions |
-| ui | navigation, history, room |
+| ui | navigation, history, room, appearance |
 | storage | profile, journal, history |
-| network | authority, transport, resume |
+| network | authority, table, transport, resume |
 | pairing | codes, audio, pwa |
 
 Примеры:
@@ -31,6 +31,8 @@ node scripts/codex/test.cjs --changed origin/dev --list
 Целевой запуск нужен для быстрых итераций и небольших выпусков. Профили app/core-ui/layout/smoke/rtc сохраняют прежние проверочные наборы. `npm test` запускает все блоки. Для локального полного совместного прогона используйте `bash scripts/codex/check.sh --full --packs-dir ../playroom-paks/packs`. В ручном `Release candidate build` поле `checks` обязательно и не имеет значения по умолчанию. Укажите `none`, если продуктовые тесты сознательно не нужны, или список блоков, подблоков и сценариев, например `case/rc2-hub-browser,ui/room`. Для запуска всех семи блоков явно перечислите `core,input,games,ui,storage,network,pairing`; сокращения `all` и `full` в релизном workflow запрещены. Пустое или неизвестное значение отвергается до подготовки паков. При `none` отдельный шаг фиксирует сознательный пропуск тестов; сборка и сверка `SHA256SUMS` всё равно выполняются. Для операций Pages через этот gateway указывайте `checks=none`: исходные тесты уже относятся к кандидату, а защищённый Pages smoke при публикации обязателен. Зелёный целевой запуск подтверждает только выбранное поведение.
 
 Подробные TAP-логи находятся в `dist/test-results/`. В консоли — сводка по выбранным блокам; при ошибке выводится полный протокол и ненулевой exit status. Новый сценарий регистрируется ровно один раз; незарегистрированные файлы и дубли блокируют запуск.
+
+`core/session-runtime` проверяет независимую историю/события/codec без платформы и порт часов Session. Для изменения Session добавляйте `case/session`, authority/durable-authority, нужные storage/recovery и `network/table`; браузерный импорт IndexedDB проверяется отдельно. Сам этот подблок не является приёмкой всей сети или всех паков.
 
 ## Аудит и очистка
 

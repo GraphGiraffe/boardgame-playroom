@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
-const files=['app/vendor/qrcode.js','app/vendor/jsqr.js','app/acoustic-pairing.js','app/pairing.js','app/qr-scanner.js'];
+const files=['core/messages.js','app/vendor/qrcode.js','app/vendor/jsqr.js','app/acoustic-pairing.js','app/pairing.js','app/qr-scanner.js'];
 test('offline jsQR decodes a REAL PR3 QR from a camera-style PNG without BarcodeDetector or CDN', {timeout:45000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await browser.newPage();

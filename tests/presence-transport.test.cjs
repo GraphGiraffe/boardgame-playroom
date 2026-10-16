@@ -8,7 +8,7 @@ function fakeChannel(){
     addEventListener(type,fn){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(fn);},
     removeEventListener(type,fn){listeners.get(type)?.delete(fn);},
     emit(type,value){for(const fn of listeners.get(type)||[])fn(type==='message'?{data:JSON.stringify(value)}:{});},
-    send(raw){const message=JSON.parse(raw);if(message.kind==='hello')queueMicrotask(()=>this.emit('message',{kind:'transport-ready',version:1}));},
+    send(raw){const message=JSON.parse(raw);if(message.kind==='hello')queueMicrotask(()=>this.emit('message',{kind:'transport-ready',version:2}));},
     close(){if(closed)return;closed=true;this.readyState='closed';this.emit('close');}
   };
 }

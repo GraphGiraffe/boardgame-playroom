@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
 /* Reusable hand overflow affordances for combined, local and projected views. */
 (function(root,factory){
   'use strict';
@@ -24,10 +25,10 @@
       const doc=hand.ownerDocument;
       if(doc&&!hand.querySelector('.hand-scroll-controls')){
         const controls=doc.createElement('div');controls.className='hand-scroll-controls';
-        controls.setAttribute('role','group');controls.setAttribute('aria-label','Прокрутка руки');
-        controls.innerHTML='<span class="hand-scroll-hint">Листайте колёсиком</span>'+
-          '<button type="button" data-hand-scroll="left" aria-label="Прокрутить руку влево" title="Предыдущие карты">'+UI.icon('prev')+'</button>'+
-          '<button type="button" data-hand-scroll="right" aria-label="Прокрутить руку вправо" title="Следующие карты">'+UI.icon('next')+'</button>';
+        controls.setAttribute('role','group');controls.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.hand-overflow.7fcbdb48c123"));
+        controls.innerHTML=("<span class=\"hand-scroll-hint\">"+globalThis.PlayroomMessages.text("ui.hand-overflow.4ab396fbf9e4")+"</span>")+
+          ("<button type=\"button\" data-hand-scroll=\"left\" aria-label=\""+globalThis.PlayroomMessages.text("ui.hand-overflow.ead31dfacd2d")+"\" title=\""+globalThis.PlayroomMessages.text("ui.hand-overflow.25e7a84fe726")+"\">")+UI.icon('prev')+'</button>'+
+          ("<button type=\"button\" data-hand-scroll=\"right\" aria-label=\""+globalThis.PlayroomMessages.text("ui.hand-overflow.ebf10075db68")+"\" title=\""+globalThis.PlayroomMessages.text("ui.hand-overflow.00ae012a0141")+"\">")+UI.icon('next')+'</button>';
         hand.appendChild(controls);
       }
       const prev=hand.querySelector?.('[data-hand-scroll="left"]'),next=hand.querySelector?.('[data-hand-scroll="right"]');

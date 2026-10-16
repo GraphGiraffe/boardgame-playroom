@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 /* Client-only projected network history. Never stores host authority state. */
 (function(root,factory){
   'use strict';
@@ -8,7 +9,7 @@
   'use strict';
   const DB='playroom.network-client-history.v1',COPY=value=>JSON.parse(JSON.stringify(value));
   const id=value=>typeof value==='string'&&value.length>0&&value.length<=128;
-  const valid=s=>s&&s.protocolVersion===1&&['snapshot','history'].includes(s.kind)&&
+  const valid=s=>s&&s.protocolVersion===2&&['snapshot','history'].includes(s.kind)&&
     id(s.sessionId)&&id(s.authorityEpoch)&&id(s.game)&&id(s.packVersion)&&
     Number.isSafeInteger(s.revision)&&s.revision>=0&&Number.isInteger(s.viewer)&&s.viewer>=-1&&s.viewer<=31&&
     s.state&&typeof s.state==='object'&&!Array.isArray(s.state)&&
@@ -16,7 +17,7 @@
   // Explicit allowlist: no resume token, room snapshot, ICE credentials, rules seed,
   // command receipt, or other host-private envelope field can enter a client frame.
   function projectFrame(snapshot){
-    if(!valid(snapshot))throw Error('Некорректный снимок сетевого игрока.');
+    if(!valid(snapshot))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.a0780d9bec32"));
     return COPY({sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,
       revision:snapshot.revision,viewer:snapshot.viewer,game:snapshot.game,
       packVersion:snapshot.packVersion,state:snapshot.state,events:snapshot.events||[]});
@@ -24,7 +25,7 @@
   class ClientHistory {
     constructor({indexedDB=globalThis.indexedDB,name=DB}={}){this.indexedDB=indexedDB;this.name=name;this.database=null;this.opening=null;}
     async remove(key){
-      if(typeof key!=='string'||!key)throw Error('Некорректный архив');
+      if(typeof key!=='string'||!key)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.b9efa6ceb037"));
       await this.tx(['matches','frames'],'readwrite',tx=>{
         tx.objectStore('matches').delete(key);const request=tx.objectStore('frames').index('id').openCursor(key);
         request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};
@@ -33,7 +34,7 @@
     async open(){
       if(this.database)return this.database;
       if(this.opening)return this.opening;
-      if(!this.indexedDB)throw Error('IndexedDB недоступен на этом устройстве.');
+      if(!this.indexedDB)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.c46c3923936b"));
       this.opening=new Promise((resolve,reject)=>{
         const request=this.indexedDB.open(this.name,1);
         request.onupgradeneeded=()=>{
@@ -45,8 +46,8 @@
           }
         };
         request.onsuccess=()=>{const db=request.result;db.onversionchange=()=>{db.close();if(this.database===db)this.database=null;};this.database=db;resolve(db);};
-        request.onerror=()=>reject(request.error||Error('Не удалось открыть архив клиента.'));
-        request.onblocked=()=>reject(Error('Архив клиента занят другой вкладкой.'));
+        request.onerror=()=>reject(request.error||Error(globalThis.PlayroomMessages.text("ui.network-client-history.7496db695727")));
+        request.onblocked=()=>reject(Error(globalThis.PlayroomMessages.text("ui.network-client-history.6f53ca3ba46c")));
       });
       try{return await this.opening;}finally{this.opening=null;}
     }
@@ -55,13 +56,13 @@
         const tx=database.transaction(stores,mode);let result,reason;
         const abort=error=>{reason=error;try{tx.abort();}catch(_){reject(error);}};
         tx.oncomplete=()=>resolve(result);
-        tx.onabort=()=>reject(reason||tx.error||Error('Архив клиента недоступен.'));
+        tx.onabort=()=>reject(reason||tx.error||Error(globalThis.PlayroomMessages.text("ui.network-client-history.22632a7702f3")));
         try{run(tx,value=>{result=value;},abort);}catch(error){abort(error);}
       });
     }
     static frame(snapshot){return projectFrame(snapshot);}
     static id(roomId,participantId,sessionId=null){
-      if(!id(roomId)||!id(participantId)||(sessionId!==null&&!id(sessionId)))throw Error('Некорректное игровое место.');
+      if(!id(roomId)||!id(participantId)||(sessionId!==null&&!id(sessionId)))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.ac44e436825d"));
       // Match scope is required: the same persistent room + participant may
       // play multiple games without overwriting (or mixing) the old replay.
       return [roomId,participantId,...(sessionId?[sessionId]:[])].map(encodeURIComponent).join('|');
@@ -74,7 +75,7 @@
           const old=get.result;
           if(old&&(old.sessionId!==frame.sessionId||old.viewer!==frame.viewer||
               old.game!==frame.game||old.packVersion!==frame.packVersion)){
-            abort(Error('Игровое место или партия изменились; старая история сохранена.'));return;
+            abort(Error(globalThis.PlayroomMessages.text("ui.network-client-history.a0b86bb0cd2d")));return;
           }
           const last=Math.max(frame.revision,old?.revision??0),now=Date.now();
           const keys=tx.objectStore('frames').index('id').getAllKeys(key);
@@ -84,7 +85,7 @@
           matches.put({receivedRevision,presentedRevision:old?.presentedRevision??null,reviewedRevision:old?.reviewedRevision??null,id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
             game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),
             role:'client',revision:last,finished:frame.revision>=last?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
-            players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64)),
+            turnNumber:frame.state.timeline?.turn||null,turn:frame.state.turn,turnName:frame.state.players[frame.state.turn]?.name||null,round:frame.state.scene?.round||null,players:(frame.state.players||[]).map(p=>String(p.name).slice(0,64)),
             participants:Array.isArray(participants)?participants.map(p=>({...id(p.id)?{id:p.id}:{},nickname:String(p.nickname||p.name||'').slice(0,64),role:['player','spectator','table'].includes(p.role)?p.role:'player',bot:!!p.bot,local:!!p.local,isHost:!!p.isHost})):old?.participants||[]});
           };
           tx.objectStore('frames').put({id:key,revision:frame.revision,frame});
@@ -93,7 +94,7 @@
       return key;
     }
     async progress(key,upTo){
-      if(!Number.isSafeInteger(upTo)||upTo<0)throw Error('Некорректная ревизия.');
+      if(!Number.isSafeInteger(upTo)||upTo<0)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.4f028d686f84"));
       return this.tx(['frames'],'readonly',(tx,done)=>{
         const r=tx.objectStore('frames').index('id').getAllKeys(key);
         r.onsuccess=()=>{const stored=new Set(r.result.map(k=>k[1])),missing=[];let receivedRevision=-1;
@@ -103,7 +104,7 @@
       });
     }
     async mark(key,kind,revision){
-      if(!['presentedRevision','reviewedRevision'].includes(kind)||!Number.isSafeInteger(revision)||revision<0)throw Error('Некорректная позиция истории.');
+      if(!['presentedRevision','reviewedRevision'].includes(kind)||!Number.isSafeInteger(revision)||revision<0)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.682569d9643d"));
       return this.tx(['matches','frames'],'readwrite',(tx,done)=>{
         const matches=tx.objectStore('matches'),r=matches.get(key);
         r.onsuccess=()=>{if(!r.result)return;const row=r.result,frame=tx.objectStore('frames').get([key,revision]);
@@ -120,7 +121,7 @@
         const frame=await transport.history(revision);
         if(!isCurrent())break;
         if(!valid(frame)||frame.kind!=='history'||frame.revision!==revision||
-          ['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>frame[k]!==snapshot[k]))throw Error('История другого подключения отклонена.');
+          ['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>frame[k]!==snapshot[k]))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.7c9ce377829e"));
         await this.save({roomId,participantId,roomName,snapshot:frame});
       }
     }
@@ -134,7 +135,7 @@
         }
       };
     });}
-    async read(key){if(typeof key!=='string'||key.length>515||!key.includes('|'))throw Error('Некорректная запись.');
+    async read(key){if(typeof key!=='string'||key.length>515||!key.includes('|'))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.0c46209c576c"));
       return this.tx(['matches','frames'],'readonly',(tx,done)=>{
         const match=tx.objectStore('matches').get(key),frames=tx.objectStore('frames').index('id').getAll(key),data={};
         match.onsuccess=()=>{data.match=match.result;};

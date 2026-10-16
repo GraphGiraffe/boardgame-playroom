@@ -66,7 +66,7 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','app/network-ui.js','app/network-session-store.js','app/network-client-history.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['core/messages.js','app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','application/pwa-update-coordinator.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
   assert.match(source,/caches\.open\(CACHE\)\)\.match\('\.\/index\.html'\)/);
   assert.match(source,/app\/vendor\/qrcode\.js/);
@@ -89,7 +89,7 @@ test('index HTML does not contain escaped newlines between tags',()=>{
   assert.match(source,/src="app\/acoustic-pairing\.js"/);
   assert.match(source,/src="app\/vendor\/ggwave\.js"/);
   assert.match(source,/src="app\/game-screen\.js"/);
-  assert.match(source,/src="app\/network-session-store\.js"/);
+  assert.match(source,/src="platform\/web\/session-store\.js"/);
   assert.match(source,/src="app\/network-client-history\.js"/);
   assert.match(source,/src="core\/game-flow\.js"/);
   assert.match(source,/src="core\/hand-overflow\.js"/);
@@ -98,14 +98,14 @@ test('index HTML does not contain escaped newlines between tags',()=>{
 });
 
 test('offline pairing UI provides speaker-only mode and explains blocked microphone',()=>{
-  const ui=fs.readFileSync(path.join(root,'app/network-ui.js'),'utf8');
+  const ui=['application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js'].map(file=>fs.readFileSync(path.join(root,file),'utf8')).join('\n');
   const acoustic=fs.readFileSync(path.join(root,'app/acoustic-pairing.js'),'utf8');
-  assert.match(ui,/id="net-host-acoustic-send"/,'speaker-only invitation must be offered');
+  assert.match(ui,/net-host-acoustic-send/,'speaker-only invitation must be offered');
   assert.match(ui,/async function sendHostSoundOnly\(signal\)/);
-  assert.match(ui,/await Acoustic\.play\(message,\{protocol,signal\}\)/);
+  assert.match(ui,/await ports\.Acoustic\.play\(message,\{protocol,signal\}\)/);
   assert.match(ui,/captureDisabled\(\)/,'capture buttons are disabled for unsupported origins');
   assert.match(ui,/captureNotice\(\)/,'show an actionable microphone warning');
-  assert.match(ui,/id="net-client-acoustic-listen"/);
+  assert.match(ui,/net-client-acoustic-listen/);
   assert.match(acoustic,/function microphoneIssue\(/);
   assert.match(acoustic,/function explainMicrophoneError\(/);
 });
@@ -155,7 +155,7 @@ test('R2 catalog route verifies snapshot bytes and serves immutable pack files',
 
 test('remote pack loader checks URL, SHA256 and manifest before installation',async()=>{
  const crypto=require('node:crypto'),{RemoteCatalog,validate}=require('../app/remote-catalog.js');
- const bundle={manifest:{id:'uno',version:'0.4.9',stateVersion:1,engineApi:1,viewApi:2}};
+ const bundle={manifest:{id:'uno',version:'0.4.9',stateVersion:1,engineApi:3,viewApi:2}};
  const bytes=Buffer.from(JSON.stringify(bundle)),sha=crypto.createHash('sha256').update(bytes).digest('hex');
  const item={...bundle.manifest,sha256:sha,url:`/api/packs/files/uno/0.4.9/${sha}.playroom-pack.json`};
  const catalog={format:'playroom-catalog',version:1,collection:'0.6.0',packs:[item]};
@@ -382,7 +382,7 @@ for fail in (False,True):
  def command(cmd,**kwargs):
   assert cmd[0]!='gh'
   if cmd[0]=='npx':pages.uploads.append(cmd[cmd.index('--branch')+1]);pages.current=new
- def prepare(public,sums,wrapper,destination):destination.mkdir();return {'sha256':'b'*64}
+ def prepare(public,sums,wrapper,destination,catalog_channel=""):destination.mkdir();return {'sha256':'b'*64}
  def smoke(url,*args,**kwargs):
   if fail and url=='https://new.example':raise ValueError('smoke failed')
  args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.4',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
@@ -394,4 +394,58 @@ for fail in (False,True):
  assert pages.uploads==['production']
 `;
  require('node:child_process').execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
+});
+
+test('preview catalog cannot read or switch the production pointer',async()=>{
+ const vm=require('node:vm'),crypto=require('node:crypto');
+ const source=fs.readFileSync(path.join(root,'scripts/pack-catalog-route.js'),'utf8');
+ const route=vm.runInNewContext('const PlayroomPackCatalogPrefix="channels/0.18-rc.1/";'+source+'\nPlayroomPackRoute',{Request,Response,URL,crypto:crypto.webcrypto,Uint8Array});
+ const body=Buffer.from('{"format":"playroom-catalog","version":1,"collection":"0.7.0-rc.1","packs":[]}'),sha=crypto.createHash('sha256').update(body).digest('hex');
+ const prefix='channels/0.18-rc.1/',read=[],pointer={version:1,sha256:sha,key:prefix+`catalog/snapshots/${sha}.json`};
+ const env={PLAYROOM_PACKS:{get:async key=>{read.push(key);return key===prefix+'catalog/current.json'?{text:async()=>JSON.stringify(pointer)}:key===pointer.key?{arrayBuffer:async()=>Uint8Array.from(body).buffer}:null;}}};
+ assert.equal((await route.fetch(new Request('https://preview.test/api/packs/catalog'),env)).status,200);assert(read.every(key=>key.startsWith(prefix)));
+ pointer.key=`catalog/snapshots/${sha}.json`;assert.equal((await route.fetch(new Request('https://preview.test/api/packs/catalog'),env)).status,503);
+});
+
+test('RC preview publishes once to a preview branch and verifies production runtime and catalog unchanged',()=>{
+ const {execFileSync}=require('node:child_process');
+ const code=`
+import importlib.util, json, os, tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+spec=importlib.util.spec_from_file_location('pages','scripts/pages-deploy.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-222222222222';sha='a'*40
+class Pages:
+ def __init__(self):self.project='existing';self.uploads=[];self.patches=[]
+ def api(self,method='GET',suffix='',payload=None):
+  if method=='PATCH':self.patches.append(payload)
+  if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha}}}]
+  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':{'KEEP':{'value':'value'}}}}}
+ def production_target(self,value):return {'id':value,'url':'https://existing.pages.dev'}
+ def manual_uploads(self,project):pass
+for tamper in (False,True):
+ pages=Pages();stable_reads=[]
+ def prepare(public,sums,wrapper,destination,catalog_channel=''):
+  assert catalog_channel=='0.18-rc.1';destination.mkdir();return {'sha256':'b'*64}
+ def command(cmd,**kwargs):
+  if cmd[0]=='node':return # Wrapper byte validation has independent real tests.
+  assert cmd[0]=='npx';branch=cmd[cmd.index('--branch')+1];assert branch.startswith('verify-');pages.uploads.append(branch)
+ def smoke(url,runtime=None,online_only=False,report_path=None):
+  stable=url=='https://existing.pages.dev'
+  if stable:stable_reads.append(url)
+  data={'appVersion':'0.17.6' if stable else '0.18.0-rc.1','catalog':{'collection':'0.6.5' if stable else '0.7.0-rc.1','sha256':'changed' if stable and tamper and len(stable_reads)>1 else 'original'}}
+  Path(report_path).write_text(json.dumps(data))
+ args=SimpleNamespace(operation='preview',release='v0.18.0-rc.1',pack_channel='0.18-rc.1',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('private.zip'),commit=sha)
+ with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
+  try:report=m.run(args)
+  except ValueError as error:
+   assert tamper and 'catalog changed' in str(error)
+  else:
+   assert not tamper and report['productionUnchanged'] and report['previewVerified']['appVersion']=='0.18.0-rc.1'
+  assert len(pages.uploads)==1 and len(stable_reads)==2
+  assert pages.patches[0]['deployment_configs']['preview']['r2_buckets']['PLAYROOM_PACKS']['name']=='existing-packs'
+  assert pages.patches[0]['deployment_configs']['preview']['env_vars']['KEEP']['value']=='value'
+`;
+ execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
 });

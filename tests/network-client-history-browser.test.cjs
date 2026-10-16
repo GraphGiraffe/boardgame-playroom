@@ -12,7 +12,7 @@ test('guest browser reload preserves only personal projected frames, without hos
       await page.goto(url);
       await page.evaluate(async()=>{
         const store=new PlayroomNetworkClientHistory({name:'lan-02-browser-personal'});
-        const mk=(revision,epoch='epoch-old')=>({kind:'snapshot',protocolVersion:1,sessionId:'session-1',authorityEpoch:epoch,
+        const mk=(revision,epoch='epoch-old')=>({kind:'snapshot',protocolVersion:2,sessionId:'session-1',authorityEpoch:epoch,
           revision,viewer:1,game:'uno',packVersion:'0.2.1',state:{move:revision,game:'uno',packVersion:'0.2.1',
             players:[{name:'Host'},{name:'Guest'}],data:{hands:[null,[{id:'OWN-CARD'}]],secret:'NONE'}},
           events:[],actions:[{type:'play'}],resumeToken:'HIDDEN-BEARER',recovery:{tokens:[{token:'HOST-TOKEN'}]}});
@@ -26,7 +26,7 @@ test('guest browser reload preserves only personal projected frames, without hos
         const store=new PlayroomNetworkClientHistory({name:'lan-02-browser-personal'}),list=await store.list();
         const saved=await store.read(list[0].id);
         let rejected=false;try{
-          await store.save({roomId:'room-a',participantId:'guest-a',snapshot:{...saved.frames[1],kind:'snapshot',viewer:0,protocolVersion:1}});
+          await store.save({roomId:'room-a',participantId:'guest-a',snapshot:{...saved.frames[1],kind:'snapshot',viewer:0,protocolVersion:2}});
         }catch(_){rejected=true;}
         const all=JSON.stringify(saved);store.close();
         return {count:list.length,role:list[0]?.role,revision:list[0]?.revision,frames:list[0]?.savedFrames,
@@ -47,7 +47,7 @@ test('reusing a room for UNO then Checkers retains two isolated guest archives a
       await page.goto(url);
       await page.evaluate(async()=>{
         const store=new PlayroomNetworkClientHistory({name:'lan-02-separate-match-archives'});
-        const mk=(sessionId,game,rev)=>({kind:'snapshot',protocolVersion:1,sessionId,authorityEpoch:'epoch-'+sessionId,
+        const mk=(sessionId,game,rev)=>({kind:'snapshot',protocolVersion:2,sessionId,authorityEpoch:'epoch-'+sessionId,
           revision:rev,viewer:1,game,packVersion:'0.1.0',state:{move:rev,game,packVersion:'0.1.0',
             players:[{name:'Host'},{name:'Guest'}],data:{hand:'OWN-VIEW-ONLY'}}});
         // The obsolete format from earlier RC7-UX builds is preserved as an
@@ -87,7 +87,7 @@ test('incremental history fills holes only, persists independent cursors and rej
  try{const page=await browser.newPage();await page.goto(url);
   const result=await page.evaluate(async()=>{
    const store=new PlayroomNetworkClientHistory({name:'incremental-016'});
-   const mk=revision=>({kind:'history',protocolVersion:1,sessionId:'s',authorityEpoch:'e',viewer:0,game:'g',packVersion:'1',revision,state:{move:revision,game:'g',packVersion:'1',players:[]}});
+   const mk=revision=>({kind:'history',protocolVersion:2,sessionId:'s',authorityEpoch:'e',viewer:0,game:'g',packVersion:'1',revision,state:{move:revision,game:'g',packVersion:'1',players:[]}});
    const options={roomId:'room',participantId:'p'},key=PlayroomNetworkClientHistory.id('room','p','s');
    await store.save({...options,snapshot:mk(0)});await store.save({...options,snapshot:mk(3)});
    const before=await store.progress(key,3),calls=[];

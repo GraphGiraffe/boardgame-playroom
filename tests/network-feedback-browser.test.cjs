@@ -4,22 +4,21 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const Engine=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js');
 require('../packs/uno/rules.js');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const definition={manifest:JSON.parse(read('packs/uno/manifest.json')),view:read('packs/uno/view.js'),styles:read('packs/uno/styles.css'),rules:Engine.get('uno').rules,sounds:{'uno.call':{label:'UNO!',notes:[{at:0,duration:.2,frequency:440}]}}};
+const compiledPacks={};require('node:vm').runInNewContext(read('installed-packs.js'),compiledPacks);
+const unoBundle=compiledPacks.PlayroomInstalledPacks.find(bundle=>bundle.manifest.id==='uno');
+const definition={manifest:unoBundle.manifest,view:unoBundle.files['view.js'],styles:unoBundle.files['styles.css'],rules:Engine.get('uno').rules,sounds:{'uno.call':{label:'UNO!',notes:[{at:0,duration:.2,frequency:440}]}}};
 const seed=()=>new Session(Engine,'uno',{seed:23,mode:'pass',preset:'quick',unoMode:'manual',players:[{name:'Иван'},{name:'Джон'}]});
 async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-  for(const name of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/ui.js','core/player-target.js','core/motion.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);try{
     const s=seed(),authority=new Authority(s),owner=authority.connect(0);
-    // This browser smoke also runs with the frozen UNO 0.2.0. Supply the
-    // optional action label as projected fixture data: the shared client must
-    // behave identically without requiring the enhanced pack at runtime.
     const snapshot=structuredClone(owner.snapshot());
     snapshot.actions=snapshot.actions.map(action=>action.type==='accuse-uno'?{...action,targetPrompt:'UNO!'}:action);
     await page.evaluate(({snapshot,definition})=>{
@@ -60,10 +59,6 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     const action=initial.actions.find(a=>a.type==='declare-uno');
     const receipt=a.dispatch(P.command(initial,action,'browser-uno-1'));
     assert.equal(receipt.ok,true);
-    // The legacy frozen pack emitted this reaction before optional visual
-    // notices were introduced. Exercise the *platform* projected-notice
-    // contract with explicit authorized fixture metadata, then keep all
-    // exact sound, duplicate and visibility assertions below.
     const projected=structuredClone(receipt.snapshot);
     const announced=projected.events.at(-1);
     assert.equal(announced.kind,'false-uno');
@@ -76,7 +71,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
     const finish=structuredClone(projected);
-    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.players[1].score=148;finish.state.move=finish.revision;
+    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.winners=[1];finish.state.players[1].score=148;finish.state.scene.players.find(player=>(player.player??player.id)===1).metrics.find(metric=>metric.kind==='points').value=148;finish.state.move=finish.revision;
     finish.events.push({id:3,kind:'finish',player:1,text:'Джон побеждает'});finish.state.events=finish.events;
     finish.cues=[{id:'defeat',eventId:3}];
     await page.evaluate(next=>qaClient.emit(next),finish);
@@ -229,13 +224,17 @@ test('external modal closing restores projected legal actions without another ne
 test('Ludo selects a pawn without committing, keeps it after a destination, and consumes every die',{timeout:40000},async()=>{
   require('../packs/ludo/rules.js');
   const shared=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared');
-  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','round-token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
+  const installed={};require('node:vm').runInNewContext(read('installed-packs.js'),installed);
+  const bundle=installed.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='ludo');
+  const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('ludo').rules,
+    assets:Object.fromEntries(['die','round-token'].map(name=>['assets/shared/'+name+'.svg','data:image/svg+xml;base64,'+Buffer.from(bundle.files['assets/shared/'+name+'.svg']).toString('base64')]))};
+
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);
   try{
     const session=new Session(Engine,'ludo',{seed:17,diceCount:3,sixReroll:'off',players:[{name:'Аня'},{name:'Борис'}]}),authority=new Authority(session),client=authority.connect(0),base=client.snapshot();
-    let state=Engine.clone(base.state),revision=0;
-    const snapshot=()=>({...base,revision,state:Engine.project(state,0),events:state.events,actions:Engine.legalActions(state,0)});
+    let state=Engine.clone(session.current),revision=0;
+    const snapshot=()=>{const projected=Engine.project(state,0);return {...base,revision,state:projected,events:projected.events,actions:Engine.legalActions(state,0)};};
     await page.exposeFunction('ludoCommit',a=>{state=Engine.applyAction(state,0,a);revision++;return snapshot();});
     await page.evaluate(({definition,snapshot})=>{
       window.qaSent=[];const listeners=new Set();

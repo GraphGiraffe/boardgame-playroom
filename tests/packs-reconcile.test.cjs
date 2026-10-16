@@ -24,9 +24,9 @@ function views(){
 function bundle(marker){
   return {
     format:'playroom-pack',formatVersion:1,
-    manifest:{id:'demo',name:'Demo',version:'1.0.0',engineApi:1,viewApi:2,stateVersion:1},
+    manifest:{id:'demo',name:'Demo',version:'1.0.0',engineApi:3,viewApi:2,stateVersion:1},
     files:{
-      'rules.js':"globalThis.TabletopCore.register({id:'demo',name:'Demo',min:1,max:2,presets:[{id:'base'}],create(){},legal(){return[]},apply(){}});",
+      'rules.js':require('./pack-fixture.cjs').rules({id:'demo',name:'Demo',min:1,max:2,preset:'base'}),
       'view.js':"globalThis.PlayroomViews.register('demo',()=>({api:2,family:'board',elements:{field:'<div>"+marker+"</div>'}}),()=>'<div>"+marker+"</div>');",
       'styles.css':'.demo::after{content:"'+marker+'"}'
     }
