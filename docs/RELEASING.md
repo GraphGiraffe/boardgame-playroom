@@ -173,3 +173,7 @@ Preview запускает production smoke до/после и сравнива�
 ### 0.18-rc.1 опубликован в отдельное preview, 2026-10-16
 
 Приложение [v0.18.0-rc.1](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.1) / коллекция [v0.7.0-rc.1](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.1). **[Проверенное preview](https://51c9a867.playroom-hod-test.pages.dev)**, [Action #38846469923](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38846469923): preview-verified, protection/runtime/catalog 12 hashes/offline прошли, production before/after совпал и canonical не переключён. Стабильная пара остаётся 0.17.6 / 0.6.5. Полная пара SHA, checks и сведения об исправлении deploy tooling — [отчёт RC](RC-0.18.0-rc.1.md).
+
+### 0.18-rc.2: исправления пользовательской приёмки
+
+Приложение 0.18.0-rc.2 / коллекция 0.7.0-rc.2 опубликованы prerelease и в [изолированное preview](https://c68c76a1.playroom-hod-test.pages.dev). Проверены source SHA, release SHA256, защищённые runtime bytes, 12 R2 файлов и offline; production сохранил 0.17.6 / 0.6.5. Проверки выбраны адресно, публикации checks=none. [Матрица замечаний и доказательства](RC-0.18.0-rc.2.md).

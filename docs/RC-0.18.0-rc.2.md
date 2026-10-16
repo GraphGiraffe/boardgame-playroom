@@ -68,3 +68,16 @@ Reduced motion убирает движение, сохраняя читаемо�
 - Приватность/права проверены authority/Table и адресными сетевыми сценариями. Новой проверки всей транспортной матрицы, pairing и storage нет: их контракты не менялись.
 
 Окончательная очистка/накопление событий и сохранение reveal проверены `case/game-feedback,case/packs-reconcile` (**6/6**) и `case/network-feedback-browser,case/rc2-presentation-browser` (**15/15**). Отдельно завершено выделение выбранной шашки только круглой рамкой: целевая клетка использует общую квадратную рамку.
+
+## Публикация и проверенное preview · 2026-10-16
+
+- Приложение: [v0.18.0-rc.2](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.2), commit `c3bb40f05996599d3bf388ae1a233c78564dd40f`, PR #122.
+- Коллекция: [v0.7.0-rc.2](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.2), commit `e7af18c4cf0b37e2a136aed24899e3d9d63bff9b`, PR паков #67.
+- Оба выпуска — prerelease, не latest. После загрузки из GitHub проверены 6 файлов приложения и 16 файлов паков, перечисленных в SHA256SUMS, плюс CRC архивов и оба source SHA в release-info.json.
+- PWA ZIP SHA256: `50e1c3e45c9e006c2eaa1a535f2961ca554b88ccf73643f8264560929f28b2e3`.
+- [R2 Action #38862002992](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/38862002992) — success, channel `0.18-rc.2`, bootstrap=true, checks=none. Snapshot `5a963b21d303bfb7aa8f7f8c43f70f7fa04009d2cf63d18cc46355bd566cee69`, обновлены 12 RC паков. Первый dispatch завершился TLS timeout до создания run; повтору предшествовала проверка отсутствия запуска.
+- **[Проверенное preview RC2](https://c68c76a1.playroom-hod-test.pages.dev)**, deployment `c68c76a1-2c87-4774-bc8a-5f5d98ca9ef4`.
+- [Pages Action #38862265626](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38862265626) — success, exact app SHA; status **preview-verified**, `productionUnchanged=true`. Запущен один preview. Защита входа, запрет анонимного чтения runtime, соответствие bytes архиву, каталог, 12 SHA256 и offline прошли. Хэши реально обслуживаемых 12 файлов дополнительно сравнены с файлами, скачанными из release.
+- Production before/after совпали: приложение **0.17.6**, коллекция **0.6.5**, snapshot `075003039fba33e9f3b92641e43a1220d1ea23ce4efcdac812c869d4cae36540`. Canonical deployment остался `bddc9741-d208-42a8-adf6-ab8e8de655c9`; main не сливался, production не публиковался.
+- Автоматические Git builds не включались. Настройки защиты ветвей через API недоступны (403 тарифа); PR не имели status checks, объединены обычным squash без admin bypass. Деревья squash-коммитов совпали с проверенными task heads.
+- Окончательная проверка форм выделения и ввода шашек: `case/checkers-drag,case/rc2-presentation-browser` **16/16**, fail/cancel/skip 0. Скриншоты сохранены локально, галерея `tmp_files/rc2-presentation.html` самодостаточна и не входит в release.
