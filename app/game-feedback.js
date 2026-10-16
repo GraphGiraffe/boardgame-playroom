@@ -10,6 +10,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   class GameFeedback {
     constructor({mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},duration=700}={}){
       this.mount=mount;this.play=play;this.clock=clock;this.duration=duration;
+      this.generation=0;this.revealer=root.PlayroomActionReveal?new root.PlayroomActionReveal({mount}):null;
       this.cursor=0;this.notice=null;this.timer=null;this.queue=[];this.active=null;this.waiters=[];
     }
     start(events=[]){this.clear();this.cursor=events.at(-1)?.id||0;}
@@ -20,20 +21,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(silent)return;
       const fresh=cues.filter(c=>additions.some(e=>e.id===c.eventId)&&typeof c.id==='string');
       if(fresh.length)this.play(fresh.map(c=>c.id),pack);
-      for(const event of additions)if(event.speech)this.queue.push({speech:event.speech,duration:Math.max(220,Number(duration)||this.duration)});
+      for(const event of additions)if(event.speech||event.reveal||event.feedback?.kind==='skip')this.queue.push({speech:event.speech,feedback:event.feedback,reveal:event.reveal,pack,duration:Math.max(event.reveal?1000:event.feedback?.kind==='skip'?700:220,Number(duration)||this.duration)});
       if(!this.active)this.next();
     }
     next(){
       if(this.timer!==null){this.clock.clearTimeout(this.timer);this.timer=null;}
       this.active=this.queue.shift()||null;this.refresh();
       if(!this.active){for(const done of this.waiters.splice(0))done();return;}
-      this.timer=this.clock.setTimeout(()=>{this.timer=null;this.next();},this.active.duration);
+      const generation=this.generation;
+      this.timer=this.clock.setTimeout(()=>{this.timer=null;Promise.resolve(this.revealer?.finish()).then(()=>{if(generation===this.generation)this.next();});},this.active.duration);
     }
     whenIdle(){return this.active||this.queue.length?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
     refresh(){
       const mount=this.mount();if(!mount)return;
+      this.revealer?.show(this.active?.reveal,this.active?.pack);
       mount.querySelectorAll('.game-notice,.game-speech').forEach(node=>node.remove());
       mount.querySelectorAll('.player-panel.is-addressed').forEach(node=>node.classList.remove('is-addressed'));
+      const skipped=this.active?.feedback?.kind==='skip'?this.active.feedback.player:null;
+      mount.querySelectorAll('.player-panel[data-player-index]').forEach(panel=>panel.classList.toggle('is-turn-skipped',Number(panel.dataset.playerIndex)===skipped));
       const speech=this.active?.speech;if(!speech)return;
       const panel=[...mount.querySelectorAll('.player-panel[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===speech.speaker);
       if(!panel)return;
@@ -45,7 +50,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       else bubble.textContent=speech.text;
       panel.append(bubble);
     }
-    clear(){if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;for(const done of this.waiters.splice(0))done();this.refresh();}
+    clear(){this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;for(const done of this.waiters.splice(0))done();this.refresh();}
     destroy(){this.clear();}
   }
   return GameFeedback;

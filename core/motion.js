@@ -103,6 +103,7 @@
     const card = snapshot.action?.card;
     const publicNow = current.filter(publicEntity);
     const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
+      if(el.hasAttribute('data-reveal-active'))return false;
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
       const before = entities.get(el.dataset.entity);
       return /^(card|tile)-/.test(el.dataset.entity) && (!before || !before.public);

@@ -40,6 +40,8 @@
       return {...value,player:value.actor,text:text(message,players),message:bindParticipants(message,players),kind:description.finish?'finish':description.kind||'action',
         ...(description.presentation?{presentation:description.presentation}:{}),
         ...(description.transfer?{transfer:description.transfer}:{}),
+        ...(description.feedback?{feedback:description.feedback}:{}),
+        ...(description.reveal?{reveal:{...description.reveal,...(description.reveal.title?{title:text(description.reveal.title,players)}:{})}}:{}),
         ...(description.speech?{speech:{...description.speech,...(description.speech.text?{text:text(description.speech.text,players)}:{})}}:{}),
         ...(description.sound!==undefined?{sound:description.sound}:{}),
         ...(description.target!==undefined?{target:description.target}:{}),

@@ -5,7 +5,7 @@ const { performance } = require('node:perf_hooks');
 const E = require('../core/engine.js');
 const packsRoot=require('node:fs').realpathSync(__dirname+'/../packs');
 const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain/standard-deck.js'));
-for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes']) require(`../packs/${game}/rules.js`);
+for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes', 'ludo']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
 const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
 const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
@@ -47,7 +47,7 @@ function cardInventory(s) {
 }
 
 test('registry exposes five independent packs and isolates metadata', () => {
-  assert.deepEqual(GAMES.map(g => g.id), ['uno', 'domino', 'durak', 'checkers', 'snakes']);
+  assert.deepEqual(GAMES.map(g => g.id), ['uno', 'domino', 'durak', 'checkers', 'snakes', 'ludo']);
   assert.throws(() => E.register(E.get('uno')), /зарегистрирован/);
   assert.throws(() => create('missing'));
   assert.throws(() => create('uno', 1)); assert.equal(create('durak', 3).players.length,3); assert.throws(() => create('uno', 2, 'missing'));
@@ -452,3 +452,31 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   }}
   assert.throws(()=>E.createGame('uno',{firstPlayerMode:'assigned',firstPlayer:42}));
 });
+
+ test('forced skips identify the affected player and choose one sound per committed action',()=>{
+  let before,after;
+  for(let seed=1;seed<40;seed++){
+    before=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],preset:'classic',seed,startPawn:'off'});
+    after=E.applyAction(before,0,{type:'roll'});if(after.data.dice[0]!==6)break;
+  }
+  assert.notEqual(after.data.dice[0],6);assert.equal(after.turn,1);
+  assert.deepEqual(E.project(after,-1).events.at(-1).feedback,{kind:'skip',player:0});
+  assert.deepEqual(E.soundCues(after,-1,before.events.at(-1).id).map(({id,target})=>({id,target})),[{id:'attack.skip',target:0}]);
+  const domino=create('domino'),tiles=[...domino.data.hands.flat(),...domino.data.stock],end=tiles.find(t=>t.a===6&&t.b===6),own=tiles.find(t=>t.a===0&&t.b===0);
+  domino.data.chain=[end];domino.data.hands=[[own],tiles.filter(t=>t!==own&&t!==end)];domino.data.stock=[];domino.turn=0;
+  assert(E.legalActions(domino,0).some(a=>a.type==='pass'));
+  const passed=E.applyAction(domino,0,{type:'pass'});
+  assert.deepEqual(E.project(passed,-1).events.at(-1).feedback,{kind:'skip',player:0});
+  assert.deepEqual(E.soundCues(passed,-1,domino.events.at(-1).id).map(c=>c.id),['attack.skip']);
+  const special=uno('red','+2'),s=unoState([[special,uno('green','3')],[uno('blue','1')]],uno('red','5'),[uno('blue','2'),uno('green','2')]);
+  const n=act(s,{type:'play',card:special.id});
+  assert.equal(E.soundCues(n,1,s.events.at(-1).id).length,1,'draw, attack and automatic calls never form a sound chorus');
+  assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.draw-skipped'),n.players).feedback,{kind:'skip',player:1});
+ });
+ test('UNO reverse is a skip with two remaining players in a larger roster',()=>{
+  const reverse=uno('red','reverse'),s=unoState([[reverse,uno('blue','3')],[uno('blue','1')],[]]);
+  s.data.ending.groups=[[2]];
+  const n=act(s,{type:'play',card:reverse.id});
+  assert.equal(n.turn,0);assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.played'),n.players).feedback,{kind:'skip',player:1});
+  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip']);
+ });
