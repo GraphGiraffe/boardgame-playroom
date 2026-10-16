@@ -10,7 +10,7 @@ const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 for(const game of ['uno','checkers','snakes','durak','domino'])require('../packs/'+game+'/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
-const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"]';
+const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"], .action-reveal-art.is-flying';
 
 function fixture({mode = 'pass', turn = 0, players = 2, openHands = false} = {}) {
   const session = new Session(Core, 'uno', {preset: 'classic', seed: 17, mode, openHands,
@@ -304,7 +304,7 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45);
       assert(frames.every(frame => frame.busy));
       const next = trace.moves.find(move => move.move === 2);
-      assert(next.t - frames.at(-1).t >= 1750, 'Next bot must wait for settle plus its own thinking gap');
+      assert(next.t - frames.at(-1).t >= 1100, 'Next bot waits for the complete reveal and its own thinking gap');
       assert.equal(await page.locator('.opponent-hand [data-entity^="card-"]').count(), 0, 'Other hidden bot cards stay unidentified');
     });
 

@@ -75,11 +75,16 @@ function editHubStep(id,step){
     moveHubGame(id,group,step<0?ids[to]:ids[to+1]||null);
   }
 
-function hubDropAt(id,target){
+function hubDropAt(id,target,point=null){
     const section=target?.closest?.('[data-edit-drop]');if(!section)return;
     const card=target.closest('.game-tile[data-game]');
     if(card?.dataset.game===id)return;
-    moveHubGame(id,section.dataset.editDrop,card?.dataset.game||null);
+    let before=card?.dataset.game||null;
+    if(card&&point){const rect=card.getBoundingClientRect(),horizontal=rect.width>rect.height*1.5;
+      const after=horizontal?point.y>rect.top+rect.height/2:point.x>rect.left+rect.width/2;
+      if(after)before=card.nextElementSibling?.dataset.game||null;
+    }
+    moveHubGame(id,section.dataset.editDrop,before);
   }
 
 function savedGamesMarkup(){

@@ -31,6 +31,7 @@ module.exports = {
     {"file": "quick-play.test.cjs", "profiles": [], "subblock": "input/feedback"},
   ]},
   games: {label: "Правила и интерфейс игр", cases: [
+    {"file":"rc2-presentation-browser.test.cjs","profiles":[],"subblock":"games/layout"},
     {"file": "game-layout-browser.test.cjs", "profiles": ["app", "layout", "smoke"], "subblock": "games/layout"},
     {"file": "views.test.cjs", "profiles": [], "subblock": "games/layout"},
     {"file": "rc2-games.test.cjs", "profiles": [], "subblock": "games/actions"},

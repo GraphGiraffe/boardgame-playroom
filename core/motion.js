@@ -43,7 +43,8 @@
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
     const stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back');
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
-    return { actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
+    return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el) {
     for (const node of [el, ...el.querySelectorAll('*')]) {
@@ -79,7 +80,7 @@
   function cancel() {
     if (running) running.finish();
   }
-  function play(snapshot, { duration = 500, settle = 160, draws } = {}) {
+  function play(snapshot, { duration = 500, settle = 160, draws, effects:effectTiming={flip:280,pair:700} } = {}) {
     cancel();
     duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
     if (!snapshot || !duration) return Promise.resolve();
@@ -103,7 +104,7 @@
     const card = snapshot.action?.card;
     const publicNow = current.filter(publicEntity);
     const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
-      if(el.hasAttribute('data-reveal-active'))return false;
+      if(el.hasAttribute('data-reveal-active')||snapshot.revealedEntities?.includes(el.dataset.entity))return false;
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
       const before = entities.get(el.dataset.entity);
       return /^(card|tile)-/.test(el.dataset.entity) && (!before || !before.public);
@@ -209,23 +210,35 @@
           const animation=mover.animate([{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
           animation.finished.then(()=>{show(entry);mover.remove();},()=>{});animations.push(animation);
         }
-        for(const el of effects){
-          const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
-          animations.push(el.animate(frames,{duration,easing:'ease-out'}));
+        const flipTimes=effectTiming;
+        let flipEnd=0;
+        for(const el of effects.filter(el=>el.dataset.motionEffect!=='flip')){
+          const content=el.firstElementChild||el;
+          animations.push(content.animate([{transform:'scale(.7)',opacity:.5},{transform:'scale(1.08)',opacity:1},{transform:'scale(1)',opacity:1}],{duration,easing:'ease-out'}));
         }
-        // A mismatched pair stays readable, then both faces turn back.
-        const closeDelay=duration+550,closeDuration=320;
-        for(const slot of closing){
-          const face=slot.querySelector('.pexeso-face'),back=slot.querySelector('.pexeso-close-back');
-          if(!face||!back)continue;
-          const first=face.animate([{transform:'rotateY(0)'},{transform:'rotateY(90deg)'}],{delay:closeDelay,duration:closeDuration/2,easing:'ease-in',fill:'forwards'});
-          const second=back.animate([{transform:'rotateY(-90deg)'},{transform:'rotateY(0)'}],{delay:closeDelay+closeDuration/2,duration:closeDuration/2,easing:'ease-out',fill:'forwards'});
-          timers.push(root.setTimeout(()=>{face.style.visibility='hidden';back.style.visibility='visible';},closeDelay+closeDuration/2));
-          animations.push(first,second);
+        const flipTargets=[...new Set([...effects.filter(el=>el.dataset.motionEffect==='flip'),...closing])];
+        for(const slot of flipTargets){
+          const face=slot.querySelector('[data-motion-face]')||slot,back=slot.querySelector('[data-motion-back]'),box=rectOf(slot);if(!box)continue;
+          const opening=effects.includes(slot),close=closing.includes(slot),old=snapshot.flips?.get(slot.dataset.motionValue);
+          const mover=doc.createElement('div');mover.className='playroom-motion-flight';mover.dataset.motionKind='flip';
+          Object.assign(mover.style,{left:box.x+'px',top:box.y+'px',width:box.width+'px',height:box.height+'px',perspective:'600px'});
+          const rotor=doc.createElement('div');Object.assign(rotor.style,{position:'absolute',inset:'0',transformStyle:'preserve-3d'});
+          const front=(opening&&old?old:styledClone(face)).cloneNode(true),reverse=styledClone(opening?face:back||face);
+          for(const [node,angle]of [[front,0],[reverse,180]]){Object.assign(node.style,{position:'absolute',inset:'0',left:'0',top:'0',width:'100%',height:'100%',transform:`rotateY(${angle}deg)`,backfaceVisibility:'hidden',visibility:'visible'});rotor.append(node);}
+          mover.append(rotor);layer.append(mover);
+          const entry={el:face,visibility:face.style.getPropertyValue('visibility'),priority:face.style.getPropertyPriority('visibility')};restore.push(entry);face.style.setProperty('visibility','hidden','important');
+          const flip=flipTimes.flip,hold=flipTimes.pair,total=(opening?flip:0)+(close?hold+flip:0);flipEnd=Math.max(flipEnd,total);
+          if(opening&&close){
+            // The two sides are the old back and new face: open, hold, close.
+            animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},{transform:'rotateY(180deg)',offset:flip/total},{transform:'rotateY(180deg)',offset:(flip+hold)/total},{transform:'rotateY(360deg)',offset:1}],{duration:total,fill:'both',easing:'linear'}));
+          }else{
+            animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},...(close?[{transform:'rotateY(0deg)',offset:hold/total}]:[]),{transform:'rotateY(180deg)',offset:1}],{duration:total||flip,fill:'both',easing:'linear'}));
+          }
+          if(close&&back)finishUpdates.push(()=>{face.style.setProperty('visibility','hidden');back.style.visibility='visible';back.style.transform='none';});
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.
-        timer = root.setTimeout(run.finish, Math.max(duration, closing.length?closeDelay+closeDuration:0, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
+        timer = root.setTimeout(run.finish, Math.max(duration, flipEnd, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
         Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(run.finish);
       } catch (error) { run.finish(); throw error; }
     });

@@ -14,6 +14,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     normal:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.84ab7f7de9c0"),duration:520,settle:160,botDelay:650,description:globalThis.PlayroomMessages.text("ui.game-flow.0378708df51b")}),
     slow:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.6e503025a34b"),duration:1100,settle:650,botDelay:1200,description:globalThis.PlayroomMessages.text("ui.game-flow.f113b5c47975")})
   });
+  const effectTimes=Object.freeze({instant:Object.freeze({skip:250,reveal:450,speech:900,flip:0,pair:450}),fast:Object.freeze({skip:250,reveal:450,speech:900,flip:180,pair:450}),normal:Object.freeze({skip:450,reveal:750,speech:1200,flip:280,pair:700}),slow:Object.freeze({skip:700,reveal:1100,speech:1600,flip:400,pair:1000})});
   const speed=value=>Object.hasOwn(presets,value)?value:'normal';
   const quickPlay=options=>!!options?.quickPlay;
   function viewingTime(capabilities,state){
@@ -44,9 +45,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     capture(context){const pace=this.pace();return pace.duration&&this.motion?.capture?this.motion.capture(context):null;}
     play(snapshot,{draws=[],minimumVisibleMs=this.presentation().minimumVisibleMs||0}={}){
       const pace=this.pace();
-      return this.scheduler.play(()=>this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws}),minimumVisibleMs);
+      return this.scheduler.play(()=>this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws,effects:effectTimes[pace.mode]}),minimumVisibleMs);
     }
     cancel(){this.scheduler.cancel();this.motion?.cancel?.();}
   }
-  return Object.freeze({presets,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
+  return Object.freeze({presets,effectTimes,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
 });

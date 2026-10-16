@@ -129,7 +129,7 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const target=document.querySelector('.stock-button');target.dataset.motionEffect='pulse';target.dataset.motionTrigger='ask';
         const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'ask'}});
         window.flight=PlayroomMotion.play(snapshot,{duration:1100});
-        return target.getAnimations()[0]?.effect.getTiming().duration;
+        return (target.firstElementChild||target).getAnimations()[0]?.effect.getTiming().duration;
       });
       assert.equal(duration,1100);await page.evaluate(()=>flight);
     });

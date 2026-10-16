@@ -202,7 +202,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#setting-volume').inputValue(),'0.6');
       assert.equal(await page.locator('#setting-volume').isDisabled(),true);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
-      assert.equal(await page.locator('#sound-preview option').count(),28,'23 standard cues including turn start, UNO voice and four sea effects');
+      assert.equal(await page.locator('#sound-preview option').count(),31,'26 standard cues including pass/discard/take plus five UNO effects');
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
       await page.locator('#setting-sound').check();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
@@ -210,7 +210,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.locator('#sound-preview').selectOption('uno|uno.call');
       await page.locator('[data-command=sound-preview]').click();
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='uno.call'&&c.finished&&c.result));
-      assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:23,scoped:true,global:false});
+      assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:26,scoped:true,global:false});
       await page.evaluate(()=>PlayroomAppBridge.audio.play(['draw','success','victory'],'oldmaid'));
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids.join(',')==='draw,success,victory'&&c.finished&&c.result));
       await page.locator('#setting-volume').selectOption('0.3');

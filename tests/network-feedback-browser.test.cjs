@@ -157,19 +157,20 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
     await page.evaluate(snapshots=>{qaClient.emit(snapshots[2]);qaClient.emit(snapshots[3]);},snapshots);
     for(let revision=1;revision<=4;revision++){
       await page.waitForFunction(n=>qaFrames.length===n,revision);assert.equal(await page.locator('.network-game').getAttribute('data-revision'),String(revision));
-      assert.equal(await page.locator('.scene [data-action]:enabled').count(),0,'No action while presentation is behind');
+      assert.equal(await page.locator('.scene [data-action]:enabled').evaluateAll(nodes=>nodes.filter(node=>!['declare-uno','accuse-uno'].includes(JSON.parse(node.dataset.action).type)).length),0,'Only independent reactions remain usable during presentation');
+      if(revision===1){await page.locator('.uno-call').click();assert.equal(await page.evaluate(()=>qaSubmitted.at(-1).type),'declare-uno');assert.equal(await page.evaluate(()=>qaFrames.length),1,'Reaction does not cancel the current animation');}
       assert.match(await page.locator('.status-event').innerText(),new RegExp(history[revision].events.at(-1).text));
       await page.evaluate(()=>qaReleases.shift()());
     }
     await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
     assert.deepEqual(await page.evaluate(()=>qaFrames.map(f=>f.revision)),[1,2,3,4]);assert.deepEqual(await page.evaluate(()=>qaHistory),[1,2]);
     assert.equal(await page.evaluate(()=>qaCancel),0,'New packets do not cancel an active animation');
-    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify']);
+    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass']);
     await page.evaluate(next=>qaClient.emit(next),snapshots[3]);assert.equal(await page.evaluate(()=>qaFrames.length),4);
     await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history');
     assert.equal(await page.locator('.status-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
     await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>qaFrames.length===5);
-    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify'],'Explicit history stays silent');
+    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass'],'Explicit history stays silent');
     await page.locator('#replay-range').evaluate(el=>{el.value='3';el.dispatchEvent(new Event('input',{bubbles:true}));});
     await page.waitForFunction(()=>document.querySelector('#replay-range').value==='3'&&document.querySelector('.scene').getAttribute('aria-busy')==='false');
     assert.equal(await page.evaluate(()=>qaFrames.length),5,'Manual history scrub is immediate, without a new flight');
