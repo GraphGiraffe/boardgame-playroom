@@ -1,7 +1,7 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../../core/messages.js");
 (function(root,factory){const api=factory(root.PlayroomRooms||(typeof require==='function'?require('../../application/rooms.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomIdentityStore=api;})(globalThis,function(Rooms){
 'use strict';
-const {normalizeName,resumeTokenValid}=Rooms;
+const {normalizeName,resumeTokenValid,normalizeAvatar}=Rooms;
 const PROFILE_KEY='playroom.player-profile.v1',RESUME_KEY='playroom.network-resume.v1';
 function secureResumeToken(){
     const cryptoProvider=globalThis.crypto?.getRandomValues?globalThis.crypto:
@@ -19,12 +19,12 @@ class ProfileStore{
         const raw=this._storage().getItem(PROFILE_KEY);if(!raw)return null;
         const value=JSON.parse(raw);
         if(value?.version!==1||typeof value.id!=='string'||!value.id||typeof value.name!=='string'||!value.name.trim())return null;
-        return Object.freeze({version:1,id:value.id,name:normalizeName(value.name),createdAt:Number(value.createdAt)||0,updatedAt:Number(value.updatedAt)||0});
+        return Object.freeze({version:1,id:value.id,name:normalizeName(value.name),avatar:normalizeAvatar(value.avatar),createdAt:Number(value.createdAt)||0,updatedAt:Number(value.updatedAt)||0});
       }catch(_){return null;}
     }
-    save(name){
+    save(name,options={}){
       const previous=this.load(),timestamp=now();
-      const profile={version:1,id:previous?.id||uuid(),name:normalizeName(name),createdAt:previous?.createdAt||timestamp,updatedAt:timestamp};
+      const profile={version:1,id:previous?.id||uuid(),name:normalizeName(name),avatar:normalizeAvatar(Object.hasOwn(options,'avatar')?options.avatar:previous?.avatar),createdAt:previous?.createdAt||timestamp,updatedAt:timestamp};
       this._storage().setItem(PROFILE_KEY,JSON.stringify(profile));
       return Object.freeze({...profile});
     }

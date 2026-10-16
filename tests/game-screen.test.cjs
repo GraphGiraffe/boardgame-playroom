@@ -152,3 +152,13 @@ test('history clamps preparation and keeps its view controls separate from the l
  controller.context({...live,state:{...live.state,turn:1}});assert.equal(controller.viewState.fleet,'enemy');assert.equal(controller.preferences({followOpponent:'on'}).followOpponent,'off');
  controller.history.open=false;controller.context(live);assert.equal(controller.viewState.fleet,'own');assert.equal(controller.preferences({followOpponent:'on'}).followOpponent,'on');
 });
+
+test('packs describe hand priority and physical seats without changing game identity or legality',()=>{
+ const UI=require('../core/ui.js'),state={game:'fixture',players:Array.from({length:4},(_,i)=>({name:'P'+i,score:0})),turn:0,data:{}};
+ const descriptor={api:2,family:'board',layout:{focus:'field',seats:['north-west','north-east','south-east','south-west'],duplicateSelf:true},elements:{field:'<div>field</div>'}};
+ const circle=UI.composeScene(descriptor,{state,viewer:0});assert.match(circle,/data-seating="circle"/);assert.match(circle,/data-player-index="0" data-seat="north-west" data-seat-copy="true"/);assert.equal((circle.match(/data-player-index="0"/g)||[]).length,2);
+ const row=UI.composeScene(descriptor,{state,viewer:0,seating:'row'});assert.match(row,/data-seating="row"/);assert.equal((row.match(/data-player-index="0"/g)||[]).length,1);
+ assert.throws(()=>UI.composeScene({...descriptor,layout:{focus:'unknown'}},{state}),/layout policy/);
+ assert.throws(()=>UI.composeScene({...descriptor,layout:{seats:['north']}},{state}),/layout policy/);
+ const cards=UI.composeScene({...descriptor,family:'cards',layout:{focus:'hands'}},{state,viewer:0});assert.match(cards,/data-layout-focus="hands"/);assert.doesNotMatch(cards,/data-action=/);
+});

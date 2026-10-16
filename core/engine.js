@@ -159,7 +159,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if (players.length < pack.min || players.length > pack.max) throw Error(globalThis.PlayroomMessages.text("ui.engine.8d8e0eef63ac",{p0:String(pack.min),p1:String(pack.max)}));
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error(globalThis.PlayroomMessages.text("ui.engine.4046d56fe0ac"));
-    const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || globalThis.PlayroomMessages.text("ui.engine.97bd9bdf39ef",{p0:String(i + 1)})).slice(0, 40), bot: !!p.bot, score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
+    const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || globalThis.PlayroomMessages.text("ui.engine.97bd9bdf39ef",{p0:String(i + 1)})).slice(0, 40), bot: !!p.bot,...(p.avatar?{avatar:p.avatar}:{}), score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
     const startMode=options.firstPlayerMode||'rules';
     if(!['rules','random','assigned'].includes(startMode))throw Error(globalThis.PlayroomMessages.text("ui.engine.1028063d4dcc"));
     const firstPlayer=startMode==='random'?Math.floor(random(state)*players.length):startMode==='assigned'?options.firstPlayer:null;

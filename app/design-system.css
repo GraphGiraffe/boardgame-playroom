@@ -7,7 +7,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 :is(#app,#modal-root) .icon-btn:disabled{opacity:.43;cursor:default}
 #modal-root .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
 #modal-root .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--ui-target);padding-bottom:12px;margin-bottom:16px}
-#modal-root .modal-head h2{min-width:0;overflow-wrap:anywhere;margin:0}
+#modal-root .modal-head h2{flex:1;min-width:0;overflow-wrap:anywhere;margin:0;text-align:left}
 #modal-root .modal-head .icon-btn{margin-left:0;order:-1}
 .shared-modal-backdrop{position:fixed;inset:0;background:#20352d66;backdrop-filter:blur(7px);padding:16px;display:flex;align-items:center;justify-content:center;z-index:50;overflow:auto}
 #modal-root .shared-modal-backdrop .modal{background:var(--paper);width:min(100%,600px);max-width:600px}
@@ -443,3 +443,95 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .settings-personal{display:grid;gap:12px;min-width:0}.settings-personal .field{margin:0}
 @media(max-width:480px){.settings-overview{grid-template-columns:minmax(0,1fr)}}
 .player-status-badge:is(.is-success,.is-danger){color:var(--color-text-primary,#244c35);background:var(--color-surface-raised,#e4ead8)}
+
+/* Pack priorities are presentation metadata. Local seating never changes game seats. */
+.app-game-layout[data-view-api="2"][data-layout-focus="hands"]:not([data-surface="player"])[data-seating="row"]{
+ grid-template-columns:minmax(0,1fr)!important;
+ grid-template-rows:minmax(0,1fr) auto minmax(60px,16%) minmax(0,var(--own-zone,180px)) auto!important;
+ grid-template-areas:"participants" "status" "field" "self" "auxiliary"!important;
+}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-participants{max-height:none;align-items:stretch}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .players-panels{align-content:stretch;align-items:stretch}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel.opponent-hand{flex-direction:column;max-width:none}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand{
+ display:flex!important;align-items:center;justify-content:safe center;height:calc(var(--seat-hand-width,60px)*1.43 + 8px)!important;min-height:0!important;max-height:none!important;overflow:auto!important;padding:4px!important;
+}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand>*{
+ flex:0 0 auto!important;width:var(--seat-hand-width,60px)!important;min-width:var(--seat-hand-width,60px)!important;height:calc(var(--seat-hand-width,60px)*1.43)!important;margin-left:-18px!important;
+}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand>:first-child{margin-left:0!important}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand .public-card>*{width:100%!important;min-width:0!important;height:100%!important}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-self{max-height:none}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-hand .hand-card{
+ --fan-card-width:var(--focus-own-card-width,90px)!important;--fan-card-height:calc(var(--focus-own-card-width,90px)*1.43)!important;
+}
+.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-hand .hand-track.is-fan{min-height:calc(var(--focus-own-card-width,90px)*1.43 + 10px);height:auto;max-height:none}
+
+/* The surrounding seats are grid items, not overlays on the game field. */
+.app-game-layout[data-view-api="2"][data-seating="circle"]{
+ grid-template-columns:minmax(0,var(--seat-width,160px)) minmax(0,1fr) minmax(0,var(--seat-width,160px))!important;
+ grid-template-rows:auto minmax(0,1fr) auto auto minmax(0,var(--own-zone,160px)) auto!important;
+ grid-template-areas:"north-west north north-east" "west field east" "south-west south south-east" "status status status" "self self self" "auxiliary auxiliary auxiliary"!important;
+}
+.app-game-layout[data-seating="circle"]>.layout-participants,.app-game-layout[data-seating="circle"] .players-panels{display:contents!important}
+.app-game-layout[data-seating="circle"] .seat-group{display:flex;gap:6px;align-items:center;justify-content:center;min-width:0;min-height:0;max-width:100%;overflow:auto;overscroll-behavior:contain}
+.app-game-layout[data-seating="circle"] :is(.seat-west,.seat-east){flex-direction:column;justify-content:safe center}
+.seat-north{grid-area:north}.seat-north-west{grid-area:north-west}.seat-north-east{grid-area:north-east}.seat-west{grid-area:west}.seat-east{grid-area:east}.seat-south-west{grid-area:south-west}.seat-south-east{grid-area:south-east}.seat-south{grid-area:south}
+.app-game-layout[data-seating="circle"] .seat-group>.player-panel{
+ width:var(--seat-width,160px)!important;min-width:var(--seat-width,160px)!important;max-width:var(--seat-width,160px)!important;height:var(--seat-height,80px)!important;min-height:var(--seat-height,80px)!important;flex:none!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;overflow:hidden;
+}
+.app-game-layout[data-seating="circle"] .seat-group .player-info{flex:none!important;min-width:0!important;min-height:44px!important;width:100%}
+.app-game-layout[data-seating="circle"] .player-turn-position{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;margin-left:auto;border:1px solid var(--color-border-subtle);border-radius:50%;font-size:10px;flex:none}
+.app-game-layout[data-seating="circle"] .layout-self{max-height:none;width:100%;height:100%}
+.app-game-layout[data-seating="circle"][data-seat-anchors="true"][data-seat-mode="ring"]>.layout-field{grid-column:2;grid-row:1/4}
+.app-game-layout[data-view-api="2"][data-seating="circle"][data-seat-mode="corners"]{
+ grid-template-columns:repeat(2,minmax(0,1fr))!important;
+ grid-template-rows:auto minmax(0,1fr) auto auto minmax(0,var(--own-zone,100px)) auto!important;
+ grid-template-areas:"north-west north-east" "field field" "south-west south-east" "status status" "self self" "auxiliary auxiliary"!important;
+}
+.app-game-layout[data-seating="circle"][data-seat-mode="corners"] .seat-group{width:100%}
+.app-game-layout[data-layout-focus="field"][data-seating="circle"] .layout-self{height:auto;max-height:100%;align-self:end}
+.seating-setting{margin:14px 0}.seating-setting small{color:var(--color-text-secondary)}
+.app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;overflow:auto}
+.app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self>.layout-actions{order:0;min-width:0;overflow:auto}
+/* Quick actions stay together above nickname, with one local theme entry. */
+.settings-overview{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.settings-quick{min-width:0;width:100%}
+.settings-quick .settings-shortcuts{display:flex;flex-wrap:nowrap;justify-content:safe center;align-items:center;gap:4px;max-width:100%;overflow-x:auto;overflow-y:hidden;min-height:52px;padding:2px 0 6px}
+.settings-shortcuts .icon-btn{flex:0 0 44px;width:44px;min-width:44px;height:44px}
+.settings-personal{width:100%;min-width:0}
+.settings-quick:has(>button){display:flex;align-items:center;justify-content:center;gap:4px;overflow-x:auto;overflow-y:hidden}
+.settings-quick:has(>button) .settings-shortcuts{display:contents}
+.settings-quick>button{flex:0 0 44px;width:44px;min-width:44px;height:44px}
+.app-game-layout[data-seating="circle"] :is(.seat-north,.seat-south){grid-column:1/-1}
+.app-game-layout[data-layout-focus="hands"][data-seating="row"] .players-panels{display:grid!important;grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr));grid-auto-rows:minmax(120px,1fr);width:100%;height:100%;align-items:stretch}
+.app-game-layout[data-layout-focus="hands"][data-seating="row"] .player-panel.opponent-hand{width:100%;min-width:0;flex:none}
+/* Shared pack list row; selection mode omits only management controls. */
+.pack-list>.pack-row,.room-choice-list>.pack-row{
+ display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px;width:100%;min-height:74px;margin:0;padding:10px;
+ border:1px solid var(--color-border-subtle,#d8dfce);border-radius:15px;background:var(--paper);color:var(--ink);text-align:left;
+}
+.pack-art{display:block;width:52px;height:52px;aspect-ratio:1;padding:4px;border-radius:10px;overflow:hidden;pointer-events:none}
+.pack-art>svg{display:block;width:100%;height:100%;max-width:100%}
+.pack-summary{min-width:0;display:block}.pack-summary strong{display:block;font-size:16px;line-height:1.2;overflow-wrap:anywhere}
+.pack-row .pack-summary small{display:block;margin:4px 0 0;font-size:12px;line-height:1.3;color:var(--color-text-secondary,#64776d);overflow-wrap:anywhere}
+.pack-row-controls{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;min-width:0}
+.pack-row .pack-display-actions{display:contents}
+.pack-row-controls button,.pack-row-controls .pack-display-actions button{min-height:44px!important;min-width:0!important;width:100%;padding:6px!important;border-radius:10px}
+.pack-row-controls>.icon-btn{grid-column:5}
+.pack-row:focus-visible{outline:3px solid var(--color-interaction-available,#638658);outline-offset:2px}
+
+/* Avatar images leave the seat-coloured rim visible, including opaque uploads. */
+.avatar{position:relative;isolation:isolate;flex:none;overflow:hidden}
+.avatar .avatar-clip{position:absolute;inset:9%;border-radius:24%;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.avatar .avatar-art{display:block;width:100%;height:100%;object-fit:contain;border-radius:inherit}
+.profile-identity-row{display:flex;align-items:center;gap:10px}.profile-identity-row>.field{flex:1;min-width:0}
+.profile-avatar-button{padding:0;border:0;background:none;flex:none;border-radius:12px;cursor:pointer;min-width:44px;min-height:44px;display:grid;place-items:center}
+.profile-avatar-button>.avatar{width:48px;height:48px;border-radius:13px;font-size:22px}
+.lobby-profile>.profile-avatar-button{align-self:end;margin-bottom:3px}
+.avatar-picker-backdrop{z-index:100;padding:16px}.avatar-picker-modal{display:flex;flex-direction:column;max-width:600px;width:100%;max-height:calc(100dvh - 32px);overflow:auto}
+.avatar-picker-modal>.modal-head{display:flex;align-items:center;gap:12px;flex:none;position:sticky;top:0;background:var(--paper);z-index:1}.avatar-picker-modal h2{flex:1;text-align:left;font-size:24px}
+.avatar-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.avatar-option{min-width:0;aspect-ratio:1;display:grid;place-items:center;padding:3px;border:2px solid transparent;background:transparent;border-radius:12px}.avatar-option .avatar{width:100%;height:100%;border-radius:10px;font-size:20px;background:var(--color-surface-raised,#e6e9dc)}
+.avatar-option[aria-pressed=true]{border-color:var(--green);background:var(--color-surface-selected,#e0e8cb)}
+.avatar-letter-option{margin-top:14px}.avatar-letter-option .avatar-option{aspect-ratio:auto;display:flex;gap:10px;min-height:48px;width:100%;text-align:left;background:var(--color-surface-raised,#e6e9dc)}.avatar-letter-option .avatar{width:40px;height:40px;flex:none}
+@media(max-width:420px){.avatar-picker-modal{padding:16px}.avatar-options{gap:3px}.avatar-option{padding:2px;border-radius:9px}.avatar-picker-modal h2{font-size:22px}}

@@ -298,3 +298,18 @@ test('RC4 sparse 1/3/5/7 occupancy compacts only overflow and preserves assigned
  rooms.configure(room.id,'host',{firstPlayerMode:'assigned',firstParticipantId:seven});state=rooms.changeGame(room.id,'host',{game:{id:'four',name:'Four',version:'1.0.0'},constraints:{min:2,max:4}});
  assert.deepEqual(state.seats.map(s=>s.participantId),['host',five,'remote',seven]);assert.equal(state.firstParticipantId,seven);assert.equal(state.participants.find(p=>p.id==='remote').seatId,'seat-3');
 });
+
+
+test('preset avatar survives profile rename and room snapshots without accepting image URLs',()=>{
+ const profiles=new ProfileStore(()=>storage),storage=memoryStorage();
+ const first=profiles.save('Иван',{avatar:'circle-red'});assert.equal(first.avatar,'circle-red');
+ assert.equal(profiles.save('Иван П.').avatar,'circle-red');
+ assert.equal(profiles.save('Иван',{avatar:null}).avatar,null);
+ assert.equal(profiles.save('Иван',{avatar:'https://example.com/image.png'}).avatar,null);
+ const {rooms,room}=createRoom();rooms.join(room.id,{id:'guest',nickname:'Маша',avatar:'star-yellow'});
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,'star-yellow');
+ rooms.setAvatar(room.id,'guest','crescent-blue');
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,'crescent-blue');
+ rooms.setAvatar(room.id,'guest','data:image/svg+xml,bad');
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,null);
+});

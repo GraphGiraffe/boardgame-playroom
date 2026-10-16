@@ -294,9 +294,9 @@ test('legacy and unreadable saves survive new games; a deleted game cannot resur
 
 test('replacement metadata changes future snapshots without rewriting history and restores exactly',()=>{
   const session=create({players:[{name:'First'},{name:'Old'}]});step(session);const old=session.current;
-  session.setPlayerMetadata(1,{name:'Replacement',bot:false});assert.equal(session.current,old);
+  session.setPlayerMetadata(1,{name:'Replacement',bot:false,avatar:'circle-red'});assert.equal(session.current,old);
   step(session);assert.equal(session.current.players[1].name,'Replacement');assert.equal(session.states[1].players[1].name,'Old');
-  assert.deepEqual(session.current.playerChanges,[{index:1,name:'Replacement',bot:false}]);
+  assert.deepEqual(session.current.playerChanges,[{index:1,name:'Replacement',bot:false,avatar:'circle-red'}]);
   step(session);assert.equal(session.current.playerChanges,undefined);
   for(const compact of [true,false])assert.deepEqual(Session.restore(Core,JSON.parse(session.serialize({compact}))).current,session.current);
   const bad=session.export();delete bad.states[2].playerChanges;assert.throws(()=>Session.restore(Core,bad));
