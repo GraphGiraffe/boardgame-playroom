@@ -305,3 +305,8 @@ AssetResolver выбирает family/variant локально, сообщает
 RC5: builder автоматически включает HTML entrypoints в offline CORE и синхронизирует cache version с package.json. Полная PWA регрессия, включая настоящий offline запуск с аватарами; исходники/ассеты RC4 не переписываются.
 
 Итог RC5: [preview](https://cc0f5728.playroom-hod-test.pages.dev), read-only verification [38931148300](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/38931148300) success, productionUnchanged=true. Точная пара 0.18.0-rc.5 / 0.7.0-rc.4 и продолжение — HANDOFF-0.18.md.
+
+
+## Приёмка RC6 · 2026-10-17
+
+Общие рассадки/локальные настройки, темп UNO, системные исправления переворотов/добора, компактные панели и карточки продолжения реализованы в приложении. Выбранные проверки 103/103; [RC6 preview](https://b3d8ade9.playroom-hod-test.pages.dev), workflow 38943639349 success, productionUnchanged=true. Коллекция RC4 неизменна. Точные SHA и матрица — RC-0.18.0-rc.6.md. Базовая миграция API 3 не начиналась заново; дальнейшая работа — пользовательские замечания RC6.
