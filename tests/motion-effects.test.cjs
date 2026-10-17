@@ -46,6 +46,20 @@ test('Motion effects move only public pieces and clean up at completion or cance
     }finally{await context.close();}
   });}
   try{
+    await check('Rotated hands preserve the complete frozen SVG back during draw and cancel on resize',async page=>{
+      const result=await page.evaluate(async()=>{
+        const stock=document.querySelector('.stock-button .piece-back');stock.style.display='block';stock.innerHTML='<svg width="100%" height="100%" viewBox="0 0 66 98"><rect width="66" height="98" fill="green"/></svg>';
+        const owner=document.querySelector('[data-player-index="1"]');owner.style.cssText='position:absolute;left:160px;top:20px;width:150px;height:64px;transform:rotate(90deg)';
+        const snapshot=PlayroomMotion.capture({actor:1,viewer:0,action:{type:'draw'}});
+        const flight=PlayroomMotion.play(snapshot,{duration:500,draws:[{player:1,count:1,from:'stock'}]}),clone=document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]'),samples=[];
+        for(const fraction of [.1,.5,.9]){
+          for(const animation of document.getAnimations()){animation.pause();animation.currentTime=animation.effect.getTiming().duration*fraction;}
+          const back=clone.getBoundingClientRect(),svg=clone.querySelector('svg').getBoundingClientRect();samples.push({w:back.width,h:back.height,sw:svg.width,sh:svg.height});
+        }
+        window.dispatchEvent(new Event('resize'));await flight;
+        return {angle:snapshot.hands.get(1).angle,samples,layers:document.querySelectorAll('.playroom-motion-layer').length};
+      });assert.equal(Math.round(result.angle),90);assert(result.samples.every(s=>Math.abs(s.w-s.sw)<1&&Math.abs(s.h-s.sh)<1),JSON.stringify(result));assert.equal(result.layers,0);
+    });
     await check('Own played card visibly travels upward, preserves face styling and restores destination',async page=>{
       const start=await page.evaluate(()=>{
         const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'play',card:'c1'}}),from=snapshot.entities.get('card-c1').rect;

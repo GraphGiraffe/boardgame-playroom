@@ -1,7 +1,7 @@
 'use strict';
 // API 3 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Older published releases remain immutable.
-const CACHE='playroom-pwa-v0.18.0-rc.6';
+const CACHE='playroom-pwa-v0.18.0-rc.7';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
   './app/hub-presenter.js',

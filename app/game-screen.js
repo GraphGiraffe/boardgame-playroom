@@ -34,7 +34,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return iconButton('id="network-pair-button"',globalThis.PlayroomMessages.text("ui.game-screen.c58470ab336f"),'addPlayer',{disabled});
   }
   let quickActions=[];
-  function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
+  function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')&&action.name!=='palette').map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
     // Context actions grow to the left; help and settings keep the right edge.
     const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:true}]:[];
@@ -66,13 +66,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
   }
   function roundText(round){return round&&Number.isSafeInteger(round.number)&&round.number>0?globalThis.PlayroomMessages.text(round.kind==='bout'?'progress.bout':round.limit?'progress.round-of':'progress.round',{number:round.number,...(round.limit?{limit:round.limit}:{})}):'';}
-  function participantsMarkup(state){return state?.players?`<div class="resume-participants">${state.players.map((player,index)=>`<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}">${UI.avatar(player,index)}<span>${UI.helpers.participantIcon(player)}${esc(player.name)}</span></span>`).join('')}</div>`:'';}
-  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,action='data-command="resume"',leave=''}){
+  function participantsMarkup(state,{network=false,participants=[],teamLayouts={},selfId=null,selfIndex=null}={}){
+    if(!state?.players)return '';
+    const groups=new Map();
+    state.players.forEach((person,index)=>{
+      const presence=participants.find(p=>p.playerIndex===index)||{};
+      const player={...person,...presence},semantic=state.scene?.players?.find(p=>(p.player??p.id)===index);
+      const team=semantic?.team||UI.helpers.teamFor(teamLayouts,state.preset,index),key=team?.id||team?.label||'';
+      const self=!player.bot&&(network?!!(selfId&&player.id===selfId||selfIndex===index||player.local):!!player.local);
+      if(!groups.has(key))groups.set(key,[]);
+      groups.get(key).push(`<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}"><span class="player-avatar-wrap">${UI.avatar(player,index)}${UI.helpers.playerMedallion({first:state.firstPlayer===index,team})}</span><span class="resume-person-name">${UI.helpers.participantIcon(player,{network})}<span${self?' class="saved-self"':''}>${esc(player.nickname||player.name)}</span></span></span>`);
+    });
+    return `<div class="resume-participants">${[...groups].map(([team,players])=>`<div class="resume-player-group"${team?` aria-label="${esc(team)}"`:''}>${players.join('')}</div>`).join('')}</div>`;
+  }
+  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave=''}){
     const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
     const progress=roundText(state?.scene?.round)||(state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
+    roomName=network?roomName:'';
     const game=[gameName,progress].filter(Boolean).join(' · '),room=[kind,roomName].filter(Boolean).join(' · ');
     const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:'';
-    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><strong class="resume-game" title="${esc(game)}">${esc(game)}</strong></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state)}</section>`;
+    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><div class="resume-game" title="${esc(game)}"><strong>${esc(gameName)}</strong>${progress?`<span> · ${esc(progress)}</span>`:''}</div></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state,{network,participants,teamLayouts})}</section>`;
   }
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
@@ -154,7 +167,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const mini of stage.querySelectorAll('.player-panel .mini-hand')){
       const count=mini.children.length;if(!count)continue;
       const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.getBoundingClientRect().width)/(count-1))):32)+'px');
+      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
     }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
       track.style.removeProperty('--fan-peek');
@@ -197,7 +210,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
-      const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',compact=w<640;
+      const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',compact=w<640||h>w;
+      stage.dataset.preferredSeating??=stage.dataset.seating;
+      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<300||w>h&&(win.innerHeight<=550||h<360));
+      stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
+      stage.dataset.seatingFallback=String(fallback);
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}

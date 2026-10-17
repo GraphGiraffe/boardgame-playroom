@@ -15,9 +15,10 @@ const clone=value=>JSON.parse(JSON.stringify(value));
   const normalizeRoomName=value=>text(value,ROOM_NAME_MAX,globalThis.PlayroomMessages.text("ui.rooms.555c0b3a7b3b"));
 
 class RoomService{
-    constructor({idFactory,clock,random,tokenFactory}={}){
+    constructor({idFactory,clock,random,tokenFactory,validateStart=()=>null}={}){
       if([idFactory,clock,random,tokenFactory].some(port=>typeof port!=="function"))throw Error("ROOM_PORT_REQUIRED");
-      this.idFactory=idFactory;this.clock=clock;this.random=random;this.tokenFactory=tokenFactory;
+      if(typeof validateStart!=='function')throw Error('ROOM_START_VALIDATOR_REQUIRED');
+      this.idFactory=idFactory;this.clock=clock;this.random=random;this.tokenFactory=tokenFactory;this.validateStart=validateStart;
       this.rooms=new Map();this.listeners=new Map();this.resumeTokens=new Map();this.connectionLeases=new Map();
       this.durableResumes=new Map();this.pendingResumes=new Set();this.resumeFallbacks=new Map();
     }
@@ -70,8 +71,8 @@ class RoomService{
     }
     prepareStart(roomId,hostId){
       const room=this._room(roomId);this._host(room,hostId);
+      const blocker=this._startBlocker(room);if(blocker)throw Error(blocker);
       if(room.recovery||room.startOrderResolved)return this.snapshot(roomId);
-      if(!this.canStart(roomId))throw Error(globalThis.PlayroomMessages.text("ui.rooms.15161c582722"));
       const seats=room.seats.filter(s=>s.participantId),ids=seats.map(s=>s.participantId);
       if(room.seatOrder==='random')for(let i=ids.length-1;i>0;i--){const j=Math.floor(this.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]];}
       seats.forEach((seat,i)=>{seat.participantId=ids[i];this._participant(room,ids[i]).seatId=seat.id;});
@@ -401,7 +402,7 @@ class RoomService{
     }
     abortStart(roomId,hostId){
       const room=this._room(roomId);this._host(room,hostId);
-      if(room.phase!=='playing')throw Error(globalThis.PlayroomMessages.text("ui.rooms.fa95ecd1fa55"));
+      if(!['starting','playing'].includes(room.phase))throw Error(globalThis.PlayroomMessages.text("ui.rooms.fa95ecd1fa55"));
       room.phase='lobby';room.countdownEndsAt=null;room.lobbyRevision++;
       for(const participant of room.participants){participant.ready=!!participant.bot;participant.rulesNotice=!participant.bot;}
       delete room.startOrderResolved;
@@ -413,15 +414,26 @@ class RoomService{
       const count=room.participants.filter(item=>item.role==='player'&&item.seatId).length;
       return room.constraints.allowed?room.constraints.allowed.includes(count):count>=room.constraints.min&&count<=room.constraints.max;
     }
-    canStart(roomId){
-      const room=this._room(roomId);if(room.phase!=='lobby'||!this._validCount(room))return false;
+    _startBlocker(room){
+      const unavailable=globalThis.PlayroomMessages.text('ui.rooms.start-unavailable');
+      if(!this._validCount(room))return globalThis.PlayroomMessages.text('ui.rooms.roster-invalid');
       const players=room.participants.filter(item=>item.role==='player'&&item.seatId);
-      if(room.recovery&&room.seats.some(seat=>Number.isInteger(seat.playerIndex)&&!seat.participantId))return false;
-      return (room.recovery||room.firstPlayerMode!=='assigned'||players.some(p=>p.id===room.firstParticipantId))&&players.length>0&&players.every(item=>(item.bot||room.transportMode==='hotseat'||item.ready)&&item.connected&&(!item.replacement||item.replacement.accepted));
+      const occupied=room.seats.filter(seat=>seat.participantId);
+      if(occupied.length!==players.length||new Set(occupied.map(seat=>seat.participantId)).size!==players.length||players.some(p=>!occupied.some(seat=>seat.id===p.seatId&&seat.participantId===p.id)))return unavailable;
+      if(room.recovery&&room.seats.some(seat=>Number.isInteger(seat.playerIndex)&&!seat.participantId))return unavailable;
+      if((!room.recovery&&room.firstPlayerMode==='assigned'&&!players.some(p=>p.id===room.firstParticipantId))||!players.length||!players.every(item=>(item.bot||room.transportMode==='hotseat'||item.ready)&&item.connected&&(!item.replacement||item.replacement.accepted)))return unavailable;
+      return room.recovery?null:this.validateStart(clone(room));
+    }
+    startBlocker(roomId){
+      const room=this._room(roomId);
+      return room.phase==='lobby'?this._startBlocker(room):globalThis.PlayroomMessages.text('ui.rooms.start-unavailable');
+    }
+    canStart(roomId){
+      return !this.startBlocker(roomId);
     }
     beginCountdown(roomId,participantId,{seconds=3}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
-      if(!this.canStart(roomId))throw Error(globalThis.PlayroomMessages.text("ui.rooms.d0769b2394d2"));
+      const blocker=this.startBlocker(roomId);if(blocker)throw Error(blocker);
       if(!Number.isInteger(seconds)||seconds<1||seconds>10)throw Error(globalThis.PlayroomMessages.text("ui.rooms.65818e5182d3"));
       this.prepareStart(roomId,participantId);room.phase='starting';room.countdownEndsAt=this.clock()+seconds*1000;this._touch(room);
       this._emit(room,'countdown-started',globalThis.PlayroomMessages.text("ui.rooms.c5b0897b37d5",{p0:String(seconds)}),{seconds});
@@ -431,6 +443,8 @@ class RoomService{
       const room=this._room(roomId);
       if(room.phase!=='starting')return {room:this.snapshot(roomId),remaining:null,started:room.phase==='playing'};
       const remaining=Math.max(0,Math.ceil((room.countdownEndsAt-this.clock())/1000));
+      const blocker=this._startBlocker(room);
+      if(blocker){this.abortStart(roomId,room.ownerId);return {room:this.snapshot(roomId),remaining:null,started:false,reason:blocker};}
       if(remaining===0){
         this.prepareStart(roomId,room.ownerId);room.phase='playing';room.countdownEndsAt=null;this._touch(room);this._emit(room,'game-started',globalThis.PlayroomMessages.text("ui.rooms.09d9da8749f7"));
         return {room:this.snapshot(roomId),remaining:0,started:true};

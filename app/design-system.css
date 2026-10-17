@@ -196,6 +196,10 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 .app-game-layout[data-surface="table"][data-layout-mode="phone-landscape"]{grid-template-columns:minmax(200px,28%) minmax(0,1fr)!important}
 
+/* A row in short landscape keeps each name and hand beside one another. */
+.app-game-layout[data-layout-mode="phone-landscape"][data-seating="row"] .player-panel.opponent-hand{flex-direction:row;flex:none;height:auto;min-height:52px}
+.app-game-layout[data-layout-mode="phone-landscape"][data-seating="row"] .players-panels{justify-content:flex-start;align-items:stretch;height:auto}
+
 /* Horizontal player cards divide space explicitly; their hands cannot size the label. */
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .player-info{flex:0 0 85px;width:85px;min-width:0}
 .app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand .mini-hand{flex:1 1 0;width:0;min-width:32px}
@@ -206,6 +210,8 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.settings-grid .field{min-width:0}.settings-grid select{width:100%;min-width:0}
 
 .app-game-layout[data-layout-mode="phone-landscape"] .players-panels.opponent-hands{align-items:stretch}.app-game-layout[data-layout-mode="phone-landscape"] .player-panel.opponent-hand{width:100%}
+
+.app-game-layout[data-layout-mode="phone-landscape"][data-opponent-hands="false"] .player-panel .player-info{flex:1;width:100%;min-width:0}
 
 /* Replay reserves space for the field, not unavailable move controls. */
 .scene.replaying .layout-actions:not(:has([data-view-key],[data-view-preference])){display:none!important}
@@ -264,12 +270,10 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 :is(#app,#modal-root) .icon-btn{display:inline-flex;align-items:center;justify-content:center}
 :is(#app,#modal-root) .icon-btn svg[data-ui-icon]{display:block;margin:0}
 #app .table-tools{flex-wrap:nowrap}
-/* Notices occupy a row before the screen, never cover a hand or the field. */
-.app-notice,#toast.show{position:relative;z-index:auto;inset:auto;transform:none;width:auto;max-width:none;margin:6px 8px;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-border-subtle,#c8b17c);border-radius:14px;background:var(--color-surface-notice,#f4e8c9);color:var(--ink);box-shadow:none;pointer-events:auto;font-size:12px;line-height:1.4}
+/* Transient notices stay above the visible viewport without moving content. */
+.app-notice,#toast.show{position:fixed;z-index:120;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:calc(100% - 16px);max-width:640px;margin:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-border-subtle,#c8b17c);border-radius:14px;background:var(--color-surface-notice,#f4e8c9);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto;font-size:12px;line-height:1.4}
 .app-notice>span,#toast.show>span{flex:1;min-width:0;overflow-wrap:anywhere}
 .app-notice .icon-btn,#toast.show .icon-btn{flex:none;width:36px;min-width:36px;height:36px}
-body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-height,72px))}
-#modal-root .modal>#toast.show{margin:0 0 16px;flex:none}
 
 .history-viewer{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 6px;font-size:11px;color:var(--muted)}
 .history-viewer select{max-width:100%;min-width:0;min-height:36px;padding:5px 9px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);font:inherit}
@@ -287,7 +291,7 @@ body:has(>#toast.show) #app .table-shell{height:calc(100dvh - var(--app-notice-h
 .room-setup-modal .room-transport>span{display:flex;align-items:center;justify-content:center;height:36px;line-height:1.2;padding:0!important}
 .resume-actions{display:flex;align-items:center;gap:8px;flex:none}
 .resume-primary{background:var(--green);color:var(--color-action-on-primary,var(--paper))}
-.resume-banner strong{display:block}.resume-banner .pill{margin-bottom:5px}
+.resume-banner strong{display:inline}.resume-banner .pill{margin-bottom:5px}
 #network-join-button{display:flex;margin-inline:auto}
 .scene.replaying .layout-hand .hand-card{width:52px!important;min-width:52px!important;height:76px!important}
 .scene.replaying .layout-hand .hand-track{min-height:92px;height:92px}
@@ -445,7 +449,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .player-status-badge:is(.is-success,.is-danger){color:var(--color-text-primary,#244c35);background:var(--color-surface-raised,#e4ead8)}
 
 /* Pack priorities are presentation metadata. Local seating never changes game seats. */
-.app-game-layout[data-view-api="2"][data-layout-focus="hands"]:not([data-surface="player"])[data-seating="row"]{
+.app-game-layout[data-view-api="2"][data-layout-focus="hands"]:not([data-surface="player"])[data-seating="row"]:not([data-layout-mode="phone-landscape"]):not([data-layout-mode="desktop"]){
  grid-template-columns:minmax(0,1fr)!important;
  grid-template-rows:minmax(0,1fr) auto minmax(60px,16%) minmax(0,var(--own-zone,180px)) auto!important;
  grid-template-areas:"participants" "status" "field" "self" "auxiliary"!important;
@@ -505,18 +509,18 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .seating-setting{margin:14px 0}.seating-setting small{color:var(--color-text-secondary)}
 .app-game-layout[data-has-hand="false"] .layout-self>.player-panel{height:auto!important;min-height:50px!important}
 .app-game-layout[data-opponent-hands="false"] .seat-group .player-hand{display:none}
-.app-game-layout[data-seating="row"][data-opponent-hands="false"] .player-panel.opponent-hand{height:auto!important;min-height:50px!important;flex-grow:0!important}
-/* Quick actions stay together above nickname, with one local theme entry. */
-.settings-overview{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.app-game-layout[data-seating="row"][data-opponent-hands="false"] .player-panel.opponent-hand{height:auto!important;min-height:50px!important}
+/* Quick actions and the separate themes button precede the profile. */
+.settings-overview{display:flex;flex-direction:column;gap:8px;align-items:stretch}
 .settings-quick{min-width:0;width:100%}
-.settings-quick .settings-shortcuts{display:flex;flex-wrap:nowrap;justify-content:safe center;align-items:center;gap:4px;max-width:100%;overflow-x:auto;overflow-y:hidden;min-height:52px;padding:2px 0 6px}
+.settings-quick .settings-shortcuts{display:flex;flex-wrap:nowrap;justify-content:safe center;align-items:center;gap:4px;max-width:100%;overflow-x:auto;overflow-y:hidden;min-height:44px;padding:0;margin:0}
 .settings-shortcuts .icon-btn{flex:0 0 44px;width:44px;min-width:44px;height:44px}
-.settings-personal{width:100%;min-width:0}
+.settings-personal{width:100%;min-width:0}.settings-themes{align-self:center;min-height:44px;margin:0}
 .settings-quick:has(>button){display:flex;align-items:center;justify-content:center;gap:4px;overflow-x:auto;overflow-y:hidden}
 .settings-quick:has(>button) .settings-shortcuts{display:contents}
 .settings-quick>button{flex:0 0 44px;width:44px;min-width:44px;height:44px}
 .app-game-layout[data-seating="circle"] :is(.seat-north,.seat-south){grid-column:1/-1}
-.app-game-layout[data-layout-focus="hands"][data-seating="row"] .players-panels{display:grid!important;grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr));grid-auto-rows:minmax(120px,1fr);width:100%;height:100%;align-items:stretch}
+.app-game-layout[data-layout-focus="hands"][data-seating="row"]:not([data-layout-mode="phone-landscape"]):not([data-layout-mode="desktop"]) .players-panels{display:grid!important;grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr));grid-auto-rows:minmax(120px,1fr);width:100%;height:100%;align-items:stretch}
 .app-game-layout[data-layout-focus="hands"][data-seating="row"] .player-panel.opponent-hand{width:100%;min-width:0;flex:none}
 /* Shared pack list row; selection mode omits only management controls. */
 .pack-list>.pack-row,.room-choice-list>.pack-row{
@@ -545,7 +549,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .avatar-picker-modal>.modal-head{display:flex;align-items:center;gap:12px;flex:none;position:sticky;top:0;background:var(--paper);z-index:1}.avatar-picker-modal h2{flex:1;text-align:left;font-size:24px}
 .avatar-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.avatar-option{min-width:0;aspect-ratio:1;display:grid;place-items:center;padding:3px;border:2px solid transparent;background:transparent;border-radius:12px}.avatar-option .avatar{width:100%;height:100%;border-radius:10px;font-size:20px;background:var(--color-surface-raised,#e6e9dc)}
 .avatar-option[aria-pressed=true]{border-color:var(--green);background:var(--color-surface-selected,#e0e8cb)}
-.avatar-letter-option{margin-top:14px}.avatar-letter-option .avatar-option{aspect-ratio:auto;display:flex;gap:10px;min-height:48px;width:100%;text-align:left;background:var(--color-surface-raised,#e6e9dc)}.avatar-letter-option .avatar{width:40px;height:40px;flex:none}
+
 @media(max-width:420px){.avatar-picker-modal{padding:16px}.avatar-options{gap:3px}.avatar-option{padding:2px;border-radius:9px}.avatar-picker-modal h2{font-size:22px}}
 
 /* RC6: navigation budget, readable headings and shared continuation cards. */
@@ -554,15 +558,21 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 #app .table-header{flex-wrap:wrap!important}
 #app .table-tools{flex-wrap:nowrap!important;margin-left:auto}
 #app .table-header .table-title{min-width:72px}
-.resume-banner{display:grid!important;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;gap:10px!important;align-items:center}
+.resume-banner{display:grid!important;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;gap:8px!important;align-items:center;padding:12px!important;font-size:14px}
 .resume-summary{min-width:0}.resume-room,.resume-game{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
 .resume-banner .pill{display:inline;padding:0;border:0;background:none;margin:0;font-size:inherit}
 .resume-actions{grid-column:2;grid-row:1;align-self:center}
-.resume-participants{grid-column:1/-1;display:flex;flex-wrap:nowrap;gap:12px;overflow-x:auto;min-width:0;padding-bottom:3px}
-.resume-person{display:inline-flex;align-items:center;gap:5px;flex:none;white-space:nowrap}
-.resume-person>.avatar{width:32px;height:32px;min-width:32px;flex:none;border-radius:9px;font-size:15px}
-.resume-person.saved-current-turn{text-decoration:none}.resume-person.saved-current-turn>span:last-child{text-decoration:underline;text-underline-offset:.2em;text-decoration-thickness:2px}
+.resume-participants{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;overflow:visible}
+.resume-player-group{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
+.resume-person{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%}
+.resume-person-name{min-width:0;overflow-wrap:anywhere;line-height:1.35}
+.resume-person .player-avatar-wrap{width:24px;height:24px;flex:none}
+.resume-person .avatar{width:24px;height:24px;min-width:24px;border-radius:7px;font-size:12px}
+.resume-person .player-medallion{width:12px;height:12px;right:-3px;top:-3px}
+.resume-person .participant-role svg{width:12px;height:12px}
+.resume-person.saved-current-turn{text-decoration:none}.resume-person.saved-current-turn>.resume-person-name{text-decoration:underline;text-underline-offset:.2em;text-decoration-thickness:2px}
 .resume-participants .avatar svg{width:100%;height:100%}.resume-participants .avatar img{width:100%;height:100%;object-fit:contain}
+
 .connection-light{display:inline-block;width:9px;height:9px;margin-right:5px;border-radius:50%;background:#b54843}
 .connection-light.is-connected{background:#347b54;animation:connection-pulse 2s ease-in-out infinite}
 @keyframes connection-pulse{50%{opacity:.4}}
@@ -574,3 +584,8 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .app-game-layout[data-opponent-hands="false"] .opponent-hand>.player-hand{display:none}
 .app-game-layout[data-has-hand="false"] .layout-self>.layout-hand{display:none}
 .app-game-layout[data-seating="row"][data-opponent-hands="false"] .players-panels{grid-auto-rows:max-content!important;align-items:start}
+
+/* Responsive fallback changes presentation only; the chosen seating is retained. */
+.app-game-layout[data-seating="row"] .seat-group{display:contents}
+.app-game-layout[data-seating="row"] [data-seat-copy="true"]{display:none!important}
+.lobby-start-reason{font-size:12px;line-height:1.4;color:var(--muted);margin:8px 0}

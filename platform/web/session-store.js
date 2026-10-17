@@ -194,9 +194,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return this.transaction(['sessions'],'readonly',(tx,done)=>{
         const request=tx.objectStore('sessions').getAll();
         request.onsuccess=()=>done(request.result.map(s=>({sessionId:s.sessionId,roomId:s.roomId,
-          turnNumber:s.turnNumber,turn:s.turn,turnName:s.turnName,round:s.round||null,game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt,
+          firstPlayer:s.firstPlayer,presetId:s.presetId,turnNumber:s.turnNumber,turn:s.turn,turnName:s.turnName,round:s.round||null,game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt,
           name:s.room?.name||'',hostMode:s.room?.hostMode||'player',finished:!!s.finished,
-          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),participants:clone(s.room?.participants||[]),role:'host'}))
+          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),participants:clone(s.room?.participants||[]).map(person=>{const seats=(s.room?.seats||[]).filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index),playerIndex=seats.findIndex(seat=>seat.participantId===person.id);return {...person,playerIndex,team:s.playerTeams?.[playerIndex]||null};}),role:'host'}))
           .sort((a,b)=>b.updatedAt-a.updatedAt));
       });
     }
