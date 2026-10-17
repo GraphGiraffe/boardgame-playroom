@@ -641,3 +641,52 @@ test('RC15 hiding a local resume card preserves the saved game across reload',as
  assert.equal(await page.locator('[data-resume-id]').count(),1);
  await page.locator('[data-resume-id]').click();await page.locator('.table-shell').waitFor();
 }));
+test('RC16 first player numbers, clockwise corners and rounded dice',async()=>fixture(async page=>{
+ for(const [width,height] of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'snakes',{players:Array.from({length:6},(_,i)=>({name:'Игрок '+i})),firstPlayer:3});
+  await page.evaluate(()=>{rcUI={seating:'circle'};rcRender();});
+  assert.equal(await page.locator('[data-player-index="3"] .player-turn-position').first().textContent(),'1');
+  const order=await page.evaluate(()=>['south-east','south-west','north-west','north-east'].flatMap(seat=>{let a=[...document.querySelectorAll('.seat-'+seat+' .player-panel')].map(el=>Number(el.dataset.playerIndex));return seat.endsWith('west')?a.reverse():a; }));
+  const first=order.indexOf(0),circle=[...order.slice(first),...order.slice(0,first)];assert.deepEqual(circle,[0,1,2,3,4,5]);
+  assert.notEqual(await page.locator('.die').evaluate(el=>getComputedStyle(el).borderRadius),'0px');
+  await page.screenshot({path:path.join(shots,`rc16-snakes-${width}.png`)});
+ }
+}));
+test('RC16 public sets reveal every card and fish books use aligned card rows',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ for(const game of ['oldmaid','gofish']){
+  await scene(page,game,{players:[{name:'Иван'},{name:'Александра'},{name:'Лев'}]});
+  const found=await page.evaluate(game=>{
+   let event;
+   for(let i=0;i<1500&&rcSession.current.status!=='finished';i++){
+    const before=rcSession.current.events.at(-1)?.id||0,actor=rcSession.current.turn,actions=TabletopCore.legalActions(rcSession.current,actor);rcSession.act(actor,actions[i%actions.length]);
+    event=TabletopCore.project(rcSession.current,0).events.find(e=>e.id>before&&e.reveal?.kind==='cards');if(event)break;
+   }
+   if(!event)return null;rcRender();window.rcReveal=new PlayroomActionReveal({mount:()=>document.querySelector('.table-shell')});rcReveal.show(event.reveal,game);return {count:event.reveal.cards.length,first:event.reveal.cards[0].id};
+  },game);
+  assert(found);assert.equal(await page.locator('.action-reveal-art>.shared-card').count(),found.count);
+  await page.screenshot({path:path.join(shots,`rc16-${game}-set.png`)});
+  await page.evaluate(()=>rcReveal.clear());
+  if(game==='gofish'){
+   assert.equal(await page.locator('.gofish-owner').count(),3);
+   const xs=await page.locator('.gofish-book-cards').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert(Math.max(...xs)-Math.min(...xs)<1);
+   assert.equal(await page.locator('.gofish-book [data-entity="card-'+found.first+'"]').count(),1);
+   await page.screenshot({path:path.join(shots,'rc16-fish-books.png')});
+  }
+ }
+}));
+test('RC16 a private transfer has a visible back before the public pair reveal',async()=>fixture(async page=>{
+ await scene(page,'oldmaid');
+ const result=await page.evaluate(async()=>{
+  let event,shot,events,draws;
+  for(let i=0;i<200&&rcSession.current.status!=='finished';i++){
+   const actor=rcSession.current.turn,action=TabletopCore.legalActions(rcSession.current,actor)[0];rcRender();shot=PlayroomMotion.capture({actor,viewer:0,action});const before=rcSession.current.events.at(-1)?.id||0;rcSession.act(actor,action);
+   events=TabletopCore.project(rcSession.current,0).events.filter(e=>e.id>before);event=events.find(e=>e.reveal?.kind==='cards');if(event)break;
+  }
+  if(!event)return null;rcRender();draws=events.filter(e=>e.transfer).map(e=>e.transfer);
+  const f=new PlayroomGameFeedback({mount:()=>document.querySelector('.table-shell')});f.accept(events,[],'oldmaid',{snapshot:shot,mode:'fast',motion:()=>PlayroomMotion.play(shot,{duration:300,draws})});
+  await new Promise(requestAnimationFrame);
+  const back=document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]'),result={back:!!back?.querySelector('.back-art-face,svg'),earlyReveal:!!document.querySelector('.action-reveal')};
+  await f.whenIdle();result.ended=!document.querySelector('.action-reveal');f.destroy();return result;
+ });assert.deepEqual(result,{back:true,earlyReveal:false,ended:true});
+}));

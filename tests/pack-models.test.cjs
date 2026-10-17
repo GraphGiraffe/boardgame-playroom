@@ -262,7 +262,7 @@ test('a round limit is independent from actions and turns, including the assigne
   assert.deepEqual(reveal.card,played.data.discard.at(-1));assert(projection.data.hands.flat().every(c=>c.hidden));
   for(const id of ['oldmaid','gofish']){
     const s=E.createGame(id,{players,preset:'classic',seed:23}),action=E.legalActions(s,s.turn)[0],n=E.applyAction(s,s.turn,action);
-    assert(E.project(n,-1).events.every(e=>!e.reveal),id+' private transfers remain hidden');
+    const events=E.project(n,-1).events;assert(events.filter(e=>e.transfer).every(e=>!e.reveal),id+' private transfers remain hidden');for(const event of events.filter(e=>e.reveal)){assert(['oldmaid.paired','gofish.booked'].includes(event.type));assert.equal(event.reveal.cards.length,id==='oldmaid'?2:4);}
   }
  });
 

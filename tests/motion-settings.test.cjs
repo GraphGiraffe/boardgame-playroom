@@ -149,7 +149,7 @@ test('Animation presets persist and stage real card flights before the next acto
     // Seed once; a reload must read the user's current storage without reseeding.
     await page.evaluate(({settings, saved}) => {
       localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, ...settings}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,autoPass:false,...settings}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, {settings, saved});
     await page.reload();
@@ -377,11 +377,11 @@ test('Animation presets persist and stage real card flights before the next acto
       await resume(page); await playHumanCard(page, saved);
       await page.locator(FLIGHT).waitFor({state: 'visible'});
       await page.locator('.table-heading [data-command=home]').click();
-      assert.equal(await page.locator('.game-tile').count(), 13);
+      assert.equal(await page.locator('.game-tile').count(),await page.evaluate(()=>TabletopCore.GAMES.length));
       assert.equal(await page.locator('.playroom-motion-layer').count(), 0);
       await page.waitForTimeout(1850);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal(await page.locator('.game-tile').count(), 13);
+      assert.equal(await page.locator('.game-tile').count(),await page.evaluate(()=>TabletopCore.GAMES.length));
     });
   } finally { await browser.close(); await fixtureServer?.close(); }
 });

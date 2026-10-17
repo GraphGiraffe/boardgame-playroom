@@ -800,3 +800,8 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 #app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-heading{gap:2px}
 #app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .participant-role svg{width:10px;height:10px}
 #app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-heading strong{font-size:10px}
+
+/* Public sets share the single-card reveal lifecycle. */
+.action-reveal-art.scene.is-card-set{display:flex!important;gap:8px;width:min(90vw,calc(var(--reveal-card-count)*150px));align-items:center}
+.action-reveal-art.scene.is-card-set>*{width:calc((100% - (var(--reveal-card-count) - 1)*8px)/var(--reveal-card-count))!important;flex:none;max-height:60dvh!important}
+:is(.game-scene,.app-game-layout) :is(.die,.shared-die):has(.shared-die-art){border-radius:20%!important}
