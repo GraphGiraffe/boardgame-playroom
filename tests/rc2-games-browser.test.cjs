@@ -84,9 +84,10 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      if(ships.length===4&&ships.some(ship=>Math.abs(ship.getBoundingClientRect().top-ships[0].getBoundingClientRect().top)>1))issues.push('opponent fleet wraps');
     }
     if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
-    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.getBoundingClientRect().height>30)issues.push('vertical player name');
+    // A side seat rotates its entire row; measure text wrapping before that transform.
+    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.offsetHeight>30)issues.push('vertical player name');
     if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
-    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>Math.abs(w-56)>1))issues.push('Yatzy unequal score columns');}
+    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>w<28||Math.abs(w-widths[0])>1))issues.push('Yatzy unequal score columns');if(stage.querySelector('.yatzy-board').scrollWidth>stage.querySelector('.yatzy-board').clientWidth+1)issues.push('Yatzy horizontal scroll');}
     for(const panel of stage.querySelectorAll('[data-hand-count].player-panel'))if(panel.querySelectorAll('.piece-count.is-hand').length!==1)issues.push('duplicate hand counter');
     return [...new Set(issues)];
    });
@@ -176,7 +177,9 @@ test('Yatzy keeps score rows and table scroll stable when dice are held',{timeou
   const page=await browser.newPage({viewport:{width:390,height:740}});page.setDefaultTimeout(5000);await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
   await page.locator('[data-start="yatzy"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command="lobby-start"]').click();
   const before=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
-  await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-dice [data-action]').first().waitFor();
+  await page.locator('.yatzy-roll[data-action]').click();await page.locator('[data-motion-kind="roll"]').first().waitFor();
+  await page.locator('[data-motion-kind="roll"]').first().waitFor({state:'detached'});const landed=Date.now();
+  await page.locator('.yatzy-dice [data-action]').first().waitFor();assert(Date.now()-landed<230,'next action unlocks after dice motion and its normal settle, without a card-animation budget');
   const after=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
   assert(before.every((height,i)=>Math.abs(height-after[i])<=1),'score buttons do not stretch rows');
   const top=await page.locator('.yatzy-board').evaluate(board=>{board.scrollTop=board.scrollHeight;window.qaYatzyBoard=board;return board.scrollTop;});assert(top>0);

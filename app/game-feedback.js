@@ -19,7 +19,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const ids=cues.filter(c=>c.eventId===event.id&&typeof c.id==='string').map(c=>c.id);
         const animated=event.speech||event.reveal||event.feedback?.kind==='skip';
         const effect=event===motionEvent?motion:null;
-        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?timing.speech:0});
+        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?timing.speech:0});
       }
       if(!this.active&&!defer)this.next();
     }

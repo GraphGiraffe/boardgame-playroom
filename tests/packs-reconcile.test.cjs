@@ -58,7 +58,9 @@ test('RC4 registry validates tags and count filter semantics',()=>{
  const fs=require('node:fs'),path=require('node:path');const other=JSON.parse(fs.readFileSync(path.join(path.dirname(fs.realpathSync(path.join(__dirname,'../packs'))),'shared/tags.json'),'utf8'));assert.deepEqual(other,require('../core/tags.json'));
 });
 test('pack staging and activation preserve the public reveal renderer',()=>{
- const sample=bundle('reveal');sample.files['view.js']="globalThis.PlayroomViews.register('demo',()=>({api:2,family:'board',elements:{field:'<div>field</div>'}}),null,{reveal:value=>'<b>'+value.card+'</b>'});";
+ const sample=bundle('reveal');sample.files['view.js']="globalThis.PlayroomViews.register('demo',()=>({api:2,family:'board',elements:{field:'<div>field</div>'}}),null,{seating:'row',reveal:value=>'<b>'+value.card+'</b>'});";
  const repo=manager();repo.instance.bootstrap([sample]);assert.equal(repo.instance.views.get('demo').reveal({card:'public'}),'<b>public</b>');
+ assert.equal(repo.instance.views.get('demo').seating,'row');
  const invalid=bundle('invalid-reveal');invalid.files['view.js']=sample.files['view.js'].replace("reveal:value=>'<b>'+value.card+'</b>'","reveal:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid reveal renderer/);
+ invalid.files['view.js']=sample.files['view.js'].replace("seating:'row'","seating:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid seating policy/);
 });

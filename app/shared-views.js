@@ -129,7 +129,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const ticket=controller.history.ticket,change=animate?Flow.eventAction(previous,result):null;
       const shot=change?flow.capture({actor:change.actor,action:change.action,viewer:result.viewer}):null;
       transitionActive=!!shot;render();
-      if(change){feedback.start(previous.events||previous.state.events||[]);feedback.accept(result.events||result.state.events||[],[],result.game,{mode:flow.pace().mode,snapshot:shot,motion:()=>flow.play(shot,{draws:result.effects||[]}),defer:true});await flow.present(()=>{feedback.next();return feedback.whenIdle();});}
+      if(change){feedback.start(previous.events||previous.state.events||[]);feedback.accept(result.events||result.state.events||[],[],result.game,{mode:flow.pace().mode,snapshot:shot,motion:()=>flow.play(shot,{draws:result.effects||[]}),defer:true});await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events:change?.events||[]});}
       if(ticket!==controller.history.ticket||!historyOpen||destroyed)return;transitionActive=false;render();
     }
     async function openHistory(index=historyCount()){
@@ -265,7 +265,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       input.invalidate();playerTargets.cancel();
       feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{defer:true,silent:!connected||document.hidden,mode:flow.pace().mode,snapshot:shot,motion:shot?()=>flow.play(shot,{draws:(next.effects||[]).filter(effect=>effect.revision===next.revision)}):null});
       render();
-      try{await flow.present(()=>{feedback.next();return feedback.whenIdle();});}finally{if(current())transitionActive=false;}
+      try{await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events:change?.events||[]});}finally{if(current())transitionActive=false;}
     }
     function subscribe(){
       const live=client.snapshot;controller.history.receive(live);
