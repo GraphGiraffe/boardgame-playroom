@@ -194,3 +194,9 @@ Bootstrap загружает model-values перед events/model-runtime/histor
 ### Статус под аватаром (RC9)
 
 Элемент `playerContent.badges` может задавать `position: "avatar-bottom"`: текстовый жетон по центру нижнего края аватара, вместо строки статусов. Полная карта оппонента сохраняет размеры и motion identity; viewport мини-руки показывает карту полностью, а при дефиците места — верхнюю половину. `playerContent` принимает `backRender` для рубашки соответствующего предмета; `data-piece-ratio` задаёт отношение ширины к высоте (например, 4/7 для домино). Масштаб предмета, окно просмотра и раскрытие веера рассчитываются общими функциями fitTileHand/fitOpponentHand/fitCardHand, без ветвлений по игре.
+
+### RC11: optional hand shape
+
+`handShape: straight | arc` is a local application preference shared by card hands. Changing it must preserve intrinsic card dimensions, player panel dimensions and hand viewport dimensions. Tile/domino hands do not consume this preference. Arc position follows the visible hand and scroll offset; independent CSS rotate/translate compose with the existing selection lift.
+
+`PlayroomMotion.poseOf(element)` is the shared 2D screen-pose calculation for flight capture and drag previews: unrotated dimensions plus screen angle. Independent CSS rotation is included; cloned flight faces reset it because the mover applies that rotation once. Shape changes never resize a picked-up card.
