@@ -103,7 +103,7 @@ test('UNO forced skips preserve corner seats and hands through every animation f
     assert(Math.abs(sample.x-result.before.x)<=4.1&&Math.abs(sample.y-result.before.y)<=4.1,'shake stays inside its four-pixel reserve');
    }
    assert.equal(Math.round(result.before.matrix[1]),0,'corner identities remain upright');
-   assert.equal(result.seating,'circle','corners fit both orientations');
+   assert.equal(result.seating,'circle',`corners fit ${width}x${height} target ${target} ${value}`);
    await page.emulateMedia({reducedMotion:'reduce'});
    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
    await page.emulateMedia({reducedMotion:'no-preference'});
@@ -238,7 +238,7 @@ test('RC8 corner seats align hands, keep player geometry equal and preserve a cl
  for(const game of ['oldmaid','gofish','ludo','uno'])for(const [width,height]of [[320,740],[390,740],[740,390],[1090,900],[1440,900]]){
   await page.setViewportSize({width,height});await scene(page,game);
   const geometry=await page.evaluate(()=>{
-   const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel')].filter(n=>n.getBoundingClientRect().width),boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
+   const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel:not([data-portrait-copy])')].filter(n=>n.getBoundingClientRect().width),boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
    return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
   });assert.equal(geometry.seating,'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
@@ -429,7 +429,7 @@ test('RC9 maximum rosters fit contents, hands and fields in both orientations',{
    const self=stage.querySelector('.layout-self')?.getBoundingClientRect();for(const group of stage.querySelectorAll('.seat-group'))if(self&&overlaps(group.getBoundingClientRect(),self))errors.push('seat/self overlap');
    for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className);}
    const tiles=[...stage.querySelectorAll('.hand-track.is-tiles>button')].map(e=>e.getBoundingClientRect());if(tiles.some(r=>Math.abs(r.width-tiles[0].width)>1||Math.abs(r.height-tiles[0].height)>1||Math.abs(r.width/r.height-4/7)>.02))errors.push('unequal domino size');
-   for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild&&e.firstElementChild.getBoundingClientRect().height<e.getBoundingClientRect().height*1.5)errors.push('opponent cards resized instead of cropped');}
+   for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild){const card=e.firstElementChild.getBoundingClientRect(),viewport=e.getBoundingClientRect();if(Math.abs(card.width/card.height-(Number(e.querySelector('[data-piece-ratio]')?.dataset.pieceRatio)||5/7))>.03)errors.push('opponent card proportions');if(stage.dataset.croppedHands==='true'&&card.height<viewport.height*1.5)errors.push('opponent cards resized instead of cropped');}}
    if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
   });
   assert.deepEqual(errors,[],`${game} ${seating} ${width}x${height}`);
@@ -439,8 +439,48 @@ test('RC9 maximum rosters fit contents, hands and fields in both orientations',{
 test('UNO status is a label below the avatar, separate from score counters',async()=>fixture(async page=>{
  await page.setViewportSize({width:390,height:844});await scene(page,'uno');
  await page.evaluate(()=>{const state=structuredClone(TabletopCore.project(rcSession.current,0));state.data.uno.declared[0]=true;const actions=TabletopCore.legalActions(rcSession.current,0);PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'UNO',state,viewer:0,actions,scene:PlayroomViews.render(state,0,actions,{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
- const badge=page.locator('.self-player .player-avatar-label');await badge.waitFor();assert.equal(await badge.textContent(),'UNO');assert.equal(await page.locator('.self-player .player-badges').count(),0);
+ const badge=page.locator('.layout-self .player-avatar-label');await badge.waitFor();assert.equal(await badge.textContent(),'UNO');assert.equal(await page.locator('.self-player .player-badges').count(),0);
  const placement=await badge.evaluate(e=>{const r=e.getBoundingClientRect(),a=e.parentElement.querySelector('.avatar').getBoundingClientRect();return {offset:Math.abs(r.x+r.width/2-a.x-a.width/2),bottom:r.bottom-a.bottom,w:r.width,h:r.height};});
  assert(placement.offset<1&&placement.bottom>=0&&placement.w>placement.h);
  await page.screenshot({path:path.join(shots,'rc9-uno-avatar-badge.png')});
+}));
+
+
+test('RC10 full names, adaptive hands and portrait own-seat identity', {timeout:60000},async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1920,1080]]){
+  await page.setViewportSize({width,height});
+  await scene(page,'uno',{players:['Александр','Екатерина','Владислав','Анастасия'].map(name=>({name}))});
+  await page.evaluate(()=>{rcUI={seating:'anchors'};rcRender();});await page.waitForTimeout(50);
+  const result=await page.evaluate(()=>{
+   const stage=document.querySelector('.app-game-layout');return {cropped:stage.dataset.croppedHands,names:[...stage.querySelectorAll('.player-heading strong')].filter(e=>e.getBoundingClientRect().width).map(e=>({text:e.textContent,sw:e.scrollWidth,w:e.clientWidth,style:getComputedStyle(e).textOverflow})),copies:[...stage.querySelectorAll('[data-portrait-copy]')].filter(e=>e.getBoundingClientRect().width).length,seating:stage.dataset.seating};
+  });
+  assert(result.names.every(n=>n.style!=='ellipsis'&&n.sw<=n.w+1),JSON.stringify({width,height,result}));
+  if(height>width&&result.seating==='circle')assert.equal(result.copies,1);
+  if(width===1920)assert.equal(result.cropped,'false');
+  const first=page.locator('.layout-hand .hand-card').first();await first.hover({position:{x:5,y:8}});await page.waitForTimeout(180);
+  assert(await page.locator('.hand-track').evaluate(e=>e.scrollWidth<=e.clientWidth+2),'hover must not scroll ordinary hand '+width);
+  await page.mouse.move(0,0);await page.waitForTimeout(100);
+  await page.screenshot({path:path.join(shots,`rc10-names-${width}x${height}.png`)});
+ }
+}));
+
+test('RC10 Durak stock and played cards share size and pairs wrap below stock',{timeout:45000},async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1920,1080]]){
+  await page.setViewportSize({width,height});await scene(page,'durak',{players:Array.from({length:6},(_,i)=>({name:['Иван','Кира','Мика','Лев','Сэм','Рэй'][i]}))});
+  await page.evaluate(()=>{const state=structuredClone(TabletopCore.project(rcSession.current,0)),cards=state.data.hands[0];state.data.table=Array.from({length:6},(_,i)=>({attack:cards[i%cards.length],defense:cards[(i+1)%cards.length]}));PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'Дурак',state,viewer:0,actions:[],scene:PlayroomViews.render(state,0,[],{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
+  await page.waitForTimeout(50);
+  const geometry=await page.evaluate(()=>{const cards=[...document.querySelectorAll('.layout-field .playing-card,.layout-field .shared-card-back')];const pairs=[...document.querySelectorAll('.durak-pair')].map(e=>e.getBoundingClientRect()),stock=document.querySelector('.field-group-stock').getBoundingClientRect();return {sizes:cards.map(e=>[e.offsetWidth,e.offsetHeight]),columns:new Set(pairs.map(r=>Math.round(r.x))).size,below:pairs.some(r=>r.top>=stock.bottom&&Math.abs(r.x-stock.x)<30)};});
+  assert(geometry.sizes.every(s=>s[0]===geometry.sizes[0][0]&&s[1]===geometry.sizes[0][1]),JSON.stringify(geometry));assert(geometry.columns>=2,JSON.stringify(geometry));assert(geometry.below,JSON.stringify(geometry));
+  await page.screenshot({path:path.join(shots,`rc10-durak-six-pairs-${width}x${height}.png`)});
+ }
+}));
+
+test('RC10 hidden domino tiles have distinct outlined backs and 4:7 proportions',async()=>fixture(async page=>{
+ for(const theme of ['light','dark']){
+  await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);await page.setViewportSize({width:390,height:844});await scene(page,'domino');
+  const backs=await page.locator('.opponent-hand .domino-back').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e),face=getComputedStyle(e.firstElementChild);return {ratio:r.width/r.height,edge:parseFloat(s.borderWidth),rim:s.backgroundColor,face:face.backgroundColor,text:e.textContent};}));
+  assert(backs.length>0);assert(backs.every(b=>Math.abs(b.ratio-4/7)<.02&&b.edge>=1&&b.rim!==b.face&&!b.text.trim()),JSON.stringify(backs));
+  assert.equal(await page.locator('.opponent-hand .card-back').count(),0);
+  await page.screenshot({path:path.join(shots,`rc10-domino-backs-${theme}.png`)});
+ }
 }));

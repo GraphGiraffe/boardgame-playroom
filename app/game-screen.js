@@ -162,31 +162,48 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
+  // One geometry contract: full pieces, independently fitted hand viewports.
+  function fitTileHand(track){
+    const count=track.children.length,style=track.ownerDocument.defaultView.getComputedStyle(track);
+    const height=parseFloat(style.getPropertyValue('--scene-card-height'))||90,available=track.clientWidth-12;
+    const width=count>7?height*4/7:Math.min(height*4/7,(available-Math.max(0,count-1)*2)/Math.max(1,count));
+    track.style.setProperty('--tile-width',Math.max(18,width)+'px');
+  }
+  function fitOpponentHand(mini,stage){
+    const count=mini.children.length;if(!count)return;
+    mini.style.removeProperty('--opponent-card-width');
+    const ratio=Number(mini.querySelector('[data-piece-ratio]')?.dataset.pieceRatio);
+    if(ratio>0&&ratio<=1){const height=parseFloat(stage.style.getPropertyValue('--opponent-card-height'))||40;mini.style.setProperty('--opponent-card-width',height*ratio+'px');}
+    const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+    mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
+  }
+  function fitCardHand(track,stage){
+    track.style.removeProperty('--fan-peek');
+    const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
+    const trackStyle=track.ownerDocument.defaultView.getComputedStyle(track),available=track.clientWidth-parseFloat(trackStyle.paddingLeft)-parseFloat(trackStyle.paddingRight);
+    let desired=parseFloat(stage.style.getPropertyValue('--scene-card-width'))||64;
+    if(stage.dataset.seating==='circle'&&stage.dataset.anchorOrientation==='landscape'){
+      const own=track.closest('.layout-self')?.getBoundingClientRect(),north=stage.querySelector('.seat-north-east')?.getBoundingClientRect();
+      if(own&&north?.height){const controls=own.height-track.getBoundingClientRect().height,availableHeight=own.bottom-north.bottom-6-controls-24;desired=Math.min(desired,Math.max(32,availableHeight/1.4));}
+    }
+    const fitted=count>1&&!track.classList.contains('is-long-hand')?Math.min(desired,(available-10)/(1+.28*Math.max(0,count-1)),available-10-16*Math.max(0,count-1)):desired;
+    track.style.setProperty('--scene-card-width',Math.max(32,fitted)+'px');
+    track.style.setProperty('--scene-card-height',Math.max(32,fitted)*1.4+'px');
+    const baseline=16;
+    let peek=baseline;
+    for(const card of track.querySelectorAll('.hand-card')){
+      const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
+      const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
+      peek=Math.max(peek,Math.min(box.width*.28,Math.ceil(marker.right-box.left+2)));
+    }
+    if(count>1&&card){const width=card.getBoundingClientRect().width;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
+    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.getBoundingClientRect().width-peek,available-card.getBoundingClientRect().width-Math.max(0,count-1)*peek-4))+'px':'0px');
+    track.style.setProperty('--fan-peek',peek+'px');
+  }
   function fitHand(stage){
-    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles')){
-      const count=track.children.length,style=track.ownerDocument.defaultView.getComputedStyle(track);
-      const height=parseFloat(style.getPropertyValue('--scene-card-height'))||90,available=track.clientWidth-12;
-      const width=count>7?height*4/7:Math.min(height*4/7,(available-Math.max(0,count-1)*2)/Math.max(1,count));
-      track.style.setProperty('--tile-width',Math.max(18,width)+'px');
-    }
-    for(const mini of stage.querySelectorAll('.player-panel .mini-hand')){
-      const count=mini.children.length;if(!count)continue;
-      const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-      mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
-    }
-    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan')){
-      track.style.removeProperty('--fan-peek');
-      const win=track.ownerDocument.defaultView,baseline=16;
-      let peek=baseline;
-      for(const card of track.querySelectorAll('.hand-card')){
-        const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
-        const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
-        peek=Math.max(peek,Math.min(box.width*.28,Math.ceil(marker.right-box.left+2)));
-      }
-      const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
-      if(count>1&&card){const width=card.getBoundingClientRect().width,style=win.getComputedStyle(track),available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);peek=Math.max(peek,Math.min(width,(available-width-10)/(count-1)));}
-      track.style.setProperty('--fan-peek',peek+'px');
-    }
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles'))fitTileHand(track);
+    for(const mini of stage.querySelectorAll('.player-panel .mini-hand'))fitOpponentHand(mini,stage);
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan'))fitCardHand(track,stage);
   }
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
@@ -220,9 +237,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.preferredSeating??=stage.dataset.seating;
       const roster=stage.querySelectorAll('.layout-participants .player-panel:not([data-seat-copy])').length;
       stage.dataset.denseRoster=String(!portrait&&h<430&&roster>2&&stage.dataset.opponentHands==='true');
-      const cardWidth=Math.max(48,Math.min(110,portrait?w*.17:Math.min(w*.085,h*.14)));
+      const cardWidth=Math.max(48,Math.min(110,portrait?w*.17:Math.min(w*.12,h*.22)));
       stage.style.setProperty('--scene-card-width',cardWidth+'px');
       stage.style.setProperty('--scene-card-height',cardWidth*1.4+'px');
+      const miniWidth=Math.max(28,Math.min(48,portrait?cardWidth*.5:h*.07)),miniHeight=miniWidth*1.4;
+      stage.style.setProperty('--opponent-card-width',miniWidth+'px');
+      stage.style.setProperty('--opponent-card-height',miniHeight+'px');
+      stage.style.setProperty('--opponent-viewport-height',(miniHeight+4)+'px');
+      stage.dataset.croppedHands='false';
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
       const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<200||(!portrait&&h<430&&roster>3&&stage.dataset.opponentHands==='true'));
       stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
@@ -241,19 +263,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
       if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));
       const seatWidth=edge?Math.max(120,Math.min(260,w-12,h-ownZone-2*seatHeight-24)):compact?(w-6)/2:Math.min(200,Math.max(110,w*.21));
-      stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,Math.floor(w/130))));
+      stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,Math.floor(w/(portrait&&roster>3?94:130)))));
       stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',seatHeight+'px');
       stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-48)/1.43))+'px');
       stage.style.setProperty('--own-zone',ownZone+'px');
       if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,fieldSize))+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
       if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);
-      if(stage.dataset.seating==='circle'){
+      const seatsOverlap=()=>{
         const ownBox=stage.querySelector('.layout-self')?.getBoundingClientRect(),groups=[...stage.querySelectorAll('.seat-group')].map(el=>el.getBoundingClientRect());
         const overlap=(a,b)=>a&&b&&Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
-        if(groups.some((box,i)=>overlap(box,ownBox)||groups.slice(i+1).some(other=>overlap(box,other)))||stage.querySelector('.layout-field')?.clientHeight<80){
-          stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
-        }
+        return stage.dataset.seating==='circle'&&groups.some((box,i)=>overlap(box,ownBox)||groups.slice(i+1).some(other=>overlap(box,other)));
+      };
+      const participants=stage.querySelector('.layout-participants'),field=stage.querySelector('.layout-field');
+      const cramped=stage.dataset.denseRoster==='true'||seatsOverlap()||(participants&&participants.scrollHeight>participants.clientHeight+2)||(field&&field.clientHeight<Math.min(180,h*.35));
+      if(cramped){stage.style.setProperty('--opponent-viewport-height',(miniHeight*.5+4)+'px');stage.dataset.croppedHands='true';fitField(stage);fitHand(stage);}
+      if(stage.dataset.seating==='circle'&&(seatsOverlap()||field?.clientHeight<80)){
+        stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
       }
       root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}

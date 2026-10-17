@@ -147,7 +147,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       const metrics=semantic?.metrics?.filter(metric=>['points','wins','pieces'].includes(metric.kind));
       const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
-      const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?back(options.kind||'card'):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
+      const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?(options.backRender?.()||back(options.kind||'card')):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
       return {handHTML,indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
@@ -252,14 +252,14 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     let self='';
     if(unified){
       const order=seatOrder(state.players.length,viewer);
-      if(circular&&layout.duplicateSelf&&viewer>=0&&surface!=='table')order.push(viewer);
+      if(circular&&viewer>=0&&surface!=='table')order.push(viewer);
       const panels=order.map(i=>({player:i,html:playerPanel(state,i,viewer,content?.[i]||{},actions)}));
       if(circular){
         const groups=new Map();
         for(const panel of panels){
           const relative=viewer>=0?(panel.player-viewer+state.players.length)%state.players.length:panel.player;
           const seat=layout.seats?.[panel.player]||['south-east','south-west','north-west','north-east'][Math.floor(relative*4/state.players.length)%4];
-          if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push(panel.html.replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?' data-seat-copy="true"':''}`));
+          if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push(panel.html.replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?` data-seat-copy="true"${layout.duplicateSelf?'':' data-portrait-copy="true"'}`:''}`));
         }
         e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${html.join('')}</div>`).join('')}</div>`;
       }else e.participants=`<div class="players-panels opponent-hands">${panels.map(panel=>panel.html).join('')}</div>`;
