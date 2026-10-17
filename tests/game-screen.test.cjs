@@ -197,3 +197,10 @@ test('continuation avatars carry host, first-player and team badges with regular
  assert.deepEqual([...html.matchAll(/resume-person-name[^>]*>.*?<span[^>]*>([A-D])<\/span>/g)].map(m=>m[1]),['A','B','C','D']);
  assert.doesNotMatch(Screen.resumeCard({state,roomName:'Не показывать',gameName:'Игра'}),/Не показывать/);
 });
+
+ test('recent cards retain only unfinished games or a connected finished room',()=>{
+  for(const network of [false,true])for(const connected of [false,true])for(const status of ['playing','finished']){
+    const html=Screen.resumeCard({state:{...projected,status},network,connected});
+    assert.equal(!!html,status!=='finished'||(network&&connected),`${network}/${connected}/${status}`);
+  }
+ });

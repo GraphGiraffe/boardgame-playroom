@@ -448,82 +448,6 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 @media(max-width:480px){.settings-overview{grid-template-columns:minmax(0,1fr)}}
 .player-status-badge:is(.is-success,.is-danger){color:var(--color-text-primary,#244c35);background:var(--color-surface-raised,#e4ead8)}
 
-/* Pack priorities are presentation metadata. Local seating never changes game seats. */
-.app-game-layout[data-view-api="2"][data-layout-focus="hands"]:not([data-surface="player"])[data-seating="row"]:not([data-layout-mode="phone-landscape"]):not([data-layout-mode="desktop"]){
- grid-template-columns:minmax(0,1fr)!important;
- grid-template-rows:minmax(0,1fr) auto minmax(60px,16%) minmax(0,var(--own-zone,180px)) auto!important;
- grid-template-areas:"participants" "status" "field" "self" "auxiliary"!important;
-}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-participants{max-height:none;align-items:stretch}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .players-panels{align-content:stretch;align-items:stretch}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel.opponent-hand{flex-direction:column;max-width:none}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand{
- display:flex!important;align-items:center;justify-content:safe center;height:calc(var(--seat-hand-width,60px)*1.43 + 8px)!important;min-height:0!important;max-height:none!important;overflow:auto!important;padding:4px!important;
-}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand>*{
- flex:0 0 auto!important;width:var(--seat-hand-width,60px)!important;min-width:var(--seat-hand-width,60px)!important;height:calc(var(--seat-hand-width,60px)*1.43)!important;margin-left:-18px!important;
-}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand>:first-child{margin-left:0!important}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .player-panel .mini-hand .public-card>*{width:100%!important;min-width:0!important;height:100%!important}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-self{max-height:none}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-hand .hand-card{
- --fan-card-width:var(--focus-own-card-width,90px)!important;--fan-card-height:calc(var(--focus-own-card-width,90px)*1.43)!important;
-}
-.app-game-layout[data-layout-focus="hands"]:not([data-surface="player"]) .layout-hand .hand-track.is-fan{min-height:calc(var(--focus-own-card-width,90px)*1.43 + 10px);height:auto;max-height:none}
-
-/* Standard circle and anchored seats reserve their actual visual footprint. */
-.app-game-layout[data-view-api="2"][data-seating="circle"]{
- grid-template-columns:minmax(0,var(--seat-height)) minmax(0,1fr) minmax(0,var(--seat-height))!important;
- grid-template-rows:auto minmax(0,1fr) auto auto minmax(0,var(--own-zone)) auto!important;
- grid-template-areas:"north-west north north-east" "west field east" "south-west south south-east" "status status status" "self self self" "auxiliary auxiliary auxiliary"!important;
-}
-.app-game-layout[data-seating="circle"]>.layout-participants,.app-game-layout[data-seating="circle"] .players-panels{display:contents!important}
-.app-game-layout[data-seating="circle"] .seat-group{display:flex;gap:6px;align-items:center;justify-content:center;min-width:0;min-height:0;max-width:100%;overscroll-behavior:contain}
-.seat-north{grid-area:north}.seat-north-west{grid-area:north-west}.seat-north-east{grid-area:north-east}.seat-west{grid-area:west}.seat-east{grid-area:east}.seat-south-west{grid-area:south-west}.seat-south-east{grid-area:south-east}.seat-south{grid-area:south}
-.app-game-layout[data-seating="circle"] .seat-group>.player-panel{
- width:var(--seat-width)!important;min-width:var(--seat-width)!important;max-width:var(--seat-width)!important;height:var(--seat-height)!important;min-height:var(--seat-height)!important;flex:none!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;overflow:hidden;
-}
-.app-game-layout[data-seating="circle"] .seat-group .player-info{flex:none!important;min-width:0!important;min-height:44px!important;width:100%}
-.app-game-layout[data-seating="circle"] .player-turn-position{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;margin-left:auto;border:1px solid var(--color-border-subtle);border-radius:50%;font-size:10px;flex:none}
-.app-game-layout[data-seating="circle"] .layout-self{max-height:none;width:100%;height:100%}
-.app-game-layout[data-seating="circle"] :is(.seat-north,.seat-south){grid-column:1/-1}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] .seat-group>.player-panel{flex-direction:row!important;align-items:center!important;padding:4px!important;gap:5px}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] .seat-group .player-info{flex:0 1 110px!important;width:110px!important}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] .player-hand{flex:1;min-width:0}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] .seat-group .mini-hand{height:44px!important;min-height:44px!important;width:100%;padding:2px!important}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] :is(.seat-west,.seat-east){display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:var(--seat-width);align-content:safe center;justify-items:center;overflow-x:hidden;overflow-y:auto}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] :is(.seat-west,.seat-east)>.player-panel{position:relative;align-self:center;margin:0;transform:rotate(90deg)}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"] .seat-east>.player-panel{transform:rotate(-90deg)}
-.app-game-layout[data-seating="circle"][data-seat-style="edge"][data-opponent-hands="false"] .seat-group .player-info{flex:1!important;width:100%!important}
-.app-game-layout[data-seating="circle"][data-seat-style="anchors"]{grid-template-columns:minmax(0,var(--seat-width)) minmax(0,1fr) minmax(0,var(--seat-width))!important}
-.app-game-layout[data-seating="circle"][data-seat-anchors="true"][data-seat-mode="ring"]>.layout-field{grid-column:2;grid-row:1/4}
-.app-game-layout[data-view-api="2"][data-seating="circle"][data-seat-mode="corners"]{
- grid-template-columns:repeat(2,minmax(0,1fr))!important;
- grid-template-rows:max-content minmax(0,var(--anchor-field-size)) max-content max-content minmax(0,var(--own-zone)) max-content!important;
- grid-template-areas:"north-west north-east" "field field" "south-west south-east" "status status" "self self" "auxiliary auxiliary"!important;align-content:center!important;
-}
-.app-game-layout[data-seating="circle"][data-seat-mode="corners"] .seat-group{width:100%}
-
-/* Anchored landscape keeps the four identities beside their physical corners.
-   The personal controls use the middle of the owner's side, freeing field height. */
-.app-game-layout[data-seating="circle"][data-anchor-compact-controls="true"]{
- grid-template-columns:minmax(0,var(--seat-width)) minmax(0,var(--anchor-field-size)) minmax(0,var(--seat-width))!important;justify-content:center;
- grid-template-rows:max-content minmax(0,1fr) max-content auto auto!important;
- grid-template-areas:"north-west field north-east" "west field east" "south-west field south-east" "status status status" "auxiliary auxiliary auxiliary"!important;
-}
-.app-game-layout[data-anchor-compact-controls="true"]>.layout-self{
- grid-column:var(--anchor-control-column);grid-row:2;display:flex!important;flex-direction:column;align-self:center!important;justify-content:center;grid-template-columns:none!important;
- width:100%;height:auto!important;max-height:100%;padding:6px;background:transparent;overflow:visible;
-}
-.app-game-layout[data-anchor-compact-controls="true"]>.layout-self>.player-panel{display:none!important}
-
-.app-game-layout[data-layout-focus="field"][data-seating="circle"] .layout-self{height:auto;max-height:100%;align-self:end}
-.app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;overflow:visible}
-.app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self>.layout-actions{order:0;min-width:0;overflow:auto;padding:7px!important}
-.seating-setting{margin:14px 0}.seating-setting small{color:var(--color-text-secondary)}
-.app-game-layout[data-has-hand="false"] .layout-self>.player-panel{height:auto!important;min-height:50px!important}
-.app-game-layout[data-opponent-hands="false"] .seat-group .player-hand{display:none}
-.app-game-layout[data-seating="row"][data-opponent-hands="false"] .player-panel.opponent-hand{height:auto!important;min-height:50px!important}
 /* Quick actions and the separate themes button precede the profile. */
 .settings-overview{display:flex;flex-direction:column;gap:8px;align-items:stretch}
 .settings-quick{min-width:0;width:100%}
@@ -534,8 +458,6 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .settings-quick:has(>button) .settings-shortcuts{display:contents}
 .settings-quick>button{flex:0 0 44px;width:44px;min-width:44px;height:44px}
 .app-game-layout[data-seating="circle"] :is(.seat-north,.seat-south){grid-column:1/-1}
-.app-game-layout[data-layout-focus="hands"][data-seating="row"]:not([data-layout-mode="phone-landscape"]):not([data-layout-mode="desktop"]) .players-panels{display:grid!important;grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr));grid-auto-rows:minmax(120px,1fr);width:100%;height:100%;align-items:stretch}
-.app-game-layout[data-layout-focus="hands"][data-seating="row"] .player-panel.opponent-hand{width:100%;min-width:0;flex:none}
 /* Shared pack list row; selection mode omits only management controls. */
 .pack-list>.pack-row,.room-choice-list>.pack-row{
  display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px;width:100%;min-height:74px;margin:0;padding:10px;
@@ -558,7 +480,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .profile-identity-row{display:flex;align-items:center;gap:10px}.profile-identity-row>.field{flex:1;min-width:0}
 .profile-avatar-button{padding:0;border:0;background:none;flex:none;border-radius:12px;cursor:pointer;min-width:44px;min-height:44px;display:grid;place-items:center}
 .profile-avatar-button>.avatar{width:48px;height:48px;border-radius:13px;font-size:22px}
-.lobby-profile>.profile-avatar-button{align-self:end;margin-bottom:3px}
+.lobby-profile>.profile-avatar-button{align-self:end;margin-bottom:0}
 .avatar-picker-backdrop{z-index:100;padding:16px}.avatar-picker-modal{display:flex;flex-direction:column;max-width:600px;width:100%;max-height:calc(100dvh - 32px);overflow:auto}
 .avatar-picker-modal>.modal-head{display:flex;align-items:center;gap:12px;flex:none;position:sticky;top:0;background:var(--paper);z-index:1}.avatar-picker-modal h2{flex:1;text-align:left;font-size:24px}
 .avatar-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.avatar-option{min-width:0;aspect-ratio:1;display:grid;place-items:center;padding:3px;border:2px solid transparent;background:transparent;border-radius:12px}.avatar-option .avatar{width:100%;height:100%;border-radius:10px;font-size:20px;background:var(--color-surface-raised,#e6e9dc)}
@@ -602,3 +524,90 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .app-game-layout[data-seating="row"] .seat-group{display:contents}
 .app-game-layout[data-seating="row"] [data-seat-copy="true"]{display:none!important}
 .lobby-start-reason{font-size:12px;line-height:1.4;color:var(--muted);margin:8px 0}
+
+/* Shared scene geometry: compact identities, fixed hand scale, physical corners. */
+.app-game-layout:not([data-surface="player"]) .player-panel.opponent-hand{height:auto;min-height:50px;max-width:none;align-self:start;flex:none;justify-content:flex-start}
+.app-game-layout:not([data-surface="player"]) .players-panels{height:auto;align-items:start;align-content:start}
+.app-game-layout:not([data-surface="player"]) .layout-participants{max-height:none}
+.app-game-layout:not([data-surface="player"]) .layout-self{height:auto;max-height:none;align-self:end;overflow:visible;background:transparent}
+.app-game-layout .layout-hand .hand-track.is-fan{--fan-card-width:64px;--fan-card-height:89.6px;height:112px;min-height:112px}
+.app-game-layout .layout-hand .hand-card{--fan-card-width:64px!important;--fan-card-height:89.6px!important}
+.app-game-layout[data-seating="circle"]{grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-template-rows:auto minmax(0,1fr) auto auto auto auto!important;grid-template-areas:"north-west north-east" "field field" "south-west south-east" "status status" "self self" "auxiliary auxiliary"!important}
+.app-game-layout[data-seating="circle"]>.layout-participants,.app-game-layout[data-seating="circle"] .players-panels{display:contents!important}
+.app-game-layout[data-seating="circle"] .seat-group{display:flex;flex-direction:column;gap:4px;min-width:0;min-height:0}
+.app-game-layout[data-seating="circle"] .seat-group>.player-panel{width:100%;min-width:0;max-width:none;transform:none;flex:none}
+.seat-north-west{grid-area:north-west}.seat-north-east{grid-area:north-east}.seat-south-west{grid-area:south-west}.seat-south-east{grid-area:south-east}
+.app-game-layout[data-seating="circle"][data-has-hand="false"] .layout-self{display:flex;flex-direction:row;align-items:center;gap:6px}
+.app-game-layout[data-seating="circle"][data-has-hand="false"] .layout-self>*{flex:1;min-width:0}
+.app-game-layout[data-seating="row"] .seat-group{display:contents}
+.app-game-layout[data-seating="row"] .players-panels{display:grid!important;grid-template-columns:repeat(var(--focus-player-columns,3),minmax(0,1fr));gap:4px}
+.app-game-layout .layout-field{scrollbar-gutter:auto}
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:has(.table-header){position:relative;padding:6px;--side-width:max(26%,180px);--side-top:88px}
+ #app .table-shell .table-header{position:absolute;inset:6px 6px auto;z-index:3;justify-content:space-between;pointer-events:none}
+ #app .table-heading,#app .table-tools{width:calc(var(--side-width) - 8px);pointer-events:auto;min-width:0}
+ #app .table-tools{justify-content:flex-end}
+ #app .table-shell .table-status{display:contents}
+ #app .table-status .turn-label{position:absolute;left:12px;top:62px;max-width:calc(var(--side-width) - 18px);z-index:3;font-size:11px}
+ #app .table-status .turn-extra,#app .table-status .status-event{position:absolute;right:12px;top:58px;width:calc(var(--side-width) - 18px);text-align:right;z-index:3;font-size:9px;line-height:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+ #app .table-status .status-event{top:72px}
+ #app .table-shell .scene{border-radius:14px}
+ .app-game-layout[data-view-api="2"]:not([data-surface="player"]){grid-template-columns:minmax(0,var(--side-width,26%)) minmax(0,1fr) minmax(0,var(--side-width,26%))!important;grid-template-rows:var(--side-top,88px) minmax(0,1fr) auto auto!important;grid-template-areas:". field ." "participants field self" "status field self" "auxiliary field self"!important}
+ .app-game-layout:not([data-surface="player"])>.layout-field{grid-column:2;grid-row:1/-1}
+ .app-game-layout[data-seating="row"] .players-panels{grid-template-columns:minmax(0,1fr)!important}
+ .app-game-layout:not([data-surface="player"]) .player-panel.opponent-hand{flex-direction:row;align-items:center;min-height:50px}
+ .app-game-layout:not([data-surface="player"]) .opponent-hand .player-info{flex:1;min-width:0;width:auto}
+ .app-game-layout:not([data-surface="player"]) .opponent-hand .player-hand{flex:1;min-width:0}
+ .app-game-layout[data-seating="circle"] .seat-group{grid-row:2;align-self:start}
+ .app-game-layout[data-seating="circle"] .seat-north-west{grid-column:1}.app-game-layout[data-seating="circle"] .seat-north-east{grid-column:3}
+ .app-game-layout[data-seating="circle"] .seat-south-west{grid-column:1;align-self:end}.app-game-layout[data-seating="circle"] .seat-south-east{grid-column:3;align-self:end}
+ .app-game-layout[data-seating="circle"]>.layout-self{grid-column:3;grid-row:3/5;display:flex;flex-direction:column}
+ .app-game-layout[data-seating="circle"][data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self>.player-panel:has(~.layout-actions){display:none}
+ .app-game-layout:not([data-surface="player"])>.layout-self{align-self:center;padding:4px}
+ .app-game-layout .layout-hand .hand-track.is-fan{height:104px!important;min-height:104px!important}
+ .app-game-layout .layout-hand .hand-card{--fan-card-width:58px!important;--fan-card-height:81.2px!important}
+}
+
+:is(.profile-identity-row,.lobby-profile){align-items:end;--profile-control-height:48px}:is(.profile-identity-row,.lobby-profile) input{height:var(--profile-control-height);min-height:var(--profile-control-height);box-sizing:border-box}:is(.profile-identity-row,.lobby-profile) .profile-avatar-button,:is(.profile-identity-row,.lobby-profile) .profile-avatar-button>.avatar{width:var(--profile-control-height);height:var(--profile-control-height);min-height:var(--profile-control-height)}
+
+.profile-identity-row>.field{margin:0}
+@media(orientation:landscape) and (min-width:600px){
+ .app-game-layout[data-seating="circle"] .seat-group{position:absolute;width:calc(var(--side-width,26%) - 6px);max-width:calc(var(--side-width,26%) - 6px);left:6px;top:var(--side-top,88px);bottom:auto}
+ .app-game-layout[data-seating="circle"] .seat-north-east,.app-game-layout[data-seating="circle"] .seat-south-east{left:auto;right:6px}
+ .app-game-layout[data-seating="circle"] .seat-south-west{top:auto;bottom:6px}
+ .app-game-layout[data-seating="circle"] .seat-south-east{top:calc(var(--side-top,88px) + var(--north-east-height,50px) + 4px)}
+ .app-game-layout[data-seating="circle"]>.layout-self{position:absolute;right:6px;bottom:6px;width:calc(var(--side-width,26%) - 6px);padding:0;gap:2px}
+ .app-game-layout[data-seating="circle"][data-has-hand="false"] .seat-south-east{top:auto;bottom:var(--corner-control-height,82px)}
+ .app-game-layout[data-seating="circle"] .layout-actions:has(.shared-hint):not(:has(button)){min-height:28px!important}
+ .app-game-layout[data-seating="circle"] .layout-actions .game-action-bar:has(.shared-hint):not(:has(button)),.app-game-layout[data-seating="circle"] .layout-actions [data-action-position]:has(>.shared-hint):not(:has(button)){min-height:28px}
+ .app-game-layout .layout-hand .hand-track.is-fan{height:94px!important;min-height:94px!important;padding-block:6px}
+}
+@media(orientation:landscape) and (min-width:600px){.app-game-layout[data-seating="circle"]>.layout-self,.app-game-layout[data-seating="circle"] .seat-group{grid-area:auto!important}}
+@media(orientation:portrait) and (max-height:740px){
+ .app-game-layout:not([data-surface="player"]) .player-panel.opponent-hand{flex-direction:row;align-items:center;min-height:50px}
+ .app-game-layout:not([data-surface="player"]) .opponent-hand .player-info{flex:1;min-width:0}
+ .app-game-layout:not([data-surface="player"]) .opponent-hand .player-hand{flex:1;min-width:0}
+}
+@media(orientation:portrait){.app-game-layout[data-seating="circle"][data-layout-family="board"]{grid-template-rows:auto minmax(0,var(--anchor-field-size)) auto auto auto auto!important;align-content:center!important}}
+@media(orientation:landscape) and (min-width:600px){
+ .app-game-layout[data-seating="circle"] .layout-actions:has(.shared-hint):not(:has(button)),.app-game-layout[data-seating="circle"] .layout-actions:has(.shared-hint):not(:has(button)) *{min-height:0!important}
+ .app-game-layout[data-seating="circle"] .layout-actions:has(.shared-hint):not(:has(button)){height:28px;flex:none}
+}
+@media(orientation:landscape) and (min-width:600px){
+ .app-game-layout .layout-hand .hand-card{--fan-card-width:52px!important;--fan-card-height:72.8px!important}
+ .app-game-layout .layout-hand .hand-track.is-fan{height:86px!important;min-height:86px!important}
+ .app-game-layout[data-seating="circle"]>.layout-status{position:absolute;grid-area:auto!important;left:6px;top:calc(50% + 28px);width:calc(var(--side-width,26%) - 6px)}
+}
+
+@media(orientation:landscape) and (min-width:600px) and (max-width:740px){#app .table-tools .icon-btn{width:40px;min-width:40px;height:40px}#app .table-tools{gap:3px}}
+@media(orientation:landscape) and (min-width:600px){.app-game-layout[data-seating="circle"]>.layout-self{align-items:stretch}.app-game-layout[data-seating="circle"]>.layout-self>.player-panel{width:100%;flex:none}}
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:has([data-surface="player"]) .table-header{position:static;pointer-events:auto}
+ #app .table-shell:has([data-surface="player"]) :is(.table-heading,.table-tools){width:auto}
+ #app .table-shell:has([data-surface="player"]) .table-status{display:flex}
+ #app .table-shell:has([data-surface="player"]) .table-status>span{position:static;width:auto;max-width:none}
+}
+@media(orientation:landscape) and (min-width:600px){
+ .app-game-layout[data-seating="circle"][data-has-hand="false"]>.layout-self{flex-direction:column}
+ .app-game-layout[data-seating="circle"][data-has-hand="false"]>.layout-self>*{flex:none;width:100%}
+}

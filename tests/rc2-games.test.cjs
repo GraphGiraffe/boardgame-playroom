@@ -245,10 +245,11 @@ test('Battleship Table can fire for either authorized actor without exposing eit
 
 
 test('Pexeso cartoon deck defaults to exact character pairs and completes every preset',()=>{
- for(const preset of ['easy','medium','hard','full']){
+ assert.deepEqual(E.get('pexeso').presets.map(p=>p.id),['easy','medium','hard']);
+ for(const preset of ['easy','medium','hard']){
   let state=create('pexeso',4,preset);assert.equal(state.data.deckSize,96);assert(E.validateState(state));
   const counts=new Map();for(const card of state.data.board)counts.set(card.character,(counts.get(card.character)||0)+1);
-  assert([...counts.values()].every(n=>n===2));if(preset==='full')assert.equal(counts.size,48);
+  assert([...counts.values()].every(n=>n===2));assert.equal(counts.size,{easy:8,medium:12,hard:18}[preset]);
   assert(E.project(state,-1).data.board.every(card=>card.hidden&&!card.character));
   const forged=E.clone(state);forged.data.board[0].color='unknown';assert.throws(()=>E.validateState(forged),/POSITION_INVALID/);
   let steps=0;while(state.status==='playing'&&steps++<3000)state=play(state);

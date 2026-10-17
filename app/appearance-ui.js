@@ -55,7 +55,6 @@
     if(root.scrollY!==scrollY)root.scrollTo({top:scrollY,behavior:'instant'});
   }
   function open(requested) {
-    if(requested==='editor'&&!document.querySelector('.app-shell'))return;
     if(dialog)close();
     mode=requested;sourceId=service.snapshot().activeId;draft=null;confirmRemove=false;
     returnFocus=document.activeElement;scrollY=root.scrollY;

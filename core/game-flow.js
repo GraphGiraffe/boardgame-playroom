@@ -47,10 +47,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const pace=this.pace();
       return this.scheduler.play(()=>this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws,effects:effectTimes[pace.mode]}),Math.min(minimumVisibleMs,effectTimes[pace.mode].reveal));
     }
-    present(effect,{events=[]}={}){
+    present(effect,{events=[],before=null,after=null}={}){
       const pace=this.pace(),times=effectTimes[pace.mode];
       const dice=events.some(event=>event.kind==='roll'||event.reveal?.kind==='dice');
-      return this.actions.play(effect,dice?0:(pace.duration?2*times.flip:0)+times.reveal);
+      const continuation=before?.status==='playing'&&after?.status==='playing'&&before.turn===after.turn&&
+        !before.timeline?.preparing&&!after.timeline?.preparing&&Number.isSafeInteger(before.timeline?.turn)&&before.timeline.turn===after.timeline?.turn;
+      return this.actions.play(effect,dice||continuation?0:(pace.duration?2*times.flip:0)+times.reveal);
     }
     cancel(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
   }

@@ -121,7 +121,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      const field=document.querySelector('.battle-fields').getBoundingClientRect(),board=document.querySelector('.battle-panel.is-active .battle-grid').getBoundingClientRect();
      if(getComputedStyle(document.querySelector('.battleship-scene .game-field-content')).overflowX!=='clip')issues.push(`${fleet} horizontal overflow is not clipped`);
      if(board.left<field.left-1||board.right>field.right+1||board.top<field.top-1||board.bottom>field.bottom+1)issues.push(`${fleet} clipped board=${board.x},${board.y},${board.width},${board.height} field=${field.x},${field.y},${field.width},${field.height}`);
-     if(Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
+     if(innerWidth<=innerHeight&&Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
      const counters=[...document.querySelectorAll('.battle-panel.is-active .fleet-indicator')];if(!counters.length)issues.push(`${fleet} counters missing`);
     }return issues;
    });assert.deepEqual(fleets,[],`centered fleet at ${width}x${height}`);

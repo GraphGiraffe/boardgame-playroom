@@ -229,7 +229,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const strategy=seatingPolicy==='row'||(state?.players?.length||0)<=2||seating==='row'?'row':layout.seats?'anchors':'circle';
+    const strategy=seatingPolicy==='row'||(state?.players?.length||0)<=2||seating==='row'?'row':'anchors';
     const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
     const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
@@ -257,7 +257,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const groups=new Map();
         for(const panel of panels){
           const relative=viewer>=0?(panel.player-viewer+state.players.length)%state.players.length:panel.player;
-          const seat=(anchored?layout.seats?.[panel.player]:null)||['south','west','north','east'][Math.round(relative*4/state.players.length)%4];
+          const seat=layout.seats?.[panel.player]||['south-east','south-west','north-west','north-east'][Math.floor(relative*4/state.players.length)%4];
           if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push(panel.html.replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?' data-seat-copy="true"':''}`));
         }
         e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${html.join('')}</div>`).join('')}</div>`;
@@ -265,7 +265,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-player-count="${state?.players?.length||0}" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="${!!layout.seats}" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-player-count="${state?.players?.length||0}" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function createRegistry() {

@@ -88,3 +88,14 @@ test('dice reveal completion unlocks the next action without a hidden card-anima
   complete();await pending;assert.equal(finished,true);
  }
 });
+test('continuations use the real effect lifetime; a new turn of the same actor retains the normal budget',async()=>{
+ for(const animationSpeed of Object.keys(Flow.presets)){
+  const timers=new Map();let id=0,complete;
+  const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+  const before={turn:0,status:'playing',timeline:{turn:7}},after={turn:0,status:'playing',timeline:{turn:7}};
+  const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{before,after});assert.equal(timers.size,0);
+  complete();await pending;
+  const next=flow.present(()=>Promise.resolve(),{before,after:{...after,timeline:{turn:8}}});
+  assert.equal(timers.size,1,'same actor does not mean same game turn');[...timers.values()][0].fn();await next;
+ }
+});
