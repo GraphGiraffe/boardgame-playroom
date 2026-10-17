@@ -2,6 +2,13 @@ name: Release candidate build
 on:
   workflow_dispatch:
     inputs:
+      audit_scope:
+        type: string
+        default: full
+      layout_audit:
+        description: Capture a read-only layout audit of the verified preview
+        type: boolean
+        default: false
       operation:
         description: Build candidate or manually operate the existing Pages project
         type: choice
@@ -102,6 +109,8 @@ jobs:
       release: ${{ inputs.release }}
       deployment: ${{ inputs.deployment }}
       pack_channel: ${{ inputs.pack_channel }}
+      layout_audit: ${{ inputs.layout_audit }}
+      audit_scope: ${{ inputs.audit_scope }}
     secrets: inherit
   reject_pages_test_selection:
     if: inputs.operation != 'build' && inputs.operation != '' && inputs.checks != 'none'
