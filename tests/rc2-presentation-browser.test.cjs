@@ -14,6 +14,40 @@ async function scene(page,game,options={}){
   window.rcRender=()=>{const actual=rcStateOverride||rcSession.current,state=TabletopCore.project(actual,0),actions=TabletopCore.legalActions(actual,0),scene=PlayroomViews.render(state,0,actions,{selected:null,preferences:{},viewState:{},...rcUI});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get(game).name,state,viewer:0,actions,scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));};rcRender();
  },{game,options});
 }
+test('playable hand outlines stay inside the scroll viewport and recent teams share one player flow',{timeout:45000},async()=>fixture(async page=>{
+ const dir=path.join(root,'tmp_files/hand-rings');fs.mkdirSync(dir,{recursive:true});
+ for(const [width,height] of [[390,844],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});await scene(page,'uno');
+  await page.evaluate(()=>{rcUI={seating:'row'};rcRender();});
+  const cards=await page.evaluate(()=>{
+   const track=document.querySelector('.own-hand .hand-track');track.scrollLeft=0;
+   return [...track.querySelectorAll('.hand-card.is-playable')].map(card=>{
+    const s=getComputedStyle(card),r=card.getBoundingClientRect(),t=track.getBoundingClientRect(),edge=Math.max(0,parseFloat(s.outlineWidth)+parseFloat(s.outlineOffset));
+    return {edge,width:parseFloat(s.outlineWidth),left:r.left-edge-track.clientLeft-t.left,right:r.right+edge-(t.left+track.clientLeft+track.clientWidth),top:r.top-edge-track.clientTop-t.top,bottom:r.bottom+edge-(t.top+track.clientTop+track.clientHeight)};
+   });
+  });
+  await page.screenshot({path:path.join(dir,`uno-${width}x${height}.png`)});
+  assert(cards.length>0);assert(cards.every(c=>c.width>=2));
+  // A selected/preview card can be lifted, so its ring must not extend its painted bounds.
+  assert(cards.every(c=>c.edge===0),'outline is painted over the card, never outside its scrollable bounds');
+  const focused=await page.evaluate(()=>{
+   const action=TabletopCore.legalActions(rcSession.current,0).find(a=>a.card);rcUI.selected=action.card;rcRender();
+   const card=document.querySelector('.own-hand .hand-card.is-selected');card.focus();const s=getComputedStyle(card);
+   return {width:parseFloat(s.outlineWidth),offset:parseFloat(s.outlineOffset)};
+  });
+  assert(focused.width>=2&&focused.width+focused.offset<=0,'keyboard focus and selection keep the complete ring inside the card');
+  await page.screenshot({path:path.join(dir,`uno-${width}x${height}-selected.png`)});
+ }
+ await page.setViewportSize({width:390,height:844});
+ await page.evaluate(()=>{
+  const teams=[{id:'a',label:'А',color:'#638658'},{id:'b',label:'Б',color:'#c97866'}];
+  const state={players:['Иван','Луна','Сэм','Кира'].map((name,i)=>({name,bot:i>0})),firstPlayer:2,turn:0,preset:'teams',status:'playing',scene:{round:{number:1},players:[0,1,2,3].map(player=>({player,team:teams[player%2]}))}};
+  document.querySelector('#app').innerHTML=PlayroomGameScreen.resumeCard({state,network:true,gameName:'Лудо',roomName:'Комната Иван',participants:[{playerIndex:0,isHost:true}]});
+ });
+ const names=await page.locator('.resume-person').evaluateAll(people=>people.map(p=>({name:p.querySelector('.resume-person-name>span:last-child').textContent.trim(),y:p.getBoundingClientRect().top})));
+ assert.deepEqual(names.map(p=>p.name),['Иван','Луна','Сэм','Кира']);assert(names.every(p=>Math.abs(p.y-names[0].y)<1),'teams do not force a new row');
+ await page.screenshot({path:path.join(dir,'recent-teams-390.png')});
+}));
 test('UNO forced skips preserve rotated seats and hands through every animation frame',{timeout:60000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/skip-feedback');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height] of [[390,844],[844,390],[768,1024],[1024,768]]){
