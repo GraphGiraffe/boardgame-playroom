@@ -14,6 +14,46 @@ async function scene(page,game,options={}){
   window.rcRender=()=>{const actual=rcStateOverride||rcSession.current,state=TabletopCore.project(actual,0),actions=TabletopCore.legalActions(actual,0),scene=PlayroomViews.render(state,0,actions,{selected:null,preferences:{},viewState:{},...rcUI});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get(game).name,state,viewer:0,actions,scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));};rcRender();
  },{game,options});
 }
+test('UNO forced skips preserve rotated seats and hands through every animation frame',{timeout:60000},async()=>fixture(async page=>{
+ const dir=path.join(root,'tmp_files/skip-feedback');fs.mkdirSync(dir,{recursive:true});
+ for(const [width,height] of [[390,844],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});
+  for(const target of [1,3])for(const value of ['skip','+2']){
+   await scene(page,'uno',{firstPlayer:target-1});
+   const result=await page.evaluate(async({target,value})=>{
+    rcUI={seating:'circle'};let action;
+    for(let seed=1;seed<=100;seed++){
+     rcSession=new TabletopSession(TabletopCore,'uno',{seed,mode:'solo',firstPlayerMode:'assigned',firstPlayer:target-1,players:['Иван','Тео','Сэм','Кира'].map(name=>({name}))});
+     action=TabletopCore.legalActions(rcSession.current,target-1).find(a=>a.type==='play'&&rcSession.current.data.hands[target-1].find(c=>c.id===a.card)?.value===value);
+     if(action)break;
+    }
+    if(!action)throw Error('UNO_SKIP_FIXTURE');
+    rcSession.act(target-1,action);rcRender();
+    const event=TabletopCore.project(rcSession.current,0).events.findLast(e=>e.feedback?.kind==='skip'&&e.feedback.player===target);
+    if(!event)throw Error('UNO_SKIP_EVENT');
+    const panel=document.querySelector(`.seat-group .player-panel[data-player-index="${target}"]`);
+    const measure=()=>{const s=getComputedStyle(panel),m=new DOMMatrix(s.transform),r=panel.getBoundingClientRect(),h=panel.querySelector('.mini-hand').getBoundingClientRect();return {matrix:[m.a,m.b,m.c,m.d],x:r.x,y:r.y,w:r.width,h:r.height,handW:h.width,handH:h.height};};
+    const before=measure();window.rcSkipFeedback=new PlayroomGameFeedback();rcSkipFeedback.accept([event],[],'uno',{mode:'slow'});
+    const animation=panel.getAnimations().find(a=>a.animationName==='player-turn-skipped');animation.pause();
+    const samples=[];for(const fraction of [0,.18,.35,.52,.69,.85,1]){animation.currentTime=animation.effect.getTiming().duration*fraction;samples.push(measure());}
+    animation.currentTime=animation.effect.getTiming().duration*.35;
+    return {before,samples,seating:document.querySelector('.app-game-layout').dataset.seating};
+   },{target,value});
+   await page.screenshot({path:path.join(dir,`uno-${width}x${height}-${target}-${value==='skip'?'skip':'draw2'}.png`)});
+   for(const sample of result.samples){
+    assert.deepEqual(sample.matrix,result.before.matrix,'skip must preserve the seat rotation');
+    for(const key of ['w','h','handW','handH'])assert(Math.abs(sample[key]-result.before[key])<1,`skip must preserve ${key}`);
+    assert(Math.abs(sample.x-result.before.x)<=4.1&&Math.abs(sample.y-result.before.y)<=4.1,'shake stays inside its four-pixel reserve');
+   }
+   if(height>width)assert.equal(Math.abs(Math.round(result.before.matrix[1])),1,'portrait fixture exercises a rotated seat');
+   if(height<width&&height<500)assert.equal(result.seating,'row','short landscape exercises the row fallback');
+   await page.emulateMedia({reducedMotion:'reduce'});
+   assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
+   await page.emulateMedia({reducedMotion:'no-preference'});
+   await page.evaluate(()=>rcSkipFeedback.destroy());
+  }
+ }
+}));
 test('RC2 themed surfaces, proportional pawns, card choice and circular interaction rings',{timeout:60000},async()=>fixture(async page=>{
  await page.evaluate(()=>PlayroomAppearanceUI.runtime.service.select('dark'));
  for(const game of ['domino','durak','battleship']){await scene(page,game);const selector={domino:'.domino-board',durak:'.durak-table',battleship:'.battle-grid'}[game];const rgb=await page.locator(selector).first().evaluate(el=>getComputedStyle(el).backgroundColor.match(/[\d.]+/g).slice(0,3).map(Number));assert(Math.max(...rgb)<170,game+' surface must use the dark palette');}

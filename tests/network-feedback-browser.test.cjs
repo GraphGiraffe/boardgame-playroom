@@ -278,7 +278,8 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.evaluate(({definition,snapshot})=>{qaClient.snapshot=snapshot;qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();},{definition,snapshot:snapshot()});
     await pawn(0).tap();await page.locator('.ludo-pawn[data-entity="token-1-0"][data-action]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[1][0]===-1);
-    assert.equal(await page.locator('.ludo-pawn[data-entity="token-0-1"][data-action]').count(),1,'base pawn exits in one tap');
+    // The committed snapshot arrives before presentation unlocks the next action.
+    await page.locator('.ludo-pawn[data-entity="token-0-1"][data-action]').waitFor({state:'visible'});
     await page.locator('.ludo-pawn[data-entity="token-0-1"]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][1]===0&&document.querySelector('[data-view-value="0:2"]'));
     await pawn(2).tap();assert.equal(await page.locator('.target-home[data-motion-anchor="finish-0"]').count(),1);
