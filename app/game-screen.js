@@ -210,11 +210,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
-      const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',compact=w<640||h>w;
+      const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',portrait=win.innerHeight>=win.innerWidth,compact=anchors?portrait:w<640;
       stage.dataset.preferredSeating??=stage.dataset.seating;
-      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<300||w>h&&(win.innerHeight<=550||h<360));
+      const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
+      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<(anchoredNoHand?220:300)||!anchoredNoHand&&w>h&&(win.innerHeight<=550||h<360));
       stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
       stage.dataset.seatingFallback=String(fallback);
+      stage.dataset.anchorOrientation=portrait?'portrait':'landscape';
+      const baseCopy=stage.querySelector('[data-seat-copy="true"]');
+      stage.dataset.anchorCompactControls=String(anchoredNoHand&&!portrait&&!fallback&&!!baseCopy);
+      stage.style.setProperty('--anchor-control-column',baseCopy?.dataset.seat?.includes('east')?'3':'1');
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
@@ -226,7 +231,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',seatHeight+'px');
       stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-48)/1.43))+'px');
       stage.style.setProperty('--own-zone',ownZone+'px');
-      if(anchors&&compact){const fieldSize=Math.max(40,Math.min(w,h-ownZone-2*seatHeight-30));stage.style.setProperty('--anchor-field-size',Math.floor(fieldSize)+'px');}
+      if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,fieldSize))+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
       if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
