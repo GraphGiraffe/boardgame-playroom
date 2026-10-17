@@ -52,7 +52,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       update(track);
     };
     const onWheel=event=>{
-      const track=event.target?.closest?.('.own-hand .hand-track.is-fan');
+      const track=event.target?.closest?.('.own-hand .hand-track');
       if(!track||event.ctrlKey||event.altKey||event.metaKey||event.shiftKey||Math.abs(event.deltaY)<=Math.abs(event.deltaX))return;
       const max=track.scrollWidth-track.clientWidth;
       if(max<=2||(event.deltaY<0&&track.scrollLeft<=1)||(event.deltaY>0&&track.scrollLeft>=max-1))return;

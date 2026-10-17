@@ -35,7 +35,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return `<form id="${client?'net-client-nickname':'lobby-nickname-form'}" class="lobby-profile">${(root.PlayroomAvatarPicker?.button(me?.nickname||'',me?.avatar)||'').replace('data-avatar-picker',client?'data-avatar-picker data-avatar-client':'data-avatar-picker')}<label class="field"><span>${globalThis.PlayroomMessages.text("ui.lobby-view.82b5d2603d58")}</span><input name="nickname" maxlength="24" autocomplete="nickname" required value="${esc(me?.nickname||'')}" ${disabled?'disabled':''}></label><button class="icon-btn" type="submit" aria-label="${globalThis.PlayroomMessages.text("ui.lobby-view.f69b66df2c5b")}" title="${globalThis.PlayroomMessages.text("ui.lobby-view.f69b66df2c5b")}" ${disabled?'disabled':''}>${icon('save')}</button></form>`;
   }
   const ruleText=key=>globalThis.PlayroomMessages.text('rules-help.'+key);
-  function fieldHelp(text){return text?`<details class="rule-help"><summary aria-label="${esc(ruleText('more'))}" title="${esc(ruleText('more'))}">${root.TabletopUI.helpers.icon('help')}</summary><p>${esc(text)}</p></details>`:'';}
+  let helpSequence=0;
+  function fieldHelp(text){
+    if(!text)return '';
+    const id='rule-help-'+(++helpSequence),label=esc(ruleText('more'));
+    return `<span class="rule-help"><button type="button" popovertarget="${id}" aria-label="${label}" title="${label}">${root.TabletopUI.helpers.icon('help')}</button><span id="${id}" class="mini-help-popover" popover="auto" role="note">${esc(text)}</span></span>`;
+  }
   function gameRulesMarkup(game,settings=[]){
     const rules=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];
     return `<section class="game-rules-help"><h3>${esc(ruleText('basics'))}</h3><ol class="rules-list">${rules.map(rule=>`<li>${esc(rule)}</li>`).join('')}</ol><h3>${esc(ruleText('modes'))}</h3><ul>${(game.presets||[]).map(preset=>`<li><strong>${esc(preset.label||preset.id)}</strong>${preset.description?': '+esc(preset.description):''}</li>`).join('')}</ul><h3>${esc(ruleText('options'))}</h3>${settings.length?`<dl>${settings.map(field=>`<dt>${esc(field.label)}</dt><dd>${esc(field.help||'')}<br><small>${field.options.map(option=>esc(option.label)).join(' · ')}</small></dd>`).join('')}</dl>`:`<p>${esc(ruleText('standard'))}</p>`}</section>`;
