@@ -811,3 +811,8 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .app-game-layout[data-seating="circle"][data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self>.player-panel:has(~.layout-actions){display:none}
 
 @media(max-width:360px) and (orientation:portrait){.app-game-layout[data-view-api="2"]{gap:4px!important}}
+
+/* A fixed metadata line prevents deferred effects from resizing player cards. */
+.app-game-layout .player-data:not(:has(.player-indicators:not(:empty))){flex-wrap:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;box-sizing:border-box}
+.app-game-layout .player-data::-webkit-scrollbar{display:none}
+.app-game-layout .player-data .player-status-badge{flex:none;white-space:nowrap}
