@@ -177,7 +177,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
     mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
   }
+  // Independent transform properties compose with selection/drag's transform.
+  // Geometry uses untransformed offsets so scrolling never feeds back into fit.
+  const arcTracks=new WeakSet();
+  function fitHandArc(track){
+    const enabled=root.PlayroomAppBridge?.gameOptions?.().handShape==='arc';
+    track.classList.toggle('is-arc',enabled);
+    const row=track.querySelector('.hand-fan-row');if(!row)return;
+    const style=track.ownerDocument.defaultView.getComputedStyle(track),left=Math.max(parseFloat(style.paddingLeft),row.offsetLeft-track.scrollLeft),right=Math.min(track.clientWidth-parseFloat(style.paddingRight),row.offsetLeft+row.offsetWidth-track.scrollLeft);
+    const center=(left+right)/2,half=Math.max(1,(right-left)/2),radius=Math.max(half*7.2,half*half/8);
+    for(const card of row.children){
+      const x=Math.max(-half,Math.min(half,row.offsetLeft+card.offsetLeft+card.offsetWidth/2-track.scrollLeft-center));
+      card.style.setProperty('--hand-arc-angle',enabled?Math.asin(x/radius)*180/Math.PI+'deg':'0deg');
+      card.style.setProperty('--hand-arc-y',enabled?radius-Math.sqrt(radius*radius-x*x)+'px':'0px');
+    }
+    if(!arcTracks.has(track)){track.addEventListener('scroll',()=>fitHandArc(track),{passive:true});arcTracks.add(track);}
+  }
   function fitCardHand(track,stage){
+    track.classList.toggle('is-arc',root.PlayroomAppBridge?.gameOptions?.().handShape==='arc');
     track.style.removeProperty('--fan-peek');
     const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
     const trackStyle=track.ownerDocument.defaultView.getComputedStyle(track),available=track.clientWidth-parseFloat(trackStyle.paddingLeft)-parseFloat(trackStyle.paddingRight);
@@ -193,12 +210,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let peek=baseline;
     for(const card of track.querySelectorAll('.hand-card')){
       const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
-      const box=card.getBoundingClientRect(),marker=corner.getBoundingClientRect();
-      peek=Math.max(peek,Math.min(box.width*.28,Math.ceil(marker.right-box.left+2)));
+      peek=Math.max(peek,Math.min(card.offsetWidth*.28,Math.ceil(corner.offsetLeft+corner.offsetWidth+2)));
     }
-    if(count>1&&card){const width=card.getBoundingClientRect().width;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
-    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.getBoundingClientRect().width-peek,available-card.getBoundingClientRect().width-Math.max(0,count-1)*peek-4))+'px':'0px');
+    if(count>1&&card){const width=card.offsetWidth;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
+    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.offsetWidth-peek,available-card.offsetWidth-Math.max(0,count-1)*peek-(track.classList.contains('is-arc')?16:4)))+'px':'0px');
     track.style.setProperty('--fan-peek',peek+'px');
+    fitHandArc(track);
   }
   function fitHand(stage){
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles'))fitTileHand(track);
@@ -285,6 +302,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
+    for(const track of host.querySelectorAll('.hand-track.is-fan'))fitHandArc(track);
   }
   return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
 });

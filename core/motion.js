@@ -20,7 +20,9 @@
     const style=root.getComputedStyle(el),width=el.offsetWidth||parseFloat(style.width)||r.width,height=el.offsetHeight||parseFloat(style.height)||r.height;
     let angle=0;
     if(root.DOMMatrixReadOnly)for(let node=el;node?.nodeType===1;node=node.parentElement){
-      const transform=root.getComputedStyle(node).transform;
+      const computed=root.getComputedStyle(node),transform=computed.transform;
+      const rotation=/^(-?[\d.]+)(deg|rad|turn|grad)$/.exec(computed.rotate);
+      if(rotation)angle+=Number(rotation[1])*({deg:Math.PI/180,rad:1,turn:Math.PI*2,grad:Math.PI/200}[rotation[2]]);
       if(transform&&transform!=='none'){const m=new root.DOMMatrixReadOnly(transform);angle+=Math.atan2(m.b,m.a);}
     }
     const scale=Math.min(r.width/(Math.abs(Math.cos(angle))*width+Math.abs(Math.sin(angle))*height),r.height/(Math.abs(Math.sin(angle))*width+Math.abs(Math.cos(angle))*height));
@@ -191,7 +193,7 @@
           if (player != null) { mover.dataset.motionPlayer = player; clone.dataset.motionPlayer = player; }
           if(kind==='play'||kind==='draw'){
             const width=parseFloat(clone.style.width)||to.width,height=parseFloat(clone.style.height)||to.height,scale=Math.min(to.width/width,to.height/height);
-            Object.assign(clone.style,{left:'0',top:'0',transformOrigin:'0 0',transform:`scale(${scale})`});
+            Object.assign(clone.style,{left:'0',top:'0',transformOrigin:'0 0',rotate:'none',translate:'none',scale:'none',transform:`scale(${scale})`});
           }
           mover.append(clone); layer.append(mover);
           const entry = el ? { el, visibility: el.style.getPropertyValue('visibility'), priority: el.style.getPropertyPriority('visibility') } : null;
@@ -275,6 +277,6 @@
       } catch (error) { run.finish(); throw error; }
     });
   }
-  const api = root.PlayroomMotion = { capture, play, cancel };
+  const api = root.PlayroomMotion = { capture, play, cancel, poseOf };
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(globalThis);

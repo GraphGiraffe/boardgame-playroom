@@ -84,6 +84,22 @@ async function main(){
    }
    save();console.log('Audited '+game.id+'; cases '+report.cases.length);
   }
+  // Exercise the opt-in hand through the shipped settings, not injected styles.
+  await page.evaluate(()=>PlayroomAppBridge.showHub());
+  await page.locator('[data-command="settings"]').first().click();
+  await page.locator('#setting-hand-shape').selectOption('arc');
+  await page.locator('#modal-root [data-command="close-modal"]').first().click();
+  for(const game of games.filter(g=>['uno','durak','oldmaid','gofish'].includes(g.id))){
+   for(let count=game.min;count<=game.max;count++)for(const seating of ['row','anchors'])for(const [width,height]of viewports){
+    await page.setViewportSize({width,height});
+    await page.evaluate(({id,count,seating})=>{auditSeating=seating;window.auditSession=new TabletopSession(TabletopCore,id,{seed:17,firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:count},(_,i)=>({name:['Иван','Кира','Мика','Лев','Сэм','Рэй'][i]||'Игрок '+i}))});for(let n=0;n<12&&auditSession.current.status!=='finished';n++){const s=auditSession.current,a=TabletopCore.botAction(s,s.turn);if(!a)break;auditSession.act(s.turn,a);}auditRender();},{id:game.id,count,seating});
+    await page.evaluate(()=>new Promise(requestAnimationFrame));
+    const m=await page.evaluate(()=>auditMeasure()),key=`arc-${game.id}-${count}-${seating}-${width}x${height}`;
+    report.cases.push({key,game:game.id,count,requested:seating,width,height,handShape:'arc',...m});
+    if(m.problems.length||m.scroll.length)report.findings.push({key,problems:m.problems,scroll:m.scroll});
+    if(count===game.max)await shot(key);
+   }
+  }
   // Actual timed effects at the published presets; measurements use real clocks.
   for(const mode of (process.env.PLAYROOM_AUDIT_SCOPE==='geometry'?[]:['fast','normal','slow']))for(const game of ['uno','pexeso','ludo','yatzy','checkers','domino','oldmaid','gofish','durak'])for(const [width,height]of [[390,844],[844,390],[1024,768],[1366,768]]){
    await page.setViewportSize({width,height});

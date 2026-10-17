@@ -65,7 +65,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const Tags=globalThis.PlayroomTags,hubFilters={type:'',mechanic:'',format:''};
   const catalog = globalThis.PlayroomCatalog || {};
   const animationPresets=Flow.presets;
-  let settings = {sound:false, volume:.6, animationSpeed:'normal', quickPlay:false,autoPass:false,seating:'circle',seatingByGame:{},showLastGame:false};
+  let settings = {sound:false, volume:.6, animationSpeed:'normal', handShape:'straight', quickPlay:false,autoPass:false,seating:'circle',seatingByGame:{},showLastGame:false};
   let viewState = {};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
   let sessionId = null, hubTab = 'games', savedFilter='all', networkSaved=[], networkSavedState='idle', networkSavedTicket=0;
@@ -87,6 +87,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
   try {
     const stored=JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}');
+    if(['straight','arc'].includes(stored?.handShape))settings.handShape=stored.handShape;
     if(typeof stored?.sound==='boolean')settings.sound=stored.sound;
     if([.3,.6,1].includes(stored?.volume))settings.volume=stored.volume;
     if(typeof stored?.quickPlay==='boolean')settings.quickPlay=stored.quickPlay;
@@ -629,6 +630,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const invite=settingsRoom?.transportMode!=='hotseat'&&!options.client&&settingsRoom?.ownerId===(lobbyParticipantId||playerProfile?.id)?GameScreen.addPlayerButton():'';
     openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.985b5e0f2ccf"))}<div class="settings-overview"><div class="settings-quick">${quick}${invite}${!quick.includes('data-command="rules"')&&(options.sharedRules||settingsRoom||session&&screen==='table')?`<button class="icon-btn" title="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" aria-label="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('rules')}</button>`:''}</div><button type="button" class="btn secondary settings-themes" data-appearance-editor>${icon('palette')} ${globalThis.PlayroomMessages.text('ui.app.themes-button')}</button><div class="settings-personal">${profile}</div></div>
       ${seatingGame?`<label class="field seating-setting"><span>${globalThis.PlayroomMessages.text('ui.app.seating.label')}</span><select id="setting-seating" data-game="${esc(seatingGame)}">${(rowOnly?['row']:[canAnchor?'anchors':'circle','row']).map(value=>`<option value="${value}" ${seatingValue===value?'selected':''}>${globalThis.PlayroomMessages.text('ui.app.seating.'+value)}</option>`).join('')}</select><small>${globalThis.PlayroomMessages.text('ui.app.seating.local')}</small></label>`:''}
+      <label class="field"><span>${globalThis.PlayroomMessages.text('ui.app.hand-shape.label')}</span><select id="setting-hand-shape">${['straight','arc'].map(value=>`<option value="${value}" ${settings.handShape===value?'selected':''}>${globalThis.PlayroomMessages.text('ui.app.hand-shape.'+value)}</option>`).join('')}</select><small>${globalThis.PlayroomMessages.text('ui.app.hand-shape.hint')}</small></label>
       <label class="switch"><span>${globalThis.PlayroomMessages.text('ui.app.show-last-game')}</span><input type="checkbox" id="setting-last-game" ${settings.showLastGame?'checked':''}></label>
       <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.21093ba6355d")}</span><input type="checkbox" id="setting-sound" ${settings.sound?'checked':''}></label>
       ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
@@ -848,11 +850,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(event.target.closest('#room-rules-form')){syncRuleVisibility(event.target.form);return;}
     try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(globalThis.PlayroomMessages.error(error));renderLobby();return;}
     if(event.target.id==='setting-player-name'){try{playerProfile=profileStore.save(event.target.value);}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
-    if(['setting-sound','setting-speed','setting-quick-play','setting-auto-pass','setting-volume','setting-seating','setting-last-game'].includes(event.target.id)){
+    if(['setting-sound','setting-speed','setting-quick-play','setting-auto-pass','setting-volume','setting-seating','setting-hand-shape','setting-last-game'].includes(event.target.id)){
       if(event.target.id==='setting-sound'){settings.sound=event.target.checked;soundTicket++;audio.setEnabled(settings.sound);document.querySelectorAll('[data-sound-control]').forEach(el=>el.disabled=!settings.sound);}
       else if(event.target.id==='setting-volume'){settings.volume=Number(event.target.value);audio.setVolume(settings.volume);}
       else if(event.target.id==='setting-quick-play')settings.quickPlay=event.target.checked;
       else if(event.target.id==='setting-seating'){const game=event.target.dataset.game;if(game&&['circle','anchors','row'].includes(event.target.value))settings.seatingByGame[game]=event.target.value;}
+      else if(event.target.id==='setting-hand-shape')settings.handShape=event.target.value==='arc'?'arc':'straight';
       else if(event.target.id==='setting-last-game')settings.showLastGame=event.target.checked;
       else if(event.target.id==='setting-auto-pass')settings.autoPass=event.target.checked;
       else {settings.animationSpeed=Object.hasOwn(animationPresets,event.target.value)?event.target.value:'normal';$('#setting-speed-description').textContent=animationPresets[settings.animationSpeed].description;}
@@ -860,7 +863,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try{localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));}catch(_){}
       window.dispatchEvent(new Event('playroom:game-options'));
       if(event.target.id==='setting-last-game'&&screen==='hub')renderHub();
-      if(event.target.id==='setting-seating'&&screen==='table'&&!document.querySelector('.network-game'))renderTable();
+      if(['setting-seating','setting-hand-shape'].includes(event.target.id)&&screen==='table'&&!document.querySelector('.network-game'))renderTable();
       if(['setting-sound','setting-volume'].includes(event.target.id))void previewSound();
     }
   });
@@ -925,7 +928,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function showSessions(){screen='hub';hubTab='sessions';closeModal(true);renderHub();}
   const publicRooms=Object.freeze(Object.fromEntries(Object.getOwnPropertyNames(Object.getPrototypeOf(Multiplayer.RoomService.prototype)).filter(name=>name!=='constructor'&&!name.startsWith('_')&&!['exportRecovery','restoreRecovery','setDurableResume'].includes(name)&&typeof roomService[name]==='function').map(name=>[name,roomService[name].bind(roomService)])));
   globalThis.PlayroomNetworkLibrary?.configureHostPorts({rooms:roomService});
-  globalThis.PlayroomAppBridge=Object.freeze({showSessions,showHub:()=>leaveTable('games'),parkLocalSession:()=>{if(room?.transportMode==='hotseat')leaveLobby();else if(screen==='table')leaveTable('games');},returnHostedRoomToLobby,restoreHostedRoom,rollbackHostedRoom,gameOptions:(gameId=session?.game)=>({animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay,seating:settings.seatingByGame[gameId]||'auto'}),audio:Object.freeze({
+  globalThis.PlayroomAppBridge=Object.freeze({showSessions,showHub:()=>leaveTable('games'),parkLocalSession:()=>{if(room?.transportMode==='hotseat')leaveLobby();else if(screen==='table')leaveTable('games');},returnHostedRoomToLobby,restoreHostedRoom,rollbackHostedRoom,gameOptions:(gameId=session?.game)=>({handShape:settings.handShape,animationSpeed:settings.animationSpeed,quickPlay:settings.quickPlay,seating:settings.seatingByGame[gameId]||'auto'}),audio:Object.freeze({
     registerPack:(id,sounds)=>audio.registerPack(id,sounds),
     get busy(){return audioPending||audio.busy;},
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;

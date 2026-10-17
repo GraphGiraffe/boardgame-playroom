@@ -684,3 +684,7 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 #app .app-game-layout .hand-fan-row{width:calc(100% - var(--fan-reveal-space,0px));margin-left:0;margin-right:var(--fan-reveal-space,0px)}
 
 @media(orientation:landscape){.app-game-layout [data-portrait-copy="true"]{display:none!important}.app-game-layout .seat-group:has(>[data-portrait-copy="true"]:only-child){display:none}}
+
+/* Optional shallow card arc; domino uses the separate tile hand contract. */
+#app .app-game-layout .layout-hand .hand-track.is-fan.is-arc{--fan-lift:4px}
+.hand-track.is-fan.is-arc .hand-card{rotate:var(--hand-arc-angle,0deg);translate:0 var(--hand-arc-y,0px);transform-origin:center}

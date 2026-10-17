@@ -46,6 +46,10 @@ test('Motion effects move only public pieces and clean up at completion or cance
     }finally{await context.close();}
   });}
   try{
+    await check('Arc card pose includes independent rotation without resizing the face',async page=>{
+      const pose=await page.evaluate(()=>{const card=document.querySelector('#source');card.style.rotate='-7deg';card.style.translate='0 4px';const snap=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'play',card:'c1'}});return snap.entities.get('card-c1').pose;});
+      assert(Math.abs(pose.angle+7)<.001);assert(Math.abs(pose.width-66)<.1);assert(Math.abs(pose.height-98)<.1);
+    });
     await check('Rotated hands preserve the complete frozen SVG back during draw and cancel on resize',async page=>{
       const result=await page.evaluate(async()=>{
         const stock=document.querySelector('.stock-button .piece-back');stock.style.display='block';stock.innerHTML='<svg width="100%" height="100%" viewBox="0 0 66 98"><rect width="66" height="98" fill="green"/></svg>';

@@ -5,7 +5,7 @@ const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/rc2-pres
 async function fixture(run){
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const page=await browser.newPage({viewport:{width:1098,height:1238}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));});
+ await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));});
  try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await browser.close();await server.close();}
 }
 async function scene(page,game,options={}){
@@ -483,4 +483,41 @@ test('RC10 hidden domino tiles have distinct outlined backs and 4:7 proportions'
   assert.equal(await page.locator('.opponent-hand .card-back').count(),0);
   await page.screenshot({path:path.join(shots,`rc10-domino-backs-${theme}.png`)});
  }
+}));
+
+test('RC11 optional card arc persists and follows scrolling without affecting domino',{timeout:60000},async()=>fixture(async page=>{
+ const dir=path.join(root,'tmp_files/rc11-arc');fs.mkdirSync(dir,{recursive:true});
+ await page.locator('[data-command="settings"]').first().click();
+ await page.locator('#setting-hand-shape').selectOption('arc');
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).handShape),'arc');
+ await page.locator('.modal [data-command="close-modal"]').click();
+ for(const [width,height]of [[390,844],[844,390],[640,320],[768,1024],[1024,768],[1920,1080]]){
+  await page.setViewportSize({width,height});await scene(page,'uno');
+  await page.evaluate(()=>{rcUI={seating:'anchors'};rcRender();});
+  const track=page.locator('.layout-hand .hand-track.is-fan');
+  assert(await track.evaluate(t=>t.classList.contains('is-arc')));
+  const measure=()=>track.evaluate(t=>({overflow:t.scrollWidth-t.clientWidth,cards:[...t.querySelectorAll('.hand-card')].map(c=>{const r=c.getBoundingClientRect(),b=t.getBoundingClientRect();return {angle:parseFloat(getComputedStyle(c).rotate),top:r.top-b.top,bottom:b.bottom-r.bottom};})}));
+  const size=()=>page.evaluate(()=>({cards:[...document.querySelectorAll('.layout-hand .hand-card')].map(c=>[c.offsetWidth,c.offsetHeight]),panels:[...document.querySelectorAll('.player-panel')].map(c=>[c.offsetWidth,c.offsetHeight]),hand:[document.querySelector('.hand-track').offsetWidth,document.querySelector('.hand-track').offsetHeight]}));
+  const arcSize=await size();
+  await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('straight');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
+  assert.deepEqual(await size(),arcSize,'shape choice preserves card, player panel and hand viewport dimensions');
+  await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('arc');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
+  let box=await measure();assert(box.cards.some(c=>Math.abs(c.angle)>1));assert(box.cards.every(c=>c.top>=-1&&c.bottom>=-1),JSON.stringify({width,height,box}));
+  await page.screenshot({path:path.join(dir,`uno-${width}x${height}.png`)});
+  await track.locator('.hand-card').first().focus();
+  box=await measure();assert(box.cards.every(c=>c.top>=-1&&c.bottom>=-1),'focus lift stays visible');
+  await page.evaluate(()=>{rcStateOverride=structuredClone(rcSession.current);rcStateOverride.data.hands[0].push(...rcStateOverride.data.drawPile.splice(0,60));rcRender();});
+  const before=await track.locator('.hand-card').last().evaluate(c=>getComputedStyle(c).rotate);
+  await track.evaluate(t=>t.scrollLeft=t.scrollWidth);await page.waitForTimeout(80);
+  assert(await track.evaluate(t=>t.scrollLeft>0),'long hand scrolls');
+  const after=await track.locator('.hand-card').last().evaluate(c=>getComputedStyle(c).rotate);
+  assert.notEqual(after,before,'card angle follows scroll position');
+  await page.screenshot({path:path.join(dir,`uno-scrolled-${width}x${height}.png`)});
+  for(const game of ['durak','oldmaid','gofish']){await scene(page,game);assert.equal(await page.locator('.hand-track.is-arc').count(),1);await page.screenshot({path:path.join(dir,`${game}-${width}x${height}.png`)});}
+  await scene(page,'domino');assert.equal(await page.locator('.hand-track.is-arc').count(),0);
+ }
+ await page.reload();await page.locator('.game-tile').first().waitFor();
+ await page.locator('[data-command="settings"]').first().click();assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
+ await page.locator('#setting-hand-shape').selectOption('straight');await page.locator('.modal [data-command="close-modal"]').click();
+ await scene(page,'uno');assert.equal(await page.locator('.hand-track.is-arc').count(),0);
 }));
