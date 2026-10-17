@@ -342,9 +342,17 @@ test('RC7 settings separate themes, square initial avatar and optional recent ga
  await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));
  const before=await page.evaluate(()=>({scroll:scrollY,height:document.documentElement.scrollHeight}));
  await page.evaluate(()=>PlayroomAppBridge.toast('Сначала покиньте текущую сетевую комнату через лобби.'));
- const notice=await page.locator('#toast').evaluate(el=>({top:el.getBoundingClientRect().top,position:getComputedStyle(el).position,scroll:scrollY,height:document.documentElement.scrollHeight}));
- assert.equal(notice.position,'fixed');assert(notice.top>=0&&notice.top<32);assert.equal(notice.scroll,before.scroll);assert.equal(notice.height,before.height);
+ await page.locator('#toast').evaluate(el=>Promise.all(el.getAnimations().map(animation=>animation.finished)));
+ assert.equal(await page.evaluate(()=>scrollY),before.scroll);assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),before.height);
+ for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});
+  const notice=await page.locator('#toast').evaluate(el=>({top:el.getBoundingClientRect().top,boxHeight:el.getBoundingClientRect().height,boxWidth:el.getBoundingClientRect().width,position:getComputedStyle(el).position}));
+  assert.equal(notice.position,'fixed');assert(notice.top>=0&&notice.top<32);assert(notice.boxHeight<=90,'notification hugs its text instead of stretching to the old bottom anchor');assert(notice.boxWidth<=480);
+  await page.screenshot({path:path.join(root,`tmp_files/rc7-review/hub-notice-${width}x${height}.png`)});
+ }
+ await page.setViewportSize({width:390,height:844});
  await page.screenshot({path:path.join(root,'tmp_files/rc7-review/hub-scrolled-notice.png')});
+ await page.locator('#toast [data-command="dismiss-notice"]').click();assert.equal(await page.locator('#toast.show').count(),0);
 }));
 
 test('RC7 UNO draws into rotated hands in live play and replay without stretching the artwork',{timeout:45000},async()=>fixture(async page=>{
