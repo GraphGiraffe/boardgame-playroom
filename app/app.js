@@ -449,7 +449,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(quiet){renderTable(false,true);return;}
       screenController.transition({context:{session,beforeTurn},capture:()=>snapshot,
         render(run){transition=run;renderTable();},
-        play:()=>flow.present(()=>{feedback.next();return feedback.whenIdle();},{events}),
+        play:()=>flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before:beforeState,after:session.current}),
         settle:0,finish:run=>finishAction(run)});
     } catch(error){toast(globalThis.PlayroomMessages.error(error)||globalThis.PlayroomMessages.text("ui.app.691a0701dfac"));void previewSound('error',session?.game);}
   }
@@ -624,9 +624,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const seatingGame=settingsRoom?.game?.id||session?.game;
     const duel=(settingsRoom?settingsRoom.seats.filter(s=>s.participantId).length:Number(document.querySelector('.app-game-layout')?.dataset.playerCount)||session?.current.players.length)===2;
     const stage=document.querySelector('.app-game-layout'),rowOnly=duel||globalThis.PlayroomViews.get(seatingGame)?.seating==='row';
-    let seatingValue=rowOnly?'row':settings.seatingByGame[seatingGame]||(stage?.dataset.seatStyle==='anchors'?'anchors':stage?.dataset.preferredSeating==='row'?'row':'circle');
-    const canAnchor=stage?.dataset.seatAnchorsAvailable==='true'||seatingValue==='anchors';
-    if(canAnchor&&seatingValue==='circle')seatingValue='anchors';
+    const seatingValue=rowOnly?'row':settings.seatingByGame[seatingGame]==='row'?'row':'anchors';
+    const canAnchor=true;
     const invite=settingsRoom?.transportMode!=='hotseat'&&!options.client&&settingsRoom?.ownerId===(lobbyParticipantId||playerProfile?.id)?GameScreen.addPlayerButton():'';
     openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.985b5e0f2ccf"))}<div class="settings-overview"><div class="settings-quick">${quick}${invite}${!quick.includes('data-command="rules"')&&(options.sharedRules||settingsRoom||session&&screen==='table')?`<button class="icon-btn" title="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" aria-label="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('rules')}</button>`:''}</div><button type="button" class="btn secondary settings-themes" data-appearance-editor>${icon('palette')} ${globalThis.PlayroomMessages.text('ui.app.themes-button')}</button><div class="settings-personal">${profile}</div></div>
       ${seatingGame?`<label class="field seating-setting"><span>${globalThis.PlayroomMessages.text('ui.app.seating.label')}</span><select id="setting-seating" data-game="${esc(seatingGame)}">${(rowOnly?['row']:[canAnchor?'anchors':'circle','row']).map(value=>`<option value="${value}" ${seatingValue===value?'selected':''}>${globalThis.PlayroomMessages.text('ui.app.seating.'+value)}</option>`).join('')}</select><small>${globalThis.PlayroomMessages.text('ui.app.seating.local')}</small></label>`:''}
@@ -698,7 +697,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const before=currentState(),after=session.states[replayIndex+1],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
       const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
       feedback.start(E.project(before,viewer).events);feedback.accept(E.project(after,viewer).events,[],session.game,{mode:timing.mode,snapshot,motion:()=>flow.play(snapshot,{draws:cardTransfers(before,after)}),defer:true});
-      replayIndex++;renderTable();await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events});
+      replayIndex++;renderTable();await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before,after});
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
     replayTimer=setTimeout(step,pace().botDelay);renderTable();

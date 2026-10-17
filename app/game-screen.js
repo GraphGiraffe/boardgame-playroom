@@ -78,6 +78,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return `<div class="resume-participants">${people.join('')}</div>`;
   }
   function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave=''}){
+    if(state?.status==='finished'&&(!network||!connected))return '';
     const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
     const progress=roundText(state?.scene?.round)||(state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
     roomName=network?roomName:'';
@@ -184,7 +185,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
-    if(stage.dataset.fieldSizing==='scroll'){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
+    const grid=field.querySelector('[data-card-count]');
+    if(grid){const count=Number(grid.dataset.cardCount);let best={size:0,columns:1,rows:count};for(let columns=2;columns<=count;columns++){const rows=Math.ceil(count/columns),size=Math.min((width-8-(columns-1)*4)/columns,(height-8-(rows-1)*4)/rows/1.4);if(size>best.size)best={size,columns,rows};}grid.style.setProperty('--grid-columns',best.columns);grid.style.setProperty('--grid-rows',best.rows);grid.style.setProperty('--grid-card-width',Math.max(1,best.size)+'px');}
+
+    if(stage.dataset.fieldSizing==='scroll'||field.querySelector('[data-card-count]')){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
     if(stage.dataset.fieldSizing==='content'){
       field.style.width='100%';field.style.height='auto';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;
     }
@@ -193,7 +197,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
     }
     field.style.zoom='1';field.style.width=Math.min(width,520)+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
-    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.85,Math.min(['desktop','tablet'].includes(stage.dataset.layoutMode)?1.4:1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
+    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.1,Math.min(1,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
   }
   const replayFitters=new WeakMap();
@@ -211,7 +215,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',portrait=win.innerHeight>=win.innerWidth,compact=anchors?portrait:w<640;
       stage.dataset.preferredSeating??=stage.dataset.seating;
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
-      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<(anchoredNoHand?220:300)||!anchoredNoHand&&w>h&&(win.innerHeight<=550||h<360));
+      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<200);
       stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
       stage.dataset.seatingFallback=String(fallback);
       stage.dataset.anchorOrientation=portrait?'portrait':'landscape';
@@ -222,6 +226,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
       if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>node.getBoundingClientRect().height+12));
+      stage.style.setProperty('--north-east-height',(stage.querySelector('.seat-north-east')?.getBoundingClientRect().height||0)+'px');
+      stage.style.setProperty('--corner-control-height',((own?.getBoundingClientRect().height||0)+12)+'px');
       const opponentHands=stage.dataset.opponentHands==='true',edge=stage.dataset.seatStyle==='edge';
       const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
       if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));
@@ -232,7 +238,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--own-zone',ownZone+'px');
       if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,fieldSize))+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
-      if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);}
+      if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);
+      if(stage.dataset.seating==='circle'){
+        const ownBox=stage.querySelector('.layout-self')?.getBoundingClientRect(),groups=[...stage.querySelectorAll('.seat-group')].map(el=>el.getBoundingClientRect());
+        const overlap=(a,b)=>a&&b&&Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
+        if(groups.some((box,i)=>overlap(box,ownBox)||groups.slice(i+1).some(other=>overlap(box,other)))||stage.querySelector('.layout-field')?.clientHeight<80){
+          stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
+        }
+      }
+      root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);

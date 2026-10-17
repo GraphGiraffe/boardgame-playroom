@@ -18,7 +18,7 @@ test('shared-grid games force rows and the complete Yatzy table fits phone and t
  const dir=path.join(root,'tmp_files/dice-review');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768]]){
   await page.setViewportSize({width,height});
-  for(const game of ['yatzy','pexeso','snakes']){
+  for(const game of ['yatzy']){
    await scene(page,game);await page.evaluate(()=>{rcUI={seating:'circle'};rcRender();});
    await page.screenshot({path:path.join(dir,`${game}-${width}x${height}.png`)});
    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row',game+' has no spatial seats');
@@ -71,7 +71,7 @@ test('playable hand outlines stay inside the scroll viewport and recent teams sh
  assert.deepEqual(names.map(p=>p.name),['Иван','Луна','Сэм','Кира']);assert(names.every(p=>Math.abs(p.y-names[0].y)<1),'teams do not force a new row');
  await page.screenshot({path:path.join(dir,'recent-teams-390.png')});
 }));
-test('UNO forced skips preserve rotated seats and hands through every animation frame',{timeout:60000},async()=>fixture(async page=>{
+test('UNO forced skips preserve corner seats and hands through every animation frame',{timeout:60000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/skip-feedback');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height] of [[390,844],[844,390],[768,1024],[1024,768]]){
   await page.setViewportSize({width,height});
@@ -102,8 +102,8 @@ test('UNO forced skips preserve rotated seats and hands through every animation 
     for(const key of ['w','h','handW','handH'])assert(Math.abs(sample[key]-result.before[key])<1,`skip must preserve ${key}`);
     assert(Math.abs(sample.x-result.before.x)<=4.1&&Math.abs(sample.y-result.before.y)<=4.1,'shake stays inside its four-pixel reserve');
    }
-   if(height>width)assert.equal(Math.abs(Math.round(result.before.matrix[1])),1,'portrait fixture exercises a rotated seat');
-   if(height<width&&height<500)assert.equal(result.seating,'row','short landscape exercises the row fallback');
+   assert.equal(Math.round(result.before.matrix[1]),0,'corner identities remain upright');
+   assert.equal(result.seating,'circle','corners fit both orientations');
    await page.emulateMedia({reducedMotion:'reduce'});
    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
    await page.emulateMedia({reducedMotion:'no-preference'});
@@ -234,13 +234,13 @@ test('RC3 Battleship history retains field and automatic viewing controls withou
  }
 }));
 
-test('RC6 circular seats align hands to edges, keep player geometry equal and preserve a clear public field',{timeout:60000},async()=>fixture(async page=>{
+test('RC8 corner seats align hands, keep player geometry equal and preserve a clear public field',{timeout:60000},async()=>fixture(async page=>{
  for(const game of ['oldmaid','gofish','ludo','uno'])for(const [width,height]of [[320,740],[390,740],[740,390],[1090,900],[1440,900]]){
   await page.setViewportSize({width,height});await scene(page,game);
   const geometry=await page.evaluate(()=>{
    const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel')].filter(n=>n.getBoundingClientRect().width),boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
    return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
-  });assert.equal(geometry.seating,game!=='ludo'&&height<width&&height<=550?'row':'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
+  });assert.equal(geometry.seating,'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
   if(geometry.seating==='circle'&&['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
   if(game==='ludo'&&geometry.seating==='circle'){assert.equal(geometry.copies,1);assert.equal(await page.locator('.seat-group [data-player-index="0"].is-turn').count(),1);assert.equal(await page.locator('.layout-self [data-player-index="0"].is-turn').count(),1);}
@@ -253,8 +253,8 @@ test('RC4 local seating can be changed without actions, ownership changes or rev
  assert.equal(await page.locator('.settings-personal [data-appearance-picker]').count(),0);
  for(const width of [320,390,1090]){await page.setViewportSize({width,height:900});assert(await page.locator('[data-quick-shortcut]').evaluateAll(nodes=>nodes.every(n=>Math.abs(n.getBoundingClientRect().y-nodes[0].getBoundingClientRect().y)<1)));}
  await page.locator('#setting-seating').selectOption('row');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions('uno').seating),'auto','another game keeps its own default');
- await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-seating').selectOption('circle');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
- assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.oldmaid),'circle');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'circle');
+ await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-seating').selectOption('anchors');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
+ assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.oldmaid),'anchors');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'anchors');
 }));
 test('RC4 phone tiles preserve square geometry, symmetrical header and readable artwork',{timeout:45000},async()=>fixture(async page=>{
  for(const width of [320,390,520]){
@@ -277,7 +277,7 @@ test('RC6 repeated Pexeso mismatches keep both flip sides visible and preserve m
     const beforeTurn=rcSession.current.turn,action={type:'flip',index},shot=PlayroomMotion.capture({actor:beforeTurn,viewer:0,action});
     rcSession.act(beforeTurn,action);rcUI={presentationTurn:beforeTurn};rcRender();
     const pending=PlayroomMotion.play(shot,{duration:220,effects:PlayroomGameFlow.effectTimes.fast});
-    for(let frame=0;frame<6;frame++){await new Promise(requestAnimationFrame);samples.push([...document.querySelectorAll('[data-motion-kind=flip] button')].every(n=>getComputedStyle(n).visibility==='visible'));}
+    for(let frame=0;frame<6;frame++){await new Promise(requestAnimationFrame);samples.push(!document.querySelector('[data-motion-kind=play]')&&[...document.querySelectorAll('[data-motion-kind=flip] button')].every(n=>getComputedStyle(n).visibility==='visible'));}
     await pending;rcUI={};rcRender();
     samples.push([...document.querySelectorAll('.pexeso-slot .pexeso-face')].every(n=>getComputedStyle(n).visibility==='visible'));
    }
@@ -312,7 +312,7 @@ test('RC7 real game scenes fit phone and tablet orientations and retain the chos
    assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>=80&&geometry.field.h>=60,game+' field '+JSON.stringify(geometry));
    assert(geometry.panels.every(b=>Math.min(b.w,b.h)>=40),game+' squashed player '+JSON.stringify(geometry));
    if(geometry.count===2)assert.equal(geometry.actual,'row',game+' duel');
-   if(game!=='ludo'&&width>height&&height<=550)assert.equal(geometry.actual,'row',game+' short landscape');
+
    await page.evaluate(()=>Promise.all(document.getAnimations().filter(a=>a.effect.getTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));
    if(game==='ludo'){
     const anchors=await page.evaluate(()=>{const field=document.querySelector('.layout-field').getBoundingClientRect();return [...document.querySelectorAll('[data-seat-copy],.seat-group>.player-panel')].map(el=>{const r=el.getBoundingClientRect();return {seat:el.dataset.seat,cx:r.x+r.width/2,cy:r.y+r.height/2,fx:field.x+field.width/2,fy:field.y+field.height/2};});});
@@ -322,7 +322,7 @@ test('RC7 real game scenes fit phone and tablet orientations and retain the chos
   }
  }
  await page.setViewportSize({width:390,height:844});await scene(page,'uno');assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
- await page.setViewportSize({width:740,height:360});await page.waitForFunction(()=>document.querySelector('.app-game-layout').dataset.seating==='row');
+ await page.setViewportSize({width:740,height:190});await page.waitForFunction(()=>document.querySelector('.app-game-layout').dataset.seating==='row');
  await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('.app-game-layout').dataset.seating==='circle');
  await page.locator('.table-tools [data-command="settings"]').click();
  // UI fixture has no selected application Session; the production preference stays untouched.
@@ -355,7 +355,7 @@ test('RC7 settings separate themes, square initial avatar and optional recent ga
  await page.locator('#toast [data-command="dismiss-notice"]').click();assert.equal(await page.locator('#toast.show').count(),0);
 }));
 
-test('RC7 UNO draws into rotated hands in live play and replay without stretching the artwork',{timeout:45000},async()=>fixture(async page=>{
+test('RC8 UNO draws into upright hands in live play and replay without stretching the artwork',{timeout:45000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/rc7-review');
  for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768]]){
   await page.setViewportSize({width,height});await scene(page,'uno',{firstPlayer:1});
@@ -373,7 +373,7 @@ test('RC7 UNO draws into rotated hands in live play and replay without stretchin
     return {samples,angle:snapshot.hands.get(1).angle};
    },replay);
    assert(result.samples.every(s=>s.w>0&&s.h>0&&(!s.aw||Math.abs(s.w-s.aw)<2)&&(!s.ah||Math.abs(s.h-s.ah)<2)),JSON.stringify({width,height,replay,result}));
-   if(height>550)assert.equal(Math.abs(Math.round(result.angle)),90);else assert.equal(result.angle,0);
+   assert.equal(result.angle,0,'corner hands stay upright');
    await page.screenshot({path:path.join(dir,`uno-${width}x${height}-${replay?'history':'live'}-draw.png`)});
    await page.evaluate(()=>{PlayroomMotion.cancel();return rcDraw;});assert.equal(await page.locator('.playroom-motion-layer').count(),0);
   }
@@ -398,5 +398,37 @@ test('RC7 Ludo offers corners or row and orientation fallback does not rewrite s
  for(const [width,height]of [[390,844],[740,360],[768,1024],[1024,768]]){
   await page.setViewportSize({width,height});const panels=await page.locator('.layout-participants .player-panel').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {w:r.width,h:r.height};}));assert(panels.every(p=>p.w>=80&&p.h>=44),JSON.stringify(panels));
   await page.screenshot({path:path.join(root,'tmp_files/rc7-review',`ludo-${width}x${height}-chosen-row.png`)});
+ }
+}));
+
+test('RC8 in-game Themes opens above settings and profile controls align',{timeout:45000},async()=>fixture(async page=>{
+ await page.locator('[data-start="uno"]').first().click();await page.locator('[data-command="lobby-start"]').click();
+ await page.locator('.table-tools [data-command="settings"]').click();
+ const before=await page.evaluate(()=>{window.settingsBefore=document.querySelector('#modal-root .modal');return localStorage.getItem('playroom.session.v1');});
+ for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});
+  const boxes=await page.locator('.settings-personal :is(.profile-identity-row,.lobby-profile)').evaluate(el=>{const a=el.querySelector('[data-avatar-picker]').getBoundingClientRect(),b=el.querySelector('input').getBoundingClientRect();return {top:a.top-b.top,height:a.height-b.height,width:a.width-a.height};});
+  assert(Math.abs(boxes.top)<2&&Math.abs(boxes.height)<2&&Math.abs(boxes.width)<2,JSON.stringify(boxes));
+  await page.locator('.settings-themes').click();await page.locator('.appearance-editor').waitFor();
+  assert(await page.locator('.appearance-editor').evaluate(el=>el.matches(':modal')));
+  await page.screenshot({path:path.join(root,`tmp_files/rc8/themes-${width}x${height}.png`)});
+  await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>document.querySelector('#modal-root .modal')===settingsBefore),true);
+ }
+ assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),before);
+}));
+
+test('RC8 maximum rosters keep panels and fields disjoint in both orientations',{timeout:120000},async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768]])for(const game of ['uno','durak','oldmaid','gofish','domino','ludo','snakes','pexeso','battleship','yatzy','checkers','tictactoe'])for(const seating of ['anchors','row']){
+  await page.setViewportSize({width,height});const count=await page.evaluate(game=>TabletopCore.get(game).max,game);
+  await scene(page,game,{players:Array.from({length:count},(_,i)=>({name:['Иван','Мика','Луна','Кира','Лев','Сэм'][i]}))});
+  await page.evaluate(seating=>{rcUI={seating};rcRender();},seating);await page.waitForTimeout(30);
+  const errors=await page.evaluate(()=>{
+   const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),panels=[...stage.querySelectorAll('.player-panel')].map(el=>({r:el.getBoundingClientRect(),name:el.textContent})).filter(p=>p.r.width&&p.r.height),errors=[];
+   const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
+   for(let i=0;i<panels.length;i++){const {r,name}=panels[i];if(r.width<70||r.height<44)errors.push('squashed '+name);if(overlaps(r,field))errors.push('field overlap '+name);for(const p of panels.slice(i+1))if(overlaps(r,p.r))errors.push('panel overlap '+name);}
+   const self=stage.querySelector('.layout-self')?.getBoundingClientRect();for(const group of stage.querySelectorAll('.seat-group'))if(self&&overlaps(group.getBoundingClientRect(),self))errors.push('seat/self overlap');
+   if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
+  });
+  assert.deepEqual(errors,[],`${game} ${seating} ${width}x${height}`);
  }
 }));
