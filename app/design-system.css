@@ -215,7 +215,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 /* Replay reserves space for the field, not unavailable move controls. */
 .scene.replaying .layout-actions:not(:has([data-view-key],[data-view-preference])){display:none!important}
-.scene.replaying .layout-actions button:not([data-view-key]):not([data-view-preference]){display:none!important}
+.scene.replaying .layout-actions button:not([data-view-key]):not([data-view-preference]):not(.shared-die){display:none!important}
 .scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles{height:76px;min-height:76px}
 .scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles>button{flex-basis:36px!important;width:36px!important;min-width:36px!important;height:63px!important}
 .scene.replaying .app-game-layout .layout-hand .hand-track.is-tiles .domino-half{width:20px}

@@ -79,3 +79,12 @@ test('Whole actions use the UNO reveal budget without adding it to long presenta
     const cancelled=flow.present(()=>new Promise(()=>{}));flow.cancel();await cancelled;assert.equal(timers.size,0);
   }
 });
+test('dice reveal completion unlocks the next action without a hidden card-animation timer',async()=>{
+ for(const animationSpeed of Object.keys(Flow.presets))for(const event of [{kind:'roll'},{reveal:{kind:'dice'}}]){
+  const timers=new Map();let id=0,complete,finished=false;
+  const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+  const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[event]}).then(()=>finished=true);
+  await Promise.resolve();assert.equal(finished,false);assert.equal(timers.size,0,'dice queue owns its complete visible lifetime');
+  complete();await pending;assert.equal(finished,true);
+ }
+});

@@ -221,6 +221,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
+      if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>node.getBoundingClientRect().height+12));
       const opponentHands=stage.dataset.opponentHands==='true',edge=stage.dataset.seatStyle==='edge';
       const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
       if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));

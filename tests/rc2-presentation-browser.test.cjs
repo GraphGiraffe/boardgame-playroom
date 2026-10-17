@@ -14,6 +14,29 @@ async function scene(page,game,options={}){
   window.rcRender=()=>{const actual=rcStateOverride||rcSession.current,state=TabletopCore.project(actual,0),actions=TabletopCore.legalActions(actual,0),scene=PlayroomViews.render(state,0,actions,{selected:null,preferences:{},viewState:{},...rcUI});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get(game).name,state,viewer:0,actions,scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));};rcRender();
  },{game,options});
 }
+test('shared-grid games force rows and the complete Yatzy table fits phone and tablet widths',{timeout:45000},async()=>fixture(async page=>{
+ const dir=path.join(root,'tmp_files/dice-review');fs.mkdirSync(dir,{recursive:true});
+ for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});
+  for(const game of ['yatzy','pexeso','snakes']){
+   await scene(page,game);await page.evaluate(()=>{rcUI={seating:'circle'};rcRender();});
+   await page.screenshot({path:path.join(dir,`${game}-${width}x${height}.png`)});
+   assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row',game+' has no spatial seats');
+   if(game==='yatzy'){
+    const table=await page.locator('.yatzy-board').evaluate(board=>({overflow:board.scrollWidth-board.clientWidth,widths:[...board.querySelectorAll('thead [data-score-player]')].map(el=>el.getBoundingClientRect().width)}));
+    assert(table.overflow<=1,JSON.stringify({width,height,table}));assert(table.widths.every(w=>w>=28&&Math.abs(w-table.widths[0])<1));
+   }
+  }
+ }
+ await page.reload();
+ await page.locator('[data-start="yatzy"]').first().click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(const seat of ['seat-3','seat-4'])b.roomService.setLocalSeat(r.id,r.ownerId,seat,{kind:'bot',nickname:seat});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
+ await page.locator('[data-command="lobby-start"]').click();await page.locator('.yatzy-score').waitFor();
+ await page.locator('.table-shell [data-command="settings"]').click();
+ assert.deepEqual(await page.locator('#setting-seating option').evaluateAll(options=>options.map(option=>option.value)),['row']);
+ await page.locator('.modal [data-command="close-modal"]').click();await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-score button[data-action]').first().click();await page.locator('.action-reveal').waitFor();
+ await page.screenshot({path:path.join(dir,'yatzy-live-dice.png')});
+}));
 test('playable hand outlines stay inside the scroll viewport and recent teams share one player flow',{timeout:45000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/hand-rings');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height] of [[390,844],[844,390],[768,1024],[1024,768]]){

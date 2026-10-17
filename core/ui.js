@@ -218,7 +218,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto'}={}) {
+  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
@@ -229,7 +229,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const strategy=(state?.players?.length||0)<=2||seating==='row'?'row':layout.seats?'anchors':'circle';
+    const strategy=seatingPolicy==='row'||(state?.players?.length||0)<=2||seating==='row'?'row':layout.seats?'anchors':'circle';
     const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
     const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
@@ -276,14 +276,15 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const surfaces=options?.surfaces||{};
         if(typeof surfaces!=='object'||Array.isArray(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Invalid view surfaces');
         if(options.reveal!==undefined&&typeof options.reveal!=='function')throw Error('Invalid reveal renderer');
-        packs.set(id,{render,cover,reveal:options.reveal,surfaces:Object.freeze({...surfaces})});
+        if(options.seating!==undefined&&options.seating!=='row')throw Error('Invalid seating policy');
+        packs.set(id,{render,cover,reveal:options.reveal,seating:options.seating,surfaces:Object.freeze({...surfaces})});
       },
       reveal(id,value){try{return packs.get(id)?.reveal?.(value)||'';}catch(_){return '';}},
       supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
+        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
         catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); }
       },
       cover(id){
