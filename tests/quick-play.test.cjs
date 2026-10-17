@@ -40,7 +40,7 @@ async function point(locator) {
   await locator.scrollIntoViewIfNeeded();
   return locator.evaluate(el => {
     const r = el.getBoundingClientRect();
-    for (const fy of [.2, .5, .8]) for (const fx of [.2, .5, .8]) {
+    for (const fy of [.2, .5, .8]) for (const fx of [.05, .1, .2, .5, .8, .95]) {
       const p = {x: r.x + r.width * fx, y: r.y + r.height * fy}, hit = document.elementFromPoint(p.x, p.y);
       if (hit === el || el.contains(hit)) return p;
     }
@@ -60,7 +60,7 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
       await context.addInitScript(saved => {
         if (sessionStorage.getItem('quick-play-test-seeded')) return;
         sessionStorage.setItem('quick-play-test-seeded', '1'); localStorage.clear();
-        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false}));
+        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
       }, saved);
       const page = await context.newPage(), cdp = mobile ? await context.newCDPSession(page) : null, errors = [];

@@ -25,7 +25,7 @@
       if (!usable(source)) return false;
       if (source.hasAttribute('data-action')) {
         const action = readAction(source.dataset.action);
-        if (action && canCommit(source)) commit(action, {source});
+        if (action && canCommit(source)) commit(action, {source,allowLayoutChange:source.dataset.allowLayoutChange==='true'});
         return true;
       }
       if (canSelect(source)) {
@@ -235,7 +235,7 @@
       // Let pointerup and its compatibility click finish against stable DOM.
       if (action || selection !== null) pendingCommit = root.requestAnimationFrame(() => {
         pendingCommit = 0;
-        if (!disposed) { if (action && canCommit(commitSource)) commit(action,{playedFrom}); else if (!action && canSelect(s.source)) select(selection); }
+        if (!disposed) { if (action && canCommit(commitSource)) commit(action,{playedFrom,source:commitSource,allowLayoutChange:commitSource?.dataset.allowLayoutChange==='true'}); else if (!action && canSelect(s.source)) select(selection); }
       });
     }
     function click(event) {

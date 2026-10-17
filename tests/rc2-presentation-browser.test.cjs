@@ -712,7 +712,7 @@ test('RC17 dice retain faces across turns and player colors never repeat',async(
 test('RC17 ZiL+ routes and deferred badges fit phones; second die follows the first movement',{timeout:45000},async()=>fixture(async page=>{
  for(const [width,height] of [[320,640],[390,844],[640,320],[844,390]]){
   await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
-  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
+  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {board:{x:b.x,y:b.y,width:b.width,height:b.height},dice:dice.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
   assert(result.targets>=3);assert(result.badges);assert(result.fit,JSON.stringify({width,height,result}));await page.screenshot({path:path.join(shots,`rc17-plus-${width}.png`)});
  }
  await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
@@ -728,4 +728,66 @@ test('RC17 ZiL+ routes and deferred badges fit phones; second die follows the fi
  const middle=await page.evaluate(()=>{const t=document.querySelector('[data-entity="token-0"]').getBoundingClientRect(),c=document.querySelector('[data-motion-anchor="cell-17"]').getBoundingClientRect();return Math.hypot(t.x+t.width/2-c.x-c.width/2,t.y+t.height/2-c.y-c.height/2);});assert(middle<3,'pawn rests on second-die cell before second reveal');
  await page.screenshot({path:path.join(shots,'rc17-second-die.png')});await page.evaluate(async()=>{await rcFeedback.whenIdle();rcFeedback.destroy();});
  assert.equal(await page.locator('[data-entity="token-0"]').evaluate(el=>el.style.translate),'');
+}));
+
+test('ZiL+ keeps board geometry and pawn size across rolling and matches cell and effect colors',async()=>fixture(async page=>{
+ for(const boardSize of [64,100])for(const [width,height] of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',boardSize,players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
+  const geometry=await page.evaluate(()=>{
+   const measure=()=>{const b=document.querySelector('.snakes-board').getBoundingClientRect(),t=document.querySelector('[data-entity="token-0"]').getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,pawn:t.width};};
+   const before=measure();rcSession.act(0,{type:'roll'});rcRender();const after=measure();
+   rcStateOverride=TabletopCore.clone(rcSession.current);rcStateOverride.data.positions[0]=10;rcRender();const moved=measure();return {before,after,moved};
+  });
+  for(const key of ['x','y','w','h','pawn'])assert(Math.abs(geometry.before[key]-geometry.after[key])<1,JSON.stringify({width,key,geometry}));assert(Math.abs(geometry.after.pawn-geometry.moved.pawn)<1);
+  const colors=await page.evaluate(()=>{rcStateOverride.data.effects[0]={skip:true,less:true,adjust:true,shield:true};rcRender();return ['skip','less','adjust','shield'].map((key,i)=>{const cell=document.querySelector(`[data-special="${key}"]`),icons={skip:'skipTurn',less:'lessDie',adjust:'adjustDie',shield:'shield'},badge=document.querySelector(`.layout-self [data-ui-icon="${icons[key]}"]`).closest('.player-status-badge');return {cell:cell.style.backgroundColor,badge:getComputedStyle(badge).backgroundColor,icon:getComputedStyle(cell.querySelector('svg')).color,number:!!cell.querySelector(':scope > span'),collision:Object.hasOwn(rcStateOverride.data.links,Number(cell.dataset.motionAnchor.slice(5)))};});});
+  assert.equal(new Set(colors.map(c=>c.cell)).size,4);assert(colors.every(c=>c.cell===c.badge&&c.icon==='rgb(255, 255, 255)'&&!c.number&&!c.collision),JSON.stringify(colors));
+  await page.screenshot({path:path.join(shots,`zil-cells-${boardSize}-${width}.png`)});
+ }
+}));
+
+test('shared board targets preserve special icons, color outcomes, and keep Ludo still',async()=>fixture(async page=>{
+ for(const [width,height]of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'ludo');
+  const result=await page.evaluate(()=>{const box=()=>{const r=document.querySelector('.ludo-board').getBoundingClientRect();return [r.x,r.y,r.width,r.height];};const before=box();rcSession.act(0,{type:'roll'});rcRender();const after=box();const a=TabletopCore.legalActions(rcSession.current,0).find(a=>a.type==='move');if(a){rcUI={viewState:{pawn:a.owner+':'+a.pawn}};rcRender();}return {before,after,selected:box(),hints:document.querySelectorAll('.ludo-scene .shared-hint').length};});
+  assert.equal(result.hints,0);for(let i=0;i<4;i++){assert(Math.abs(result.before[i]-result.after[i])<1,JSON.stringify(result));assert(Math.abs(result.before[i]-result.selected[i])<1);}
+  await page.screenshot({path:path.join(shots,`zil-ludo-${width}.png`)});
+ }
+ await scene(page,'snakes',{preset:'plus',boardSize:64});
+ const targets=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[3,5]});rcStateOverride.data.positions[0]=17;rcRender();const capture=document.querySelector('[data-motion-anchor="cell-22"]'),home=document.querySelector('[data-motion-anchor="cell-20"]');const kinds=[capture.classList.contains('target-capture'),home.classList.contains('target-home')];rcStateOverride.data.positions[0]=8;rcRender();const cell=document.querySelector('[data-motion-anchor="cell-11"]');return {kinds,background:getComputedStyle(cell).backgroundColor,base:cell.style.backgroundColor,icon:getComputedStyle(cell.querySelector('svg')).color,dot:!!cell.querySelector('.board-route-dot'),target:cell.classList.contains('board-target')};});
+ assert.deepEqual(targets.kinds,[true,true]);assert(targets.target&&!targets.dot);assert.notEqual(targets.background,targets.base);assert.equal(targets.icon,'rgb(255, 255, 255)');
+}));
+
+test('all games keep the field stable while selecting and changing action phases',{timeout:120000},async()=>fixture(async page=>{
+ const report=[];
+ for(const [width,height] of [[320,640],[390,844],[640,320],[844,390]])for(const game of ['tictactoe','checkers','battleship','domino','durak','uno','oldmaid','gofish','pexeso','yatzy','ludo','snakes']){
+  await page.setViewportSize({width,height});await scene(page,game);
+  const measurements=await page.evaluate(()=>{
+   const rows=[],box=()=>{const r=document.querySelector('.layout-field').getBoundingClientRect();return [r.x,r.y,r.width,r.height];};
+   for(let step=0;step<16&&rcSession.current.status==='playing';step++){
+    rcUI={};rcRender();const before=box(),s=rcSession.current,actor=s.turn,actions=TabletopCore.legalActions(s,actor);
+    const selected=actions.find(a=>a.card!=null||a.pawn!=null);
+    if(actor===0&&selected){rcUI={selected:selected.card,viewState:selected.pawn!=null?{pawn:selected.owner+':'+selected.pawn}:{}};rcRender();rows.push({step,phase:s.data.phase,kind:'selection',before,after:box()});}
+    rcUI={};const action=actions.find(a=>a.type==='ready')||actions.find(a=>a.type==='auto')||actions.find(a=>a.type==='score')||actions[step%actions.length];if(!action)break;
+    rcSession.act(actor,action);rcRender();rows.push({step,phase:s.data.phase,action:action.type,kind:'action',before,after:box()});
+   }
+   return rows;
+  });
+  const changes=measurements.filter(row=>row.before.some((v,i)=>Math.abs(v-row.after[i])>1));report.push({game,width,changes});
+  await page.screenshot({path:path.join(shots,`rc18-all-${game}-${width}.png`)});
+ }
+ fs.writeFileSync(path.join(shots,'rc18-layout-report.json'),JSON.stringify(report,null,2));
+ assert.deepEqual(report.filter(row=>row.changes.length),[]);
+}));
+
+ test('layout reflow requires an explicit action flag and resets on viewport change',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await scene(page,'uno');
+ const result=await page.evaluate(()=>{
+  const h=document.querySelector('#app'),box=()=>document.querySelector('.layout-field').getBoundingClientRect().height;
+  const initial=box();document.querySelector('.layout-actions').style.height='110px';PlayroomGameScreen.layoutScene(h);const fixed=box();
+  PlayroomGameScreen.allowLayoutChange(h,{});PlayroomGameScreen.layoutScene(h);const implicit=box();
+  PlayroomGameScreen.allowLayoutChange(h,{allowLayoutChange:true});PlayroomGameScreen.layoutScene(h);
+  return {initial,fixed,implicit,changed:box(),attr:PlayroomViews.helpers.actionAttr({type:'draw'},{allowLayoutChange:true})};
+ });assert.equal(result.initial,result.fixed);assert.equal(result.initial,result.implicit);assert.notEqual(result.changed,result.initial);assert.match(result.attr,/data-allow-layout-change="true"/);
+ await page.setViewportSize({width:844,height:390});await page.evaluate(()=>rcRender());
+ assert((await page.locator('.layout-field').boundingBox()).width>100);
 }));

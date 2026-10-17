@@ -50,10 +50,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return header+'<div class="modal-body">'+template.innerHTML+'</div>';
   }
   const DOM=root.PlayroomDOM||(typeof require==='function'?require('../platform/web/dom.js'):null),{patchChildren}=DOM;
-  const pendingScroll=new WeakMap();
+  const pendingScroll=new WeakMap(), fixedLayouts=new WeakMap();
+  function allowLayoutChange(host,{allowLayoutChange=false}={}){
+    if(allowLayoutChange===true)fixedLayouts.delete(host);
+  }
   function update(host,markup){
     const scrollers=[...host.querySelectorAll('[data-scene-scroll],.hand-track,.hand-scroll')].map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
     const template=host.ownerDocument.createElement('template');template.innerHTML=markup;
+    if(!template.content.querySelector('.table-shell'))fixedLayouts.delete(host);
     patchChildren(host,template.content);
     pendingScroll.set(host,scrollers);
   }
@@ -140,7 +144,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       reset(){previous=null;clearTimeout(timer);}
     };
   }
-  function render({gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
+  function render({layoutId='',gameName,subtitle='',state,viewer,actions=[],scene='',turnText='',turnExtra='',replay=false,
     busy=false,botThinking=false,animationSpeed='',beforeFooter='',historyHTML='',footerText='',footerTitle=footerText,footerAction={command:'home',label:globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),icon:'back'},
     statusExtra='',footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel=globalThis.PlayroomMessages.text("ui.game-screen.d7ab0767bbee"),playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption='',roomAction=null,fieldToggle=null}={}){
     fieldToggle=network&&!readOnly&&viewer>=0?fieldToggle:null;
@@ -148,12 +152,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:globalThis.PlayroomMessages.text("ui.game-screen.24735a7161d9"),name:'trophy'}:roomAction?{...roomAction,label:globalThis.PlayroomMessages.text("ui.game-screen.3a73248bdd79"),name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerText||'');
     if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
-    return `<main class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
+    return `<main data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title"><h1 title="${esc(gameName)}">${esc(gameName)}</h1><p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         ...(primary?[{...primary,attrs:primary.attrs+' data-game-primary="true"'}]:[]),
         {attrs:'data-command="history"',label:globalThis.PlayroomMessages.text("ui.game-screen.c9d00b5b5cd1"),name:'history',active:!!historyHTML,hidden:!!fieldToggle},
         ...(fieldToggle?[{attrs:'data-command="toggle-field"',label:fieldToggle.hidden?globalThis.PlayroomMessages.text("ui.game-screen.4df59b1750a8"):globalThis.PlayroomMessages.text("ui.game-screen.af36d13ed774"),name:'grid',active:fieldToggle.hidden}]:[]),
-        ...(!readOnly?[{attrs:'data-command="pause"',label:pause?globalThis.PlayroomMessages.text("ui.game-screen.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.game-screen.65530fd463ea"),name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
+        ...(!readOnly&&state.status!=='finished'?[{attrs:'data-command="pause"',label:pause?globalThis.PlayroomMessages.text("ui.game-screen.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.game-screen.65530fd463ea"),name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML}]:[]),
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full',hidden:true},
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
@@ -222,6 +226,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.offsetWidth-peek,(available-card.offsetWidth-Math.max(0,count-1)*peek)/2-2))+'px':'0px');
     track.style.setProperty('--fan-peek',peek+'px');
     if(track.classList.contains('is-arc'))track.style.setProperty('--fan-reveal-space','0px');
+    track.classList.toggle('is-tight',parseFloat(track.style.getPropertyValue('--fan-reveal-space'))<(card?.offsetWidth||0)-peek);
     fitHandArc(track);
   }
   function fitHand(stage){
@@ -256,7 +261,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
-    const stage=scene?.querySelector('.app-game-layout');if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
+    const stage=scene?.querySelector('.app-game-layout');
+    const layoutKey=stage?JSON.stringify([host.querySelector('.table-shell')?.dataset.layoutIdentity,scene.clientWidth,scene.clientHeight,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating]):null;
+    let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
+    if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
+      for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('overflow');}
+    }
+    if(stage){const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
       const w=scene.clientWidth-12,h=scene.clientHeight-12,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',portrait=win.innerHeight>=win.innerWidth,compact=anchors?portrait:w<640;
       stage.dataset.preferredSeating??=stage.dataset.seating;
       const roster=stage.querySelectorAll('.layout-participants .player-panel:not([data-seat-copy])').length;
@@ -314,11 +325,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
         fitHand(stage);
       }
-      root.PlayroomHandOverflow?.sync?.(host);fitField(stage);}
+      root.PlayroomHandOverflow?.sync?.(host);
+      // Freeze the grid tracks, not game objects: new controls stay inside their zone.
+      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?.getBoundingClientRect().height,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands};fixedLayouts.set(host,locked);}
+      stage.style.setProperty('grid-template-rows',locked.rows,'important');
+      stage.style.setProperty('grid-template-columns',locked.columns,'important');
+      if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow='auto';}
+      fitField(stage);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
     for(const track of host.querySelectorAll('.hand-track.is-fan'))fitHandArc(track);
   }
-  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,iconButton,toolbar,modalHead});
+  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

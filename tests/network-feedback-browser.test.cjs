@@ -260,7 +260,7 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     assert.equal(await page.evaluate(()=>qaSent.length),0,'switching pawns never commits');
     assert.equal(await page.locator('.ludo-target').count(),2,'duplicate dice share one destination');
     assert.equal(await page.locator('.target-capture').count(),1);
-    assert.equal(await page.locator('.ludo-route-dot').count(),3);
+    assert.equal(await page.locator('.board-route-dot').count(),3);
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-targets-390.png')});}
     await page.locator('.target-move').tap();
     await page.waitForFunction(()=>document.querySelectorAll('.shared-die.used').length===1&&document.querySelector('.ludo-pawn.is-selected'));
