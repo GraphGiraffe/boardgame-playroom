@@ -805,3 +805,19 @@ test('ZiL+ has one reversible adjustment choice before either die or destination
  });assert.deepEqual(result.initial,[]);assert(result.disabled);assert.equal(result.buttons,2);assert.deepEqual(result.reset,[]);assert.deepEqual(result.plus,[33,36]);assert.deepEqual(result.minus,[31,34]);assert.deepEqual(result.again,result.plus);assert.equal(result.position,30);assert.deepEqual(result.before,result.after);
  await page.screenshot({path:path.join(shots,'rc18-adjustment.png')});
 }));
+
+
+test('deferred effect badges scroll in one fixed-height player row',async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
+  const result=await page.evaluate(()=>{
+   const boxes=()=>Array.from(document.querySelectorAll('.player-info'),el=>{const r=el.getBoundingClientRect();return [r.x,r.y,r.width,r.height];});
+   const before=boxes();rcStateOverride=TabletopCore.clone(rcSession.current);rcStateOverride.data.effects.forEach(e=>Object.assign(e,{skip:true,less:true,adjust:true,shield:true}));rcRender();
+   const rows=Array.from(document.querySelectorAll('.player-data')).filter(el=>el.querySelector('.player-status-badge')).map(el=>{const badges=Array.from(el.querySelectorAll('.player-status-badge')),tops=badges.map(b=>b.getBoundingClientRect().top);el.scrollLeft=1000;return {tops,scroll:el.scrollLeft,overflow:el.scrollWidth>el.clientWidth};});return {before,after:boxes(),rows};
+  });
+  assert.deepEqual(result.after,result.before,'effects must not resize or reposition cards');assert(result.rows.length);
+  for(const row of result.rows){assert(Math.max(...row.tops)-Math.min(...row.tops)<1);if(row.overflow)assert(row.scroll>0);}
+  if(width<=390)assert(result.rows.some(row=>row.overflow),'narrow cards exercise scrolling');
+  await page.screenshot({path:path.join(shots,`rc19-effects-${width}.png`)});
+ }
+}));
