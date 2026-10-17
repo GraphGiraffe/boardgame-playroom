@@ -55,7 +55,7 @@
 .hand-track.is-fan .hand-card:focus,.hand-track.is-fan .hand-card.is-hand-preview{z-index:80;transform:translateY(calc(-1 * var(--fan-lift)))}
 /* Lifted previews must not cover the exposed rank corner of their successor.
    Make room for the preview by shifting following cards, retaining the fan overlap. */
-@media(hover:hover){.hand-track.is-fan .hand-fan-row>.hand-card:hover ~ .hand-card:not(:hover):not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(calc(var(--fan-card-width) - var(--fan-peek)))}}
+@media(hover:hover){.hand-track.is-fan .hand-fan-row>.hand-card:hover ~ .hand-card:not(:hover):not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(var(--fan-reveal-space,calc(var(--fan-card-width) - var(--fan-peek))))}}
 @media(hover:hover){.hand-track.is-fan .hand-card:hover{z-index:90;transform:translateY(calc(-1 * var(--fan-lift)))}}
 @media(max-width:760px){.hand-track.is-fan{--fan-card-width:64px;--fan-card-height:91px;height:calc(var(--fan-card-height) + 26px);min-height:calc(var(--fan-card-height) + 26px);padding-top:17px;padding-bottom:9px}}
 @media(prefers-reduced-motion:reduce){.hand-track.is-fan .hand-card:is(.is-selected,:focus,.is-hand-preview){transform:translateY(-9px)!important}}
@@ -104,7 +104,7 @@
 @media (hover:hover) and (pointer:fine){.own-hand.hand-overflow .hand-heading>span{visibility:hidden}}
 
 /* A selected or keyboard preview keeps subsequent rank corners reachable. */
-.hand-track.is-fan .hand-fan-row>.hand-card:is(.is-selected,:focus,.is-hand-preview) ~ .hand-card:not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(calc(var(--fan-card-width) - var(--fan-peek)))}
+.hand-track.is-fan .hand-fan-row>.hand-card:is(.is-selected,:focus,.is-hand-preview) ~ .hand-card:not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(var(--fan-reveal-space,calc(var(--fan-card-width) - var(--fan-peek))))}
 
 .participant-role{display:inline-flex;align-items:center;gap:2px;flex:none;color:inherit;vertical-align:middle}
 .participant-role svg{display:block;width:14px;height:14px;flex:none}
