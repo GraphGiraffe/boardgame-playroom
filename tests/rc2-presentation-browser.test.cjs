@@ -648,7 +648,7 @@ test('RC16 first player numbers, clockwise corners and rounded dice',async()=>fi
   assert.equal(await page.locator('[data-player-index="3"] .player-turn-position').first().textContent(),'1');
   const order=await page.evaluate(()=>['south-east','south-west','north-west','north-east'].flatMap(seat=>{let a=[...document.querySelectorAll('.seat-'+seat+' .player-panel')].map(el=>Number(el.dataset.playerIndex));return seat.endsWith('west')?a.reverse():a; }));
   const first=order.indexOf(0),circle=[...order.slice(first),...order.slice(0,first)];assert.deepEqual(circle,[0,1,2,3,4,5]);
-  assert.notEqual(await page.locator('.die').evaluate(el=>getComputedStyle(el).borderRadius),'0px');
+  assert((await page.locator('.die').evaluateAll(els=>els.map(el=>getComputedStyle(el).borderRadius))).every(value=>value!=='0px'));
   await page.screenshot({path:path.join(shots,`rc16-snakes-${width}.png`)});
  }
 }));
@@ -689,4 +689,43 @@ test('RC16 a private transfer has a visible back before the public pair reveal',
   const back=document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]'),result={back:!!back?.querySelector('.back-art-face,svg'),earlyReveal:!!document.querySelector('.action-reveal')};
   await f.whenIdle();result.ended=!document.querySelector('.action-reveal');f.destroy();return result;
  });assert.deepEqual(result,{back:true,earlyReveal:false,ended:true});
+}));
+test('RC17 dice retain faces across turns and player colors never repeat',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ for(const game of ['yatzy','ludo','snakes']){
+  await scene(page,game);
+  const result=await page.evaluate(game=>{
+   const before=JSON.stringify(rcSession.current.data.dice),rng=rcSession.current.rng;rcRender();
+   const rendered=[...document.querySelectorAll('.layout-self .shared-die-art')].map(el=>el.querySelectorAll('circle').length);
+   const first=rcSession.current.turn;rcSession.act(first,{type:'roll'});const rolled=JSON.stringify(rcSession.current.data.dice);
+   for(let i=0;i<20&&rcSession.current.turn===first;i++){
+    const legal=TabletopCore.legalActions(rcSession.current,first),action=legal.find(a=>a.type==='score')||legal.find(a=>a.type==='move');if(!action)break;rcSession.act(first,action);
+   }
+   rcRender();return {before,rendered,rolled,after:JSON.stringify(rcSession.current.data.dice),visible:[...document.querySelectorAll('.layout-self .shared-die-art')].map(el=>el.querySelectorAll('circle').length),changed:rcSession.current.turn!==first};
+  },game);
+  assert(result.rendered.length>0&&result.rendered.every(n=>n>=1&&n<=6),game);assert(result.visible.every(n=>n>=1&&n<=6));assert.equal(result.after,result.rolled);assert(result.changed,game);
+  await page.screenshot({path:path.join(shots,`rc17-${game}-dice.png`)});
+ }
+ const colors=await page.evaluate(()=>{const host=document.createElement('div');host.innerHTML=Array.from({length:8},(_,i)=>TabletopUI.avatar({name:'Игрок '+i},i)).join('');document.body.append(host);const colors=[...host.children].map(el=>getComputedStyle(el).backgroundColor);host.remove();return {colors,slots:Array.from({length:8},(_,i)=>PlayroomMultiplayer.seatColor(i).value)};});assert.equal(new Set(colors.colors).size,8);assert.equal(new Set(colors.slots).size,8);
+}));
+
+test('RC17 ZiL+ routes and deferred badges fit phones; second die follows the first movement',{timeout:45000},async()=>fixture(async page=>{
+ for(const [width,height] of [[320,640],[390,844],[640,320],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
+  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
+  assert(result.targets>=3);assert(result.badges);assert(result.fit,JSON.stringify({width,height,result}));await page.screenshot({path:path.join(shots,`rc17-plus-${width}.png`)});
+ }
+ await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
+ await page.evaluate(()=>{
+  const before=TabletopCore.clone(rcSession.current);Object.assign(before.data,{phase:'move',dice:[1,2]});before.data.positions[0]=16;rcStateOverride=before;rcRender();
+  const action=TabletopCore.legalActions(before,0).find(a=>a.dieIndex===0&&a.delta===0),shot=PlayroomMotion.capture({viewer:0,action});
+  const after=TabletopCore.applyAction(before,0,action);rcStateOverride=after;rcRender();
+  window.rcFeedback=new PlayroomGameFeedback({mount:()=>document.querySelector('.table-shell')});rcFeedback.start(TabletopCore.project(before,0).events);rcFeedback.accept(TabletopCore.project(after,0).events,[],'snakes',{snapshot:shot,mode:'fast'});
+ });
+ await page.waitForFunction(()=>document.querySelector('.action-reveal-die svg')?.querySelectorAll('circle').length===1);
+ await page.screenshot({path:path.join(shots,'rc17-first-die.png')});
+ await page.waitForFunction(()=>document.querySelector('.action-reveal-die svg')?.querySelectorAll('circle').length===2);
+ const middle=await page.evaluate(()=>{const t=document.querySelector('[data-entity="token-0"]').getBoundingClientRect(),c=document.querySelector('[data-motion-anchor="cell-17"]').getBoundingClientRect();return Math.hypot(t.x+t.width/2-c.x-c.width/2,t.y+t.height/2-c.y-c.height/2);});assert(middle<3,'pawn rests on second-die cell before second reveal');
+ await page.screenshot({path:path.join(shots,'rc17-second-die.png')});await page.evaluate(async()=>{await rcFeedback.whenIdle();rcFeedback.destroy();});
+ assert.equal(await page.locator('[data-entity="token-0"]').evaluate(el=>el.style.translate),'');
 }));

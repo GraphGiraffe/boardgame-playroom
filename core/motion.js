@@ -112,7 +112,7 @@
     const flights = [], used = new Set();
     const current = [...scene.querySelectorAll('[data-entity]')];
     let sequence=null;
-    try { sequence=JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
+    try { sequence=snapshot.sequence||JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
     if(sequence?.trigger!==snapshot.action?.type)sequence=null;
     const anchorRect=point=>{
       const anchor=[...scene.querySelectorAll('[data-motion-anchor]')].find(el=>el.dataset.motionAnchor===point.anchor);
@@ -124,7 +124,7 @@
       flights.push({el:routeEntity,from,to,kind:'route',sequence,duration:duration+sequence.steps.length*duration/4+(sequence.jump?settle+duration:0)});used.add(routeEntity);
     }else sequence=null;
     const card = snapshot.action?.card;
-    const publicNow = current.filter(publicEntity);
+    const publicNow = snapshot.routeOnly?[]:current.filter(publicEntity);
     const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
       if(el.closest('[data-motion-effect="flip"]')||el.hasAttribute('data-reveal-active')||snapshot.revealedEntities?.includes(el.dataset.entity))return false;
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
@@ -136,7 +136,7 @@
       if (from && to) { flights.push({ el, from, to, kind: 'play' }); used.add(el); }
     }
     for (const el of current) {
-      if (used.has(el)) continue;
+      if (snapshot.routeOnly||used.has(el)) continue;
       const before = entities.get(el.dataset.entity), to = rectOf(el);
       if (!to) continue;
       if (before?.public && publicEntity(el) && /^(checker|token)-/.test(el.dataset.entity) && Math.hypot(before.rect.x - to.x, before.rect.y - to.y) > 2) flights.push({ el, from: snapshot.playedFrom && Number(el.dataset.boardCell)===snapshot.action?.to ? snapshot.playedFrom : before.rect, to, kind: 'move' });
@@ -161,7 +161,7 @@
       }
       cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
     }
-    const dice = [...scene.querySelectorAll('[data-motion-lead]')].filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
+    const dice = (snapshot.routeOnly?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
     const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
     const closing=snapshot.action?.type==='flip'?[...scene.querySelectorAll('[data-motion-close]')]:[];
     if (!flights.length && !dice.length && !effects.length && !closing.length) return Promise.resolve();
@@ -190,6 +190,7 @@
             clone.classList.add('piece-back', 'playroom-motion-piece'); clone.setAttribute('aria-hidden', 'true');
             Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', minWidth: '0', minHeight: '0', transform: 'none' });
           } else clone = styledClone(el);
+          if(snapshot.routeOnly)clone.style.translate='none';
           clone.dataset.motionKind = kind;
           if (player != null) { mover.dataset.motionPlayer = player; clone.dataset.motionPlayer = player; }
           if(kind==='play'||kind==='draw'){
@@ -216,8 +217,8 @@
               // All cells use their live centres, including after a resize.
               const at=point=>{const r=anchorRect(point)||box;return transform(r.x+(r.width-box.width)/2,r.y+(r.height-box.height)/2,1,1);};
               const result=[{transform:at(route.origin),offset:0},...(route.entry==='lift'?[{transform:at(route.origin)+' translateY(-10px) scale(1.1)',offset:duration/flightDuration*.5}]:[]),{transform:at(route.origin),offset:duration/flightDuration}];
-              route.steps.forEach((point,index)=>result.push({transform:!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
-              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:transform(box.x,box.y,1,1),offset:1});}
+              route.steps.forEach((point,index)=>result.push({transform:!snapshot.routeOnly&&!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
+              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:snapshot.routeOnly?at(route.jump):transform(box.x,box.y,1,1),offset:1});}
               if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
             };
             frames=routeFrames();

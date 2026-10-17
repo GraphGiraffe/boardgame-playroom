@@ -21,6 +21,6 @@ function describeRules(rules={},settings=[],hasHands=false){
     if(hasHands)rows.push({label:globalThis.PlayroomMessages.text("ui.multiplayer.957e469d885d"),value:rules.openHands?globalThis.PlayroomMessages.text("ui.multiplayer.93e6073f9005"):globalThis.PlayroomMessages.text("ui.multiplayer.43e5ab70f691")});
     return rows;
   }
-const seatColor=index=>{const known=COLORS[index];return known?{value:'var(--color-seat-'+index+','+known[0]+')',label:known[1]}:{value:'hsl('+Math.round((index*137.508)%360)+' 46% 50%)',label:String(index+1)};};
+const seatColor=index=>{const known=COLORS[index];return known?{value:globalThis.TabletopUI?.helpers.playerColor(index)||'var(--color-seat-'+index+','+known[0]+')',label:known[1]}:{value:'hsl('+Math.round((index*137.508)%360)+' 46% 50%)',label:String(index+1)};};
 return {...Rooms,...Store,COLORS,seatColor,describeRules,RoomService};
 });

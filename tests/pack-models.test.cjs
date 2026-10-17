@@ -286,3 +286,32 @@ test('Battleship counts every shot as a turn and both firing queues as a round',
   assert.equal(model.project(state,-1).timeline.round,2);assert(model.project(state,-1).data.ships.flat(2).every(cell=>cell===null));
  }
 });
+
+test('ZiL+ deferred effects, shield and automatic second die obey the public commands',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
+ const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>2,ending:Ending}));
+ const start=(from=0)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17})));p.data.positions[0]=from;p.data.phase='move';p.data.dice=[1,3];return p;};
+ const move=p=>model.apply(p,0,{type:'move',dieIndex:0,delta:0});
+ let p=start(16),r=move(p);assert.equal(r.position.data.positions[0],34);assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[1,3]);assert.equal(r.events.filter(e=>e.params.automatic).length,1);
+ for(const [from,effect] of [[10,'skip'],[28,'less'],[21,'snake']]){
+  p=start(from);p.data.effects[0].shield=true;r=move(p);assert(!r.position.data.effects[0].shield);assert(!r.position.data.effects[0][effect]);assert(r.events.some(e=>e.type==='snakes.protected'));if(effect==='snake')assert.equal(r.position.data.positions[0],22);
+ }
+ p=start(12);r=move(p);assert(r.position.data.effects[0].adjust);p=JSON.parse(JSON.stringify(r.position));p.turn=0;p.data.effects[0].shield=true;
+ r=model.apply(p,0,{type:'roll'});assert(r.position.data.adjusting);assert(!r.position.data.effects[0].adjust);assert.equal(model.legalActions(r.position,0).length,6);
+ r=model.apply(r.position,0,{type:'move',dieIndex:0,delta:-1});assert(r.position.data.effects[0].shield,'voluntary minus one never consumes a shield');
+ p=start();p.data.phase='roll';p.data.effects[0].less=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,1);assert(!r.position.data.effects[0].less);
+ p.data.effects[0].shield=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,2);assert(!r.position.data.effects[0].shield);
+ p=start();p.data.effects[1]={skip:true,less:true,adjust:true,shield:false};r=move(p);assert.equal(r.position.turn,2);assert.deepEqual(r.position.data.effects[1],{skip:false,less:true,adjust:true,shield:false});
+ p=start(5);r=move(p);assert.equal(r.position.turn,0);assert.equal(r.position.data.phase,'roll');
+ p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-1}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
+});
+
+test('ZiL+ bot games terminate and replay deterministically with six players and both board sizes',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
+ const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:Random.rollDie,ending:Ending}));
+ for(const boardSize of [64,100])for(const endMode of ['winner','round','last']){
+  let p=model.create({playerCount:6,firstPlayer:4,preset:'plus',rng:173,options:{boardSize,endMode,maxRounds:20}}),replay=p,steps=0;
+  while(p.status==='playing'&&steps++<600){const a=model.botAction(p,p.turn),r=model.apply(p,p.turn,a);replay=model.apply(replay,replay.turn,a).position;p=r.position;model.validate(p);}
+  assert.equal(p.status,'finished',boardSize+'/'+endMode);assert.deepEqual(p,replay);assert(model.result(p).places.every(n=>n>=1&&n<=6));
+ }
+});

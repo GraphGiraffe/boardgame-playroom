@@ -15,10 +15,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const timing=times[mode]||times.normal;
       if(snapshot)snapshot.revealedEntities=additions.flatMap(e=>e.reveal?.cards?.map(card=>'card-'+card.id)|| (e.reveal?.entity?[e.reveal.entity]:[]));
       const motionEvent=additions.findLast(e=>e.transfer)||additions.findLast(e=>e.reveal||e.presentation)||additions.at(-1);
+      const routes=additions.filter(e=>e.presentation?.sequence);
+      this.routePoints??=new Map();this.routeStyles??=new Map();this.routeActors??=new Map();this.routeCounters??=new Map();this.routeTurns??=new Map();
+      for(const event of routes){const r=event.presentation.sequence;this.routeActors.set(r.entity,r.player);if(!this.routePoints.has(r.entity))this.routePoints.set(r.entity,r.origin);}
       for(const event of additions){
         const ids=cues.filter(c=>c.eventId===event.id&&typeof c.id==='string').map(c=>c.id);
         const animated=event.speech||event.reveal||event.feedback?.kind==='skip';
-        const effect=event===motionEvent?motion:null;
+        const route=event.presentation?.sequence;
+        const effect=route?async()=>{
+          const generation=this.generation;const pace=root.PlayroomGameFlow.timing({animationSpeed:mode},root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+          await root.PlayroomMotion?.play({...snapshot,action:{type:route.trigger},sequence:route,routeOnly:true},{duration:pace.duration,settle:pace.settle});
+          if(generation!==this.generation)return;this.routePoints.set(route.entity,route.jump||route.steps.at(-1)||route.origin);this.positionRoutes();
+        }:routes.length?null:event===motionEvent?motion:null;
         if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?timing.speech:0});
       }
       if(!this.active&&!defer)this.next();
@@ -26,10 +34,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     next(){
       if(this.timer!==null){this.clock.clearTimeout(this.timer);this.timer=null;}
       this.active=this.queue.shift()||null;this.refresh();
-      if(!this.active){for(const done of this.waiters.splice(0))done();return;}
+      if(!this.active){this.restoreRoutes();for(const done of this.waiters.splice(0))done();return;}
       const item=this.active,generation=this.generation;if(item.ids.length)this.play(item.ids,item.pack);
       const valid=()=>generation===this.generation&&item===this.active;
-      const finish=()=>{if(!valid())return;Promise.resolve(this.revealer?.finish()).then(()=>{if(valid())this.next();});};
+      const finish=()=>{if(!valid())return;Promise.resolve(this.revealer?.finish()).then(async()=>{if(valid()&&item.reveal&&item.presentation?.sequence)await item.motion?.();if(valid())this.next();});};
       const hold=()=>{if(!valid())return;if(item.duration)this.timer=this.clock.setTimeout(()=>{this.timer=null;
         // Questions/answers remain readable before the associated transfer.
         if(item.speech&&item.motion)Promise.resolve(item.motion()).then(finish,finish);else finish();
@@ -48,10 +56,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const top=box.top-r.height-8>=8?box.top-r.height-8:Math.min(box.bottom+8,win.innerHeight-r.height-8);
       bubble.style.left=left+'px';bubble.style.top=Math.max(8,top)+'px';
     }
+    positionRoutes(){
+      const mount=this.mount();if(!mount)return;
+      for(const [entity,point] of this.routePoints||[]){
+        const el=[...mount.querySelectorAll('[data-entity]')].find(n=>n.dataset.entity===entity),anchor=[...mount.querySelectorAll('[data-motion-anchor]')].find(n=>n.dataset.motionAnchor===point.anchor);
+        if(!el||!anchor)continue;
+        if(!this.routeStyles.has(el))this.routeStyles.set(el,el.style.translate);
+        el.style.translate=this.routeStyles.get(el);const a=anchor.getBoundingClientRect(),r=el.getBoundingClientRect();
+        el.style.translate=`${a.x+a.width/2-r.x-r.width/2}px ${a.y+a.height/2-r.y-r.height/2}px`;
+        for(const panel of mount.querySelectorAll('.player-panel[data-player-index]')){
+          if(!this.routeTurns.has(panel))this.routeTurns.set(panel,{turn:panel.classList.contains('is-turn'),current:panel.getAttribute('aria-current')});
+          const active=Number(panel.dataset.playerIndex)===this.routeActors.get(entity);panel.classList.toggle('is-turn',active);if(active)panel.setAttribute('aria-current','true');else panel.removeAttribute('aria-current');
+          if(active&&point.label)for(const counter of panel.querySelectorAll('[data-motion-counter="position"]')){if(!this.routeCounters.has(counter))this.routeCounters.set(counter,counter.textContent);counter.textContent=point.label;}
+        }
+      }
+    }
+    restoreRoutes(){for(const [el,value] of this.routeStyles||[])el.style.translate=value;this.routeStyles?.clear();this.routePoints?.clear();this.routeActors?.clear();for(const [el,value] of this.routeCounters||[])el.textContent=value;this.routeCounters?.clear();for(const [panel,value] of this.routeTurns||[]){panel.classList.toggle('is-turn',value.turn);if(value.current===null)panel.removeAttribute('aria-current');else panel.setAttribute('aria-current',value.current);}this.routeTurns?.clear();}
     restorePending(){for(const {el,value,priority} of this.pendingRevealTargets||[])el.style.setProperty('visibility',value,priority);this.pendingRevealTargets=[];}
     refresh(){
       this.restorePending();
       const mount=this.mount();if(!mount)return;
+      this.positionRoutes();
       const item=this.active;this.revealer?.show(item?.reveal,item?.pack);
       const pending=new Set(this.queue.flatMap(event=>event.reveal?.cards?.map(card=>'card-'+card.id)||[]));
       for(const el of mount.querySelectorAll('[data-entity]'))if(pending.has(el.dataset.entity)&&!el.closest('.hand-track,.mini-hand')){this.pendingRevealTargets.push({el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')});el.style.setProperty('visibility','hidden','important');}
@@ -74,7 +99,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       this.position();
     }
-    clear(){this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
+    clear(){if(this.routePoints?.size)root.PlayroomMotion?.cancel();this.restoreRoutes();this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
     destroy(){this.clear();root.removeEventListener?.('resize',this.reposition);root.document?.removeEventListener('scroll',this.reposition,true);}
   }
   GameFeedback.times=Object.freeze(times);return GameFeedback;
