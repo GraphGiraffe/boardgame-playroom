@@ -503,6 +503,20 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
  grid-template-areas:"north-west north-east" "field field" "south-west south-east" "status status" "self self" "auxiliary auxiliary"!important;align-content:center!important;
 }
 .app-game-layout[data-seating="circle"][data-seat-mode="corners"] .seat-group{width:100%}
+
+/* Anchored landscape keeps the four identities beside their physical corners.
+   The personal controls use the middle of the owner's side, freeing field height. */
+.app-game-layout[data-seating="circle"][data-anchor-compact-controls="true"]{
+ grid-template-columns:minmax(0,var(--seat-width)) minmax(0,var(--anchor-field-size)) minmax(0,var(--seat-width))!important;justify-content:center;
+ grid-template-rows:max-content minmax(0,1fr) max-content auto auto!important;
+ grid-template-areas:"north-west field north-east" "west field east" "south-west field south-east" "status status status" "auxiliary auxiliary auxiliary"!important;
+}
+.app-game-layout[data-anchor-compact-controls="true"]>.layout-self{
+ grid-column:var(--anchor-control-column);grid-row:2;display:flex!important;flex-direction:column;align-self:center!important;justify-content:center;grid-template-columns:none!important;
+ width:100%;height:auto!important;max-height:100%;padding:6px;background:transparent;overflow:visible;
+}
+.app-game-layout[data-anchor-compact-controls="true"]>.layout-self>.player-panel{display:none!important}
+
 .app-game-layout[data-layout-focus="field"][data-seating="circle"] .layout-self{height:auto;max-height:100%;align-self:end}
 .app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;overflow:visible}
 .app-game-layout[data-seating="circle"][data-seat-anchors="true"]>.layout-self>.layout-actions{order:0;min-width:0;overflow:auto;padding:7px!important}
