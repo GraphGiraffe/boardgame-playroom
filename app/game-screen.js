@@ -77,14 +77,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
     return `<div class="resume-participants">${people.join('')}</div>`;
   }
-  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave=''}){
+  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){
     if(state?.status==='finished'&&(!network||!connected))return '';
     const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
     const progress=roundText(state?.scene?.round)||(state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
     roomName=network?roomName:'';
     const game=[gameName,progress].filter(Boolean).join(' · '),room=[kind,roomName].filter(Boolean).join(' · ');
     const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:'';
-    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><div class="resume-game" title="${esc(game)}"><strong>${esc(gameName)}</strong>${progress?`<span> · ${esc(progress)}</span>`:''}</div></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state,{network,participants,teamLayouts})}</section>`;
+    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><div class="resume-game" title="${esc(game)}"><strong>${esc(gameName)}</strong>${progress?`<span> · ${esc(progress)}</span>`:''}</div></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):hide?iconButton(hide,text('ui.app.hide-local-session'),'close'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state,{network,participants,teamLayouts})}</section>`;
   }
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
@@ -164,11 +164,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   // One geometry contract: full pieces, independently fitted hand viewports.
   function fitTileHand(track){
-    const count=track.children.length,style=track.ownerDocument.defaultView.getComputedStyle(track);
-    const height=parseFloat(style.getPropertyValue('--scene-card-height'))||90,available=track.clientWidth-12;
-    const width=count>7?height*4/7:Math.min(height*4/7,(available-Math.max(0,count-1)*2)/Math.max(1,count));
-    track.style.setProperty('--tile-width',Math.max(18,width)+'px');
+    const style=track.ownerDocument.defaultView.getComputedStyle(track);
+    const height=parseFloat(style.getPropertyValue('--scene-card-height'))||90;
+    track.style.setProperty('--tile-width',height*4/7+'px');
+    track.classList.toggle('is-long-hand',track.scrollWidth>track.clientWidth+2);
   }
+
   function fitOpponentHand(mini,stage){
     const count=mini.children.length;if(!count)return;
     mini.style.removeProperty('--opponent-card-width');
@@ -292,7 +293,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--own-zone',ownZone+'px');
       if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,fieldSize))+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
-      if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitField(stage);fitHand(stage);
+      if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);fitField(stage);
       const seatsOverlap=()=>{
         const ownBox=stage.querySelector('.layout-self')?.getBoundingClientRect(),groups=[...stage.querySelectorAll('.seat-group')].map(el=>el.getBoundingClientRect());
         const overlap=(a,b)=>a&&b&&Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
@@ -308,11 +309,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const maximum=Math.max(1,Math.floor(participants.clientWidth/80));
         for(let columns=1;columns<=maximum;columns++){
           stage.style.setProperty('--focus-player-columns',columns);
+          const panels=participants.querySelector('.players-panels');if(panels)panels.dataset.compact=String(participants.clientWidth/columns<120);
           if(participants.scrollHeight<=participants.clientHeight+2)break;
         }
         fitHand(stage);
       }
-      root.PlayroomHandOverflow?.sync?.(host);}
+      root.PlayroomHandOverflow?.sync?.(host);fitField(stage);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);

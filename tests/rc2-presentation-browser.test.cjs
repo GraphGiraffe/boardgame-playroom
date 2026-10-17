@@ -33,7 +33,7 @@ test('shared-grid games force rows and the complete Yatzy table fits phone and t
  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(const seat of ['seat-3','seat-4'])b.roomService.setLocalSeat(r.id,r.ownerId,seat,{kind:'bot',nickname:seat});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
  await page.locator('[data-command="lobby-start"]').click();await page.locator('.yatzy-score').waitFor();
  await page.locator('.table-shell [data-command="settings"]').click();
- assert.deepEqual(await page.locator('#setting-seating option').evaluateAll(options=>options.map(option=>option.value)),['row']);
+ assert.equal(await page.locator('#setting-seating').count(),0);assert.equal(await page.locator('#setting-hand-shape').count(),0);
  await page.locator('.modal [data-command="close-modal"]').click();await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-score button[data-action]').first().click();await page.locator('.action-reveal').waitFor();
  await page.screenshot({path:path.join(dir,'yatzy-live-dice.png')});
 }));
@@ -334,7 +334,7 @@ test('RC7 settings separate themes, square initial avatar and optional recent ga
  await page.evaluate(()=>{PlayroomAppBridge.rememberGame('uno');PlayroomAppBridge.showHub();});assert.equal(await page.locator('.recent-section').count(),0);
  await page.locator('.topbar-tools [data-command="settings"]').click();
  assert.equal(await page.locator('.settings-quick [data-appearance-picker],.settings-quick [data-appearance-editor]').count(),0);
- assert.equal(await page.locator('.settings-themes').innerText(),'Темы');
+ assert.equal(await page.locator('.settings-themes').getAttribute('aria-label'),'Темы');
  await page.locator('#setting-last-game').check();await page.locator('[data-avatar-picker]').click();
  const letter=page.locator('[data-avatar-option=""]');assert.equal(await letter.innerText(),'И');
  const sizes=await letter.evaluate(el=>{const a=el.getBoundingClientRect(),b=el.parentElement.firstElementChild.getBoundingClientRect();return[a.width,a.height,b.width,b.height];});assert(Math.max(...sizes)-Math.min(...sizes)<1);
@@ -432,6 +432,7 @@ test('RC9 maximum rosters fit contents, hands and fields in both orientations',{
    for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild){const card=e.firstElementChild.getBoundingClientRect(),viewport=e.getBoundingClientRect();if(Math.abs(card.width/card.height-(Number(e.querySelector('[data-piece-ratio]')?.dataset.pieceRatio)||5/7))>.03)errors.push('opponent card proportions');if(stage.dataset.croppedHands==='true'&&card.height<viewport.height*1.5)errors.push('opponent cards resized instead of cropped');}}
    if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
   });
+  if(errors.length)await page.screenshot({path:path.join(shots,`rc15-failure-${game}-${width}.png`)});
   assert.deepEqual(errors,[],`${game} ${seating} ${width}x${height}`);
  }
 }));
@@ -574,4 +575,69 @@ test('RC12 bubbles anchor visible duplicate panels and actions escape small pane
   const f=new PlayroomGameFeedback({mount:()=>host});f.active={id:99,timing:PlayroomGameFlow.effectTimes.fast,speech:{speaker:1,text:'Беру'}};f.refresh();const b=f.bubble.getBoundingClientRect(),r=panel.getBoundingClientRect();const good=b.width>0&&b.left>=0&&b.right<=innerWidth&&Math.abs(b.left-r.left)<r.width;f.destroy();copy.remove();
   panel.querySelector('.player-info').setAttribute('data-player-target','1');const target=new PlayroomPlayerTarget({root:()=>host,actions:()=>[{target:1,targetKind:'player',type:'catch',label:'UNO!'}],commit(){}});target.tap(1);const menu=target.menu;const fits=menu&&menu.scrollHeight<=menu.clientHeight&&menu.parentElement===document.body;target.destroy();return {good,fits};
  });assert(result.good);assert(result.fits);
+}));
+
+test('RC15 popovers preserve form layout and fixed choices hide without losing values',async()=>fixture(async page=>{
+ for(const [width,height] of [[320,640],[844,390]]){
+  await page.setViewportSize({width,height});await page.reload();await page.locator('.game-tile').first().waitFor();
+  await page.screenshot({path:path.join(shots,`rc15-hub-${width}.png`)});
+  await page.evaluate(()=>{document.querySelector('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal"><div class="modal-body"><form><fieldset><legend>Игрок №1 ${PlayroomLobbyView.fieldHelp('Первый ход определяется правилами игры.')}</legend></fieldset><label class="field"><span>Набор правил</span><select name="preset"><option value="classic">Классика</option></select></label><label class="switch"><span>Открытые руки</span><input type="checkbox">${PlayroomLobbyView.fieldHelp('Все участники видят карты друг друга. Это меняет видимость рук, но не допустимые действия.')}</label></form></div></section></div>`;});
+  assert.equal(await page.locator('select[name=preset]').isVisible(),false);
+  assert.equal(await page.locator('select[name=preset]').inputValue(),'classic');
+  const before=await page.locator('.switch').boundingBox();
+  for(const button of await page.locator('.rule-help>button').all()){
+   await button.click();const popup=page.locator('.mini-help-popover:popover-open');await popup.waitFor();
+   const box=await popup.boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=width&&box.y+box.height<=height);
+   assert.deepEqual(await page.locator('.switch').boundingBox(),before);
+   await page.screenshot({path:path.join(shots,`rc15-help-${width}.png`)});
+   await page.keyboard.press('Escape');assert.equal(await page.locator(':popover-open').count(),0);
+  }
+ }
+}));
+
+test('RC15 domino hand swipes at fixed size and six-player dice games fit', {timeout:60000},async()=>fixture(async page=>{
+ const players=Array.from({length:6},(_,i)=>({name:['Иван','Кира','Сэм','Лев','Ника','Тео'][i]}));
+ for(const [width,height] of [[320,640],[844,390],[768,1024],[1024,768]]){
+  await page.setViewportSize({width,height});
+  for(const game of ['yatzy','snakes']){
+   await scene(page,game,{players});assert.equal(await page.evaluate(()=>rcSession.current.players.length),6);
+   assert(await page.locator('[data-game-element="field"]').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+   await page.screenshot({path:path.join(shots,`rc15-${game}-6-${width}.png`)});
+  }
+ }
+ await page.setViewportSize({width:844,height:390});await scene(page,'domino');
+ const track=page.locator('.hand-track'),box=await track.boundingBox();
+ assert(box.x+box.width<=844,'viewport fits the own-hand slot');
+ assert(await track.evaluate(e=>e.scrollWidth>e.clientWidth),'fixed-size domino hand overflows inside viewport');
+ const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+ for(const [type,x]of [['touchStart',box.x+box.width-20],['touchMove',box.x+box.width-50],['touchMove',box.x+20],['touchEnd',0]])await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y:box.y+box.height/2}]});
+ assert(await track.evaluate(e=>e.scrollLeft>0),'touch swipe scrolls domino');
+ await page.screenshot({path:path.join(shots,'rc15-domino-swipe.png')});
+}));
+
+test('RC15 card choices use a viewport dialog and the landscape catalog adapts',async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'oldmaid',{players:Array.from({length:6},(_,i)=>({name:'Игрок '+(i+1)}))});
+  await page.evaluate(()=>{window.rcChoice=new PlayroomPlayerTarget({root:()=>document.querySelector('.table-shell'),actions:()=>TabletopCore.legalActions(rcSession.current,0),commit(){}});rcChoice.tap(1);});
+  const menu=page.locator('.card-choice-dialog');assert(await menu.evaluate(e=>e.matches(':modal')&&e.parentNode===document.body));const box=await menu.boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=width&&box.y+box.height<=height);assert.equal(await menu.locator('[data-card-index]').first().evaluate(e=>Math.round(e.getBoundingClientRect().width)),72);
+  await page.screenshot({path:path.join(shots,`rc15-choice-${width}.png`)});await page.keyboard.press('Escape');assert.equal(await menu.count(),0);await page.evaluate(()=>rcChoice.destroy());
+ }
+ let previous=0;
+ for(const [width,height]of [[640,320],[844,390],[1366,768],[1920,1080]]){
+  await page.setViewportSize({width,height});await page.reload();await page.locator('.game-tile').first().waitFor();
+  const columns=await page.locator('.game-grid').first().evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length);assert(columns>=previous);previous=columns;
+  await page.screenshot({path:path.join(shots,`rc15-catalog-${width}.png`)});
+ }
+}));
+test('RC15 hiding a local resume card preserves the saved game across reload',async()=>fixture(async page=>{
+ await page.locator('[data-start="tictactoe"]').first().click();
+ await page.locator('[data-command="lobby-start"]').click();
+ await page.locator('.table-shell [data-command="home"]').click();
+ await page.locator('[data-command="hide-local-session"]').click();
+ assert.equal(await page.locator('.resume-banner').count(),0);
+ await page.reload();await page.locator('.game-tile').first().waitFor();
+ assert.equal(await page.locator('.resume-banner').count(),0);
+ await page.locator('[data-command="sessions"]').first().click();
+ assert.equal(await page.locator('[data-resume-id]').count(),1);
+ await page.locator('[data-resume-id]').click();await page.locator('.table-shell').waitFor();
 }));

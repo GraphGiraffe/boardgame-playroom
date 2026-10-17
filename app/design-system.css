@@ -424,7 +424,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .app-game-layout[data-view-api="2"][data-surface="player"][data-has-hand="false"]{grid-template-rows:minmax(0,1fr) auto!important;grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"participants" "self"!important}
 
 /* A rule's explanation stays beside its own control on every layout. */
-.rule-field{position:relative}.rule-field>label{padding-right:2.5rem}.rule-help{font-size:.9rem}.rule-help>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;color:var(--ink)}.rule-help>summary::-webkit-details-marker{display:none}.rule-help>summary svg{width:1.2rem;height:1.2rem}.rule-field>.rule-help>summary{position:absolute;right:0;top:-.3rem}.rule-help>p{padding:.65rem;border:1px solid var(--line);border-radius:.6rem;background:var(--paper);color:var(--muted);margin:.25rem 0}.game-rules-help dd{margin:0 0 .8rem;color:var(--muted)}.game-rules-help dt{font-weight:700}.game-rules-help h3{margin:1.2rem 0 .6rem}
+.rule-field{position:relative}.rule-field>label{padding-right:2.5rem}.rule-help{font-size:.9rem}.rule-help>button{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:center;width:2rem;height:2rem;color:var(--ink)}.rule-help>button svg{width:1.2rem;height:1.2rem}.rule-field>.rule-help>button{position:absolute;right:0;top:-.3rem}.game-rules-help dd{margin:0 0 .8rem;color:var(--muted)}.game-rules-help dt{font-weight:700}.game-rules-help h3{margin:1.2rem 0 .6rem}
 
 .saved-current-turn{text-decoration:underline;text-underline-offset:.2em;text-decoration-thickness:2px}.resume-participants{display:flex;flex-wrap:wrap;gap:.25em}.resume-participants svg{width:1em;height:1em;vertical-align:middle}
 
@@ -646,7 +646,7 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 #app .app-game-layout[data-dense-roster="true"] .opponent-hand .player-heading{grid-column:1/-1}
 #app .app-game-layout .layout-hand .hand-track.is-tiles:not(.is-long-hand){gap:2px}
 
-#app .app-game-layout .layout-hand .hand-track.is-tiles{display:flex!important;flex-wrap:nowrap!important;gap:2px!important;padding:6px!important;height:calc(var(--tile-width,48px)*1.75 + 12px)!important;min-height:calc(var(--tile-width,48px)*1.75 + 12px)!important;overflow-x:auto;overflow-y:hidden}
+#app .app-game-layout .layout-hand .hand-track.is-tiles{display:flex!important;flex-wrap:nowrap!important;justify-content:safe center!important;gap:2px!important;padding:6px!important;height:calc(var(--tile-width,48px)*1.75 + 12px)!important;min-height:calc(var(--tile-width,48px)*1.75 + 12px)!important;overflow-x:auto;overflow-y:hidden}
 #app .app-game-layout .layout-hand .hand-track.is-tiles>button{flex:0 0 var(--tile-width,48px)!important;width:var(--tile-width,48px)!important;min-width:var(--tile-width,48px)!important;max-width:var(--tile-width,48px)!important;height:calc(var(--tile-width,48px)*1.75)!important;min-height:0!important;aspect-ratio:4/7}
 
 #app .app-game-layout[data-dense-roster="true"] .opponent-hand .player-info{gap:2px}
@@ -727,7 +727,7 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .player-indicator.fleet-indicator .fleet-ship-icon{max-width:30px;height:18px}
 .player-indicator.fleet-indicator b{margin-left:auto;min-width:1ch;text-align:right}
 
-.start-options legend{display:flex;align-items:center;gap:6px}.start-options legend .rule-help{display:inline-block}.rule-help>p{font-weight:400}.start-options legend .rule-help>p{position:absolute;z-index:5;max-width:260px}.lobby-primary .lobby-stop{margin:0;grid-column:auto}
+.start-options legend{display:flex;align-items:center;gap:6px}.start-options legend .rule-help{display:inline-block}.lobby-primary .lobby-stop{margin:0;grid-column:auto}
 
 @media(orientation:landscape) and (min-width:600px){
  #app .app-game-layout[data-dense-roster="true"] .players-panels{grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr))!important}
@@ -754,3 +754,49 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 /* Keep symmetric content insets while the settings body remains scrollable. */
 #modal-root .modal:has(.settings-overview)>.modal-body{scrollbar-gutter:auto;scrollbar-width:none}
 #modal-root .modal:has(.settings-overview)>.modal-body::-webkit-scrollbar{display:none}
+
+/* Mini help uses the browser top layer, independent of form layout and scrolling. */
+.rule-help{display:inline-flex;flex:none;vertical-align:middle}
+.rule-help>button{padding:0;border:0;background:transparent;font:inherit}
+.mini-help-popover{box-sizing:border-box;width:min(320px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;margin:auto;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5;font-weight:400;text-align:left;white-space:normal;box-shadow:0 8px 32px #193c3233}
+.mini-help-popover::backdrop{background:transparent}
+.hub-main .intro{margin-top:16px;margin-bottom:12px}
+.hub-main .intro+.library-heading{margin-top:12px}
+
+/* The scroll viewport must fit its slot even when the pieces do not. */
+#app .app-game-layout .own-hand .hand-track{width:100%;min-width:0;max-width:100%}
+.settings-overview .settings-themes{padding:0;min-width:40px;width:40px;height:40px;justify-self:end}
+/* A fixed value stays in form data, but needs no choice control. */
+.field:has(>select>option:only-child):not(:has(>select>optgroup)){display:none!important}
+
+.settings-quick .icon-btn,.settings-quick>button{flex:0 0 40px;width:40px;min-width:40px;height:40px}
+.player-target-menu.card-choice-dialog{position:fixed;inset:0;margin:auto;transform:none;width:min(560px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);height:max-content;display:grid;grid-template-columns:repeat(auto-fit,72px);grid-auto-rows:min-content;justify-content:center;align-content:start;gap:10px;padding:16px;overflow:auto;color:var(--ink)}
+.player-target-menu.card-choice-dialog>button{width:72px;height:101px}
+.player-target-menu.card-choice-dialog::backdrop{background:#193c3266}
+.card-choice-dialog .card-choice-heading{font-size:16px;font-weight:400}
+@media(orientation:landscape) and (min-width:600px){
+ .hub-main .game-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(150px,22vw,220px)),1fr));gap:12px}
+ .hub-main .game-tile,.hub-main .game-tile:last-child,.hub-main .game-tile.featured{grid-column:auto;display:flex;flex-direction:column;min-height:0;height:230px}
+ .hub-main .game-cover,.hub-main .game-tile:last-child .game-cover,.hub-main .featured .game-cover{height:115px;padding:28px 12px 0;flex:none}
+ .hub-main .tile-content,.hub-main .game-tile:last-child .tile-content,.hub-main .featured .tile-content{padding:6px 12px 12px}
+ .hub-main .tile-title,.hub-main .featured .tile-title{font-size:20px;letter-spacing:-.5px}
+}
+@media(orientation:portrait) and (max-width:599px){
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .players-panels{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}
+@media(orientation:portrait) and (max-width:599px){
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .player-info{gap:3px;padding:3px}
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .player-avatar-wrap,
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .avatar{width:20px;height:20px;min-width:20px}
+}
+@media(orientation:portrait) and (max-width:599px){
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .player-heading{gap:2px}
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .participant-role svg{width:10px;height:10px}
+ .app-game-layout[data-seating="row"][data-opponent-hands="false"]:is([data-player-count="5"],[data-player-count="6"],[data-player-count="7"],[data-player-count="8"]) .layout-participants .player-heading strong{font-size:10px}
+}
+
+#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-info{gap:3px;padding:3px}
+#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-avatar-wrap,#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .avatar{width:20px;height:20px;min-width:20px}
+#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-heading{gap:2px}
+#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .participant-role svg{width:10px;height:10px}
+#app .app-game-layout[data-opponent-hands="false"] .players-panels[data-compact="true"] .player-heading strong{font-size:10px}
