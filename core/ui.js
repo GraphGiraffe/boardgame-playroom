@@ -28,7 +28,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     shuffle:"<path d=\"M3 6h2c6 0 8 12 14 12h3m-4-4 4 4-4 4M3 18h2c2 0 4-2 6-5m2-3c2-3 4-4 6-4h3m-4-4 4 4-4 4\"/>",
     ship:"<path d=\"M2 16h20l-4 5H6ZM8 15V8h8v7m-4-7V3m0 2h5\"/>",
     sword:'<path d="m4 20 4-4m-3-3 6 6m-4-4L17 3h4v4L11 17M9 15 19 5"/>',
-    adjustDie:'<path d="M3 8h8M7 4v8M3 17h8m5-11 3-2v15m-3 0h6"/>',
+    adjustDie:'<text x="12" y="12.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-weight="800" font-size="18" font-style="normal" fill="currentColor" stroke="none">±1</text>',
     lessDie:'<path d="M1 12h5"/><rect x="9" y="5" width="14" height="14" rx="3"/><circle cx="13" cy="9" r=".8"/><circle cx="19" cy="15" r=".8"/>',
     skipTurn:'<circle cx="12" cy="12" r="9"/><path d="m6 18 12-12"/>',
     secondDie:'<rect x="9" y="9" width="13" height="13" rx="3"/><path d="M15 5V3H2v13h3"/><circle cx="13" cy="13" r=".8"/><circle cx="18" cy="18" r=".8"/>',

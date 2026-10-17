@@ -712,8 +712,8 @@ test('RC17 dice retain faces across turns and player colors never repeat',async(
 test('RC17 ZiL+ routes and deferred badges fit phones; second die follows the first movement',{timeout:45000},async()=>fixture(async page=>{
  for(const [width,height] of [[320,640],[390,844],[640,320],[844,390]]){
   await page.setViewportSize({width,height});await scene(page,'snakes',{preset:'plus',players:Array.from({length:6},(_,i)=>({name:'Игрок '+i}))});
-  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {board:{x:b.x,y:b.y,width:b.width,height:b.height},dice:dice.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
-  assert(result.targets>=3);assert(result.badges);assert(result.fit,JSON.stringify({width,height,result}));await page.screenshot({path:path.join(shots,`rc17-plus-${width}.png`)});
+  const result=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.effects[0]={adjust:true,less:true,skip:true,shield:true};rcUI={viewState:{adjustDelta:rcStateOverride.move+':1'}};rcRender();const b=document.querySelector('.snakes-board').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-self .snakes-controls button')].map(e=>e.getBoundingClientRect());return {board:{x:b.x,y:b.y,width:b.width,height:b.height},dice:dice.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})),targets:document.querySelectorAll('.snakes-cell[data-action]').length,badges:document.querySelectorAll('.layout-self [data-ui-icon="lessDie"]').length,fit:b.width>120&&b.left>=0&&b.right<=innerWidth&&dice.every(r=>r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight)};});
+  assert(result.targets>=2);assert(result.badges);assert(result.fit,JSON.stringify({width,height,result}));await page.screenshot({path:path.join(shots,`rc17-plus-${width}.png`)});
  }
  await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
  await page.evaluate(()=>{
@@ -790,4 +790,16 @@ test('all games keep the field stable while selecting and changing action phases
  });assert.equal(result.initial,result.fixed);assert.equal(result.initial,result.implicit);assert.notEqual(result.changed,result.initial);assert.match(result.attr,/data-allow-layout-change="true"/);
  await page.setViewportSize({width:844,height:390});await page.evaluate(()=>rcRender());
  assert((await page.locator('.layout-field').boundingBox()).width>100);
+}));
+
+test('ZiL+ has one reversible adjustment choice before either die or destination can move',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
+ const result=await page.evaluate(()=>{
+  rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[2,5],adjusting:true});rcStateOverride.data.positions[0]=30;rcRender();
+  const cells=()=>[...document.querySelectorAll('.snakes-cell[data-action]')].map(el=>Number(el.dataset.motionAnchor.slice(5))).sort((a,b)=>a-b),box=()=>{const r=document.querySelector('.snakes-board').getBoundingClientRect();return [r.x,r.y,r.width,r.height];};
+  const before=box(),initial=cells(),disabled=[...document.querySelectorAll('.snakes-controls .die')].every(el=>el.disabled),buttons=document.querySelectorAll('.snakes-adjust button').length;
+  const choose=value=>{const button=document.querySelector(`[data-adjust-delta="${value}"]`);rcUI.viewState={adjustDelta:button.dataset.viewValue};rcRender();return cells();};
+  const plus=choose(1),minus=choose(-1),again=choose(1),after=box();rcStateOverride.move++;rcRender();return {before,after,initial,disabled,buttons,plus,minus,again,reset:cells(),position:rcStateOverride.data.positions[0]};
+ });assert.deepEqual(result.initial,[]);assert(result.disabled);assert.equal(result.buttons,2);assert.deepEqual(result.reset,[]);assert.deepEqual(result.plus,[33,36]);assert.deepEqual(result.minus,[31,34]);assert.deepEqual(result.again,result.plus);assert.equal(result.position,30);assert.deepEqual(result.before,result.after);
+ await page.screenshot({path:path.join(shots,'rc18-adjustment.png')});
 }));
