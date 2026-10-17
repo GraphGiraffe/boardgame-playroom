@@ -741,6 +741,8 @@ test('ZiL+ keeps board geometry and pawn size across rolling and matches cell an
   for(const key of ['x','y','w','h','pawn'])assert(Math.abs(geometry.before[key]-geometry.after[key])<1,JSON.stringify({width,key,geometry}));assert(Math.abs(geometry.after.pawn-geometry.moved.pawn)<1);
   const colors=await page.evaluate(()=>{rcStateOverride.data.effects[0]={skip:true,less:true,adjust:true,shield:true};rcRender();return ['skip','less','adjust','shield'].map((key,i)=>{const cell=document.querySelector(`[data-special="${key}"]`),icons={skip:'skipTurn',less:'lessDie',adjust:'adjustDie',shield:'shield'},badge=document.querySelector(`.layout-self [data-ui-icon="${icons[key]}"]`).closest('.player-status-badge');return {cell:cell.style.backgroundColor,badge:getComputedStyle(badge).backgroundColor,icon:getComputedStyle(cell.querySelector('svg')).color,number:!!cell.querySelector(':scope > span'),collision:Object.hasOwn(rcStateOverride.data.links,Number(cell.dataset.motionAnchor.slice(5)))};});});
   assert.equal(new Set(colors.map(c=>c.cell)).size,4);assert(colors.every(c=>c.cell===c.badge&&c.icon==='rgb(255, 255, 255)'&&!c.number&&!c.collision),JSON.stringify(colors));
+  const layers=await page.evaluate(()=>{const z=selector=>Number(getComputedStyle(document.querySelector(selector)).zIndex)||0;return {links:z('.snakes-links'),tokens:z('.snakes-tokens'),cells:Math.max(...Array.from(document.querySelectorAll('.snakes-cell'),el=>Number(getComputedStyle(el).zIndex)||0))};});
+  assert(layers.links>layers.cells&&layers.tokens>layers.links,JSON.stringify(layers));
   await page.screenshot({path:path.join(shots,`zil-cells-${boardSize}-${width}.png`)});
  }
 }));
