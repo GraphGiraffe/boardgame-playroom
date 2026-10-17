@@ -747,6 +747,10 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .modal:has(.settings-overview) .settings-grid{margin-block:12px}
 .modal:has(.settings-overview) .settings-grid .field{margin:0}
 @media(max-width:360px){.modal:has(.settings-overview){padding:16px}.modal:has(.settings-overview) .modal-head h2{font-size:18px;white-space:nowrap}}
-#modal-root .modal:has(.settings-overview)>.modal-head{overflow-y:hidden;scrollbar-gutter:stable;gap:8px}
+#modal-root .modal:has(.settings-overview)>.modal-head{overflow-y:hidden;scrollbar-gutter:auto;gap:8px}
 #modal-root .modal:has(.settings-overview)>.modal-head h2{font-size:clamp(16px,4vw,26px);white-space:nowrap}
 @media(max-width:360px){#modal-root .modal:has(.settings-overview){padding-inline:10px}}
+
+/* Keep symmetric content insets while the settings body remains scrollable. */
+#modal-root .modal:has(.settings-overview)>.modal-body{scrollbar-gutter:auto;scrollbar-width:none}
+#modal-root .modal:has(.settings-overview)>.modal-body::-webkit-scrollbar{display:none}
