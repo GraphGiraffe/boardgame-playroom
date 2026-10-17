@@ -9,20 +9,22 @@ const report={screens:[],cases:[],findings:[],animations:[],errors:[]};
 const viewports=[[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1366,768],[1920,1080]];
 const save=()=>fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
 async function main(){
- const deployment=JSON.parse(fs.readFileSync('deploy-report.json','utf8'));
+ const local=process.env.PLAYROOM_AUDIT_LOCAL==='true';
+ const fixture=local?await require('../tests/browser-origin.cjs').serveBrowserFixture(path.resolve('.')):null;
+ const deployment=local?{status:'preview-verified',previewUrl:fixture.url,commit:'local',previewVerified:{catalog:'local'}}:JSON.parse(fs.readFileSync('deploy-report.json','utf8'));
  if(deployment.status!=='preview-verified'||!deployment.previewUrl)throw Error('Unverified preview');
  const url=deployment.previewUrl,origin=new URL(url).origin;
  const password=process.env.PAGES_SMOKE_PASSWORD,clientId=process.env.CF_ACCESS_CLIENT_ID,clientSecret=process.env.CF_ACCESS_CLIENT_SECRET;
- if(!password)throw Error('Missing authentication');
+ if(!password&&!local)throw Error('Missing authentication');
  report.url=url;report.commit=deployment.commit;report.catalog=deployment.previewVerified.catalog;report.viewports=viewports;
- const tunnel=clientId?await accessProxy(origin,{clientId,clientSecret}):await originProxy(origin);
+ const tunnel=local?fixture:clientId?await accessProxy(origin,{clientId,clientSecret}):await originProxy(origin);
  let browser;
  try{
-  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>',...(tunnel.spki?['--ignore-certificate-errors-spki-list='+tunnel.spki]:[])]});
+  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:local?undefined:{server:tunnel.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>',...(tunnel.spki?['--ignore-certificate-errors-spki-list='+tunnel.spki]:[])]});
   const context=await browser.newContext({playroomProfile:false,ignoreHTTPSErrors:!!clientId,extraHTTPHeaders:clientId?{'CF-Access-Client-Id':clientId,'CF-Access-Client-Secret':clientSecret}:{}});
   const page=await context.newPage();page.setDefaultTimeout(15000);
-  await page.goto(url);await page.locator('input[name=password]').fill(password);
-  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type=submit]').click()]);
+  await page.goto(url);if(!local){await page.locator('input[name=password]').fill(password);
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.locator('button[type=submit]').click()]);}
   await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);if(await page.locator('input[name=password]').count())throw Error('Login failed');
   page.on('pageerror',e=>report.errors.push({name:e.name}));
   report.version=await page.evaluate(()=>PlayroomAppVersion);
@@ -33,7 +35,7 @@ async function main(){
   await page.evaluate(()=>{localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));});
   if(process.env.PLAYROOM_AUDIT_SCOPE!=='interactions'){
   // Actual hub, settings, avatar picker, appearance, library, lobby and help.
-  for(const [width,height]of viewports){
+  for(const [width,height]of (process.env.PLAYROOM_AUDIT_SCOPE==='geometry'?[]:viewports)){
    await page.setViewportSize({width,height});await page.evaluate(()=>PlayroomAppBridge.showHub());
    for(const menu of ['hub','packs','settings','help','sessions']){
     try{
@@ -83,7 +85,7 @@ async function main(){
    save();console.log('Audited '+game.id+'; cases '+report.cases.length);
   }
   // Actual timed effects at the published presets; measurements use real clocks.
-  for(const mode of ['fast','normal','slow'])for(const game of ['uno','pexeso','ludo','yatzy','checkers','domino','oldmaid','gofish','durak'])for(const [width,height]of [[390,844],[844,390],[1024,768],[1366,768]]){
+  for(const mode of (process.env.PLAYROOM_AUDIT_SCOPE==='geometry'?[]:['fast','normal','slow']))for(const game of ['uno','pexeso','ludo','yatzy','checkers','domino','oldmaid','gofish','durak'])for(const [width,height]of [[390,844],[844,390],[1024,768],[1366,768]]){
    await page.setViewportSize({width,height});
    try{
     const result=await page.evaluate(async({game,mode})=>{
