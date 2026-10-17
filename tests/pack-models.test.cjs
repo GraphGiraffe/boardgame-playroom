@@ -265,3 +265,24 @@ test('a round limit is independent from actions and turns, including the assigne
     assert(E.project(n,-1).events.every(e=>!e.reveal),id+' private transfers remain hidden');
   }
  });
+
+test('Battleship counts every shot as a turn and both firing queues as a round',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js'),base=path.join(packs,'packs/battleship');
+ const model=new GameModel(require(base+'/domain/game.js')({random:Random.random},require(base+'/domain/geometry.js')));
+ for(const preset of ['russian','classic'])for(const firstPlayer of [0,1]){
+  let state=model.create({playerCount:2,firstPlayer,preset,rng:17});
+  for(let p=0;p<2;p++)for(const action of [{type:'auto'},{type:'ready'}])state=model.apply(state,state.turn,action).position;
+  assert.equal(state.timeline.turn,1);assert.equal(state.timeline.round,1);assert.deepEqual(state.timeline.starts,[state.revision]);
+  const hit=state.data.ships[1-firstPlayer][0][0];state=model.apply(state,firstPlayer,{type:'fire',cell:hit}).position;
+  assert.equal(state.timeline.turn,2);assert.equal(state.timeline.round,1);assert.equal(state.turn,preset==='russian'?firstPlayer:1-firstPlayer);
+  if(preset==='russian'){
+   const second=state.data.ships[1-firstPlayer][0][1];state=model.apply(state,firstPlayer,{type:'fire',cell:second}).position;
+   assert.equal(state.timeline.turn,3);assert.equal(state.timeline.round,1);assert.equal(state.turn,firstPlayer);
+   const miss=model.legalActions(state,firstPlayer).find(a=>!state.data.ships[1-firstPlayer].flat().includes(a.cell));
+   state=model.apply(state,firstPlayer,miss).position;assert.equal(state.timeline.round,1);
+  }
+  const opponent=1-firstPlayer,miss=model.legalActions(state,opponent).find(a=>!state.data.ships[firstPlayer].flat().includes(a.cell));
+  state=model.apply(state,opponent,miss).position;assert.equal(state.turn,firstPlayer);assert.equal(state.timeline.round,2);assert.equal(state.timeline.roundStarts.at(-1),state.revision);
+  assert.equal(model.project(state,-1).timeline.round,2);assert(model.project(state,-1).data.ships.flat(2).every(cell=>cell===null));
+ }
+});

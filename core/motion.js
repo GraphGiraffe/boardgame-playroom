@@ -13,13 +13,26 @@
     const scale = Math.min(1,Math.max(1,right-left)/rect.width,Math.max(1,bottom-top)/rect.height), width=rect.width*scale,height=rect.height*scale;
     return { x: Math.max(left, Math.min(rect.x, right - width)), y: Math.max(top, Math.min(rect.y, bottom - height)), width, height };
   }
+  // Keep the local card shape separate from its axis-aligned screen bounds.
+  // A rotated parent changes the screen pose, not the card's aspect ratio.
+  function poseOf(el) {
+    const r=rectOf(el);if(!r)return null;
+    const style=root.getComputedStyle(el),width=el.offsetWidth||parseFloat(style.width)||r.width,height=el.offsetHeight||parseFloat(style.height)||r.height;
+    let angle=0;
+    if(root.DOMMatrixReadOnly)for(let node=el;node?.nodeType===1;node=node.parentElement){
+      const transform=root.getComputedStyle(node).transform;
+      if(transform&&transform!=='none'){const m=new root.DOMMatrixReadOnly(transform);angle+=Math.atan2(m.b,m.a);}
+    }
+    const scale=Math.min(r.width/(Math.abs(Math.cos(angle))*width+Math.abs(Math.sin(angle))*height),r.height/(Math.abs(Math.sin(angle))*width+Math.abs(Math.cos(angle))*height));
+    return {x:r.x+(r.width-width*scale)/2,y:r.y+(r.height-height*scale)/2,width:width*scale,height:height*scale,angle:angle*180/Math.PI};
+  }
   function handOrigin(hand, maxWidth = 38, maxHeight = 54) {
-    const r = rectOf(hand);
+    const r = poseOf(hand);
     if (!r) return null;
     // A compact anchor represents the centre of a hidden hand; no hidden card
     // identity or face is read, stored, or cloned by the motion layer.
     const width = Math.min(maxWidth, r.width), height = Math.min(maxHeight, r.height);
-    return clampRect({ x: r.x + (r.width - width) / 2, y: r.y + (r.height - height) / 2, width, height });
+    return {...clampRect({ x: r.x + (r.width - width) / 2, y: r.y + (r.height - height) / 2, width, height }),angle:r.angle};
   }
   function handOrigins(scene, viewer) {
     const hands = new Map();
@@ -37,14 +50,14 @@
       const rect = rectOf(el);
       if (!rect || root.getComputedStyle(el).visibility === 'hidden') continue;
       const hand = el.closest(handSelector), boundary = rectOf(hand || scene);
-      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary), hand: !!hand, public: publicEntity(el) });
+      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, public: publicEntity(el) });
     }
     const owner = Number.isInteger(actor) ? [...(scene?.querySelectorAll('[data-player-index]') || [])].find(el => Number(el.dataset.playerIndex) === actor) : null;
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
     const stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back');
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
     const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
-    return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: poseOf(stockBack)||poseOf(scene?.querySelector('.stock-button')), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el) {
     for (const node of [el, ...el.querySelectorAll('*')]) {
@@ -116,7 +129,7 @@
       return /^(card|tile)-/.test(el.dataset.entity) && (!before || !before.public);
     });
     for (const el of played) {
-      const before = entities.get(el.dataset.entity), from = card != null && snapshot.playedFrom ? snapshot.playedFrom : before?.hand ? before.rect : snapshot.origin, to = rectOf(el);
+      const before = entities.get(el.dataset.entity), from = card != null && snapshot.playedFrom ? snapshot.playedFrom : before?.hand ? before.pose||before.rect : snapshot.origin, to = poseOf(el);
       if (from && to) { flights.push({ el, from, to, kind: 'play' }); used.add(el); }
     }
     for (const el of current) {
@@ -136,11 +149,11 @@
       if (!from || !anchor) continue;
       for (let i = 0; i < cue.count; i++) {
         const el = cue.to==='table'?(i===cue.count-1?publicNow.filter(el=>el.closest('[data-motion-table]')).at(-1):null):cue.player === snapshot.viewer ? handCards[ownIndex++] : null;
-        const target = el ? clampRect(rectOf(el), rectOf(el.closest(handSelector))) : anchor;
+        const target = el ? poseOf(el) : anchor;
         if (!target) continue;
         const ratio=(parseFloat(snapshot.stockBack?.style.width)/parseFloat(snapshot.stockBack?.style.height))||from.width/from.height;
         const width=Math.min(target.width,target.height*ratio),height=width/ratio;
-        const to={x:target.x+(target.width-width)/2,y:target.y+(target.height-height)/2,width,height};
+        const to={x:target.x+(target.width-width)/2,y:target.y+(target.height-height)/2,width,height,angle:target.angle||0};
         flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: cueDelay + i * duration * .3 });
       }
       cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
@@ -161,7 +174,7 @@
         finishUpdates.forEach(update=>update());
         layer?.remove(); if (running === run) running = null; resolve();
       }};
-      const onResize=()=>resizeUpdates.forEach(update=>update());
+      const onResize=()=>{if(flights.some(f=>f.kind==='play'||f.kind==='draw'))run.finish();else resizeUpdates.forEach(update=>update());};
       root.addEventListener('resize',onResize);
       running = run;
       try {
@@ -172,16 +185,26 @@
           if (back) {
             clone = snapshot.stockBack?.cloneNode(true) || doc.createElement('div');
             clone.classList.add('piece-back', 'playroom-motion-piece'); clone.setAttribute('aria-hidden', 'true');
-            Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', width: `${to.width}px`, height: `${to.height}px`, minWidth: '0', minHeight: '0', transform: 'none' });
+            Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', minWidth: '0', minHeight: '0', transform: 'none' });
           } else clone = styledClone(el);
           clone.dataset.motionKind = kind;
           if (player != null) { mover.dataset.motionPlayer = player; clone.dataset.motionPlayer = player; }
+          if(kind==='play'||kind==='draw'){
+            const width=parseFloat(clone.style.width)||to.width,height=parseFloat(clone.style.height)||to.height,scale=Math.min(to.width/width,to.height/height);
+            Object.assign(clone.style,{left:'0',top:'0',transformOrigin:'0 0',transform:`scale(${scale})`});
+          }
           mover.append(clone); layer.append(mover);
           const entry = el ? { el, visibility: el.style.getPropertyValue('visibility'), priority: el.style.getPropertyPriority('visibility') } : null;
           if (entry) { restore.push(entry); el.style.setProperty('visibility', 'hidden', 'important'); }
           const sx = Math.min(from.width / to.width,from.height / to.height), sy = sx, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
           const transform = (x,y,xScale,yScale) => `translate3d(${x}px,${y}px,0) scale(${xScale},${yScale})`;
           let frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
+          if(kind==='play'||kind==='draw'){
+            const start=from.angle||0,delta=((to.angle||0)-start+540)%360-180;
+            const at=(x,y,scale,angle)=>`translate3d(${x}px,${y}px,0) rotate(${angle}deg) scale(${scale}) translate(-50%,-50%)`;
+            const x0=from.x+from.width/2,y0=from.y+from.height/2,x1=to.x+to.width/2,y1=to.y+to.height/2;
+            frames=[{transform:at(x0,y0,sx,start),offset:0},{transform:at((x0+x1)/2,Math.max(0,Math.min(y0,y1)-lift),(sx+1)/2,start+delta*.52),offset:.52},{transform:at(x1,y1,1,start+delta),offset:1}];
+          }
           let routeFrames;
           if(route){
             routeFrames=()=>{

@@ -22,7 +22,7 @@ test('settings avatar stays left of nickname and uses the shared persistent pick
     await page.locator('.topbar-tools [data-command=settings]').click();
     await assertPlacement();
     await page.locator('.settings-personal [data-avatar-picker]').click();
-    assert.equal(await page.locator('.avatar-options [data-avatar-option]').count(),48);
+    assert.equal(await page.locator('.avatar-options [data-avatar-option]').count(),49);
     assert.equal(await page.locator('.avatar-options').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),6);
     assert.equal(await page.locator('.avatar-picker-modal').evaluate(el=>el.scrollTop),0);
     await page.waitForFunction(()=>[...document.querySelectorAll('.avatar-options img')].every(img=>img.complete&&img.naturalWidth===256));
@@ -38,7 +38,7 @@ test('settings avatar stays left of nickname and uses the shared persistent pick
     await page.locator('.lobby-header [data-command=settings]').click();
     for(const width of [390,320]){await page.setViewportSize({width,height:844});await assertPlacement();}
     await page.locator('.settings-personal [data-avatar-picker]').click();
-    await page.locator('.avatar-letter-option [data-avatar-option]').click();
+    await page.locator('.avatar-options [data-avatar-option=""]').click();
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),null);
     assert.equal(await page.locator('.settings-personal .avatar-art').count(),0);
   }finally{await context.close();await browser.close();await fixture.close();}

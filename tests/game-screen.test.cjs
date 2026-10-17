@@ -182,3 +182,17 @@ test('Toolbar exposes at most three context actions and keeps overflow in settin
   assert.doesNotMatch(html,/data-command="full"/);
   assert.match(Screen.quickAccessMarkup(),/data-command="full"/);
 });
+
+test('duels always render a row even with a saved circular or anchored preference',()=>{
+ const UI=require('../core/ui.js'),state={players:[{name:'A'},{name:'B'}],turn:0,data:{}};
+ for(const seating of ['circle','anchors','row']){
+  const html=UI.composeScene({api:2,family:'board',layout:{seats:['north-west','south-east'],duplicateSelf:true},elements:{field:'<div>field</div>'}},{state,viewer:0,seating});
+  assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);
+ }
+});
+test('continuation avatars carry host, first-player and team badges with regular-weight progress',()=>{
+ const teams=[{id:'a',label:'А',color:'#123'},{id:'b',label:'Б',color:'#456'}],state={players:[{name:'A'},{name:'B'},{name:'C'},{name:'D'}],firstPlayer:1,turn:2,preset:'teams',status:'playing',scene:{round:{number:3},players:[0,1,2,3].map(player=>({player,team:teams[player%2]}))}};
+ const html=Screen.resumeCard({state,network:true,roomName:'Комната',gameName:'Игра',participants:[{playerIndex:1,isHost:true}]});
+ assert.equal((html.match(/class="resume-player-group"/g)||[]).length,2);assert.match(html,/первый ход/i);assert.match(html,/хост/i);assert.match(html,/<strong>Игра<\/strong><span> · Раунд 3<\/span>/);
+ assert.doesNotMatch(Screen.resumeCard({state,roomName:'Не показывать',gameName:'Игра'}),/Не показывать/);
+});

@@ -48,6 +48,8 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=lobby-start]').click();
   await page.locator('.table-heading [data-command=home]').click();
+  assert.equal(await page.locator('.recent-section').count(),0,'recent game is opt-in');
+  await page.locator('.topbar-tools [data-command=settings]').click();await page.locator('#setting-last-game').check();await page.locator('.modal [data-command=close-modal]').click();await page.evaluate(()=>PlayroomAppBridge.showHub());
   assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
   assert.equal(await page.locator('.game-tile[data-game=pexeso]').count(),2);
   assert.equal(await page.locator('.hub-game-section + .hub-game-section').count(),2);

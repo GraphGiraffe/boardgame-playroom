@@ -267,5 +267,9 @@
   "avatars.close": "Закрыть",
   "ui.app.seating.anchors": "По углам",
   "ui.resume.connected": "Соединение активно",
-  "ui.resume.disconnected": "Нет соединения"
+  "ui.resume.disconnected": "Нет соединения",
+  "ui.app.themes-button": "Темы",
+  "ui.app.show-last-game": "Показывать последнюю игру",
+  "ui.rooms.start-unavailable": "Для старта все участники должны занять места, подключиться и подтвердить готовность.",
+  "ui.rooms.roster-invalid": "Выбранный режим не поддерживает такой состав игроков. Измените число участников или режим."
 }

@@ -313,3 +313,16 @@ test('preset avatar survives profile rename and room snapshots without accepting
  rooms.setAvatar(room.id,'guest','data:image/svg+xml,bad');
  assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,null);
 });
+
+test('start validation rejects unsupported rosters before countdown and cancels on disconnect',()=>{
+ let time=1000,n=0,calls=0;
+ const rooms=new RoomService({idFactory:()=>`id-${++n}`,clock:()=>time,random:()=>.1,validateStart:room=>{calls++;return room.rules.preset==='teams'&&room.participants.filter(p=>p.role==='player').length!==4?'Нужно четыре игрока':null;}});
+ const room=rooms.create({name:'Тест',game:{id:'fixture',name:'Игра'},host:{id:'host',nickname:'Иван'},rules:{preset:'teams'},constraints:{min:2,max:4}});
+ rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.setReady(room.id,'host',true);
+ assert.equal(rooms.canStart(room.id),false);assert.equal(rooms.startBlocker(room.id),'Нужно четыре игрока');
+ assert.throws(()=>rooms.beginCountdown(room.id,'host'),/четыре/);assert.equal(rooms.snapshot(room.id).phase,'lobby');
+ rooms.updateRules(room.id,'host',{preset:'individual'});rooms.setReady(room.id,'host',true);
+ assert.equal(rooms.canStart(room.id),true,'unused seats do not block a valid roster');
+ rooms.beginCountdown(room.id,'host');rooms.setConnected(room.id,'host',false);time=4000;
+ const result=rooms.tick(room.id);assert.equal(result.started,false);assert.equal(result.room.phase,'lobby');assert(result.reason);assert(calls>0);
+});

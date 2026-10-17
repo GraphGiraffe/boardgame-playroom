@@ -34,12 +34,12 @@
       this.storage=storage;this.engine=engine;this.Session=Session;this.packs=packs;this.idFactory=idFactory;
     }
     summary(session){
-      const state=session.current,round=this.engine.project?.(state,-1)?.scene?.round||null;
+      const state=session.current,scene=this.engine.project?.(state,-1)?.scene,round=scene?.round||null;
       return JSON.parse(JSON.stringify({formatVersion:1,game:session.game,packVersion:session.packVersion,
         createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
         players:state.players.map(player=>player.name),
-        participants:(session.options.lobbyConfig?.participants||state.players.map(player=>({nickname:player.name,avatar:player.avatar||null,bot:player.bot,local:true,role:'player'})))
-          .map(({nickname,name,avatar,bot,local,role})=>({nickname:nickname||name,avatar:avatar||null,bot:!!bot,local:!!local,role})),
+        firstPlayer:state.firstPlayer,presetId:state.preset,
+        participants:state.players.map((player,index)=>({nickname:player.name,avatar:player.avatar||null,bot:!!player.bot,local:true,role:'player',playerIndex:index,team:scene?.players?.find(p=>p.player===index)?.team||null})),
         round,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
         outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null}));
     }
