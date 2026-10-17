@@ -42,12 +42,20 @@ async function touchDrag(page,cdp,id='u1'){
 test('UNO desktop and touch drag/drop through the real application',{timeout:120000},async t=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,options,run){await t.test(name,async()=>{
-    const context=await browser.newContext({viewport:options.mobile?{width:390,height:844}:{width:1280,height:900},hasTouch:!!options.mobile,isMobile:!!options.mobile,reducedMotion:'reduce'});
-    const saved=fixture(options);await context.addInitScript(({saved,autoPass})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,autoPass}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,autoPass:!!options.autoPass});
+    const context=await browser.newContext({viewport:options.landscape?{width:844,height:390}:options.mobile?{width:390,height:844}:{width:1280,height:900},hasTouch:!!options.mobile,isMobile:!!options.mobile,reducedMotion:'reduce'});
+    const saved=fixture(options);await context.addInitScript(({saved,autoPass,handShape})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,autoPass,handShape}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,autoPass:!!options.autoPass,handShape:options.arc?'arc':'straight'});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(4500);page.on('pageerror',e=>errors.push(e.message));
     try{await page.goto(url);await page.locator('.resume-banner [data-command=resume]').click();await source(page).waitFor({state:'visible'});await run({page,context,saved});assert.deepEqual(errors,[]);}finally{await context.close();}
   });}
   try{
+    for(const mobile of [false,true])for(const landscape of mobile?[false,true]:[false])await check(`Arc hand legal drag ${mobile?'touch':'mouse'} ${landscape?'landscape':'portrait'}`,{mobile,landscape,arc:true},async({page,context})=>{
+      assert(await page.locator('.hand-track').evaluate(t=>t.classList.contains('is-arc')));
+      const shape=await source(page).evaluate(c=>[c.offsetWidth,c.offsetHeight]);
+      await page.evaluate(shape=>{const observer=new MutationObserver(()=>{const ghost=document.querySelector('.playroom-drag-ghost');if(ghost){window.arcGhostSize=[ghost.offsetWidth,ghost.offsetHeight];observer.disconnect();}});observer.observe(document.body,{childList:true});},shape);
+      if(mobile)await touchDrag(page,await context.newCDPSession(page));else await mouseDrag(page);
+      assert.deepEqual(await page.evaluate(()=>arcGhostSize),shape,'drag preserves intrinsic card dimensions');
+      await expectMove(page,1);assert.equal((await state(page)).data.discard.at(-1).id,'u1');
+    });
     await check('Mouse hold over a legal card highlights discard and drops exactly one move',{},async({page,saved})=>{
       const p=await center(source(page));await page.mouse.move(p.x,p.y);await page.mouse.down();await page.waitForTimeout(230);
       assert.equal(await page.locator('.playroom-drag-ghost').count(),1);
@@ -75,7 +83,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
     await check('Touch drop then immediate fresh native tap selects; tapping discard plays the next card',{mobile:true,autoPass:true},async({page,context})=>{
       const cdp=await context.newCDPSession(page);await touchDrag(page,cdp);await expectMove(page,1);const at=Date.now();await tap(cdp,source(page,'u5'));assert(Date.now()-at<400);await page.locator('.uno-drop-target[data-drop-piece="u5"]').waitFor({state:'visible'});assert.equal((await state(page)).move,1);await tap(cdp,drop(page));await expectMove(page,2);assert.equal((await state(page)).data.discard.at(-1).id,'u5');
     });
-    await check('Horizontal touch swipes reach every card in a long single row without growing the table or playing',{mobile:true,longHand:true},async({page,context,saved})=>{
+    await check('Horizontal touch swipes reach every card in a long single row without growing the table or playing',{mobile:true,longHand:true,arc:true},async({page,context,saved})=>{
       const track=page.locator('.hand-track'),cdp=await context.newCDPSession(page),seen=new Set();
       assert.equal(await page.locator('.hand-track .uno-card').count(),saved.states[0].data.hands[0].length);
       assert.equal(await page.locator('.hand-track .hand-fan-row').count(),1);
