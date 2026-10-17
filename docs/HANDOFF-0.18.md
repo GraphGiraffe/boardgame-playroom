@@ -5,10 +5,10 @@
 ## 1. Выпуски и адреса
 
 - Стабильная линия: приложение **0.17.6**, коллекция **0.6.5**. Основной адрес `https://playroom-hod-test.pages.dev` защищён существующим шлюзом. Стабильную версию этим RC не переключаем.
-- **Проверенный preview: https://b3d8ade9.playroom-hod-test.pages.dev** — использовать этот адрес для дальнейшей приёмки.
-- Новый кандидат: приложение **0.18.0-rc.6**, коллекция **0.7.0-rc.4**, изолированный каталог **0.18-rc.4**. Публикация и полный protected/offline smoke подтверждены; URL и SHA — в разделе «Результат публикации» в конце документа.
+- **Проверенный preview: https://3acb8786.playroom-hod-test.pages.dev** — использовать этот адрес для дальнейшей приёмки.
+- Новый кандидат: приложение **0.18.0-rc.7**, коллекция **0.7.0-rc.5**, изолированный каталог **0.18-rc.5**. Публикация и полный protected/offline smoke подтверждены; URL и SHA — в разделе «Результат публикации» в конце документа.
 - Предыдущий подтверждённый preview RC3: `https://d6db03cc.playroom-hod-test.pages.dev`; app commit `d6ef43e508af32045cdc7ea31343b00116d1b1be`, packs commit `13e46333ea6d733148fe2eb1222c5f6835973764`.
-- RC6 — рассадки, темп UNO, исправление переворотов/добора и компактный интерфейс. Исправление offline RC5 сохранено; паки остаются RC4. RC — кандидат для проверки. Финальный стабильный 0.18 ещё не объявлен.
+- RC7 — уточнённые углы/ряд, геометрия повёрнутых анимаций, компактные настройки/партии, видимые уведомления и проверка состава до старта. Морской бой получил отдельные выстрелы-ходы и раунды. RC — кандидат для приёмки; стабильный 0.18 не объявлен.
 
 ## 2. Репозитории и владельцы
 
@@ -30,7 +30,7 @@
 3. `playroom/docs/AUDIT-0.18.md` — утверждённый аудит и исходные требования.
 4. `playroom/docs/REFACTOR-0.18-TRACKER.md` — реестр F01–F35 и хронология переноса. Ранние «осталось» не означают, что это до сих пор не сделано; смотреть заключительный срез и новые RC.
 5. `playroom/docs/REFACTOR-0.18-CONTRACTS.md`, `SDK-0.18.md` — границы и API.
-6. `playroom/docs/RC-0.18.0-rc.{1,2,3,4,5,6}.md` — изменения и свидетельства каждого RC. Текущий отчёт — RC6; RC4/RC5 сохраняют историю функций и offline hotfix.
+6. `playroom/docs/RC-0.18.0-rc.{1,2,3,4,5,6,7}.md` — изменения и свидетельства каждого RC. Текущий отчёт — RC7; RC4/RC5 сохраняют историю функций и offline hotfix.
 7. `playroom/docs/RC4-CONTRACTS.md`, `GAME-ELEMENTS-API.md`, `UI-DESIGN-SYSTEM.md`, `MULTIVIEW.md` — действующие UI/visibility контракты.
 8. `playroom/docs/TESTING.md`, `RELEASING.md`, `PACK-PUBLICATION-0.17.md` — проверки и раздельная публикация.
 9. `playroom-paks/docs/AUTHORING.md`, `REFACTOR-0.18.md` — разработка паков.
@@ -72,7 +72,7 @@
 - Фиксированные разные позы/лица и аксессуары: месяц с ночным колпаком, треугольник с праздничным колпаком, квадрат в круглых очках, круг с бабочкой, звезда с короной, прямоугольник в тёмных очках, ромб с шарфом, шестиугольник в кепке.
 - Отдельные пакеты `shared/asset-packs/characters` и `cartoon-deck`. PNG 512×512 RGBA — канонические, WebP 256×256 — runtime. Мультяшные растровые иллюстрации — согласованное исключение из SVG игровых компонентов.
 - Принятые концепты в `playroom-paks/docs/design/pexeso-characters/`; прошлые варианты персонажей и Ятзи сохранены. **Простые геометрические карточки удалены** по прямому указанию владельца.
-- Выбор аватара на первом вводе имени и слева от ввода имени в настройках. 6 столбцов, ниже «Буква имени». По умолчанию первая буква. В партии остаётся видимый цветной ободок места игрока; изображение вписано/обрезано внутренним скруглённым квадратом.
+- Выбор аватара на первом вводе имени и слева от ввода имени в настройках. 6 столбцов, буква имени — 49-я квадратная ячейка того же размера, без видимой подписи. По умолчанию первая буква. В партии остаётся видимый цветной ободок места игрока; изображение вписано/обрезано внутренним скруглённым квадратом.
 - Только allowlist ID пресетов, без внешних URL. Кастомная загрузка и будущая кнопка с пунктирным плюсиком **пока не реализуются**.
 - Профиль: `platform/web/identity-store.js`; изображения/валидация: `core/avatars.js`, сгенерированный offline `core/character-assets.js`; picker: `app/avatar-picker.js`. Комнаты/сеть/сессии/результаты передают avatar ID.
 
@@ -90,10 +90,10 @@
 ```bash
 cd /home/ivan/python/other/BoardGames/playroom
 python3 build.py --prepare-dev --packs-dir ../playroom-paks/packs
-node scripts/codex/test.cjs case/player-profile,case/rc2-presentation-browser
-python3 build.py --packs-dir ../playroom-paks/packs --all-games --pwa --remote-catalog --output-dir dist/rc5
+node scripts/codex/test.cjs case/game-screen,case/player-profile,case/motion-effects,case/multiplayer-lobby,case/pack-models,case/rc2-presentation-browser,case/rc2-hub-browser,case/network-main-app,case/session-runtime,case/network-session-store-browser,case/pwa
+python3 build.py --packs-dir ../playroom-paks/packs --all-games --pwa --remote-catalog --output-dir dist/rc7
 cd ../playroom-paks
-python3 build.py --output-dir dist/rc4
+python3 build.py --output-dir dist/rc7
 ```
 
 Chrome брать из `scripts/codex/browser.cjs`; для sandbox может требоваться разрешённый запуск браузера. Использовался `XDG_CONFIG_HOME=/tmp/playroom-rc4-xdg`. Скриншоты — `playroom/tmp_files/`, не коммитить генерируемые сборки и временные PNG. Исходные принятые ассеты коммитятся в репозитории паков. Сверять SHA256 всех файлов и CRC ZIP, повторно проверять скачанные GitHub Release assets. Зелёный целевой тест доказывает только свой сценарий.
@@ -101,9 +101,9 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 ## 7. Публикация и восстановление
 
 1. Зафиксировать оба исходника и провести PR в dev. Собрать артефакты на точных финальных SHA; `release-info.json` закрепляет app/packs commits, канал и выбранные проверки.
-2. Создать **prerelease** для новых неизданных версий. Для текущей пары используются `v0.7.0-rc.4` (уже опубликован) и `v0.18.0-rc.5` с файлами и SHA256SUMS. Не трогать старые теги.
-3. Packs workflow `.github/workflows/packs-publish.yml`: `checks=none`, `release=v0.7.0-rc.4`, `channel=0.18-rc.4`; для нового канала проверить необходимость `bootstrap=true`. Не оставлять channel пустым: пустой = production.
-4. App gateway `.github/workflows/prerelease.yml`: `operation=preview`, `checks=none`, `release=v0.18.0-rc.5`, `pack_channel=0.18-rc.4`. Используется существующий защищённый Pages проект/закрытая обёртка. Main/production pointer не переключать.
+2. Создать **prerelease** для новых неизданных версий. Для текущей пары используются `v0.7.0-rc.5` (уже опубликован; не перезаписывать) и `v0.18.0-rc.7` с файлами и SHA256SUMS. Не трогать старые теги.
+3. Packs workflow `.github/workflows/packs-publish.yml`: `checks=none`, `release=v0.7.0-rc.5`, `channel=0.18-rc.5`; для нового канала проверить необходимость `bootstrap=true`. Не оставлять channel пустым: пустой = production.
+4. App gateway `.github/workflows/prerelease.yml`: `operation=preview`, `checks=none`, `release=v0.18.0-rc.7`, `pack_channel=0.18-rc.5`. Используется существующий защищённый Pages проект/закрытая обёртка. Main/production pointer не переключать.
 5. Скачать `pages-deployment-report`, проверить `status`, exact commit/version/channel, 12 packs hashes, protection/runtime/offline и **productionUnchanged=true**. URL нового deployment записать в конце этого документа и в START-NEXT-CHAT.md.
 
 Доступ GitHub может отличаться у `gh` и git HTTPS; пользователь подтвердил исправление `gh auth status`. Не выводить токены/пароли. Не менять работающий системный прокси ради одного процесса; при необходимости изолировать env только команды. Закрытые wrapper/password/Worker/credentials не входят в публичные ZIP или Markdown.
@@ -114,7 +114,7 @@ Chrome брать из `scripts/codex/browser.cjs`; для sandbox может т
 
 ## 8. Что делать дальше
 
-- Сначала открыть новый preview RC6 и собрать пользовательские замечания. Продолжать от актуального dev/выпускного SHA, не начинать аудит заново и не возвращать отвергнутые варианты.
+- Сначала открыть новый preview RC7 и собрать пользовательские замечания. Продолжать от актуального dev/выпускного SHA, не начинать аудит заново и не возвращать отвергнутые варианты.
 - Проверить реальные телефоны/планшеты, touch, короткий landscape, большой шрифт; особенно круговую рассадку, рост рук, 96 карт Пексесо и выбор аватара. Автоматические браузерные контексты не доказывают взаимодействие физических устройств/NAT.
 - При ошибке искать общий слой: геометрия/подсветка/палитра/тайминги в канонических компонентах, правила/приватность в паке. Избегать нового набора точечных offsets и CSS overrides. Не терять функции F01–F35.
 - Режимы/справки новых игр, новые ассеты/скины и произвольные грани кубиков должны пользоваться существующими контрактами; не добавлять игровой semantic value в локальную косметическую настройку.
@@ -229,3 +229,15 @@ RC5 preview `cc0f5728-375f-4e3a-94ef-3333571c9f68` загружен workflow 389
 - Проверены доступ/защита, exact runtime bytes RC6, hashes 12 паков, offline reload и сохранение localStorage. Production до/после одинаков: app 0.17.6 / collection 0.6.5; canonical `bddc9741-d208-42a8-adf6-ab8e8de655c9` не переключён.
 - Публичный GitHub Release содержит 7 assets. Локальные и повторно скачанные 6 SHA256 файлов совпали; CRC трёх ZIP passed. Артефакты собраны на exact runtime SHA после squash, без перезаписи прежних RC.
 - Выбранный source-набор — **103/103**, без fail/cancel/skip. Это адресная проверка, не полный цикл и не приёмка физических устройств.
+
+## Итог: подтверждённый RC7 preview
+
+- **https://3acb8786.playroom-hod-test.pages.dev**; deployment `3acb8786-600e-4dab-9d74-246bcfa33f71`, [Pages #39002524955](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/39002524955) — success, полный protected/offline smoke, productionUnchanged=true.
+- App `v0.18.0-rc.7`, runtime SHA `e043a45197c044a993643c279065d4786a26295e`, PR #131/#132. Packs `v0.7.0-rc.5`, SHA `7a5c02c6d2e167584a9332e2e5ed4a083b5f07b5`, PR #71/#72, R2 channel `0.18-rc.5`, [R2 #39002392127](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/39002392127) success.
+- Проверены скачанные release assets: app 6 SHA / 3 ZIP CRC, packs 18 SHA / 5 ZIP CRC. Остальные 11 игровых JSON и оба standalone asset ZIP совпали с RC4 побайтово.
+- Основной адресный набор 131/131; два новых случая UNO live/history и Лудо по 1/1. После уточнения углов затронутые screen/presentation 36/36, финальный расчёт геометрии 3/3. Повторные проверки не означают дополнительную полноту полного цикла.
+- Реальные состояния всех 12 игр после 8 легальных действий: 320×640, 390×844, 740×360, 844×390, 768×1024, 1024×768; 101 review PNG в `tmp_files/rc7-review/`. Это эмуляция браузера, не физические телефоны/планшеты/NAT.
+- Дуэли — только ряд. Лудо — углы/ряд: portrait сверху/снизу, landscape слева/справа у конкретных баз. Управление на стороне своей базы; лишний собственный дубль в landscape скрыт. При реальной нехватке места временный ряд не меняет выбранную настройку.
+- Карточки партий остаются, локальное имя комнаты убрано. Отдельная последняя **игра в каталоге** скрыта по умолчанию; `showLastGame` включает её. Темы отдельной кнопкой в настройках, навигация «Темы и скины» остаётся.
+- Морской бой `0.2.0-rc.5`, stateVersion 4: каждый выстрел — ход, раунд после очередей обоих; setup не считается. Старые партии требуют свою прежнюю точную версию, immutable RC4 сохранён.
+- При следующем кандидате брать новую версию/output dir. Опубликованные RC7 артефакты и SHA256SUMS не переписывать. Поздний docs-only commit не меняет runtime tag SHA. Production остаётся 0.17.6 / 0.6.5 и canonical `bddc9741-d208-42a8-adf6-ab8e8de655c9`.

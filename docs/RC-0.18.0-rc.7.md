@@ -1,6 +1,6 @@
 # ХОД 0.18.0-rc.7 · приёмка 2026-10-17
 
-Кандидат приложения RC7 и коллекция 0.7.0-rc.5 предназначены только для защищённого preview и канала `0.18-rc.5`. Стабильная линия 0.17.6 / 0.6.5 не переключается. Адрес и окончательные SHA фиксируются после публикации.
+Кандидат приложения RC7 и коллекция 0.7.0-rc.5 предназначены только для защищённого preview и канала `0.18-rc.5`. Стабильная линия 0.17.6 / 0.6.5 не переключается. Проверенный preview: **https://3acb8786.playroom-hod-test.pages.dev**.
 
 ## Поведение
 
@@ -25,3 +25,19 @@
 Уточнение владельца после основного прогона: landscape углов сохраняет привязку к базам, а не автоматически переходит в ряд. Дополнительная адресная проверка кругов, матрицы 72 сцен и настроек Лудо — 3/3, включая геометрическую привязку к углам. Финальная перепроверка изменённого блока выполняется отдельно от ранее зелёных неизменённых подсистем.
 
 Повтор затронутых `case/game-screen,case/rc2-presentation-browser`: 36/36 (`/tmp/rc7-anchor-final.log`). После окончательного расчёта близости карточек к полю — три адресных случая кругов/матрицы/Лудо, 3/3 (`/tmp/rc7-anchor-close.log`). Неизменённые rules/network/storage/PWA используют ранее успешные адресные проверки.
+
+## Публичные артефакты
+
+- Приложение `v0.18.0-rc.7`, source `e043a45197c044a993643c279065d4786a26295e`; PR #131/#132. GitHub Release: 7 assets, 6 SHA256, CRC 3 ZIP проверены локально и после скачивания.
+- Коллекция `v0.7.0-rc.5`, source `7a5c02c6d2e167584a9332e2e5ed4a083b5f07b5`; PR #71/#72. GitHub Release: 19 assets, 18 SHA256, CRC 5 ZIP проверены локально и после скачивания.
+- 11 прежних игровых JSON и 2 самостоятельных архива персонажей/колоды совпадают с RC4 побайтово. Старые теги и файлы не перезаписывались.
+- R2 channel `0.18-rc.5`, [публикация #39002392127](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/39002392127) — success. Production каталог не переключался.
+- Браузерные снимки: `tmp_files/rc7-review/` (101 PNG), включая [телефон, углы landscape](../tmp_files/rc7-review/ludo-740x360-played.png), [планшет landscape](../tmp_files/rc7-review/ludo-1024x768-played.png), [портрет](../tmp_files/rc7-review/ludo-390x844-played.png). Это локальные review-артефакты, не файлы публичного релиза.
+
+## Итог публикации
+
+- **Проверенный preview: https://3acb8786.playroom-hod-test.pages.dev**, deployment `3acb8786-600e-4dab-9d74-246bcfa33f71`.
+- [Pages workflow #39002524955](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/39002524955) — success, `status=preview-verified`, `productionUnchanged=true`. Единственная загрузка preview, без повторного upload.
+- Protected access/runtime bytes, все 12 pack SHA256 (включая battleship@0.2.0-rc.5), offline reload и сохранность localStorage прошли обязательный smoke. Каталог — 0.7.0-rc.5.
+- Production до/после совпал: приложение 0.17.6 / коллекция 0.6.5, canonical `bddc9741-d208-42a8-adf6-ab8e8de655c9` не переключён. Main SHA приложения `c07e22e622485d20978bd223e3b2134c4fffd0b2`, паков `f5fbc11925b29a72ad3db7f9edc829c40aa66c5c` неизменны.
+- Приложение: [v0.18.0-rc.7](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.7). Коллекция: [v0.7.0-rc.5](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.5). Оба prerelease, теги указывают на SHA из release-info.json.
