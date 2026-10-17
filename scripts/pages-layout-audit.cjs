@@ -31,6 +31,7 @@ async function main(){
   if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Иван');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
   await page.waitForFunction(()=>TabletopCore.GAMES.length===12,null,{timeout:60000});
   await page.evaluate(()=>{localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));});
+  if(process.env.PLAYROOM_AUDIT_SCOPE!=='interactions'){
   // Actual hub, settings, avatar picker, appearance, library, lobby and help.
   for(const [width,height]of viewports){
    await page.setViewportSize({width,height});await page.evaluate(()=>PlayroomAppBridge.showHub());
@@ -97,6 +98,36 @@ async function main(){
      return {pace,timings,samples};
     },{game,mode});report.animations.push({game,mode,width,height,...result});
    }catch(error){report.findings.push({game,mode,width,height,kind:'animation-scenario-error',reason:error.message.split('\n')[0].slice(0,160)});}
+  }
+  }else{
+   report.scope='interactions';
+   await page.reload();await page.waitForFunction(()=>TabletopCore.GAMES.length===12);
+   for(const game of ['uno','ludo','yatzy','pexeso','battleship','checkers','domino','oldmaid','gofish','durak','snakes','tictactoe'])for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768],[1366,768]]){
+    const key=`real-${game}-${width}x${height}`;await page.setViewportSize({width,height});
+    try{
+     await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator(`[data-start="${game}"]`).first().click();
+     await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
+     await page.locator('[data-command="lobby-start"]').click();await page.locator('.app-game-layout').waitFor();await shot(key);
+     await page.locator('.table-tools [data-command="settings"]').click();await shot(key+'-settings');await page.locator('#modal-root [data-command="close-modal"]').click();
+     // Record the next real user action, including busy state and reveal lifetime.
+     const candidate=await page.locator('.scene [data-action]').evaluateAll(nodes=>{const n=nodes.find(n=>{const a=JSON.parse(n.dataset.action);return ['roll','flip','draw','shoot','place','move'].includes(a.type)&&n.getBoundingClientRect().width>0&&!n.disabled;});return n?{index:nodes.indexOf(n),action:n.dataset.action}:null;});
+     if(candidate){
+      await page.evaluate(()=>{window.auditFrames=[];window.auditUntil=performance.now()+4500;const start=performance.now();function frame(){const scene=document.querySelector('.scene'),reveal=document.querySelector('.action-reveal');auditFrames.push({ms:Math.round(performance.now()-start),busy:scene?.getAttribute('aria-busy'),reveal:!!reveal,r:reveal?{w:reveal.getBoundingClientRect().width,h:reveal.getBoundingClientRect().height}:null,motion:document.querySelectorAll('.playroom-motion-piece').length,scroll:document.documentElement.scrollHeight-innerHeight});if(performance.now()<auditUntil)requestAnimationFrame(frame);}requestAnimationFrame(frame);});
+      await page.locator('.scene [data-action]').nth(candidate.index).click();
+      await page.waitForTimeout(250);await shot(key+'-action');await page.waitForTimeout(4350);
+      report.animations.push({key,action:JSON.parse(candidate.action).type,frames:await page.evaluate(()=>auditFrames)});
+     }
+     await page.locator('.table-tools [data-command="pause"]').click();await shot(key+'-pause');
+     await page.locator('.table-tools [data-command="history"]').click();await shot(key+'-history');
+     report.cases.push({key,passed:true});
+    }catch(error){report.findings.push({key,kind:'real-ui-action-error',reason:error.message.split('\n')[0].slice(0,200)});await page.goto(url);await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}
+    save();
+   }
+   // Measure all published reveal speed presets using real feedback on shipped UI.
+   for(const mode of ['fast','normal','slow']){
+    const measured=await page.evaluate(async mode=>{const samples=[];const f=new PlayroomGameFeedback();const start=performance.now();f.accept([{id:1,reveal:{kind:'dice',dice:[{value:6}]}}],[],'ludo',{mode});while(performance.now()-start<4000){samples.push({ms:Math.round(performance.now()-start),visible:!!document.querySelector('.action-reveal')});if(!f.active&&!f.queue.length)break;await new Promise(requestAnimationFrame);}f.destroy();return samples;},mode);report.animations.push({mode,kind:'dice-reveal',samples:measured});
+   }
+
   }
   save();console.log('Completed: '+report.cases.length+' layout states, '+report.animations.length+' animation scenarios, '+report.findings.length+' findings');
  }finally{save();await browser?.close();await tunnel.close();}

@@ -2,6 +2,9 @@ name: Protected Pages publication
 on:
   workflow_call:
     inputs:
+      audit_scope:
+        type: string
+        default: full
       layout_audit:
         type: boolean
         default: false
@@ -22,6 +25,9 @@ on:
         default: ''
   workflow_dispatch:
     inputs:
+      audit_scope:
+        type: string
+        default: full
       layout_audit:
         type: boolean
         default: false
@@ -92,6 +98,8 @@ jobs:
         run: python3 scripts/pages-deploy.py "$OPERATION" --release "$RELEASE" --deployment "$DEPLOYMENT" --pack-channel "$PACK_CHANNEL"
       - name: Audit verified preview layouts without deployment
         if: inputs.layout_audit && inputs.operation == 'preflight'
+        env:
+          PLAYROOM_AUDIT_SCOPE: ${{ inputs.audit_scope }}
         run: node scripts/pages-layout-audit.cjs
       - uses: actions/upload-artifact@v4
         if: always() && inputs.layout_audit
