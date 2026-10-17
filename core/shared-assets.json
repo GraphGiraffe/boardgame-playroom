@@ -12,8 +12,8 @@
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "c25f5ba781f1a5b03c13950189e31b375b2ed072354ba89367936b261d9e9573",
-      "renderedSha256": "c25f5ba781f1a5b03c13950189e31b375b2ed072354ba89367936b261d9e9573"
+      "sha256": "725e78f555bc14ca32686d7c8b06ca3b5ba0e65fa41bb2148b3947009d02146d",
+      "renderedSha256": "725e78f555bc14ca32686d7c8b06ca3b5ba0e65fa41bb2148b3947009d02146d"
     },
     {
       "source": "shared/sounds/standard-sounds.json",

@@ -102,6 +102,8 @@ Presentation может вернуть `feedback: {kind, player}` для `skip`,
 
 Web GameFeedback выделяет карточку skip красным и встряхивает 700 мс, без оверлея и сдвига вёрстки. Reduced motion отключает движение, но сохраняет цвет; история/reconnect/повторный ACK не запускают эффект. При активном звуке действия сигнал своего хода не накладывается. Общие источники — shared/sounds/standard-sounds.json и shared/components/game-components.css репозитория паков.
 
+Встряхивание использует независимое CSS-свойство `translate`: оно не заменяет `transform` рассадки. Боковая карточка и её рука сохраняют поворот и размеры на всех фазах пропуска, включая добор штрафных карт UNO.
+
 ## Крупный показ публичных ходов
 
 Presentation opt-in `reveal` передаётся после audience projection. Карта: `{kind:'card', card:<public face>, entity:<destination entity>}`; кубики: `{kind:'dice', title?:MessageRef, dice:[{value,active?:boolean}]}`. У Web view опционален `register(...,{reveal: value=>markup})`: используется тот же renderer/ассеты карты, что на поле. Общий ActionReveal не знает правила или названия игр. Не передавайте скрытые грани/карты в эти метаданные.
