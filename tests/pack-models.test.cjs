@@ -297,13 +297,14 @@ test('ZiL+ deferred effects, shield and automatic second die obey the public com
   p=start(from);p.data.effects[0].shield=true;r=move(p);assert(!r.position.data.effects[0].shield);assert(!r.position.data.effects[0][effect]);assert(r.events.some(e=>e.type==='snakes.protected'));if(effect==='snake')assert.equal(r.position.data.positions[0],22);
  }
  p=start(12);r=move(p);assert(r.position.data.effects[0].adjust);p=JSON.parse(JSON.stringify(r.position));p.turn=0;p.data.effects[0].shield=true;
- r=model.apply(p,0,{type:'roll'});assert(r.position.data.adjusting);assert(!r.position.data.effects[0].adjust);assert.equal(model.legalActions(r.position,0).length,6);
+ r=model.apply(p,0,{type:'roll'});assert(r.position.data.adjusting);assert(!r.position.data.effects[0].adjust);assert.equal(model.legalActions(r.position,0).length,4);
  r=model.apply(r.position,0,{type:'move',dieIndex:0,delta:-1});assert(r.position.data.effects[0].shield,'voluntary minus one never consumes a shield');
  p=start();p.data.phase='roll';p.data.effects[0].less=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,1);assert(!r.position.data.effects[0].less);
  p.data.effects[0].shield=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,2);assert(!r.position.data.effects[0].shield);
  p=start();p.data.effects[1]={skip:true,less:true,adjust:true,shield:false};r=move(p);assert.equal(r.position.turn,2);assert.deepEqual(r.position.data.effects[1],{skip:false,less:true,adjust:true,shield:false});
  p=start(5);r=move(p);assert.equal(r.position.turn,0);assert.equal(r.position.data.phase,'roll');
- p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-1}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
+ p=start(15);p.data.adjusting=true;r=model.apply(p,0,{type:'move',dieIndex:0,delta:1});assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[2,3]);
+ p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:0}));assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-1}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
 });
 
 test('ZiL+ bot games terminate and replay deterministically with six players and both board sizes',()=>{

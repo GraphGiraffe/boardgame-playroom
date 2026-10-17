@@ -345,7 +345,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const oldHand=$('.hand-track, .hand-cards, .hand-scroll'); const scrollLeft=oldHand?.scrollLeft||0;
     const eventText=replay&&replayIndex===0?globalThis.PlayroomMessages.text("ui.app.03f70ecc37a6"):lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.bcb4a1cfa013");
     const markup=GameScreen.render({
-      gameName:game.name,subtitle:session.options.presetLabel||globalThis.PlayroomMessages.text("ui.app.4da4da9da138"),
+      layoutId:sessionId||session.createdAt,gameName:game.name,subtitle:session.options.presetLabel||globalThis.PlayroomMessages.text("ui.app.4da4da9da138"),
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
       turnText,turnExtra:replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
@@ -442,7 +442,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom});
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
       else {const receipt=screenController.send(action,{actor});if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
-      selected=null;playerTargets?.cancel();
+      GameScreen.allowLayoutChange($('#app'),context);selected=null;playerTargets?.cancel();
       const quiet=catalog[session.game]?.capabilities?.quietActions?.includes(action.type);
       const draws=cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer));
       const events=E.project(session.current,viewer).events.filter(event=>event.id>(beforeState.events.at(-1)?.id||0));

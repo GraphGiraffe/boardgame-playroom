@@ -3,8 +3,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 (function(root,factory){const api=factory(root.PlayroomRooms||(typeof require==='function'?require('../application/rooms.js'):null),root.PlayroomIdentityStore||(typeof require==='function'?require('../platform/web/identity-store.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomMultiplayer=api;})(globalThis,function(Rooms,Store){
 'use strict';
   const COLORS=[
-    ['#587d5d',globalThis.PlayroomMessages.text("ui.multiplayer.a4bb19e1436f")],['#cf7358',globalThis.PlayroomMessages.text("ui.multiplayer.731c7ce35857")],['#5f85a4',globalThis.PlayroomMessages.text("ui.multiplayer.66d12fb99282")],['#b89a46',globalThis.PlayroomMessages.text("ui.multiplayer.b039d623c29e")],
-    ['#806ca5',globalThis.PlayroomMessages.text("ui.multiplayer.4aed2cd288de")],['#438f8a',globalThis.PlayroomMessages.text("ui.multiplayer.1174a37a5ab4")],['#b56c8d',globalThis.PlayroomMessages.text("ui.multiplayer.6b64572a4b37")],['#7f8d53',globalThis.PlayroomMessages.text("ui.multiplayer.36cd623ea46f")],
+    ['#348653',globalThis.PlayroomMessages.text("ui.multiplayer.a4bb19e1436f")],['#d75245',globalThis.PlayroomMessages.text("ui.multiplayer.731c7ce35857")],['#387bbf',globalThis.PlayroomMessages.text("ui.multiplayer.66d12fb99282")],['#d9b136',globalThis.PlayroomMessages.text("ui.multiplayer.b039d623c29e")],
+    ['#e68532',globalThis.PlayroomMessages.text("ui.multiplayer.4aed2cd288de")],['#9055b5',globalThis.PlayroomMessages.text("ui.multiplayer.1174a37a5ab4")],['#42b7d6',globalThis.PlayroomMessages.text("ui.multiplayer.6b64572a4b37")],['#7c858e',globalThis.PlayroomMessages.text("ui.multiplayer.36cd623ea46f")],
     ['#a76a45',globalThis.PlayroomMessages.text("ui.multiplayer.690cb43da431")],['#6371a0',globalThis.PlayroomMessages.text("ui.multiplayer.03a7adc9a6c4")],['#8a6a58',globalThis.PlayroomMessages.text("ui.multiplayer.206522bddd15")],['#6d8f77',globalThis.PlayroomMessages.text("ui.multiplayer.b3fa5ae77400")]
   ];
 

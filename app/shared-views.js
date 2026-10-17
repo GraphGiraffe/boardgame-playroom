@@ -60,7 +60,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const scene=V.render(renderState,s.viewer,current?s.actions:available(),{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer)),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({minimum:controller.history.minimum,index:controller.history.requested??controller.history.index??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:controller.history.boundary,turnStarts:live.state.timeline?.starts||[],roundStarts:(live.state.scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1}))}):'';
       const markup=GameScreen.render({
-        fieldToggle:hasTable?{hidden:fieldHidden}:null,network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
+        layoutId:s.sessionId,fieldToggle:hasTable?{hidden:fieldHidden}:null,network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:current?s.actions:available(),scoreLabel:pack.catalog.scoreLabel||globalThis.PlayroomMessages.text("ui.shared-views.d7ab0767bbee"),
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?globalThis.PlayroomMessages.text("ui.shared-views.a92c2f3c7ff1"):readOnly?globalThis.PlayroomMessages.text("ui.shared-views.ef90e06de5f0"):!connected?globalThis.PlayroomMessages.text("ui.shared-views.1b183e4d703e"):finished?globalThis.PlayroomMessages.text("ui.shared-views.64f3ad19b9c6"):live.paused?globalThis.PlayroomMessages.text("ui.shared-views.65530fd463ea"):(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?globalThis.PlayroomMessages.text("ui.shared-views.2a3e6d5708df"):turn?globalThis.PlayroomMessages.text("ui.shared-views.6e352d281a89",{p0:String(turn.name)}):globalThis.PlayroomMessages.text("ui.shared-views.a353dfef7d2f"),
@@ -104,17 +104,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       ownedDialog=null;dialogOpen=false;pendingAction=null;
     }
     function close(){const command=dialogReturnCommand;clearDialog();render();if(command)app.querySelector('[data-command="'+command+'"]')?.focus();}
-    async function submit(action,confirmed=false){
+    async function submit(action,confirmed=false,context={}){
       if(!usable()&&!independent(action))return;
-      if(action.confirmation&&!confirmed){pendingAction=action;show(`<h2>${globalThis.PlayroomMessages.text("ui.shared-views.4678099b5551")}</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||globalThis.PlayroomMessages.text("ui.shared-views.27bca309f5f8"))}</button>`);return;}
+      if(action.confirmation&&!confirmed){pendingAction={action,context};show(`<h2>${globalThis.PlayroomMessages.text("ui.shared-views.4678099b5551")}</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||globalThis.PlayroomMessages.text("ui.shared-views.27bca309f5f8"))}</button>`);return;}
       input.cancel();
-      try{const promise=controller.send(action);render();const receipt=await promise;if(receipt.ok)selected=null;else if(!receipt.ignored)toast(receipt.message);
+      try{const promise=controller.send(action);render();const receipt=await promise;if(receipt.ok){selected=null;GameScreen.allowLayoutChange(app,context);}else if(!receipt.ignored)toast(receipt.message);
         // The authoritative snapshot already rendered the new scene; avoid
         // destroying its animation destination again on a delayed ACK.
         if(!transitionActive)render();}
       catch(error){toast(globalThis.PlayroomMessages.text("ui.shared-views.57c89972646e",{p0:String(globalThis.PlayroomMessages.error(error))}));render();}
     }
-    input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:source=>usable()||independent(JSON.parse(source?.dataset.action||'null')),select(value){selected=value;render();},commit:submit});
+    input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:source=>usable()||independent(JSON.parse(source?.dataset.action||'null')),select(value){selected=value;render();},commit(action,context){return submit(action,false,context);}});
     playerTargets=new root.PlayroomPlayerTarget({selected:()=>selected,actions:available,commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
     function result(){
       const snapshot=client.snapshot;if(snapshot?.state?.status!=='finished')return;
@@ -167,7 +167,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       switch(command){
         case 'close-modal':close();break;
         case 'confirm-action':{
-          const todo=pendingAction;close();if(todo)await submit(todo,true);break;
+          const todo=pendingAction;close();if(todo)await submit(todo.action,true,todo.context);break;
         }
         case 'rematch':if(!readOnly&&client.snapshot?.state?.status==='finished')onExit?.({finished:true});break;
         case 'home':

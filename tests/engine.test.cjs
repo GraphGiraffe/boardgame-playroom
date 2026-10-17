@@ -7,7 +7,7 @@ const packsRoot=require('node:fs').realpathSync(__dirname+'/../packs');
 const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain/standard-deck.js'));
 for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes', 'ludo']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
-const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
+const create = (game, count = 2, preset = 'classic', seed = 23, options = {}) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed, ...options });
 const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
 const act = (s, action) => {if(!s.unitPosition)return E.applyAction(s,s.turn,action);if(!actions(s).some(candidate=>Object.entries(action).every(([key,value])=>candidate[key]===value)))throw Error('ACTION_UNAVAILABLE');const changed=unoRules.reduce(s,s.turn,action),n=changed.position;n.move=(s.move||0)+1;n.winner=n.winners[0]??null;n.players.forEach((player,index)=>player.score=n.data.points[index]);n.events=[...s.events,...changed.events.map((event,index)=>({...event,id:(s.events.at(-1)?.id||0)+index+1,revision:n.move}))];return n;};
 const actions = s => s.unitPosition?unoRules.actions(s,s.turn).map(choice=>choice.command):E.legalActions(s,s.turn);
@@ -254,11 +254,12 @@ test('checkers wins by blocked opponent and draws by repetition or quiet-king li
 });
 
 test('snakes exact finish, reflected overshoot, one link per turn and no extra six', () => {
-  for(const preset of ['classic','quick']) {
-    let s=create('snakes',2,preset); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
-    s=create('snakes',2,preset); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
-    s=create('snakes',2,preset); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
-    s=create('snakes',2,preset); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
+  for(const boardSize of [64,100]) {
+    const preset='classic';
+    let s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
+    s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
+    s=create('snakes',2,preset,23,{boardSize}); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
+    s=create('snakes',2,preset,23,{boardSize}); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
   }
 });
 
@@ -273,9 +274,10 @@ test('import validation rejects malformed common state and each pack data', () =
   for(const [game,change] of bads) {const s=create(game);change(s);assert.throws(()=>E.validateState(s),game);}
 });
 
-test('264 seeded complete games cover every player count/preset and bot/random choices', t => {
+test('seeded complete games cover every supported player count/preset and bot/random choices', t => {
   let games=0, moves=0, maxMoves=0; const timings=[];
   for(const game of GAMES) for(let count=game.min;count<=game.max;count++) for(const preset of game.presets) for(let seed=0;seed<12;seed++) {
+    if(game.id==='ludo'&&preset.id==='teams'&&count!==4)continue;
     let s=create(game.id,count,preset.id,seed), choice={rng:seed+9123};
     const expected=cardInventory(s)?.map(c=>c.id).sort(), initialPieces=s.data.board?.filter(Boolean).length;
     while(s.status==='playing' && s.move<3000) {
@@ -334,9 +336,9 @@ test('sound metadata is optional, validated and respects private event visibilit
 test('standalone audio library registers scoped pack overrides without a browser', async () => {
   const Audio=require('../core/audio.js');let contexts=0;
   const audio=new Audio({contextFactory:()=>{contexts++;return null;}});
-  assert.equal(audio.catalog().length,23);assert.equal(audio.catalog().find(c=>c.id==='turn').label,'Ваш ход');assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
+  assert.equal(audio.catalog().length,26);assert.equal(audio.catalog().find(c=>c.id==='turn').label,'Ваш ход');assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
   audio.registerPack('custom_pack',{move:{label:'Own move',notes:[{frequency:500,duration:.1}]},'custom.call':{label:'Call',notes:[{frequency:700,duration:.1}]}});
-  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,24);
+  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,27);
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);

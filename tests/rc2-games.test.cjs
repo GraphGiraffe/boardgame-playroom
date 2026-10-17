@@ -65,7 +65,7 @@ test('Ludo keeps every pawn visible on a shared start and does not replay the pr
  const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
  const safeCell=route.match(/<button class="ludo-cell ludo-safe[^>]*data-motion-anchor="path-8"[^>]*>[\s\S]*?<\/button>/)?.[0];
  assert(safeCell?.includes('ludo-safe-star'));
- assert(!safeCell.includes('ludo-route-dot'),'route dots do not hide a safe star');
+ assert(!safeCell.includes('board-route-dot'),'route dots do not hide a safe star');
 });
 
 test('Durak lets a non-defender join the attack',()=>{
@@ -138,11 +138,11 @@ test('fleet counters show distinct deck lengths and mark zero in both surfaces',
  const scene=V.render(E.project(s,0),0,E.legalActions(s,0));
  assert.match(scene,/fleet-indicator/);
 });
-test('board game avatars keep the standard light palette',()=>{
+test('board game avatars use the shared distinct seat palette',()=>{
  for(const id of ['ludo','snakes','checkers']){
   const s=E.createGame(id,{players:[{name:'Аня'},{name:'Борис'}],seed:17});
   const html=V.render(E.project(s,0),0,E.legalActions(s,0));
-  assert(!/class="avatar p\d+"[^>]*style="background:/.test(html),id);
+  assert.match(html,/background:color-mix\(in srgb,var\(--color-seat-0/,id);
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
@@ -152,7 +152,7 @@ test('RC4 sea bot decisions depend only on observed shots',()=>{
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers.length,1);assert.equal(E.project(pair.next,-1).events.find(e=>e.reveal?.kind==='cards').reveal.cards.length,2);assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
 test('Akulina draw shows both participants to everyone, while the card stays private',()=>{

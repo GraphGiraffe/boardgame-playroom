@@ -55,8 +55,8 @@
 .hand-track.is-fan .hand-card:focus,.hand-track.is-fan .hand-card.is-hand-preview{z-index:80;transform:translateY(calc(-1 * var(--fan-lift)))}
 /* Lifted previews must not cover the exposed rank corner of their successor.
    Make room for the preview by shifting following cards, retaining the fan overlap. */
-@media(hover:hover){.hand-track.is-fan .hand-fan-row>.hand-card:hover ~ .hand-card:not(:hover):not(.is-selected):not(:focus):not(.is-hand-preview){transform:translateX(var(--fan-reveal-space,calc(var(--fan-card-width) - var(--fan-peek))))}}
-@media(hover:hover){.hand-track.is-fan .hand-card:hover{z-index:90;transform:translateY(calc(-1 * var(--fan-lift)))}}
+
+@media(hover:hover){.hand-track.is-fan .hand-card:hover{filter:brightness(1.04)}}
 @media(max-width:760px){.hand-track.is-fan{--fan-card-width:64px;--fan-card-height:91px;height:calc(var(--fan-card-height) + 26px);min-height:calc(var(--fan-card-height) + 26px);padding-top:17px;padding-bottom:9px}}
 @media(prefers-reduced-motion:reduce){.hand-track.is-fan .hand-card:is(.is-selected,:focus,.is-hand-preview){transform:translateY(-9px)!important}}
 
@@ -120,3 +120,16 @@
 
 .round-token-art{display:block;width:100%;height:100%;overflow:visible}
 .player-score.is-pieces{display:inline-flex;align-items:center;justify-content:center;min-width:0;width:22px;height:22px;padding:0;flex:none;border:0;background:transparent;box-shadow:none;--round-token-fill:var(--color-counter-face,#fff9e8);--round-token-rim:var(--color-border-subtle,#d5ddc6);--round-token-side:var(--color-token-side,#a9b596);--round-token-mark:var(--color-counter-mark,#45633d)}
+
+/* Shared board targets: packs supply legal commands and semantic outcome only. */
+:is(.game-scene,.app-game-layout) .board-target{position:relative;cursor:pointer;z-index:1;outline:2px solid var(--target-edge);outline-offset:-3px;background:var(--target-fill)!important}
+.board-target.target-move{--target-fill:#f4d96c;--target-edge:#96720b}
+.board-target.target-capture{--target-fill:#ee9a87;--target-edge:#ad392c}
+.board-target.target-home{--target-fill:#98d09a;--target-edge:#2c743f}
+:is(.game-scene,.app-game-layout) .board-target:focus-visible{outline:3px solid #172f25;outline-offset:-3px}
+.board-target:active{filter:brightness(1.12)}
+@media(hover:hover){.board-target:hover{filter:brightness(1.08)}}
+.board-route-dot{display:block;width:22%;aspect-ratio:1;border-radius:50%;background:#334d3c;box-shadow:0 0 0 1px var(--color-material-route-base,#fff9e7);pointer-events:none}
+
+/* In a tight hand the next rank must remain above the previous preview. */
+.hand-track.is-fan.is-tight .hand-card:is(.is-selected,:focus,.is-hand-preview){z-index:1}

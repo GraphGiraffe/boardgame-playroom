@@ -168,7 +168,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .layout-self:has(.layout-hand)>.layout-hand{order:2}
 .app-game-layout .layout-hand .hand-track.is-tiles{height:110px;min-height:110px;padding:12px 8px 10px;box-sizing:border-box;overflow-x:auto;overflow-y:hidden}
 .app-game-layout .layout-hand .hand-track.is-tiles>.is-selected{transform:translateY(-4px)}
-.app-game-layout:not([data-action-reserve="true"]) .layout-actions:has(.scene-actions:empty):not(:has(.pass-device-button)){display:none}
+.app-game-layout:not([data-action-reserve="true"]) .layout-actions:has(>.scene-actions:only-child:empty):not(:has(.pass-device-button)){display:none}
 
 .app-game-layout .player-panel .mini-hand.is-open>*:first-child{margin-left:0!important}
 .app-game-layout[data-layout-mode="phone-landscape"] .layout-hand .hand-track.is-fan{--fan-card-width:var(--scene-card-width,64px);--fan-card-height:var(--scene-card-height,89.6px);height:100px!important;min-height:100px!important}
@@ -805,3 +805,9 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .action-reveal-art.scene.is-card-set{display:flex!important;gap:8px;width:min(90vw,calc(var(--reveal-card-count)*150px));align-items:center}
 .action-reveal-art.scene.is-card-set>*{width:calc((100% - (var(--reveal-card-count) - 1)*8px)/var(--reveal-card-count))!important;flex:none;max-height:60dvh!important}
 :is(.game-scene,.app-game-layout) :is(.die,.shared-die):has(.shared-die-art){border-radius:20%!important}
+
+/* A board player's card already occupies its seat. Give its controls the full
+   remaining row, including two dice with 44px adjustment targets. */
+.app-game-layout[data-seating="circle"][data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self>.player-panel:has(~.layout-actions){display:none}
+
+@media(max-width:360px) and (orientation:portrait){.app-game-layout[data-view-api="2"]{gap:4px!important}}
