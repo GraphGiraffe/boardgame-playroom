@@ -2,10 +2,10 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/rc2-presentation');
-async function fixture(run){
+async function fixture(run,{settings={sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false}}={}){
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const page=await browser.newPage({viewport:{width:1098,height:1238}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast'}));});
+ await page.addInitScript(settings=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(settings&&!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));},settings);
  try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await browser.close();await server.close();}
 }
 async function scene(page,game,options={}){
@@ -119,7 +119,7 @@ test('RC2 themed surfaces, proportional pawns, card choice and circular interact
  await scene(page,'checkers');const selected=await page.locator('.checker-piece.is-playable').first().evaluate(el=>({shape:el.dataset.interactionShape,radius:getComputedStyle(el).borderRadius,width:getComputedStyle(el).outlineWidth}));assert.equal(selected.shape,'circle');assert.equal(selected.radius,'50%');assert(parseFloat(selected.width)>=2);assert.equal(await page.locator('.checker-art .available-marker').count(),0);
  await page.screenshot({path:path.join(shots,'dark-checkers.png')});
  await scene(page,'oldmaid');await page.evaluate(()=>{const p=new PlayroomPlayerTarget({root:()=>document.querySelector('.table-shell'),actions:()=>TabletopCore.legalActions(rcSession.current,0),commit(){}});p.tap(1);});
- assert(await page.locator('.player-target-menu.is-card-choice button[data-card-index]').first().evaluate(el=>el.getBoundingClientRect().width>=90));
+ assert(await page.locator('.player-target-menu.is-card-choice button[data-card-index]').first().evaluate(el=>el.getBoundingClientRect().width>=50&&el.getBoundingClientRect().width<=80));
  await page.screenshot({path:path.join(shots,'dark-card-choice.png')});
 }));
 test('RC2 feedback overlays preserve geometry, identity and speed; reveal has readable dark title',{timeout:45000},async()=>fixture(async page=>{
@@ -153,8 +153,8 @@ test('RC2 hub drops work in both directions and settings groups adapt',{timeout:
  await drop(page.locator(`[data-edit-drop="normal"] [data-game="${before[0]}"]`),page.locator(`[data-edit-drop="normal"] [data-game="${before[1]}"]`),false);
  assert.deepEqual(await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),before);
  await page.reload();await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomAppearanceUI.runtime.service.select('dark'));await page.locator('[data-start="uno"]').first().click();await page.locator('.modal [data-command="settings"]').click();
- await page.setViewportSize({width:1098,height:1238});let positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(positions[1].y>positions[0].y);
- await page.screenshot({path:path.join(shots,'dark-settings.png')});await page.setViewportSize({width:390,height:740});positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(positions[1].y>positions[0].y);
+ await page.setViewportSize({width:1098,height:1238});let positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(Math.abs(positions[1].y-positions[0].y)<8);
+ await page.screenshot({path:path.join(shots,'dark-settings.png')});await page.setViewportSize({width:390,height:740});positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(Math.abs(positions[1].y-positions[0].y)<8);
 }));
 test('RC2 Pexeso opens and closes with two continuous opaque sides and no layout changes',{timeout:30000},async()=>fixture(async page=>{
  await scene(page,'pexeso',{deck:'52'});
@@ -198,7 +198,7 @@ test('RC3 hub uses two columns down to 320px and an accessible icon-only edit co
   for(const width of [320,390,520,1090]){
    await page.setViewportSize({width,height:900});
    const layout=await page.evaluate(()=>{const grid=document.querySelector('.game-grid'),cards=[...grid.querySelectorAll('.game-tile')],button=document.querySelector('[data-edit-toggle]');return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,sameRow:Math.abs(cards[0].getBoundingClientRect().top-cards[1].getBoundingClientRect().top)<1,overflow:document.documentElement.scrollWidth>innerWidth+1,text:button.textContent.trim(),label:button.getAttribute('aria-label')};});
-   if(width<=520){assert.equal(layout.columns,2);assert(layout.sameRow);assert(await page.locator('.game-tile').evaluateAll(cards=>cards.every(card=>card.getBoundingClientRect().height/card.getBoundingClientRect().width<1.3)),'cards should be nearly square');const overflow=await page.locator('.game-tile').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+1).map(card=>({id:card.dataset.game,h:card.clientHeight,scroll:card.scrollHeight,parts:[...card.children].map(n=>({class:n.className,h:n.getBoundingClientRect().height}))})));assert.deepEqual(overflow,[],'card content must fit at '+width);}assert(!layout.overflow);assert.equal(layout.text,'');assert(layout.label);const buttons=await page.locator('.hub-intro-actions .btn').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert.equal(buttons.length,2);assert(Math.abs(buttons[0]-buttons[1])<1);
+   if(width<=520){assert.equal(layout.columns,2);assert(layout.sameRow);assert(await page.locator('.game-tile').evaluateAll(cards=>cards.every(card=>card.getBoundingClientRect().height/card.getBoundingClientRect().width<1.3)),'cards should be nearly square');const overflow=await page.locator('.game-tile').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+1).map(card=>({id:card.dataset.game,h:card.clientHeight,scroll:card.scrollHeight,parts:[...card.children].map(n=>({class:n.className,h:n.getBoundingClientRect().height}))})));assert.deepEqual(overflow,[],'card content must fit at '+width);}assert(!layout.overflow);assert.equal(layout.text,'');assert(layout.label);const buttons=await page.locator('.hub-intro-actions .btn').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert.equal(buttons.length,1);assert.equal(await page.locator('.filter-scope #network-join-button').count(),1);
    if(width===390)await page.screenshot({path:path.join(shots,`rc3-hub-${theme}.png`),fullPage:true});
   }
  }
@@ -427,7 +427,7 @@ test('RC9 maximum rosters fit contents, hands and fields in both orientations',{
    const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
    for(let i=0;i<panels.length;i++){const {r,name}=panels[i];if(r.width<70||r.height<40)errors.push('squashed '+name);if(r.bottom>innerHeight+2)errors.push('panel below viewport '+name);if(overlaps(r,field))errors.push('field overlap '+name);for(const p of panels.slice(i+1))if(overlaps(r,p.r))errors.push('panel overlap '+name);}
    const self=stage.querySelector('.layout-self')?.getBoundingClientRect();for(const group of stage.querySelectorAll('.seat-group'))if(self&&overlaps(group.getBoundingClientRect(),self))errors.push('seat/self overlap');
-   for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className);}
+   for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className+' '+JSON.stringify({w:e.clientWidth,h:e.clientHeight,sw:e.scrollWidth,sh:e.scrollHeight}));}
    const tiles=[...stage.querySelectorAll('.hand-track.is-tiles>button')].map(e=>e.getBoundingClientRect());if(tiles.some(r=>Math.abs(r.width-tiles[0].width)>1||Math.abs(r.height-tiles[0].height)>1||Math.abs(r.width/r.height-4/7)>.02))errors.push('unequal domino size');
    for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild){const card=e.firstElementChild.getBoundingClientRect(),viewport=e.getBoundingClientRect();if(Math.abs(card.width/card.height-(Number(e.querySelector('[data-piece-ratio]')?.dataset.pieceRatio)||5/7))>.03)errors.push('opponent card proportions');if(stage.dataset.croppedHands==='true'&&card.height<viewport.height*1.5)errors.push('opponent cards resized instead of cropped');}}
    if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
@@ -520,4 +520,57 @@ test('RC11 optional card arc persists and follows scrolling without affecting do
  await page.locator('[data-command="settings"]').first().click();assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
  await page.locator('#setting-hand-shape').selectOption('straight');await page.locator('.modal [data-command="close-modal"]').click();
  await scene(page,'uno');assert.equal(await page.locator('.hand-track.is-arc').count(),0);
+}));
+
+
+test('RC12 fresh defaults, compact room entry and symmetric landscape status',{timeout:45000},async()=>fixture(async page=>{
+ const dir=path.join(root,'tmp_files/rc12-ui');fs.mkdirSync(dir,{recursive:true});
+ await page.locator('[data-command="settings"]').first().click();
+ for(const id of ['setting-sound','setting-auto-pass','setting-quick-play'])assert(await page.locator('#'+id).isChecked(),id);
+ assert.equal(await page.locator('#setting-last-game').isChecked(),false);
+ assert.equal(await page.locator('#setting-volume').inputValue(),'1');
+ assert.equal(await page.locator('#setting-speed').inputValue(),'normal');
+ assert.equal(await page.locator('#setting-hand-shape').inputValue(),'straight');
+ await page.screenshot({path:path.join(dir,'defaults.png')});
+ await page.setViewportSize({width:320,height:640});
+ const heading=await page.locator('.modal-head').evaluate(h=>({height:h.querySelector('h2').getBoundingClientRect().height,overflow:h.scrollWidth-h.clientWidth}));assert(heading.height<30&&heading.overflow<=1);
+ const edges=await page.locator('.modal').evaluate(m=>['.settings-header-actions','.settings-themes','#setting-player-name','#setting-hand-shape','#setting-last-game'].map(s=>m.querySelector(s).getBoundingClientRect().right));assert(Math.max(...edges)-Math.min(...edges)<=1,JSON.stringify(edges));
+ await page.screenshot({path:path.join(dir,'settings-320.png')});await page.setViewportSize({width:1098,height:1238});
+ await page.locator('#setting-sound').uncheck();await page.locator('#setting-quick-play').uncheck();await page.locator('#setting-auto-pass').uncheck();
+ await page.reload();await page.locator('.game-tile').first().waitFor();
+ await page.locator('[data-command="settings"]').first().click();
+ for(const id of ['setting-sound','setting-auto-pass','setting-quick-play'])assert.equal(await page.locator('#'+id).isChecked(),false,'saved '+id);
+ await page.locator('.modal [data-command="close-modal"]').click();
+ for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768],[1366,768]]){
+  await page.setViewportSize({width,height});await page.evaluate(()=>PlayroomAppBridge.showHub());
+  const join=page.locator('.filter-scope #network-join-button');await join.waitFor();
+  const row=await join.evaluate(b=>{const r=b.getBoundingClientRect(),f=document.querySelector('[data-filter="all"]').getBoundingClientRect();return {center:r.y+r.height/2-f.y-f.height/2,right:r.right,overflow:document.documentElement.scrollWidth-innerWidth};});
+  assert(Math.abs(row.center)<1&&row.right<=width&&row.overflow<=1,JSON.stringify(row));
+  await page.screenshot({path:path.join(dir,`hub-${width}x${height}.png`)});
+  await join.click();await page.locator('#modal-root .modal').waitFor();await page.keyboard.press('Escape');
+  await scene(page,'yatzy');
+  if(width>height){const boxes=await page.locator('.table-status').evaluate(s=>[s.querySelector('.turn-label'),s.querySelector('.status-details')].map(e=>{const r=e.getBoundingClientRect();return {top:r.top,height:r.height,bg:getComputedStyle(e).backgroundColor};}));assert.deepEqual(boxes[0],boxes[1]);assert.notEqual(boxes[0].bg,'rgba(0, 0, 0, 0)');}
+  await page.screenshot({path:path.join(dir,`yatzy-${width}x${height}.png`)});
+ }
+},{settings:null}));
+
+test('RC12 small fans stay centered, symmetric and overlapping',{timeout:45000},async()=>fixture(async page=>{
+ await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('arc');await page.locator('.modal [data-command="close-modal"]').click();
+ const dir=path.join(root,'tmp_files/rc12-ui');fs.mkdirSync(dir,{recursive:true});
+ for(const [width,height] of [[390,844],[640,320],[844,390],[1024,768]])for(const count of [1,2,3,4,6]){
+  await page.setViewportSize({width,height});await scene(page,'uno');
+  await page.evaluate(count=>{rcStateOverride=structuredClone(rcSession.current);rcStateOverride.data.drawPile.push(...rcStateOverride.data.hands[0].splice(count));rcRender();},count);
+  const result=await page.locator('.hand-track').evaluate(t=>{const b=t.getBoundingClientRect(),cards=[...t.querySelectorAll('.hand-card')].map(c=>({angle:parseFloat(getComputedStyle(c).rotate),r:c.getBoundingClientRect()}));return {debug:{row:t.querySelector('.hand-fan-row').getBoundingClientRect().toJSON(),track:b.toJSON(),card:t.querySelector('.hand-card').offsetWidth,padding:getComputedStyle(t).padding},center:(b.left+b.right)/2,cards:cards.map(c=>({angle:c.angle,left:c.r.left,right:c.r.right}))};});
+  const first=result.cards[0],last=result.cards.at(-1);assert(Math.abs(first.angle+last.angle)<.1,JSON.stringify({width,height,count,result}));assert(Math.abs((first.left+last.right)/2-result.center)<2);if(count===1)assert.equal(first.angle,0);else for(let i=1;i<count;i++)assert(result.cards[i].left<result.cards[i-1].right);
+  await page.screenshot({path:path.join(dir,`fan-${count}-${width}x${height}.png`)});
+ }
+}));
+
+test('RC12 bubbles anchor visible duplicate panels and actions escape small panels',{timeout:30000},async()=>fixture(async page=>{
+ await page.setViewportSize({width:844,height:390});await scene(page,'uno');
+ const result=await page.evaluate(()=>{
+  const host=document.querySelector('.table-shell'),panel=host.querySelector('.player-panel[data-player-index="1"]'),copy=panel.cloneNode(true);copy.style.display='none';host.prepend(copy);
+  const f=new PlayroomGameFeedback({mount:()=>host});f.active={id:99,timing:PlayroomGameFlow.effectTimes.fast,speech:{speaker:1,text:'Беру'}};f.refresh();const b=f.bubble.getBoundingClientRect(),r=panel.getBoundingClientRect();const good=b.width>0&&b.left>=0&&b.right<=innerWidth&&Math.abs(b.left-r.left)<r.width;f.destroy();copy.remove();
+  panel.querySelector('.player-info').setAttribute('data-player-target','1');const target=new PlayroomPlayerTarget({root:()=>host,actions:()=>[{target:1,targetKind:'player',type:'catch',label:'UNO!'}],commit(){}});target.tap(1);const menu=target.menu;const fits=menu&&menu.scrollHeight<=menu.clientHeight&&menu.parentElement===document.body;target.destroy();return {good,fits};
+ });assert(result.good);assert(result.fits);
 }));

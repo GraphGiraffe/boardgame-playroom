@@ -41,7 +41,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     whenIdle(){return this.active||this.queue.length?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
     position(){
       const bubble=this.bubble,mount=this.mount(),speech=this.active?.speech;if(!bubble||!mount||!speech)return;
-      const panel=mount.querySelector(`.player-panel[data-player-index="${speech.speaker}"]`);if(!panel)return;
+      const panel=[...mount.querySelectorAll(`.player-panel[data-player-index="${speech.speaker}"]`)].find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0;});
+      bubble.hidden=!panel;bubble.style.visibility=panel?'':'hidden';if(!panel)return;
       const box=panel.getBoundingClientRect(),r=bubble.getBoundingClientRect(),doc=mount.ownerDocument,win=doc.defaultView;
       const left=Math.max(8,Math.min(box.right-r.width,win.innerWidth-r.width-8));
       const top=box.top-r.height-8>=8?box.top-r.height-8:Math.min(box.bottom+8,win.innerHeight-r.height-8);

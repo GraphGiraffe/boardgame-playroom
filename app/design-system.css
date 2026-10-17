@@ -681,10 +681,72 @@ body.reduced-motion .connection-light.is-connected{animation:none}
  #app .app-game-layout[data-seating="row"][data-opponent-hands="false"]>.layout-self>.player-panel{order:-1}
 }
 
-#app .app-game-layout .hand-fan-row{width:calc(100% - var(--fan-reveal-space,0px));margin-left:0;margin-right:var(--fan-reveal-space,0px)}
+#app .app-game-layout .hand-fan-row{margin-inline:auto}
 
 @media(orientation:landscape){.app-game-layout [data-portrait-copy="true"]{display:none!important}.app-game-layout .seat-group:has(>[data-portrait-copy="true"]:only-child){display:none}}
 
 /* Optional shallow card arc; domino uses the separate tile hand contract. */
 #app .app-game-layout .layout-hand .hand-track.is-fan.is-arc{--fan-lift:4px}
 .hand-track.is-fan.is-arc .hand-card{rotate:var(--hand-arc-angle,0deg);translate:0 var(--hand-arc-y,0px);transform-origin:center}
+
+/* Keep room entry alongside collection scope, including narrow phones. */
+#app .filter-scope{display:flex;flex-wrap:nowrap;align-items:center;gap:6px}
+#app .filter-scope>.filter{flex:none}
+#app .filter-scope #network-join-button{margin-left:auto;min-width:0;max-width:260px;min-height:44px;padding:6px 10px;font-size:12px;line-height:16px}
+.table-status .status-details{display:contents}
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:not(:has([data-surface="player"])) .table-status .turn-label,
+ #app .table-shell:not(:has([data-surface="player"])) .table-status .status-details{position:absolute;top:56px;width:calc(var(--side-width) - 18px);max-width:none;height:32px;padding:4px 8px;box-sizing:border-box;border-radius:10px;background:var(--color-surface-raised,#e4e9d8);z-index:3}
+ #app .table-shell:not(:has([data-surface="player"])) .table-status .turn-label{left:12px;display:flex;align-items:center}
+ #app .table-shell:not(:has([data-surface="player"])) .table-status .status-details{right:12px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+ #app .table-shell:not(:has([data-surface="player"])) .table-status .status-details>span{position:static;width:100%;max-width:none;min-height:0;flex:none;line-height:12px;text-align:right}
+}
+
+/* Shared RC12 state markers and compact dialogs. */
+.player-panel .player-turn-position{display:inline-flex;align-items:center;justify-content:center;position:absolute;right:6px;top:6px;width:16px;height:16px;border:1px solid var(--color-border-subtle,#a9bd94);border-radius:50%;font-size:10px;font-weight:400;background:var(--paper)}
+.player-panel .player-heading{padding-right:18px}
+.player-avatar-label.is-icon{width:17px;height:17px;padding:1px;display:grid;place-items:center;border-radius:4px}
+.player-avatar-label.is-icon svg{width:13px;height:13px}
+.modal:has(.settings-overview) .modal-head{margin-bottom:12px;gap:8px}
+.settings-header-actions{display:flex;gap:4px;margin-left:auto;flex:none}
+.modal:has(.settings-overview) .modal-head h2{font-size:clamp(18px,4vw,28px)}
+.settings-overview{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.settings-personal{grid-column:1/-1}
+.settings-quick,.settings-quick:has(>button){justify-content:flex-start}
+.settings-quick .settings-shortcuts{justify-content:flex-start}
+.settings-themes{font-size:12px;padding:8px;min-width:0}
+.modal:has(.settings-overview) .field{margin:12px 0;gap:8px}
+.modal:has(.settings-overview) .settings-personal .field{margin:0}
+.modal:has(.settings-overview) .settings-details{margin:12px 0}
+.player-target-menu:not(.is-card-choice){max-height:none;overflow:visible;width:max-content}
+.player-target-menu.is-card-choice.in-field{inset:auto;top:0;left:50%;transform:translateX(-50%);width:min(100%,420px);max-height:100%;grid-template-columns:repeat(auto-fit,55px);padding:8px;gap:6px}
+.player-target-menu.is-card-choice.in-field>button{width:55px;height:77px}
+.lobby-primary .lobby-stop{flex:0 0 44px;width:44px;min-width:44px;height:44px;padding:0}
+#app .app-game-layout .is-arc .hand-fan-row{width:min(100%,calc(var(--fan-card-width) + (var(--fan-count) - 1) * var(--fan-card-width) * .65));margin-inline:auto}
+.player-indicator.fleet-indicator{width:48px;height:25px;min-height:25px;padding:2px;gap:2px;font-size:10px;box-sizing:border-box}
+.player-indicator.fleet-indicator .fleet-ship-icon{max-width:30px;height:18px}
+.player-indicator.fleet-indicator b{margin-left:auto;min-width:1ch;text-align:right}
+
+.start-options legend{display:flex;align-items:center;gap:6px}.start-options legend .rule-help{display:inline-block}.rule-help>p{font-weight:400}.start-options legend .rule-help>p{position:absolute;z-index:5;max-width:260px}.lobby-primary .lobby-stop{margin:0;grid-column:auto}
+
+@media(orientation:landscape) and (min-width:600px){
+ #app .app-game-layout[data-dense-roster="true"] .players-panels{grid-template-columns:repeat(var(--focus-player-columns,2),minmax(0,1fr))!important}
+}
+
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:has([data-layout-focus="hands"]){--side-width:max(30%,180px)}
+}
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:has([data-dense-roster="true"]){--side-width:max(30%,220px)}
+}
+
+.hand-track.is-fan{position:relative}
+@media(orientation:landscape) and (min-width:600px){#app .app-game-layout[data-seating="row"] .players-panels{grid-template-columns:repeat(var(--focus-player-columns,1),minmax(0,1fr))!important}}
+
+.modal:has(.settings-overview) .lobby-profile{margin:0}
+.modal:has(.settings-overview) .settings-grid{margin-block:12px}
+.modal:has(.settings-overview) .settings-grid .field{margin:0}
+@media(max-width:360px){.modal:has(.settings-overview){padding:16px}.modal:has(.settings-overview) .modal-head h2{font-size:18px;white-space:nowrap}}
+#modal-root .modal:has(.settings-overview)>.modal-head{overflow-y:hidden;scrollbar-gutter:stable;gap:8px}
+#modal-root .modal:has(.settings-overview)>.modal-head h2{font-size:clamp(16px,4vw,26px);white-space:nowrap}
+@media(max-width:360px){#modal-root .modal:has(.settings-overview){padding-inline:10px}}

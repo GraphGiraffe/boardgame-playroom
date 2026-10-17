@@ -113,7 +113,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     await context.addInitScript(saved => {
       if (sessionStorage.getItem('uno-social-seeded')) return;
       sessionStorage.setItem('uno-social-seeded', '1'); localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant'}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant',quickPlay:false,autoPass:false}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, saved);
     const page = await context.newPage(), errors = [];
@@ -316,4 +316,13 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       }
     });
   } finally { await browser.close(); await fixtureServer?.close(); }
+});
+
+test('RC12 UNO supports five and six players with private hands and complete bot games',()=>{
+ for(const count of [5,6]){
+  let state=Core.createGame('uno',{players:Array.from({length:count},(_,i)=>({name:'Игрок '+(i+1),bot:true})),seed:17,unoMode:'auto'});
+  assert.equal(state.data.hands.length,count);assert(Core.project(state,0).data.hands.slice(1).flat().every(c=>c.hidden));
+  for(let step=0;state.status==='playing'&&step<3000;step++){state=Core.applyAction(state,state.turn,Core.botAction(state));assert(Core.validateState(state));}
+  assert.equal(state.status,'finished');
+ }
 });
