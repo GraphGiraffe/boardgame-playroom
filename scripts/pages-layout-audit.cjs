@@ -45,7 +45,7 @@ async function main(){
       await page.locator('.settings-themes').click();await shot(`themes-${width}x${height}`);await page.keyboard.press('Escape');
      }
      const excess=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);if(excess>2)report.findings.push({menu,width,height,kind:'page-horizontal-scroll',excess});
-     if(!['hub','sessions'].includes(menu))await page.locator('#modal-root [data-command="close-modal"]').click();
+     if(!['hub','sessions'].includes(menu))await page.locator('#modal-root [data-command="close-modal"]').first().click();
     }catch(_){report.findings.push({menu,width,height,kind:'menu-interaction-failed'});await page.goto(url);await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);}
    }
    await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator('[data-start="uno"]').first().click();await shot(`lobby-${width}x${height}`);await page.evaluate(()=>PlayroomAppBridge.leaveLobby());
@@ -108,7 +108,7 @@ async function main(){
      await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator(`[data-start="${game}"]`).first().click();
      await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
      await page.locator('[data-command="lobby-start"]').click();await page.locator('.app-game-layout').waitFor();await shot(key);
-     await page.locator('.table-tools [data-command="settings"]').click();await shot(key+'-settings');await page.locator('#modal-root [data-command="close-modal"]').click();
+     await page.locator('.table-tools [data-command="settings"]').click();await shot(key+'-settings');await page.locator('#modal-root [data-command="close-modal"]').first().click();
      // Record the next real user action, including busy state and reveal lifetime.
      const candidate=await page.locator('.scene [data-action]').evaluateAll(nodes=>{const n=nodes.find(n=>{const a=JSON.parse(n.dataset.action);return ['roll','flip','draw','shoot','place','move'].includes(a.type)&&n.getBoundingClientRect().width>0&&!n.disabled;});return n?{index:nodes.indexOf(n),action:n.dataset.action}:null;});
      if(candidate){
