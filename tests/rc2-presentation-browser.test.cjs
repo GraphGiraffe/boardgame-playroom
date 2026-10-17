@@ -417,18 +417,30 @@ test('RC8 in-game Themes opens above settings and profile controls align',{timeo
  assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),before);
 }));
 
-test('RC8 maximum rosters keep panels and fields disjoint in both orientations',{timeout:120000},async()=>fixture(async page=>{
- for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768]])for(const game of ['uno','durak','oldmaid','gofish','domino','ludo','snakes','pexeso','battleship','yatzy','checkers','tictactoe'])for(const seating of ['anchors','row']){
+test('RC9 maximum rosters fit contents, hands and fields in both orientations',{timeout:120000},async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1366,768],[1920,1080]])for(const game of ['uno','durak','oldmaid','gofish','domino','ludo','snakes','pexeso','battleship','yatzy','checkers','tictactoe'])for(const seating of ['anchors','row']){
   await page.setViewportSize({width,height});const count=await page.evaluate(game=>TabletopCore.get(game).max,game);
   await scene(page,game,{players:Array.from({length:count},(_,i)=>({name:['Иван','Мика','Луна','Кира','Лев','Сэм'][i]}))});
   await page.evaluate(seating=>{rcUI={seating};rcRender();},seating);await page.waitForTimeout(30);
   const errors=await page.evaluate(()=>{
    const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),panels=[...stage.querySelectorAll('.player-panel')].map(el=>({r:el.getBoundingClientRect(),name:el.textContent})).filter(p=>p.r.width&&p.r.height),errors=[];
    const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
-   for(let i=0;i<panels.length;i++){const {r,name}=panels[i];if(r.width<70||r.height<44)errors.push('squashed '+name);if(overlaps(r,field))errors.push('field overlap '+name);for(const p of panels.slice(i+1))if(overlaps(r,p.r))errors.push('panel overlap '+name);}
+   for(let i=0;i<panels.length;i++){const {r,name}=panels[i];if(r.width<70||r.height<40)errors.push('squashed '+name);if(r.bottom>innerHeight+2)errors.push('panel below viewport '+name);if(overlaps(r,field))errors.push('field overlap '+name);for(const p of panels.slice(i+1))if(overlaps(r,p.r))errors.push('panel overlap '+name);}
    const self=stage.querySelector('.layout-self')?.getBoundingClientRect();for(const group of stage.querySelectorAll('.seat-group'))if(self&&overlaps(group.getBoundingClientRect(),self))errors.push('seat/self overlap');
+   for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className);}
+   const tiles=[...stage.querySelectorAll('.hand-track.is-tiles>button')].map(e=>e.getBoundingClientRect());if(tiles.some(r=>Math.abs(r.width-tiles[0].width)>1||Math.abs(r.height-tiles[0].height)>1||Math.abs(r.width/r.height-4/7)>.02))errors.push('unequal domino size');
+   for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild&&e.firstElementChild.getBoundingClientRect().height<e.getBoundingClientRect().height*1.5)errors.push('opponent cards resized instead of cropped');}
    if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
   });
   assert.deepEqual(errors,[],`${game} ${seating} ${width}x${height}`);
  }
+}));
+
+test('UNO status is a label below the avatar, separate from score counters',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await scene(page,'uno');
+ await page.evaluate(()=>{const state=structuredClone(TabletopCore.project(rcSession.current,0));state.data.uno.declared[0]=true;const actions=TabletopCore.legalActions(rcSession.current,0);PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'UNO',state,viewer:0,actions,scene:PlayroomViews.render(state,0,actions,{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
+ const badge=page.locator('.self-player .player-avatar-label');await badge.waitFor();assert.equal(await badge.textContent(),'UNO');assert.equal(await page.locator('.self-player .player-badges').count(),0);
+ const placement=await badge.evaluate(e=>{const r=e.getBoundingClientRect(),a=e.parentElement.querySelector('.avatar').getBoundingClientRect();return {offset:Math.abs(r.x+r.width/2-a.x-a.width/2),bottom:r.bottom-a.bottom,w:r.width,h:r.height};});
+ assert(placement.offset<1&&placement.bottom>=0&&placement.w>placement.h);
+ await page.screenshot({path:path.join(shots,'rc9-uno-avatar-badge.png')});
 }));

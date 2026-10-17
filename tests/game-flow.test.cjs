@@ -72,7 +72,7 @@ test('Whole actions use the UNO reveal budget without adding it to long presenta
   for(const [animationSpeed,minimum]of Object.entries({instant:200,fast:660,normal:1060,slow:1600})){
     const timers=new Map();let id=0,finished=false;
     const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
-    let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve)).then(()=>finished=true);
+    let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[{reveal:{kind:"card"}}]}).then(()=>finished=true);
     assert.equal([...timers.values()][0].ms,minimum);
     [...timers.values()][0].fn();await Promise.resolve();assert.equal(finished,false,'long motion must finish');
     complete();await pending;assert.equal(timers.size,0);
@@ -95,7 +95,13 @@ test('continuations use the real effect lifetime; a new turn of the same actor r
   const before={turn:0,status:'playing',timeline:{turn:7}},after={turn:0,status:'playing',timeline:{turn:7}};
   const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{before,after});assert.equal(timers.size,0);
   complete();await pending;
-  const next=flow.present(()=>Promise.resolve(),{before,after:{...after,timeline:{turn:8}}});
+  const next=flow.present(()=>Promise.resolve(),{before,after:{...after,timeline:{turn:8}},events:[{reveal:{kind:'card'}}]});
   assert.equal(timers.size,1,'same actor does not mean same game turn');[...timers.values()][0].fn();await next;
  }
+});
+
+test('non-card placements do not inherit a card reveal delay',async()=>{
+ const timers=[];const flow=new Flow.GameFlow({options:()=>({animationSpeed:'fast'}),clock:{setTimeout:(_,ms)=>timers.push(ms),clearTimeout:()=>{}}});
+ for(const event of [{kind:'place'},{kind:'move'}])await flow.present(()=>Promise.resolve(),{events:[event]});
+ assert.deepEqual(timers,[]);
 });

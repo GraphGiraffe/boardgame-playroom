@@ -190,3 +190,7 @@ Bootstrap загружает model-values перед events/model-runtime/histor
 - Public snapshot включает firstPlayer/firstPlayerMode/result. История результата и живой результат клиента используют одни публичные показатели и playerContent, без полного host state.
 
 У десяти паков engineApi 3: tictactoe, yatzy, battleship, pexeso, oldmaid, gofish, ludo, snakes, domino, checkers. UNO и Дурак продолжают перенос; окончательное удаление legacy слоя впереди.
+
+### Статус под аватаром (RC9)
+
+Элемент `playerContent.badges` может задавать `position: "avatar-bottom"`: текстовый жетон по центру нижнего края аватара, вместо строки статусов. Полная карта оппонента сохраняет размеры и motion identity; viewport мини-руки показывает её верхнюю половину.

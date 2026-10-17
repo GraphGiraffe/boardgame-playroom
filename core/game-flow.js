@@ -52,7 +52,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const dice=events.some(event=>event.kind==='roll'||event.reveal?.kind==='dice');
       const continuation=before?.status==='playing'&&after?.status==='playing'&&before.turn===after.turn&&
         !before.timeline?.preparing&&!after.timeline?.preparing&&Number.isSafeInteger(before.timeline?.turn)&&before.timeline.turn===after.timeline?.turn;
-      return this.actions.play(effect,dice||continuation?0:(pace.duration?2*times.flip:0)+times.reveal);
+      return this.actions.play(effect,dice||continuation||!events.some(event=>event.reveal?.kind==='card'||event.kind==='skip')?0:(pace.duration?2*times.flip:0)+times.reveal);
     }
     cancel(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
   }
