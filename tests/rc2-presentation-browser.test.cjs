@@ -535,6 +535,7 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
  await page.setViewportSize({width:320,height:640});
  const heading=await page.locator('.modal-head').evaluate(h=>({height:h.querySelector('h2').getBoundingClientRect().height,overflow:h.scrollWidth-h.clientWidth}));assert(heading.height<30&&heading.overflow<=1);
  const edges=await page.locator('.modal').evaluate(m=>['.settings-header-actions','.settings-themes','#setting-player-name','#setting-hand-shape','#setting-last-game'].map(s=>m.querySelector(s).getBoundingClientRect().right));assert(Math.max(...edges)-Math.min(...edges)<=1,JSON.stringify(edges));
+ const insets=await page.locator('.modal').evaluate(m=>{const r=m.getBoundingClientRect(),left=m.querySelector('.modal-head>.icon-btn').getBoundingClientRect().left,right=m.querySelector('#setting-hand-shape').getBoundingClientRect().right;return {left:left-r.left,right:r.right-right};});assert(Math.abs(insets.left-insets.right)<=1,JSON.stringify(insets));assert.equal(await page.locator('#setting-hand-shape').locator('..').locator('small').count(),0);
  await page.screenshot({path:path.join(dir,'settings-320.png')});await page.setViewportSize({width:1098,height:1238});
  await page.locator('#setting-sound').uncheck();await page.locator('#setting-quick-play').uncheck();await page.locator('#setting-auto-pass').uncheck();
  await page.reload();await page.locator('.game-tile').first().waitFor();
