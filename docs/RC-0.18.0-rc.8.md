@@ -22,7 +22,7 @@
 
 ## Границы
 
-Только защищённый prerelease. План: приложение 0.18.0-rc.8, коллекция 0.7.0-rc.6, канал 0.18-rc.6. Production 0.17.6 / 0.6.5 не переключать. Старые JSON/ZIP/теги неизменны. Общий компонент включён в паки, поэтому все изменённые bundle получают новые версии.
+Только защищённый prerelease. Опубликованы: приложение 0.18.0-rc.8, коллекция 0.7.0-rc.6, канал 0.18-rc.6. Production 0.17.6 / 0.6.5 не переключать. Старые JSON/ZIP/теги неизменны. Общий компонент включён в паки, поэтому все изменённые bundle получают новые версии.
 
 ## Проверка
 
@@ -32,4 +32,12 @@
 
 ## Публикация
 
-Ещё не выполнена; адрес предыдущего подтверждённого RC7 — https://3acb8786.playroom-hod-test.pages.dev.
+Preview: https://62e03fb5.playroom-hod-test.pages.dev
+
+- App commit `4e95a659a872c2b15a458cc27cf326621ed57442`; packs commit `de53e0ebd6ba89fc177c15c355fb81b1e1f0294b`. PR приложения #138, коллекции #75 — merged в dev.
+- GitHub Releases `v0.18.0-rc.8` / `v0.7.0-rc.6`: скачанные файлы сверены по SHA256, ZIP CRC — success.
+- PWA ZIP SHA256 `64a5013be34c0ea53808792160a98ac9a5cb5161fcbc1dce7c4b9b5aab320580`.
+- R2 канал `0.18-rc.6`: workflow 39007703800 — success. Каталог `208e2adbb14790aefefb97524bf3045b152e03d282bcd4375c7d8bc00fb3d34b`, 12 паков.
+- Pages [39007824709](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/39007824709): protected/offline smoke — success, preview-verified.
+- Production до/после: app 0.17.6, packs 0.6.5; deployment `bddc9741-d208-42a8-adf6-ab8e8de655c9`; productionUnchanged=true.
+- Визуально просмотрены игровые снимки и меню/паки/настройки в `tmp_files/rc8/`; физический Android — следующий этап приёмки владельца.
