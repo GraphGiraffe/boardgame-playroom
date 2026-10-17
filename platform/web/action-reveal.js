@@ -12,9 +12,9 @@
       const x=right>left?(left+right)/2:width/2,y=bottom>top?(top+bottom)/2:height/2;
       this.host.style.setProperty('--reveal-x',x+'px');this.host.style.setProperty('--reveal-y',y+'px');
     }
-    target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>el.dataset.entity===this.value?.entity&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'));}
+    target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>el.dataset.entity===this.value?.entity&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'))||(this.value?.kind==='cards'?this.mount()?.querySelector('[data-motion-table]'):null);}
     restore(){if(!this.hidden)return;const {el,value,priority}=this.hidden;el.style.setProperty('visibility',value,priority);el.removeAttribute('data-reveal-active');this.hidden=null;}
-    hideTarget(){const el=this.target();if(this.hidden?.el===el)return;this.restore();if(el){this.hidden={el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')};el.setAttribute('data-reveal-active','');el.style.setProperty('visibility','hidden','important');}}
+    hideTarget(){const el=this.target();if(this.value?.kind==='cards'&&el?.hasAttribute('data-motion-table'))return;if(this.hidden?.el===el)return;this.restore();if(el){this.hidden={el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')};el.setAttribute('data-reveal-active','');el.style.setProperty('visibility','hidden','important');}}
     show(value,pack){
       const mount=this.mount();if(!mount||!value){this.clear();return;}
       if(this.value===value&&this.host?.isConnected){this.hideTarget();this.position();return;}
@@ -27,8 +27,8 @@
         const H=root.TabletopUI.helpers;
         for(const die of value.dice||[]){const item=doc.createElement('span');item.className='action-reveal-die'+(die.active===false?' is-unused':'');item.innerHTML=H.assetArt('die',{value:die.value},params=>H.components.dieArt(params.value));art.append(item);}
         host.setAttribute('aria-label',[value.title,root.PlayroomMessages.text('ui.action-reveal.dice',{values:(value.dice||[]).map(die=>die.value).join(', ')})].filter(Boolean).join('. '));
-      }else if(value.kind==='card'){
-        const markup=root.PlayroomViews?.reveal?.(pack,value);if(!markup){this.value=null;return;}
+      }else if(value.kind==='card'||value.kind==='cards'){
+        const markup=value.kind==='cards'?(value.cards||[]).map(card=>root.PlayroomViews?.reveal?.(pack,{kind:'card',card})).join(''):root.PlayroomViews?.reveal?.(pack,value);if(value.kind==='cards'){art.classList.add('is-card-set');art.style.setProperty('--reveal-card-count',value.cards.length);}if(!markup){this.value=null;return;}
         art.innerHTML=markup;art.classList.add('scene',pack+'-scene');
         for(const node of art.querySelectorAll('*')){for(const attr of [...node.attributes])if(attr.name==='id'||attr.name.startsWith('data-')||attr.name.startsWith('on'))node.removeAttribute(attr.name);node.setAttribute('tabindex','-1');if('disabled'in node)node.disabled=true;}
       }else{this.value=null;return;}
@@ -38,7 +38,7 @@
       if(this.entered||!this.host)return;this.entered=true;this.timing=timing;
       const art=this.host.querySelector('.action-reveal-art');
       const reduced=root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||root.document?.body.classList.contains('reduced-motion');
-      if(this.value?.kind!=='card'||!art||reduced||!timing.flip)return;
+      if(!['card','cards'].includes(this.value?.kind)||!art||reduced||!timing.flip)return;
       const from=snapshot?.playedFrom||snapshot?.entities?.get(this.value.entity)?.rect||snapshot?.origin,to=art.getBoundingClientRect();
       if(!from||!to.width||!to.height)return;
       const scale=Math.min(from.width/to.width,from.height/to.height);
@@ -48,7 +48,7 @@
     async finish(){
       const value=this.value,art=this.host?.querySelector('.action-reveal-art'),target=this.target();
       const reduced=root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||root.document?.body.classList.contains('reduced-motion');
-      if(this.value?.kind==='card'&&art&&target&&!reduced&&this.timing?.flip!==0&&art.animate){
+      if(['card','cards'].includes(this.value?.kind)&&art&&target&&!reduced&&this.timing?.flip!==0&&art.animate){
         const from=art.getBoundingClientRect(),to=target.getBoundingClientRect();
         if(from.width&&to.width&&to.height){
           const title=this.host.querySelector('.action-reveal-title');if(title)title.style.opacity='0';

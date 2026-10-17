@@ -56,7 +56,8 @@
     }
     const owner = Number.isInteger(actor) ? [...(scene?.querySelectorAll('[data-player-index]') || [])].find(el => Number(el.dataset.playerIndex) === actor) : null;
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
-    const stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back');
+    let stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back')||scene?.querySelector('.mini-hand .piece-back');
+    if(!stockBack&&root.TabletopUI?.helpers?.back){const template=doc.createElement('template');template.innerHTML=root.TabletopUI.helpers.back();stockBack=template.content.firstElementChild;}
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
     const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
     return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: poseOf(stockBack)||poseOf(scene?.querySelector('.stock-button')), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };

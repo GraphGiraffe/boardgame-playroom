@@ -13,8 +13,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const additions=events.filter(e=>Number.isSafeInteger(e?.id)&&e.id>this.cursor);if(!additions.length)return;
       this.cursor=additions.at(-1).id;if(silent)return;
       const timing=times[mode]||times.normal;
-      if(snapshot)snapshot.revealedEntities=additions.filter(e=>e.reveal?.entity).map(e=>e.reveal.entity);
-      const motionEvent=additions.findLast(e=>e.transfer||e.reveal||e.presentation)||additions.at(-1);
+      if(snapshot)snapshot.revealedEntities=additions.flatMap(e=>e.reveal?.cards?.map(card=>'card-'+card.id)|| (e.reveal?.entity?[e.reveal.entity]:[]));
+      const motionEvent=additions.findLast(e=>e.transfer)||additions.findLast(e=>e.reveal||e.presentation)||additions.at(-1);
       for(const event of additions){
         const ids=cues.filter(c=>c.eventId===event.id&&typeof c.id==='string').map(c=>c.id);
         const animated=event.speech||event.reveal||event.feedback?.kind==='skip';
@@ -48,9 +48,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const top=box.top-r.height-8>=8?box.top-r.height-8:Math.min(box.bottom+8,win.innerHeight-r.height-8);
       bubble.style.left=left+'px';bubble.style.top=Math.max(8,top)+'px';
     }
+    restorePending(){for(const {el,value,priority} of this.pendingRevealTargets||[])el.style.setProperty('visibility',value,priority);this.pendingRevealTargets=[];}
     refresh(){
+      this.restorePending();
       const mount=this.mount();if(!mount)return;
       const item=this.active;this.revealer?.show(item?.reveal,item?.pack);
+      const pending=new Set(this.queue.flatMap(event=>event.reveal?.cards?.map(card=>'card-'+card.id)||[]));
+      for(const el of mount.querySelectorAll('[data-entity]'))if(pending.has(el.dataset.entity)&&!el.closest('.hand-track,.mini-hand')){this.pendingRevealTargets.push({el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')});el.style.setProperty('visibility','hidden','important');}
       const skipped=item?.feedback?.kind==='skip'?item.feedback.player:null;
       mount.querySelectorAll('.player-panel[data-player-index]').forEach(panel=>{
         panel.style.setProperty('--feedback-skip-ms',(item?.timing.skip||450)+'ms');
@@ -70,7 +74,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       this.position();
     }
-    clear(){this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
+    clear(){this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
     destroy(){this.clear();root.removeEventListener?.('resize',this.reposition);root.document?.removeEventListener('scroll',this.reposition,true);}
   }
   GameFeedback.times=Object.freeze(times);return GameFeedback;

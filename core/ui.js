@@ -94,6 +94,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const order=Array.isArray(sequence)&&sequence.length===count&&new Set(sequence).size===count&&sequence.every(index=>Number.isInteger(index)&&index>=0&&index<count)?sequence:Array.from({length:count},(_,index)=>index);
     const start=own?order.indexOf(viewer)+1:0;return Array.from({length:own?count-1:count},(_,i)=>order[(start+i)%count]);
   }
+  function playerOrderPosition(state,index){return (index-(Number.isInteger(state.firstPlayer)?state.firstPlayer:0)+state.players.length)%state.players.length+1;}
   function opponents(state, viewer, cardRender, options = {}) {
     if (!state.data.hands) return '';
     return `<div class="opponent-hands">${seatOrder(state.players.length,viewer).map(i => {
@@ -148,11 +149,11 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
       const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?(options.backRender?.()||back(options.kind||'card')):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
-      return {handHTML,orderPosition:semantic?.orderPosition??index+1,indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+      return {handHTML,orderPosition:semantic?.orderPosition??playerOrderPosition(state,index),indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
-    const orderPosition=Number.isInteger(content.orderPosition)&&content.orderPosition>=1&&content.orderPosition<=8?content.orderPosition:index+1;
+    const orderPosition=Number.isInteger(content.orderPosition)&&content.orderPosition>=1&&content.orderPosition<=8?content.orderPosition:playerOrderPosition(state,index);
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const avatarBadges=(content.badges||[]).filter(b=>b?.position==='avatar-bottom').map(b=>`<span class="player-avatar-label${b.icon?' is-icon':''}" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}">${b.icon?icon(b.icon):esc(b.label)}</span>`).join('');
     const badges=(content.badges||[]).filter(b=>b?.position!=='avatar-bottom').map(b=>`<span class="player-status-badge ${typeof b==='object'&&['success','danger'].includes(b.tone)?'is-'+b.tone:''}"${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
@@ -259,10 +260,10 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const groups=new Map();
         for(const panel of panels){
           const relative=viewer>=0?(panel.player-viewer+state.players.length)%state.players.length:panel.player;
-          const seat=layout.seats?.[panel.player]||['south-east','south-west','north-west','north-east'][Math.floor(relative*4/state.players.length)%4];
+          const seat=layout.seats?.[panel.player]||['south-east','south-west','north-west','north-east'][Math.ceil(relative*4/state.players.length)%4];
           if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push(panel.html.replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?` data-seat-copy="true"${layout.duplicateSelf?'':' data-portrait-copy="true"'}`:''}`));
         }
-        e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${html.join('')}</div>`).join('')}</div>`;
+        e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${(seat.endsWith('west')?html.reverse():html).join('')}</div>`).join('')}</div>`;
       }else e.participants=`<div class="players-panels opponent-hands">${panels.map(panel=>panel.html).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
