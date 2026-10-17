@@ -256,3 +256,10 @@ test('Pexeso cartoon deck defaults to exact character pairs and completes every 
   assert.equal(state.status,'finished',preset);assert(E.validateState(state));
  }
 });
+
+test('RC12 Pexeso composition stays fixed while placement changes',()=>{
+ for(const deck of ['cartoon','52'])for(const preset of ['easy','medium','hard']){
+  const a=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:17}),b=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:42});
+  assert.deepEqual(a.data.board.map(c=>c.id).sort(),b.data.board.map(c=>c.id).sort());assert.notDeepEqual(a.data.board.map(c=>c.id),b.data.board.map(c=>c.id));
+ }
+});

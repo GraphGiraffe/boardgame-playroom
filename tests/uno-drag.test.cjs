@@ -43,7 +43,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,options,run){await t.test(name,async()=>{
     const context=await browser.newContext({viewport:options.landscape?{width:844,height:390}:options.mobile?{width:390,height:844}:{width:1280,height:900},hasTouch:!!options.mobile,isMobile:!!options.mobile,reducedMotion:'reduce'});
-    const saved=fixture(options);await context.addInitScript(({saved,autoPass,handShape})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,autoPass,handShape}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,autoPass:!!options.autoPass,handShape:options.arc?'arc':'straight'});
+    const saved=fixture(options);await context.addInitScript(({saved,autoPass,handShape})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,quickPlay:false,autoPass,handShape}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,autoPass:!!options.autoPass,handShape:options.arc?'arc':'straight'});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(4500);page.on('pageerror',e=>errors.push(e.message));
     try{await page.goto(url);await page.locator('.resume-banner [data-command=resume]').click();await source(page).waitFor({state:'visible'});await run({page,context,saved});assert.deepEqual(errors,[]);}finally{await context.close();}
   });}

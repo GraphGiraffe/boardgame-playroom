@@ -179,7 +179,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(clientAudioListener&&!document.getElementById('net-client-acoustic-listen'))stopClientAudio();
     const b=bridge();if(!b)return;
     const intro=$('.intro');
-    if(intro&&!document.getElementById('network-join-button')){const wrap=document.createElement('div');wrap.className='lobby-actions hub-intro-actions';wrap.innerHTML=("<button class=\"btn secondary\" id=\"network-join-button\" type=\"button\">"+globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b")+"</button>");intro.appendChild(wrap);}
+    const scope=document.querySelector('.filter-scope');
+    if(scope&&!document.getElementById('network-join-button')){const button=document.createElement('button');button.className='btn secondary';button.id='network-join-button';button.type='button';button.textContent=globalThis.PlayroomMessages.text('ui.network-ui.25177fb5362b');scope.appendChild(button);}
 
     if(hasActiveRoom()&&networkInMenu){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
@@ -188,7 +189,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
 
-    if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");intro.querySelector('.lobby-actions')?.appendChild(btn);}
+    if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");let actions=intro.querySelector('.lobby-actions');if(!actions){actions=document.createElement('div');actions.className='lobby-actions hub-intro-actions';intro.appendChild(actions);}actions.appendChild(btn);}
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     const room=b.room?.(),lobby=$('.lobby-shell');

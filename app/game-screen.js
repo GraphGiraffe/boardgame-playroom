@@ -34,7 +34,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return iconButton('id="network-pair-button"',globalThis.PlayroomMessages.text("ui.game-screen.c58470ab336f"),'addPlayer',{disabled});
   }
   let quickActions=[];
-  function quickAccessMarkup(){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')&&action.name!=='palette').map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
+  function quickAccessMarkup({exclude=[]}={}){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')&&action.name!=='palette'&&!exclude.includes(action.name)).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
     // Context actions grow to the left; help and settings keep the right edge.
     const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:true}]:[];
@@ -157,7 +157,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full',hidden:true},
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
-      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="turn-extra">${esc([roundText(state.scene?.round),state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}${statusExtra}</div>
+      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
@@ -175,7 +175,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const ratio=Number(mini.querySelector('[data-piece-ratio]')?.dataset.pieceRatio);
     if(ratio>0&&ratio<=1){const height=parseFloat(stage.style.getPropertyValue('--opponent-card-height'))||40;mini.style.setProperty('--opponent-card-width',height*ratio+'px');}
     const style=mini.ownerDocument.defaultView.getComputedStyle(mini),available=mini.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
-    mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(32,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
+    mini.style.setProperty('--mini-step',(count>1?Math.max(mini.classList.contains('is-open')?12:0,Math.min(mini.firstElementChild.offsetWidth*.65,(available-mini.firstElementChild.offsetWidth)/(count-1))):32)+'px');
   }
   // Independent transform properties compose with selection/drag's transform.
   // Geometry uses untransformed offsets so scrolling never feeds back into fit.
@@ -184,8 +184,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const enabled=root.PlayroomAppBridge?.gameOptions?.().handShape==='arc';
     track.classList.toggle('is-arc',enabled);
     const row=track.querySelector('.hand-fan-row');if(!row)return;
+    const pieceWidth=row.firstElementChild?.offsetWidth||0,step=Math.min(parseFloat(track.style.getPropertyValue('--fan-peek'))||16,pieceWidth*.65);
+    row.style.setProperty('grid-template-columns',(row.children.length>1?`repeat(${row.children.length-1},${step}px) `:'')+pieceWidth+'px','important');
     const style=track.ownerDocument.defaultView.getComputedStyle(track),left=Math.max(parseFloat(style.paddingLeft),row.offsetLeft-track.scrollLeft),right=Math.min(track.clientWidth-parseFloat(style.paddingRight),row.offsetLeft+row.offsetWidth-track.scrollLeft);
-    const center=(left+right)/2,half=Math.max(1,(right-left)/2),radius=Math.max(half*7.2,half*half/8);
+    const center=(left+right)/2,half=Math.max(1,(right-left)/2),count=row.children.length;
+    const angle=Math.min(12,4+24/Math.max(1,count));
+    const radius=Math.max(half/Math.sin(angle*Math.PI/180),half*half/8);
     for(const card of row.children){
       const x=Math.max(-half,Math.min(half,row.offsetLeft+card.offsetLeft+card.offsetWidth/2-track.scrollLeft-center));
       card.style.setProperty('--hand-arc-angle',enabled?Math.asin(x/radius)*180/Math.PI+'deg':'0deg');
@@ -213,8 +217,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       peek=Math.max(peek,Math.min(card.offsetWidth*.28,Math.ceil(corner.offsetLeft+corner.offsetWidth+2)));
     }
     if(count>1&&card){const width=card.offsetWidth;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
-    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.offsetWidth-peek,available-card.offsetWidth-Math.max(0,count-1)*peek-(track.classList.contains('is-arc')?16:4)))+'px':'0px');
+    if(card)peek=Math.min(peek,card.offsetWidth*.65);
+    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.offsetWidth-peek,(available-card.offsetWidth-Math.max(0,count-1)*peek)/2-2))+'px':'0px');
     track.style.setProperty('--fan-peek',peek+'px');
+    if(track.classList.contains('is-arc'))track.style.setProperty('--fan-reveal-space','0px');
     fitHandArc(track);
   }
   function fitHand(stage){
@@ -280,7 +286,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
       if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));
       const seatWidth=edge?Math.max(120,Math.min(260,w-12,h-ownZone-2*seatHeight-24)):compact?(w-6)/2:Math.min(200,Math.max(110,w*.21));
-      stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,Math.floor(w/(portrait&&roster>3?94:130)))));
+      stage.style.setProperty('--focus-player-columns',Math.max(1,Math.min(stage.querySelectorAll('.layout-participants .player-panel').length,portrait?Math.floor(w/(roster>3?94:130)):Math.ceil(roster/Math.max(1,Math.floor((h-88)/58))))));
       stage.style.setProperty('--seat-width',Math.floor(seatWidth)+'px');stage.style.setProperty('--seat-height',seatHeight+'px');
       stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-48)/1.43))+'px');
       stage.style.setProperty('--own-zone',ownZone+'px');
@@ -297,6 +303,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(cramped){stage.style.setProperty('--opponent-viewport-height',(miniHeight*.5+4)+'px');stage.dataset.croppedHands='true';fitField(stage);fitHand(stage);}
       if(stage.dataset.seating==='circle'&&(seatsOverlap()||field?.clientHeight<80)){
         stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
+      }
+      if(!portrait&&stage.dataset.seating==='row'&&participants){
+        const maximum=Math.max(1,Math.floor(participants.clientWidth/80));
+        for(let columns=1;columns<=maximum;columns++){
+          stage.style.setProperty('--focus-player-columns',columns);
+          if(participants.scrollHeight<=participants.clientHeight+2)break;
+        }
+        fitHand(stage);
       }
       root.PlayroomHandOverflow?.sync?.(host);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
