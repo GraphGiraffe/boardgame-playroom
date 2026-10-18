@@ -13,3 +13,15 @@
 Ограничение прежней расширенной матрицы game-layout-browser сохранено: до этой правки уже были ошибки ожиданий дубликата своего игрока, компактных кнопок, границ повёрнутых счётчиков и отдельных низких экранов. Базовый RC22 в изолированном checkout дал 115 pass / 65 fail; рабочий срез до RC23 — 186 pass / 59 fail вместе с presentation/network. Эта матрица не выбрана новым выпускным gate и не объявляется пройденной; ослабление её порогов ранее отклонила автоматическая проверка, пороги не изменены. Внесено только различение обрезки overflow:hidden и настоящей вертикальной прокрутки согласно принятому требованию пользователя. Подробности — FISH-TABLE-REVIEW.md.
 
 Публикация: новые immutable GitHub prereleases, скачанные SHA256/ZIP CRC, отдельный каталог и защищённый Pages preview; точные SHA/URL/отчёт проверки добавляются после публикации. Стабильный основной адрес не переключается.
+
+## Immutable выпуск и источники
+
+Приложение: commit `4a94ab6de438e8706c91c2be6f699e886e0b58c2`, [PR #163](https://github.com/GraphGiraffe/boardgame-playroom/pull/163), [v0.18.0-rc.23](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.23). Коллекция: commit `8d74c9f3abf116014ef70855976de3383a13af38`, [PR #89](https://github.com/GraphGiraffe/boardgame-playroom-paks/pull/89), [v0.7.0-rc.17](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0-rc.17). Теги проверены по remote refs, оба релиза опубликованы как prerelease (не Draft); доступ к ним определяется прежними правами репозиториев.
+
+После скачивания проверены все 8 файлов приложения и 18 файлов коллекции по SHA256/ZIP CRC. Отдельный архив `playroom-assets-mini-cards-0.1.0.zip` содержит manifest, renderer, CSS и README. Сборка источников и опубликованный provenance содержат точную пару SHA и выбранные проверки.
+
+[Публикация каталога #39096787116](https://github.com/GraphGiraffe/boardgame-playroom-paks/actions/runs/39096787116) завершилась успешно, только канал `0.18-rc.17`; snapshot `a032e010b1c79c062cc3095153cb1f6d3a68c6c702a19b0dd275bd97f35e88d7`.
+
+[Защищённый preview #39096893247](https://github.com/GraphGiraffe/boardgame-playroom/actions/runs/39096893247): **preview-verified**, [https://819afbfc.playroom-hod-test.pages.dev](https://819afbfc.playroom-hod-test.pages.dev), deployment `819afbfc-ffdd-4166-9695-35b4547132a9`. Проверены точный runtime RC23, каталог RC17 и все 12 pack SHA256, защита доступа и offline reload; `productionUnchanged: true`, production сохранил app 0.17.6 / collection 0.6.5. Одна загрузка preview, production не переключался. Все публикационные workflows используют `checks=none`, не подменяя локальный исходный gate.
+
+Итоговый отчёт находится в артефакте pages-deployment-report запуска #39096893247; локальная копия проверки — /tmp/rc23-preview-report/deploy-report.json. Этот последующий commit меняет только документацию; runtime и теги остаются на указанных immutable SHA.
