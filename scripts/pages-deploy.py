@@ -277,7 +277,10 @@ def run(args):
         if args.pack_channel:
             return verify_existing_preview(pages, args, report, expected, previous)
         target = pages.production_target(args.deployment) if args.deployment else None
-        smoke(target['url'] if target else expected)
+        with tempfile.TemporaryDirectory(prefix='playroom-production-verify-') as tmp:
+            verified = Path(tmp)/'production.json'
+            smoke(target['url'] if target else expected, report_path=verified)
+            report['productionVerified'] = json.loads(verified.read_text())
         report.update(status='preflight-passed', productionBranch=production, verifiedDeployment=target['id'] if target else previous)
         return report
     if args.operation == 'rollback':
@@ -384,7 +387,10 @@ def run(args):
             deployed = upload(production)
             if deployed.get('environment') != 'production':
                 raise ValueError('Expected production deployment')
-            smoke(deployed['url'], tmp/'site');smoke(expected, tmp/'site')
+            smoke(deployed['url'], tmp/'site')
+            verified = tmp/'production-verification.json'
+            smoke(expected, tmp/'site', report_path=verified)
+            report['productionVerified'] = json.loads(verified.read_text())
             if pages.api().get('canonical_deployment', {}).get('id') != deployed['id']:
                 raise ValueError('Production deployment was not confirmed')
             report.update(deployment=deployed['id'], status='published')

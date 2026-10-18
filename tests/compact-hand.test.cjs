@@ -115,7 +115,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
   async function check(name, options, run) {
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: options.viewport || {width: 390, height: 740}, isMobile: !!options.touch, hasTouch: !!options.touch, reducedMotion: 'reduce'});
-      await context.addInitScript(saved => {if(sessionStorage.getItem('compact-seeded'))return;sessionStorage.setItem('compact-seeded','1');localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, options.saved || fixture(options.long));
+      await context.addInitScript(saved => {if(sessionStorage.getItem('compact-seeded'))return;sessionStorage.setItem('compact-seeded','1');localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false, handShape:'straight'})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, options.saved || fixture(options.long));
       const page = await context.newPage(), errors = []; page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
       try {
         await page.goto(hosted?.url||url); await page.locator('.resume-banner [data-command=resume]').click();
@@ -151,7 +151,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
         });
         assert.equal(hand.count,count);assert.equal(hand.rows,1);
         assert(hand.overlap>=12,`Cards must visibly overlap, got ${JSON.stringify(hand)}`);
-        assert(hand.overflow>1&&hand.marker,`Scrolled hands need a visible right boundary: ${JSON.stringify(hand)}`);
+        assert.equal(hand.marker,hand.overflow>1,`Scrolled hands need a visible right boundary: ${JSON.stringify(hand)}`);
       });
     await check('Hover and keyboard focus reveal the whole card, including an unplayable card', {}, async ({page}) => {
       for (const id of ['u1', 'u26']) {

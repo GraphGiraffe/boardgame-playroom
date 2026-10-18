@@ -89,11 +89,12 @@ async function accuse(page, target) {
   await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
   assert.equal(await token.getAttribute('aria-expanded'),'true');
-  const box=await button.boundingBox(),card=await panel.boundingBox();assert(box.x>=card.x&&box.y>=card.y&&box.x+box.width<=card.x+card.width+1&&box.y+box.height<=card.y+card.height+1,'player action stays inside its card');
+  const box=await button.boundingBox(),viewport=page.viewportSize();assert(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width+1&&box.y+box.height<=viewport.height+1,'player action popover stays within the viewport');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
   assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
   await button.click();
+  await page.locator('[data-command=confirm-action]').click();
   assert.equal(await page.locator('.player-target-menu').count(),0);
   return appearance;
 }

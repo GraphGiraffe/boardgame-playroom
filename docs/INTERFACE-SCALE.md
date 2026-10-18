@@ -1,6 +1,5 @@
 # Локальный масштаб и дискретные настройки
 
-Изменения включены в новый [RC26 / коллекцию RC19](RC-0.18.0-rc.26.md). Ниже сохранена история локальной реализации и её проверки.
 
 ## Поведение
 
@@ -30,31 +29,5 @@ platform/web/interface-scale.js нормализует целый процент
 
 Старые сценарии UI теперь явно выбирают ручной режим для проверок выбора перед ходом и отключают автоматическую передачу в проверке инспекции своей руки. Два кубика ЗиЛ+ выполняют одну и ту же команду броска; тест нажимает один из них. Геометрия display:contents проверяется по всем реальным группам мест, а не по нулевому прямоугольнику контейнера. После поворота проверка ждёт два кадра рендера для завершения штатного ResizeObserver, затем измеряет все области; проверки неподвижности поля во время ходов продолжают снимать покадровые значения. Строгие границы, 44 px и проверки звука/сохранений сохранены.
 
-## Проверка
 
-Сценарий tests/interface-scale.test.cjs зарегистрирован в ui/appearance. Проверяет все разрешённые шаги на 320×640, 390×844, 844×390, 768×1024, 1024×768 и 1440×900 для всех 12 игр с максимальными составами: границы областей, квадратные доски, читаемые имена и отсутствие лишней прокрутки игроков. Проверяет сохранение настроек, все точки в серой зоне, запрет выбора мышью/клавиатурой, mute и восстановление после поворота. Живой drag карты UNO проверяется при уменьшенном и увеличенном масштабе; Лудо дополнительно проверяет настоящие touch-нажатия.
-
-Снимки находятся в tmp_files/interface-scale/. Эти изменения локальные, без нового RC, stable-релиза или deployment.
-
-Итоговые адресные команды (XDG_CONFIG_HOME=/tmp/playroom-rc7-xdg):
-
-```sh
-node scripts/codex/test.cjs case/interface-scale,case/motion-settings,case/drag-app,case/motion-effects,case/ludo-team-markers-browser
-node scripts/codex/test.cjs case/ui,case/interface-scale,case/appearance-browser,case/ludo-team-markers-browser
-node scripts/codex/test.cjs case/rc2-presentation-browser,case/game-layout-browser
-node scripts/codex/test.cjs case/network-main-app,core/screen,case/localization
-```
-
-Успешно **406 уникальных проверок**: input 42, ui 91, games 236, core 35, network 2; fail/skipped 0. Семь сценариев масштаба/Лудо входят в первые две команды и считаются один раз. Дополнительно окончательная проверка всех групп мест после поворота: node --test --test-name-pattern="Phone landscape" tests/ui.test.cjs — 50/50, fail/skipped 0; лог /tmp/interface-scale-all-seats.log. Логи: /tmp/interface-scale-input-final.log, /tmp/interface-scale-ui-final.log, /tmp/interface-scale-games-final.log, /tmp/interface-scale-contracts-final.log. Это выбранная область приёмки, не полный suite. Изначальный единый список превысил допустимую длину имени TAP-файла; те же сценарии завершены отдельными короткими командами без изменения runner.
-
-Ветка приложения feature/interface-scale поверх e7df33520a5d308d52fcc71ba5f6d095ceed72b9; точный состав приложения закреплён коммитом этого документа. Companion: bc407070bf20d3e1e7e047dd351fdc92741c8223, без новых изменений в паках. Все разрешённые масштабы проверены в Chromium; физический Android и другие браузеры не проверялись.
-
-Локальная сборка:
-
-```sh
-python3 build.py --all-games --pwa --packs-dir ../playroom-paks/packs --output-dir dist/interface-scale
-cd dist/interface-scale
-sha256sum -c SHA256SUMS
-```
-
-Архивы также проверяются по ZIP CRC, автономный HTML — открытием в Chromium и проверкой доступности слайдеров. Версии и опубликованные теги остаются прежними; локальные файлы сборки не являются новым выпуском.
+Проверки: case/interface-scale; stable evidence — [RELEASE-0.18](RELEASE-0.18.md).

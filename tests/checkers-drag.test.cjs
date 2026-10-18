@@ -81,7 +81,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
         hasTouch: !!options.mobile, isMobile: !!options.mobile, reducedMotion: options.motion ? 'no-preference' : 'reduce'});
       const saved = fixture(options);
       await context.addInitScript(({saved, motion}) => {
-        localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false}));
+        localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false, autoPass:false}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
       }, {saved, motion: !!options.motion});
       const page = await context.newPage(), errors = [];

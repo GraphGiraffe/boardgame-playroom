@@ -37,14 +37,14 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=room-rules]').click();
   await page.locator('#room-rules-form [name=preset]').selectOption('hard');
-  await page.locator('#room-rules-form [name="option-deck"]').selectOption('54');
+  await page.locator('#room-rules-form [name="option-deck"]').selectOption('52');
   await page.locator('#room-rules-form').evaluate(form=>form.requestSubmit());
   await page.locator('[data-command=lobby-leave]').click();
   await page.reload();
   await page.locator('[data-start=pexeso]').first().click();
   await page.locator('[data-command=room-rules]').click();
   assert.equal(await page.locator('#room-rules-form [name=preset]').inputValue(),'hard');
-  assert.equal(await page.locator('#room-rules-form [name="option-deck"]').inputValue(),'54');
+  assert.equal(await page.locator('#room-rules-form [name="option-deck"]').inputValue(),'52');
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=lobby-start]').click();
   await page.locator('.table-heading [data-command=home]').click();

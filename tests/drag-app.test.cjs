@@ -206,7 +206,7 @@ test('Domino selection and drag gestures through the real application', {timeout
       assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
     });
 
-    await check('Landscape domino hand scrolls horizontally without shrinking tiles', {mobile:true}, async ({page,context})=>{
+    await check('Landscape domino hand scrolls horizontally without shrinking tiles', {mobile:true,longHand:true}, async ({page,context})=>{
       await page.setViewportSize({width:740,height:320});
       const track=page.locator('.hand-track'),cdp=await context.newCDPSession(page),before=await state(page);
       assert(await track.evaluate(e=>e.scrollWidth>e.clientWidth),'tiles overflow inside hand viewport');

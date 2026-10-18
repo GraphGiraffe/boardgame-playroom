@@ -118,7 +118,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
       await page.locator('[data-pack-confirm="1"]').click();
       await page.locator('[data-pack-confirm="2"]').waitFor();
       await page.locator('[data-pack-confirm="2"]').click();
-      await page.locator('.pack-entry[data-pack-version="0.2.0"]').waitFor({state:'detached'});
+      await page.locator('.pack-entry[data-pack-id="qa-counter"][data-pack-version="0.2.0"]').waitFor({state:'detached'});
       await close();await page.locator('.side-nav [data-command=sessions]').click();
       assert.equal(await page.locator('.saved-game').count(),1);
     });

@@ -280,8 +280,8 @@ test('all source packs provide only API 2 elements with application-owned placem
       assert.equal(panels.length,state.players.length+panels.filter(panel=>panel[3].includes('data-seat-copy="true"')).length,game);
       assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
       for(const [,classes,index,attrs]of panels){
-        assert.equal(classes.includes('is-turn'),Number(index)===turn,`${game}: only the current player is highlighted`);
-        assert.equal(attrs.includes('aria-current="true"'),Number(index)===turn,`${game}: accessible current player follows turn changes`);
+        assert.equal(classes.includes('is-turn'),Number(index)===turn&&!attrs.includes('data-seat-copy='),`${game}: only the current player is highlighted`);
+        assert.equal(attrs.includes('aria-current="true"'),Number(index)===turn&&!attrs.includes('data-seat-copy='),`${game}: accessible current player follows turn changes`);
         assert.equal(classes.includes('self-player'),Number(index)===viewer,`${game}: own card uses the same turn state`);
       }
     }

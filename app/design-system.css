@@ -602,13 +602,13 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 
 /* One size contract for hand cards and their scroll viewport. */
 #app .app-game-layout .layout-hand .hand-track.is-fan,#app .app-game-layout .layout-hand .hand-card{--fan-card-width:var(--scene-card-width,64px)!important;--fan-card-height:var(--scene-card-height,89.6px)!important}
-#app .app-game-layout .layout-hand .hand-track.is-fan{box-sizing:border-box;height:calc(var(--scene-card-height,89.6px) + 24px)!important;min-height:calc(var(--scene-card-height,89.6px) + 24px)!important;padding:12px 6px!important;overflow-y:hidden!important}
+#app .app-game-layout .layout-hand .hand-track.is-fan{box-sizing:border-box;height:var(--hand-row-height,113.6px)!important;min-height:var(--hand-row-height,113.6px)!important;padding:12px 6px!important;overflow-y:hidden!important}
 #app .app-game-layout .layout-hand .hand-track.is-tiles:not(.is-long-hand){flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden}
 .app-game-layout .layout-actions:has(.shared-hint):not(:has(button)){height:auto!important;min-height:0!important;flex:none}
 .app-game-layout .layout-actions .game-action-bar:has(.shared-hint):not(:has(button)){display:block;min-height:0}
 .app-game-layout .layout-actions [data-action-position]:has(>.shared-hint){min-height:0;height:auto}
 .app-game-layout .layout-actions .shared-hint{display:block;font-size:11px;line-height:1.25;text-align:center}
-.app-game-layout .hand-scroll-controls{position:static!important;display:flex;justify-content:flex-end;min-height:24px;height:24px;margin:0}
+.app-game-layout .hand-scroll-controls{position:absolute!important;top:auto;bottom:0;right:6px;display:flex;justify-content:flex-end;min-height:24px;height:24px;margin:0}
 .app-game-layout .hand-scroll-controls button{height:24px;min-height:24px;width:28px}
 @media(orientation:landscape) and (min-width:600px){
  #app .app-game-layout[data-dense-roster="true"] .players-panels{grid-template-columns:repeat(2,minmax(0,1fr))!important}
@@ -629,7 +629,7 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 #app .app-game-layout .self-player .player-info{min-height:38px}
 #app .app-game-layout .layout-hand .own-hand{min-height:0;height:auto;padding:0}
 #app .app-game-layout .layout-actions{min-height:0}
-#app .app-game-layout .layout-actions .scene-button{min-height:36px;padding:6px 10px}
+#app .app-game-layout .layout-actions .scene-button{min-height:44px;padding:6px 10px}
 
 #app .app-game-layout .layout-hand .card-corner{font-size:calc(var(--scene-card-width,64px)*.20);left:4px;top:4px}
 #app .app-game-layout .layout-hand .card-corner small{font-size:calc(var(--scene-card-width,64px)*.15)}
@@ -831,7 +831,7 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 
 @media(orientation:landscape) and (min-width:600px) and (max-height:360px){
  #app .app-game-layout[data-seating="row"]>.layout-self{padding:2px;gap:2px}
- #app .app-game-layout[data-seating="row"] .layout-hand .hand-track.is-fan{height:calc(var(--scene-card-height,89.6px) + 12px)!important;min-height:calc(var(--scene-card-height,89.6px) + 12px)!important;padding-block:6px!important}
+ #app .app-game-layout[data-seating="row"] .layout-hand .hand-track.is-fan{height:calc(var(--hand-row-height,113.6px) - 12px)!important;min-height:calc(var(--hand-row-height,113.6px) - 12px)!important;padding-block:6px!important}
 }
 @media(orientation:landscape) and (min-width:600px){
  #app .table-shell:has(.table-tools>button:nth-child(4)){--side-width:max(26%,198px)}
@@ -842,3 +842,7 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
  #app .app-game-layout[data-seating="row"]>.layout-self>.layout-actions:has(>.pass-device-button){display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center}
  #app .app-game-layout[data-seating="row"]>.layout-self>.layout-actions>.scene-actions{min-width:0;width:100%}
 }
+
+/* The personal surface owns its grid, independent of the table seating. */
+#app .app-game-layout[data-surface="player"] .players-panels{grid-template-columns:repeat(var(--player-columns,2),minmax(0,1fr))!important;grid-template-rows:repeat(var(--player-rows,1),minmax(110px,1fr))!important;grid-auto-rows:minmax(110px,1fr)}
+.app-game-layout .hand-scroll-hint{display:none}

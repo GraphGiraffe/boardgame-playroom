@@ -827,7 +827,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const person=event.target.closest('[data-player-target],[data-player-panel-target]');
     if(person){showPlayerActions(Number(person.dataset.playerTarget??person.dataset.playerPanelTarget));return;}
     const button=event.target.closest('button,[data-action],[data-select],[data-cell],[data-drop-select]');
-    if(!button||button.disabled)return;
+    if(!button){const tile=event.target.closest('.game-tile:not(.is-editing)[data-game]');if(tile&&!hubEditing)setup(tile.dataset.game);return;}
+    if(button.disabled)return;
     if(button.dataset.roomGame){updateRoomGame(button.dataset.roomGame);return;}
     if(button.dataset.roomCycle){try{cycleRoomSeat(button.dataset.roomCycle);}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}
     if(button.dataset.roomBot){try{room=roomService.setLocalSeat(room.id,lobbyParticipantId,button.dataset.roomBot,{kind:'bot',nickname:button.dataset.botName});renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}

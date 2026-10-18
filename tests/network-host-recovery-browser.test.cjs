@@ -160,12 +160,14 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
             return panel?.querySelector('.replay-badge')?.textContent?.trim().startsWith('0 /');
           });
           assert.equal((await guest.locator('.table-title h1').innerText()).trim(),'UNO');
+          await guest.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
           const fit=await guest.evaluate(()=>{
             const scene=document.querySelector('.table-shell.network-game .scene.replaying'),stage=scene?.firstElementChild;
             if(!scene||!stage)return {exists:false};
             return {exists:true,viewportHeight:scene.getBoundingClientRect().height,
               stageHeight:stage.getBoundingClientRect().height,scrollExcess:scene.scrollHeight-scene.clientHeight};
           });
+          if(process.env.PLAYROOM_CAPTURE_DIR)await guest.screenshot({path:require('node:path').join(process.env.PLAYROOM_CAPTURE_DIR,'network-replay-'+mode+'.png')});
           assert.equal(fit.exists,true);
           assert.ok(fit.stageHeight<=fit.viewportHeight+8,'the replay board must fit above history controls: '+JSON.stringify(fit));
           assert.ok(fit.scrollExcess<=8,'network replay must not require internal page scrolling: '+JSON.stringify(fit));
