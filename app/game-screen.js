@@ -27,6 +27,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       svg.setAttribute('preserveAspectRatio','xMidYMid meet');
     }
   }
+  function rangeSetting({id,label,min=0,max=3,step=1,value,display,describedby='',bounds=false}){
+    const stops=Array.from({length:Math.round((max-min)/step)+1},(_,i)=>min+i*step);
+    return `<label class="settings-range" for="${esc(id)}" style="--range-progress:${(value-min)/(max-min)*100}%;--range-allowed:100%"><span class="settings-range-heading"><span>${esc(label)}</span><output id="${esc(id)}-value" for="${esc(id)}">${esc(display)}</output></span><span class="settings-range-track"><input type="range" id="${esc(id)}" min="${min}" max="${max}" step="${step}" value="${value}" aria-valuetext="${esc(display)}"${describedby?` aria-describedby="${esc(describedby)}"`:''}><span class="settings-range-dots" aria-hidden="true">${stops.map(stop=>`<i data-range-stop="${stop}" style="left:${(stop-min)/(max-min)*100}%"></i>`).join('')}</span></span>${bounds?`<span class="settings-range-bounds" aria-hidden="true"><span>${min}%</span><span>${max}%</span></span>`:''}</label>`;
+  }
+  // CSS zoom changes screen rectangles, while layout offsets stay in local pixels.
+  function layoutRect(node){
+    const r=node.getBoundingClientRect(),scale=node.closest('#app,#modal-root,.appearance-dialog')?(root.PlayroomInterfaceScale?.applied||100)/100:1;
+    return {x:r.x/scale,y:r.y/scale,left:r.left/scale,right:r.right/scale,top:r.top/scale,bottom:r.bottom/scale,width:r.width/scale,height:r.height/scale};
+  }
   function iconButton(attrs,label,name,{disabled=false,active,className='',type='button'}={}){
     return `<button class="icon-btn ui-icon-button ${esc(className)}${active?' active':''}" type="${esc(type)}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}" ${typeof active==='boolean'?`aria-pressed="${active}"`:''} ${disabled?'disabled':''}>${icon(name)}</button>`;
   }
@@ -67,10 +76,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function updateModal(modal,content){
     const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
     const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
-    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>el.getBoundingClientRect().bottom>(body?.getBoundingClientRect().top||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
-    const top=anchor?.getBoundingClientRect().top;
+    const anchor=[...modal.querySelectorAll('.lobby-seat-row,.lobby-observer,.pack-entry')].find(el=>layoutRect(el).bottom>((body?layoutRect(body).top:0)||0)&&(!el.matches('.pack-entry')||content.includes(`data-pack-id="${el.dataset.packId}" data-pack-version="${el.dataset.packVersion}"`)));
+    const top=anchor?layoutRect(anchor).top:0;
     patchChildren(modal,template.content);fitCovers(modal);
-    if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
+    if(body){body.scrollTop=scroll;if(anchor?.isConnected)body.scrollTop+=layoutRect(anchor).top-top;}
   }
   function roundText(round){return round&&Number.isSafeInteger(round.number)&&round.number>0?globalThis.PlayroomMessages.text(round.kind==='bout'?'progress.bout':round.limit?'progress.round-of':'progress.round',{number:round.number,...(round.limit?{limit:round.limit}:{})}):'';}
   function participantsMarkup(state,{network=false,participants=[],teamLayouts={},selfId=null,selfIndex=null}={}){
@@ -178,9 +187,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const own=track.closest('.layout-self'),slot=track.closest('.layout-hand'),piece=track.querySelector('.hand-card,.domino-tile');
     if(!own||!slot||!piece)return Infinity;
     const style=own.ownerDocument.defaultView.getComputedStyle(own),children=[...own.children].filter(node=>node.getClientRects().length);
-    const reserved=children.filter(node=>node!==slot).reduce((sum,node)=>sum+node.getBoundingClientRect().height,0)
+    const reserved=children.filter(node=>node!==slot).reduce((sum,node)=>sum+layoutRect(node).height,0)
       +parseFloat(style.paddingTop)+parseFloat(style.paddingBottom)+Math.max(0,children.length-1)*(parseFloat(style.rowGap)||0);
-    return Math.max(0,own.clientHeight-reserved-(slot.getBoundingClientRect().height-piece.offsetHeight));
+    return Math.max(0,own.clientHeight-reserved-(layoutRect(slot).height-piece.offsetHeight));
   }
   function fitTileHand(track,stage){
     const style=track.ownerDocument.defaultView.getComputedStyle(track);
@@ -225,8 +234,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const trackStyle=track.ownerDocument.defaultView.getComputedStyle(track),available=track.clientWidth-parseFloat(trackStyle.paddingLeft)-parseFloat(trackStyle.paddingRight);
     let desired=Math.min(parseFloat(stage.style.getPropertyValue('--scene-card-width'))||64,Math.max(32,handPieceHeight(track,stage)/1.4));
     if(stage.dataset.seating==='circle'&&stage.dataset.anchorOrientation==='landscape'){
-      const own=track.closest('.layout-self')?.getBoundingClientRect(),north=stage.querySelector('.seat-north-east')?.getBoundingClientRect();
-      if(own&&north?.height){const controls=own.height-track.getBoundingClientRect().height,availableHeight=own.bottom-north.bottom-6-controls-24;desired=Math.min(desired,Math.max(32,availableHeight/1.4));}
+      const own=track.closest('.layout-self')&&layoutRect(track.closest('.layout-self')),north=stage.querySelector('.seat-north-east')&&layoutRect(stage.querySelector('.seat-north-east'));
+      if(own&&north?.height){const controls=own.height-layoutRect(track).height,availableHeight=own.bottom-north.bottom-6-controls-24;desired=Math.min(desired,Math.max(32,availableHeight/1.4));}
     }
     const fitted=count>1&&!track.classList.contains('is-long-hand')?Math.min(desired,(available-10)/(1+.28*Math.max(0,count-1)),available-10-16*Math.max(0,count-1)):desired;
     track.style.setProperty('--scene-card-width',Math.max(32,fitted)+'px');
@@ -270,8 +279,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       field.style.width=boardWidth+'px';field.style.height=boardHeight+'px';field.style.zoom='1';return;
     }
     field.style.zoom='1';field.style.width=Math.min(width,520)+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
-    const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.1,Math.min(1.6,width/Math.max(field.scrollWidth,r.width,1),height/natural));
+    const r=layoutRect(field),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.1,Math.min(1.6,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
+  }
+  function fitPlayerPanels(stage){
+    for(const panel of stage.querySelectorAll('.player-panel.opponent-hand')){panel.dataset.compactHand=String(stage.dataset.opponentHands==='true'&&panel.clientWidth<240);panel.dataset.compactIdentity=String(panel.clientWidth<120);}
   }
   // Responsive score lists change columns inside the reserved field, never its grid tracks.
   function fitScoreTables(stage){
@@ -280,7 +292,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const rows=[...table.rows];if(!rows.length)continue;
       const space=table.closest('[data-score-table-space]')||stage.querySelector('.layout-field');if(!space)continue;
       const css=win.getComputedStyle(space),height=space.clientHeight-parseFloat(css.paddingTop||0)-parseFloat(css.paddingBottom||0);
-      const rowHeight=rows[0].getBoundingClientRect().height;if(height<=0||rowHeight<=0)continue;
+      const rowHeight=layoutRect(rows[0]).height;if(height<=0||rowHeight<=0)continue;
       const maximum=Math.max(1,Number(table.dataset.responsiveScoreTable)||1),minimum=Math.max(1,Number(table.dataset.scoreColumnWidth)||80);
       const columns=Math.max(1,Math.min(maximum,Math.floor(table.clientWidth/minimum),Math.ceil(rows.length*rowHeight/height)));
       table.style.setProperty('--score-columns',columns);table.style.setProperty('--score-rows',Math.ceil(rows.length/columns));table.dataset.scoreColumns=String(columns);
@@ -292,7 +304,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let previous=null;
       for(const card of stack.children){
         card.style.marginInlineStart=previous?Math.min(0,previous.peek-previous.width)+'px':'0px';
-        const box=card.getBoundingClientRect(),corner=card.querySelector('.shared-card-corner:not(.bottom),.card-corner:not(.bottom)')?.getBoundingClientRect();
+        const box=layoutRect(card),cornerNode=card.querySelector('.shared-card-corner:not(.bottom),.card-corner:not(.bottom)'),corner=cornerNode?layoutRect(cornerNode):null;
         previous={width:box.width,peek:Math.min(box.width,fixedStep>0?fixedStep:corner?Math.ceil(corner.right-box.left+2):box.width)};
       }
     }
@@ -328,7 +340,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--opponent-viewport-height',(miniHeight*.5+4)+'px');
       stage.dataset.croppedHands='true';
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
-      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<200||(!portrait&&h<430&&roster>3&&stage.dataset.opponentHands==='true'));
+      const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<200||(!portrait&&(w<600||h<430&&roster>3&&stage.dataset.opponentHands==='true')));
       stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
       stage.dataset.seatingFallback=String(fallback);
       stage.dataset.anchorOrientation=portrait?'portrait':'landscape';
@@ -337,10 +349,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--anchor-control-column',baseCopy?.dataset.seat?.includes('east')?'3':'1');
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?92:Math.min(hands?240:200,Math.max(h<350?90:130,h*.32))):0;
-      const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+node.getBoundingClientRect().height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
-      if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>node.getBoundingClientRect().height+12));
-      stage.style.setProperty('--north-east-height',(stage.querySelector('.seat-north-east')?.getBoundingClientRect().height||0)+'px');
-      stage.style.setProperty('--corner-control-height',((own?.getBoundingClientRect().height||0)+12)+'px');
+      const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+layoutRect(node).height,16);ownZone=Math.min(Math.max(90,h*.55),Math.max(ownZone,natural));}
+      if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>layoutRect(node).height+12));
+      stage.style.setProperty('--north-east-height',(stage.querySelector('.seat-north-east')&&layoutRect(stage.querySelector('.seat-north-east')).height||0)+'px');
+      stage.style.setProperty('--corner-control-height',(((own?layoutRect(own).height:0))+12)+'px');
       const opponentHands=stage.dataset.opponentHands==='true',edge=stage.dataset.seatStyle==='edge';
       const seatHeight=edge?(opponentHands?64:52):(opponentHands?96:52);
       if(edge)ownZone=Math.min(ownZone,Math.max(90,h-seatHeight-130));
@@ -352,8 +364,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,fieldSize))+'px');}
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
       if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=scene.clientWidth*(wide?.65:1),columns=Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);fitField(stage);
+      fitPlayerPanels(stage);
       const seatsOverlap=()=>{
-        const ownBox=stage.querySelector('.layout-self')?.getBoundingClientRect(),groups=[...stage.querySelectorAll('.seat-group')].map(el=>el.getBoundingClientRect());
+        const ownBox=stage.querySelector('.layout-self')&&layoutRect(stage.querySelector('.layout-self')),groups=[...stage.querySelectorAll('.seat-group')].map(el=>layoutRect(el));
         const overlap=(a,b)=>a&&b&&Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
         return stage.dataset.seating==='circle'&&groups.some((box,i)=>overlap(box,ownBox)||groups.slice(i+1).some(other=>overlap(box,other)));
       };
@@ -361,18 +374,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(stage.dataset.seating==='circle'&&(seatsOverlap()||field?.clientHeight<80)){
         stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
       }
-      if(!portrait&&stage.dataset.seating==='row'&&participants){
-        const maximum=Math.max(1,Math.floor(participants.clientWidth/80));
-        for(let columns=1;columns<=maximum;columns++){
-          stage.style.setProperty('--focus-player-columns',columns);
-          const panels=participants.querySelector('.players-panels');if(panels)panels.dataset.compact=String(participants.clientWidth/columns<120);
-          if(participants.scrollHeight<=participants.clientHeight+2)break;
+      if(stage.dataset.seating==='row'&&participants){
+        const panels=participants.querySelector('.players-panels');
+        if(portrait){
+          // At reduced zoom a portrait viewport can use desktop side tracks.
+          // Fit the actual participant slot, not the whole scene width.
+          const minimum=participants.clientWidth>stage.clientWidth*.8?(roster>3?94:130):stage.dataset.opponentHands==='true'?140:roster>3?94:130;
+          const columns=Math.max(1,Math.min(roster,Math.floor((participants.clientWidth+4)/(minimum+4))));
+          stage.style.setProperty('--focus-player-columns',columns);if(panels)panels.dataset.compact=String(participants.clientWidth/columns<(stage.dataset.opponentHands==='true'?240:120));
+        }else{
+          const minimum=stage.dataset.opponentHands==='true'&&stage.dataset.denseRoster!=='true'?140:80,maximum=Math.max(1,Math.floor(participants.clientWidth/minimum));
+          for(let columns=1;columns<=maximum;columns++){
+            stage.style.setProperty('--focus-player-columns',columns);
+            if(panels)panels.dataset.compact=String(participants.clientWidth/columns<(stage.dataset.opponentHands==='true'?240:120));
+            if(participants.scrollHeight<=participants.clientHeight+2)break;
+          }
         }
-        fitHand(stage);
+        fitPlayerPanels(stage);fitHand(stage);
       }
       root.PlayroomHandOverflow?.sync?.(host);
       // Freeze the grid tracks, not game objects: new controls stay inside their zone.
-      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?.getBoundingClientRect().height,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands};fixedLayouts.set(host,locked);}
+      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?layoutRect(own).height:0,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands};fixedLayouts.set(host,locked);}
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow='auto';}
@@ -393,5 +415,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     pendingScroll.delete(host);
     for(const track of host.querySelectorAll('.hand-track.is-fan'))fitHandArc(track);
   }
-  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
+  return Object.freeze({rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

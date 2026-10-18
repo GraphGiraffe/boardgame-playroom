@@ -1,0 +1,33 @@
+:root{--interface-viewport-height:calc(100dvh / var(--interface-scale,1));--interface-viewport-width:calc(100vw / var(--interface-scale,1))}
+/* Layout roots zoom; drag, motion and tooltip layers keep screen coordinates. */
+#app,#modal-root,#toast,.app-update-banner,.appearance-dialog{zoom:var(--interface-scale,1)}
+#app .table-shell:has(.table-header){height:var(--interface-viewport-height,100dvh)}
+#app .sidebar{height:var(--interface-viewport-height,100dvh)}
+#modal-root .modal,#modal-root .avatar-picker-modal{max-height:calc(var(--interface-viewport-height,100dvh) - 32px)}
+.appearance-dialog{max-height:calc(var(--interface-viewport-height,100dvh) - 24px);max-width:calc(var(--interface-viewport-width,100vw) - 24px)}
+#app .table-shell .history-panel{max-height:calc(var(--interface-viewport-height,100dvh) * .25)}
+.settings-range{display:block;min-width:0;margin-block:12px;color:var(--ink);font-size:12px;font-weight:700}
+.settings-grid .settings-range{margin:0}
+.settings-range-heading{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:2px 6px;min-height:32px}
+.settings-range-heading output{margin-left:auto;font-size:11px;font-weight:400;color:var(--muted);white-space:nowrap}
+.settings-range-track{position:relative;display:block;height:36px}
+.settings-range input[type=range]{appearance:none;-webkit-appearance:none;display:block;width:100%;min-width:0;height:36px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;cursor:pointer;touch-action:pan-y;position:relative;z-index:1}
+.settings-range input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--green,#35654f) 0 var(--range-progress),var(--line,#d9deca) var(--range-progress) var(--range-allowed),#aaa var(--range-allowed) 100%)}
+.settings-range input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--green,#35654f) 0 var(--range-progress),var(--line,#d9deca) var(--range-progress) var(--range-allowed),#aaa var(--range-allowed) 100%)}
+.settings-range input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:16px;height:22px;margin-top:-8px;border:1px solid var(--green,#35654f);border-radius:6px;background:var(--paper);box-shadow:0 2px 0 var(--line)}
+.settings-range input[type=range]::-moz-range-thumb{width:14px;height:20px;border:1px solid var(--green,#35654f);border-radius:6px;background:var(--paper);box-shadow:0 2px 0 var(--line)}
+.settings-range-dots{position:absolute;inset:0 8px;pointer-events:none;z-index:2}
+.settings-range-dots i{position:absolute;top:50%;width:3px;height:3px;border-radius:50%;background:var(--ink);opacity:.55;transform:translate(-50%,-50%)}
+.settings-range-bounds{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;font-weight:400}
+
+/* Narrow participant columns keep identity above the cropped hand. */
+#app .app-game-layout .player-panel.opponent-hand[data-compact-hand="true"]{flex-direction:column}
+#app .app-game-layout .opponent-hand[data-compact-hand="true"] :is(.player-info,.player-hand){flex:none;width:100%;min-width:0}
+#app .app-game-layout[data-layout-mode="phone-landscape"][data-dense-roster="false"][data-opponent-hands="true"] .opponent-hand[data-compact-hand="false"] .player-info{flex:1 1 140px;width:auto;min-width:140px}
+
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-info{gap:3px;padding:3px}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] :is(.player-avatar-wrap,.avatar){width:20px;height:20px;min-width:20px}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading{gap:2px}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .participant-role svg{width:10px;height:10px}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading strong{font-size:10px}
+#app .app-game-layout[data-dense-roster="true"] .opponent-hand[data-compact-identity="true"] .player-info{padding:0;gap:2px}

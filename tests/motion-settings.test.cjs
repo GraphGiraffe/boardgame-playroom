@@ -1,4 +1,6 @@
 'use strict';
+
+async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -170,14 +172,14 @@ test('Animation presets persist and stage real card flights before the next acto
       for (const speed of ['instant', 'fast', 'normal', 'slow']) {
         await page.locator('[data-command=settings]').click();
         assert.equal(await page.locator('#setting-motion').count(), 0);
-        assert.deepEqual(await page.locator('#setting-speed option').evaluateAll(options => options.map(option => option.value)),
-          ['instant', 'fast', 'normal', 'slow']);
-        await page.locator('#setting-speed').selectOption(speed);
+        assert.equal(await page.locator('#setting-speed').getAttribute('type'),'range');
+        assert.equal(await page.locator('#setting-speed').locator('..').locator('[data-range-stop]').count(),4);
+        await setRange(page,'setting-speed',['instant','fast','normal','slow'].indexOf(speed));
         assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('playroom.settings.v1')).animationSpeed), speed);
         await page.evaluate(() => sessionStorage.clear());
         await page.reload();
         await page.locator('[data-command=settings]').click();
-        assert.equal(await page.locator('#setting-speed').inputValue(), speed);
+        assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(speed)));
         await page.locator('.modal [data-command=close-modal]').click();
       }
     });
@@ -239,7 +241,7 @@ test('Animation presets persist and stage real card flights before the next acto
       ]) {
         const {page} = await open({settings});
         await page.locator('[data-command=settings]').click();
-        assert.equal(await page.locator('#setting-speed').inputValue(), expected);
+        assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(expected)));
       }
     });
 

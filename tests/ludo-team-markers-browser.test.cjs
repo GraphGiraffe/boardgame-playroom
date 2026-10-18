@@ -87,9 +87,9 @@ test('Ludo touch selects a friendly pawn on a destination cell and commits throu
   const saved=new Session(Core,'ludo',{seed:17,mode:'solo',firstPlayerMode:'assigned',firstPlayer:0,diceCount:2,players:[{name:'Иван'},{name:'Мика'}]}).export();
   const state=saved.states[0];state.turn=0;Object.assign(state.data,{phase:'move',dice:[2,3],used:[false,false]});state.data.pawns[0]=[7,9,-1,-1];assert(Core.validateState(state));
   const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  try{for(const viewport of [{width:390,height:844},{width:844,height:390}]){
-    const context=await browser.newContext({viewport,hasTouch:true,isMobile:true});
-    await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',autoPass:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+  try{for(const viewport of [{width:390,height:844,scale:100},{width:844,height:390,scale:100},{width:390,height:844,scale:120},{width:844,height:390,scale:110}]){
+    const context=await browser.newContext({viewport:{width:viewport.width,height:viewport.height},hasTouch:true,isMobile:true});
+    await context.addInitScript(({saved,scale})=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',autoPass:false,interfaceScale:scale}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},{saved,scale:viewport.scale});
     const page=await context.newPage();page.setDefaultTimeout(5000);
     try{
       await page.goto(server.url);await page.locator('.resume-banner [data-command="resume"]').tap();await page.locator('.ludo-board').waitFor();

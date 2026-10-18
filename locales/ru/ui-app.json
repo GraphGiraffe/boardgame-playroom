@@ -276,5 +276,7 @@
   "ui.app.hand-shape.straight": "По прямой",
   "ui.app.hand-shape.arc": "По дуге",
   "ui.app.hand-shape.hint": "Для карточных игр. Домино всегда по прямой.",
-  "ui.app.hide-local-session": "Скрыть"
+  "ui.app.hide-local-session": "Скрыть",
+  "ui.app.interface-scale": "Масштаб интерфейса",
+  "ui.app.volume.mute": "Без звука"
 }

@@ -836,3 +836,9 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 @media(orientation:landscape) and (min-width:600px){
  #app .table-shell:has(.table-tools>button:nth-child(4)){--side-width:max(26%,198px)}
 }
+
+/* Pass and game controls share one reserved row beside a landscape hand. */
+@media(orientation:landscape){
+ #app .app-game-layout[data-seating="row"]>.layout-self>.layout-actions:has(>.pass-device-button){display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center}
+ #app .app-game-layout[data-seating="row"]>.layout-self>.layout-actions>.scene-actions{min-width:0;width:100%}
+}
