@@ -184,8 +184,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
     const hostRole=host.locator('.player-panel [data-participant-role=player]:has(svg[data-ui-icon=host])');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),1,'Host retains the primary network-player icon');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown supplements the player role');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),0,'Host crown replaces the network-player icon');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Network host keeps one crown');
     const iconHandle=await hostRole.elementHandle();
     await host.waitForTimeout(800);assert(await iconHandle.evaluate(node=>node.isConnected),'unchanged presence must preserve the role node and avoid a DOM observer loop');
     // Network mode MUST use the local bot/hot-seat GameScreen, not a compact

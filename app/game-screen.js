@@ -79,6 +79,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const self=!player.bot&&(network?!!(selfId&&player.id===selfId||selfIndex===index||player.local):!!player.local);
       return `<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}"><span class="player-avatar-wrap">${UI.avatar(player,index)}${UI.helpers.playerMedallion({first:state.firstPlayer===index,team})}</span><span class="resume-person-name">${UI.helpers.participantIcon(player,{network})}<span${self?' class="saved-self"':''}>${esc(player.nickname||player.name)}</span></span></span>`;
     });
+    if(network)for(const table of participants.filter(person=>person.role==='table')){
+      people.push(`<span class="resume-person resume-table"><span class="resume-person-name">${UI.helpers.participantIcon(table,{network:true})}<span>${esc(table.nickname||table.name||root.PlayroomMessages.text('ui.ui.da639244db1d'))}</span></span></span>`);
+    }
     return `<div class="resume-participants">${people.join('')}</div>`;
   }
   function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){

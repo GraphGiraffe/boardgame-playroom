@@ -816,3 +816,6 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .app-game-layout .player-data:not(:has(.player-indicators:not(:empty))){flex-wrap:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;box-sizing:border-box}
 .app-game-layout .player-data::-webkit-scrollbar{display:none}
 .app-game-layout .player-data .player-status-badge{flex:none;white-space:nowrap}
+
+/* All game presentation stays below application dialogs (layer 50). */
+body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}

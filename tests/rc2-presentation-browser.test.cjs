@@ -531,7 +531,7 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
  assert.equal(await page.locator('#setting-last-game').isChecked(),false);
  assert.equal(await page.locator('#setting-volume').inputValue(),'1');
  assert.equal(await page.locator('#setting-speed').inputValue(),'normal');
- assert.equal(await page.locator('#setting-hand-shape').inputValue(),'straight');
+ assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
  await page.screenshot({path:path.join(dir,'defaults.png')});
  await page.setViewportSize({width:320,height:640});
  const heading=await page.locator('.modal-head').evaluate(h=>({height:h.querySelector('h2').getBoundingClientRect().height,overflow:h.scrollWidth-h.clientWidth}));assert(heading.height<30&&heading.overflow<=1);
@@ -869,3 +869,40 @@ test('card hands default to arc while a saved straight hand stays explicit',asyn
  await fixture(async page=>{assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions().handShape),'arc');await scene(page,'uno');assert.equal(await page.locator('.layout-hand .hand-track.is-arc').count(),1);});
  await fixture(async page=>{assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions().handShape),'straight');await scene(page,'uno');assert.equal(await page.locator('.layout-hand .hand-track.is-arc').count(),0);},{settings:{sound:false,animationSpeed:'fast',handShape:'straight'}});
 });
+
+
+test('local primary player keeps the player icon after changing seats and no local crowns appear',async()=>fixture(async page=>{
+ await page.locator('[data-start="snakes"]').click();
+ const host=await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room(),id=r.id,h=r.ownerId;b.roomService.setLocalSeat(id,h,'seat-2',{kind:'human',nickname:'Друг'});b.roomService.setLocalSeat(id,h,'seat-3',{kind:'bot',nickname:'Бот'});b.roomService.moveParticipant(id,h,h,'seat-3');b.roomService.configure(id,h,{firstPlayerMode:'assigned',firstParticipantId:h});b.renderLobby();return h;});
+ assert.equal(await page.locator(`[data-participant-id="${host}"] [data-participant-role="player"]`).count(),1);
+ assert.equal(await page.locator('.lobby-shell [data-ui-icon="host"]').count(),0);
+ assert.equal(await page.locator('.lobby-shell [data-participant-role="hand"]').count(),1);
+ await page.screenshot({path:path.join(shots,'rc20-local-lobby.png')});
+ await page.locator('[data-command="lobby-start"]').click();await page.locator('.table-shell').waitFor();
+ assert(await page.locator('.player-panel[data-player-index="2"] [data-participant-role="player"]').count()>0);
+ assert(await page.locator('.player-panel [data-participant-role="hand"]').count()>0);
+ assert.equal(await page.locator('.table-shell [data-ui-icon="host"]').count(),0);
+ await page.screenshot({path:path.join(shots,'rc20-local-player.png')});
+}));
+
+test('network crowns replace player icons and the resume card appends Table after all players',async()=>fixture(async page=>{
+ const result=await page.evaluate(()=>{
+  const h=TabletopUI.helpers,html=(person,options)=>{const node=document.createElement('div');node.innerHTML=h.participantIcon(person,options);return [...node.querySelectorAll('[data-ui-icon]')].map(el=>el.dataset.uiIcon);};
+  const state={players:[{name:'Игрок'},{name:'Бот',bot:true}],turn:0,status:'playing'};
+  document.querySelector('#app').innerHTML=PlayroomGameScreen.resumeCard({state,network:true,participants:[{playerIndex:0,isHost:true},{role:'spectator',nickname:'Зритель'},{role:'table',nickname:'Общий экран',isHost:true}]});
+  return {local:html({local:true,isHost:true}),host:html({isHost:true},{network:true}),table:html({isHost:true,role:'table'},{network:true}),names:[...document.querySelectorAll('.resume-person-name>span:last-child')].map(el=>el.textContent),last:[...document.querySelectorAll('.resume-person')].at(-1).classList.contains('resume-table')};
+ });assert.deepEqual(result.local,['player']);assert.deepEqual(result.host,['host']);assert.deepEqual(result.table,['host','grid']);assert.deepEqual(result.names,['Игрок','Бот','Общий экран']);assert(result.last);
+ await page.screenshot({path:path.join(shots,'rc20-network-resume-table.png')});
+}));
+
+test('enlarged public moves and bubbles remain below application dialogs',async()=>fixture(async page=>{
+ await scene(page,'snakes',{preset:'plus'});
+ const result=await page.evaluate(()=>{
+  const reveal=new PlayroomActionReveal();reveal.show({kind:'dice',dice:[{value:6}]},'snakes');
+  const feedback=new PlayroomGameFeedback();feedback.active={id:1,timing:PlayroomGameFlow.effectTimes.normal,speech:{speaker:0,text:'Пас'}};feedback.refresh();
+  document.querySelector('#modal-root').innerHTML='<div class="shared-modal-backdrop"><div class="modal" style="width:300px;height:300px">Настройки</div></div>';
+  const modal=document.querySelector('.shared-modal-backdrop'),box=modal.getBoundingClientRect(),x=box.x+box.width/2,y=box.y+box.height/2;
+  const z=el=>Number(getComputedStyle(el).zIndex);return {reveal:z(reveal.host),bubble:z(feedback.layer),modal:z(modal),top:!!document.elementFromPoint(x,y)?.closest('#modal-root')};
+ });assert(result.reveal<result.modal,JSON.stringify(result));assert(result.bubble<result.modal,JSON.stringify(result));assert(result.top);
+ await page.screenshot({path:path.join(shots,'rc20-reveal-behind-dialog.png')});
+}));

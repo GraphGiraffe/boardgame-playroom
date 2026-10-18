@@ -331,7 +331,8 @@ test('scene reserves optional actions and validates generic motion route descrip
   assert.throws(()=>UI.composeScene({...descriptor,motionSequence:{trigger:'roll'}}));
   const art=UI.art({main:'<i>Face</i>',width:48,height:84,rotation:270});
   assert.match(art,/viewBox="0 0 84 48"/);assert.match(art,/translate\(0 48\) rotate\(-90\)/);
-  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="hand".*data-ui-icon="host".*data-ui-icon="replacement"/);
+  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="player".*data-ui-icon="replacement"/);
+  assert.doesNotMatch(UI.participantIcon({isHost:true,local:true}),/data-ui-icon="host"/);
 });
 
 test('snakes routes describe every bounced step and retain landing before a link',()=>{

@@ -19,7 +19,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-lobby-seat="seat-3"]').click();await page.locator('#room-human-form input').fill('Оля');await page.locator('#room-human-form').evaluate(f=>f.requestSubmit());
         assert.match(await page.locator('[data-lobby-seat="seat-3"]').innerText(),/Оля/);await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-room-cycle="seat-3"]').click();
         await page.locator('[data-room-option=transportMode]').check();
-        assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online[aria-label*=хост]').count(),1);assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online svg').count(),2,'host keeps both player and host icons');
+        assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online[aria-label*=хост]').count(),1);assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online svg').count(),1,'host crown replaces the player icon');
         assert.equal(await page.locator('.lobby-seat-row [data-participant-role=bot].is-online').count(),0);await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-room-title]').fill('Комната Иван');await page.locator('[data-room-title]').press('Tab');
         await page.locator('.lobby-shell').waitFor();
         await page.evaluate(()=>{

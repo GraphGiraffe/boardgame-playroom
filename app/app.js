@@ -338,7 +338,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const context=screenController.context(frame,{scope:catalog[state.game]?.capabilities?.viewStateScope});
     selected=context.selected;viewState=context.viewState;
 
-    projected.players=projected.players.map(p=>({...p,local:!p.bot}));
+    const setup=session.options.lobbyConfig;
+    const occupied=setup?.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);
+    const primary=setup?occupied.findIndex(seat=>seat.participantId===setup.ownerId):projected.players.findIndex(p=>!p.bot);
+    projected.players=projected.players.map((p,index)=>({...p,local:!p.bot&&index!==primary}));
     if(feedbackSession!==session){feedbackSession=session;feedback.start(E.project(session.current,viewer).events);}
     const turnPlayer=state.players[state.turn], finished=state.status==='finished';
     const turnText=replay?globalThis.PlayroomMessages.text("ui.app.a92c2f3c7ff1"):transition?globalThis.PlayroomMessages.text("ui.app.fadac501dd8a"):finished?globalThis.PlayroomMessages.text("ui.app.64f3ad19b9c6"):paused?globalThis.PlayroomMessages.text("ui.app.65530fd463ea"):turnPlayer?.bot?globalThis.PlayroomMessages.text("ui.app.f96994dfc267",{p0:String(turnPlayer.name)}):isPass()?globalThis.PlayroomMessages.text("ui.app.6e352d281a89",{p0:String(turnPlayer?.name)}):globalThis.PlayroomMessages.text("ui.app.12d5fb57ada4");
