@@ -65,7 +65,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const Tags=globalThis.PlayroomTags,hubFilters={type:'',mechanic:'',format:''};
   const catalog = globalThis.PlayroomCatalog || {};
   const animationPresets=Flow.presets;
-  let settings = {sound:true, volume:1, animationSpeed:'normal', handShape:'straight', quickPlay:true,autoPass:true,seating:'circle',seatingByGame:{},showLastGame:false};
+  let settings = {sound:true, volume:1, animationSpeed:'normal', handShape:'arc', quickPlay:true,autoPass:true,seating:'circle',seatingByGame:{},showLastGame:false};
   let viewState = {};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
   let sessionId = null, hubTab = 'games', savedFilter='all', networkSaved=[], networkSavedState='idle', networkSavedTicket=0;

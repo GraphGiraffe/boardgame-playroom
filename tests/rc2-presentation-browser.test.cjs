@@ -836,3 +836,36 @@ test('full boards reserve a square zone and use portrait width before and after 
   if(game==='snakes'||game==='ludo')await page.screenshot({path:path.join(shots,`rc20-${game}-${seating}-${width}-${height}.png`)});
  }
 }));
+
+
+test('each committed dice roll animates independently of routes, faces and speed except instant',async()=>fixture(async page=>{
+ for(const [game,preset]of [['snakes','plus'],['snakes','classic'],['ludo','classic'],['yatzy','classic']])for(const mode of ['fast','normal','slow','instant']){
+  await page.emulateMedia({reducedMotion:'no-preference'});await scene(page,game,{preset});
+  const result=await page.evaluate(({mode})=>{
+   const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion});
+   window.rollFeedback=new PlayroomGameFeedback();rollFeedback.start(rcSession.current.events);
+   const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcRender();
+   const events=TabletopCore.project(rcSession.current,0).events;
+   rollFeedback.accept(events,[],rcSession.game,{mode,snapshot,motion:()=>flow.play(snapshot)});
+   const count=document.querySelectorAll('[data-motion-kind="roll"]').length;
+   const queue=rollFeedback.queue.length;rollFeedback.accept(events,[],rcSession.game,{mode});
+   return {count,queue,duplicateQueue:rollFeedback.queue.length};
+  },{mode});
+  if(mode==='instant')assert.equal(result.count,0);else assert(result.count>0,game+'/'+preset+'/'+mode);
+  assert.equal(result.queue,result.duplicateQueue,'duplicate snapshot must not queue a second throw');
+  await page.evaluate(()=>{rollFeedback.clear();PlayroomMotion.cancel();});
+ }
+ await page.emulateMedia({reducedMotion:'reduce'});await scene(page,'snakes',{preset:'plus'});
+ const gentle=await page.evaluate(()=>{window.rollFeedback=new PlayroomGameFeedback();rollFeedback.accept([{id:100,kind:'roll'}],[],'snakes',{mode:'fast'});return [...document.querySelectorAll('[data-motion-kind="roll"]')].map(el=>el.getAnimations()[0]?.effect.getKeyframes());});
+ assert.equal(gentle.length,2);assert(gentle.every(frames=>frames.length&&frames.every(frame=>frame.transform===undefined)));
+ await page.evaluate(()=>{rollFeedback.clear();PlayroomMotion.cancel();});
+ // Equal faces in the same DOM still animate for every newly accepted event.
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ for(const id of [101,102]){await page.evaluate(id=>rollFeedback.accept([{id,kind:'roll'}],[],'snakes',{mode:'fast'}),id);assert.equal(await page.locator('[data-motion-kind="roll"]').count(),2);await page.evaluate(()=>{rollFeedback.clear();PlayroomMotion.cancel();});}
+}));
+
+
+test('card hands default to arc while a saved straight hand stays explicit',async()=>{
+ await fixture(async page=>{assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions().handShape),'arc');await scene(page,'uno');assert.equal(await page.locator('.layout-hand .hand-track.is-arc').count(),1);});
+ await fixture(async page=>{assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions().handShape),'straight');await scene(page,'uno');assert.equal(await page.locator('.layout-hand .hand-track.is-arc').count(),0);},{settings:{sound:false,animationSpeed:'fast',handShape:'straight'}});
+});
