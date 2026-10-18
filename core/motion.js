@@ -110,10 +110,10 @@
     if (!scene) return Promise.resolve();
     const entities = snapshot.entities instanceof Map ? snapshot.entities : new Map();
     const flights = [], used = new Set();
-    const current = [...scene.querySelectorAll('[data-entity]')];
+    const current = snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-entity]')];
     let sequence=null;
     try { sequence=snapshot.sequence||JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
-    if(sequence?.trigger!==snapshot.action?.type)sequence=null;
+    if(snapshot.diceOnly||sequence?.trigger!==snapshot.action?.type)sequence=null;
     const anchorRect=point=>{
       const anchor=[...scene.querySelectorAll('[data-motion-anchor]')].find(el=>el.dataset.motionAnchor===point.anchor);
       return rectOf(anchor);
@@ -161,8 +161,8 @@
       }
       cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
     }
-    const dice = (snapshot.routeOnly?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
-    const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
+    const dice = (snapshot.routeOnly||snapshot.skipDice?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
+    const effects=(snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-motion-effect]')]).filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
     const closing=snapshot.action?.type==='flip'?[...scene.querySelectorAll('[data-motion-close]')]:[];
     if (!flights.length && !dice.length && !effects.length && !closing.length) return Promise.resolve();
     return new Promise(resolve => {
@@ -243,7 +243,7 @@
           mover.className='playroom-motion-flight';mover.dataset.motionKind='roll';mover.append(clone);layer.append(mover);
           const position=()=>{const r=rectOf(die)||box;Object.assign(mover.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${r.width}px`,height:`${r.height}px`,transformOrigin:'center'});};position();resizeUpdates.push(position);
           const entry={el:die,visibility:die.style.getPropertyValue('visibility'),priority:die.style.getPropertyPriority('visibility')};restore.push(entry);die.style.setProperty('visibility','hidden','important');
-          const animation=mover.animate([{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
+          const animation=mover.animate(snapshot.reducedMotion?[{opacity:.35},{opacity:1}]:[{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
           animation.finished.then(()=>{show(entry);mover.remove();},()=>{});animations.push(animation);
         }
         const flipTimes=effectTiming;

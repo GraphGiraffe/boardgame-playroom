@@ -16,10 +16,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(snapshot)snapshot.revealedEntities=additions.flatMap(e=>e.reveal?.cards?.map(card=>'card-'+card.id)|| (e.reveal?.entity?[e.reveal.entity]:[]));
       const motionEvent=additions.findLast(e=>e.transfer)||additions.findLast(e=>e.reveal||e.presentation)||additions.at(-1);
       const routes=additions.filter(e=>e.presentation?.sequence);
+      let rollSoundEvent=null;
+      // A committed roll is a presentation step of its own, even when the same
+      // command also reveals a result or moves a pawn. Never infer it from faces.
+      if(mode!=='instant'&&root.PlayroomMotion?.play&&(snapshot?.action?.type==='roll'||additions.some(e=>e.kind==='roll'))){
+        if(snapshot)snapshot.skipDice=true;
+        rollSoundEvent=additions.find(e=>e.kind==='roll')||additions[0];
+        const ids=cues.filter(c=>c.eventId===rollSoundEvent.id&&typeof c.id==='string').map(c=>c.id);
+        const reduced=!!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+        const duration=root.PlayroomGameFlow.presets[mode]?.duration||root.PlayroomGameFlow.presets.normal.duration;
+        this.queue.push({id:rollSoundEvent.id,pack,ids,timing,diceRoll:true,duration:0,motion:()=>root.PlayroomMotion.play({action:{type:'roll'},diceOnly:true,reducedMotion:reduced},{duration:reduced?Math.min(180,duration):duration})});
+      }
       this.routePoints??=new Map();this.routeStyles??=new Map();this.routeActors??=new Map();this.routeCounters??=new Map();this.routeTurns??=new Map();
       for(const event of routes){const r=event.presentation.sequence;this.routeActors.set(r.entity,r.player);if(!this.routePoints.has(r.entity))this.routePoints.set(r.entity,r.origin);}
       for(const event of additions){
-        const ids=cues.filter(c=>c.eventId===event.id&&typeof c.id==='string').map(c=>c.id);
+        const ids=event===rollSoundEvent?[]:cues.filter(c=>c.eventId===event.id&&typeof c.id==='string').map(c=>c.id);
         const animated=event.speech||event.reveal||event.feedback?.kind==='skip';
         const route=event.presentation?.sequence;
         const effect=route?async()=>{
@@ -99,7 +110,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       this.position();
     }
-    clear(){if(this.routePoints?.size)root.PlayroomMotion?.cancel();this.restoreRoutes();this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
+    clear(){if(this.routePoints?.size||this.active?.diceRoll)root.PlayroomMotion?.cancel();this.restoreRoutes();this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
     destroy(){this.clear();root.removeEventListener?.('resize',this.reposition);root.document?.removeEventListener('scroll',this.reposition,true);}
   }
   GameFeedback.times=Object.freeze(times);return GameFeedback;

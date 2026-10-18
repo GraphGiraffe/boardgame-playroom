@@ -302,7 +302,7 @@ test('ZiL+ deferred effects, shield and automatic second die obey the public com
  p=start();p.data.phase='roll';p.data.effects[0].less=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,1);assert(!r.position.data.effects[0].less);
  p.data.effects[0].shield=true;r=model.apply(p,0,{type:'roll'});assert.equal(r.position.data.dice.length,2);assert(!r.position.data.effects[0].shield);
  p=start();p.data.effects[1]={skip:true,less:true,adjust:true,shield:false};r=move(p);assert.equal(r.position.turn,2);assert.deepEqual(r.position.data.effects[1],{skip:false,less:true,adjust:true,shield:false});
- p=start(5);r=move(p);assert.equal(r.position.turn,0);assert.equal(r.position.data.phase,'roll');
+ p=start(5);r=move(p);assert.equal(r.position.turn,1);assert.equal(r.position.data.phase,'roll');
  p=start(15);p.data.adjusting=true;r=model.apply(p,0,{type:'move',dieIndex:0,delta:1});assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[2,3]);
  p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:0}));assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-1}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
 });
@@ -315,4 +315,20 @@ test('ZiL+ bot games terminate and replay deterministically with six players and
   while(p.status==='playing'&&steps++<600){const a=model.botAction(p,p.turn),r=model.apply(p,p.turn,a);replay=model.apply(replay,replay.turn,a).position;p=r.position;model.validate(p);}
   assert.equal(p.status,'finished',boardSize+'/'+endMode);assert.deepEqual(p,replay);assert(model.result(p).places.every(n=>n>=1&&n<=6));
  }
+});
+
+
+test('ZiL+ rewards raw doubles after all moves and has no extra-roll cells',()=>{
+ const {GameModel}=require('../core/model-runtime.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
+ const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>2,ending:Ending}));
+ const start=(dice,from=0,boardSize=64)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17,options:{boardSize}})));p.data.phase='move';p.data.dice=dice;p.data.positions[0]=from;return p;};
+ const move=(p,delta=0)=>model.apply(p,0,{type:'move',dieIndex:0,delta});
+ for(const size of [64,100])assert(!Object.values(start([2,2],0,size).data.special).includes('extra'));
+ let r=move(start([2,2]));assert.equal(r.position.turn,0);assert.equal(r.position.data.phase,'roll');assert.equal(r.events.at(-1).type,'snakes.extra');
+ r=model.apply(r.position,0,{type:'roll'});assert.equal(r.position.data.phase,'move');assert.equal(r.position.turn,0);
+ r=move(start([2,2],15));assert.equal(r.position.turn,0);assert.equal(r.events.filter(e=>e.type==='snakes.moved').length,2);assert.equal(r.events.filter(e=>e.type==='snakes.extra').length,1);assert.equal(r.events.at(-1).type,'snakes.extra');
+ let p=start([2,2]);p.data.adjusting=true;r=move(p,1);assert.equal(r.position.turn,0,'adjustment cannot cancel a raw double');
+ p=start([2,3]);p.data.adjusting=true;r=move(p,1);assert.equal(r.position.turn,1,'adjustment cannot create a double');
+ r=move(start([2]));assert.equal(r.position.turn,1,'one die cannot be a double');
+ r=move(start([1,1],63));assert.equal(r.position.status,'finished');assert(!r.events.some(e=>e.type==='snakes.extra'),'no bonus after finishing');
 });
