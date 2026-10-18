@@ -173,16 +173,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
   // One geometry contract: full pieces, independently fitted hand viewports.
-  function fitTileHand(track){
+  function handPieceHeight(track,stage){
+    if(stage.dataset.seating!=='row'||stage.dataset.anchorOrientation!=='landscape')return Infinity;
+    const own=track.closest('.layout-self'),slot=track.closest('.layout-hand'),piece=track.querySelector('.hand-card,.domino-tile');
+    if(!own||!slot||!piece)return Infinity;
+    const style=own.ownerDocument.defaultView.getComputedStyle(own),children=[...own.children].filter(node=>node.getClientRects().length);
+    const reserved=children.filter(node=>node!==slot).reduce((sum,node)=>sum+node.getBoundingClientRect().height,0)
+      +parseFloat(style.paddingTop)+parseFloat(style.paddingBottom)+Math.max(0,children.length-1)*(parseFloat(style.rowGap)||0);
+    return Math.max(0,own.clientHeight-reserved-(slot.getBoundingClientRect().height-piece.offsetHeight));
+  }
+  function fitTileHand(track,stage){
     const style=track.ownerDocument.defaultView.getComputedStyle(track);
-    const height=parseFloat(style.getPropertyValue('--scene-card-height'))||90;
+    const height=Math.min(parseFloat(style.getPropertyValue('--scene-card-height'))||90,Math.max(32,handPieceHeight(track,stage)));
     track.style.setProperty('--tile-width',height*4/7+'px');
     track.classList.toggle('is-long-hand',track.scrollWidth>track.clientWidth+2);
   }
 
   function fitOpponentHand(mini,stage){
     const count=mini.children.length;if(!count)return;
-    mini.style.setProperty('--opponent-viewport-height',(mini.firstElementChild.offsetHeight*.5+4)+'px');
+    mini.style.setProperty('--opponent-viewport-height',(stage.dataset.denseRoster==='true'?mini.firstElementChild.offsetHeight*.4+2:mini.firstElementChild.offsetHeight*.5+4)+'px');
     mini.style.removeProperty('--opponent-card-width');
     const ratio=Number(mini.querySelector('[data-piece-ratio]')?.dataset.pieceRatio);
     if(ratio>0&&ratio<=1){const height=parseFloat(stage.style.getPropertyValue('--opponent-card-height'))||40;mini.style.setProperty('--opponent-card-width',height*ratio+'px');}
@@ -214,7 +223,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     track.style.removeProperty('--fan-peek');
     const count=track.querySelectorAll('.hand-card').length,card=track.querySelector('.hand-card');
     const trackStyle=track.ownerDocument.defaultView.getComputedStyle(track),available=track.clientWidth-parseFloat(trackStyle.paddingLeft)-parseFloat(trackStyle.paddingRight);
-    let desired=parseFloat(stage.style.getPropertyValue('--scene-card-width'))||64;
+    let desired=Math.min(parseFloat(stage.style.getPropertyValue('--scene-card-width'))||64,Math.max(32,handPieceHeight(track,stage)/1.4));
     if(stage.dataset.seating==='circle'&&stage.dataset.anchorOrientation==='landscape'){
       const own=track.closest('.layout-self')?.getBoundingClientRect(),north=stage.querySelector('.seat-north-east')?.getBoundingClientRect();
       if(own&&north?.height){const controls=own.height-track.getBoundingClientRect().height,availableHeight=own.bottom-north.bottom-6-controls-24;desired=Math.min(desired,Math.max(32,availableHeight/1.4));}
@@ -237,7 +246,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     fitHandArc(track);
   }
   function fitHand(stage){
-    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles'))fitTileHand(track);
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles'))fitTileHand(track,stage);
     for(const mini of stage.querySelectorAll('.player-panel .mini-hand'))fitOpponentHand(mini,stage);
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan'))fitCardHand(track,stage);
   }
@@ -367,7 +376,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow='auto';}
-      fitField(stage);fitScoreTables(stage);fitCardOverlaps(stage);}
+      fitField(stage);fitScoreTables(stage);fitCardOverlaps(stage);
+      // Corner seating may show an identity twice; only its visible primary
+      // representation owns the turn highlight and aria-current.
+      const panels=[...stage.querySelectorAll('.player-panel')];
+      for(const panel of panels){panel.dataset.turnPrimary='false';panel.classList.remove('is-turn');panel.removeAttribute('aria-current');}
+      for(const index of new Set(panels.map(panel=>panel.dataset.playerIndex))){
+        const copies=panels.filter(panel=>panel.dataset.playerIndex===index);
+        const visible=panel=>!!panel.getClientRects().length;
+        const primary=copies.find(panel=>!panel.hasAttribute('data-seat-copy')&&visible(panel))||copies.find(visible);
+        if(primary){primary.dataset.turnPrimary='true';if(Number(index)===Number(stage.dataset.turnPlayer)){primary.classList.add('is-turn');primary.setAttribute('aria-current','true');}}
+      }
+    }
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);

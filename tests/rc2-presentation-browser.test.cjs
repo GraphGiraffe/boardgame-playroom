@@ -253,7 +253,12 @@ test('RC8 corner seats align hands, keep player geometry equal and preserve a cl
   });assert.equal(geometry.seating,game==='gofish'?'row':'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
   if(geometry.seating==='circle'&&['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
-  if(game==='ludo'&&geometry.seating==='circle'){assert.equal(geometry.copies,1);assert.equal(await page.locator('.seat-group [data-player-index="0"].is-turn').count(),1);assert.equal(await page.locator('.layout-self [data-player-index="0"].is-turn').count(),1);}
+  if(game==='ludo'&&geometry.seating==='circle'){
+   assert.equal(geometry.copies,1);
+   const current=page.locator('.player-panel.is-turn');assert.equal(await current.count(),1);assert(await current.isVisible());
+   assert.equal(await current.getAttribute('data-player-index'),'0');assert.equal(await current.getAttribute('aria-current'),'true');
+   assert.equal(await current.getAttribute('data-turn-primary'),'true');assert.equal(await page.locator('.player-panel[aria-current="true"]').count(),1);
+  }
   if([390,1090].includes(width))await page.screenshot({path:path.join(shots,`rc4-${game}-${width}.png`)});
  }
 }));
@@ -855,7 +860,7 @@ test('each committed dice roll animates independently of routes, faces and speed
   const result=await page.evaluate(({mode})=>{
    const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion,reducedMotion:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
    window.rollFeedback=new PlayroomGameFeedback();rollFeedback.start(rcSession.current.events);
-   const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcRender();
+   const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcUI.presentationTurn=actor;rcRender();
    const events=TabletopCore.project(rcSession.current,0).events;
    rollFeedback.accept(events,[],rcSession.game,{mode,snapshot,motion:()=>flow.play(snapshot)});
    const count=document.querySelectorAll('[data-motion-kind="roll"]').length;

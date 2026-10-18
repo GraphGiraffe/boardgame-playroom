@@ -83,7 +83,7 @@ test('all packs share player panels and preserve geometry across reported screen
    return {errors,mode:stage.dataset.layoutMode,width:scene.clientWidth,height:scene.clientHeight};
   },turn);
   assert.deepEqual(result.errors,[]);assert.equal(result.mode,UI.selectLayout(result.width,result.height));
-  if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||!replay&&(capture<13||width===390&&height===740))){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,process.env.PLAYROOM_CAPTURE_ALL?`${game}-${surface||'combined'}-${width}x${height}-${replay?'history':'live'}.png`:`${String(++capture).padStart(2,'0')}-${game}.png`)});}
+  if(process.env.PLAYROOM_CAPTURE_DIR&&(process.env.PLAYROOM_CAPTURE_ALL||!replay&&(capture<13||width===390&&height===740||width===640&&height===280))){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,process.env.PLAYROOM_CAPTURE_ALL?`${game}-${surface||'combined'}-${width}x${height}-${replay?'history':'live'}.png`:`${String(++capture).padStart(2,'0')}-${game}.png`)});}
  });
  await t.test('two counters and long names remain inside narrow player cards',async()=>{
   for(const width of [320,390,740]){
