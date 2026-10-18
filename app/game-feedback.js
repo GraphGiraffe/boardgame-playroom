@@ -19,9 +19,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let rollSoundEvent=null;
       // A committed roll is a presentation step of its own, even when the same
       // command also reveals a result or moves a pawn. Never infer it from faces.
-      if(mode!=='instant'&&root.PlayroomMotion?.play&&(snapshot?.action?.type==='roll'||additions.some(e=>e.kind==='roll'))){
+      if(mode!=='instant'&&root.PlayroomMotion?.play&&(snapshot?.action?.type==='roll'||additions.some(e=>e.kind==='roll'||e.presentation?.type==='roll'))){
         if(snapshot)snapshot.skipDice=true;
-        rollSoundEvent=additions.find(e=>e.kind==='roll')||additions[0];
+        rollSoundEvent=additions.find(e=>e.kind==='roll'||e.presentation?.type==='roll')||additions[0];
         const ids=cues.filter(c=>c.eventId===rollSoundEvent.id&&typeof c.id==='string').map(c=>c.id);
         const reduced=!!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
         const duration=root.PlayroomGameFlow.presets[mode]?.duration||root.PlayroomGameFlow.presets.normal.duration;

@@ -839,10 +839,10 @@ test('full boards reserve a square zone and use portrait width before and after 
 
 
 test('each committed dice roll animates independently of routes, faces and speed except instant',async()=>fixture(async page=>{
- for(const [game,preset]of [['snakes','plus'],['snakes','classic'],['ludo','classic'],['yatzy','classic']])for(const mode of ['fast','normal','slow','instant']){
-  await page.emulateMedia({reducedMotion:'no-preference'});await scene(page,game,{preset});
+ for(const [game,preset]of [['snakes','plus'],['snakes','classic'],['ludo','classic'],['yatzy','classic']])for(const choice of ['fast','normal','slow','instant','reduced']){
+  const mode=choice==='reduced'?'fast':choice;await page.emulateMedia({reducedMotion:choice==='reduced'?'reduce':'no-preference'});await scene(page,game,{preset});
   const result=await page.evaluate(({mode})=>{
-   const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion});
+   const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion,reducedMotion:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
    window.rollFeedback=new PlayroomGameFeedback();rollFeedback.start(rcSession.current.events);
    const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcRender();
    const events=TabletopCore.project(rcSession.current,0).events;
