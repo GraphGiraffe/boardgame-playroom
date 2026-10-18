@@ -204,7 +204,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       await page.locator('.table-tools [data-command=settings]').click();
       for(const selector of ['#setting-sound','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
       assert.equal(await page.locator('#setting-auto-pass').count(),0,'hotseat option does not apply to network');
-      await page.locator('.modal [data-quick-shortcut][data-command=rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
+      await page.locator('.modal [data-shared-rules],.modal [data-quick-shortcut][data-command=rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
     }
     const menuIdentity=await client.evaluate(()=>({id:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length}));
     await client.locator('.table-heading [data-command=home]').click();
@@ -294,7 +294,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       for(const [i,page] of [host,client].entries()){
         assert.equal(await page.locator('.table-tools [data-command=room],.table-tools [data-net-action=room]').count(),0);
         assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
-        const b=await page.locator('.table-tools [data-game-primary]').boundingBox();assert(Math.abs(b.x-primaryPositions[i].x)<1,'result must occupy room position');
+        const b=await page.locator('.table-tools [data-game-primary]').boundingBox();assert(Math.abs(b.y-primaryPositions[i].y)<1,'result must stay on the same toolbar row');assert.equal(b.width,primaryPositions[i].width);assert.equal(b.height,primaryPositions[i].height);
       }
       await client.locator('.shared-modal-backdrop [data-command=close-modal]').click();
       assert.equal(await client.locator('.shared-modal-backdrop').count(),0);
