@@ -7,3 +7,5 @@
 Общий выбранный запуск `case/rc2-games,case/pack-models`: 48 pass / 1 fail из 49. Не пройден прежний сценарий Ludo keeps every pawn visible on a shared start and does not replay the prior roll: ожидание отсутствия data-motion-lead="roll" расходится с текущим поведением. Та же ошибка подтверждена без правок на исходном RC22 d786da5ed916d083c33b38e3e90196edda443cc1 в /tmp/playroom-mini-baseline. Проверка Лудо не ослаблялась и не менялась; общий прогон нельзя считать зелёным. Логи: /tmp/pexeso-random-tests.log, /tmp/pexeso-ludo-baseline.log.
 
 Самостоятельный `bash scripts/codex/check.sh` паков прошёл: синтаксис, сборка, 18 SHA256. Снимки 390×844 и 844×390 в tmp_files/pexeso-random-review просмотрены. Для демонстрации на снимках временно раскрыты все лица в отдельной локальной проекции; в игре сохраняется стандартная скрытая проекция.
+
+RC25 опубликован и проверен: https://3c261986.playroom-hod-test.pages.dev. Protected/runtime/catalog/offline прошли, production unchanged. Точные SHA и каналы — RC-0.18.0-rc.25.md.
