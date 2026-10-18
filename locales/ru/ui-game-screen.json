@@ -1,4 +1,7 @@
 {
+  "ui.game-screen.action-confirmation": "Подтверждение действия",
+  "ui.game-screen.confirm-action": "Подтвердить",
+  "ui.game-screen.cancel-action": "Отмена",
   "ui.game-screen.1fd4bffb137b": "К играм",
   "ui.game-screen.ae29400e7f17": "Вернуться к игре",
   "ui.game-screen.ed9aa3c20c66": "Закрыть историю",

@@ -345,3 +345,30 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     assert.equal(await page.locator('.action-reveal').count(),0,'history/reconnect never creates a new reveal');
   }finally{await page.close();await browser.close();}
  });
+
+test('Yatzy confirms category and zero score before player or public Table submission',{timeout:40000},async()=>{
+ require('../packs/yatzy/rules.js');
+ const bundle=compiledPacks.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='yatzy');
+ const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('yatzy').rules,assets:Object.fromEntries(['die'].map(name=>['assets/shared/'+name+'.svg','data:image/svg+xml;base64,'+Buffer.from(bundle.files['assets/shared/'+name+'.svg']).toString('base64')]))};
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const table of [false,true]){
+  const page=await fixture(browser),session=new Session(Engine,'yatzy',{seed:17,firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'Иван'},{name:'Луна'}]});session.act(0,{type:'roll'});
+  const authority=new Authority(session),client=table?authority.connectTable([0,1]):authority.connect(0),initial=client.snapshot(),before=JSON.stringify(session.current);
+  let sequence=0;await page.exposeFunction('scoreCommit',action=>{const receipt=client.dispatch(P.command(client.snapshot(),action,'qa-score-'+(++sequence)));return {receipt,snapshot:client.snapshot()};});
+  await page.evaluate(({initial,definition,table})=>{
+   const listeners=new Set();window.qaSent=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant',quickPlay:true})};
+   window.qaClient={snapshot:initial,pending:null,subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(action){qaSent.push(action);const {receipt,snapshot}=await scoreCommit(action);this.emit(snapshot);return receipt;},emit(snapshot){this.snapshot=snapshot;for(const f of listeners)f(snapshot);},async history(){return this.snapshot;},close(){}};
+   window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:table?'table':'combined'});qaGame.render();
+  },{initial,definition,table});
+  const category=page.locator('.yatzy-score button[data-action]').filter({hasText:/^0$/}).first();
+  for(const cancel of [true,false]){
+   await category.click();await page.locator('.modal [data-command="confirm-action"]').waitFor();assert.match(await page.locator('.modal .lead').textContent(),/0 очков/);assert.equal(await page.evaluate(()=>qaSent.length),0);assert.equal(JSON.stringify(session.current),before);
+   if(cancel)await page.locator('.modal [data-command="close-modal"]').last().click();
+  }
+  // A newer authoritative frame invalidates the pending choice.
+  session.act(0,{type:'hold',index:0});await page.evaluate(next=>qaClient.emit(next),client.snapshot());await page.locator('.modal [data-command="confirm-action"]').click();assert.equal(await page.evaluate(()=>qaSent.length),0);
+  await category.click();const chosen=JSON.parse(await category.getAttribute('data-action'));
+  await page.locator('.modal [data-command="confirm-action"]').click();await page.waitForFunction(()=>qaSent.length===1);assert.equal(session.current.data.scores[0][chosen.key],0);assert.equal(session.current.move,3);
+  await page.evaluate(()=>qaGame.destroy());await page.close();
+ }}finally{await browser.close();}
+});
