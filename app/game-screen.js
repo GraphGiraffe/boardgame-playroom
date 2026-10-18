@@ -263,6 +263,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.1,Math.min(1.6,width/Math.max(field.scrollWidth,r.width,1),height/natural));
     field.style.height=natural+'px';field.style.zoom=String(scale);field.style.setProperty('--field-scale',String(scale));
   }
+  // Responsive score lists change columns inside the reserved field, never its grid tracks.
+  function fitScoreTables(stage){
+    const win=stage.ownerDocument.defaultView;
+    for(const table of stage.querySelectorAll('[data-responsive-score-table]')){
+      const rows=[...table.rows];if(!rows.length)continue;
+      const space=table.closest('[data-score-table-space]')||stage.querySelector('.layout-field');if(!space)continue;
+      const css=win.getComputedStyle(space),height=space.clientHeight-parseFloat(css.paddingTop||0)-parseFloat(css.paddingBottom||0);
+      const rowHeight=rows[0].getBoundingClientRect().height;if(height<=0||rowHeight<=0)continue;
+      const maximum=Math.max(1,Number(table.dataset.responsiveScoreTable)||1),minimum=Math.max(1,Number(table.dataset.scoreColumnWidth)||80);
+      const columns=Math.max(1,Math.min(maximum,Math.floor(table.clientWidth/minimum),Math.ceil(rows.length*rowHeight/height)));
+      table.style.setProperty('--score-columns',columns);table.style.setProperty('--score-rows',Math.ceil(rows.length/columns));table.dataset.scoreColumns=String(columns);
+    }
+  }
   const replayFitters=new WeakMap();
   function layoutScene(host){
     const scene=host.querySelector('.scene'),previous=replayFitters.get(host);
@@ -344,7 +357,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow='auto';}
-      fitField(stage);}
+      fitField(stage);fitScoreTables(stage);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
