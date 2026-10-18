@@ -1,3 +1,4 @@
+if(typeof require==='function'&&typeof module==='object'&&module.exports)require("../../core/messages.js");
 (function(root,factory){
   'use strict';
   const api=factory(root);
@@ -8,7 +9,7 @@
   const SIGNAL_VERSION=1;
   const clone=value=>JSON.parse(JSON.stringify(value));
   function rtc(){
-    if(typeof root.RTCPeerConnection!=='function')throw Error('Этот браузер не поддерживает WebRTC.');
+    if(typeof root.RTCPeerConnection!=='function')throw Error(globalThis.PlayroomMessages.text("ui.webrtc.c348ecba285d"));
     return root.RTCPeerConnection;
   }
   function pairingId(){
@@ -17,16 +18,16 @@
     return 'pair-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
   }
   function serializeDescription(description,{pairingId:nullablePairingId=null}={}){
-    if(!description||!['offer','answer'].includes(description.type)||typeof description.sdp!=='string')throw Error('Некорректное описание WebRTC.');
+    if(!description||!['offer','answer'].includes(description.type)||typeof description.sdp!=='string')throw Error(globalThis.PlayroomMessages.text("ui.webrtc.bafb603f86cc"));
     const value={v:SIGNAL_VERSION,type:description.type,sdp:description.sdp};
     if(nullablePairingId)value.pairingId=String(nullablePairingId);
     return JSON.stringify(value);
   }
   function parseSignal(value,expected){
     let data=value;
-    if(typeof data==='string')try{data=JSON.parse(data);}catch(_){throw Error('Некорректный код подключения.');}
-    if(!data||data.v!==SIGNAL_VERSION||!['offer','answer'].includes(data.type)||typeof data.sdp!=='string'||!data.sdp)throw Error('Некорректный код подключения.');
-    if(expected&&data.type!==expected)throw Error('Ожидался '+expected+' WebRTC.');
+    if(typeof data==='string')try{data=JSON.parse(data);}catch(_){throw Error(globalThis.PlayroomMessages.text("ui.webrtc.1275b08d76b1"));}
+    if(!data||data.v!==SIGNAL_VERSION||!['offer','answer'].includes(data.type)||typeof data.sdp!=='string'||!data.sdp)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.1275b08d76b1"));
+    if(expected&&data.type!==expected)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.cef07e67b7b6",{p0:String(expected)}));
     return {description:{type:data.type,sdp:data.sdp},pairingId:typeof data.pairingId==='string'&&data.pairingId?data.pairingId:null};
   }
   function parseDescription(value,expected){return parseSignal(value,expected).description;}
@@ -34,7 +35,7 @@
   function waitIce(pc,{timeout=8000}={}){
     if(pc.iceGatheringState==='complete')return Promise.resolve();
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(done,timeout,Error('Не удалось подготовить локальное WebRTC-соединение.'));
+      const timer=setTimeout(done,timeout,Error(globalThis.PlayroomMessages.text("ui.webrtc.31f66cf5723d")));
       function done(error){clearTimeout(timer);pc.removeEventListener('icegatheringstatechange',change);error?reject(error):resolve();}
       function change(){if(pc.iceGatheringState==='complete')done();}
       pc.addEventListener('icegatheringstatechange',change);
@@ -43,30 +44,33 @@
   function waitOpen(channel,{timeout=10000}={}){
     if(channel.readyState==='open')return Promise.resolve(channel);
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(done,timeout,Error('Другой браузер не подключился.'));
+      const timer=setTimeout(done,timeout,Error(globalThis.PlayroomMessages.text("ui.webrtc.99b70a4fcf53")));
       function done(error){clearTimeout(timer);channel.removeEventListener('open',open);channel.removeEventListener('error',fail);channel.removeEventListener('close',closed);error?reject(error):resolve(channel);}
       function open(){done();}
-      function fail(){done(Error('Ошибка WebRTC-канала.'));}
-      function closed(){done(Error('WebRTC-канал закрыт до подключения.'));}
+      function fail(){done(Error(globalThis.PlayroomMessages.text("ui.webrtc.4bb59524ff0c")));}
+      function closed(){done(Error(globalThis.PlayroomMessages.text("ui.webrtc.bd6b75c2f0ac")));}
       channel.addEventListener('open',open,{once:true});channel.addEventListener('error',fail,{once:true});channel.addEventListener('close',closed,{once:true});
     });
   }
   function send(channel,message){
-    if(channel.readyState!=='open')throw Error('WebRTC-канал не подключён.');
+    if(channel.readyState!=='open')throw Error(globalThis.PlayroomMessages.text("ui.webrtc.dd436f0099c4"));
     channel.send(JSON.stringify(message));
   }
   function serve(channel,connection){
-    if(!channel||!connection)throw Error('Нужны канал и привязанное соединение authority.');
+    if(!channel||!connection)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.581f9b800c4d"));
+    let negotiated=false;
     const debug=channel.__playroomDebug={side:'server',hellos:0,ready:0,requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
-    const unsubscribe=connection.subscribe?.(snapshot=>{if(channel.readyState==='open'){debug.snapshots++;send(channel,{kind:'snapshot',snapshot});}});
+    const unsubscribe=connection.subscribe?.(snapshot=>{if(negotiated&&channel.readyState==='open'){debug.snapshots++;send(channel,{kind:'snapshot',snapshot});}});
     const onMessage=async event=>{
       let message;try{message=JSON.parse(event.data);}catch(error){debug.errors++;debug.lastError='parse';return;}
       if(message?.kind==='hello'){
         debug.hellos++;
-        if(channel.readyState==='open'){send(channel,{kind:'transport-ready',version:1});debug.ready++;}
+        if(message.version!==2){send(channel,{kind:'transport-ready',version:2,error:'VERSION_MISMATCH'});return;}
+        negotiated=true;if(channel.readyState==='open'){send(channel,{kind:'transport-ready',version:2});debug.ready++;}
         return;
       }
       if(message?.kind!=='request'||!Number.isSafeInteger(message.requestId))return;
+      if(!negotiated){send(channel,{kind:'response',requestId:message.requestId,error:'VERSION_MISMATCH'});return;}
       debug.requests++;debug.lastMethod=message.method;
       try{
         let result;
@@ -79,7 +83,7 @@
         if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,result});debug.responses++;}
       }catch(error){
         debug.errors++;debug.lastError=error?.message||String(error);
-        if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,error:'Запрос не выполнен.'});debug.responses++;}
+        if(channel.readyState==='open'){send(channel,{kind:'response',requestId:message.requestId,error:globalThis.PlayroomMessages.text("ui.webrtc.b266c6f0f866")});debug.responses++;}
       }
     };
     channel.addEventListener('message',onMessage);
@@ -95,12 +99,12 @@
     const readyTimer=setTimeout(()=>{
       if(ready||closed)return;
       debug.timeouts++;debug.lastError='handshake-timeout';
-      rejectReady(Error('Хост не подтвердил готовность соединения.'));
+      rejectReady(Error(globalThis.PlayroomMessages.text("ui.webrtc.88d10d3be98c")));
     },handshakeTimeout);
     let helloTimer=null;
     const sendHello=()=>{
       if(closed||ready||channel.readyState!=='open')return;
-      try{send(channel,{kind:'hello',version:1});debug.hellos++;}
+      try{send(channel,{kind:'hello',version:2});debug.hellos++;}
       catch(error){debug.lastError=error?.message||String(error);}
     };
     const stopHello=()=>{clearInterval(helloTimer);helloTimer=null;};
@@ -110,7 +114,7 @@
     };
     const onMessage=event=>{
       let message;try{message=JSON.parse(event.data);}catch(_){return;}
-      if(message?.kind==='transport-ready'){markReady();return;}
+      if(message?.kind==='transport-ready'){if(message.version!==2||message.error){clearTimeout(readyTimer);stopHello();rejectReady(Error('VERSION_MISMATCH'));return;}markReady();return;}
       if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
       // Presence is a separate public control-plane message. The host sends it
       // only on an authenticated participant's RTC channel; never a full room
@@ -134,8 +138,8 @@
     };
     const onOpen=()=>sendHello();
     const onClose=()=>{
-      for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}pending.clear();
-      if(!ready){clearTimeout(readyTimer);stopHello();rejectReady(Error('Соединение закрылось до подтверждения готовности.'));}
+      for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.e192912e5d23")));}pending.clear();
+      if(!ready){clearTimeout(readyTimer);stopHello();rejectReady(Error(globalThis.PlayroomMessages.text("ui.webrtc.fed7d356de28")));}
     };
     channel.addEventListener('message',onMessage);
     channel.addEventListener('open',onOpen);
@@ -143,11 +147,11 @@
     if(channel.readyState==='open'){sendHello();helloTimer=setInterval(sendHello,250);}
     else helloTimer=setInterval(sendHello,250);
     const request=async(method,value)=>{
-      if(closed)throw Error('Подключение закрыто.');
+      if(closed)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.b8adaa326e7c"));
       await readyPromise;
       return new Promise((resolve,reject)=>{
-        if(closed||channel.readyState!=='open')return reject(Error('Нет соединения с хостом.'));
-        const requestId=++sequence,timer=setTimeout(()=>{debug.timeouts++;pending.delete(requestId);reject(Error('Хост не ответил. Повторите запрос.'));},timeout);
+        if(closed||channel.readyState!=='open')return reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.6eca5437b40f")));
+        const requestId=++sequence,timer=setTimeout(()=>{debug.timeouts++;pending.delete(requestId);reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.f0561539374a")));},timeout);
         debug.requests++;debug.lastMethod=method;pending.set(requestId,{resolve,reject,timer});
         try{send(channel,{kind:'request',requestId,method,value});}
         catch(error){clearTimeout(timer);pending.delete(requestId);reject(error);}
@@ -166,61 +170,23 @@
       close(){
         if(closed)return;closed=true;clearTimeout(readyTimer);stopHello();
         channel.removeEventListener('message',onMessage);channel.removeEventListener('open',onOpen);channel.removeEventListener('close',onClose);
-        for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error('Соединение закрыто.'));}
+        for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.e192912e5d23")));}
         pending.clear();listeners.clear();presenceListeners.clear();latestPresence=null;try{channel.close();}catch(_){}
       }
     });
   }
   // No external signalling: only probe the existing authenticated connection.
-  class Recovery {
-    constructor({pc,transport,reconcile,onState=()=>{},document=root.document,interval=5000,grace=10000}){
-      Object.assign(this,{pc,transport,reconcile,onState,document,grace});
-      this.state='connecting';this.lastResponse=null;this.error=null;this.route=null;this.events=[];this.closed=false;this.flight=null;this.generation=0;
-      this.notify=()=>{const state=pc.connectionState;if(state!=='connected')this.generation++;
-        if(['failed','closed'].includes(state))this.setState('invite','channel-closed');
-        else if(state==='disconnected'){this.setState('recovering','channel-disconnected');this.waitForInvite();}
-        else if(state==='connected')void this.check();};
-      this.visibility=()=>{if(document?.hidden){this.generation++;this.setState('recovering');}else void this.check({recover:true});};
-      pc.addEventListener('connectionstatechange',this.notify);
-      document?.addEventListener('visibilitychange',this.visibility);
-      this.timer=setInterval(()=>{if(!document?.hidden)void this.check();},interval);
-      this.notify();
-    }
-    setState(state,error=null){
-      if(this.closed)return;const changed=this.state!==state||this.error!==error;this.state=state;this.error=error;
-      if(state==='connected'){clearTimeout(this.graceTimer);this.graceTimer=null;}
-      if(changed){this.events.push({at:Date.now(),state,error});if(this.events.length>100)this.events.shift();this.onState(this.report());}
-    }
-    waitForInvite(){if(!this.graceTimer)this.graceTimer=setTimeout(()=>{this.graceTimer=null;if(this.state!=='connected')this.setState('invite','recovery-timeout');},this.grace);}
-    report(){return {state:this.state,ice:this.pc.iceConnectionState||'unknown',channel:this.pc.connectionState||'unknown',lastResponse:this.lastResponse,error:this.error,route:this.route,events:this.events.map(e=>({...e}))};}
-    async routeInfo(){
-      try{const stats=await this.pc.getStats?.();if(!stats)return;
-        const pair=[...stats.values()].find(s=>s.type==='candidate-pair'&&s.state==='succeeded'&&(s.nominated||s.selected));
-        const local=stats.get(pair?.localCandidateId),remote=stats.get(pair?.remoteCandidateId);
-        const type=v=>['host','srflx','prflx','relay'].includes(v)?v:'unknown';
-        this.route=pair?{local:type(local?.candidateType),remote:type(remote?.candidateType),protocol:['udp','tcp'].includes(local?.protocol)?local.protocol:'unknown'}:null;
-      }catch(_){} // Diagnostics must never interrupt play or expose raw RTC data.
-    }
-    check({recover=false}={}){
-      if(this.closed||this.document?.hidden)return Promise.resolve();
-      if(this.flight)return this.flight;
-      if(this.pc.connectionState!=='connected'){this.notify();return Promise.resolve();}
-      const recovering=recover||this.state!=='connected';
-      if(recovering)this.setState('recovering');
-      const generation=this.generation;
-      this.flight=(async()=>{
-        try{
-          const snapshot=await this.transport.snapshot();if(this.closed||generation!==this.generation||this.document?.hidden)return;
-          await this.reconcile(snapshot,{recovering});if(this.closed||generation!==this.generation||this.document?.hidden)return;
-          this.lastResponse=Date.now();await this.routeInfo();
-          if(this.closed||generation!==this.generation||this.document?.hidden||this.pc.connectionState!=='connected')return;
-          this.setState('connected');
-        }catch(_){if(!this.closed&&generation===this.generation&&!this.document?.hidden){this.setState('invite','sync-failed');}}
-        finally{this.flight=null;}
-      })();
-      return this.flight;
-    }
-    close(){this.closed=true;clearInterval(this.timer);clearTimeout(this.graceTimer);this.pc.removeEventListener('connectionstatechange',this.notify);this.document?.removeEventListener('visibilitychange',this.visibility);}
+  const RecoveryBase=root.PlayroomRecoveryCoordinator||(typeof require==='function'?require('../../application/recovery-coordinator.js'):null);
+  async function connectionRoute(pc){
+    const stats=await pc.getStats?.();if(!stats)return null;
+    const pair=[...stats.values()].find(value=>value.type==='candidate-pair'&&value.state==='succeeded'&&(value.nominated||value.selected));
+    const local=stats.get(pair?.localCandidateId),remote=stats.get(pair?.remoteCandidateId),type=value=>['host','srflx','prflx','relay'].includes(value)?value:'unknown';
+    return pair?{local:type(local?.candidateType),remote:type(remote?.candidateType),protocol:['udp','tcp'].includes(local?.protocol)?local.protocol:'unknown'}:null;
+  }
+  class Recovery extends RecoveryBase {
+    constructor(options){const document=options.document??root.document;super({...options,link:options.pc,
+      visibility:{get hidden(){return !!document?.hidden;},subscribe(listener){document?.addEventListener('visibilitychange',listener);return()=>document?.removeEventListener('visibilitychange',listener);}},
+      diagnostics:()=>connectionRoute(options.pc),clock:{now:()=>Date.now(),setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id),setInterval:(fn,ms)=>setInterval(fn,ms),clearInterval:id=>clearInterval(id)}});}
   }
   async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
     const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true}),id=pairingId();
@@ -229,7 +195,7 @@
       pc,channel,pairingId:id,offer:serializeDescription(pc.localDescription,{pairingId:id}),
       async acceptAnswer(signal){
         const parsed=parseSignal(signal,'answer');
-        if(parsed.pairingId&&parsed.pairingId!==id)throw Error('Этот ответ относится к другому приглашению. Создайте новый ответ для текущего подключения.');
+        if(parsed.pairingId&&parsed.pairingId!==id)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.a6d20424e6f2"));
         await pc.setRemoteDescription(parsed.description);return waitOpen(channel);
       },
       waitOpen:options=>waitOpen(channel,options),

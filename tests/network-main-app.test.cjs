@@ -13,6 +13,53 @@ function server(){
 async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
+test('main app: public Table over WebRTC shares moves with a player without gaining private viewer rights',{timeout:90000},async()=>{
+ const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),tc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),pc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});
+ const host=await hc.newPage(),table=await tc.newPage(),phone=await pc.newPage(),errors=[];host._url=url;table._url=url;phone._url=url;
+ for(const page of [host,table,phone]){page.setDefaultTimeout(10000);page.on('pageerror',error=>errors.push(error.message));}
+ try{
+  await profile(host,'Анна');await profile(table,'Стол');await profile(phone,'Борис');
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode]').check();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
+  async function join(page){
+   await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();
+   const offer=await value(host,'#net-host-token');
+   await page.locator('#network-join-button').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+   await page.locator('#net-client-token').waitFor();
+   await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+   await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(form=>form.requestSubmit());
+   await page.locator('.lobby-shell').waitFor();
+  }
+  await join(phone);await phone.locator('[data-net-seat]:not([disabled])').first().click();await join(table);
+  await phone.locator('[data-net-action=settings]').click();await phone.locator('[data-avatar-picker]').click();await phone.locator('[data-avatar-option=star-yellow]').click();
+  await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(p=>p.nickname==='Борис'&&p.avatar==='star-yellow'));await phone.locator('.modal [data-command=close-modal]').click();
+  await table.locator('[data-net-action=table]').click();
+  await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(person=>!person.isHost&&person.role==='table'));
+  await host.evaluate(()=>{
+   const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});
+   b.renderLobby();
+  });
+  await host.locator('[data-command=lobby-ready]').click();await phone.locator('[data-net-action=ready]').click();
+  await host.locator('[data-command=lobby-start]:not([disabled])').click();
+  await phone.locator('.network-game').waitFor();await phone.evaluate(()=>PlayroomNetworkLibrary.setAvatar('circle-blue'));
+  await host.waitForFunction(()=>{const b=PlayroomAppBridge;return b.roomService.snapshot(b.room().id).participants.some(p=>p.nickname==='Борис'&&p.avatar==='circle-blue');});
+  await phone.waitForFunction(()=>[...document.querySelectorAll('.player-avatar-wrap .avatar-art')].some(img=>img.getAttribute('src')===PlayroomAvatars.source('circle-blue')));
+  assert.equal(await phone.locator('.network-game').count(),1,'cosmetic update keeps the live game mounted');
+  await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
+  await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
+  await phone.locator('.ttt-cell[data-action]').first().waitFor();await phone.locator('.ttt-cell').nth(0).click();
+  await host.locator('.ttt-cell.nought').waitFor();
+  await table.locator('.ttt-cell[data-action]').first().waitFor();await table.locator('.ttt-cell').nth(1).click();
+  await table.waitForFunction(()=>document.querySelectorAll('.ttt-cell.cross').length===2);
+  assert.equal(await table.locator('.network-game').getAttribute('data-viewer'),'-1');
+  assert.equal(await host.locator('.network-game').getAttribute('data-viewer'),'0');
+  await table.locator('[data-command=history]').click();await table.locator('#replay-range').waitFor();
+  assert.equal(await table.locator('.ttt-cell[data-action]').count(),0);
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();await new Promise(resolve=>s.close(resolve));}
+});
+
 test('main app: two browsers join UNO lobby, ready, countdown and share a move',{timeout:90000,skip:!hasUno},async()=>{
   const externalUrl=process.env.PLAYROOM_URL||'';
   const hosted=externalUrl?{s:null,url:externalUrl}:await server();
@@ -137,8 +184,8 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(await host.locator('.table-shell.network-game').getAttribute('data-viewer'),'0');
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
     const hostRole=host.locator('.player-panel [data-participant-role=player]:has(svg[data-ui-icon=host])');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),1,'Host retains the primary network-player icon');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown supplements the player role');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),0,'Host crown replaces the network-player icon');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Network host keeps one crown');
     const iconHandle=await hostRole.elementHandle();
     await host.waitForTimeout(800);assert(await iconHandle.evaluate(node=>node.isConnected),'unchanged presence must preserve the role node and avoid a DOM observer loop');
     // Network mode MUST use the local bot/hot-seat GameScreen, not a compact
@@ -150,14 +197,14 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       assert.equal(await page.locator('.table-shell.network-game .scene .opponent-hand').count(),1);
       assert.equal(await page.locator('.table-shell.network-game .scene .own-hand').count(),1);
       assert.equal(await page.locator('.table-tools [data-command=history] svg').count(),1);
-      assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),1);
+      assert.equal(await page.locator('.table-tools [data-command=rules] svg').count(),0);
       assert.equal(await page.locator('.opponent-hand .uno-art-face').count(),0,'Opponent private card faces must stay hidden');
     }
     for(const page of [host,client]){
       await page.locator('.table-tools [data-command=settings]').click();
-      for(const selector of ['#setting-sound','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
+      for(const selector of ['#setting-scale','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
       assert.equal(await page.locator('#setting-auto-pass').count(),0,'hotseat option does not apply to network');
-      await page.locator('.modal [data-shared-rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
+      await page.locator('.modal [data-shared-rules],.modal [data-quick-shortcut][data-command=rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
     }
     const menuIdentity=await client.evaluate(()=>({id:PlayroomNetworkDebug().client.participantId,peers:qaRTCs.length}));
     await client.locator('.table-heading [data-command=home]').click();
@@ -228,8 +275,12 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
         [...document.querySelectorAll(selector)].some(node=>!node.disabled&&!node.closest('[inert]')&&node.getClientRects().length),ordinaryAction,{timeout:10000});
       return page;
     }));
-    assert.equal(await host.locator('.table-tools #network-pair-button').innerHTML(),addPlayerIcon);
-    assert.equal(await host.locator('.table-tools #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    assert.equal(await host.locator('.table-tools #network-pair-button').count(),0);
+    assert.equal(await host.locator('.table-tools button').count(),4);
+    await host.locator('.table-tools [data-command=settings]').click();
+    assert.equal(await host.locator('.modal #network-pair-button').innerHTML(),addPlayerIcon);
+    assert.equal(await host.locator('.modal #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    await host.locator('.modal [data-command=close-modal]').click();
     for(const exit of ['guest','host']){
       const primaryPositions=await Promise.all([host,client].map(async page=>{
         assert.equal(await page.locator('.table-tools [data-command=room]').count(),1);
@@ -243,7 +294,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       for(const [i,page] of [host,client].entries()){
         assert.equal(await page.locator('.table-tools [data-command=room],.table-tools [data-net-action=room]').count(),0);
         assert.equal(await page.locator('.table-tools [data-command=result]').count(),1);
-        const b=await page.locator('.table-tools [data-game-primary]').boundingBox();assert(Math.abs(b.x-primaryPositions[i].x)<1,'result must occupy room position');
+        const b=await page.locator('.table-tools [data-game-primary]').boundingBox();assert(Math.abs(b.y-primaryPositions[i].y)<1,'result must stay on the same toolbar row');assert.equal(b.width,primaryPositions[i].width);assert.equal(b.height,primaryPositions[i].height);
       }
       await client.locator('.shared-modal-backdrop [data-command=close-modal]').click();
       assert.equal(await client.locator('.shared-modal-backdrop').count(),0);

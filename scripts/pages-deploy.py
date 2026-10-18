@@ -70,7 +70,7 @@ def private_wrapper(args):
     return output.getvalue()
 
 
-def prepare(public, sums, wrapper, destination):
+def prepare(public, sums, wrapper, destination, catalog_channel=""):
     matches = re.findall(r'^([a-f0-9]{64})\s+\*?playroom-pwa\.zip$', Path(sums).read_text(), re.M)
     if len(matches) != 1 or hashlib.sha256(Path(public).read_bytes()).hexdigest() != matches[0]:
         raise ValueError('Release checksum mismatch')
@@ -116,7 +116,7 @@ def prepare(public, sums, wrapper, destination):
         raise ValueError('Deployment destination must be empty')
     destination.mkdir(parents=True, exist_ok=True)
     files.update(private)
-    files['_worker.js'] = wrap_private_worker(files['_worker.js'])
+    files['_worker.js'] = wrap_private_worker(files['_worker.js'], catalog_channel)
     for name, content in files.items():
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -141,18 +141,30 @@ class Pages:
             with urllib.request.urlopen(request, timeout=30) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as error:
-            raise ValueError(f'Cloudflare request failed: HTTP {error.code}') from None
+            details=[]
+            try:
+                for item in json.loads(error.read(16384)).get('errors',[])[:3]:
+                    details.append(str(item.get('code',''))+': '+str(item.get('message',''))[:300])
+            except (ValueError,AttributeError):
+                pass
+            detail='; '.join(details)
+            for key,value in os.environ.items():
+                if len(value)>4 and any(mark in key for mark in ('TOKEN','SECRET','PASSWORD','WRAPPER_B64')):detail=detail.replace(value,'***')
+            raise ValueError(f'Cloudflare {method} {suffix or "project"} failed: HTTP {error.code}'+(' ('+detail+')' if detail else '')) from None
         if not data.get('success'):
             raise ValueError('Cloudflare rejected the operation')
         return data['result']
 
-    def production_target(self, deployment):
+    def deployment_target(self, deployment, environment):
         if not re.fullmatch(r'[a-f0-9-]{36}', deployment):
             raise ValueError('Invalid deployment ID')
         target = self.api(suffix='/deployments/'+deployment)
-        if target.get('environment') != 'production' or target.get('latest_stage', {}).get('status') != 'success':
-            raise ValueError('Rollback requires a successful production deployment')
+        if target.get('environment') != environment or target.get('latest_stage', {}).get('status') != 'success':
+            raise ValueError('Expected a successful '+environment+' deployment')
         return target
+
+    def production_target(self, deployment):
+        return self.deployment_target(deployment, 'production')
 
     def manual_uploads(self, project):
         source = project.get('source') or {}
@@ -175,12 +187,54 @@ class Pages:
         return target
 
 
-def smoke(url, runtime=None, online_only=False):
+def smoke(url, runtime=None, online_only=False, report_path=None):
     env = dict(os.environ, PLAYROOM_DEPLOY_URL=url)
+    if report_path:
+        env['PLAYROOM_SMOKE_REPORT'] = str(report_path)
     if runtime:
         env['PLAYROOM_DEPLOY_DIR'] = str(runtime)
     env['PLAYROOM_SMOKE_ONLINE_ONLY'] = '1' if online_only else '0'
     subprocess.run(['node', str(ROOT/'scripts/pages-smoke.cjs')], env=env, check=True)
+
+
+def save_report(args,report):
+    target=getattr(args,'report',None)
+    if target:target.write_text(json.dumps(report,indent=2)+'\n')
+
+
+def github_release_assets(tag, directory):
+    repo = required('GITHUB_REPOSITORY')
+    release = json.loads(subprocess.check_output(['gh', 'release', 'view', tag, '--repo', repo, '--json', 'tagName,isDraft,targetCommitish']))
+    if release['isDraft'] or release['tagName'] != tag:
+        raise ValueError('Release must already be published')
+    subprocess.run(['gh', 'release', 'download', tag, '--repo', repo, '--pattern', 'playroom-pwa.zip', '--pattern', 'SHA256SUMS', '--dir', str(directory)], check=True)
+    sha = subprocess.check_output(['git', 'rev-list', '-n', '1', tag], text=True).strip()
+    if not re.fullmatch(r'[a-f0-9]{40}', sha):
+        raise ValueError('Release requires an exact source commit')
+    return directory/'playroom-pwa.zip', directory/'SHA256SUMS', sha
+
+
+def verify_existing_preview(pages, args, report, origin, previous):
+    if not args.deployment or not args.release:
+        raise ValueError('Preview verification requires deployment, release and pack channel')
+    target = pages.deployment_target(args.deployment, 'preview')
+    with tempfile.TemporaryDirectory(prefix='playroom-preview-verify-') as directory:
+        directory = Path(directory)
+        public, sums, sha = github_release_assets(args.release, directory)
+        if target.get('deployment_trigger', {}).get('metadata', {}).get('commit_hash') != sha:
+            raise ValueError('Preview commit differs from release')
+        prepare(public, sums, private_wrapper(args), directory/'site', args.pack_channel)
+        before, preview, after = (directory/name for name in ('before.json', 'preview.json', 'after.json'))
+        report.update(status='preview-recheck', previewDeployment=target['id'], previewUrl=target['url'], release=args.release, commit=sha, packChannel=args.pack_channel)
+        save_report(args, report)
+        smoke(origin, online_only=True, report_path=before)
+        smoke(target['url'], directory/'site', report_path=preview)
+        smoke(origin, online_only=True, report_path=after)
+        baseline, current = json.loads(before.read_text()), json.loads(after.read_text())
+        if baseline != current or pages.api().get('canonical_deployment', {}).get('id') != previous:
+            raise ValueError('Production changed during preview verification')
+        report.update(status='preview-verified', productionBefore=baseline, productionAfter=current, previewVerified=json.loads(preview.read_text()), productionUnchanged=True, uploaded=False)
+    return report
 
 
 def run(args):
@@ -196,7 +250,8 @@ def run(args):
     if expected != origin and expected not in ['https://'+d for d in project.get('domains', [])]:
         raise ValueError('Configured origin does not belong to the existing project')
     previous = project.get('canonical_deployment', {}).get('id')
-    report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation}
+    report = {'project': pages.project, 'origin': expected, 'previousDeployment': previous, 'operation': args.operation, 'status':'started'}
+    save_report(args,report)
     if args.operation == 'preflight':
         source = project.get('source') or {}
         config = source.get('config') or {}
@@ -219,8 +274,13 @@ def run(args):
             worker = Path(tmp)/'_worker.js'
             worker.write_bytes(wrap_private_worker(private['_worker.js']))
             subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(worker)], check=True)
+        if args.pack_channel:
+            return verify_existing_preview(pages, args, report, expected, previous)
         target = pages.production_target(args.deployment) if args.deployment else None
-        smoke(target['url'] if target else expected)
+        with tempfile.TemporaryDirectory(prefix='playroom-production-verify-') as tmp:
+            verified = Path(tmp)/'production.json'
+            smoke(target['url'] if target else expected, report_path=verified)
+            report['productionVerified'] = json.loads(verified.read_text())
         report.update(status='preflight-passed', productionBranch=production, verifiedDeployment=target['id'] if target else previous)
         return report
     if args.operation == 'rollback':
@@ -257,18 +317,15 @@ def run(args):
             if public.name != 'playroom-pwa.zip':
                 raise ValueError('Expected release asset playroom-pwa.zip')
         else:
-            repo = required('GITHUB_REPOSITORY')
-            release = json.loads(subprocess.check_output(['gh', 'release', 'view', args.release, '--repo', repo, '--json', 'tagName,isDraft,targetCommitish']))
-            if release['isDraft'] or release['tagName'] != args.release:
-                raise ValueError('Release must already be published')
-            subprocess.run(['gh', 'release', 'download', args.release, '--repo', repo, '--pattern', 'playroom-pwa.zip', '--pattern', 'SHA256SUMS', '--dir', str(tmp)], check=True)
-            public, sums = tmp/'playroom-pwa.zip', tmp/'SHA256SUMS'
-            sha = subprocess.check_output(['git', 'rev-list', '-n', '1', args.release], text=True).strip()
+            public, sums, sha = github_release_assets(args.release, tmp)
         if not re.fullmatch(r'[a-f0-9]{40}', sha):
             raise ValueError('Release requires an exact source commit')
-        digest = prepare(public, sums, private_wrapper(args), tmp/'site')
+        catalog_channel=getattr(args,'pack_channel','')
+        if catalog_channel and args.operation!='preview':
+            raise ValueError('An isolated catalog is permitted only for preview')
+        digest = prepare(public, sums, private_wrapper(args), tmp/'site', catalog_channel)
         subprocess.run(['node', str(ROOT/'scripts/pages-wrapper-check.cjs'), str(tmp/'site/_worker.js')], check=True)
-        report.update(release=args.release, commit=sha, sha256=digest['sha256'], source='local' if args.public else 'github-release')
+        report.update(packChannel=catalog_channel, release=args.release, commit=sha, sha256=digest['sha256'], source='local' if args.public else 'github-release')
         run_id = os.environ.get('GITHUB_RUN_ID') or 'local-'+uuid.uuid4().hex[:12]
         preview_branch = 'verify-'+run_id
         if preview_branch == production:
@@ -284,10 +341,43 @@ def run(args):
             return max(matches, key=lambda d:d.get('created_on',''))
         # A preview is an explicit operation only. Production deploy uploads once.
         if args.operation == 'preview':
+            baseline_file=tmp/'production-before.json'
+            smoke(expected,online_only=True,report_path=baseline_file)
+            production_before=json.loads(baseline_file.read_text())
+            report.update(status='preview-configuration',productionBefore=production_before);save_report(args,report)
+            pages.manual_uploads(project)
+            if catalog_channel:
+                configs=project.get('deployment_configs') or {}
+                binding=(configs.get('production') or {}).get('r2_buckets',{}).get('PLAYROOM_PACKS')
+                if not binding: raise ValueError('Production R2 binding is missing')
+                # PATCH only writable R2 fields, never the full GET response (null/read-only settings).
+                preview_config=configs.get('preview') or {}
+                def bucket_fields(value):
+                    return {key:value[key] for key in ('name','jurisdiction') if value.get(key) is not None}
+                buckets={key:bucket_fields(value) for key,value in (preview_config.get('r2_buckets') or {}).items()}
+                buckets['PLAYROOM_PACKS']=bucket_fields(binding)
+                if preview_config.get('r2_buckets')!=buckets:
+                    pages.api('PATCH',payload={'deployment_configs':{'preview':{'r2_buckets':buckets}}})
+                actual=pages.api()
+                preview_actual=(actual.get('deployment_configs') or {}).get('preview') or {}
+                if (preview_actual.get('r2_buckets') or {}).get('PLAYROOM_PACKS',{}).get('name')!=binding['name']:
+                    raise ValueError('Preview R2 binding was not confirmed')
+                if (preview_actual.get('env_vars') or {})!=(preview_config.get('env_vars') or {}):
+                    raise ValueError('Preview environment variables changed')
+                if actual.get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed before preview upload')
+            report.update(status='preview-upload');save_report(args,report)
             preview = upload(preview_branch)
+            report.update(status='preview-uploaded',previewDeployment=preview['id'],previewUrl=preview['url']);save_report(args,report)
             if preview.get('environment') != 'preview':
                 raise ValueError('Expected preview deployment')
-            smoke(preview['url'], tmp/'site')
+            preview_file=tmp/'preview-verification.json'
+            smoke(preview['url'], tmp/'site',report_path=preview_file)
+            after_file=tmp/'production-after.json'
+            smoke(expected,online_only=True,report_path=after_file)
+            production_after=json.loads(after_file.read_text())
+            if production_before!=production_after: raise ValueError('Production runtime or catalog changed during preview')
+            report.update(productionBefore=production_before,productionAfter=production_after,previewVerified=json.loads(preview_file.read_text()),productionUnchanged=True)
+            if pages.api().get('canonical_deployment',{}).get('id')!=previous: raise ValueError('Production changed during preview deployment')
             report.update(status='preview-verified', previewDeployment=preview['id'], previewUrl=preview['url'])
             return report
         if pages.api().get('canonical_deployment', {}).get('id') != previous:
@@ -297,7 +387,10 @@ def run(args):
             deployed = upload(production)
             if deployed.get('environment') != 'production':
                 raise ValueError('Expected production deployment')
-            smoke(deployed['url'], tmp/'site');smoke(expected, tmp/'site')
+            smoke(deployed['url'], tmp/'site')
+            verified = tmp/'production-verification.json'
+            smoke(expected, tmp/'site', report_path=verified)
+            report['productionVerified'] = json.loads(verified.read_text())
             if pages.api().get('canonical_deployment', {}).get('id') != deployed['id']:
                 raise ValueError('Production deployment was not confirmed')
             report.update(deployment=deployed['id'], status='published')
@@ -311,6 +404,7 @@ def run(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--pack-channel', default='')
     parser.add_argument('operation', choices=['deploy', 'preview', 'rollback', 'preflight'])
     parser.add_argument('--release')
     parser.add_argument('--deployment')
@@ -320,11 +414,14 @@ if __name__ == '__main__':
     parser.add_argument('--commit', help='Exact app commit SHA for local publication')
     parser.add_argument('--report', type=Path, default=Path('deploy-report.json'))
     args = parser.parse_args()
+    args.report.write_text(json.dumps({'operation':args.operation,'status':'starting'})+'\n')
     try:
         report = run(args)
         args.report.write_text(json.dumps(report, indent=2)+'\n')
         print(json.dumps(report))
     except Exception as error:
         # Never print raw provider responses, command environment or auth material.
-        print('Deployment failed: '+(str(error) if isinstance(error, ValueError) else type(error).__name__))
+        message=str(error) if isinstance(error, ValueError) else type(error).__name__
+        report=json.loads(args.report.read_text());report.update(status='failed',failedStage=report.get('status'),error=message);save_report(args,report)
+        print('Deployment failed: '+message)
         raise SystemExit(1)

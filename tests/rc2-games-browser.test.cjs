@@ -2,6 +2,52 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+test('layered model renders assigned marks, public Table controls and projected client history',{timeout:45000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(fixture.url);
+  if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(form=>form.requestSubmit());}
+  const captures=path.join(root,'tmp_files/refactor-0.18-model');fs.mkdirSync(captures,{recursive:true});
+  for(const [width,height]of [[320,640],[390,740],[740,390]])for(const theme of ['light','dark']){
+   await page.setViewportSize({width,height});
+   const result=await page.evaluate(({theme})=>{
+    PlayroomAppearanceUI.runtime.service.select(theme);
+    const E=TabletopCore,session=new TabletopSession(E,'tictactoe',{seed:17,firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Аня'},{name:'Борис'}]});
+    const next=E.applyTableAction(session.current,1,{type:'place',cell:4});
+    const same=JSON.stringify(next)===JSON.stringify(E.applyAction(session.current,1,{type:'place',cell:4}));
+    const table=E.projectTable(next,0),actions=table.tableActions;
+    const scene=PlayroomViews.render(table,-1,actions,{surface:'table'});
+    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Крестики-нолики',state:table,viewer:-1,actions,scene,turnText:'Публичный стол'});
+    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    const publicHtml=PlayroomViews.render(E.project(next,-1),-1,[],{surface:'table'});
+    const replayHtml=PlayroomViews.render(table,-1,[],{surface:'table'});
+    return {same,mark:document.querySelectorAll('.ttt-cell')[4].classList.contains('cross'),
+      buttons:document.querySelectorAll('.ttt-cell[data-action]').length,
+      viewer:table.modelProjection.viewer,actor:table.modelProjection.actor,
+      readonly:!publicHtml.includes('data-action=')&&!replayHtml.includes('data-action='),
+      overflow:document.documentElement.scrollWidth>innerWidth+1};
+   },{theme});
+   assert.deepEqual(result,{same:true,mark:true,buttons:8,viewer:-1,actor:0,readonly:true,overflow:false});
+   if(width===390)await page.screenshot({path:path.join(captures,`table-${theme}-390.png`)});
+  }
+  await page.evaluate(async()=>{
+   const session=new TabletopSession(TabletopCore,'tictactoe',{seed:17,firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Аня'},{name:'Борис'}]});
+   const authority=new SessionAuthority(session),connection=authority.connect(1),client=new PlayroomSessionClient(PlayroomLocalTransport(connection));
+   await client.refresh();await client.send({type:'place',cell:4});
+   const mounted=PlayroomSharedViews.mount(client,PlayroomPacks.exportView('tictactoe',session.packVersion),{surface:'combined'});mounted.render();
+   window.modelNetwork={authority,client,mounted};
+  });
+  await page.locator('.network-game .ttt-cell.cross').waitFor();
+  assert.equal(await page.locator('.network-game .ttt-cell[data-action]').count(),0,'other player turn is read only');
+  const history=await page.evaluate(async()=>{
+   const {authority,client}=modelNetwork,frame=await client.transport.history(0);
+   return {revision:authority.revision,cell:client.snapshot.state.modelProjection.data.board[4],
+     initial:frame.state.modelProjection.data.board[4],secret:JSON.stringify(client.snapshot).includes('"rng"')};
+  });
+  assert.deepEqual(history,{revision:1,cell:1,initial:null,secret:false});assert.deepEqual(errors,[]);
+  await page.evaluate(()=>{modelNetwork.mounted.destroy();modelNetwork.client.close();modelNetwork.authority.dispose();});
+ }finally{await browser.close();await fixture.close();}
+});
 test('new game scenes preserve proportions, reachable controls and hands before and after a move',{timeout:120000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const page=await browser.newPage({viewport:{width:390,height:740}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}assert.equal(await page.locator('#modal-root .modal').count(),0);const games=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid'];
@@ -17,7 +63,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     const stage=document.querySelector('.app-game-layout'),issues=[];
     if(!stage)return ['missing scene'];
     const visible=e=>{const r=e.getBoundingClientRect();return !e.closest('[inert]')&&r.width>0&&r.height>0;};
-    for(const [selector,ratio]of [['.shared-card',5/7],['.shared-die',1],['.battle-cell',1],['.ttt-cell',1],['.ludo-board',1],['.ludo-pawn',1]])for(const e of stage.querySelectorAll(selector)){if(!visible(e))continue;const r=e.getBoundingClientRect();if(Math.abs(r.width/r.height-ratio)>.025)issues.push(`${selector} ratio ${r.width}/${r.height}`);}
+    for(const [selector,ratio]of [['.shared-card',5/7],['.shared-die',1],['.battle-cell',1],['.ttt-cell',1],['.ludo-board',1],['.ludo-pawn',1]])for(const e of stage.querySelectorAll(selector)){if(!visible(e))continue;const r={width:e.offsetWidth,height:e.offsetHeight};if(Math.abs(r.width/r.height-ratio)>.025)issues.push(`${selector} ratio ${r.width}/${r.height}`);}
     if(document.documentElement.scrollWidth>innerWidth+1)issues.push('page overflow');
     const actions=stage.querySelector('.layout-actions'),hand=stage.querySelector('.layout-hand'),field=stage.querySelector('.layout-field');
     for(const e of [actions,hand].filter(Boolean)){const r=e.getBoundingClientRect(),s=stage.getBoundingClientRect();if(r.top<s.top-1||r.bottom>s.bottom+1)issues.push(`clipped ${e.className}: ${r.top}..${r.bottom}/${s.bottom}`);}
@@ -38,9 +84,10 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      if(ships.length===4&&ships.some(ship=>Math.abs(ship.getBoundingClientRect().top-ships[0].getBoundingClientRect().top)>1))issues.push('opponent fleet wraps');
     }
     if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
-    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.getBoundingClientRect().height>30)issues.push('vertical player name');
+    // A side seat rotates its entire row; measure text wrapping before that transform.
+    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.offsetHeight>30)issues.push('vertical player name');
     if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
-    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>Math.abs(w-56)>1))issues.push('Yatzy unequal score columns');}
+    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>w<28||Math.abs(w-widths[0])>1))issues.push('Yatzy unequal score columns');if(stage.querySelector('.yatzy-board').scrollWidth>stage.querySelector('.yatzy-board').clientWidth+1)issues.push('Yatzy horizontal scroll');}
     for(const panel of stage.querySelectorAll('[data-hand-count].player-panel'))if(panel.querySelectorAll('.piece-count.is-hand').length!==1)issues.push('duplicate hand counter');
     return [...new Set(issues)];
    });
@@ -58,7 +105,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      let state=E.createGame(id,{players,seed:17}),before;
      const measure=()=>{const projected=E.project(state,state.turn),actions=E.legalActions(state),scene=PlayroomViews.render(projected,state.turn,actions);
       document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game.name,state:projected,viewer:state.turn,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
-      const f=document.querySelector('.layout-field').getBoundingClientRect(),a=document.querySelector('.layout-actions')?.getBoundingClientRect();return {field:[f.left,f.top,f.width,f.height],actions:a?.height||0};};
+      const node=document.querySelector('.layout-field');if(!node)throw Error(id+' scene: '+document.querySelector('#app').textContent);const f=node.getBoundingClientRect(),a=document.querySelector('.layout-actions')?.getBoundingClientRect();return {field:[f.left,f.top,f.width,f.height],actions:a?.height||0};};
      before=measure();const action=E.botAction(state);if(!action)continue;state=E.applyAction(state,state.turn,action);const after=measure();
      if(before.field.some((value,i)=>Math.abs(value-after.field[i])>2))issues.push(`${id} field shifted after action: ${before.field} -> ${after.field}`);
      if(before.actions&&after.actions&&Math.abs(before.actions-after.actions)>2)issues.push(`${id} actions changed height: ${before.actions} -> ${after.actions}`);
@@ -74,7 +121,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
      const field=document.querySelector('.battle-fields').getBoundingClientRect(),board=document.querySelector('.battle-panel.is-active .battle-grid').getBoundingClientRect();
      if(getComputedStyle(document.querySelector('.battleship-scene .game-field-content')).overflowX!=='clip')issues.push(`${fleet} horizontal overflow is not clipped`);
      if(board.left<field.left-1||board.right>field.right+1||board.top<field.top-1||board.bottom>field.bottom+1)issues.push(`${fleet} clipped board=${board.x},${board.y},${board.width},${board.height} field=${field.x},${field.y},${field.width},${field.height}`);
-     if(Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
+     if(innerWidth<=innerHeight&&Math.abs((board.left+board.right)/2-(field.left+field.right)/2)>2)issues.push(`${fleet} off center`);
      const counters=[...document.querySelectorAll('.battle-panel.is-active .fleet-indicator')];if(!counters.length)issues.push(`${fleet} counters missing`);
     }return issues;
    });assert.deepEqual(fleets,[],`centered fleet at ${width}x${height}`);
@@ -93,7 +140,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(game==='battleship'){
      if(document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
      if(!document.querySelector('[data-view-preference="followOpponent"]'))issues.push('missing spectator auto-switch');
-     if(document.querySelector('.battle-fields')?.dataset.presentationWait!=='750')issues.push('missing minimum shot viewing time');
+     if(PlayroomGameFlow.viewingTime(PlayroomCatalog.battleship.capabilities,{data:{phase:'battle'}})!==750)issues.push('missing minimum shot viewing time');
     }
    }return issues;
   });assert.deepEqual(publicViews,[]);
@@ -130,7 +177,9 @@ test('Yatzy keeps score rows and table scroll stable when dice are held',{timeou
   const page=await browser.newPage({viewport:{width:390,height:740}});page.setDefaultTimeout(5000);await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
   await page.locator('[data-start="yatzy"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command="lobby-start"]').click();
   const before=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
-  await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-dice [data-action]').first().waitFor();
+  await page.locator('.yatzy-roll[data-action]').click();await page.locator('[data-motion-kind="roll"]').first().waitFor();
+  await page.locator('[data-motion-kind="roll"]').first().waitFor({state:'detached'});const landed=Date.now();
+  await page.locator('.yatzy-dice [data-action]').first().waitFor();assert(Date.now()-landed<230,'next action unlocks after dice motion and its normal settle, without a card-animation budget');
   const after=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
   assert(before.every((height,i)=>Math.abs(height-after[i])<=1),'score buttons do not stretch rows');
   const top=await page.locator('.yatzy-board').evaluate(board=>{board.scrollTop=board.scrollHeight;window.qaYatzyBoard=board;return board.scrollTop;});assert(top>0);

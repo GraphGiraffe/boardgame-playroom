@@ -59,7 +59,7 @@ async function mouseDrag(page, from, to, {hold = false, escape = false} = {}) {
 async function touch(cdp, type, point) {
   await cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{...point, radiusX: 4, radiusY: 4, force: 1}]});
 }
-async function touchDrag(page, cdp, from, to, {hold = false, cancel = false} = {}) {
+async function touchDrag(page, cdp, from, to, {hold = false, cancel = false, inspect} = {}) {
   const start = await center(piece(page, from)), end = await center(cell(page, to));
   await touch(cdp, 'touchStart', start);
   if (hold) await page.waitForTimeout(260);
@@ -69,6 +69,7 @@ async function touchDrag(page, cdp, from, to, {hold = false, cancel = false} = {
   });
   assert.equal(await page.locator('.playroom-drag-ghost').count(), 1, 'a diagonal touch starts dragging without a hold');
   await assertNoOverflow(page);
+  if(inspect)await inspect();
   await touch(cdp, cancel ? 'touchCancel' : 'touchEnd');
 }
 
@@ -80,7 +81,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
         hasTouch: !!options.mobile, isMobile: !!options.mobile, reducedMotion: options.motion ? 'no-preference' : 'reduce'});
       const saved = fixture(options);
       await context.addInitScript(({saved, motion}) => {
-        localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false}));
+        localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false, autoPass:false}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
       }, {saved, motion: !!options.motion});
       const page = await context.newPage(), errors = [];
@@ -93,6 +94,30 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
     });
   }
   try {
+    await check('Thin cell and checker rings preserve the board colour in both themes and orientations', {mobile: true, capture: true}, async ({page, context}) => {
+      const fs=require('node:fs'),dir=path.resolve(__dirname,'../tmp_files/checkers-review');fs.mkdirSync(dir,{recursive:true});
+      await piece(page,42).tap();const cdp=await context.newCDPSession(page);
+      for(const [width,height]of [[390,844],[844,390],[768,1024],[1024,768]])for(const theme of ['light','dark']){
+        await page.setViewportSize({width,height});await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
+        if(!await cell(page,28).evaluate(el=>el.classList.contains('destination')))await piece(page,42).tap();
+        const original=await page.locator('.checker-cell.dark:not(.destination)').first().evaluate(el=>getComputedStyle(el).backgroundColor);
+        const target=cell(page,28),ring=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth)}));
+        assert.equal(ring.background,original,'destination changes only its outline');assert(ring.width>0&&ring.width<=2);
+        assert(await piece(page,42).evaluate(el=>parseFloat(getComputedStyle(el).outlineWidth)<=2),'checker selection ring stays thin');
+        await page.screenshot({path:path.join(dir,`${theme}-${width}x${height}.png`)});
+        await touchDrag(page,cdp,42,28,{cancel:true,inspect:async()=>{
+          const hover=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth),shadow:getComputedStyle(el).boxShadow}));
+          assert.equal(hover.background,original);assert(hover.width>0&&hover.width<=2);assert.equal(hover.shadow,'none');
+          assert(await page.locator('.playroom-drag-ghost').evaluate(el=>parseFloat(getComputedStyle(el).outlineWidth)<=2));
+        }});
+      }
+    });
+    await check('Chained capture unlocks immediately after movement without a card-animation wait', {mobile:true,capture:true,motion:true}, async({page,context,saved})=>{
+      const cdp=await context.newCDPSession(page);await touchDrag(page,cdp,42,28);const dropped=Date.now();await expectMove(page,1);
+      assert(Date.now()-dropped<900,'normal-speed intermediate capture must not wait for the 1060 ms card budget');
+      assert.equal((await state(page)).timeline.turn,saved.states[0].timeline.turn);
+      await touchDrag(page,cdp,28,14);await expectMove(page,2);assert.equal((await state(page)).timeline.turn,saved.states[0].timeline.turn+1);
+    });
     await check('Only movable pieces can be dragged; click selection exposes exact destinations', {}, async ({page, saved}) => {
       const legal = Core.legalActions(saved.states[0]);
       const actual = await page.locator('.checker-board [data-drag-piece]').evaluateAll(els => els.map(el => Number(el.dataset.dragPiece)).sort((a, b) => a - b));

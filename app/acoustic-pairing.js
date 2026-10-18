@@ -1,3 +1,4 @@
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 (function(root,factory){
   'use strict';
   const api=factory(root);
@@ -41,9 +42,9 @@
     return !!ipv4Parts(address)&&!['documentation','reserved'].includes(addressKind(address));
   }
   function addressBytes(address){
-    if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))throw Error('Укажите IPv4-адрес устройства.');
+    if(typeof address!=='string'||!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address))throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.862fbe66102a"));
     const parts=ipv4Parts(address);
-    if(!parts||['documentation','reserved'].includes(addressKind(address)))throw Error('Это служебный или тестовый IPv4-адрес, непригодный для LAN-подключения.');
+    if(!parts||['documentation','reserved'].includes(addressKind(address)))throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.a298a4977bd7"));
     return parts;
   }
   function privateRank(ip){
@@ -57,8 +58,8 @@
   }
   function parsed(signal){
     let value=signal;
-    if(typeof value==='string')try{value=JSON.parse(value);}catch(_){throw Error('Некорректные данные WebRTC.');}
-    if(value?.v!==1||!['offer','answer'].includes(value.type)||typeof value.sdp!=='string'||!value.sdp)throw Error('Некорректные данные WebRTC.');
+    if(typeof value==='string')try{value=JSON.parse(value);}catch(_){throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.8ef45973b248"));}
+    if(value?.v!==1||!['offer','answer'].includes(value.type)||typeof value.sdp!=='string'||!value.sdp)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.8ef45973b248"));
     return value;
   }
   function parseCandidates(sdp){
@@ -153,7 +154,7 @@
     return base.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
   }
   function unbase64url(text){
-    if(typeof text!=='string'||!text||!/^[A-Za-z0-9_-]+$/.test(text))throw Error('Звуковое сообщение повреждено.');
+    if(typeof text!=='string'||!text||!/^[A-Za-z0-9_-]+$/.test(text))throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.61f9d19be1f0"));
     const raw=text.replace(/-/g,'+').replace(/_/g,'/');
     const padded=raw+'='.repeat((4-raw.length%4)%4);
     const binary=typeof atob==='function'?atob(padded):Buffer.from(padded,'base64').toString('binary');
@@ -162,7 +163,7 @@
   function uuidBytes(id){
     const hyphenated=/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id);
     const flat=typeof id==='string'?id.replace(/-/g,''):'';
-    if(!/^[a-f\d]{32}$/i.test(flat))throw Error('Для звукового подключения нужен защищённый идентификатор WebRTC.');
+    if(!/^[a-f\d]{32}$/i.test(flat))throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.2fbc7811eb87"));
     return {bytes:Uint8Array.from(flat.match(/../g),x=>parseInt(x,16)),hyphenated};
   }
   function uuidString(bytes,hyphenated){
@@ -178,19 +179,19 @@
     const explicit=address!==undefined&&address!==null&&address!=='';
     const matching=all.filter(c=>c.address===address);
     if(explicit&&matching.length&&!matching.some(c=>c.audio&&(port===null||c.port===Number(port))))
-      throw Error('Этот ICE-адрес не является пригодным UDP host-кандидатом. Для него используйте QR/Share.');
+      throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.58390e657c25"));
     const usable=candidates.filter(c=>c.audio);
     const chosen=usable.find(c=>c.address===address&&(port===null||c.port===Number(port)))||
       usable.find(c=>port!==null&&c.port===Number(port))||usable[0]||candidates[0];
-    if(!chosen)throw Error('WebRTC не предоставил LAN UDP-кандидат. Используйте QR/Share.');
+    if(!chosen)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.7da95be29cb5"));
     const ip=address||chosen.address,ipv4=addressBytes(ip),udpPort=port===null?chosen.port:Number(port);
-    if(!Number.isInteger(udpPort)||udpPort<1||udpPort>65535)throw Error('Некорректный UDP-порт.');
+    if(!Number.isInteger(udpPort)||udpPort<1||udpPort>65535)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.33ae0e8190f4"));
     const fingerprint=sdpField(item.sdp,'fingerprint');
     const m=/^sha-256\s+([0-9a-f]{2}(?::[0-9a-f]{2}){31})$/i.exec(fingerprint||'');
-    if(!m)throw Error('WebRTC не предоставил поддерживаемый DTLS fingerprint.');
+    if(!m)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.c3431a773e41"));
     const fp=Uint8Array.from(m[1].split(':'),x=>parseInt(x,16));
     const ufrag=sdpField(item.sdp,'ice-ufrag'),pwd=sdpField(item.sdp,'ice-pwd');
-    if(!ascii(ufrag)||!ascii(pwd)||ufrag.length>255||pwd.length>255)throw Error('Некорректные ICE-параметры.');
+    if(!ascii(ufrag)||!ascii(pwd)||ufrag.length>255||pwd.length>255)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.7c60924b855e"));
     const id=uuidBytes(item.pairingId),u=encoder.encode(ufrag),p=encoder.encode(pwd);
     const bytes=new Uint8Array(HEADER+u.length+p.length);
     bytes.set(MAGIC);bytes[2]=VERSION;bytes[3]=item.type==='offer'?1:2;bytes[4]=id.hyphenated?1:0;
@@ -200,17 +201,17 @@
     bytes[15]=u.length;bytes[16]=p.length;
     bytes.set(id.bytes,17);bytes.set(fp,33);bytes.set(u,HEADER);bytes.set(p,HEADER+u.length);
     const message=base64url(bytes);
-    if(message.length>MAX_AUDIO_TEXT)throw Error('ICE-параметры слишком длинные для быстрого звукового обмена. Используйте QR/Share.');
+    if(message.length>MAX_AUDIO_TEXT)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.8928db5918fc"));
     return message;
   }
   function unpack(message){
     const b=unbase64url(message);
-    if(b.length<HEADER||b.length>120||b[0]!==MAGIC[0]||b[1]!==MAGIC[1]||b[2]!==VERSION||![1,2].includes(b[3])||![0,1].includes(b[4])||HEADER+b[15]+b[16]!==b.length)throw Error('Звуковое сообщение несовместимо с PlayRoom.');
+    if(b.length<HEADER||b.length>120||b[0]!==MAGIC[0]||b[1]!==MAGIC[1]||b[2]!==VERSION||![1,2].includes(b[3])||![0,1].includes(b[4])||HEADER+b[15]+b[16]!==b.length)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.870b3a61c2b9"));
     const ip=Array.from(b.slice(5,9)).join('.');addressBytes(ip);
-    const port=(b[9]<<8)|b[10];if(!port)throw Error('Некорректный UDP-порт.');
+    const port=(b[9]<<8)|b[10];if(!port)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.33ae0e8190f4"));
     const priority=(((b[11]*0x1000000)+(b[12]<<16)+(b[13]<<8)+b[14])>>>0);
     const ufrag=decoder.decode(b.slice(HEADER,HEADER+b[15])),pwd=decoder.decode(b.slice(HEADER+b[15]));
-    if(!ascii(ufrag)||!ascii(pwd))throw Error('Некорректные ICE-параметры.');
+    if(!ascii(ufrag)||!ascii(pwd))throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.7c60924b855e"));
     const pairingId=uuidString(b.slice(17,33),!!b[4]);
     const fingerprint=Array.from(b.slice(33,65),x=>x.toString(16).padStart(2,'0').toUpperCase()).join(':');
     const kind=b[3]===1?'offer':'answer';
@@ -228,36 +229,36 @@
     return {kind,ip,port,pairingId,signal:JSON.stringify({v:1,type:kind,sdp,pairingId})};
   }
   function microphoneIssue({protocol=root.location?.protocol,secure=root.isSecureContext,mediaDevices=root.navigator?.mediaDevices}={}){
-    if(protocol==='content:')return 'Звуковой приём недоступен из Android content://: браузер не разрешает доступ к микрофону. Откройте PlayRoom по HTTPS как PWA. Пока можно передать звук через динамик и принять ответ QR/ссылкой.';
-    if(secure===false)return 'Для микрофона нужен безопасный адрес: HTTPS/PWA или localhost. На этой странице приём звука заблокирован. Используйте QR/ссылку либо откройте PlayRoom как HTTPS PWA.';
-    if(typeof mediaDevices?.getUserMedia!=='function')return 'Браузер не предоставляет доступ к микрофону на этой странице. Откройте PlayRoom как HTTPS PWA или воспользуйтесь QR/ссылкой.';
+    if(protocol==='content:')return globalThis.PlayroomMessages.text("ui.acoustic-pairing.c7cb140d0c9e");
+    if(secure===false)return globalThis.PlayroomMessages.text("ui.acoustic-pairing.fe9fbbe21db2");
+    if(typeof mediaDevices?.getUserMedia!=='function')return globalThis.PlayroomMessages.text("ui.acoustic-pairing.ec061d8c3d2d");
     return null;
   }
   function explainMicrophoneError(error){
     const source=String(error?.name||'')+' '+String(error?.message||'');
     if(/NotAllowedError|PermissionDeniedError|SecurityError|permission\s+denied|denied|not\s+allowed/i.test(source))
-      return Error('Доступ к микрофону запрещён браузером или Android. Откройте PlayRoom по HTTPS (лучше установленную PWA) и разрешите микрофон в настройках сайта/системы. Если доступ недоступен, используйте QR или передачу звука только через динамик.');
+      return Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.14978f3f9a48"));
     if(/NotFoundError|DevicesNotFoundError/i.test(source))
-      return Error('Микрофон не обнаружен. Подключите микрофон либо используйте QR/ссылку.');
+      return Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.f35c430d1496"));
     if(/NotReadableError|TrackStartError|AbortError/i.test(source))
-      return Error('Микрофон занят или не может быть запущен. Закройте другие приложения, использующие его, либо используйте QR/ссылку.');
-    return error instanceof Error?error:Error('Не удалось запустить микрофон. Попробуйте HTTPS/PWA или QR/ссылку.');
+      return Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.f19c8da6922c"));
+    return error instanceof Error?error:Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.e686e5818844"));
   }
   async function moduleInstance(){
-    if(typeof root.ggwave_factory!=='function')throw Error('Звуковой модуль не включён в сборку.');
+    if(typeof root.ggwave_factory!=='function')throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.b7225252e7b6"));
     if(!moduleInstance.pending)moduleInstance.pending=Promise.resolve().then(()=>root.ggwave_factory()).catch(error=>{moduleInstance.pending=null;throw error;});
     return moduleInstance.pending;
   }
   function audioContext(){
     const Context=root.AudioContext||root.webkitAudioContext;
-    if(!Context)throw Error('Web Audio недоступен в этом браузере.');
+    if(!Context)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.48186d58da64"));
     return new Context();
   }
   function setup(gg,context){
     const parameters=gg.getDefaultParameters();
     parameters.sampleRateInp=context.sampleRate;parameters.sampleRateOut=context.sampleRate;
     const instance=gg.init(parameters);
-    if(!Number.isInteger(instance)||instance<0)throw Error('Не удалось запустить звуковой модуль.');
+    if(!Number.isInteger(instance)||instance<0)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.f6dce7e48911"));
     return instance;
   }
   async function play(message,{protocol='fastest',volume=12,signal}={}){
@@ -269,9 +270,9 @@
       const loading=moduleInstance();
       await context.resume();gg=await loading;signal?.throwIfAborted();instance=setup(gg,context);
       const protocolId=gg.ProtocolId[protocols[protocol]];
-      if(protocolId===undefined)throw Error('Неизвестный звуковой протокол.');
+      if(protocolId===undefined)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.444727aa3217"));
       const waveform=gg.encode(instance,message,protocolId,volume);
-      if(!waveform?.byteLength||waveform.byteLength%4)throw Error('Не удалось закодировать звук.');
+      if(!waveform?.byteLength||waveform.byteLength%4)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.cec1b6c550db"));
       const pcm=new Float32Array(waveform.buffer.slice(waveform.byteOffset,waveform.byteOffset+waveform.byteLength));
       const buffer=context.createBuffer(1,pcm.length,context.sampleRate);buffer.copyToChannel(pcm,0);
       await new Promise((resolve,reject)=>{
@@ -285,7 +286,7 @@
     }finally{if(instance!==null)gg.free(instance);await context.close();}
   }
   async function listen(onPacket,{signal}={}){
-    if(typeof onPacket!=='function')throw Error('Нужен обработчик звукового приглашения.');
+    if(typeof onPacket!=='function')throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.ae2b178ec705"));
     const issue=microphoneIssue();if(issue)throw Error(issue);
     const context=audioContext(),loading=moduleInstance();
     let gg=null;
@@ -303,7 +304,7 @@
       if(signal?.aborted){stream.getTracks().forEach(track=>track.stop());signal.throwIfAborted();}
       instance=setup(gg,context);
       signal?.addEventListener('abort',stop,{once:true});
-      if(!context.createScriptProcessor)throw Error('Этот браузер не поддерживает звуковой приём.');
+      if(!context.createScriptProcessor)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.9ac4cb00c107"));
       source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(1024,1,1);
       processor.onaudioprocess=event=>{
         event.outputBuffer.getChannelData(0).fill(0);

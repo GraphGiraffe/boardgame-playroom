@@ -1,36 +1,38 @@
-.saved-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:40px 0 25px}
-.saved-heading h1{font-size:clamp(30px,4vw,44px);letter-spacing:-1.5px;margin:0 0 8px}
+.saved-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:24px 0 16px}
+.saved-heading h1{font-size:clamp(26px,3vw,34px);letter-spacing:-1.5px;margin:0 0 8px}
 .saved-heading p{color:var(--muted);font-size:14px;line-height:1.5;margin:0;max-width:520px}
 .saved-heading-actions{display:flex;gap:10px;flex-wrap:wrap}
-.saved-games-list{display:grid;gap:15px}
-.saved-game{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:18px;border:1px solid var(--line);border-radius:22px;background:var(--white);padding:22px;box-shadow:var(--shadow)}
-.saved-game h2{margin:10px 0 8px;font-size:23px;letter-spacing:-.6px}
-.saved-game p{color:var(--muted);font-size:13px;line-height:1.6;margin:4px 0;overflow-wrap:anywhere}
+.saved-games-list{display:grid;gap:10px}
+.saved-game{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border:1px solid var(--line);border-radius:22px;background:var(--white);padding:12px;box-shadow:var(--shadow)}
+.saved-game h2{margin:6px 0;font-size:16px;letter-spacing:-.6px}
+.saved-game p{color:var(--muted);font-size:13px;line-height:1.4;margin:3px 0;overflow-wrap:anywhere}
 .saved-game .saved-players{color:var(--ink)}
 .saved-game-actions{display:flex;gap:8px;align-items:center}
 .saved-game-actions .icon-btn{flex:none}
-.saved-empty{border:1px dashed #b8c6a7;background:#e9eedc;border-radius:24px;padding:45px 25px;text-align:center}
+.saved-empty{border:1px dashed var(--color-border-subtle,#b8c6a7);background:var(--color-surface-raised,#e9eedc);border-radius:24px;padding:45px 25px;text-align:center}
 .saved-empty h2{margin:0 0 12px;font-size:25px}
 .saved-empty p{color:var(--muted);line-height:1.6;margin:0 0 24px}
 .saved-status{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 @media(max-width:760px){
- .saved-heading{align-items:start;flex-direction:column;margin:28px 0 20px;gap:16px}
+ .saved-heading{align-items:start;flex-direction:column;margin:20px 0 14px;gap:12px}
  .saved-heading .btn{min-height:44px}
- .saved-game{grid-template-columns:minmax(0,1fr);gap:12px;padding:18px}
+ .saved-game{grid-template-columns:minmax(0,1fr);gap:10px;padding:12px}
  .saved-game-actions .btn{flex:1;min-height:46px}
  .saved-game-actions .icon-btn{min-height:46px}
 }
 
 /* Shared library filters: local sessions and privacy-scoped network archives. */
 .saved-filter-bar{display:flex;align-items:center;gap:8px;margin:-7px 0 20px;flex-wrap:wrap}
-.saved-filter-bar .filter{background:#e6eadc;border:1px solid transparent}
-.saved-filter-bar .filter.active{background:var(--green);color:white}
+.saved-filter-bar .filter{background:var(--color-surface-raised,#e6eadc);border:1px solid transparent}
+.saved-filter-bar .filter.active{background:var(--green);color:var(--color-action-on-primary,white)}
 .saved-network-info{font-size:12px;color:var(--muted);margin:-8px 0 14px}
 @media(max-width:760px){.saved-filter-bar{margin:0 0 16px}.saved-filter-bar .filter{padding:10px 13px}}
 
 .saved-game-actions .icon-btn{width:46px;min-width:46px;height:46px;padding:0;border-radius:14px}
-.saved-game-actions .saved-continue{background:var(--green);border-color:var(--green);color:#fffdf4}
-.saved-game-actions .saved-history{background:#e6eadc}
+.saved-game-actions .saved-continue{background:var(--green);border-color:var(--green);color:var(--color-action-on-primary,#fffdf4)}
+.saved-game-actions .saved-history{background:var(--color-surface-raised,#e6eadc)}
 .saved-game-actions .icon-btn:disabled{opacity:.4}
 .saved-game-actions .saved-delete{margin-left:8px}
 @media(max-width:760px){.saved-game-actions{justify-content:flex-end}.saved-game h2{margin-top:8px}.saved-game p{line-height:1.45}}
+
+.saved-game h2 .saved-progress{font-size:12px;font-weight:400;letter-spacing:normal}.saved-game .saved-status{font-size:12px}.saved-game .resume-participants{margin:8px 0}

@@ -1,0 +1,14 @@
+{
+  "ui.network-client-history.0c46209c576c": "Некорректная запись.",
+  "ui.network-client-history.7c9ce377829e": "История другого подключения отклонена.",
+  "ui.network-client-history.682569d9643d": "Некорректная позиция истории.",
+  "ui.network-client-history.4f028d686f84": "Некорректная ревизия.",
+  "ui.network-client-history.a0b86bb0cd2d": "Игровое место или партия изменились; старая история сохранена.",
+  "ui.network-client-history.ac44e436825d": "Некорректное игровое место.",
+  "ui.network-client-history.22632a7702f3": "Архив клиента недоступен.",
+  "ui.network-client-history.6f53ca3ba46c": "Архив клиента занят другой вкладкой.",
+  "ui.network-client-history.7496db695727": "Не удалось открыть архив клиента.",
+  "ui.network-client-history.c46c3923936b": "IndexedDB недоступен на этом устройстве.",
+  "ui.network-client-history.b9efa6ceb037": "Некорректный архив",
+  "ui.network-client-history.a0780d9bec32": "Некорректный снимок сетевого игрока."
+}

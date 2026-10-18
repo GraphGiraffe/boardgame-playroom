@@ -84,8 +84,8 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
 
     const hostRole=host.locator('.lobby-person [data-participant-role=player].is-online:has(svg[data-ui-icon=host])');
     assert.equal(await hostRole.count(),1,'Host keeps the online player role');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),1,'Host retains the primary network-player icon');
-    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown supplements the role without repeating the name');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=player]').count(),0,'Host crown replaces the primary network-player icon');
+    assert.equal(await hostRole.locator('svg[data-ui-icon=host]').count(),1,'Host crown identifies the host without repeating the name');
     await client.locator('[data-net-action=table]').click();await client.locator('.lobby-table-slot [data-participant-id]').waitFor();
     if(seatedGuest){const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();}
     await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();
@@ -115,12 +115,12 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     if(game==='checkers'){await host.locator('.checker-piece.movable').first().click();await host.locator('.checker-cell.destination').first().click();}
     else if(game==='domino'||game==='durak'){const card=host.locator('.layout-hand .is-playable').first();await card.scrollIntoViewIfNeeded();const point=await card.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+8,y:r.y+16};});await host.mouse.click(point.x,point.y);if(game==='domino')await host.locator('.domino-drop-target[data-action]').first().click();}
     else if(game==='oldmaid'){await host.locator('[data-player-target]').first().click();await host.locator('.player-target-menu [data-card-index]').first().click();}
-    else await host.locator(game==='uno'?'.stock-button[data-action]':game==='ludo'?'.shared-die[data-action]':game==='yatzy'?'.yatzy-roll[data-action]':'.die[data-action]').click();
+    else await host.locator(game==='uno'?'.stock-button[data-action]':game==='ludo'?'.shared-die[data-action]':game==='yatzy'?'.yatzy-roll[data-action]':'.die[data-action]').first().click();
     await client.waitForFunction(r=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>r,before);
     assert.ok(Number(await client.locator('.table-shell.network-game').getAttribute('data-revision'))>before);
-    if(!['uno','ludo','yatzy'].includes(game))await client.waitForFunction(()=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>=2);
+    if(!['uno','ludo','yatzy','snakes'].includes(game))await client.waitForFunction(()=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)>=2);
     assert.equal(await client.locator('.opponent-hand .public-card').count(),0,'hidden opponent hands never expose card faces');
-    assert.equal(await host.locator('.player-panel').count(),seatedGuest?3:2);
+    assert.equal(await host.locator('.player-panel').evaluateAll(nodes=>new Set(nodes.map(node=>node.dataset.playerIndex)).size),seatedGuest?3:2);
     assert.deepEqual(errors,[]);
   }finally{await hc.close();await browser.close();if(s)await new Promise(r=>s.close(r));}
 });

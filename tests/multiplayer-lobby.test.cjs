@@ -298,3 +298,31 @@ test('RC4 sparse 1/3/5/7 occupancy compacts only overflow and preserves assigned
  rooms.configure(room.id,'host',{firstPlayerMode:'assigned',firstParticipantId:seven});state=rooms.changeGame(room.id,'host',{game:{id:'four',name:'Four',version:'1.0.0'},constraints:{min:2,max:4}});
  assert.deepEqual(state.seats.map(s=>s.participantId),['host',five,'remote',seven]);assert.equal(state.firstParticipantId,seven);assert.equal(state.participants.find(p=>p.id==='remote').seatId,'seat-3');
 });
+
+
+test('preset avatar survives profile rename and room snapshots without accepting image URLs',()=>{
+ const profiles=new ProfileStore(()=>storage),storage=memoryStorage();
+ const first=profiles.save('Иван',{avatar:'circle-red'});assert.equal(first.avatar,'circle-red');
+ assert.equal(profiles.save('Иван П.').avatar,'circle-red');
+ assert.equal(profiles.save('Иван',{avatar:null}).avatar,null);
+ assert.equal(profiles.save('Иван',{avatar:'https://example.com/image.png'}).avatar,null);
+ const {rooms,room}=createRoom();rooms.join(room.id,{id:'guest',nickname:'Маша',avatar:'star-yellow'});
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,'star-yellow');
+ rooms.setAvatar(room.id,'guest','crescent-blue');
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,'crescent-blue');
+ rooms.setAvatar(room.id,'guest','data:image/svg+xml,bad');
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').avatar,null);
+});
+
+test('start validation rejects unsupported rosters before countdown and cancels on disconnect',()=>{
+ let time=1000,n=0,calls=0;
+ const rooms=new RoomService({idFactory:()=>`id-${++n}`,clock:()=>time,random:()=>.1,validateStart:room=>{calls++;return room.rules.preset==='teams'&&room.participants.filter(p=>p.role==='player').length!==4?'Нужно четыре игрока':null;}});
+ const room=rooms.create({name:'Тест',game:{id:'fixture',name:'Игра'},host:{id:'host',nickname:'Иван'},rules:{preset:'teams'},constraints:{min:2,max:4}});
+ rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.setReady(room.id,'host',true);
+ assert.equal(rooms.canStart(room.id),false);assert.equal(rooms.startBlocker(room.id),'Нужно четыре игрока');
+ assert.throws(()=>rooms.beginCountdown(room.id,'host'),/четыре/);assert.equal(rooms.snapshot(room.id).phase,'lobby');
+ rooms.updateRules(room.id,'host',{preset:'individual'});rooms.setReady(room.id,'host',true);
+ assert.equal(rooms.canStart(room.id),true,'unused seats do not block a valid roster');
+ rooms.beginCountdown(room.id,'host');rooms.setConnected(room.id,'host',false);time=4000;
+ const result=rooms.tick(room.id);assert.equal(result.started,false);assert.equal(result.room.phase,'lobby');assert(result.reason);assert(calls>0);
+});

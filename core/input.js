@@ -25,7 +25,7 @@
       if (!usable(source)) return false;
       if (source.hasAttribute('data-action')) {
         const action = readAction(source.dataset.action);
-        if (action && canCommit(source)) commit(action, {source});
+        if (action && canCommit(source)) commit(action, {source,allowLayoutChange:source.dataset.allowLayoutChange==='true'});
         return true;
       }
       if (canSelect(source)) {
@@ -47,7 +47,7 @@
       let pointed=doc.elementFromPoint(x, y);
       if(s.segment){
         const cell=pointed?.closest('[data-grid-index]'),board=cell?.closest('[data-drag-boundary]');
-        if(board){const columns=Number(board.dataset.gridColumns)||10,index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
+        if(board){const columns=Number(board.dataset.gridColumns);if(!Number.isInteger(columns)||columns<1)return null;const index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
           const origin=board.querySelector('[data-grid-index="'+index+'"]');
           pointed=origin?.matches('[data-drop-piece]')?origin:origin?.querySelector('[data-drop-piece]')||origin||pointed;
         }
@@ -104,14 +104,14 @@
       clearTimeout(s.timer);
       if (!s.drag || !s.source.isConnected || !canStart(s.source) || !canSelect(s.source)) { cleanup(); return; }
       // Clone before select(): selecting may synchronously replace the scene.
-      const rect = s.source.getBoundingClientRect(), style = root.getComputedStyle(s.source);
+      const rect = s.source.getBoundingClientRect(), style = root.getComputedStyle(s.source),pose=root.PlayroomMotion?.poseOf(s.source)||rect;
       const shape=/^([1-8]):([hv])$/.exec(s.source.dataset.dragShape||'');
       const unit=shape?s.source.closest('.scene')?.querySelector('[data-drag-unit]')?.getBoundingClientRect():null;
       s.vertical=shape?.[2]==='v';s.segment=Number(s.source.dataset.dragSegment)||0;
-      s.width=shape&&unit?unit.width*(s.vertical?1:Number(shape[1])):rect.width;
-      s.height=shape&&unit?unit.height*(s.vertical?Number(shape[1]):1):rect.height;
-      s.offsetX=Math.max(0,Math.min(s.width,s.startX-rect.left+(s.vertical?0:s.segment*(unit?.width||0))));
-      s.offsetY=Math.max(0,Math.min(s.height,s.startY-rect.top+(s.vertical?s.segment*(unit?.height||0):0)));
+      s.width=shape&&unit?unit.width*(s.vertical?1:Number(shape[1])):pose.width;
+      s.height=shape&&unit?unit.height*(s.vertical?Number(shape[1]):1):pose.height;
+      s.offsetX=Math.max(0,Math.min(s.width,s.startX-(pose.x??rect.left)+(s.vertical?0:s.segment*(unit?.width||0))));
+      s.offsetY=Math.max(0,Math.min(s.height,s.startY-(pose.y??rect.top)+(s.vertical?s.segment*(unit?.height||0):0)));
       s.boundary=s.source.closest('[data-drag-boundary]')?.getBoundingClientRect();
       s.ghost=shape&&unit?doc.createElement('div'):s.source.cloneNode(true);
       if(shape&&unit){s.ghost.className='playroom-composite-ghost';s.ghost.style.gridTemplateColumns=`repeat(${s.vertical?1:Number(shape[1])},1fr)`;s.ghost.style.gridTemplateRows=`repeat(${s.vertical?Number(shape[1]):1},1fr)`;for(let i=0;i<Number(shape[1]);i++)s.ghost.append(doc.createElement('span'));}
@@ -125,7 +125,9 @@
       if ('disabled' in s.ghost) s.ghost.disabled = true;
       Object.assign(s.ghost.style, { width: `${s.width}px`, height: `${s.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, flexDirection: style.flexDirection });
       s.phase = 'dragging';
-      doc.body.append(s.ghost); capture.classList.add('playroom-dragging'); takeCapture(s);
+      doc.body.append(s.ghost);
+      if(pose.angle&&!root.matchMedia?.('(prefers-reduced-motion: reduce)').matches)s.ghost.animate([{rotate:pose.angle+'deg'},{rotate:'0deg'}],{duration:100,easing:'ease-out'});
+      capture.classList.add('playroom-dragging'); takeCapture(s);
       try { select(s.piece); } catch (error) { cancel(); throw error; }
       if (active !== s) return;
       s.renderedSource = [...doc.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
@@ -233,7 +235,7 @@
       // Let pointerup and its compatibility click finish against stable DOM.
       if (action || selection !== null) pendingCommit = root.requestAnimationFrame(() => {
         pendingCommit = 0;
-        if (!disposed) { if (action && canCommit(commitSource)) commit(action,{playedFrom}); else if (!action && canSelect(s.source)) select(selection); }
+        if (!disposed) { if (action && canCommit(commitSource)) commit(action,{playedFrom,source:commitSource,allowLayoutChange:commitSource?.dataset.allowLayoutChange==='true'}); else if (!action && canSelect(s.source)) select(selection); }
       });
     }
     function click(event) {
@@ -261,7 +263,7 @@
     listen(root, 'blur', cancel);
     listen(root, 'resize', cancel);
     listen(doc, 'visibilitychange', () => { if (doc.hidden) cancel(); });
-    return { handleClick, cancel, destroy() { cancel(); disposed = true; suppress = null; handlers.forEach(remove => remove()); } };
+    return { handleClick, cancel, invalidate(){if(!active||!['scrolling','scroll'].includes(active.phase)&&!active.scrollOnly)cancel();}, destroy() { cancel(); disposed = true; suppress = null; handlers.forEach(remove => remove()); } };
   }
   return { attach };
 });

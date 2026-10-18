@@ -1,4 +1,6 @@
 'use strict';
+
+async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -10,7 +12,7 @@ const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 for(const game of ['uno','checkers','snakes','durak','domino'])require('../packs/'+game+'/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
-const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"]';
+const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"], .action-reveal-art.is-flying';
 
 function fixture({mode = 'pass', turn = 0, players = 2, openHands = false} = {}) {
   const session = new Session(Core, 'uno', {preset: 'classic', seed: 17, mode, openHands,
@@ -149,7 +151,7 @@ test('Animation presets persist and stage real card flights before the next acto
     // Seed once; a reload must read the user's current storage without reseeding.
     await page.evaluate(({settings, saved}) => {
       localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, ...settings}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,autoPass:false,...settings}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, {settings, saved});
     await page.reload();
@@ -170,14 +172,14 @@ test('Animation presets persist and stage real card flights before the next acto
       for (const speed of ['instant', 'fast', 'normal', 'slow']) {
         await page.locator('[data-command=settings]').click();
         assert.equal(await page.locator('#setting-motion').count(), 0);
-        assert.deepEqual(await page.locator('#setting-speed option').evaluateAll(options => options.map(option => option.value)),
-          ['instant', 'fast', 'normal', 'slow']);
-        await page.locator('#setting-speed').selectOption(speed);
+        assert.equal(await page.locator('#setting-speed').getAttribute('type'),'range');
+        assert.equal(await page.locator('#setting-speed').locator('..').locator('[data-range-stop]').count(),4);
+        await setRange(page,'setting-speed',['instant','fast','normal','slow'].indexOf(speed));
         assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('playroom.settings.v1')).animationSpeed), speed);
         await page.evaluate(() => sessionStorage.clear());
         await page.reload();
         await page.locator('[data-command=settings]').click();
-        assert.equal(await page.locator('#setting-speed').inputValue(), speed);
+        assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(speed)));
         await page.locator('.modal [data-command=close-modal]').click();
       }
     });
@@ -239,7 +241,7 @@ test('Animation presets persist and stage real card flights before the next acto
       ]) {
         const {page} = await open({settings});
         await page.locator('[data-command=settings]').click();
-        assert.equal(await page.locator('#setting-speed').inputValue(), expected);
+        assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(expected)));
       }
     });
 
@@ -287,7 +289,8 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(distance(center(frames[0].pieces[0]), center(source)) < 65, 'Flight must start at the old hand card');
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45, 'Flight must arrive at discard');
       const accepted = trace.moves.find(move => move.move === 1), gate = trace.samples.find(sample => sample.gate);
-      assert(gate.t - accepted.t >= 1650, 'Slow curtain must wait for the 1100ms flight and 650ms observation pause');
+      const effects=require('../core/game-flow.js').effectTimes.slow;
+      assert(gate.t-accepted.t>=effects.flip*2+effects.reveal-100,'Privacy curtain waits for entry, shortened reveal hold and exit');
     });
 
     await check('Slow bot reveals only its played card and the next bot waits until staging is over', async open => {
@@ -300,11 +303,12 @@ test('Animation presets persist and stage real card flights before the next acto
       const trace = await stopTrace(page), frames = playedFrames(trace);
       assert(frames.length >= 10);
       assert(frames.some(frame => frame.pieces[0].face === '9'), 'Bot flight must show the card it actually played');
-      assert(center(frames[0].pieces[0]).y < center(destination).y - 20, 'Bot card must start at the opponent side');
+      const origin=await page.locator('.player-panel[data-player-index="1"] .mini-hand').boundingBox();
+      assert(distance(center(frames[0].pieces[0]),center(origin))<65,'Bot card must start at its actual edge seat');
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45);
       assert(frames.every(frame => frame.busy));
       const next = trace.moves.find(move => move.move === 2);
-      assert(next.t - frames.at(-1).t >= 1750, 'Next bot must wait for settle plus its own thinking gap');
+      assert(next.t - frames.at(-1).t >= 1100, 'Next bot waits for the complete reveal and its own thinking gap');
       assert.equal(await page.locator('.opponent-hand [data-entity^="card-"]').count(), 0, 'Other hidden bot cards stay unidentified');
     });
 
@@ -375,11 +379,11 @@ test('Animation presets persist and stage real card flights before the next acto
       await resume(page); await playHumanCard(page, saved);
       await page.locator(FLIGHT).waitFor({state: 'visible'});
       await page.locator('.table-heading [data-command=home]').click();
-      assert.equal(await page.locator('.game-tile').count(), 13);
+      assert.equal(await page.locator('.game-tile').count(),await page.evaluate(()=>TabletopCore.GAMES.length));
       assert.equal(await page.locator('.playroom-motion-layer').count(), 0);
       await page.waitForTimeout(1850);
       assert.equal(await page.locator('.handoff').count(), 0);
-      assert.equal(await page.locator('.game-tile').count(), 13);
+      assert.equal(await page.locator('.game-tile').count(),await page.evaluate(()=>TabletopCore.GAMES.length));
     });
   } finally { await browser.close(); await fixtureServer?.close(); }
 });

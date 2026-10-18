@@ -19,7 +19,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-lobby-seat="seat-3"]').click();await page.locator('#room-human-form input').fill('Оля');await page.locator('#room-human-form').evaluate(f=>f.requestSubmit());
         assert.match(await page.locator('[data-lobby-seat="seat-3"]').innerText(),/Оля/);await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-room-cycle="seat-3"]').click();
         await page.locator('[data-room-option=transportMode]').check();
-        assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online[aria-label*=хост]').count(),1);assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online svg').count(),2,'host keeps both player and host icons');
+        assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online[aria-label*=хост]').count(),1);assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online svg').count(),1,'host crown replaces the player icon');
         assert.equal(await page.locator('.lobby-seat-row [data-participant-role=bot].is-online').count(),0);await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-room-title]').fill('Комната Иван');await page.locator('[data-room-title]').press('Tab');
         await page.locator('.lobby-shell').waitFor();
         await page.evaluate(()=>{
@@ -85,7 +85,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await lobby.locator('[data-command=room-rules]').click();
         await page.locator('[data-rules=uno]').click();await page.getByRole('button',{name:'Понятно',exact:true}).click();
         await page.locator('.room-setup-modal').waitFor();
-        await lobby.locator('[data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или локального игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
+        await settings.click();await page.locator('.modal-head [data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или локального игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
         await lobby.locator('[data-command=room-rules-view]').click();assert.equal(await page.locator('.modal .lobby-rule-grid').count(),1);assert(await page.locator('.modal .rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').click();
         await settings.click();await page.locator('#lobby-nickname-form input').fill('Иван новый');await page.locator('#lobby-nickname-form').evaluate(f=>f.requestSubmit());
         assert.equal(await page.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).participants.find(p=>p.isHost).nickname),'Иван новый');
@@ -124,7 +124,7 @@ test('Finished Offline match restores its saved lobby and starts a separate clea
       const raw=session.export();TabletopCore.finish(raw.states[0],0,'Готово');raw.libraryId='qa-complete';localStorage.setItem('playroom.session.v1',JSON.stringify(raw));
       return {name:room.name,seats:room.seats.map(s=>s.participantId),participants:room.participants.map(p=>({id:p.id,name:p.nickname,bot:p.bot,seat:p.seatId})),first:host,rules:room.rules};
     });
-    await page.reload();await page.locator('.resume-banner [data-command=resume]').click();await page.locator('[data-command=result]').click();await page.locator('[data-command=rematch]').click();
+    await page.reload();await page.locator('[data-command=sessions]').first().click();await page.locator('[data-history-id=qa-complete]').click();await page.locator('[data-command=result]').click();await page.locator('[data-command=rematch]').click();
     const actual=await page.evaluate(()=>{const r=PlayroomAppBridge.room();return {name:r.name,seats:r.seats.map(s=>s.participantId),participants:r.participants.map(p=>({id:p.id,name:p.nickname,bot:p.bot,seat:p.seatId})),first:r.firstParticipantId,rules:r.rules};});
     assert.deepEqual(actual,expected);
     await page.locator('[data-command=lobby-start]').click();

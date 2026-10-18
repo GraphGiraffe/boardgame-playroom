@@ -24,9 +24,9 @@ function views(){
 function bundle(marker){
   return {
     format:'playroom-pack',formatVersion:1,
-    manifest:{id:'demo',name:'Demo',version:'1.0.0',engineApi:1,viewApi:2,stateVersion:1},
+    manifest:{id:'demo',name:'Demo',version:'1.0.0',engineApi:3,viewApi:2,stateVersion:1},
     files:{
-      'rules.js':"globalThis.TabletopCore.register({id:'demo',name:'Demo',min:1,max:2,presets:[{id:'base'}],create(){},legal(){return[]},apply(){}});",
+      'rules.js':require('./pack-fixture.cjs').rules({id:'demo',name:'Demo',min:1,max:2,preset:'base'}),
       'view.js':"globalThis.PlayroomViews.register('demo',()=>({api:2,family:'board',elements:{field:'<div>"+marker+"</div>'}}),()=>'<div>"+marker+"</div>');",
       'styles.css':'.demo::after{content:"'+marker+'"}'
     }
@@ -56,4 +56,11 @@ test('RC4 registry validates tags and count filter semantics',()=>{
  assert(T.matches({min:2,max:2},{},'duel'));assert(T.matches({min:1,max:1},{},'solo'));assert(T.matches(g,{playModes:[{id:'teams',teams:true,players:[4]}]},'teams'));
  const sample=bundle('tags');sample.manifest.tags=['cards','unknown'];assert.throws(()=>manager().instance.prepare(sample));
  const fs=require('node:fs'),path=require('node:path');const other=JSON.parse(fs.readFileSync(path.join(path.dirname(fs.realpathSync(path.join(__dirname,'../packs'))),'shared/tags.json'),'utf8'));assert.deepEqual(other,require('../core/tags.json'));
+});
+test('pack staging and activation preserve the public reveal renderer',()=>{
+ const sample=bundle('reveal');sample.files['view.js']="globalThis.PlayroomViews.register('demo',()=>({api:2,family:'board',elements:{field:'<div>field</div>'}}),null,{seating:'row',reveal:value=>'<b>'+value.card+'</b>'});";
+ const repo=manager();repo.instance.bootstrap([sample]);assert.equal(repo.instance.views.get('demo').reveal({card:'public'}),'<b>public</b>');
+ assert.equal(repo.instance.views.get('demo').seating,'row');
+ const invalid=bundle('invalid-reveal');invalid.files['view.js']=sample.files['view.js'].replace("reveal:value=>'<b>'+value.card+'</b>'","reveal:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid reveal renderer/);
+ invalid.files['view.js']=sample.files['view.js'].replace("seating:'row'","seating:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid seating policy/);
 });

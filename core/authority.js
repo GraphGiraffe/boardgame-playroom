@@ -1,18 +1,19 @@
-(function(root,factory){const P=root.PlayroomProtocol||(typeof require==='function'?require('./protocol.js'):null),api=factory(P);if(typeof module==='object'&&module.exports)module.exports=api;root.SessionAuthority=api;})(typeof globalThis!=='undefined'?globalThis:this,function(P){
+if(typeof module==='object'&&module.exports&&typeof require==='function')require("./messages.js");
+(function(root,factory){
+  const P=root.PlayroomProtocol||(typeof require==='function'?require('./protocol.js'):null);
+  const Processor=root.PlayroomCommandProcessor||(typeof require==='function'?require('./command-processor.js'):null);
+  const api=factory(P,Processor);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  root.SessionAuthority=api;
+})(globalThis,function(P,Processor){
   'use strict';
   const records=new WeakMap();
   const {clone,freeze,canonical}=P;
   let sequence=0;
   const uid=()=>globalThis.crypto?.randomUUID?.()||`authority-${Date.now()}-${++sequence}`;
-  const text={REACTION_IGNORED:'Реакция уже обработана или пока недоступна.',REACTION_WAIT:'Дайте игроку завершить объявление.',PAUSED:'Партия на паузе.',BAD_COMMAND:'Некорректная команда.',WRONG_SESSION:'Эта команда относится к другой партии.',WRONG_EPOCH:'Исполнитель перезапущен. Откройте актуальную ссылку.',READ_ONLY:'Общий стол доступен только для просмотра.',STALE:'Состояние изменилось. Повторите выбор.',ILLEGAL:'Этот ход сейчас недоступен.',ID_CONFLICT:'Этот идентификатор уже использован другой командой.',CLOSED:'Подключение закрыто.',BUSY:'Исполнитель завершает предыдущее действие.',RECEIPT_LIMIT:'Достигнут лимит команд этой тестовой партии.',STORAGE_ERROR:'Не удалось сохранить ход. Проверьте свободное место и доступность хранилища; действие не выполнено.',RECOVERY_REQUIRED:'Ход записан в хранилище, но интерфейс исполнителя не удалось обновить. Перезагрузите страницу хоста и восстановите комнату из сетевого сохранения.'};
-  function transfers(before,after){
-    if(!before.data.hands||!after.data.hands)return [];
-    const explicit=after.events.filter(e=>e.id>(before.events.at(-1)?.id||0)&&e.transfer).map(e=>({...e.transfer,...(e.privateTo!=null?{privateTo:e.privateTo}:{})}));
-    const owners=new Map(),table=new Set(),groups=new Map();
-    before.data.hands.forEach((h,p)=>h.forEach(c=>owners.set(c.id,p)));
-    const visit=v=>{if(v&&typeof v==='object'){if(v.id)table.add(v.id);else Object.values(v).forEach(visit);}};visit(before.data.table);
-    after.data.hands.forEach((h,p)=>h.forEach(c=>{const prev=owners.get(c.id);if(prev===p)return;const from=prev!==undefined?'hand':table.has(c.id)?'table':'stock',key=`${p}:${from}:${prev??''}`;if(!groups.has(key))groups.set(key,{player:p,count:0,from,...(prev!==undefined?{fromPlayer:prev}:{})});groups.get(key).count++;}));
-    return [...explicit,...[...groups.values()].filter(c=>!explicit.some(e=>!e.to&&e.player===c.player&&e.from===c.from&&e.fromPlayer===c.fromPlayer))];
+  const text={REACTION_IGNORED:globalThis.PlayroomMessages.text("ui.authority.5f23a122ff2d"),REACTION_WAIT:globalThis.PlayroomMessages.text("ui.authority.3872543a6282"),PAUSED:globalThis.PlayroomMessages.text("ui.authority.85620a4ad1ea"),BAD_COMMAND:globalThis.PlayroomMessages.text("ui.authority.acdb0b2cb886"),WRONG_SESSION:globalThis.PlayroomMessages.text("ui.authority.a0c9ab47df94"),WRONG_EPOCH:globalThis.PlayroomMessages.text("ui.authority.059dd3ee0afc"),READ_ONLY:globalThis.PlayroomMessages.text("ui.authority.c1945508163a"),STALE:globalThis.PlayroomMessages.text("ui.authority.3071d856a05b"),ILLEGAL:globalThis.PlayroomMessages.text("ui.authority.190d437d1355"),ID_CONFLICT:globalThis.PlayroomMessages.text("ui.authority.a19dbd4bae20"),CLOSED:globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"),BUSY:globalThis.PlayroomMessages.text("ui.authority.08135f979c63"),RECEIPT_LIMIT:globalThis.PlayroomMessages.text("ui.authority.a7cd175031c4"),STORAGE_ERROR:globalThis.PlayroomMessages.text("ui.authority.852785addf93"),RECOVERY_REQUIRED:globalThis.PlayroomMessages.text("ui.authority.06ab5f697dcc")};
+  function transfers(before,after,events=after.events){
+    return events.filter(event=>event.id>(before.events.at(-1)?.id||0)&&event.transfer).map(event=>({...event.transfer,...(event.privateTo!=null?{privateTo:event.privateTo}:{})}));
   }
   class SessionAuthority {
     constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0}={}){
@@ -29,34 +30,66 @@
         if(receipts.has(key))throw Error('Duplicate restored receipt');
         receipts.set(key,{signature:row.signature,receipt:freeze(clone(row.receipt))});
       }
-      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,effects:[],paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+    }
+    _processor() {
+      const r=records.get(this);
+      return r.processor ||= new Processor({
+        persistence:r.persistence,
+        begin:()=>{r.busy=true;},end:()=>this._idle(),
+        commit:next=>r.session.commitPrepared(next),
+        remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
+        publish:(before,next)=>{
+          this._publish();if(r.persistence)this.scheduleBot();
+        },
+        reject:(code,command)=>({ok:false,code,message:text[code],commandId:command.commandId,revision:this.revision}),
+        fence:()=>{r.disposed=true;}
+      });
     }
     get revision(){return records.get(this).session.current.move;}
     connect(viewer=-1){
       const r=records.get(this);
       if(r.disposed||!Number.isInteger(viewer)||viewer < -1||viewer>=r.session.current.players.length)throw Error('Invalid audience');
-      const binding={viewer,listeners:new Set(),closed:false};r.bindings.add(binding);
+      return this._connect({viewer,role:viewer<0?'spectator':'player'});
+    }
+    // Host capability: the client never chooses its grants or data audience.
+    connectTable(actors){
+      const r=records.get(this);
+      if(!Array.isArray(actors)||new Set(actors).size!==actors.length||actors.some(actor=>
+        !Number.isInteger(actor)||actor<0||actor>=r.session.current.players.length))throw Error('Invalid Table actors');
+      return this._connect({viewer:-1,role:'table',actors:Object.freeze([...actors])});
+    }
+    _connect(access){
+      const r=records.get(this);if(r.disposed)throw Error('Invalid audience');
+      const binding={...access,listeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);
       const requireOpen=()=>{if(binding.closed||r.disposed)throw Error(text.CLOSED);};
       return Object.freeze({
-        snapshot:()=>{requireOpen();return this._snapshot(viewer);},
-        history:(index)=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.states.length)throw Error('Invalid history index');return this._snapshot(viewer,index);},
+        snapshot:()=>{requireOpen();return this._snapshot(viewer,undefined,binding);},
+        history:(index)=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.states.length)throw Error('Invalid history index');return this._snapshot(viewer,index,binding);},
         presentationReady:message=>this._presentationReady(binding,message),
-        dispatch:command=>r.persistence?this._dispatchDurable(binding,command):this._dispatch(binding,command),
+        dispatch:command=>this._dispatch(binding,command),
         subscribe:listener=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');binding.listeners.add(listener);return ()=>binding.listeners.delete(listener);},
         close:()=>{binding.closed=true;binding.listeners.clear();r.bindings.delete(binding);}
       });
     }
-    _snapshot(viewer,index){
+    _snapshot(viewer,index,binding=null){
       const r=records.get(this),s=r.session,live=index===undefined,state=live?s.current:s.states[index];
       const windows=live?this._syncReactionWindows():[];
       const reactionWindows=windows.map(window=>({...window.descriptor,suspended:window.suspended,protected:window.readyAt===null||this._now()<window.readyAt+window.descriptor.humanMs}));
       const reactionWindow=reactionWindows.find(w=>w.owner===viewer)||reactionWindows[0]||null;
-      const projected=s.engine.project(state,viewer),previous=live?null:s.states[index-1];
-      const visible=live?r.effects:previous?transfers(previous,state).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
+      const role=binding?.role||(viewer<0?'spectator':'player');
+      const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!state.players[state.turn]?.bot?state.turn:-1):viewer;
+      const projected=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor):s.engine.project(state,viewer),previous=live?s.states.at(-2):s.states[index-1];
+      const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','openHands','data','events'])if(projected[key]!==undefined)safe[key]=projected[key];
-      return freeze(clone({protocolVersion:1,kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions:live&&!r.paused&&viewer>=0&&!state.players[viewer]?.bot?s.engine.legalActions(state,viewer).filter(action=>this._reactionDecision(viewer,action)!=='REACTION_WAIT'):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','data','events','modelProjection','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
+      if(safe.modelProjection)safe.modelProjection={...safe.modelProjection,actions:safe.modelProjection.actions.filter(command=>
+        actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
+      if(safe.modelProjection)safe.scene=s.engine.get(s.game,s.packVersion).scene(safe.modelProjection,safe.players);
+      if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
+      return freeze(clone({protocolVersion:2,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -122,93 +155,47 @@
       const r=records.get(this),control=r.session.engine.reactionControl?.(r.session.current,actor,action);
       return !!control?.independent&&['answer','challenge'].includes(control.kind)&&Number.isSafeInteger(action.episode)&&action.episode===control.episode;
     }
-    _dispatch(binding,command){
+    _commandActor(binding,command,internalBot=false){
+      const state=records.get(this).session.current;
+      if(binding.role==='table'){
+        if(command.action.type==='session-pause'||!binding.actors.includes(command.actor)||state.players[command.actor]?.bot)return {code:'READ_ONLY'};
+        return {actor:command.actor};
+      }
+      if(Object.hasOwn(command,'actor'))return {code:'BAD_COMMAND'};
+      if(binding.viewer<0||(!internalBot&&state.players[binding.viewer]?.bot))return {code:'READ_ONLY'};
+      return {actor:binding.viewer};
+    }
+    _actionFor(binding,actor,action){
+      const s=records.get(this).session;
+      return binding.role==='table'?s.engine.tableCommand(s.current,actor,action):action;
+    }
+    _dispatch(binding,command,internalBot=false){
       const r=records.get(this),s=r.session;
-      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:this._snapshot(binding.viewer)}:{})});
+      const snapshot=()=>this._snapshot(binding.viewer,undefined,binding);
+      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
+        revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:snapshot()}:{})});
       if(binding.closed||r.disposed)return reject('CLOSED');
       if(!P.validate(command))return reject('BAD_COMMAND');
       if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
+      // A restored durable authority may replay an existing receipt across epochs.
+      if(!r.persistence&&command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
+      const access=this._commandActor(binding,command,internalBot);
+      if(access.code)return reject(access.code);
+      const actor=access.actor,key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
+      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:snapshot()}):reject('ID_CONFLICT');
       if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
-      if(binding.viewer<0||s.current.players[binding.viewer]?.bot)return reject('READ_ONLY');
-      const key=`${binding.viewer}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
-      // Check identity BEFORE revision: retry after a lost ack must return its receipt.
-      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer)}):reject('ID_CONFLICT');
       if(r.stopRequested)return reject('PAUSED');
       if(r.busy)return reject('BUSY');
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
-      let receipt;
-      const decision=this._reactionDecision(binding.viewer,command.action);
-      if(decision)receipt={...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})};
-      else if(command.expectedRevision!==this.revision&&!this._currentReaction(binding.viewer,command.action))receipt=reject('STALE');
-      else {
-        r.busy=true;
-        try{s.act(binding.viewer,command.action);r.effects=transfers(s.states.at(-2),s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));receipt={ok:true,code:'OK',commandId:command.commandId,revision:this.revision};}
-        catch(_){receipt=reject('ILLEGAL');}
-        // A rejected command also has a stable receipt; do not store a stale snapshot.
-        const {snapshot,...result}=receipt;r.receipts.set(key,{signature,receipt:freeze(result)});
-        try{if(receipt.ok)this._publish();}finally{this._idle();}
-        return freeze({...receipt,snapshot:this._snapshot(binding.viewer)});
-      }
-      const {snapshot,...result}=receipt;r.receipts.set(key,{signature,receipt:freeze(result)});return receipt;
-    }
-    // Network-only path: stage the transition, wait for atomic journal + receipt
-    // commit, and only then change the live Session or publish a snapshot.
-    async _dispatchDurable(binding,command,internalBot=false){
-      const r=records.get(this),s=r.session;
-      const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
-        revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:this._snapshot(binding.viewer)}:{})});
-      if(binding.closed||r.disposed)return reject('CLOSED');
-      if(!P.validate(command))return reject('BAD_COMMAND');
-      if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
-      if(binding.viewer<0||(!internalBot&&s.current.players[binding.viewer]?.bot))return reject('READ_ONLY');
-      const key=`${binding.viewer}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
-      // An old epoch may only resolve an already-committed command. It must
-      // never authorize a NEW action after restoring the host.
-      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:this._snapshot(binding.viewer)}):reject('ID_CONFLICT');
-      if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
-      if(r.stopRequested)return reject('PAUSED');
-      if(r.busy)return reject('BUSY');
-      if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
-      if(r.paused)return reject('PAUSED');
-      r.busy=true;
-      let committed=false;
-      try{
-        let receipt,next;
-        const decision=this._reactionDecision(binding.viewer,command.action);
-        if(decision)receipt={...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})};
-        else if(command.expectedRevision!==this.revision&&!this._currentReaction(binding.viewer,command.action))receipt=reject('STALE');
-        else {
-          try{next=s.prepare(binding.viewer,command.action);}catch(_){receipt=reject('ILLEGAL');}
-        }
-        if(next){
-          const before=s.current,revision=before.move;
-          receipt={ok:true,code:'OK',commandId:command.commandId,revision:next.move};
-          await r.persistence.commit({sessionId:r.sessionId,previousRevision:revision,nextState:next,
-            viewer:binding.viewer,commandId:command.commandId,signature,receipt});
-          committed=true;
-          s.commitPrepared(next);
-          r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));
-        }else{
-          const {snapshot,...result}=receipt;
-          await r.persistence.recordReceipt({sessionId:r.sessionId,viewer:binding.viewer,commandId:command.commandId,signature,receipt:result});
-        }
-        const {snapshot,...result}=receipt;
-        r.receipts.set(key,{signature,receipt:freeze(result)});
-        if(receipt.ok){this._publish();this.scheduleBot();}
-        return freeze({...result,snapshot:this._snapshot(binding.viewer)});
-      }catch(_){
-        if(committed){
-          // The journal already contains the step: never claim it was rolled
-          // back. Fence this authority until host recovery reloads the disk.
-          r.disposed=true;
-          return freeze({ok:false,code:'RECOVERY_REQUIRED',message:text.RECOVERY_REQUIRED,
-            commandId:command.commandId,revision:this.revision});
-        }
-        return reject('STORAGE_ERROR');
-      }
-      finally{this._idle();}
+      const decision=this._reactionDecision(actor,command.action);
+      const rejection=decision?{...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})}:
+        command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action)?reject('STALE'):null;
+      const result=this._processor().execute({sessionId:r.sessionId,actor,command,signature,before:s.current,rejection,
+        prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action))});
+      const reply=receipt=>freeze({...receipt,...(!r.disposed?{snapshot:snapshot()}:{})});
+      return result&&typeof result.then==='function'?result.then(reply):reply(result);
     }
     async _pause(binding,command,signature,key,reject){
       const r=records.get(this);
@@ -224,21 +211,21 @@
         for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
         r.receipts.set(key,{signature,receipt:freeze(receipt)});
         this.cancelBot();this._publish();
-        return freeze({...receipt,snapshot:this._snapshot(binding.viewer)});
+        return freeze({...receipt,snapshot:this._snapshot(binding.viewer,undefined,binding)});
       }catch(_){return reject('STORAGE_ERROR');}finally{this._idle();if(!r.paused&&r.persistence)this.scheduleBot();}
     }
     _idle(){const r=records.get(this);r.busy=false;for(const resolve of r.idleWaiters.splice(0))resolve();}
     stopForLobby(){
       const r=records.get(this);if(r.stopPromise)return r.stopPromise;
-      if(r.disposed)return Promise.reject(Error('Подключение закрыто.'));
+      if(r.disposed)return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c")));
       r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
       r.stopPromise=(async()=>{
         try{
           if(r.busy)await new Promise(resolve=>r.idleWaiters.push(resolve));
-          if(r.disposed)throw Error('Подключение закрыто.');
+          if(r.disposed)throw Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"));
           const command=P.command(this._snapshot(-1),{type:'session-pause',paused:true,expectedControlRevision:r.controlRevision},uid());
           const receipt=await this._pause({viewer:-1,host:true},command,canonical(command),`host:${command.commandId}`,code=>({ok:false,code,message:text[code]}));
-          if(!receipt.ok)throw Error(receipt.message||'Не удалось сохранить партию.');
+          if(!receipt.ok)throw Error(receipt.message||globalThis.PlayroomMessages.text("ui.authority.05bb0383c4c2"));
           return receipt;
         }catch(error){r.stopRequested=false;if(bots)this.scheduleBot(bots);throw error;}
         finally{r.stopPromise=null;}
@@ -247,12 +234,12 @@
     async actBotAsync(actor,action){
       const r=records.get(this);
       if(r.disposed||r.busy||r.paused||!r.session.current.players[actor]?.bot)throw Error('Invalid bot actor');
-      const receipt=await this._dispatchDurable({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
+      const receipt=await this._dispatch({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
       if(!receipt.ok)throw Error(receipt.message);return r.session.current;
     }
     _publish(){
       const r=records.get(this);
-      for(const binding of [...r.bindings])if(!binding.closed){let snapshot;try{snapshot=this._snapshot(binding.viewer);}catch(_){continue;}for(const listener of [...binding.listeners]){try{listener(snapshot);}catch(_){/* View failure cannot roll back a committed move. */}}}
+      for(const binding of [...r.bindings])if(!binding.closed){let snapshot;try{snapshot=this._snapshot(binding.viewer,undefined,binding);}catch(_){continue;}for(const listener of [...binding.listeners]){try{listener(snapshot);}catch(_){/* View failure cannot roll back a committed move. */}}}
     }
     cancelBot(){const r=records.get(this);r.botOptions=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
     scheduleBot({delay=500,run,onError=()=>{}}={}){
@@ -273,7 +260,15 @@
       },wait);
     }
     // Host-only entrypoint; never attached to a client capability.
-    actBot(actor,action){const r=records.get(this),s=r.session;if(r.persistence)throw Error('Durable bot actions require a committed async transition');if(r.disposed||r.busy||r.paused||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');const decision=this._reactionDecision(actor,action);if(decision)throw Error(text[decision]);const before=s.current;r.busy=true;try{s.act(actor,action);r.effects=transfers(before,s.current).map((draw,i)=>({id:`${this.revision}:draw:${i}`,revision:this.revision,...draw}));this._publish();}finally{this._idle();}return s.current;}
+    actBot(actor,action){
+      const r=records.get(this),s=r.session;
+      if(r.persistence)throw Error('Durable bot actions require a committed async transition');
+      if(r.disposed||r.busy||r.paused||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');
+      const command=P.command(this._snapshot(actor),action,uid());
+      const receipt=this._dispatch({viewer:actor,closed:false},command,true);
+      if(!receipt.ok)throw Error(receipt.message);
+      return s.current;
+    }
     dispose(){const r=records.get(this);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;for(const b of r.bindings){b.closed=true;b.listeners.clear();}r.bindings.clear();}
   }
   SessionAuthority.transfers=transfers;

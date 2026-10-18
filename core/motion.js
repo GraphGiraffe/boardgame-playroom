@@ -13,13 +13,28 @@
     const scale = Math.min(1,Math.max(1,right-left)/rect.width,Math.max(1,bottom-top)/rect.height), width=rect.width*scale,height=rect.height*scale;
     return { x: Math.max(left, Math.min(rect.x, right - width)), y: Math.max(top, Math.min(rect.y, bottom - height)), width, height };
   }
+  // Keep the local card shape separate from its axis-aligned screen bounds.
+  // A rotated parent changes the screen pose, not the card's aspect ratio.
+  function poseOf(el) {
+    const r=rectOf(el);if(!r)return null;
+    const style=root.getComputedStyle(el),width=el.offsetWidth||parseFloat(style.width)||r.width,height=el.offsetHeight||parseFloat(style.height)||r.height;
+    let angle=0;
+    if(root.DOMMatrixReadOnly)for(let node=el;node?.nodeType===1;node=node.parentElement){
+      const computed=root.getComputedStyle(node),transform=computed.transform;
+      const rotation=/^(-?[\d.]+)(deg|rad|turn|grad)$/.exec(computed.rotate);
+      if(rotation)angle+=Number(rotation[1])*({deg:Math.PI/180,rad:1,turn:Math.PI*2,grad:Math.PI/200}[rotation[2]]);
+      if(transform&&transform!=='none'){const m=new root.DOMMatrixReadOnly(transform);angle+=Math.atan2(m.b,m.a);}
+    }
+    const scale=Math.min(r.width/(Math.abs(Math.cos(angle))*width+Math.abs(Math.sin(angle))*height),r.height/(Math.abs(Math.sin(angle))*width+Math.abs(Math.cos(angle))*height));
+    return {x:r.x+(r.width-width*scale)/2,y:r.y+(r.height-height*scale)/2,width:width*scale,height:height*scale,angle:angle*180/Math.PI};
+  }
   function handOrigin(hand, maxWidth = 38, maxHeight = 54) {
-    const r = rectOf(hand);
+    const r = poseOf(hand);
     if (!r) return null;
     // A compact anchor represents the centre of a hidden hand; no hidden card
     // identity or face is read, stored, or cloned by the motion layer.
     const width = Math.min(maxWidth, r.width), height = Math.min(maxHeight, r.height);
-    return clampRect({ x: r.x + (r.width - width) / 2, y: r.y + (r.height - height) / 2, width, height });
+    return {...clampRect({ x: r.x + (r.width - width) / 2, y: r.y + (r.height - height) / 2, width, height }),angle:r.angle};
   }
   function handOrigins(scene, viewer) {
     const hands = new Map();
@@ -37,13 +52,15 @@
       const rect = rectOf(el);
       if (!rect || root.getComputedStyle(el).visibility === 'hidden') continue;
       const hand = el.closest(handSelector), boundary = rectOf(hand || scene);
-      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary), hand: !!hand, public: publicEntity(el) });
+      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, public: publicEntity(el) });
     }
     const owner = Number.isInteger(actor) ? [...(scene?.querySelectorAll('[data-player-index]') || [])].find(el => Number(el.dataset.playerIndex) === actor) : null;
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
-    const stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back');
+    let stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back')||scene?.querySelector('.mini-hand .piece-back');
+    if(!stockBack&&root.TabletopUI?.helpers?.back){const template=doc.createElement('template');template.innerHTML=root.TabletopUI.helpers.back();stockBack=template.content.firstElementChild;}
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
-    return { actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: clampRect(rectOf(stockBack) || rectOf(scene?.querySelector('.stock-button'))), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
+    return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: poseOf(stockBack)||poseOf(scene?.querySelector('.stock-button')), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el) {
     for (const node of [el, ...el.querySelectorAll('*')]) {
@@ -54,15 +71,21 @@
   }
   function styledClone(el) {
     const clone = el.cloneNode(true), sourceNodes = [el, ...el.querySelectorAll('*')], cloneNodes = [clone, ...clone.querySelectorAll('*')];
+    // Resolve inherited visibility in the state the animation will display.
+    // Explicitly hidden descendants stay hidden; a hidden wrapper must not
+    // bake its temporary visibility into every child of a card back.
+    const visibility=el.style.getPropertyValue('visibility'),priority=el.style.getPropertyPriority('visibility');
+    const reveal=root.getComputedStyle(el).visibility==='hidden';
+    if(reveal)el.style.setProperty('visibility','visible','important');
     // Freeze resolved styles so a domino retains its board orientation and
     // inherited CSS variables even when its clone leaves the game container.
-    for (let i = 0; i < sourceNodes.length; i++) {
+    try { for (let i = 0; i < sourceNodes.length; i++) {
       const style = root.getComputedStyle(sourceNodes[i]);
       cloneNodes[i].style.cssText = [...style].map(key => `${key}:${style.getPropertyValue(key)};`).join('');
       cloneNodes[i].style.setProperty('animation', 'none', 'important');
       cloneNodes[i].style.setProperty('transition', 'none', 'important');
       cloneNodes[i].style.setProperty('pointer-events', 'none', 'important');
-    }
+    }} finally {if(reveal){if(visibility)el.style.setProperty('visibility',visibility,priority);else el.style.removeProperty('visibility');}}
     stripInteraction(clone);
     const style = root.getComputedStyle(el), width = el.offsetWidth || parseFloat(style.width), height = el.offsetHeight || parseFloat(style.height);
     const origin = style.transformOrigin.split(' ').map(Number.parseFloat), ox = origin[0] || 0, oy = origin[1] || 0;
@@ -79,7 +102,7 @@
   function cancel() {
     if (running) running.finish();
   }
-  function play(snapshot, { duration = 500, settle = 160, draws } = {}) {
+  function play(snapshot, { duration = 500, settle = 160, draws, effects:effectTiming={flip:280,pair:700} } = {}) {
     cancel();
     duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
     if (!snapshot || !duration) return Promise.resolve();
@@ -87,10 +110,10 @@
     if (!scene) return Promise.resolve();
     const entities = snapshot.entities instanceof Map ? snapshot.entities : new Map();
     const flights = [], used = new Set();
-    const current = [...scene.querySelectorAll('[data-entity]')];
+    const current = snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-entity]')];
     let sequence=null;
-    try { sequence=JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
-    if(sequence?.trigger!==snapshot.action?.type)sequence=null;
+    try { sequence=snapshot.sequence||JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
+    if(snapshot.diceOnly||sequence?.trigger!==snapshot.action?.type)sequence=null;
     const anchorRect=point=>{
       const anchor=[...scene.querySelectorAll('[data-motion-anchor]')].find(el=>el.dataset.motionAnchor===point.anchor);
       return rectOf(anchor);
@@ -101,18 +124,19 @@
       flights.push({el:routeEntity,from,to,kind:'route',sequence,duration:duration+sequence.steps.length*duration/4+(sequence.jump?settle+duration:0)});used.add(routeEntity);
     }else sequence=null;
     const card = snapshot.action?.card;
-    const publicNow = current.filter(publicEntity);
+    const publicNow = snapshot.routeOnly?[]:current.filter(publicEntity);
     const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
+      if(el.closest('[data-motion-effect="flip"]')||el.hasAttribute('data-reveal-active')||snapshot.revealedEntities?.includes(el.dataset.entity))return false;
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
       const before = entities.get(el.dataset.entity);
       return /^(card|tile)-/.test(el.dataset.entity) && (!before || !before.public);
     });
     for (const el of played) {
-      const before = entities.get(el.dataset.entity), from = card != null && snapshot.playedFrom ? snapshot.playedFrom : before?.hand ? before.rect : snapshot.origin, to = rectOf(el);
+      const before = entities.get(el.dataset.entity), from = card != null && snapshot.playedFrom ? snapshot.playedFrom : before?.hand ? before.pose||before.rect : snapshot.origin, to = poseOf(el);
       if (from && to) { flights.push({ el, from, to, kind: 'play' }); used.add(el); }
     }
     for (const el of current) {
-      if (used.has(el)) continue;
+      if (snapshot.routeOnly||used.has(el)) continue;
       const before = entities.get(el.dataset.entity), to = rectOf(el);
       if (!to) continue;
       if (before?.public && publicEntity(el) && /^(checker|token)-/.test(el.dataset.entity) && Math.hypot(before.rect.x - to.x, before.rect.y - to.y) > 2) flights.push({ el, from: snapshot.playedFrom && Number(el.dataset.boardCell)===snapshot.action?.to ? snapshot.playedFrom : before.rect, to, kind: 'move' });
@@ -128,14 +152,17 @@
       if (!from || !anchor) continue;
       for (let i = 0; i < cue.count; i++) {
         const el = cue.to==='table'?(i===cue.count-1?publicNow.filter(el=>el.closest('[data-motion-table]')).at(-1):null):cue.player === snapshot.viewer ? handCards[ownIndex++] : null;
-        const to = el ? clampRect(rectOf(el), rectOf(el.closest(handSelector))) : anchor;
-        if (!to) continue;
+        const target = el ? poseOf(el) : anchor;
+        if (!target) continue;
+        const ratio=(parseFloat(snapshot.stockBack?.style.width)/parseFloat(snapshot.stockBack?.style.height))||from.width/from.height;
+        const width=Math.min(target.width,target.height*ratio),height=width/ratio;
+        const to={x:target.x+(target.width-width)/2,y:target.y+(target.height-height)/2,width,height,angle:target.angle||0};
         flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * .65, delay: cueDelay + i * duration * .3 });
       }
       cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
     }
-    const dice = [...scene.querySelectorAll('[data-motion-lead]')].filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
-    const effects=[...scene.querySelectorAll('[data-motion-effect]')].filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
+    const dice = (snapshot.routeOnly||snapshot.skipDice?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
+    const effects=(snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-motion-effect]')]).filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
     const closing=snapshot.action?.type==='flip'?[...scene.querySelectorAll('[data-motion-close]')]:[];
     if (!flights.length && !dice.length && !effects.length && !closing.length) return Promise.resolve();
     return new Promise(resolve => {
@@ -150,7 +177,7 @@
         finishUpdates.forEach(update=>update());
         layer?.remove(); if (running === run) running = null; resolve();
       }};
-      const onResize=()=>resizeUpdates.forEach(update=>update());
+      const onResize=()=>{if(flights.some(f=>f.kind==='play'||f.kind==='draw'))run.finish();else resizeUpdates.forEach(update=>update());};
       root.addEventListener('resize',onResize);
       running = run;
       try {
@@ -161,16 +188,27 @@
           if (back) {
             clone = snapshot.stockBack?.cloneNode(true) || doc.createElement('div');
             clone.classList.add('piece-back', 'playroom-motion-piece'); clone.setAttribute('aria-hidden', 'true');
-            Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', width: `${to.width}px`, height: `${to.height}px`, minWidth: '0', minHeight: '0', transform: 'none' });
+            Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', minWidth: '0', minHeight: '0', transform: 'none' });
           } else clone = styledClone(el);
+          if(snapshot.routeOnly)clone.style.translate='none';
           clone.dataset.motionKind = kind;
           if (player != null) { mover.dataset.motionPlayer = player; clone.dataset.motionPlayer = player; }
+          if(kind==='play'||kind==='draw'){
+            const width=parseFloat(clone.style.width)||to.width,height=parseFloat(clone.style.height)||to.height,scale=Math.min(to.width/width,to.height/height);
+            Object.assign(clone.style,{left:'0',top:'0',transformOrigin:'0 0',rotate:'none',translate:'none',scale:'none',transform:`scale(${scale})`});
+          }
           mover.append(clone); layer.append(mover);
           const entry = el ? { el, visibility: el.style.getPropertyValue('visibility'), priority: el.style.getPropertyPriority('visibility') } : null;
           if (entry) { restore.push(entry); el.style.setProperty('visibility', 'hidden', 'important'); }
           const sx = Math.min(from.width / to.width,from.height / to.height), sy = sx, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
           const transform = (x,y,xScale,yScale) => `translate3d(${x}px,${y}px,0) scale(${xScale},${yScale})`;
           let frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
+          if(kind==='play'||kind==='draw'){
+            const start=from.angle||0,delta=((to.angle||0)-start+540)%360-180;
+            const at=(x,y,scale,angle)=>`translate3d(${x}px,${y}px,0) rotate(${angle}deg) scale(${scale}) translate(-50%,-50%)`;
+            const x0=from.x+from.width/2,y0=from.y+from.height/2,x1=to.x+to.width/2,y1=to.y+to.height/2;
+            frames=[{transform:at(x0,y0,sx,start),offset:0},{transform:at((x0+x1)/2,Math.max(0,Math.min(y0,y1)-lift),(sx+1)/2,start+delta*.52),offset:.52},{transform:at(x1,y1,1,start+delta),offset:1}];
+          }
           let routeFrames;
           if(route){
             routeFrames=()=>{
@@ -179,12 +217,12 @@
               // All cells use their live centres, including after a resize.
               const at=point=>{const r=anchorRect(point)||box;return transform(r.x+(r.width-box.width)/2,r.y+(r.height-box.height)/2,1,1);};
               const result=[{transform:at(route.origin),offset:0},...(route.entry==='lift'?[{transform:at(route.origin)+' translateY(-10px) scale(1.1)',offset:duration/flightDuration*.5}]:[]),{transform:at(route.origin),offset:duration/flightDuration}];
-              route.steps.forEach((point,index)=>result.push({transform:!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
-              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:transform(box.x,box.y,1,1),offset:1});}
+              route.steps.forEach((point,index)=>result.push({transform:!snapshot.routeOnly&&!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
+              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:snapshot.routeOnly?at(route.jump):transform(box.x,box.y,1,1),offset:1});}
               if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
             };
             frames=routeFrames();
-            const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===route.player);
+            const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>node.dataset.turnPrimary!=='false'&&Number(node.dataset.playerIndex)===route.player);
             const counter=[...(panel?.querySelectorAll('[data-motion-counter]')||[])].find(node=>node.dataset.motionCounter===route.counter),finalLabel=counter?.textContent;
             const status=scene.closest('.table-shell')?.querySelector('.status-event'),finalStatus=status?.textContent,finalTitle=status?.getAttribute('title');
             const highlighted=[...scene.querySelectorAll('.player-panel.is-turn')];highlighted.forEach(node=>{node.classList.remove('is-turn');node.removeAttribute('aria-current');});panel?.classList.add('is-turn');panel?.setAttribute('aria-current','true');
@@ -205,30 +243,42 @@
           mover.className='playroom-motion-flight';mover.dataset.motionKind='roll';mover.append(clone);layer.append(mover);
           const position=()=>{const r=rectOf(die)||box;Object.assign(mover.style,{left:`${r.x}px`,top:`${r.y}px`,width:`${r.width}px`,height:`${r.height}px`,transformOrigin:'center'});};position();resizeUpdates.push(position);
           const entry={el:die,visibility:die.style.getPropertyValue('visibility'),priority:die.style.getPropertyPriority('visibility')};restore.push(entry);die.style.setProperty('visibility','hidden','important');
-          const animation=mover.animate([{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
+          const animation=mover.animate(snapshot.reducedMotion?[{opacity:.35},{opacity:1}]:[{transform:'rotate(-25deg) scale(.85)'},{transform:'rotate(135deg) scale(1.08)',offset:.45},{transform:'rotate(0) scale(1)'}],{duration,easing:'ease-out'});
           animation.finished.then(()=>{show(entry);mover.remove();},()=>{});animations.push(animation);
         }
-        for(const el of effects){
-          const frames=el.dataset.motionEffect==='flip'?[{transform:'perspective(600px) rotateY(90deg)',opacity:.3},{transform:'perspective(600px) rotateY(0)',opacity:1}]:[{transform:'scale(.7)',opacity:.3},{transform:'scale(1.12)',opacity:1},{transform:'scale(1)',opacity:1}];
-          animations.push(el.animate(frames,{duration,easing:'ease-out'}));
+        const flipTimes=effectTiming;
+        let flipEnd=0;
+        for(const el of effects.filter(el=>el.dataset.motionEffect!=='flip')){
+          const content=el.firstElementChild||el;
+          animations.push(content.animate([{transform:'scale(.7)',opacity:.5},{transform:'scale(1.08)',opacity:1},{transform:'scale(1)',opacity:1}],{duration,easing:'ease-out'}));
         }
-        // A mismatched pair stays readable, then both faces turn back.
-        const closeDelay=duration+550,closeDuration=320;
-        for(const slot of closing){
-          const face=slot.querySelector('.pexeso-face'),back=slot.querySelector('.pexeso-close-back');
-          if(!face||!back)continue;
-          const first=face.animate([{transform:'rotateY(0)'},{transform:'rotateY(90deg)'}],{delay:closeDelay,duration:closeDuration/2,easing:'ease-in',fill:'forwards'});
-          const second=back.animate([{transform:'rotateY(-90deg)'},{transform:'rotateY(0)'}],{delay:closeDelay+closeDuration/2,duration:closeDuration/2,easing:'ease-out',fill:'forwards'});
-          timers.push(root.setTimeout(()=>{face.style.visibility='hidden';back.style.visibility='visible';},closeDelay+closeDuration/2));
-          animations.push(first,second);
+        const flipTargets=[...new Set([...effects.filter(el=>el.dataset.motionEffect==='flip'),...closing])];
+        for(const slot of flipTargets){
+          const face=slot.querySelector('[data-motion-face]')||slot,back=slot.querySelector('[data-motion-back]'),box=rectOf(slot);if(!box)continue;
+          const opening=effects.includes(slot),close=closing.includes(slot),old=snapshot.flips?.get(slot.dataset.motionValue);
+          const mover=doc.createElement('div');mover.className='playroom-motion-flight';mover.dataset.motionKind='flip';
+          Object.assign(mover.style,{left:box.x+'px',top:box.y+'px',width:box.width+'px',height:box.height+'px',perspective:'600px'});
+          const rotor=doc.createElement('div');Object.assign(rotor.style,{position:'absolute',inset:'0',transformStyle:'preserve-3d'});
+          const front=(opening&&old?old:styledClone(face)).cloneNode(true),reverse=styledClone(opening?face:back||face);
+          for(const [node,angle]of [[front,0],[reverse,180]]){Object.assign(node.style,{position:'absolute',inset:'0',left:'0',top:'0',width:'100%',height:'100%',transform:`rotateY(${angle}deg)`,backfaceVisibility:'hidden',visibility:'visible'});rotor.append(node);}
+          mover.append(rotor);layer.append(mover);
+          const entry={el:face,visibility:face.style.getPropertyValue('visibility'),priority:face.style.getPropertyPriority('visibility')};restore.push(entry);face.style.setProperty('visibility','hidden','important');
+          const flip=flipTimes.flip,hold=flipTimes.pair+(!opening&&effects.some(el=>el.dataset.motionEffect==='flip')?flip:0),total=(opening?flip:0)+(close?hold+flip:0);flipEnd=Math.max(flipEnd,total);
+          if(opening&&close){
+            // The two sides are the old back and new face: open, hold, close.
+            animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},{transform:'rotateY(180deg)',offset:flip/total},{transform:'rotateY(180deg)',offset:(flip+hold)/total},{transform:'rotateY(360deg)',offset:1}],{duration:total,fill:'both',easing:'linear'}));
+          }else{
+            animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},...(close?[{transform:'rotateY(0deg)',offset:hold/total}]:[]),{transform:'rotateY(180deg)',offset:1}],{duration:total||flip,fill:'both',easing:'linear'}));
+          }
+          if(close&&back)finishUpdates.push(()=>{face.style.setProperty('visibility','hidden');back.style.visibility='visible';back.style.transform='none';});
         }
         // A fallback also resolves if a browser drops animation.finished when
         // its document changes visibility; cancel() remains synchronous.
-        timer = root.setTimeout(run.finish, Math.max(duration, closing.length?closeDelay+closeDuration:0, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
+        timer = root.setTimeout(run.finish, Math.max(duration, flipEnd, ...flights.map(f => (f.delay || 0) + (f.duration || duration))) + 100);
         Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(run.finish);
       } catch (error) { run.finish(); throw error; }
     });
   }
-  const api = root.PlayroomMotion = { capture, play, cancel };
+  const api = root.PlayroomMotion = { capture, play, cancel, poseOf };
   if (typeof module === 'object' && module.exports) module.exports = api;
 })(globalThis);

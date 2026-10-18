@@ -32,16 +32,14 @@ test('Local and network mode call the exact same motion engine and preferences',
 });
 
 test('A pack minimum viewing time applies at instant and animated speeds',async()=>{
-  const previous=globalThis.document;
-  globalThis.document={querySelector:()=>({dataset:{presentationWait:'35'}})};
-  try{
+  {
     for(const animationSpeed of ['instant','fast']){
-      const flow=new Flow.GameFlow({options:()=>({animationSpeed}),motion:{play:()=>Promise.resolve()}});
+      const flow=new Flow.GameFlow({options:()=>({animationSpeed}),motion:{play:()=>Promise.resolve()},presentation:()=>({minimumVisibleMs:35})});
       const start=performance.now();
       await flow.play(null);
       assert(performance.now()-start>=30,`${animationSpeed} skipped the minimum viewing time`);
     }
-  }finally{globalThis.document=previous;}
+  }
 });
 
 test('Only newer, same-session projected events can trigger network presentation',()=>{
@@ -54,4 +52,56 @@ test('Only newer, same-session projected events can trigger network presentation
   assert.equal(Flow.eventAction(first,{...next,authorityEpoch:'new'}),null);
   assert.equal(Flow.eventAction(null,next),null);
   assert.deepEqual(Flow.eventAction({...first,state:{turn:1}},{...next,events:first.events}),{actor:1,action:{type:'action'},events:[]});
+});
+
+
+test('presentation cancellation releases its waiter and timer even when a renderer never finishes',async()=>{
+  const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0;
+  const scheduler=new Scheduler({setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
+  const first=scheduler.play(()=>new Promise(()=>{}),750);assert.equal(timers.size,1);
+  scheduler.cancel();await first;await scheduler.whenIdle();assert.equal(timers.size,0);
+  const next=scheduler.play(()=>Promise.resolve(),200);assert.equal(timers.size,1);
+  [...timers.values()][0].fn();await next;assert.equal(timers.size,0);
+  assert.throws(()=>scheduler.play(()=>{},-1),/DELAY_INVALID/);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:{default:750,phases:{setup:0}}}},{data:{phase:'setup'}}),0);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:750}},{data:{}}),750);
+});
+
+
+test('Whole actions use the UNO reveal budget without adding it to long presentations',async()=>{
+  for(const [animationSpeed,minimum]of Object.entries({instant:200,fast:660,normal:1060,slow:1600})){
+    const timers=new Map();let id=0,finished=false;
+    const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+    let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[{reveal:{kind:"card"}}]}).then(()=>finished=true);
+    assert.equal([...timers.values()][0].ms,minimum);
+    [...timers.values()][0].fn();await Promise.resolve();assert.equal(finished,false,'long motion must finish');
+    complete();await pending;assert.equal(timers.size,0);
+    const cancelled=flow.present(()=>new Promise(()=>{}));flow.cancel();await cancelled;assert.equal(timers.size,0);
+  }
+});
+test('dice reveal completion unlocks the next action without a hidden card-animation timer',async()=>{
+ for(const animationSpeed of Object.keys(Flow.presets))for(const event of [{kind:'roll'},{reveal:{kind:'dice'}}]){
+  const timers=new Map();let id=0,complete,finished=false;
+  const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+  const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[event]}).then(()=>finished=true);
+  await Promise.resolve();assert.equal(finished,false);assert.equal(timers.size,0,'dice queue owns its complete visible lifetime');
+  complete();await pending;assert.equal(finished,true);
+ }
+});
+test('continuations use the real effect lifetime; a new turn of the same actor retains the normal budget',async()=>{
+ for(const animationSpeed of Object.keys(Flow.presets)){
+  const timers=new Map();let id=0,complete;
+  const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+  const before={turn:0,status:'playing',timeline:{turn:7}},after={turn:0,status:'playing',timeline:{turn:7}};
+  const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{before,after});assert.equal(timers.size,0);
+  complete();await pending;
+  const next=flow.present(()=>Promise.resolve(),{before,after:{...after,timeline:{turn:8}},events:[{reveal:{kind:'card'}}]});
+  assert.equal(timers.size,1,'same actor does not mean same game turn');[...timers.values()][0].fn();await next;
+ }
+});
+
+test('non-card placements do not inherit a card reveal delay',async()=>{
+ const timers=[];const flow=new Flow.GameFlow({options:()=>({animationSpeed:'fast'}),clock:{setTimeout:(_,ms)=>timers.push(ms),clearTimeout:()=>{}}});
+ for(const event of [{kind:'place'},{kind:'move'}])await flow.present(()=>Promise.resolve(),{events:[event]});
+ assert.deepEqual(timers,[]);
 });

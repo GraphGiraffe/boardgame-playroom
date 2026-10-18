@@ -20,7 +20,7 @@ function serveSavedGames() {
     const pathname=new URL(req.url,'http://localhost').pathname;
     const rel=pathname==='/'?'index.html':pathname.slice(1);
     const filename=path.resolve(root,rel);
-    const allowed=rel==='index.html'||rel==='installed-packs.js'||['app/','core/','packs/'].some(prefix=>rel.startsWith(prefix));
+    const allowed=rel==='index.html'||rel==='installed-packs.js'||['core/messages.js','app/','core/','application/','presentation/','platform/','packs/'].some(prefix=>rel.startsWith(prefix));
     if(!allowed||!filename.startsWith(root+path.sep)||!fs.existsSync(filename)||!fs.statSync(filename).isFile()){
       res.writeHead(404);res.end();return;
     }
@@ -45,7 +45,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         const capture=async name=>{if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${name}-${width}x${height}.png`)});}};await capture('hub');
         const nav=page.locator('.side-nav');
         assert.equal(await nav.isVisible(),true);
-        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Как играть']);
+        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Темы и скины']);
         for (const button of await nav.locator('button').all()) {
           const b=await button.boundingBox(); assert(b.width>=44&&b.height>=44&&b.x>=0&&b.x+b.width<=width+1);
         }
@@ -53,7 +53,9 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(nav.locator('[data-command=sessions]'));
         await page.locator('.saved-games-list').waitFor();
         assert.equal(await page.locator('.saved-empty').isVisible(),true);await capture('sessions');
-        await press(nav.locator('[data-command=help]')); await page.locator('.help-grid').waitFor();await capture('help');
+        await press(nav.locator('[data-appearance-editor]'));await page.locator('.appearance-editor').waitFor();await capture('appearance');
+        await press(page.locator('.appearance-dialog [data-appearance-action=close]'));
+        await press(page.locator('.topbar [data-command=help]'));await page.locator('.help-grid').waitFor();await capture('help');
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
         for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}
@@ -174,7 +176,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       }
     });
     await t.test('Completed result returns to the menu and remains in read-only history after reload',async()=>{
-      const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'quick',players:[{name:'Финиш'},{name:'Соперник'}]});
+      const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'classic',boardSize:64,players:[{name:'Финиш'},{name:'Соперник'}]});
       let penultimate;
       for(let i=0;i<1000&&completed.current.status==='playing';i++){
         // Export while this is still the current state, before its journal is compacted.
@@ -250,11 +252,11 @@ test('Every visible part of each hub tile opens its game setup', {timeout:120000
       const page=await context.newPage();page.setDefaultTimeout(5000);
       try {
         await page.goto(url);
-        for(const game of ['uno','domino','durak','checkers','snakes'])for(const part of ['.tile-top','.tile-title','.tile-description','.tile-meta','.play-tile','.game-cover']){
+        for(const game of ['uno','domino','durak','checkers','snakes'])for(const part of ['.tile-player-count','.tile-title','.tile-description','.tile-mechanics','.game-cover']){
           const target=page.locator(`[data-game=${game}] ${part}`);
           await target.evaluate(el=>el.scrollIntoView({block:'center'}));
           const p=await target.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};});
-          assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.closest('[data-start]')?.dataset.start,p),game,`${game} ${part} must hit launch button`);
+          assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.closest('.game-tile')?.dataset.game,p),game,`${game} ${part} must hit launch button`);
           if(mobile)await page.touchscreen.tap(p.x,p.y);else await page.mouse.click(p.x,p.y);
           await page.locator('.room-setup-modal').waitFor();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),game);
           assert.equal(await page.evaluate(()=>getSelection().toString()),'');

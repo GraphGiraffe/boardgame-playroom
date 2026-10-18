@@ -12,8 +12,8 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     await page.goto(server.url);
     await page.evaluate(()=>{
       const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
-      const teamBadges=[{label:'синяя',color:'#668fad'},{label:'красная',color:'#ce735d'}];
-      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',teamBadges}),'result-modal');
+      const teams=[{id:'blue',label:'синяя',color:'#668fad'},{id:'red',label:'красная',color:'#ce735d'}];const playerContent=state.players.map((_,index)=>({team:teams[index%2]}));
+      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent}),'result-modal');
     });
     const badges=await page.locator('.result-awards').evaluateAll(wrappers=>wrappers.map(wrapper=>{
       const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect(),symbol=team.querySelector('svg')?.getBoundingClientRect(),disc=team.querySelectorAll('circle')[1];
@@ -25,6 +25,13 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     assert(badges[0].symbolOffset<1,'first-player symbol stays centered on its team disc');
     assert.equal(badges[0].symbolWidth,22,'first-player artwork scales with the disc');
     assert(badges.every(b=>b.medal===22&&b.team===22&&b.exposedRight>=4&&b.exposedRight<=6&&b.exposedBottom>=2&&b.exposedBottom<=4&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek uniformly from below the medal: '+JSON.stringify(badges));
+    const colors=()=>page.locator('.result-awards .is-place').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node.querySelectorAll('circle')[1]).fill));
+    const lightMedals=await colors();
+    assert.equal(new Set(lightMedals).size,2,'gold and silver keep distinct material colors');
+    for(const id of ['dark','light']){
+      await page.evaluate(id=>PlayroomAppearanceUI.runtime.service.select(id),id);
+      assert.deepEqual(await colors(),lightMedals,'theme switching preserves canonical medal colors');
+    }
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
     await page.setViewportSize({width:320,height:740});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);

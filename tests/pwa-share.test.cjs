@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../app/pwa.js'),'utf8');
+const source=['core/messages.js','application/pwa-update-coordinator.js','app/pwa.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
 function pwa(protocol,{canShare=()=>true}={}){
   const shareCalls=[];
   const context={isSecureContext:protocol==='https:',location:{protocol,hostname:protocol==='https:'?'example.test':'',href:protocol==='https:'?'https://example.test/playroom/':'content://test/playroom'},

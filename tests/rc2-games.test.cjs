@@ -1,4 +1,5 @@
 'use strict';
+require('../core/model-registration.js');
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const E=require('../core/engine.js'),ids=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid','durak'];
 for(const id of ids)require(`../packs/${id}/rules.js`);
@@ -20,6 +21,12 @@ test('new packs, deck sizes and Durak variants finish with valid states',()=>{
 
 test('hidden boards and hands remain private in projected state',()=>{
  let s=create('battleship',2,'russian');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const sea=E.project(s,0);assert(sea.data.ships[0].flat().some(Number.isInteger));assert(sea.data.ships[1].flat().every(x=>x===null));
+ for(const openHands of [false,true]){
+  s.openHands=openHands;const spectator=E.project(s,-1),table=E.projectTable(s,s.turn);
+  assert.deepEqual(table.data,spectator.data);
+  assert(table.data.ships.flat(2).every(cell=>cell===null),'both fleets stay hidden on Table');
+  assert.deepEqual(table.tableActions,E.legalActions(s).map(({type,cell})=>({type,cell})),'only public shots are granted');
+ }
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}
 });
@@ -53,12 +60,14 @@ test('Ludo keeps every pawn visible on a shared start and does not replay the pr
  }
  s.data.phase='roll';s.data.lastRoll=6;s.data.lastRolled=[0];s.events.push({id:1,kind:'roll',player:0});s.turn=1;
  assert.doesNotMatch(V.render(E.project(s,1),1,E.legalActions(s,1),{}),/data-motion-lead="roll"/);
+ // The just-committed roll still animates when no legal move advanced the turn.
+ assert.match(V.render(E.project(s,1),1,E.legalActions(s,1),{presentationTurn:0}),/data-motion-lead="roll"/);
  s.turn=0;assert.match(V.render(E.project(s,0),0,E.legalActions(s,0),{}),/data-motion-lead="roll"/);
  s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.dice=[1];s.data.used=[false];
  const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
  const safeCell=route.match(/<button class="ludo-cell ludo-safe[^>]*data-motion-anchor="path-8"[^>]*>[\s\S]*?<\/button>/)?.[0];
  assert(safeCell?.includes('ludo-safe-star'));
- assert(!safeCell.includes('ludo-route-dot'),'route dots do not hide a safe star');
+ assert(!safeCell.includes('board-route-dot'),'route dots do not hide a safe star');
 });
 
 test('Durak lets a non-defender join the attack',()=>{
@@ -86,7 +95,7 @@ test('Akulina draws the chosen hidden card and rejects an invalid index',()=>{
 });
 test('automatic fleets leave gaps in both rulesets and Yatzy totals include the bonus',()=>{
  for(const preset of ['classic','russian']){let s=create('battleship',2,preset);s=play(s,{type:'auto'});for(const [i,ship] of s.data.ships[0].entries())for(const cell of ship)for(const other of s.data.ships[0].slice(i+1).flat())assert(Math.abs(cell%10-other%10)>1||Math.abs(Math.floor(cell/10)-Math.floor(other/10))>1);}
- let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
+ let s=create('yatzy');s.data.scores[0]={ones:3,twos:6,threes:9,fours:12,fives:15,sixes:18,chance:20};s.data.round=7;const p=E.project(s,0);assert.equal(p.data.totals[0],133);assert.equal(p.data.bonuses[0],50);assert.equal(p.data.upper[0],63);
 });
 
 test('new pack actions have playable common sound cues and do not replay old events',()=>{
@@ -131,21 +140,21 @@ test('fleet counters show distinct deck lengths and mark zero in both surfaces',
  const scene=V.render(E.project(s,0),0,E.legalActions(s,0));
  assert.match(scene,/fleet-indicator/);
 });
-test('board game avatars keep the standard light palette',()=>{
+test('board game avatars use the shared distinct seat palette',()=>{
  for(const id of ['ludo','snakes','checkers']){
   const s=E.createGame(id,{players:[{name:'Аня'},{name:'Борис'}],seed:17});
   const html=V.render(E.project(s,0),0,E.legalActions(s,0));
-  assert(!/class="avatar p\d+"[^>]*style="background:/.test(html),id);
+  assert.match(html,/background:color-mix\(in srgb,var\(--color-seat-0/,id);
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);privateChanged.data.ships[1-actor]=[];assert.deepEqual(E.botAction(privateChanged),action);
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);const G=require('../packs/battleship/domain/geometry.js');let seed={rng:23};do{privateChanged.data.ships[1-actor]=G.autoPlace(seed,[],G.fleets[s.preset],true,E.random);}while(!privateChanged.data.ships[1-actor].flat().includes(cell));assert(E.validateState(privateChanged));assert.deepEqual(E.botAction(privateChanged),action);
  assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
  for(const action of E.legalActions(s)){const next=play(s,action);if(next.data.discard.length>s.data.discard.length){pair={action,next};break;}}assert(pair);
- const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers[1].to,'table');assert(!JSON.stringify(transfers).includes('♠'));
+ const cues=E.soundCues(pair.next,-1,s.events.at(-1).id);assert(cues.some(c=>c.id==='success'));const transfers=Authority.transfers(s,pair.next,E.project(pair.next,-1).events);assert.equal(transfers[0].from,'hand');assert.equal(transfers[0].fromPlayer,pair.action.target);assert.equal(transfers[0].player,s.turn);assert.equal('privateTo' in transfers[0],false);assert.equal(transfers.length,1);assert.equal(E.project(pair.next,-1).events.find(e=>e.reveal?.kind==='cards').reveal.cards.length,2);assert(!JSON.stringify(transfers).includes('♠'));
  const projected=E.project(pair.next,-1);assert.deepEqual(E.soundCues(projected,-1,s.events.at(-1).id),cues);
 });
 test('Akulina draw shows both participants to everyone, while the card stays private',()=>{
@@ -177,22 +186,40 @@ test('Akulina awards descending points as players leave; the last player gets ze
  assert.equal(s.players.find((_,i)=>!s.data.outOrder.includes(i)).score,0);
  assert.deepEqual(s.winners,s.data.outOrder);
 });
+test('Ludo friendly occupied cells keep pawn selection separate from a move',()=>{
+ for(const preset of ['classic','teams']){
+  const s=E.createGame('ludo',{players:Array.from({length:4},(_,i)=>({name:'P'+i})),preset,diceCount:2,seed:17});
+  s.turn=0;s.data.phase='move';s.data.dice=[2,3];s.data.used=[false,false];s.data.pawns[0]=[7,9,-1,-1];
+  const projected=E.project(s,0),actions=E.legalActions(s,0),before=JSON.stringify(s),move=actions.find(a=>a.owner===0&&a.pawn===0&&a.dieIndex===0);
+  assert(move,'moving onto a friendly occupied cell is legal');
+  const html=V.render(projected,0,actions,{viewState:{pawn:'0:0'}});
+  const pawn=html.match(/<button class="ludo-pawn[^>]*data-entity="token-0-1"[^>]*>/)?.[0];
+  assert.match(pawn,/data-view-key="pawn" data-view-value="0:1"/);assert.doesNotMatch(pawn,/data-action=/);
+  const cell=html.match(/<button class="ludo-cell[^>]*data-motion-anchor="path-9"[^>]*>/)?.[0];
+  assert(cell.includes(V.helpers.actionAttr(move)),'the marked cell still executes the selected move');
+  assert(html.includes('data-motion-lead="" '+V.helpers.actionAttr(move)),'the selected pawn can also move by tapping its die');
+  const other=V.render(projected,0,actions,{viewState:{pawn:'0:1'}}),otherMove=actions.find(a=>a.owner===0&&a.pawn===1&&a.dieIndex===0);
+  assert(other.includes('data-motion-lead="" '+V.helpers.actionAttr(otherMove)),'switching pawns updates the die command');
+  assert.equal(JSON.stringify(s),before,'selection and previews do not consume a die or move a pawn');
+  const next=play(s,move);assert.equal(next.data.pawns[0][0],9);assert.equal(next.data.pawns[0][1],9);assert.deepEqual(next.data.used,[true,false]);
+ }
+});
 test('Ludo star squares are safe while the next unmarked square can capture',()=>{
  let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];
  s=play(s,{type:'move',owner:0,pawn:0,dieIndex:0});assert.equal(s.data.pawns[1][0],47);
 });
 test('Pexeso shows a mismatch through its animation, then closes it before the next turn',()=>{
- let s=create('pexeso',2,'easy'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
+ let s=create('pexeso',2,'easy','52'),first=0,second=s.data.board.findIndex(c=>c.rank!==s.data.board[first].rank);
  s=play(s,{type:'flip',index:first});s=play(s,{type:'flip',index:second});
  assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
  assert(E.legalActions(s).every(a=>a.type==='flip'));
  const projected=E.project(s,1),animated=V.render(projected,1,[],{presentationTurn:0}),settled=V.render(projected,1,[]);
- assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
+ assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"[^>]*><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
  assert.equal((settled.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length);
  s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
 });
 test('Pexeso bot sometimes overlooks a known pair',()=>{
- const s=create('pexeso',2,'easy'),pair=(a,b)=>a.rank===b.rank&&(['♥','♦'].includes(a.suit)===['♥','♦'].includes(b.suit));
+ const s=create('pexeso',2,'easy','52'),pair=(a,b)=>a.rank===b.rank&&(['♥','♦'].includes(a.suit)===['♥','♦'].includes(b.suit));
  const first=s.data.board.findIndex((a,i)=>s.data.board.some((b,j)=>i!==j&&pair(a,b))),second=s.data.board.findIndex((b,j)=>j!==first&&pair(s.data.board[first],b));
  s.data.seen[first]=s.data.board[first].id;s.data.seen[second]=s.data.board[second].id;
  const choices=new Set();for(let move=0;move<12;move++){s.move=move;choices.add(E.botAction(s).index===first||E.botAction(s).index===second?'known':'missed');}
@@ -209,4 +236,78 @@ test('Yatzy permits releasing a held die before the third roll',()=>{
 });
 test('RC4 Yatzy score sounds distinguish numeric, special and yatzy only after scoring',()=>{
  for(const [key,sound]of [['ones','success'],['pair','success.special'],['yatzy','success.yatzy']]){let s=create('yatzy');s.data.rolls=3;s.data.dice=[1,1,1,1,1];const cursor=s.events.at(-1).id;s=play(s,{type:'score',key});assert(E.soundCues(s,0,cursor).some(c=>c.id===sound));}
+});
+
+
+test('Pexeso bot choice is invariant under permutations of never-revealed faces',()=>{
+  for(let move=0;move<30;move++){
+    const state=create('pexeso');state.move=move;
+    state.data.flipped=[0];state.data.phase='second';state.data.seen={0:state.data.board[0].id,1:state.data.board[1].id};
+    const altered=E.clone(state),tail=altered.data.board.slice(2).reverse();altered.data.board.splice(2,tail.length,...tail);
+    const a=E.botAction(state),b=E.botAction(altered);
+    assert.deepEqual(b,a,'unknown card faces must never influence a bot mistake');
+  }
+});
+
+test('Battleship Table can fire for either authorized actor without exposing either fleet',()=>{
+ let state=create('battleship');
+ for(let i=0;i<2;i++){state=play(state,{type:'auto'});state=play(state,{type:'ready'});}
+ for(const actor of [0,1]){
+  state.turn=actor;
+  const projection=E.projectTable(state,actor),scene=V.render(projection,-1,projection.tableActions,{surface:'table',viewState:{fleet:actor===0?'enemy':'own'}});
+  assert.equal((scene.match(/data-action=/g)||[]).length,100,'public shots on the opponent field');
+  assert(!scene.includes('aria-label="undefined"'));assert(projection.data.ships.flat(2).every(cell=>cell===null));
+  const next=E.applyTableAction(state,actor,projection.tableActions[0]);assert.equal(next.data.shots[actor].length,1);
+ }
+ const spectator=V.render(E.project(state,-1),-1,[],{surface:'table'});
+ assert(!spectator.includes('data-action='));
+});
+
+
+test('Pexeso cartoon deck defaults to exact character pairs and completes every preset',()=>{
+ assert.deepEqual(E.get('pexeso').presets.map(p=>p.id),['easy','medium','hard']);
+ for(const preset of ['easy','medium','hard']){
+  let state=create('pexeso',4,preset);assert.equal(state.data.deckSize,96);assert(E.validateState(state));
+  const counts=new Map();for(const card of state.data.board)counts.set(card.character,(counts.get(card.character)||0)+1);
+  assert([...counts.values()].every(n=>n===2));assert.equal(counts.size,{easy:8,medium:12,hard:18}[preset]);
+  assert(E.project(state,-1).data.board.every(card=>card.hidden&&!card.character));
+  const forged=E.clone(state);forged.data.board[0].color='unknown';assert.throws(()=>E.validateState(forged),/POSITION_INVALID/);
+  let steps=0;while(state.status==='playing'&&steps++<3000)state=play(state);
+  assert.equal(state.status,'finished',preset);assert(E.validateState(state));
+ }
+});
+
+test('Pexeso standard-deck composition stays fixed while placement changes',()=>{
+ for(const deck of ['36','52','54'])for(const preset of ['easy','medium','hard']){
+  const a=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:17}),b=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:42});
+  assert.deepEqual(a.data.board.map(c=>c.id).sort(),b.data.board.map(c=>c.id).sort());assert.notDeepEqual(a.data.board.map(c=>c.id),b.data.board.map(c=>c.id));
+ }
+});
+
+
+test('Pexeso cartoon pairs vary by seed with all shapes, varied colors and reproducible identical pairs',()=>{
+ const players=[{name:'A'},{name:'B'}];
+ for(const preset of ['easy','medium','hard']){
+  const compositions=new Set(),colorAssignments=new Set();
+  for(let seed=1;seed<=64;seed++){
+   const options={players,preset,deck:'cartoon',seed},state=E.createGame('pexeso',options),again=E.createGame('pexeso',options);
+   assert.deepEqual(state,again,'same seed restores the same complete initial state');assert(E.validateState(state));
+   const pairs=new Map();for(const card of state.data.board){const group=pairs.get(card.character)||[];group.push(card);pairs.set(card.character,group);}
+   assert.equal(pairs.size,{easy:8,medium:12,hard:18}[preset]);
+   const shapes=new Map(),colors=new Set();
+   for(const [character,cards]of pairs){
+    assert.equal(cards.length,2);assert.notEqual(cards[0].id,cards[1].id);
+    assert.equal(cards[0].shape,cards[1].shape);assert.equal(cards[0].color,cards[1].color);
+    assert.equal(character,cards[0].shape+'-'+cards[0].color);
+    shapes.set(cards[0].shape,(shapes.get(cards[0].shape)||0)+1);colors.add(cards[0].color);
+   }
+   assert.equal(shapes.size,8);assert.equal(colors.size,6);
+   assert(Math.max(...shapes.values())-Math.min(...shapes.values())<=1);
+   assert(E.project(state,-1).data.board.every(card=>card.hidden&&!card.character&&!card.shape&&!card.color));
+   compositions.add([...pairs.keys()].sort().join(','));
+   colorAssignments.add([...pairs.keys()].filter(key=>key.startsWith('crescent-')).sort().join(','));
+  }
+  assert(compositions.size>32,'new seeds select different face sets');
+  assert(colorAssignments.size>3,'individual shapes receive different colors across games');
+ }
 });

@@ -3,27 +3,32 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { performance } = require('node:perf_hooks');
 const E = require('../core/engine.js');
-for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes']) require(`../packs/${game}/rules.js`);
+const packsRoot=require('node:fs').realpathSync(__dirname+'/../packs');
+const StandardDeck=require(require('node:path').join(packsRoot,'../shared/domain/standard-deck.js'));
+for (const game of ['uno', 'domino', 'durak', 'checkers', 'snakes', 'ludo']) require(`../packs/${game}/rules.js`);
 const GAMES = E.GAMES;
-const create = (game, count = 2, preset = 'classic', seed = 23) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed });
-const act = (s, action) => E.applyAction(s, s.turn, action);
-const actions = s => E.legalActions(s, s.turn);
+const create = (game, count = 2, preset = 'classic', seed = 23, options = {}) => E.createGame(game, { players: Array.from({ length: count }, (_, i) => ({ name: `P${i}`, bot: true })), preset, seed, ...options });
+const unoRules=require('../packs/uno/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
+const act = (s, action) => {if(!s.unitPosition)return E.applyAction(s,s.turn,action);if(!actions(s).some(candidate=>Object.entries(action).every(([key,value])=>candidate[key]===value)))throw Error('ACTION_UNAVAILABLE');const changed=unoRules.reduce(s,s.turn,action),n=changed.position;n.move=(s.move||0)+1;n.winner=n.winners[0]??null;n.players.forEach((player,index)=>player.score=n.data.points[index]);n.events=[...s.events,...changed.events.map((event,index)=>({...event,id:(s.events.at(-1)?.id||0)+index+1,revision:n.move}))];return n;};
+const actions = s => s.unitPosition?unoRules.actions(s,s.turn).map(choice=>choice.command):E.legalActions(s,s.turn);
 const types = s => actions(s).map(a => a.type);
 const has = (s, query) => actions(s).some(a => Object.entries(query).every(([k, v]) => a[k] === v));
 let fixtureId = 0;
 const uno = (color, value) => ({ id: `fixture-${fixtureId++}`, color, value });
+const dominoRules=require('../packs/domino/domain/game.js')({shuffle:E.shuffle,ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js'))});
 const tile = (a, b) => ({ id: `fixture-${fixtureId++}`, a, b });
 const card = (suit, rank) => ({ id: `${suit}${rank}`, suit, rank });
 function unoState(hands, top = uno('red', '5'), drawPile = []) {
-  const s = create('uno', hands.length); s.turn = 0;
+  const s = create('uno', hands.length);Object.assign(s,{turn:0,playerCount:hands.length,winners:[],revision:0,unitPosition:true});
   Object.assign(s.data, { hands, discard: [top], drawPile, color: top.color, drawn: null, noDraw: false, stalled: 0 }); return s;
 }
 function dominoState(hands, chain, stock = []) {
-  const s = create('domino', hands.length); s.turn = 0; s.data = { hands, chain, stock, passes: 0 }; return s;
+  // Minimal local-rule fixtures deliberately omit the rest of the double-six deck.
+  return {playerCount:hands.length,turn:0,status:'playing',winners:[],data:{ending:require(require('node:path').join(packsRoot,'../shared/domain/end-policy.js')).create(hands.length,0),hands,chain,stock,passes:0}};
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; return s;
+  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};
@@ -42,7 +47,7 @@ function cardInventory(s) {
 }
 
 test('registry exposes five independent packs and isolates metadata', () => {
-  assert.deepEqual(GAMES.map(g => g.id), ['uno', 'domino', 'durak', 'checkers', 'snakes']);
+  assert.deepEqual(GAMES.map(g => g.id), ['uno', 'domino', 'durak', 'checkers', 'snakes', 'ludo']);
   assert.throws(() => E.register(E.get('uno')), /зарегистрирован/);
   assert.throws(() => create('missing'));
   assert.throws(() => create('uno', 1)); assert.equal(create('durak', 3).players.length,3); assert.throws(() => create('uno', 2, 'missing'));
@@ -91,6 +96,8 @@ test('projection protects hands, stock, RNG, drawn identity and private event pa
     assert.equal(p.events.at(-1).text, 'secret card');
     const pile = game === 'domino' ? 'stock' : 'drawPile'; assert(spectator.data[pile].every(c => c.hidden));
     s.openHands = true; assert.deepEqual(E.project(s, 0).data.hands, s.data.hands);
+    for (const viewer of [-1, 99, 0.5, null, undefined, '0']) assert.deepEqual(E.project(s, viewer).data.hands, s.data.hands);
+    s.openHands = false;
     for (const viewer of [-1, 99, 0.5, null, undefined, '0']) assert(E.project(s, viewer).data.hands.flat().every(c => c.hidden));
     p.players[0].name = 'changed'; assert.equal(s.players[0].name, 'P0');
   }
@@ -170,21 +177,21 @@ test('UNO reverse/skip directions, action scores and stock exhaustion', () => {
 test('domino orients both endpoints and enforces draw-until-playable', () => {
   const left = tile(3, 6), right = tile(1, 5);
   let s = dominoState([[left,tile(0,0)],[right,tile(2,2)]],[tile(3,1)]);
-  s = act(s,{type:'play',card:left.id,side:'left'}); assert.deepEqual([s.data.chain[0].a,s.data.chain[0].b],[6,3]);
-  s = act(s,{type:'play',card:right.id,side:'right'}); assert.deepEqual([s.data.chain.at(-1).a,s.data.chain.at(-1).b],[1,5]);
+  s = dominoRules.reduce(s,s.turn,{type:'play',card:left.id,side:'left'}).position; assert.deepEqual([s.data.chain[0].a,s.data.chain[0].b],[6,3]);
+  s = dominoRules.reduce(s,s.turn,{type:'play',card:right.id,side:'right'}).position; assert.deepEqual([s.data.chain.at(-1).a,s.data.chain.at(-1).b],[1,5]);
   const fitting=tile(1,4), blocked=tile(2,2);
   s=dominoState([[tile(6,6)],[tile(3,3)]],[tile(1,1)],[fitting,blocked]);
-  assert.deepEqual(types(s),['draw']); s=act(s,{type:'draw'}); assert.equal(s.turn,0); assert.deepEqual(types(s),['draw']);
-  s=act(s,{type:'draw'}); assert(has(s,{card:fitting.id})); assert(!types(s).includes('draw')); assert(!types(s).includes('pass'));
+  assert.deepEqual(dominoRules.actions(s,s.turn).map(choice=>choice.command.type),['draw']); s=dominoRules.reduce(s,s.turn,{type:'draw'}).position; assert.equal(s.turn,0); assert.deepEqual(dominoRules.actions(s,s.turn).map(choice=>choice.command.type),['draw']);
+  s=dominoRules.reduce(s,s.turn,{type:'draw'}).position; assert(dominoRules.actions(s,s.turn).some(choice=>choice.command.card===fitting.id)); assert(!dominoRules.actions(s,s.turn).map(choice=>choice.command.type).includes('draw')); assert(!dominoRules.actions(s,s.turn).map(choice=>choice.command.type).includes('pass'));
 });
 
 test('domino blocked minimum, tie, empty-hand victory and score are exact', () => {
   for (const [other, winner, score] of [[tile(2,2),0,4],[tile(1,1),null,0]]) {
-    let s=dominoState([[tile(0,2)],[other]],[tile(6,6)]); s=act(s,{type:'pass'}); s=act(s,{type:'pass'});
-    assert.equal(s.status,'finished'); assert.equal(s.winner,winner); assert.equal(s.players[0].score,score);
+    let s=dominoState([[tile(0,2)],[other]],[tile(6,6)]); s=dominoRules.reduce(s,s.turn,{type:'pass'}).position; s=dominoRules.reduce(s,s.turn,{type:'pass'}).position;
+    assert.equal(s.status,'finished'); assert.equal(s.winners[0]??null,winner); assert.equal(dominoRules.score(s)[0],score);
   }
   const last=tile(1,2); let s=dominoState([[last],[tile(3,5)]],[tile(1,1)],[tile(6,6)]);
-  s=act(s,{type:'play',card:last.id,side:'right'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,8);
+  s=dominoRules.reduce(s,s.turn,{type:'play',card:last.id,side:'right'}).position; assert.equal(s.winners[0],0); assert.equal(dominoRules.score(s)[0],8);
 });
 
 test('durak beats by suit/rank or trump, attacker may add defense rank', () => {
@@ -197,15 +204,15 @@ test('durak beats by suit/rank or trump, attacker may add defense rank', () => {
 
 test('durak take permits throwing only matching ranks within start hand limit', () => {
   let s=durakState([[card('♠',7),card('♦',7),card('♣',7),card('♣',9)],[card('♠',6),card('♦',6)]]);
-  s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); assert.equal(s.turn,0); assert(!has(s,{card:'♣9'}));
+  const discarded=s.data.discard.length;s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); assert.equal(s.turn,0); assert(!has(s,{card:'♣9'}));
   s=act(s,{type:'attack',card:'♦7'}); assert.deepEqual(types(s),['done']); s=act(s,{type:'done'});
-  assert.equal(s.data.hands[1].length,4); assert.equal(s.data.discard.length,0); assert.equal(s.turn,0); assert.equal(s.data.table.length,0); assert.equal(s.data.attackLimit,4);
+  assert.equal(s.data.hands[1].length,4); assert.equal(s.data.discard.length,discarded); assert.equal(s.turn,0); assert.equal(s.data.table.length,0); assert.equal(s.data.attackLimit,4);
 });
 
 test('durak draws attacker first, trump last, and resolves last cards at end of bout', () => {
-  let s=durakState([[card('♠',7)],[card('♠',8)]],[card('♥',6),card('♦',10)]);
+  let s=durakState([[card('♠',7)],[card('♠',8)]],[card('♥',6),card('♦',10)]);const discarded=s.data.discard.length;
   s=act(s,{type:'attack',card:'♠7'}); assert.equal(s.status,'playing'); s=act(s,{type:'defend',card:'♠8',target:0}); assert.equal(s.status,'playing');
-  s=act(s,{type:'done'}); assert.deepEqual(s.data.hands[0].map(c=>c.id),['♦10','♥6']); assert.equal(s.data.discard.length,2); assert.equal(s.winner,1);
+  s=act(s,{type:'done'}); assert.deepEqual(s.data.hands[0].map(c=>c.id),['♦10','♥6']); assert.equal(s.data.discard.length,discarded+2); assert.equal(s.winner,1);
   s=durakState([[card('♠',7)],[card('♠',8)]]); s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'defend',card:'♠8',target:0}); s=act(s,{type:'done'});
   assert.equal(s.status,'finished'); assert.equal(s.winner,null);
   s=durakState([[card('♠',7)],[card('♠',6)]]); s=act(s,{type:'attack',card:'♠7'}); s=act(s,{type:'take'}); s=act(s,{type:'done'}); assert.equal(s.winner,0);
@@ -242,16 +249,17 @@ test('checkers wins by blocked opponent and draws by repetition or quiet-king li
   s=checkersState([[56,0,true],[5,1,true]]);
   const cycle=[[56,49],[5,12],[49,56],[12,5]];
   for(let i=0;i<9 && s.status==='playing';i++) {const [from,to]=cycle[i%4]; s=act(s,{type:'move',from,to});}
-  assert.equal(s.status,'finished'); assert.equal(s.winner,null); assert.match(s.events.at(-1).text,/трижды/);
+  assert.equal(s.status,'finished'); assert.equal(s.winner,null); assert.equal(s.events.at(-1).type,'checkers.repeated');assert.match(E.project(s,0).events.at(-1).text,/трижды/);
   s=checkersState([[56,0,true],[5,1,true]]); s.data.quiet=29; s=act(s,{type:'move',from:56,to:49}); assert.equal(s.status,'finished'); assert.equal(s.winner,null);
 });
 
 test('snakes exact finish, reflected overshoot, one link per turn and no extra six', () => {
-  for(const preset of ['classic','quick']) {
-    let s=create('snakes',2,preset); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
-    s=create('snakes',2,preset); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
-    s=create('snakes',2,preset); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
-    s=create('snakes',2,preset); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
+  for(const boardSize of [64,100]) {
+    const preset='classic';
+    let s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
+    s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
+    s=create('snakes',2,preset,23,{boardSize}); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
+    s=create('snakes',2,preset,23,{boardSize}); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
   }
 });
 
@@ -266,9 +274,10 @@ test('import validation rejects malformed common state and each pack data', () =
   for(const [game,change] of bads) {const s=create(game);change(s);assert.throws(()=>E.validateState(s),game);}
 });
 
-test('264 seeded complete games cover every player count/preset and bot/random choices', t => {
+test('seeded complete games cover every supported player count/preset and bot/random choices', t => {
   let games=0, moves=0, maxMoves=0; const timings=[];
   for(const game of GAMES) for(let count=game.min;count<=game.max;count++) for(const preset of game.presets) for(let seed=0;seed<12;seed++) {
+    if(game.id==='ludo'&&preset.id==='teams'&&count!==4)continue;
     let s=create(game.id,count,preset.id,seed), choice={rng:seed+9123};
     const expected=cardInventory(s)?.map(c=>c.id).sort(), initialPieces=s.data.board?.filter(Boolean).length;
     while(s.status==='playing' && s.move<3000) {
@@ -327,9 +336,9 @@ test('sound metadata is optional, validated and respects private event visibilit
 test('standalone audio library registers scoped pack overrides without a browser', async () => {
   const Audio=require('../core/audio.js');let contexts=0;
   const audio=new Audio({contextFactory:()=>{contexts++;return null;}});
-  assert.equal(audio.catalog().length,23);assert.equal(audio.catalog().find(c=>c.id==='turn').label,'Ваш ход');assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
+  assert.equal(audio.catalog().length,26);assert.equal(audio.catalog().find(c=>c.id==='turn').label,'Ваш ход');assert.equal(await audio.unlock(),false);assert.equal(contexts,0);
   audio.registerPack('custom_pack',{move:{label:'Own move',notes:[{frequency:500,duration:.1}]},'custom.call':{label:'Call',notes:[{frequency:700,duration:.1}]}});
-  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,24);
+  assert.equal(audio.catalog('custom_pack').find(c=>c.id==='move').label,'Own move');assert.equal(audio.catalog().find(c=>c.id==='move').label,'Ход');assert.equal(audio.catalog('custom_pack').length,27);
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);
@@ -340,7 +349,8 @@ test('standalone audio library registers scoped pack overrides without a browser
 // separate core so version switching cannot affect the built-in game tests.
 function packEnvironment(storage, viewsOverride) {
   const vm = require('node:vm'), fs = require('node:fs');
-  const sandbox = {module:{exports:{}}};
+  const sandbox = {module:{exports:{}},PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../core/random.js'), 'utf8'), sandbox);
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/engine.js'), 'utf8'), sandbox);
   const core = sandbox.module.exports, views = viewsOverride || require('../core/ui.js').createRegistry(), catalog = {};
   let raw = null;
@@ -349,8 +359,8 @@ function packEnvironment(storage, viewsOverride) {
   return {core, views, catalog, store, manager};
 }
 function installFixture(version = '0.1.0', increment = 1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:1,viewApi:2,stateVersion:1},files:{
-    'rules.js':`(function(root){const E=root.TabletopCore;E.register({id:'install-fixture',name:'Fixture',min:2,max:2,presets:[{id:'standard',label:'Standard'}],create(s){s.data={count:0};},legal(){return[{type:'advance',label:'Advance'}];},apply(s,actor){s.data.count+=${increment};s.turn=1-actor;E.event(s,'Moved',actor);},validateState(s){E.assertState(Number.isInteger(s.data.count)&&s.data.count>=0&&s.data.count%${increment}===0,'fixture');}});})(globalThis);`,
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:3,viewApi:2,stateVersion:1},files:{
+    'rules.js':require('./pack-fixture.cjs').rules({id:'install-fixture',version,key:'count',step:increment,preset:'standard',action:'advance'}),
     'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:2,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
     'styles.css':'.fixture { background-image: url("assets/icon.svg"); }',
     'assets/icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1"/></svg>'
@@ -362,7 +372,7 @@ test('offline packs validate metadata, entries and assets before registry mutati
   const parsed = manager.parse(source);
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null);assert(Object.isFrozen(parsed.files));
   const bad = modify => {const b=JSON.parse(JSON.stringify(source));modify(b);return b;};
-  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=3),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
+  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=4),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
   for(const b of [bad(b=>b.files['view.js']='throw Error("broken view")'),bad(b=>b.files['rules.js']='('),bad(b=>b.files['styles.css']='.x{background:url(https://example.invalid/x.png)}'),bad(b=>b.files['styles.css']='@import "https://example.invalid/x.css";')]) assert.throws(()=>manager.prepare(b));
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null,'failed prepare cannot persist or activate');
   assert.throws(()=>manager.install(source),/подготовьте/);
@@ -398,7 +408,7 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   const mixed=oldSession.export();mixed.states[1].packVersion='0.2.0';assert.throws(()=>Session.restore(core,mixed),/Сохранение/);
   const missing=oldSession.export();missing.packVersion=missing.options.packVersion='9.0.0';assert.throws(()=>Session.restore(core,missing),e=>e.code==='PACK_VERSION_MISSING'&&e.packVersion==='9.0.0');
   const legacy=oldSession.export();delete legacy.packVersion;delete legacy.options.packVersion;legacy.states.forEach(s=>{delete s.packVersion;delete s.packStateVersion;});
-  assert.equal(Session.packVersionOf(legacy),'0.1.0');assert.equal(Session.restore(core,legacy).packVersion,'0.1.0');
+  assert.equal(Session.packVersionOf(legacy),undefined);assert.throws(()=>Session.restore(core,legacy),/Сохранение|формат/);
 });
 
 test('pack quota failure and failed view activation preserve installed registries and persisted bytes', () => {
@@ -444,3 +454,31 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   }}
   assert.throws(()=>E.createGame('uno',{firstPlayerMode:'assigned',firstPlayer:42}));
 });
+
+ test('forced skips identify the affected player and choose one sound per committed action',()=>{
+  let before,after;
+  for(let seed=1;seed<40;seed++){
+    before=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],preset:'classic',seed,startPawn:'off'});
+    after=E.applyAction(before,0,{type:'roll'});if(after.data.dice[0]!==6)break;
+  }
+  assert.notEqual(after.data.dice[0],6);assert.equal(after.turn,1);
+  assert.deepEqual(E.project(after,-1).events.at(-1).feedback,{kind:'skip',player:0});
+  assert.deepEqual(E.soundCues(after,-1,before.events.at(-1).id).map(({id,target})=>({id,target})),[{id:'attack.skip',target:0}]);
+  const domino=create('domino'),tiles=[...domino.data.hands.flat(),...domino.data.stock],end=tiles.find(t=>t.a===6&&t.b===6),own=tiles.find(t=>t.a===0&&t.b===0);
+  domino.data.chain=[end];domino.data.hands=[[own],tiles.filter(t=>t!==own&&t!==end)];domino.data.stock=[];domino.turn=0;
+  assert(E.legalActions(domino,0).some(a=>a.type==='pass'));
+  const passed=E.applyAction(domino,0,{type:'pass'});
+  assert.deepEqual(E.project(passed,-1).events.at(-1).feedback,{kind:'skip',player:0});
+  assert.deepEqual(E.soundCues(passed,-1,domino.events.at(-1).id).map(c=>c.id),['attack.skip']);
+  const special=uno('red','+2'),s=unoState([[special,uno('green','3')],[uno('blue','1')]],uno('red','5'),[uno('blue','2'),uno('green','2')]);
+  const n=act(s,{type:'play',card:special.id});
+  assert.equal(E.soundCues(n,1,s.events.at(-1).id).length,1,'draw, attack and automatic calls never form a sound chorus');
+  assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.draw-skipped'),n.players).feedback,{kind:'skip',player:1});
+ });
+ test('UNO reverse is a skip with two remaining players in a larger roster',()=>{
+  const reverse=uno('red','reverse'),s=unoState([[reverse,uno('blue','3')],[uno('blue','1')],[]]);
+  s.data.ending.groups=[[2]];
+  const n=act(s,{type:'play',card:reverse.id});
+  assert.equal(n.turn,0);assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.played'),n.players).feedback,{kind:'skip',player:1});
+  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip']);
+ });

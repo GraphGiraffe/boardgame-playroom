@@ -1,0 +1,11 @@
+{
+  "common.close": "Закрыть",
+  "common.cancel": "Отмена",
+  "common.save": "Сохранить",
+  "common.confirm": "Подтвердить",
+  "common.error": "Не удалось выполнить действие.",
+  "sessions.draw": "Ничья",
+  "sessions.winner": "Победитель: {player}",
+  "sessions.not-found": "Партия не найдена. Возможно, её удалили в другой вкладке.",
+  "sessions.removed": "Эта партия уже удалена или открыта в другой версии страницы."
+}

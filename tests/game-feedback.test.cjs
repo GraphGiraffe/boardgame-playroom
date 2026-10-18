@@ -15,3 +15,19 @@ test('feedback plays only newly committed projected sound/event IDs and keeps no
   for(const f of [...timers.values()])f();assert.equal(feedback.notice,null);
   feedback.destroy();
 });
+test('feedback queues each sound with its speech and preserves speed-specific reading time',async()=>{
+ const audio=[],timers=[];const f=new Feedback({mount:()=>null,play:ids=>audio.push(...ids),clock:{setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout(){}}});
+ f.accept([{id:1,speech:{speaker:0,text:'Туз'}},{id:2,speech:{speaker:1,icon:'cross'}}],[{eventId:1,id:'ask'},{eventId:2,id:'absent'}],'gofish',{mode:'fast'});
+ assert.deepEqual(audio,['ask']);assert.equal(timers[0].ms,900);
+ timers[0].fn();await Promise.resolve();await Promise.resolve();assert.deepEqual(audio,['ask','absent']);assert.equal(timers[1].ms,900);
+ f.clear();assert.equal(f.active,null);assert.equal(f.queue.length,0);
+});
+test('dice results have readable hold times while card reveal timing stays unchanged',async()=>{
+ for(const [mode,duration] of Object.entries({instant:500,fast:800,normal:1100,slow:1500})){
+  const timers=[],f=new Feedback({mount:()=>null,clock:{setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout(){}}});
+  f.accept([{id:1,reveal:{kind:'dice',dice:[{value:6}]}}],[],'any',{mode});
+  await Promise.resolve();assert.equal(timers[0].ms,duration);f.clear();
+  f.accept([{id:2,reveal:{kind:'card'}}],[],'any',{mode});await Promise.resolve();
+  assert.equal(timers.at(-1).ms,Feedback.times[mode].reveal);f.destroy();
+ }
+});

@@ -4,22 +4,21 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const Engine=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js');
 require('../packs/uno/rules.js');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
-const definition={manifest:JSON.parse(read('packs/uno/manifest.json')),view:read('packs/uno/view.js'),styles:read('packs/uno/styles.css'),rules:Engine.get('uno').rules,sounds:{'uno.call':{label:'UNO!',notes:[{at:0,duration:.2,frequency:440}]}}};
+const compiledPacks={};require('node:vm').runInNewContext(read('installed-packs.js'),compiledPacks);
+const unoBundle=compiledPacks.PlayroomInstalledPacks.find(bundle=>bundle.manifest.id==='uno');
+const definition={manifest:unoBundle.manifest,view:unoBundle.files['view.js'],styles:unoBundle.files['styles.css'],rules:Engine.get('uno').rules,sounds:{'uno.call':{label:'UNO!',notes:[{at:0,duration:.2,frequency:440}]}}};
 const seed=()=>new Session(Engine,'uno',{seed:23,mode:'pass',preset:'quick',unoMode:'manual',players:[{name:'Иван'},{name:'Джон'}]});
 async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-  for(const name of ['app/styles.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/ui.js','core/player-target.js','core/motion.js','core/game-flow.js','core/hand-overflow.js','app/views.js','app/game-screen.js','app/game-feedback.js','core/input.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','platform/web/action-reveal.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);try{
     const s=seed(),authority=new Authority(s),owner=authority.connect(0);
-    // This browser smoke also runs with the frozen UNO 0.2.0. Supply the
-    // optional action label as projected fixture data: the shared client must
-    // behave identically without requiring the enhanced pack at runtime.
     const snapshot=structuredClone(owner.snapshot());
     snapshot.actions=snapshot.actions.map(action=>action.type==='accuse-uno'?{...action,targetPrompt:'UNO!'}:action);
     await page.evaluate(({snapshot,definition})=>{
@@ -60,10 +59,6 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     const action=initial.actions.find(a=>a.type==='declare-uno');
     const receipt=a.dispatch(P.command(initial,action,'browser-uno-1'));
     assert.equal(receipt.ok,true);
-    // The legacy frozen pack emitted this reaction before optional visual
-    // notices were introduced. Exercise the *platform* projected-notice
-    // contract with explicit authorized fixture metadata, then keep all
-    // exact sound, duplicate and visibility assertions below.
     const projected=structuredClone(receipt.snapshot);
     const announced=projected.events.at(-1);
     assert.equal(announced.kind,'false-uno');
@@ -76,7 +71,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
     const finish=structuredClone(projected);
-    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.players[1].score=148;finish.state.move=finish.revision;
+    finish.revision++;finish.state.status='finished';finish.state.winner=1;finish.state.winners=[1];finish.state.players[1].score=148;finish.state.scene.players.find(player=>(player.player??player.id)===1).metrics.find(metric=>metric.kind==='points').value=148;finish.state.move=finish.revision;
     finish.events.push({id:3,kind:'finish',player:1,text:'Джон побеждает'});finish.state.events=finish.events;
     finish.cues=[{id:'defeat',eventId:3}];
     await page.evaluate(next=>qaClient.emit(next),finish);
@@ -162,19 +157,20 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
     await page.evaluate(snapshots=>{qaClient.emit(snapshots[2]);qaClient.emit(snapshots[3]);},snapshots);
     for(let revision=1;revision<=4;revision++){
       await page.waitForFunction(n=>qaFrames.length===n,revision);assert.equal(await page.locator('.network-game').getAttribute('data-revision'),String(revision));
-      assert.equal(await page.locator('.scene [data-action]:enabled').count(),0,'No action while presentation is behind');
+      assert.equal(await page.locator('.scene [data-action]:enabled').evaluateAll(nodes=>nodes.filter(node=>!['declare-uno','accuse-uno'].includes(JSON.parse(node.dataset.action).type)).length),0,'Only independent reactions remain usable during presentation');
+      if(revision===1){await page.locator('.uno-call').click();assert.equal(await page.evaluate(()=>qaSubmitted.at(-1).type),'declare-uno');assert.equal(await page.evaluate(()=>qaFrames.length),1,'Reaction does not cancel the current animation');}
       assert.match(await page.locator('.status-event').innerText(),new RegExp(history[revision].events.at(-1).text));
       await page.evaluate(()=>qaReleases.shift()());
     }
     await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
     assert.deepEqual(await page.evaluate(()=>qaFrames.map(f=>f.revision)),[1,2,3,4]);assert.deepEqual(await page.evaluate(()=>qaHistory),[1,2]);
     assert.equal(await page.evaluate(()=>qaCancel),0,'New packets do not cancel an active animation');
-    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify']);
+    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass']);
     await page.evaluate(next=>qaClient.emit(next),snapshots[3]);assert.equal(await page.evaluate(()=>qaFrames.length),4);
     await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history');
     assert.equal(await page.locator('.status-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
     await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>qaFrames.length===5);
-    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','notify','draw','notify'],'Explicit history stays silent');
+    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass'],'Explicit history stays silent');
     await page.locator('#replay-range').evaluate(el=>{el.value='3';el.dispatchEvent(new Event('input',{bubbles:true}));});
     await page.waitForFunction(()=>document.querySelector('#replay-range').value==='3'&&document.querySelector('.scene').getAttribute('aria-busy')==='false');
     assert.equal(await page.evaluate(()=>qaFrames.length),5,'Manual history scrub is immediate, without a new flight');
@@ -229,13 +225,17 @@ test('external modal closing restores projected legal actions without another ne
 test('Ludo selects a pawn without committing, keeps it after a destination, and consumes every die',{timeout:40000},async()=>{
   require('../packs/ludo/rules.js');
   const shared=path.join(path.dirname(fs.realpathSync(path.join(root,'packs'))),'shared');
-  const definition={manifest:JSON.parse(read('packs/ludo/manifest.json')),view:fs.readFileSync(path.join(shared,'view-kit.js'),'utf8')+'\n'+read('packs/ludo/view.js'),styles:fs.readFileSync(path.join(shared,'view-kit.css'),'utf8')+read('packs/ludo/styles.css'),rules:Engine.get('ludo').rules,assets:Object.fromEntries(['die','round-token'].map(name=>[`assets/shared/${name}.svg`,'data:image/svg+xml;base64,'+fs.readFileSync(path.join(shared,`assets/${name}.svg`)).toString('base64')]))};
+  const installed={};require('node:vm').runInNewContext(read('installed-packs.js'),installed);
+  const bundle=installed.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='ludo');
+  const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('ludo').rules,
+    assets:Object.fromEntries(['die','round-token'].map(name=>['assets/shared/'+name+'.svg','data:image/svg+xml;base64,'+Buffer.from(bundle.files['assets/shared/'+name+'.svg']).toString('base64')]))};
+
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await fixture(browser);
   try{
     const session=new Session(Engine,'ludo',{seed:17,diceCount:3,sixReroll:'off',players:[{name:'Аня'},{name:'Борис'}]}),authority=new Authority(session),client=authority.connect(0),base=client.snapshot();
-    let state=Engine.clone(base.state),revision=0;
-    const snapshot=()=>({...base,revision,state:Engine.project(state,0),events:state.events,actions:Engine.legalActions(state,0)});
+    let state=Engine.clone(session.current),revision=0;
+    const snapshot=()=>{const projected=Engine.project(state,0);return {...base,revision,state:projected,events:projected.events,actions:Engine.legalActions(state,0)};};
     await page.exposeFunction('ludoCommit',a=>{state=Engine.applyAction(state,0,a);revision++;return snapshot();});
     await page.evaluate(({definition,snapshot})=>{
       window.qaSent=[];const listeners=new Set();
@@ -260,7 +260,7 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     assert.equal(await page.evaluate(()=>qaSent.length),0,'switching pawns never commits');
     assert.equal(await page.locator('.ludo-target').count(),2,'duplicate dice share one destination');
     assert.equal(await page.locator('.target-capture').count(),1);
-    assert.equal(await page.locator('.ludo-route-dot').count(),3);
+    assert.equal(await page.locator('.board-route-dot').count(),3);
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-targets-390.png')});}
     await page.locator('.target-move').tap();
     await page.waitForFunction(()=>document.querySelectorAll('.shared-die.used').length===1&&document.querySelector('.ludo-pawn.is-selected'));
@@ -278,7 +278,8 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.evaluate(({definition,snapshot})=>{qaClient.snapshot=snapshot;qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();},{definition,snapshot:snapshot()});
     await pawn(0).tap();await page.locator('.ludo-pawn[data-entity="token-1-0"][data-action]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[1][0]===-1);
-    assert.equal(await page.locator('.ludo-pawn[data-entity="token-0-1"][data-action]').count(),1,'base pawn exits in one tap');
+    // The committed snapshot arrives before presentation unlocks the next action.
+    await page.locator('.ludo-pawn[data-entity="token-0-1"][data-action]').waitFor({state:'visible'});
     await page.locator('.ludo-pawn[data-entity="token-0-1"]').tap();
     await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][1]===0&&document.querySelector('[data-view-value="0:2"]'));
     await pawn(2).tap();assert.equal(await page.locator('.target-home[data-motion-anchor="finish-0"]').count(),1);
@@ -286,4 +287,88 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.locator('.target-home').tap();await page.waitForFunction(()=>qaClient.snapshot.state.data.pawns[0][2]===57);
     await page.evaluate(()=>qaGame.destroy());
   }finally{await page.close();await browser.close();}
+});
+
+ test('skip cue shakes only the affected card, respects reduced motion, expires and is not replayed',{timeout:20000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const page=await fixture(browser);try{
+    await page.evaluate(()=>{
+      document.querySelector('#app').innerHTML='<div class="table-shell"><article class="player-panel" data-player-index="0">A</article><article class="player-panel" data-player-index="1">B</article></div>';
+      window.skipSounds=[];window.skipEvents=[{id:1,feedback:{kind:'skip',player:1}}];
+      window.skipFeedback=new PlayroomGameFeedback({play:ids=>skipSounds.push(ids)});skipFeedback.start([]);
+      skipFeedback.accept(skipEvents,[{eventId:1,id:'attack.skip'}],'uno',{duration:1});
+    });
+    assert.equal(await page.locator('.is-turn-skipped').getAttribute('data-player-index'),'1');
+    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'player-turn-skipped');
+    assert.equal(await page.locator('.game-notice,.game-speech').count(),0,'skip has no layout-shifting message');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.notEqual(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+    await page.waitForFunction(()=>!document.querySelector('.is-turn-skipped'));
+    await page.evaluate(()=>skipFeedback.accept(skipEvents,[{eventId:1,id:'attack.skip'}],'uno'));
+    assert.deepEqual(await page.evaluate(()=>skipSounds),[['attack.skip']]);
+    assert.equal(await page.locator('.is-turn-skipped').count(),0);
+  }finally{await page.close();await browser.close();}
+ });
+
+ test('public card reveal pauses, flies to its destination and dice remain duplicated',{timeout:20000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+  const page=await fixture(browser);try{
+    await page.evaluate(definition=>{
+      PlayroomPackLoader.execute(definition.view,{PlayroomMessages,PlayroomViews,PlayroomComponents:globalThis.PlayroomComponents,TabletopUI,PlayroomCatalog:{uno:definition.manifest},PlayroomPack:{id:'uno',version:definition.manifest.version,asset:path=>definition.assets?.[path]}});
+      const style=document.createElement('style');style.textContent=definition.styles;document.head.append(style);
+      window.reveal={kind:'card',card:{id:'u1',color:'red',value:'7'},entity:'card-u1'};
+      document.querySelector('#app').innerHTML='<div class="table-shell"><div class="scene uno-scene" style="height:400px">'+PlayroomViews.reveal('uno',reveal)+'</div></div>';
+      window.largeFeedback=new PlayroomGameFeedback();largeFeedback.start([]);largeFeedback.accept([{id:1,reveal}],[],'uno',{duration:1});
+    },definition);
+    assert.equal(await page.locator('.action-reveal .uno-card').count(),1);
+    assert(await page.locator('.action-reveal .uno-card').evaluate(el=>el.getBoundingClientRect().width>120));
+    assert.equal(await page.locator('.scene [data-reveal-active]').count(),1);
+    assert.equal(await page.locator('.action-reveal [data-entity]').count(),0,'enlarged art cannot become a second playable card');
+    assert.equal(await page.locator('.action-reveal [data-action]').count(),0);
+    await page.evaluate(()=>PlayroomMotion.play({actor:0,viewer:0,action:{type:'play',card:'u1'},entities:new Map(),origin:{x:10,y:600,width:60,height:90},hands:new Map()},{duration:200}));
+    assert.equal(await page.locator('.playroom-motion-piece').count(),0,'ordinary motion does not duplicate the enlarged card flight');
+    assert.equal(await page.evaluate(()=>largeFeedback.active!==null),true);
+    await page.waitForFunction(()=>document.querySelector('.action-reveal-art')?.getAnimations().length>0);
+    await page.waitForFunction(()=>!document.querySelector('.action-reveal'));
+    assert.equal(await page.locator('[data-reveal-active]').count(),0);
+    assert.notEqual(await page.locator('.scene .uno-card').evaluate(el=>getComputedStyle(el).visibility),'hidden');
+    await page.evaluate(()=>{
+      largeFeedback.accept([{id:2,reveal:{kind:'dice',title:'Пара',dice:[{value:6},{value:6},{value:2,active:false},{value:3,active:false},{value:4,active:false}]}}],[],'yatzy',{duration:1});
+    });
+    assert.equal(await page.locator('.action-reveal-die').count(),5);assert.equal(await page.locator('.action-reveal-die.is-unused').count(),3);
+    assert.equal(await page.locator('[data-reveal-active]').count(),0,'dice are copies, no source is hidden');
+    assert.equal(await page.locator('.action-reveal-title').textContent(),'Пара');
+    assert(await page.locator('.action-reveal').evaluate(el=>el.scrollWidth<=innerWidth));
+    await page.evaluate(()=>largeFeedback.clear());assert.equal(await page.locator('.action-reveal').count(),0);
+    await page.evaluate(()=>largeFeedback.accept([{id:3,reveal}],[],'uno',{silent:true}));
+    assert.equal(await page.locator('.action-reveal').count(),0,'history/reconnect never creates a new reveal');
+  }finally{await page.close();await browser.close();}
+ });
+
+test('Yatzy confirms category and zero score before player or public Table submission',{timeout:40000},async()=>{
+ require('../packs/yatzy/rules.js');
+ const bundle=compiledPacks.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='yatzy');
+ const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('yatzy').rules,assets:Object.fromEntries(['die'].map(name=>['assets/shared/'+name+'.svg','data:image/svg+xml;base64,'+Buffer.from(bundle.files['assets/shared/'+name+'.svg']).toString('base64')]))};
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const table of [false,true]){
+  const page=await fixture(browser),session=new Session(Engine,'yatzy',{seed:17,firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'Иван'},{name:'Луна'}]});session.act(0,{type:'roll'});
+  const authority=new Authority(session),client=table?authority.connectTable([0,1]):authority.connect(0),initial=client.snapshot(),before=JSON.stringify(session.current);
+  let sequence=0;await page.exposeFunction('scoreCommit',action=>{const receipt=client.dispatch(P.command(client.snapshot(),action,'qa-score-'+(++sequence)));return {receipt,snapshot:client.snapshot()};});
+  await page.evaluate(({initial,definition,table})=>{
+   const listeners=new Set();window.qaSent=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant',quickPlay:true})};
+   window.qaClient={snapshot:initial,pending:null,subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(action){qaSent.push(action);const {receipt,snapshot}=await scoreCommit(action);this.emit(snapshot);return receipt;},emit(snapshot){this.snapshot=snapshot;for(const f of listeners)f(snapshot);},async history(){return this.snapshot;},close(){}};
+   window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:table?'table':'combined'});qaGame.render();
+  },{initial,definition,table});
+  const category=page.locator('.yatzy-score button[data-action]').filter({hasText:/^0$/}).first();
+  for(const cancel of [true,false]){
+   await category.click();await page.locator('.modal [data-command="confirm-action"]').waitFor();assert.match(await page.locator('.modal .lead').textContent(),/0 очков/);assert.equal(await page.evaluate(()=>qaSent.length),0);assert.equal(JSON.stringify(session.current),before);
+   if(cancel)await page.locator('.modal [data-command="close-modal"]').last().click();
+  }
+  // A newer authoritative frame invalidates the pending choice.
+  session.act(0,{type:'hold',index:0});await page.evaluate(next=>qaClient.emit(next),client.snapshot());await page.locator('.modal [data-command="confirm-action"]').click();assert.equal(await page.evaluate(()=>qaSent.length),0);
+  await category.click();const chosen=JSON.parse(await category.getAttribute('data-action'));
+  await page.locator('.modal [data-command="confirm-action"]').click();await page.waitForFunction(()=>qaSent.length===1);assert.equal(session.current.data.scores[0][chosen.key],0);assert.equal(session.current.move,3);
+  await page.evaluate(()=>qaGame.destroy());await page.close();
+ }}finally{await browser.close();}
 });

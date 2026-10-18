@@ -5,6 +5,28 @@ const path=require('node:path');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root=path.resolve(__dirname,'..');
 
+test('Flip backs remain visible inside their clones and draws keep the stock aspect ratio',{timeout:30000},async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage();
+    await page.setContent('<style>*{box-sizing:border-box}.scene{width:390px;height:740px}.slot{position:relative;width:70px;height:100px}.face,.back{display:block;width:100%;height:100%}.back{position:absolute;inset:0;visibility:hidden;transform:rotateY(-90deg)}.back button{width:100%;height:100%}.stock-button{position:absolute;left:100px;top:300px;width:70px;height:100px;padding:0;border:0}.piece-back{display:block;width:100%;height:100%;background:green}.mini-hand{position:absolute;left:20px;top:40px;width:130px;height:44px}</style><div class="scene"><div class="slot" data-motion-effect="flip" data-motion-trigger="flip" data-motion-key="index" data-motion-value="0" data-motion-close="true"><span class="face" data-motion-face><button>Public face</button></span><span class="back" data-motion-back><button>Public back</button></span></div><button class="stock-button" data-motion-stock><span class="piece-back"></span></button><div data-player-index="1"><div class="mini-hand"></div></div></div>');
+    await page.addScriptTag({path:path.join(root,'core/motion.js')});
+    const result=await page.evaluate(async()=>{
+      const flip=PlayroomMotion.play({action:{type:'flip',index:1},entities:new Map(),flips:new Map()},{duration:300,effects:{flip:300,pair:200}});
+      const sides=[...document.querySelectorAll('[data-motion-kind=flip]>div>* button')].map(n=>getComputedStyle(n).visibility);
+      PlayroomMotion.cancel();await flip;document.querySelector('.slot').remove();
+      const shot=PlayroomMotion.capture({actor:1,viewer:0,action:{type:'draw'}}),draw=PlayroomMotion.play(shot,{duration:500,draws:[{player:1,count:1,from:'stock'}]});
+      const piece=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]'),samples=[];
+      for(const fraction of [.05,.5,.95]){for(const a of document.getAnimations()){a.pause();a.currentTime=a.effect.getTiming().duration*fraction;}const r=piece.getBoundingClientRect();samples.push(r.width/r.height);}
+      PlayroomMotion.cancel();await draw;
+      return {sides,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length};
+    });
+    assert.deepEqual(result.sides,['visible','visible']);
+    assert(result.samples.every(ratio=>Math.abs(ratio-result.sourceRatio)<.01),JSON.stringify(result));
+    assert.equal(result.layers,0);
+  }finally{await browser.close();}
+});
+
 test('Motion effects move only public pieces and clean up at completion or cancellation',{timeout:90000},async t=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   async function check(name,run){await t.test(name,async()=>{
@@ -24,6 +46,24 @@ test('Motion effects move only public pieces and clean up at completion or cance
     }finally{await context.close();}
   });}
   try{
+    await check('Arc card pose includes independent rotation without resizing the face',async page=>{
+      const pose=await page.evaluate(()=>{const card=document.querySelector('#source');card.style.rotate='-7deg';card.style.translate='0 4px';const snap=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'play',card:'c1'}});return snap.entities.get('card-c1').pose;});
+      assert(Math.abs(pose.angle+7)<.001);assert(Math.abs(pose.width-66)<.1);assert(Math.abs(pose.height-98)<.1);
+    });
+    await check('Rotated hands preserve the complete frozen SVG back during draw and cancel on resize',async page=>{
+      const result=await page.evaluate(async()=>{
+        const stock=document.querySelector('.stock-button .piece-back');stock.style.display='block';stock.innerHTML='<svg width="100%" height="100%" viewBox="0 0 66 98"><rect width="66" height="98" fill="green"/></svg>';
+        const owner=document.querySelector('[data-player-index="1"]');owner.style.cssText='position:absolute;left:160px;top:20px;width:150px;height:64px;transform:rotate(90deg)';
+        const snapshot=PlayroomMotion.capture({actor:1,viewer:0,action:{type:'draw'}});
+        const flight=PlayroomMotion.play(snapshot,{duration:500,draws:[{player:1,count:1,from:'stock'}]}),clone=document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]'),samples=[];
+        for(const fraction of [.1,.5,.9]){
+          for(const animation of document.getAnimations()){animation.pause();animation.currentTime=animation.effect.getTiming().duration*fraction;}
+          const back=clone.getBoundingClientRect(),svg=clone.querySelector('svg').getBoundingClientRect();samples.push({w:back.width,h:back.height,sw:svg.width,sh:svg.height});
+        }
+        window.dispatchEvent(new Event('resize'));await flight;
+        return {angle:snapshot.hands.get(1).angle,samples,layers:document.querySelectorAll('.playroom-motion-layer').length};
+      });assert.equal(Math.round(result.angle),90);assert(result.samples.every(s=>Math.abs(s.w-s.sw)<1&&Math.abs(s.h-s.sh)<1),JSON.stringify(result));assert.equal(result.layers,0);
+    });
     await check('Own played card visibly travels upward, preserves face styling and restores destination',async page=>{
       const start=await page.evaluate(()=>{
         const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'play',card:'c1'}}),from=snapshot.entities.get('card-c1').rect;
@@ -129,7 +169,7 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const target=document.querySelector('.stock-button');target.dataset.motionEffect='pulse';target.dataset.motionTrigger='ask';
         const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'ask'}});
         window.flight=PlayroomMotion.play(snapshot,{duration:1100});
-        return target.getAnimations()[0]?.effect.getTiming().duration;
+        return (target.firstElementChild||target).getAnimations()[0]?.effect.getTiming().duration;
       });
       assert.equal(duration,1100);await page.evaluate(()=>flight);
     });

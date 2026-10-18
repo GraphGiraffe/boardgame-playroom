@@ -29,7 +29,7 @@ function fixture({counts = [2, 2], turn = 0, pending = null, declared = [], mode
   data.hands = counts.map((count, i) => specs[i].slice(0, count).map(([color, value]) => take(color, value)));
   data.drawPile = [...pool.values()];
   data.color = 'red'; data.direction = 1; data.drawn = null; data.noDraw = false; data.stalled = 0;
-  data.uno = {mode: unoMode, declared: counts.map((_, i) => !!declared[i]), pending};
+  data.uno = {mode:unoMode,declared:counts.map((_,i)=>!!declared[i]),pending,episode:0,calls:[],penalties:[],situations:counts.map((count,i)=>({episode:0,open:unoMode==='manual'&&count===1&&!declared[i],settled:false,called:false}))};
   state.turn = turn;
   Core.validateState(state);
   return saved;
@@ -38,7 +38,7 @@ async function read(page) {
   return page.evaluate(() => TabletopSession.restore(TabletopCore,
     JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
 }
-async function state(page) { return (await read(page)).states.at(-1); }
+async function state(page) { const raw=(await read(page)).states.at(-1);return {...raw,events:Core.project(raw,-1).events}; }
 async function ready(page) {
   await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') === 'false');
 }
@@ -89,11 +89,12 @@ async function accuse(page, target) {
   await button.waitFor({state:'visible'});
   assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
   assert.equal(await token.getAttribute('aria-expanded'),'true');
-  const box=await button.boundingBox(),card=await panel.boundingBox();assert(box.x>=card.x&&box.y>=card.y&&box.x+box.width<=card.x+card.width+1&&box.y+box.height<=card.y+card.height+1,'player action stays inside its card');
+  const box=await button.boundingBox(),viewport=page.viewportSize();assert(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width+1&&box.y+box.height<=viewport.height+1,'player action popover stays within the viewport');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
   assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
   await button.click();
+  await page.locator('[data-command=confirm-action]').click();
   assert.equal(await page.locator('.player-target-menu').count(),0);
   return appearance;
 }
@@ -113,7 +114,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     await context.addInitScript(saved => {
       if (sessionStorage.getItem('uno-social-seeded')) return;
       sessionStorage.setItem('uno-social-seeded', '1'); localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant'}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant',quickPlay:false,autoPass:false}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, saved);
     const page = await context.newPage(), errors = [];
@@ -303,10 +304,10 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       }
     });
 
-    await check('Auto mode keeps automatic UNO and restores legacy sessions without manual controls', async open => {
-      for (const legacy of [false, true]) {
+    await check('Auto mode keeps automatic UNO without manual controls', async open => {
+      for (const preset of ['classic','quick']) {
         const saved = fixture({unoMode: 'auto'});
-        if (legacy) { delete saved.options.unoMode; delete saved.states[0].data.uno; }
+        saved.options.preset=preset;saved.states[0].preset=preset;
         const {page} = await open(saved); await resume(page);
         assert.equal(await page.locator('[data-player-target]').count(), 0);
         assert.equal(await page.locator('.scene [data-action]').evaluateAll(nodes =>
@@ -316,4 +317,13 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       }
     });
   } finally { await browser.close(); await fixtureServer?.close(); }
+});
+
+test('RC12 UNO supports five and six players with private hands and complete bot games',()=>{
+ for(const count of [5,6]){
+  let state=Core.createGame('uno',{players:Array.from({length:count},(_,i)=>({name:'Игрок '+(i+1),bot:true})),seed:17,unoMode:'auto'});
+  assert.equal(state.data.hands.length,count);assert(Core.project(state,0).data.hands.slice(1).flat().every(c=>c.hidden));
+  for(let step=0;state.status==='playing'&&step<3000;step++){state=Core.applyAction(state,state.turn,Core.botAction(state));assert(Core.validateState(state));}
+  assert.equal(state.status,'finished');
+ }
 });

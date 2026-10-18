@@ -1,38 +1,40 @@
-# Архитектура приложения 0.15
+# Архитектура ХОД 0.18
 
-[Индекс](DEVELOPER-INDEX.md) · [сеть](DEVELOPER-MULTIPLAYER.md) · [данные](DEVELOPER-DATA.md)
+Приложение и коллекция — два независимых репозитория. Пак владеет правилами игры, общая оболочка — вводом, сценой, историей, хранением и сетью. Доменные модули работают без браузера; Web — один из адаптеров.
 
-`index.html` подключает общие core-модули, UI приложения и подготовленные паки. Сборщик создаёт автономный HTML и PWA из тех же исходников. Встроенный набор игр — вариант поставки, а не зависимость ядра.
+| Слой / модули | Вход и результат | Граница ответственности |
+|---|---|---|
+| pack/domain | Position + actor + command → Transition | Чистые правила, RNG в состоянии, legal actions, результат |
+| core/model-values, events, model-runtime | Проверенное определение → GameModel | JSON-инварианты, immutable переход, audience projection, timeline |
+| core/model-registration, engine | Definition + presentation + locales + version → registry | Связь переносимой модели с Session; точная версия пака |
+| core/session, history, session-codec | Команды → кадры/архив | История, метаданные игроков; часы через порт |
+| core/command-processor, authority, journal | Запрос + права → durable commit → receipt | Очередь, дедупликация, revision, запись до ACK |
+| pack/presentation + presentation/localization | Разрешённая проекция/событие → SceneModel/MessageRef | Смысловые показатели, подписи, публичные эффекты |
+| application/game-screen-controller, history-controller | client.snapshot/history/send → состояние экрана | Отмена устаревших ответов, view state, навигация истории |
+| application/rooms, host-session-service, client-connection-service | Порты room/client/authority | Жизненный цикл комнаты, подключение и права |
+| application/history-sync-service, recovery-coordinator | Разрешённые кадры/курсоры | Backfill, восстановление, pending-команды |
+| application/library, host-recovery, upgrade-service | Репозиторий/engine/Session | Библиотека, проверка архива, переход API |
+| application/appearance, pwa-update-coordinator | Локальные preferences / состояния окон | Темы и безопасная активация обновления |
+| platform/web | DOM, IndexedDB, Web Locks, pack-loader, identity-store | Реализация платформенных портов |
+| app/game-screen, shared-views, game-feedback | SceneModel → Web UI | Единая геометрия, роли, эффекты и окна |
+| core/ui, input, motion, audio | Разметка компонентов / события ввода | Выбор, drag/swipe/scroll, визуальный отклик |
+| app/app, network-ui, multiplayer, transports/webrtc | UI и WebRTC | Сборка зависимостей и пользовательская навигация |
+| shared/components и asset-packs коллекции | Semantic data + palette/skin → изображение | Канонические повторно используемые компоненты |
 
-| Слой | Ответственность |
-| --- | --- |
-| core/engine.js | Реестр версий, создание состояния, проверка и применение действий, проекции |
-| core/session.js | Текущее состояние, история, подготовка/фиксация перехода, экспорт |
-| core/authority.js | Права viewer, порядок команд, ревизии, квитанции, разрешённая история |
-| core/ui.js, core/input.js | Элементы, счётчики, жесты, выбор источника и цели |
-| app/app.js | Каталог, локальная игра, библиотека, настройки и общие окна |
-| app/game-screen.js, app/shared-views.js | Общая сцена, toolbar, результаты, архивный/сетевой viewer |
-| app/multiplayer.js | RoomService: состав, места, роли, готовность и жизненный цикл комнаты |
-| app/network-ui.js | Browser authority, клиент, сохранения и pairing-сценарии |
-| app/transports/webrtc.js | RTCDataChannel, RPC и доставка снимков |
-| Отдельный пак | Правила, представления, собственные стили/ресурсы и бот |
+```mermaid
+flowchart LR
+  UI[Web UI] --> Client[Application client port]
+  Client --> Authority[Authority / CommandProcessor]
+  Authority --> Model[GameModel / pack domain]
+  Model --> Commit[Storage transaction + receipt]
+  Commit --> Projection[Audience projection]
+  Projection --> Presentation[Pack presentation + localization]
+  Presentation --> Screen[ScreenController / HistoryController]
+  Screen --> UI
+```
 
-## Жизненный цикл
+Локальная игра использует тот же игровой контракт; Hotseat меняет viewer через передачу устройства. Сетевая authority находится в браузере хоста. Комната переживает окончание матча; уход в меню паркует UI, явный выход закрывает участие. Просмотр истории отдельного клиента не останавливает всех остальных.
 
-Локальная Session выполняет правила непосредственно. Hotseat меняет viewer через экран передачи телефона. Сетевая игра использует SessionAuthority у хоста и клиентские разрешённые снимки; отдельный Node host не требуется. Dev-серверы служат проверке и не являются архитектурой production.
+Состояние и действия всегда фильтруются **до** локализации, звука и анимации. Сеть не получает Session.export гостю. DOM, названия участников, тексты, часы и случайность окружения не входят в domain. Публичный actor Стола не меняет viewer=-1.
 
-Room живёт дольше матча: остановка сохраняет Session, состав и настройки комнаты. Переход в главное меню паркует игровой UI, сохраняя соединение. Явный выход из комнаты и остановка матча — разные операции. Просмотр результатов/истории не является глобальной фазой интерфейса всех участников.
-
-NetworkSessionStore сохраняет authority, историю и receipts до ACK; Web Locks защищают от двух владельцев сохранения в одном origin. Клиентская база содержит проекции. После восстановления хоста транспорт устанавливается заново; статический PWA-сайт не заменяет сигнализацию.
-
-## Инварианты
-
-- Полное состояние никогда не используется как сетевой snapshot гостя.
-- Surface задаёт компоновку, viewer — права. Нельзя получить чужую руку переключением layout.
-- Метаданные UI не разрешают действие: authority повторно проверяет actor и legal actions.
-- Окна и сцена имеют независимые слои; анимация игры не пересекает modal root.
-- Пак не размещает toolbar, карточки игроков и общие панели. API описан в [GAME-ELEMENTS-API](GAME-ELEMENTS-API.md).
-
-## Дополнения RC.4
-
-Актуальные контракты каталога, лобби, персональных настроек, scroll-поля, индикаторов, событий и приватности: [RC4-CONTRACTS](RC4-CONTRACTS.md). Новые реализации должны соблюдать эти требования совместно с основным контрактом.
+Канонические shared-компоненты/компилятор находятся в коллекции. Сборка приложения с явным --packs-dir синхронизирует закреплённые копии и digest; автономная сборка проверяет эти digest. Не редактировать generated-копии вручную. Пак не импортирует соседний репозиторий в поставляемом runtime.
