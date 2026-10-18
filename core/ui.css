@@ -114,7 +114,7 @@
 .player-score{display:inline-block;min-width:17px;padding:2px 4px;box-sizing:border-box;border-radius:4px;background:var(--color-counter-face,#fff9e8);color:var(--color-counter-mark,#45633d);box-shadow:0 1px 0 #becaa8;text-align:center;white-space:nowrap;font:800 10px/1.2 system-ui,sans-serif}
 .player-score.is-wins{background:var(--color-counter-wins-face,#253e35);color:var(--color-counter-wins-mark,#fff9e8);box-shadow:0 1px 0 #19352c}
 
-.piece-count.is-hand{display:inline-grid;place-items:center;width:13px;height:18px;min-width:13px;padding:0;border:1px solid var(--color-border-subtle,#d9deca);border-radius:4px;transform:rotate(-8deg);font-size:9px;box-shadow:0 1px 0 #becaa8;margin:-1px 3px}
+.piece-count.is-hand{display:inline-grid;place-items:center;width:13px;height:18px;min-width:13px;padding:0;border:1px solid var(--color-border-subtle,#d9deca);border-radius:4px;transform:rotate(-8deg);font-size:9px;box-shadow:0 1px 0 #becaa8;margin:2px 3px}
 
 .piece-count.is-hand.is-long-count{font-size:7px}
 

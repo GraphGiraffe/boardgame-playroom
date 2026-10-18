@@ -149,7 +149,7 @@ test('RC2 board stays still while marks animate and Pexeso scales into available
   const boxes=await page.evaluate(async()=>{
    const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'place',cell:4}});rcSession.act(0,{type:'place',cell:4});rcRender();
    const motion=PlayroomMotion.play(snapshot,{duration:220}),samples=[];for(let i=0;i<10;i++){await new Promise(requestAnimationFrame);const b=document.querySelector('.ttt-grid').getBoundingClientRect();samples.push([b.x,b.y,b.width,b.height,document.documentElement.scrollWidth]);}await motion;return samples;
-  });for(const box of boxes)for(let i=0;i<4;i++)assert(Math.abs(box[i]-boxes[0][i])<1,'field geometry must stay fixed');
+  });for(const box of boxes)for(let i=0;i<4;i++)assert(Math.abs(box[i]-boxes[0][i])<1,'field geometry must stay fixed '+JSON.stringify({width,height,boxes}));
   assert(boxes.every(b=>b[4]<=width),'no page horizontal overflow');
  }
  await page.setViewportSize({width:1098,height:1238});await scene(page,'pexeso',{deck:'32'});assert(await page.locator('.pexeso-slot').first().evaluate(el=>el.getBoundingClientRect().width>70));await page.screenshot({path:path.join(shots,'dark-pexeso.png')});
@@ -253,7 +253,12 @@ test('RC8 corner seats align hands, keep player geometry equal and preserve a cl
   });assert.equal(geometry.seating,game==='gofish'?'row':'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
   if(geometry.seating==='circle'&&['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
-  if(game==='ludo'&&geometry.seating==='circle'){assert.equal(geometry.copies,1);assert.equal(await page.locator('.seat-group [data-player-index="0"].is-turn').count(),1);assert.equal(await page.locator('.layout-self [data-player-index="0"].is-turn').count(),1);}
+  if(game==='ludo'&&geometry.seating==='circle'){
+   assert.equal(geometry.copies,1);
+   const current=page.locator('.player-panel.is-turn');assert.equal(await current.count(),1);assert(await current.isVisible());
+   assert.equal(await current.getAttribute('data-player-index'),'0');assert.equal(await current.getAttribute('aria-current'),'true');
+   assert.equal(await current.getAttribute('data-turn-primary'),'true');assert.equal(await page.locator('.player-panel[aria-current="true"]').count(),1);
+  }
   if([390,1090].includes(width))await page.screenshot({path:path.join(shots,`rc4-${game}-${width}.png`)});
  }
 }));
@@ -537,10 +542,11 @@ test('RC11 optional card arc persists and follows scrolling without affecting do
 test('RC12 fresh defaults, compact room entry and symmetric landscape status',{timeout:45000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/rc12-ui');fs.mkdirSync(dir,{recursive:true});
  await page.locator('[data-command="settings"]').first().click();
- for(const id of ['setting-sound','setting-auto-pass','setting-quick-play'])assert(await page.locator('#'+id).isChecked(),id);
+ for(const id of ['setting-auto-pass','setting-quick-play'])assert(await page.locator('#'+id).isChecked(),id);
+ assert.equal(await page.locator('#setting-sound').count(),0);
  assert.equal(await page.locator('#setting-last-game').isChecked(),false);
- assert.equal(await page.locator('#setting-volume').inputValue(),'1');
- assert.equal(await page.locator('#setting-speed').inputValue(),'normal');
+ assert.equal(await page.locator('#setting-volume').inputValue(),'3');
+ assert.equal(await page.locator('#setting-speed').inputValue(),'2');
  assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
  await page.screenshot({path:path.join(dir,'defaults.png')});
  await page.setViewportSize({width:320,height:640});
@@ -548,10 +554,11 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
  const edges=await page.locator('.modal').evaluate(m=>['.settings-header-actions','.settings-themes','#setting-player-name','#setting-hand-shape','#setting-last-game'].map(s=>m.querySelector(s).getBoundingClientRect().right));assert(Math.max(...edges)-Math.min(...edges)<=1,JSON.stringify(edges));
  const insets=await page.locator('.modal').evaluate(m=>{const r=m.getBoundingClientRect(),left=m.querySelector('.modal-head>.icon-btn').getBoundingClientRect().left,right=m.querySelector('#setting-hand-shape').getBoundingClientRect().right;return {left:left-r.left,right:r.right-right};});assert(Math.abs(insets.left-insets.right)<=1,JSON.stringify(insets));assert.equal(await page.locator('#setting-hand-shape').locator('..').locator('small').count(),0);
  await page.screenshot({path:path.join(dir,'settings-320.png')});await page.setViewportSize({width:1098,height:1238});
- await page.locator('#setting-sound').uncheck();await page.locator('#setting-quick-play').uncheck();await page.locator('#setting-auto-pass').uncheck();
+ await page.locator('#setting-volume').evaluate(e=>{e.value='0';e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));});await page.locator('#setting-quick-play').uncheck();await page.locator('#setting-auto-pass').uncheck();
  await page.reload();await page.locator('.game-tile').first().waitFor();
  await page.locator('[data-command="settings"]').first().click();
- for(const id of ['setting-sound','setting-auto-pass','setting-quick-play'])assert.equal(await page.locator('#'+id).isChecked(),false,'saved '+id);
+ for(const id of ['setting-auto-pass','setting-quick-play'])assert.equal(await page.locator('#'+id).isChecked(),false,'saved '+id);
+ assert.equal(await page.locator('#setting-volume').inputValue(),'0');
  await page.locator('.modal [data-command="close-modal"]').click();
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768],[1366,768]]){
   await page.setViewportSize({width,height});await page.evaluate(()=>PlayroomAppBridge.showHub());
@@ -855,7 +862,7 @@ test('each committed dice roll animates independently of routes, faces and speed
   const result=await page.evaluate(({mode})=>{
    const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion,reducedMotion:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
    window.rollFeedback=new PlayroomGameFeedback();rollFeedback.start(rcSession.current.events);
-   const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcRender();
+   const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcUI.presentationTurn=actor;rcRender();
    const events=TabletopCore.project(rcSession.current,0).events;
    rollFeedback.accept(events,[],rcSession.game,{mode,snapshot,motion:()=>flow.play(snapshot)});
    const count=document.querySelectorAll('[data-motion-kind="roll"]').length;

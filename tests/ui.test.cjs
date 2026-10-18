@@ -1,4 +1,6 @@
 'use strict';
+
+async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -31,7 +33,7 @@ async function cardTouchPoint(card){await card.scrollIntoViewIfNeeded();return c
 async function exposedClick(page,card){await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);}
 async function clickMove(page,game){
   if(game==='checkers'){await page.locator('.checker-piece.movable').first().click();await page.locator('.checker-cell.destination').first().click();}
-  else if(game==='snakes')await page.locator('.die[data-action]').click();
+  else if(game==='snakes')await page.locator('.die[data-action]').first().click();
   else if(game==='uno')await page.locator('.stock-button[data-action]').click();
   else {const card=page.locator('.hand-track .is-playable').first();await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
 }
@@ -54,7 +56,7 @@ test('Offline pack installation, updates and empty application preserve saved ve
   const add=async expected=>{await page.locator('.qa-counter-scene [data-action]').click();await page.waitForFunction(n=>document.querySelector('.qa-count')?.textContent===String(n),expected);await page.waitForSelector('.scene[aria-busy=false]');};
   try{
     await page.goto(testUrl);
-    await page.evaluate(()=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));});await page.reload();
+    await page.evaluate(()=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,quickPlay:false}));});await page.reload();
     await t.test('All bundled games can be removed into a persistent empty hub',async()=>{
       await openManager();
       await page.locator('[data-pack-remove]').last().click();await page.locator('[data-pack-confirm="1"]').click();
@@ -145,7 +147,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
         }
       }});
     });
-    await context.addInitScript(({savedValue})=>{if(sessionStorage.getItem('qa-seeded'))return;sessionStorage.setItem('qa-seeded','1');localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false}));if(savedValue!==null)localStorage.setItem('playroom.session.v1',typeof savedValue==='string'?savedValue:JSON.stringify(savedValue));},{savedValue});
+    await context.addInitScript(({savedValue})=>{if(sessionStorage.getItem('qa-seeded'))return;sessionStorage.setItem('qa-seeded','1');localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,quickPlay:false}));if(savedValue!==null)localStorage.setItem('playroom.session.v1',typeof savedValue==='string'?savedValue:JSON.stringify(savedValue));},{savedValue});
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
     await page.goto(testUrl);return {page,context,errors};
   }
@@ -190,7 +192,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const {page}=await open('{broken-json');assert.equal(await page.locator('.game-tile').count(),12);assert.match(await page.locator('body').innerText(),/не удалось восстановить/i);await page.locator('[data-start=snakes]').click();await page.locator('[data-command=lobby-start]').click();assert.equal((await saved(page)).game,'snakes');
     });
     await check('Settings persist and fullscreen enters/exits in Chromium',async open=>{
-      const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await page.locator('#setting-speed').selectOption('normal');await page.locator('#setting-sound').check();await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'normal');assert.equal(await page.locator('#setting-sound').isChecked(),true);await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
+      const {page}=await open(null,undefined,{},false,storageUrl);await page.locator('[data-command=settings]').click();await setRange(page,'setting-speed',2);await setRange(page,'setting-volume',2);await page.locator('.modal [data-command=close-modal]').click();await page.reload();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-speed').inputValue(),'2');assert.equal(await page.locator('#setting-volume').inputValue(),'2');await page.locator('.modal [data-command=close-modal]').click();await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),true);await page.locator('[data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>!!document.fullscreenElement),false);
     });
     await check('Sound starts muted; real offline UNO preview, volume and mute survive reload',async open=>{
       const {page}=await open(fixture('uno'),{width:390,height:844},{},true,storageUrl);
@@ -198,13 +200,13 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await move(page),1);
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='play'||c.method==='sequence').length),0,'muted actions never enter playback');
       await page.locator('.table-tools [data-command=settings]').click();
-      assert.equal(await page.locator('#setting-sound').isChecked(),false);
-      assert.equal(await page.locator('#setting-volume').inputValue(),'0.6');
-      assert.equal(await page.locator('#setting-volume').isDisabled(),true);
+      assert.equal(await page.locator('#setting-volume').inputValue(),'0');
+      assert.equal(await page.locator('#setting-sound').count(),0);
+      assert.equal(await page.locator('#setting-volume').isDisabled(),false);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
       assert.equal(await page.locator('#sound-preview option').count(),31,'26 standard cues including pass/discard/take plus five UNO effects');
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
-      await page.locator('#setting-sound').check();
+      await setRange(page,'setting-volume',2);
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
       await page.getByText('Проверить звук',{exact:true}).click();
       await page.locator('#sound-preview').selectOption('uno|uno.call');
@@ -213,7 +215,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.deepEqual(await page.evaluate(()=>({context:qaAudio.audio._context.constructor.name,state:qaAudio.audio._context.state,decoded:qaAudio.audio._buffers.size,standard:qaAudio.audio.catalog().length,scoped:qaAudio.audio.catalog('uno').some(c=>c.id==='uno.call'),global:qaAudio.audio.catalog().some(c=>c.id==='uno.call')})),{context:'AudioContext',state:'running',decoded:1,standard:26,scoped:true,global:false});
       await page.evaluate(()=>PlayroomAppBridge.audio.play(['draw','success','victory'],'oldmaid'));
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids.join(',')==='draw,success,victory'&&c.finished&&c.result));
-      await page.locator('#setting-volume').selectOption('0.3');
+      await setRange(page,'setting-volume',1);
       // Observe the persisted state before reloading; distinguish a failed
       // settings write from a delayed browser navigation or a fresh context.
       await page.waitForFunction(()=>{
@@ -222,16 +224,16 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       });
       await page.locator('.modal [data-command=close-modal]').click();await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
       await page.locator('[data-command=settings]').click();
-      assert.equal(await page.locator('#setting-sound').isChecked(),true);
-      assert.equal(await page.locator('#setting-volume').inputValue(),'0.3');
-      await page.locator('#setting-sound').uncheck();
-      assert.equal(await page.locator('#setting-volume').isDisabled(),true);
+      assert.equal(await page.locator('#setting-volume').inputValue(),'1');
+      assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).volume),0.3);
+      await setRange(page,'setting-volume',0);
+      assert.equal(await page.locator('#setting-volume').isDisabled(),false);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
       assert.equal(await page.evaluate(()=>qaAudio.audio.enabled),false);
       await page.locator('.modal [data-command=close-modal]').click();await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
       await page.locator('[data-command=settings]').click();
-      assert.equal(await page.locator('#setting-sound').isChecked(),false);
-      assert.equal(await page.locator('#setting-volume').inputValue(),'0.3');
+      assert.equal(await page.locator('#setting-volume').inputValue(),'0');
+      assert.equal(await page.locator('#setting-sound').count(),0);
       assert.equal(await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='play'||c.method==='sequence').length),0,'muted reload never starts a preview');
       assert.equal(await move(page),1,'sound preferences preserve the game');
     });
@@ -243,7 +245,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const illegal=pool.splice(pool.findIndex(c=>c.color!==d.color&&c.color!=='wild'&&/^\d$/.test(c.value)&&c.value!==d.discard.at(-1).value),1)[0];
       d.hands[0]=[card,illegal];d.drawPile=pool;E.validateState(state);
       const {page}=await open(data,{width:1280,height:900},{isMobile:false,hasTouch:false},true);
-      await resume(page);await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-sound').check();
+      await resume(page);await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-auto-pass').uncheck();await setRange(page,'setting-volume',2);
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.finished&&c.result));
       await page.locator('.modal [data-command=close-modal]').click();
       await page.evaluate(()=>qaAudio.calls=[]);
@@ -275,7 +277,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       await page.locator('.table-tools [data-command=history]').click();await page.locator('#replay-range').focus();await page.keyboard.press('Home');
       const beforeAuto=await page.evaluate(()=>qaAudio.calls.filter(c=>c.method==='sequence').length);
       await page.locator('[data-command=replay-play]').click();
-      await page.waitForFunction(n=>qaAudio.calls.filter(c=>c.method==='sequence').length>=n+2&&qaAudio.calls.filter(c=>c.method==='sequence').at(-1).ids[0]==='uno.call'&&qaAudio.audio._groups.size>0,beforeAuto);
+      await page.waitForFunction(n=>qaAudio.calls.filter(c=>c.method==='sequence').length>=n+2&&qaAudio.calls.filter(c=>c.method==='sequence').at(-1).ids[0]==='uno.call'&&qaAudio.audio._groups.size>0,beforeAuto).catch(async()=>assert.fail(JSON.stringify(await page.evaluate(()=>({calls:qaAudio.calls.map(c=>({method:c.method,ids:c.ids,result:c.result,finished:c.finished})),groups:qaAudio.audio._groups.size,index:document.querySelector('#replay-range')?.value,busy:document.querySelector('.scene')?.getAttribute('aria-busy')})))));
       await page.locator('[data-command=replay-play]').click();
       await page.waitForFunction(()=>qaAudio.calls.filter(c=>c.method==='sequence').at(-1).finished);
       assert.deepEqual(await page.evaluate(()=>({result:qaAudio.calls.filter(c=>c.method==='sequence').at(-1).result,groups:qaAudio.audio._groups.size,voices:qaAudio.audio._voices.size})),{result:false,groups:0,voices:0},'stop replay cancels its current source and sequence');
@@ -339,7 +341,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
   }
   async function open(spec,viewport){
     const context=await browser.newContext({viewport,isMobile:true,hasTouch:true,reducedMotion:'reduce'}),data=seed(spec);
-    await context.addInitScript(data=>{if(sessionStorage.getItem('landscape-seeded'))return;sessionStorage.setItem('landscape-seeded','1');localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(data));},data);
+    await context.addInitScript(data=>{if(sessionStorage.getItem('landscape-seeded'))return;sessionStorage.setItem('landscape-seeded','1');localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'instant',sound:false,quickPlay:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(data));},data);
     const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
     await page.goto(url);await resume(page);return {page,context,errors,data};
   }
@@ -347,7 +349,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     return page.evaluate(insets=>{
       const errors=[],scene=document.querySelector('.scene').getBoundingClientRect();
       if(document.documentElement.scrollWidth>innerWidth+1||document.documentElement.scrollHeight>innerHeight+1)errors.push('page overflow');
-      for(const selector of ['.layout-field','.layout-self','.layout-participants']){const node=document.querySelector(selector);if(!node)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector);}
+      for(const selector of ['.layout-field','.layout-self','.layout-participants','.seat-group'])for(const node of document.querySelectorAll(selector)){if(!node?.getClientRects().length)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector);}
       for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width&&r.height&&(r.width<44||r.height<44))errors.push('touch target');}
       return errors;
     },insets);
@@ -393,7 +395,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
       try{
         const before=await saved(page);
         for(const viewport of [{width:390,height:740},{width:740,height:360},{width:390,height:740},{width:844,height:390}]){
-          await page.setViewportSize(viewport);assert.deepEqual(await visibleTable(page,'uno'),[],`rotation to ${viewport.width}×${viewport.height}`);assert.deepEqual(await saved(page),before);
+          await page.setViewportSize(viewport);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));assert.deepEqual(await visibleTable(page,'uno'),[],`rotation to ${viewport.width}×${viewport.height}`);assert.deepEqual(await saved(page),before);
         }
         await page.locator('.table-tools [data-command=settings]').tap();await page.locator('.modal [data-command=fullscreen]').tap();await page.locator('.modal [data-command=close-modal]').tap();
         await page.waitForFunction(()=>!!document.fullscreenElement||document.documentElement.classList.contains('fullscreen-fallback'));

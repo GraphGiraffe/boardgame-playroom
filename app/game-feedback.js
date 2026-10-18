@@ -77,7 +77,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         el.style.translate=`${a.x+a.width/2-r.x-r.width/2}px ${a.y+a.height/2-r.y-r.height/2}px`;
         for(const panel of mount.querySelectorAll('.player-panel[data-player-index]')){
           if(!this.routeTurns.has(panel))this.routeTurns.set(panel,{turn:panel.classList.contains('is-turn'),current:panel.getAttribute('aria-current')});
-          const active=Number(panel.dataset.playerIndex)===this.routeActors.get(entity);panel.classList.toggle('is-turn',active);if(active)panel.setAttribute('aria-current','true');else panel.removeAttribute('aria-current');
+          const active=panel.dataset.turnPrimary!=='false'&&Number(panel.dataset.playerIndex)===this.routeActors.get(entity);panel.classList.toggle('is-turn',active);if(active)panel.setAttribute('aria-current','true');else panel.removeAttribute('aria-current');
           if(active&&point.label)for(const counter of panel.querySelectorAll('[data-motion-counter="position"]')){if(!this.routeCounters.has(counter))this.routeCounters.set(counter,counter.textContent);counter.textContent=point.label;}
         }
       }

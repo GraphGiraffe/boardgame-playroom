@@ -222,7 +222,7 @@
               if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
             };
             frames=routeFrames();
-            const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>Number(node.dataset.playerIndex)===route.player);
+            const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>node.dataset.turnPrimary!=='false'&&Number(node.dataset.playerIndex)===route.player);
             const counter=[...(panel?.querySelectorAll('[data-motion-counter]')||[])].find(node=>node.dataset.motionCounter===route.counter),finalLabel=counter?.textContent;
             const status=scene.closest('.table-shell')?.querySelector('.status-event'),finalStatus=status?.textContent,finalTitle=status?.getAttribute('title');
             const highlighted=[...scene.querySelectorAll('.player-panel.is-turn')];highlighted.forEach(node=>{node.classList.remove('is-turn');node.removeAttribute('aria-current');});panel?.classList.add('is-turn');panel?.setAttribute('aria-current','true');

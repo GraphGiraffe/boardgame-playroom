@@ -60,6 +60,8 @@ test('Ludo keeps every pawn visible on a shared start and does not replay the pr
  }
  s.data.phase='roll';s.data.lastRoll=6;s.data.lastRolled=[0];s.events.push({id:1,kind:'roll',player:0});s.turn=1;
  assert.doesNotMatch(V.render(E.project(s,1),1,E.legalActions(s,1),{}),/data-motion-lead="roll"/);
+ // The just-committed roll still animates when no legal move advanced the turn.
+ assert.match(V.render(E.project(s,1),1,E.legalActions(s,1),{presentationTurn:0}),/data-motion-lead="roll"/);
  s.turn=0;assert.match(V.render(E.project(s,0),0,E.legalActions(s,0),{}),/data-motion-lead="roll"/);
  s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.dice=[1];s.data.used=[false];
  const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
@@ -183,6 +185,24 @@ test('Akulina awards descending points as players leave; the last player gets ze
  assert.equal(s.status,'finished');assert.deepEqual(s.data.outOrder.map(i=>s.players[i].score),[3,2,1]);
  assert.equal(s.players.find((_,i)=>!s.data.outOrder.includes(i)).score,0);
  assert.deepEqual(s.winners,s.data.outOrder);
+});
+test('Ludo friendly occupied cells keep pawn selection separate from a move',()=>{
+ for(const preset of ['classic','teams']){
+  const s=E.createGame('ludo',{players:Array.from({length:4},(_,i)=>({name:'P'+i})),preset,diceCount:2,seed:17});
+  s.turn=0;s.data.phase='move';s.data.dice=[2,3];s.data.used=[false,false];s.data.pawns[0]=[7,9,-1,-1];
+  const projected=E.project(s,0),actions=E.legalActions(s,0),before=JSON.stringify(s),move=actions.find(a=>a.owner===0&&a.pawn===0&&a.dieIndex===0);
+  assert(move,'moving onto a friendly occupied cell is legal');
+  const html=V.render(projected,0,actions,{viewState:{pawn:'0:0'}});
+  const pawn=html.match(/<button class="ludo-pawn[^>]*data-entity="token-0-1"[^>]*>/)?.[0];
+  assert.match(pawn,/data-view-key="pawn" data-view-value="0:1"/);assert.doesNotMatch(pawn,/data-action=/);
+  const cell=html.match(/<button class="ludo-cell[^>]*data-motion-anchor="path-9"[^>]*>/)?.[0];
+  assert(cell.includes(V.helpers.actionAttr(move)),'the marked cell still executes the selected move');
+  assert(html.includes('data-motion-lead="" '+V.helpers.actionAttr(move)),'the selected pawn can also move by tapping its die');
+  const other=V.render(projected,0,actions,{viewState:{pawn:'0:1'}}),otherMove=actions.find(a=>a.owner===0&&a.pawn===1&&a.dieIndex===0);
+  assert(other.includes('data-motion-lead="" '+V.helpers.actionAttr(otherMove)),'switching pawns updates the die command');
+  assert.equal(JSON.stringify(s),before,'selection and previews do not consume a die or move a pawn');
+  const next=play(s,move);assert.equal(next.data.pawns[0][0],9);assert.equal(next.data.pawns[0][1],9);assert.deepEqual(next.data.used,[true,false]);
+ }
 });
 test('Ludo star squares are safe while the next unmarked square can capture',()=>{
  let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];

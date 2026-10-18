@@ -202,7 +202,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     }
     for(const page of [host,client]){
       await page.locator('.table-tools [data-command=settings]').click();
-      for(const selector of ['#setting-sound','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
+      for(const selector of ['#setting-scale','#setting-volume','#setting-speed','#setting-quick-play'])assert.equal(await page.locator(selector).count(),1,'shared network setting '+selector);
       assert.equal(await page.locator('#setting-auto-pass').count(),0,'hotseat option does not apply to network');
       await page.locator('.modal [data-shared-rules],.modal [data-quick-shortcut][data-command=rules]').click();assert.match(await page.locator('.modal').innerText(),/Правила игры/);await page.locator('.modal [data-command=close-modal]').click();
     }
