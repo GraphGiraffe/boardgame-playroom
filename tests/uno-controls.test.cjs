@@ -39,7 +39,7 @@ async function layout(page,{handCount=7}={}) {
     if(arrow&&arrow.bottom>field.top+1)errors.push('direction not above piles');
     for(const mini of document.querySelectorAll('.mini-hand'))for(const card of mini.querySelectorAll('.uno-card,.piece-back')){
       const m=r(mini),c=r(card),parent=r(mini.closest('.opponent-hand'));
-      if(c.top<m.top||c.bottom>m.bottom||c.top<parent.top||c.bottom>parent.bottom)errors.push('opponent card clipped vertically');
+      if(c.top<m.top-1||m.bottom>parent.bottom+1||m.height>=c.height)errors.push('opponent hand must crop the full-size cards inside its panel');
     }
     for(const selector of ['.uno-call','.uno-card-help']){
       const el=document.querySelector(selector),b=r(el);
@@ -69,7 +69,7 @@ async function layout(page,{handCount=7}={}) {
     }
     const colors=[...document.querySelectorAll('.color-choice')];
     if(colors.length&&new Set(colors.map(el=>r(el).top)).size!==1)errors.push('color choice grows into multiple rows');
-    for(const color of colors){const b=r(color);if(b.width<44||b.height<44||!inside(r(scene),b)||!color.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)))errors.push('invalid color target');}
+    for(const color of colors){const b=r(color);if(b.width<44||b.height<44||!inside(r(scene),b)||!color.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)))errors.push('invalid color target '+JSON.stringify({b,hit:document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.outerHTML.slice(0,180)}));}
     return errors;
   },handCount);
   const details=errors.length?await page.evaluate(()=>Object.fromEntries(['.table-shell','.table-header','.table-status','.layout-participants','.scene','.uno-scene','.opponent-hands','.uno-center','.game-action-bar','.own-hand'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect(),c=getComputedStyle(el);return [selector,{height:r.height,top:r.top,minHeight:c.minHeight,padding:c.padding,position:c.position,display:c.display}];}))):null;
@@ -95,7 +95,7 @@ async function showVariant(page,state,variant,handCount){
     document.querySelector('.scene').innerHTML=template.content.querySelector('.scene').innerHTML;PlayroomGameScreen.layoutScene(document.querySelector('#app'));
   },{state,variant,handCount});
 }
-test('Responsive UNO utilities, turn direction and complete opponent cards stay stable',{timeout:120000},async t=>{
+test('Responsive UNO utilities, turn direction and cropped opponent hands stay stable',{timeout:120000},async t=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const screens=[{width:320,height:640},{width:390,height:740},{width:1280,height:900},{width:1226,height:825},{width:817,height:550,scale:1.5}];
   try{

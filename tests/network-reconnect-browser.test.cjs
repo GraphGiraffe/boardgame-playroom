@@ -137,6 +137,7 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
     const previousRevision=await client.locator('.table-shell.network-game').getAttribute('data-revision');
     await client.reload();
     await client.locator('#network-join-button').waitFor();
+    await host.locator('.table-tools [data-command=settings]').click();
     await host.locator('#network-pair-button').waitFor();
     await pair(host,client,{offerButton:true,photo:true});
     await client.locator('.table-shell.network-game').waitFor({timeout:15000});

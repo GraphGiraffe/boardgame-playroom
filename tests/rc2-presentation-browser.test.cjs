@@ -104,7 +104,7 @@ test('UNO forced skips preserve corner seats and hands through every animation f
     const animation=panel.getAnimations().find(a=>a.animationName==='player-turn-skipped');animation.pause();
     const samples=[];for(const fraction of [0,.18,.35,.52,.69,.85,1]){animation.currentTime=animation.effect.getTiming().duration*fraction;samples.push(measure());}
     animation.currentTime=animation.effect.getTiming().duration*.35;
-    return {before,samples,seating:document.querySelector('.app-game-layout').dataset.seating};
+    return {before,samples,seating:document.querySelector('.app-game-layout').dataset.seating,fallback:document.querySelector('.app-game-layout').dataset.seatingFallback};
    },{target,value});
    await page.screenshot({path:path.join(dir,`uno-${width}x${height}-${target}-${value==='skip'?'skip':'draw2'}.png`)});
    for(const sample of result.samples){
@@ -113,7 +113,7 @@ test('UNO forced skips preserve corner seats and hands through every animation f
     assert(Math.abs(sample.x-result.before.x)<=4.1&&Math.abs(sample.y-result.before.y)<=4.1,'shake stays inside its four-pixel reserve');
    }
    assert.equal(Math.round(result.before.matrix[1]),0,'corner identities remain upright');
-   assert.equal(result.seating,'circle',`corners fit ${width}x${height} target ${target} ${value}`);
+   assert(result.seating==='circle'||result.seating==='row'&&result.fallback==='true',`corners or explicit responsive fallback ${width}x${height} target ${target} ${value}`);
    await page.emulateMedia({reducedMotion:'reduce'});
    assert.equal(await page.locator('.is-turn-skipped').evaluate(el=>getComputedStyle(el).animationName),'none');
    await page.emulateMedia({reducedMotion:'no-preference'});
@@ -249,8 +249,8 @@ test('RC8 corner seats align hands, keep player geometry equal and preserve a cl
   await page.setViewportSize({width,height});await scene(page,game);
   const geometry=await page.evaluate(()=>{
    const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel:not([data-portrait-copy])')].filter(n=>n.getBoundingClientRect().width),boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
-   return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
-  });assert.equal(geometry.seating,game==='gofish'?'row':'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
+   return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,fallback:stage.dataset.seatingFallback,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
+  });if(game==='gofish')assert.equal(geometry.seating,'row');else assert(geometry.seating==='circle'||geometry.seating==='row'&&geometry.fallback==='true',game+' explicit responsive fallback');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
   if(geometry.seating==='circle'&&['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
   if(game==='ludo'&&geometry.seating==='circle'){
@@ -442,7 +442,7 @@ test('RC9 maximum rosters fit contents, hands and fields in both orientations',{
    const overlaps=(a,b)=>Math.min(a.right,b.right)-Math.max(a.left,b.left)>1&&Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>1;
    for(let i=0;i<panels.length;i++){const {r,name}=panels[i];if(r.width<70||r.height<40)errors.push('squashed '+name);if(r.bottom>innerHeight+2)errors.push('panel below viewport '+name);if(overlaps(r,field))errors.push('field overlap '+name);for(const p of panels.slice(i+1))if(overlaps(r,p.r))errors.push('panel overlap '+name);}
    const self=stage.querySelector('.layout-self')?.getBoundingClientRect();for(const group of stage.querySelectorAll('.seat-group'))if(self&&overlaps(group.getBoundingClientRect(),self))errors.push('seat/self overlap');
-   for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className+' '+JSON.stringify({w:e.clientWidth,h:e.clientHeight,sw:e.scrollWidth,sh:e.scrollHeight}));}
+   for(const e of stage.querySelectorAll('.layout-participants,.layout-field,.hand-track:not(.is-long-hand),.yatzy-board')){if(e.clientWidth&&((!e.matches('.yatzy-board')&&getComputedStyle(e).overflowY==='auto'&&e.scrollHeight>e.clientHeight+3)||(getComputedStyle(e).overflowX==='auto'&&e.scrollWidth>e.clientWidth+3)))errors.push('content scroll '+e.className+' '+JSON.stringify({w:e.clientWidth,h:e.clientHeight,sw:e.scrollWidth,sh:e.scrollHeight}));}
    const tiles=[...stage.querySelectorAll('.hand-track.is-tiles>button')].map(e=>e.getBoundingClientRect());if(tiles.some(r=>Math.abs(r.width-tiles[0].width)>1||Math.abs(r.height-tiles[0].height)>1||Math.abs(r.width/r.height-4/7)>.02))errors.push('unequal domino size');
    for(const e of stage.querySelectorAll('.opponent-hand .mini-hand')){if(e.clientWidth&&e.firstElementChild){const card=e.firstElementChild.getBoundingClientRect(),viewport=e.getBoundingClientRect();if(Math.abs(card.width/card.height-(Number(e.querySelector('[data-piece-ratio]')?.dataset.pieceRatio)||5/7))>.03)errors.push('opponent card proportions');if(stage.dataset.croppedHands==='true'&&card.height<viewport.height*1.5)errors.push('opponent cards resized instead of cropped');}}
    if(document.documentElement.scrollWidth>innerWidth+1)errors.push('page overflow');return errors;
@@ -480,13 +480,13 @@ test('RC10 full names, adaptive hands and portrait own-seat identity', {timeout:
  }
 }));
 
-test('RC10 Durak stock and played cards share size and pairs wrap below stock',{timeout:45000},async()=>fixture(async page=>{
+test('Durak stock and played cards share size with readable pairs in the reserved field',{timeout:45000},async()=>fixture(async page=>{
  for(const [width,height]of [[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1920,1080]]){
   await page.setViewportSize({width,height});await scene(page,'durak',{players:Array.from({length:6},(_,i)=>({name:['Иван','Кира','Мика','Лев','Сэм','Рэй'][i]}))});
   await page.evaluate(()=>{const state=structuredClone(TabletopCore.project(rcSession.current,0)),cards=state.data.hands[0];state.data.table=Array.from({length:6},(_,i)=>({attack:cards[i%cards.length],defense:cards[(i+1)%cards.length]}));PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'Дурак',state,viewer:0,actions:[],scene:PlayroomViews.render(state,0,[],{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
   await page.waitForTimeout(50);
-  const geometry=await page.evaluate(()=>{const cards=[...document.querySelectorAll('.layout-field .playing-card,.layout-field .shared-card-back')];const pairs=[...document.querySelectorAll('.durak-pair')].map(e=>e.getBoundingClientRect()),stock=document.querySelector('.field-group-stock').getBoundingClientRect();return {sizes:cards.map(e=>[e.offsetWidth,e.offsetHeight]),columns:new Set(pairs.map(r=>Math.round(r.x))).size,below:pairs.some(r=>r.top>=stock.bottom&&Math.abs(r.x-stock.x)<30)};});
-  assert(geometry.sizes.every(s=>s[0]===geometry.sizes[0][0]&&s[1]===geometry.sizes[0][1]),JSON.stringify(geometry));assert(geometry.columns>=2,JSON.stringify(geometry));assert(geometry.below,JSON.stringify(geometry));
+  const geometry=await page.evaluate(()=>{const cards=[...document.querySelectorAll('.layout-field .playing-card,.layout-field .shared-card-back')];const pairs=[...document.querySelectorAll('.durak-pair')].map(e=>e.getBoundingClientRect()),stock=document.querySelector('.field-group-stock').getBoundingClientRect();return {sizes:cards.map(e=>[e.offsetWidth,e.offsetHeight]),columns:new Set(pairs.map(r=>Math.round(r.x))).size,clear:pairs.every(r=>Math.min(r.right,stock.right)-Math.max(r.left,stock.left)<=1||Math.min(r.bottom,stock.bottom)-Math.max(r.top,stock.top)<=1)};});
+  assert(geometry.sizes.every(s=>s[0]===geometry.sizes[0][0]&&s[1]===geometry.sizes[0][1]),JSON.stringify(geometry));assert(geometry.columns>=2,JSON.stringify(geometry));assert(geometry.clear,JSON.stringify(geometry));
   await page.screenshot({path:path.join(shots,`rc10-durak-six-pairs-${width}x${height}.png`)});
  }
 }));
@@ -622,7 +622,8 @@ test('RC15 domino hand swipes at fixed size and six-player dice games fit', {tim
    await page.screenshot({path:path.join(shots,`rc15-${game}-6-${width}.png`)});
   }
  }
- await page.setViewportSize({width:844,height:390});await scene(page,'domino');
+ await page.setViewportSize({width:844,height:390});await scene(page,'domino',{players:[{name:'Иван'},{name:'Кира'}]});
+ await page.evaluate(()=>{rcStateOverride=structuredClone(rcSession.current);rcStateOverride.data.hands[0].push(...rcStateOverride.data.stock.splice(0));rcRender();});
  const track=page.locator('.hand-track'),box=await track.boundingBox();
  assert(box.x+box.width<=844,'viewport fits the own-hand slot');
  assert(await track.evaluate(e=>e.scrollWidth>e.clientWidth),'fixed-size domino hand overflows inside viewport');

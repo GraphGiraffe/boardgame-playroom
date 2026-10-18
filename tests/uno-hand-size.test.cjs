@@ -38,7 +38,7 @@ test('UNO hand count never changes row height or shifts the table', {timeout: 12
   async function open(viewport, count, fn) {
     const mobile = viewport.width < 500, context = await browser.newContext({viewport, hasTouch: mobile, isMobile: mobile, reducedMotion: 'no-preference'});
     const saved = fixture(count);
-    await context.addInitScript(saved => {localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({animationSpeed: 'normal', sound: false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
+    await context.addInitScript(saved => {localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({animationSpeed: 'normal', sound: false, handShape: 'straight'})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
     const page = await context.newPage(), errors = []; page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
     try {
       await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.hand-track').waitFor({state: 'visible'});

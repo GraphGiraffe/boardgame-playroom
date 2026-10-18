@@ -408,10 +408,9 @@ def main():
     write_zip(archive, [("playroom/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in files])
     core_files = [path for path in files if path.parts[len(ROOT.parts)] in {"core", "application", "presentation", "platform", "themes", "locales"}]
     core_items = [("tabletop-core/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in core_files]
-    contract = ROOT / "docs" / "PACKS.md"
-    if contract.is_file():
-        core_items.append(("tabletop-core/docs/PACKS.md", contract.read_bytes()))
-    core_items.append(("tabletop-core/docs/SDK-0.18.md", (ROOT / "docs/SDK-0.18.md").read_bytes()))
+    # The portable SDK includes the current linked contracts, not a retired API document.
+    core_items.extend(("tabletop-core/docs/" + path.name, path.read_bytes())
+                      for path in sorted((ROOT / "docs").glob("*.md")))
     write_zip(core_archive, core_items)
     artifacts = [page, archive, core_archive]
     if complete_html is not None:

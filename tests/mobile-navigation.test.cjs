@@ -176,7 +176,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       }
     });
     await t.test('Completed result returns to the menu and remains in read-only history after reload',async()=>{
-      const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'quick',players:[{name:'Финиш'},{name:'Соперник'}]});
+      const completed=new Session(Core,'snakes',{seed:17,mode:'pass',preset:'classic',boardSize:64,players:[{name:'Финиш'},{name:'Соперник'}]});
       let penultimate;
       for(let i=0;i<1000&&completed.current.status==='playing';i++){
         // Export while this is still the current state, before its journal is compacted.
@@ -252,11 +252,11 @@ test('Every visible part of each hub tile opens its game setup', {timeout:120000
       const page=await context.newPage();page.setDefaultTimeout(5000);
       try {
         await page.goto(url);
-        for(const game of ['uno','domino','durak','checkers','snakes'])for(const part of ['.tile-top','.tile-title','.tile-description','.tile-meta','.play-tile','.game-cover']){
+        for(const game of ['uno','domino','durak','checkers','snakes'])for(const part of ['.tile-player-count','.tile-title','.tile-description','.tile-mechanics','.game-cover']){
           const target=page.locator(`[data-game=${game}] ${part}`);
           await target.evaluate(el=>el.scrollIntoView({block:'center'}));
           const p=await target.evaluate(el=>{const r=el.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};});
-          assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.closest('[data-start]')?.dataset.start,p),game,`${game} ${part} must hit launch button`);
+          assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.closest('.game-tile')?.dataset.game,p),game,`${game} ${part} must hit launch button`);
           if(mobile)await page.touchscreen.tap(p.x,p.y);else await page.mouse.click(p.x,p.y);
           await page.locator('.room-setup-modal').waitFor();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),game);
           assert.equal(await page.evaluate(()=>getSelection().toString()),'');

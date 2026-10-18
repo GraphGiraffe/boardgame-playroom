@@ -131,5 +131,5 @@
 @media(hover:hover){.board-target:hover{filter:brightness(1.08)}}
 .board-route-dot{display:block;width:22%;aspect-ratio:1;border-radius:50%;background:#334d3c;box-shadow:0 0 0 1px var(--color-material-route-base,#fff9e7);pointer-events:none}
 
-/* In a tight hand the next rank must remain above the previous preview. */
-.hand-track.is-fan.is-tight .hand-card:is(.is-selected,:focus,.is-hand-preview){z-index:1}
+/* Lift the inspected card above overlapping neighbours in a tight hand. */
+.hand-track.is-fan.is-tight .hand-card:is(.is-selected,:focus,.is-hand-preview){z-index:80}

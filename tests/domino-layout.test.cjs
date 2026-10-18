@@ -96,10 +96,10 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
         }
         Core.validateState(saved.states[0]);
       }
-      await context.addInitScript(saved => {localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
+      await context.addInitScript(saved => {localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false, showLastGame:true})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
       const page = await context.newPage(), errors = []; page.setDefaultTimeout(5000); page.on('pageerror', e => errors.push(e.message));
       try {
-        await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.domino-chain').waitFor({state: 'visible'});
+        await page.goto(url); if(saved.states[0].status==='finished'){await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('[data-history-id]').first().click();}else await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.domino-chain').waitFor({state: 'visible'});
         await run({page, context, saved}); assert.deepEqual(errors, []);
       } finally { await context.close(); }
     });

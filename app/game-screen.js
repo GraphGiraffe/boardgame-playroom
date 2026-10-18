@@ -194,7 +194,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function fitTileHand(track,stage){
     const style=track.ownerDocument.defaultView.getComputedStyle(track);
     const height=Math.min(parseFloat(style.getPropertyValue('--scene-card-height'))||90,Math.max(32,handPieceHeight(track,stage)));
-    track.style.setProperty('--tile-width',height*4/7+'px');
+    const count=track.querySelectorAll('.domino-tile').length,available=track.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+    const fitted=count>0&&count<=7?Math.min(height*4/7,(available-2*(count-1))/count):height*4/7;
+    track.style.setProperty('--tile-width',Math.max(24,fitted)+'px');
     track.classList.toggle('is-long-hand',track.scrollWidth>track.clientWidth+2);
   }
 
@@ -237,20 +239,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const own=track.closest('.layout-self')&&layoutRect(track.closest('.layout-self')),north=stage.querySelector('.seat-north-east')&&layoutRect(stage.querySelector('.seat-north-east'));
       if(own&&north?.height){const controls=own.height-layoutRect(track).height,availableHeight=own.bottom-north.bottom-6-controls-24;desired=Math.min(desired,Math.max(32,availableHeight/1.4));}
     }
-    const fitted=count>1&&!track.classList.contains('is-long-hand')?Math.min(desired,(available-10)/(1+.28*Math.max(0,count-1)),available-10-16*Math.max(0,count-1)):desired;
-    track.style.setProperty('--scene-card-width',Math.max(32,fitted)+'px');
-    track.style.setProperty('--scene-card-height',Math.max(32,fitted)*1.4+'px');
-    const baseline=16;
+    const fitted=Math.max(56,Math.min(desired,(available-12)/3.6));
+    track.style.setProperty('--scene-card-width',fitted+'px');
+    track.style.setProperty('--scene-card-height',fitted*1.4+'px');
+    const baseline=20;
     let peek=baseline;
     for(const card of track.querySelectorAll('.hand-card')){
       const corner=card.querySelector('.card-corner:not(.bottom)');if(!corner)continue;
-      peek=Math.max(peek,Math.min(card.offsetWidth*.28,Math.ceil(corner.offsetLeft+corner.offsetWidth+2)));
+      peek=Math.max(peek,Math.ceil((corner.offsetLeft+corner.offsetWidth)*(card.offsetWidth/(card.querySelector('.piece-artboard')?.offsetWidth||card.offsetWidth))+6));
     }
+    if(!track.classList.contains('is-arc'))for(const item of track.querySelectorAll('.hand-card')){const corner=item.querySelector('.card-corner:not(.bottom)');if(corner)peek=Math.max(peek,Math.ceil(layoutRect(corner).right-layoutRect(item).left+2));}
     if(count>1&&card){const width=card.offsetWidth;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
     if(card)peek=Math.min(peek,card.offsetWidth*.65);
-    track.style.setProperty('--fan-reveal-space',card?Math.max(0,Math.min(card.offsetWidth-peek,(available-card.offsetWidth-Math.max(0,count-1)*peek)/2-2))+'px':'0px');
+    track.style.setProperty('--fan-reveal-space',card?Math.max(0,card.offsetWidth-peek)+'px':'0px');
     track.style.setProperty('--fan-peek',peek+'px');
-    if(track.classList.contains('is-arc'))track.style.setProperty('--fan-reveal-space','0px');
     track.classList.toggle('is-tight',parseFloat(track.style.getPropertyValue('--fan-reveal-space'))<(card?.offsetWidth||0)-peek);
     fitHandArc(track);
   }
@@ -310,13 +312,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
   }
   const replayFitters=new WeakMap();
-  function layoutScene(host){
+  function layoutScene(host,settled=false){
+    // Network diagnostics/history can finish mounting after the synchronous render.
+    // Measure once more after that DOM transaction, before freezing the viewport.
+    if(!settled)host.ownerDocument.defaultView.requestAnimationFrame?.(()=>layoutScene(host,true));
     const scene=host.querySelector('.scene'),previous=replayFitters.get(host);
     if(previous?.scene!==scene){
       previous?.observer?.disconnect();replayFitters.delete(host);
       if(scene){
         const Observer=scene.ownerDocument.defaultView.ResizeObserver;
-        const observer=Observer?new Observer(()=>layoutScene(host)):null;
+        const observer=Observer?new Observer(()=>layoutScene(host,true)):null;
         replayFitters.set(host,{scene,observer});observer?.observe(scene);const participants=scene.querySelector('.layout-participants');if(participants)observer?.observe(participants);for(const hand of scene.querySelectorAll('.mini-hand'))observer?.observe(hand);
       }
     }
@@ -331,9 +336,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.preferredSeating??=stage.dataset.seating;
       const roster=stage.querySelectorAll('.layout-participants .player-panel:not([data-seat-copy])').length;
       stage.dataset.denseRoster=String(!portrait&&h<430&&roster>2&&stage.dataset.opponentHands==='true');
-      const cardWidth=Math.max(48,Math.min(110,portrait?w*.17:Math.min(w*.12,h*.22)));
+      const cardWidth=Math.max(portrait?56:48,Math.min(110,portrait?w*.17:Math.min(w*.12,h*.22)));
       stage.style.setProperty('--scene-card-width',cardWidth+'px');
       stage.style.setProperty('--scene-card-height',cardWidth*1.4+'px');
+      stage.style.setProperty('--hand-row-height',(cardWidth*1.4+24)+'px');
       const miniWidth=Math.max(28,Math.min(48,portrait?cardWidth*.5:h*.07)),miniHeight=miniWidth*1.4;
       stage.style.setProperty('--opponent-card-width',miniWidth+'px');
       stage.style.setProperty('--opponent-card-height',miniHeight+'px');
@@ -374,7 +380,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(stage.dataset.seating==='circle'&&(seatsOverlap()||field?.clientHeight<80)){
         stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
       }
-      if(stage.dataset.seating==='row'&&participants){
+      if(stage.dataset.seating==='row'&&participants&&stage.dataset.surface!=='player'){
         const panels=participants.querySelector('.players-panels');
         if(portrait){
           // At reduced zoom a portrait viewport can use desktop side tracks.

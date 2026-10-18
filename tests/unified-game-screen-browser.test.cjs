@@ -107,7 +107,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.equal(await shell.getAttribute('data-viewer'),String(snapshot.viewer));
     assert.equal(await shell.getAttribute('data-revision'),String(snapshot.revision));
     const commands=await shell.locator('.table-tools > button').evaluateAll(nodes=>nodes.map(n=>n.dataset.command));
-    assert.deepEqual(commands.slice(-2),['rules','settings'],'Help and settings retain the right edge');
+    assert.deepEqual(commands.slice(-2),['pause','settings'],'Pause and settings retain the right edge');
     assert.equal(await shell.locator('.table-tools button svg[data-ui-icon]').count(),commands.length);
 
     assert.equal(await shell.locator('.player-panel .player-token').count(),2);
