@@ -220,7 +220,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if (!Localization) throw Error('Localization module is required');
     return new Localization.Translator({catalogs});
   }
-  const helpers = {viewApi:2,playerColor,tokenLayout,assetArt,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
+  const helpers = {viewApi:2,playerOrderPosition,playerColor,tokenLayout,assetArt,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){

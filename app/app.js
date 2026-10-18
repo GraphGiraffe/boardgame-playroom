@@ -72,7 +72,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   let hubEditing=false;
   let room=null,lobbyParticipantId=null,lobbyTimer=null,lobbyCountdown=null;
   let historyOpen = false, replayIndex = null, replayTimer = null, botTimer = null, autoPassTimer = null;
-  let paused = false, lastResult = null, storageOK = true, modalReturn = null;
+  let paused = false, lastResult = null, storageOK = true, modalReturn = null, pendingAction = null;
   let missedFrom = null, soundTicket = 0;
   let loadWarning = '', modalBack = null, historyOrigin = null, reactionShownAt = null;
   let input = null, packUI = null, playerTargets = null, feedbackSession = null;
@@ -440,6 +440,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(isReplay()||paused||gate!==null)return;
     const independent=!!E.reactionControl?.(session.current,actor,action)?.independent;
     if(transition&&!independent)return;
+    if(!session.current.players[actor]?.bot&&action.confirmation&&!context.confirmed){
+      if($('#modal-root').children.length)return;
+      openModal(GameScreen.actionConfirmationMarkup(action));
+      pendingAction={session,state:session.current,actor,action,context};return;
+    }
     try {
       if(transition&&independent){const receipt=screenController.send(action,{actor});if(!receipt.ok&&!receipt.ignored)throw Error(receipt.message);feedback.accept(E.project(session.current,viewer).events,E.soundCues(session.current,viewer,feedback.cursor),session.game,{mode:pace().mode});save();renderTable();return;}
       const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom});
@@ -460,6 +465,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   const localModal=new globalThis.PlayroomDOM.ModalController({host:$('#modal-root'),background:$('#app')});
   function openModal(content,className='',{keepAudio=false}={}) {
+    pendingAction=null;
     const existing=className&&$('#modal-root .'+className);
     if(existing&&(className==='room-setup-modal'||className==='pack-manager-modal')){GameScreen.updateModal(existing,content);return;}
     const returnToRoom=!!$('#modal-root .room-setup-modal')&&className!=='room-setup-modal';
@@ -475,6 +481,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     $('.modal button,.modal input,.modal select')?.focus();
   }
   function closeModal(ignoreBack=false) {
+    pendingAction=null;
     dismissNotice();
     if($('#profile-form')&&!playerProfile?.name&&!ignoreBack)return;
 
@@ -735,6 +742,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'lobby-start':startLobbyCountdown,
     'lobby-leave':()=>{if(room?.transportMode==='network'&&room.phase==='playing'&&!confirm(globalThis.PlayroomMessages.text("ui.app.15bd355dbb93")))return;leaveLobby();},
     'close-modal':closeModal,
+    'confirm-action'(){const todo=pendingAction;closeModal();if(todo&&todo.session===session&&todo.state===session.current&&screen==='table'&&todo.actor===viewer)act(todo.actor,todo.action,{...todo.context,confirmed:true});},
     'room-rules-view':showRoomRules,
     'room-help':showRoomHelp,
     'sound-preview'(){const value=$('#sound-preview')?.value;if(!value)return;const [pack,id]=value.split('|');void previewSound(id,pack||undefined);},

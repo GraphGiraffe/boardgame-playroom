@@ -43,6 +43,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     quickActions=ordered;return [...ordered.filter(action=>!action.hidden&&action.name!=='settings').slice(0,3),...ordered.filter(action=>action.name==='settings')].map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
   const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"',globalThis.PlayroomMessages.text("ui.game-screen.a7a4033657e8"),'close')}<h2>${esc(title)}</h2></header>`;
+  function actionConfirmationMarkup(action){
+    return `<h2>${esc(root.PlayroomMessages.text('ui.game-screen.action-confirmation'))}</h2><p class="lead">${esc(action.confirmation)}</p><div class="modal-foot"><button class="btn secondary" data-command="close-modal">${esc(root.PlayroomMessages.text('ui.game-screen.cancel-action'))}</button><button class="btn" data-command="confirm-action">${esc(action.label||root.PlayroomMessages.text('ui.game-screen.confirm-action'))}</button></div>`;
+  }
   function modalContent(content){
     const template=root.document.createElement('template');template.innerHTML=content;
     const head=template.content.querySelector('.modal-head');
@@ -347,5 +350,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     pendingScroll.delete(host);
     for(const track of host.querySelectorAll('.hand-track.is-fan'))fitHandArc(track);
   }
-  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
+  return Object.freeze({tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

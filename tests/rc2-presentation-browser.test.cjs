@@ -34,7 +34,17 @@ test('shared-grid games force rows and the complete Yatzy table fits phone and t
  await page.locator('[data-command="lobby-start"]').click();await page.locator('.yatzy-score').waitFor();
  await page.locator('.table-shell [data-command="settings"]').click();
  assert.equal(await page.locator('#setting-seating').count(),0);assert.equal(await page.locator('#setting-hand-shape').count(),0);
- await page.locator('.modal [data-command="close-modal"]').click();await page.locator('.yatzy-roll[data-action]').click();await page.locator('.yatzy-score button[data-action]').first().click();await page.locator('.action-reveal').waitFor();
+ await page.locator('.modal [data-command="close-modal"]').click();await page.locator('.yatzy-roll[data-action]').click();const category=page.locator('.yatzy-score button[data-action]').filter({hasText:/^0$/}).first();
+ await category.waitFor();const before=await page.locator('.yatzy-score').textContent(),dice=await page.locator('.yatzy-dice').innerHTML(),box=await page.locator('.layout-field').boundingBox();
+ for(const cancel of ['button','escape','close']){
+  await category.click();await page.locator('.modal [data-command="confirm-action"]').waitFor();
+  assert.match(await page.locator('.modal .lead').textContent(),/0 очков/);
+  assert.equal(await page.locator('.yatzy-score').textContent(),before);assert.equal(await page.locator('.yatzy-dice').innerHTML(),dice);assert.deepEqual(await page.locator('.layout-field').boundingBox(),box);
+  await page.screenshot({path:path.join(dir,'yatzy-confirmation.png')});
+  if(cancel==='escape')await page.keyboard.press('Escape');else await page.locator('.modal [data-command="close-modal"]').nth(cancel==='close'?0:1).click();
+  assert.equal(await page.locator('.yatzy-score').textContent(),before);assert.equal(await page.locator('.yatzy-dice').innerHTML(),dice);
+ }
+ await category.click();for(const [width,height] of [[320,640],[390,844],[844,390]]){await page.setViewportSize({width,height});await page.screenshot({path:path.join(dir,`yatzy-confirmation-${width}.png`)});const box=await page.locator('.modal').boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=height+1);}await page.locator('.modal [data-command="confirm-action"]').click();await page.locator('.action-reveal').waitFor();
  await page.screenshot({path:path.join(dir,'yatzy-live-dice.png')});
 }));
 test('playable hand outlines stay inside the scroll viewport and recent teams share one player flow',{timeout:45000},async()=>fixture(async page=>{
@@ -665,12 +675,13 @@ test('RC16 public sets reveal every card and fish books use aligned card rows',a
    if(!event)return null;rcRender();window.rcReveal=new PlayroomActionReveal({mount:()=>document.querySelector('.table-shell')});rcReveal.show(event.reveal,game);return {count:event.reveal.cards.length,first:event.reveal.cards[0].id};
   },game);
   assert(found);assert.equal(await page.locator('.action-reveal-art>.shared-card').count(),found.count);
+  assert(await page.locator('.action-reveal-art>.shared-card').evaluateAll(cards=>cards.every(card=>getComputedStyle(card).backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(card).boxShadow==='none')),'only artwork paints the card, without rectangular backing');
   await page.screenshot({path:path.join(shots,`rc16-${game}-set.png`)});
   await page.evaluate(()=>rcReveal.clear());
   if(game==='gofish'){
    assert.equal(await page.locator('.gofish-owner').count(),3);
-   const xs=await page.locator('.gofish-book-cards').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert(Math.max(...xs)-Math.min(...xs)<1);
-   assert.equal(await page.locator('.gofish-book [data-entity="card-'+found.first+'"]').count(),1);
+   const xs=await page.locator('.gofish-book-cards').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert(Math.max(...xs)-Math.min(...xs)<1);assert.equal(await page.locator('.gofish-owner .avatar').count(),3);
+   assert.equal(await page.locator('.gofish-book[data-entity="card-'+found.first+'"]').count(),1);
    await page.screenshot({path:path.join(shots,'rc16-fish-books.png')});
   }
  }
@@ -905,4 +916,19 @@ test('enlarged public moves and bubbles remain below application dialogs',async(
   const z=el=>Number(getComputedStyle(el).zIndex);return {reveal:z(reveal.host),bubble:z(feedback.layer),modal:z(modal),top:!!document.elementFromPoint(x,y)?.closest('#modal-root')};
  });assert(result.reveal<result.modal,JSON.stringify(result));assert(result.bubble<result.modal,JSON.stringify(result));assert(result.top);
  await page.screenshot({path:path.join(shots,'rc20-reveal-behind-dialog.png')});
+}));
+
+test('fish books follow turn order in balanced avatar columns and rank-only cards stay legible',async()=>fixture(async page=>{
+ for(const [width,height] of [[320,640],[390,844],[844,390]])for(const count of [3,4,5,6]){
+  await page.setViewportSize({width,height});await scene(page,'gofish',{firstPlayer:2,players:Array.from({length:count},(_,i)=>({name:['Иван','Луна','Сэм','Кира','Ника','Лев'][i]}))});
+  const fieldBefore=await page.locator('.layout-field').boundingBox(),tablesBefore=await page.locator('.gofish-book-column').evaluateAll(tables=>tables.map(t=>({width:t.getBoundingClientRect().width,height:t.getBoundingClientRect().height})));
+  await page.evaluate(()=>{const state=TabletopCore.project(rcSession.current,0),d=state.data;d.books=d.books.map(()=>Array.from({length:13},(_,i)=>i+2));d.bookCards=d.books.map((r,p)=>r.map((rank,i)=>({id:`test-${p}-${i}`,rank,suit:'♥'})));const scene=PlayroomViews.render(state,0,[],{preferences:{},viewState:{}});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get('gofish').name,state,viewer:0,actions:[],scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
+  assert.deepEqual(await page.locator('.layout-field').boundingBox(),fieldBefore,'all sets do not resize the field');assert.deepEqual(await page.locator('.gofish-book-column').evaluateAll(tables=>tables.map(t=>({width:t.getBoundingClientRect().width,height:t.getBoundingClientRect().height}))),tablesBefore,'all sets do not resize tables');
+  await page.screenshot({path:path.join(shots,`rc22-fish-${count}-${width}-start.png`)});
+  const layout=await page.evaluate(()=>({columns:[...document.querySelectorAll('.gofish-book-column')].map(c=>[...c.querySelectorAll('[data-book-player]')].map(r=>Number(r.dataset.bookPlayer))),stock:document.querySelector('.gofish-stock').getBoundingClientRect().width,overflows:[...document.querySelectorAll('.gofish-book-cards')].map(c=>c.scrollWidth>c.clientWidth),ranks:[...document.querySelectorAll('.gofish-book .shared-face strong')].map(c=>c.textContent),card:document.querySelector('.gofish-book').getBoundingClientRect().width}));
+  assert.equal(layout.columns.length,count>3?2:1);assert(Math.abs(layout.columns[0].length-(layout.columns[1]?.length||layout.columns[0].length))<=1);assert.deepEqual(layout.columns.flat(),Array.from({length:count},(_,i)=>(i+2)%count));assert(layout.stock>=85,JSON.stringify(layout));assert(layout.card>=33.9,JSON.stringify(layout));assert.equal(layout.ranks.length,count*13);assert.equal(new Set(layout.ranks).size,13);assert(await page.locator('.gofish-book-cards').evaluateAll(cells=>cells.every(cell=>{cell.scrollLeft=cell.scrollWidth;const last=cell.lastElementChild.getBoundingClientRect(),box=cell.getBoundingClientRect();return last.right<=box.right+1&&last.left>=box.left-1;})),'last set is reachable inside its own table cell');
+  await page.evaluate(()=>{const board=document.querySelector('.gofish-board');board.scrollTop=board.scrollHeight;});
+  assert(await page.locator('.gofish-board').evaluate(board=>{const b=board.getBoundingClientRect();return [...board.querySelectorAll('.gofish-book-column tr:last-child')].every(row=>row.getBoundingClientRect().bottom<=b.bottom+1);}),'last player in either table is reachable');
+  await page.screenshot({path:path.join(shots,`rc22-fish-${count}-${width}.png`)});
+ }
 }));

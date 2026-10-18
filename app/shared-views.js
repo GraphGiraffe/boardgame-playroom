@@ -106,7 +106,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     function close(){const command=dialogReturnCommand;clearDialog();render();if(command)app.querySelector('[data-command="'+command+'"]')?.focus();}
     async function submit(action,confirmed=false,context={}){
       if(!usable()&&!independent(action))return;
-      if(action.confirmation&&!confirmed){pendingAction={action,context};show(`<h2>${globalThis.PlayroomMessages.text("ui.shared-views.4678099b5551")}</h2><p class="lead">${H.esc(action.confirmation)}</p><button class="btn" data-command="confirm-action">${H.esc(action.label||globalThis.PlayroomMessages.text("ui.shared-views.27bca309f5f8"))}</button>`);return;}
+      if(action.confirmation&&!confirmed){pendingAction={action,context,revision:client.snapshot.revision};show(GameScreen.actionConfirmationMarkup(action));return;}
       input.cancel();
       try{const promise=controller.send(action);render();const receipt=await promise;if(receipt.ok){selected=null;GameScreen.allowLayoutChange(app,context);}else if(!receipt.ignored)toast(receipt.message);
         // The authoritative snapshot already rendered the new scene; avoid
@@ -167,7 +167,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       switch(command){
         case 'close-modal':close();break;
         case 'confirm-action':{
-          const todo=pendingAction;close();if(todo)await submit(todo.action,true,todo.context);break;
+          const todo=pendingAction;close();if(todo&&todo.revision===client.snapshot.revision)await submit(todo.action,true,todo.context);break;
         }
         case 'rematch':if(!readOnly&&client.snapshot?.state?.status==='finished')onExit?.({finished:true});break;
         case 'home':
