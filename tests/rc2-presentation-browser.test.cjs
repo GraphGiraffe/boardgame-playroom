@@ -821,3 +821,18 @@ test('deferred effect badges scroll in one fixed-height player row',async()=>fix
   await page.screenshot({path:path.join(shots,`rc19-effects-${width}.png`)});
  }
 }));
+
+
+test('full boards reserve a square zone and use portrait width before and after rolling',async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[390,900],[844,390]])for(const game of ['snakes','ludo','checkers','tictactoe'])for(const seating of ['circle','row']){
+  await page.setViewportSize({width,height});await scene(page,game,{players:Array.from({length:game==='snakes'?6:game==='ludo'?4:2},(_,i)=>({name:'Игрок '+i}))});
+  await page.evaluate(seating=>{rcUI={seating};rcRender();},seating);
+  const measure=()=>page.evaluate(()=>{const box=sel=>{const r=document.querySelector(sel).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};};return {field:box('.layout-field'),art:box('.game-field-content'),stage:box('.app-game-layout'),controls:document.querySelector('.layout-actions')?.getBoundingClientRect().bottom,overflow:document.documentElement.scrollWidth>innerWidth};});
+  const before=await measure();assert(Math.abs(before.field.w-before.field.h)<1,JSON.stringify({game,seating,width,before}));assert(Math.abs(before.art.w-before.field.w)<2);assert(!before.overflow);
+  if(width===390&&height>=844)assert(before.art.w>=before.stage.w-14,JSON.stringify({game,seating,width,before}));
+  if(game==='snakes'||game==='ludo'){
+   await page.evaluate(()=>{rcSession.act(0,{type:'roll'});rcRender();});const after=await measure();assert.deepEqual(after.field,before.field,'rolling must preserve the square zone');
+  }
+  if(game==='snakes'||game==='ludo')await page.screenshot({path:path.join(shots,`rc20-${game}-${seating}-${width}-${height}.png`)});
+ }
+}));

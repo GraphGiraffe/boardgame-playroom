@@ -236,6 +236,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
+    // Measure the whole grid track before reserving the board's intrinsic shape.
+    for(const key of ['width','height','justify-self','align-self'])slot.style.removeProperty(key);
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
     const grid=field.querySelector('[data-card-count]');
     if(grid){const count=Number(grid.dataset.cardCount);let best={size:0,columns:1,rows:count};for(let columns=2;columns<=count;columns++){const rows=Math.ceil(count/columns),size=Math.min((width-8-(columns-1)*4)/columns,(height-8-(rows-1)*4)/rows/1.4);if(size>best.size)best={size,columns,rows};}grid.style.setProperty('--grid-columns',best.columns);grid.style.setProperty('--grid-rows',best.rows);grid.style.setProperty('--grid-card-width',Math.max(1,best.size)+'px');}
@@ -244,7 +246,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
     if(stage.dataset.layoutFamily==='board'){
       const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
-      field.style.width=Math.min(width,height*aspect)+'px';field.style.height=Math.min(height,width/aspect)+'px';field.style.zoom='1';return;
+      const boardWidth=Math.min(width,height*aspect),boardHeight=boardWidth/aspect;
+      if(stage.dataset.fieldSizing!=='content'){
+        slot.style.width=boardWidth+'px';slot.style.height=boardHeight+'px';
+        slot.style.justifySelf='center';slot.style.alignSelf='center';
+      }
+      field.style.width=boardWidth+'px';field.style.height=boardHeight+'px';field.style.zoom='1';return;
     }
     field.style.zoom='1';field.style.width=Math.min(width,520)+'px';field.style.height='auto';field.style.setProperty('--field-scale','1');
     const r=field.getBoundingClientRect(),natural=Math.max(field.scrollHeight,r.height,1),scale=Math.max(.1,Math.min(1.6,width/Math.max(field.scrollWidth,r.width,1),height/natural));
