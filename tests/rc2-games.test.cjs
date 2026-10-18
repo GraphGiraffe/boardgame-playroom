@@ -257,9 +257,37 @@ test('Pexeso cartoon deck defaults to exact character pairs and completes every 
  }
 });
 
-test('RC12 Pexeso composition stays fixed while placement changes',()=>{
- for(const deck of ['cartoon','52'])for(const preset of ['easy','medium','hard']){
+test('Pexeso standard-deck composition stays fixed while placement changes',()=>{
+ for(const deck of ['36','52','54'])for(const preset of ['easy','medium','hard']){
   const a=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:17}),b=E.createGame('pexeso',{players:[{name:'A'},{name:'B'}],preset,deck,seed:42});
   assert.deepEqual(a.data.board.map(c=>c.id).sort(),b.data.board.map(c=>c.id).sort());assert.notDeepEqual(a.data.board.map(c=>c.id),b.data.board.map(c=>c.id));
+ }
+});
+
+
+test('Pexeso cartoon pairs vary by seed with all shapes, varied colors and reproducible identical pairs',()=>{
+ const players=[{name:'A'},{name:'B'}];
+ for(const preset of ['easy','medium','hard']){
+  const compositions=new Set(),colorAssignments=new Set();
+  for(let seed=1;seed<=64;seed++){
+   const options={players,preset,deck:'cartoon',seed},state=E.createGame('pexeso',options),again=E.createGame('pexeso',options);
+   assert.deepEqual(state,again,'same seed restores the same complete initial state');assert(E.validateState(state));
+   const pairs=new Map();for(const card of state.data.board){const group=pairs.get(card.character)||[];group.push(card);pairs.set(card.character,group);}
+   assert.equal(pairs.size,{easy:8,medium:12,hard:18}[preset]);
+   const shapes=new Map(),colors=new Set();
+   for(const [character,cards]of pairs){
+    assert.equal(cards.length,2);assert.notEqual(cards[0].id,cards[1].id);
+    assert.equal(cards[0].shape,cards[1].shape);assert.equal(cards[0].color,cards[1].color);
+    assert.equal(character,cards[0].shape+'-'+cards[0].color);
+    shapes.set(cards[0].shape,(shapes.get(cards[0].shape)||0)+1);colors.add(cards[0].color);
+   }
+   assert.equal(shapes.size,8);assert.equal(colors.size,6);
+   assert(Math.max(...shapes.values())-Math.min(...shapes.values())<=1);
+   assert(E.project(state,-1).data.board.every(card=>card.hidden&&!card.character&&!card.shape&&!card.color));
+   compositions.add([...pairs.keys()].sort().join(','));
+   colorAssignments.add([...pairs.keys()].filter(key=>key.startsWith('crescent-')).sort().join(','));
+  }
+  assert(compositions.size>32,'new seeds select different face sets');
+  assert(colorAssignments.size>3,'individual shapes receive different colors across games');
  }
 });
