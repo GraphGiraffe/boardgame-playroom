@@ -15,7 +15,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
-    cards:'<path d="m4.5 6-1.4 11a3 3 0 0 0 2.6 3.3l8.9 1.3a3 3 0 0 0 3.4-2.4M4 20a3 3 0 0 0 2.3 2l7.9 1.1"/><g transform="rotate(10 13 10.4)"><rect x="7" y="2" width="12" height="16.8" rx="2.4"/><path d="M10.5 7h5l-3.6 6.8"/></g>',
+    cards:'<path d="M7.8 5H5.4A2.4 2.4 0 0 0 3 7.4v12a2.4 2.4 0 0 0 2.4 2.4h7.2a2.4 2.4 0 0 0 2.4-2.4"/><g transform="rotate(10 13 10.4)"><rect x="7" y="2" width="12" height="16.8" rx="2.4"/><path d="M10 8V5h3"/></g>',
     board:'<g transform="rotate(10 12 12)"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></g>',
     pieces:"<circle cx=\"9\" cy=\"14\" r=\"7\"/><path d=\"M7 5a7 7 0 1 1 12 11M5 14a4 4 0 0 0 4 4\"/>",
     solitaire:"<rect x=\"2\" y=\"3\" width=\"6\" height=\"9\" rx=\"1\"/><rect x=\"10\" y=\"3\" width=\"6\" height=\"9\" rx=\"1\"/><path d=\"M4 15v6h6m2-6v6h6m0-18h4v9h-4\"/>",
