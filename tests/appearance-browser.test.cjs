@@ -22,10 +22,16 @@ async function fixture(run) {
   finally{await context.close();await browser.close();await server.close();}
 }
 async function choose(page,id) {
-  await page.locator('[data-appearance-picker]').first().click();
-  await page.locator('.appearance-picker [data-appearance-choice]').selectOption(id);
+  const openedSettings=!(await page.locator('.settings-themes:visible').count());
+  if(openedSettings)await page.locator('[data-command=settings]:visible').first().click();
+  await page.locator('.settings-themes').click();
+  await page.locator('.appearance-editor [data-appearance-choice]').selectOption(id);
+  await page.locator('[data-appearance-action=apply]').click();
+  await page.locator('[data-appearance-action=close]').click();
   assert.equal(await page.locator('.appearance-dialog').count(),0);
+  if(openedSettings)await page.locator('#modal-root [data-command=close-modal]').first().click();
 }
+
 function contrast(foreground,background) {
   const luminance=color=>{
     const rgb=color.startsWith('#')?color.slice(1).match(/../g).map(value=>parseInt(value,16)):color.match(/\d+(?:\.\d+)?/g).slice(0,3).map(Number);
@@ -44,7 +50,7 @@ test('theme editor copies immutable presets, previews, cancels, saves, reloads a
   const backgrounds=await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n).backgroundColor));
   for(const color of backgrounds){const rgb=color.match(/\d+/g).slice(0,3).map(Number);assert(Math.max(...rgb)<130,`Dark tile: ${color}`);}
   await page.screenshot({path:path.join(captures,'dark-hub-390.png'),fullPage:true});
-  await page.locator('[data-appearance-editor]').click();
+  await page.locator('[data-appearance-editor]:visible').first().click();
   assert.equal(await page.locator('[data-appearance-action=edit]').count(),0);
   await page.locator('[data-appearance-action=copy]').click();
   await page.locator('[name=themeName]').fill('Моя ночь');
@@ -63,7 +69,7 @@ test('theme editor copies immutable presets, previews, cancels, saves, reloads a
   await page.screenshot({path:path.join(captures,'custom-editor-390.png'),fullPage:true});
   await page.keyboard.press('Escape');await page.reload();await page.locator('.game-tile').first().waitFor();
   assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),id);
-  await page.locator('[data-appearance-editor]').click();
+  await page.locator('[data-appearance-editor]:visible').first().click();
   await page.locator('[data-appearance-action=edit]').click();await page.locator('[name=themeName]').fill('Тихий вечер');
   await page.locator('#appearance-draft button[type=submit]').click();
   assert.equal(await page.locator('[data-appearance-choice] option:checked').textContent(),'Тихий вечер');
@@ -72,7 +78,7 @@ test('theme editor copies immutable presets, previews, cancels, saves, reloads a
   assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),'light');
   await page.keyboard.press('Escape');
   for(const [width,height] of [[320,640],[740,390]]){
-    await page.setViewportSize({width,height});await page.locator('[data-appearance-editor]').click();
+    await page.setViewportSize({width,height});await page.locator('[data-appearance-editor]:visible').first().click();
     await page.locator('[data-appearance-action=copy]').click();
     const size=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,dialog:document.querySelector('.appearance-dialog').getBoundingClientRect().toJSON()}));
     assert(size.scroll<=size.width+1);assert(size.dialog.left>=0&&size.dialog.right<=width+1);
@@ -101,15 +107,15 @@ test('switching preserves local table, scrolling, history slider and an already 
   assert(after.same);assert.equal(after.raw,before.raw);assert.equal(after.top,before.top);assert.equal(after.left,before.left);assert.deepEqual(after.rect,before.rect);
   const colors=await page.evaluate(()=>{
     const header=getComputedStyle(document.querySelector('.yatzy-score thead th'));
-    return {header:header.color,face:header.backgroundColor,hint:getComputedStyle(document.querySelector('.yatzy-dice-help')).color,canvas:getComputedStyle(document.documentElement).getPropertyValue('--color-surface-game').trim()};
+    return {header:header.color,face:header.backgroundColor,hint:getComputedStyle(document.querySelector('.yatzy-score tbody th')).color,canvas:getComputedStyle(document.documentElement).getPropertyValue('--color-surface-game').trim()};
   });
   assert(contrast(colors.header,colors.face)>=4.5);assert(contrast(colors.hint,colors.canvas)>=4.5);
   await page.screenshot({path:path.join(captures,'dark-yatzy-390.png')});
   await page.locator('.table-tools [data-command=settings]').click();
   await page.evaluate(()=>window.appearanceSettings=document.querySelector('#modal-root .modal'));
-  await page.locator('.appearance-settings-shortcut').click();await page.keyboard.press('Escape');
+  await page.locator('.settings-themes').click();await page.keyboard.press('Escape');
   assert.equal(await page.evaluate(()=>document.querySelector('#modal-root .modal')===window.appearanceSettings),true);
-  await page.locator('.appearance-settings-shortcut').click();await page.locator('.appearance-picker select').selectOption('light');
+  await choose(page,'light');
   assert.equal(await page.evaluate(()=>document.querySelector('#modal-root .modal')===window.appearanceSettings),true);
   await page.locator('#modal-root [data-command=close-modal]').click();
   await page.locator('.table-tools [data-command=history]').click();await page.locator('#replay-range').waitFor();
@@ -122,7 +128,7 @@ test('switching preserves local table, scrolling, history slider and an already 
   await page.setViewportSize({width:320,height:640});
   assert.equal(await page.locator('.table-tools [data-appearance-picker]').isVisible(),false);
   await page.locator('.table-tools [data-command=settings]').click();
-  await page.locator('.appearance-settings-shortcut').click();await page.locator('.appearance-picker select').selectOption('light');
+  await choose(page,'light');
   assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');
 }));
 

@@ -250,7 +250,7 @@ test('RC8 corner seats align hands, keep player geometry equal and preserve a cl
   const geometry=await page.evaluate(()=>{
    const stage=document.querySelector('.app-game-layout'),field=stage.querySelector('.layout-field').getBoundingClientRect(),cards=[...stage.querySelectorAll('.seat-group>.player-panel:not([data-portrait-copy])')].filter(n=>n.getBoundingClientRect().width),boxes=cards.map(n=>{const b=n.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height,localWidth:n.offsetWidth,localHeight:n.offsetHeight};});
    return {focus:stage.dataset.layoutFocus,seating:stage.dataset.seating,mode:stage.dataset.seatMode,field:{x:field.x,y:field.y,w:field.width,h:field.height},boxes:boxes.map(b=>({x:b.x,y:b.y,w:b.width,h:b.height,lw:b.localWidth,lh:b.localHeight})),mini:[...stage.querySelectorAll('.seat-group .mini-hand>*')].map(n=>n.getBoundingClientRect().width),overflow:document.documentElement.scrollWidth>innerWidth+1,copies:stage.querySelectorAll('[data-seat-copy]').length};
-  });assert.equal(geometry.seating,'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
+  });assert.equal(geometry.seating,game==='gofish'?'row':'circle');assert(!geometry.overflow,game+' '+width);assert(geometry.field.w>40&&geometry.field.h>40,JSON.stringify(geometry));
   for(const b of geometry.boxes){assert(Math.abs(b.lw-geometry.boxes[0].lw)<1&&Math.abs(b.lh-geometry.boxes[0].lh)<1,game+' equal cards');assert(b.x+b.w<=geometry.field.x+1||b.x>=geometry.field.x+geometry.field.w-1||b.y+b.h<=geometry.field.y+1||b.y>=geometry.field.y+geometry.field.h-1,game+' seats cannot cover field '+JSON.stringify(geometry));}
   if(geometry.seating==='circle'&&['oldmaid','gofish'].includes(game)){assert.equal(geometry.focus,'hands');assert(geometry.boxes.every(b=>b.lw>b.lh),'name and hand share a horizontal block before edge rotation');}
   if(game==='ludo'&&geometry.seating==='circle'){assert.equal(geometry.copies,1);assert.equal(await page.locator('.seat-group [data-player-index="0"].is-turn').count(),1);assert.equal(await page.locator('.layout-self [data-player-index="0"].is-turn').count(),1);}
@@ -467,7 +467,7 @@ test('RC10 full names, adaptive hands and portrait own-seat identity', {timeout:
   });
   assert(result.names.every(n=>n.style!=='ellipsis'&&n.sw<=n.w+1),JSON.stringify({width,height,result}));
   if(height>width&&result.seating==='circle')assert.equal(result.copies,1);
-  if(width===1920)assert.equal(result.cropped,'false');
+  assert.equal(result.cropped,'true');
   const first=page.locator('.layout-hand .hand-card').first();await first.hover({position:{x:5,y:8}});await page.waitForTimeout(180);
   assert(await page.locator('.hand-track').evaluate(e=>e.scrollWidth<=e.clientWidth+2),'hover must not scroll ordinary hand '+width);
   await page.mouse.move(0,0);await page.waitForTimeout(100);
@@ -921,14 +921,60 @@ test('enlarged public moves and bubbles remain below application dialogs',async(
 test('fish books follow turn order in balanced avatar columns and rank-only cards stay legible',async()=>fixture(async page=>{
  for(const [width,height] of [[320,640],[390,844],[844,390]])for(const count of [3,4,5,6]){
   await page.setViewportSize({width,height});await scene(page,'gofish',{firstPlayer:2,players:Array.from({length:count},(_,i)=>({name:['Иван','Луна','Сэм','Кира','Ника','Лев'][i]}))});
+  await page.evaluate(()=>{rcUI={seating:'anchors'};rcRender();});assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row','fish ignores saved corner seating');
   const fieldBefore=await page.locator('.layout-field').boundingBox(),tablesBefore=await page.locator('.gofish-book-table').evaluateAll(tables=>tables.map(t=>({width:t.getBoundingClientRect().width,height:t.getBoundingClientRect().height})));
   await page.evaluate(()=>{const state=TabletopCore.project(rcSession.current,0),d=state.data;d.books=d.books.map(()=>Array.from({length:13},(_,i)=>i+2));d.bookCards=d.books.map((r,p)=>r.map((rank,i)=>({id:`test-${p}-${i}`,rank,suit:'♥'})));const scene=PlayroomViews.render(state,0,[],{preferences:{},viewState:{}});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get('gofish').name,state,viewer:0,actions:[],scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
   assert.deepEqual(await page.locator('.layout-field').boundingBox(),fieldBefore,'all sets do not resize the field');assert.deepEqual(await page.locator('.gofish-book-table').evaluateAll(tables=>tables.map(t=>({width:t.getBoundingClientRect().width,height:t.getBoundingClientRect().height}))),tablesBefore,'all sets do not resize tables');
-  await page.screenshot({path:path.join(shots,`rc22-fish-${count}-${width}-start.png`)});
-  const layout=await page.evaluate(()=>({columns:Object.values([...document.querySelectorAll('[data-book-player]')].reduce((columns,row)=>{const x=Math.round(row.getBoundingClientRect().x);(columns[x]||=[]).push(Number(row.dataset.bookPlayer));return columns;},{})),stock:document.querySelector('.gofish-stock').getBoundingClientRect().width,overflows:[...document.querySelectorAll('.gofish-book-cards')].map(c=>c.scrollWidth>c.clientWidth),ranks:[...document.querySelectorAll('.gofish-book .shared-face strong')].map(c=>c.textContent),card:document.querySelector('.gofish-book').getBoundingClientRect().width}));
-  assert(layout.columns.length>=1&&layout.columns.length<=2);if(count===6)assert.equal(layout.columns.length,width===844?1:2,'six-player tables adapt to available field height');assert(Math.abs(layout.columns[0].length-(layout.columns[1]?.length||layout.columns[0].length))<=1);assert.deepEqual(layout.columns.flat(),Array.from({length:count},(_,i)=>(i+2)%count));assert(layout.stock>=59.9&&layout.stock<=90.1,JSON.stringify(layout));assert(await page.locator('.gofish-owner .avatar').evaluateAll(avatars=>avatars.every(avatar=>{const range=document.createRange();range.selectNodeContents(avatar);const letter=range.getBoundingClientRect(),box=avatar.getBoundingClientRect();return Math.abs(letter.x+letter.width/2-box.x-box.width/2)<1&&Math.abs(letter.y+letter.height/2-box.y-box.height/2)<4;})),'avatar letters remain centered in both table columns');assert(layout.card>=27.9&&layout.card<=28.1,JSON.stringify(layout));assert.equal(layout.ranks.length,count*13);assert.equal(new Set(layout.ranks).size,13);assert(await page.locator('.gofish-book-cards').evaluateAll(cells=>cells.every(cell=>{cell.scrollLeft=cell.scrollWidth;const last=cell.lastElementChild.getBoundingClientRect(),box=cell.getBoundingClientRect();return last.right<=box.right+1&&last.left>=box.left-1;})),'last set is reachable inside its own table cell');
+  assert(await page.locator('.gofish-book-cards').evaluateAll(stacks=>stacks.every(stack=>{const cards=[...stack.children];return cards.slice(1).every((card,i)=>{const previous=cards[i],a=previous.getBoundingClientRect(),b=card.getBoundingClientRect(),label=previous.querySelector('.shared-card-corner:not(.bottom)'),corner=label.getBoundingClientRect();if(Math.abs(b.left-a.left-14)>.1)return false;if(previous.dataset.rank!=='10')return b.left>=corner.right;const range=document.createRange();range.setStart(label.firstChild,0);range.setEnd(label.firstChild,1);return b.left>=range.getBoundingClientRect().right+1&&b.left<corner.right&&corner.left-a.left<stack.firstElementChild.querySelector('.shared-card-corner:not(.bottom)').getBoundingClientRect().left-stack.firstElementChild.getBoundingClientRect().left-.8;});})),'uniform mini-card geometry '+JSON.stringify(await page.locator('.gofish-book-cards').first().evaluate(stack=>[...stack.children].map((card,i)=>{const box=card.getBoundingClientRect(),label=card.querySelector('.shared-card-corner:not(.bottom)'),corner=label.getBoundingClientRect();return {rank:card.dataset.rank,x:box.x,step:i?box.x-stack.children[i-1].getBoundingClientRect().x:0,left:corner.left-box.left,right:corner.right-box.left};}))));
+  await page.screenshot({path:path.join(shots,`fish-density-${count}-${width}-start.png`)});
+  const layout=await page.evaluate(()=>({columns:Object.values([...document.querySelectorAll('[data-book-player]')].reduce((columns,row)=>{const x=Math.round(row.getBoundingClientRect().x);(columns[x]||=[]).push(Number(row.dataset.bookPlayer));return columns;},{})),stock:document.querySelector('.gofish-stock').getBoundingClientRect().width,overflows:[...document.querySelectorAll('.gofish-book-cards')].map(c=>c.scrollWidth>c.clientWidth),ranks:[...document.querySelectorAll('.gofish-book .shared-card-corner:not(.bottom)')].map(c=>c.textContent),card:document.querySelector('.gofish-book').getBoundingClientRect().width}));
+  assert(layout.columns.length>=1&&layout.columns.length<=2);if(count===6&&width!==320)assert.equal(layout.columns.length,1,'six-player tables fit one column when field height is sufficient');assert(Math.abs(layout.columns[0].length-(layout.columns[1]?.length||layout.columns[0].length))<=1);assert.deepEqual(layout.columns.flat(),Array.from({length:count},(_,i)=>(i+2)%count));assert(layout.stock>=59.9&&layout.stock<=90.1,JSON.stringify(layout));assert(await page.locator('.gofish-owner .avatar').evaluateAll(avatars=>avatars.every(avatar=>{const range=document.createRange();range.selectNodeContents(avatar);const letter=range.getBoundingClientRect(),box=avatar.getBoundingClientRect();return Math.abs(box.width-24)<.1&&Math.abs(box.height-24)<.1&&Math.abs(letter.x+letter.width/2-box.x-box.width/2)<1&&Math.abs(letter.y+letter.height/2-box.y-box.height/2)<4;})),'avatar letters remain centered in both table columns');assert(layout.card>=23.9&&layout.card<=24.1,JSON.stringify(layout));assert.equal(layout.ranks.length,count*13);assert.equal(new Set(layout.ranks).size,13);assert(await page.locator('.gofish-book-cards').evaluateAll(cells=>cells.every(cell=>{cell.scrollLeft=cell.scrollWidth;const last=cell.lastElementChild.getBoundingClientRect(),box=cell.getBoundingClientRect();return last.right<=box.right+1&&last.left>=box.left-1;})),'last set is reachable inside its own table cell');
   await page.evaluate(()=>{const board=document.querySelector('.gofish-board');board.scrollTop=board.scrollHeight;});
   assert(await page.locator('.gofish-board').evaluate(board=>{const b=board.getBoundingClientRect();return [...board.querySelectorAll('.gofish-book-row')].every(row=>row.getBoundingClientRect().bottom<=b.bottom+1);}),'last player in either table is reachable');
-  await page.screenshot({path:path.join(shots,`rc22-fish-${count}-${width}.png`)});
+  await page.screenshot({path:path.join(shots,`fish-density-${count}-${width}.png`)});
+ }
+}));
+
+test('fish hides the seating selector because only rows are available',async()=>fixture(async page=>{
+ await page.locator('[data-start="gofish"]').first().click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
+ await page.locator('[data-command="lobby-start"]').click();await page.locator('.gofish-board').waitFor();
+ await page.locator('.table-shell [data-command="settings"]').click();assert.equal(await page.locator('#setting-seating').count(),0);assert.equal(await page.locator('#setting-hand-shape').count(),1);
+}));
+
+test('player-card hands are always cropped on every hand-game surface',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ for(const game of ['uno','durak','oldmaid','gofish','domino'])for(const openHands of [false,true]){
+  await scene(page,game,{openHands});
+  for(const surface of ['combined','table','player'])for(const seating of ['row','anchors']){
+   await page.evaluate(({surface,seating})=>{const viewer=surface==='table'?-1:0,state=TabletopCore.project(rcSession.current,viewer),actions=viewer<0?[]:TabletopCore.legalActions(rcSession.current,viewer),scene=PlayroomViews.render(state,viewer,actions,{surface,seating,preferences:{},viewState:{}});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:state.game,state,viewer,actions,scene,turnText:'Ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));},{surface,seating});
+   const hands=await page.locator('.player-panel .mini-hand').evaluateAll(hands=>hands.filter(hand=>hand.clientWidth&&hand.firstElementChild).map(hand=>({height:hand.getBoundingClientRect().height,card:hand.firstElementChild.getBoundingClientRect().height,overflow:getComputedStyle(hand).overflowY})));
+   assert(hands.length,game+' '+surface);assert(hands.every(hand=>hand.overflow==='hidden'&&hand.card>=hand.height*1.5),JSON.stringify({game,surface,seating,openHands,hands}));
+  }
+ }
+}));
+
+
+test('avatars remain square with proportional corners in lobby, settings, picker, games and saved results',async()=>fixture(async page=>{
+ const check=async label=>{
+  const avatars=await page.locator('.avatar').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length&&n.getBoundingClientRect().width).map(n=>{
+   const r=n.getBoundingClientRect(),s=getComputedStyle(n),art=n.querySelector('.avatar-art'),clip=n.querySelector('.avatar-clip');
+   return {width:r.width,height:r.height,corners:[s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomLeftRadius,s.borderBottomRightRadius],fit:art?getComputedStyle(art).objectFit:null,inset:clip?(clip.getBoundingClientRect().left-r.left)/r.width:null};
+  }));
+  assert(avatars.length,label+' has visible avatars');
+  for(const a of avatars){assert(Math.abs(a.width-a.height)<.2,label+JSON.stringify(a));assert(a.corners.every(v=>v==='22%'),label+JSON.stringify(a));if(a.fit){assert.equal(a.fit,'contain');assert(Math.abs(a.inset-.09)<.01);}}
+ };
+ for(const [width,height] of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await page.reload();await page.locator('.game-tile').first().waitFor();
+  await page.locator('.topbar [data-command="settings"]').click();await check('settings');
+  await page.locator('[data-avatar-picker]').first().click();await check('picker');
+  await page.screenshot({path:path.join(shots,`avatars-picker-${width}.png`)});
+  await page.locator('[data-avatar-option="square-red"]').click();await check('profile artwork');await page.keyboard.press('Escape');
+  await page.locator('[data-start="gofish"]').first().click();await check('lobby');
+  await page.screenshot({path:path.join(shots,`avatars-lobby-${width}.png`)});
+  await scene(page,'gofish',{players:Array.from({length:6},(_,i)=>({name:['Иван','Луна','Сэм','Кира','Ника','Лев'][i],avatar:i%2?'square-red':null}))});
+  await check('game and fish table');
+  await page.evaluate(()=>{const state=TabletopCore.project(rcSession.current,0);state.status='finished';state.winners=[0];state.result={places:[1,2,3,4,5,6],values:[6,5,4,3,2,1]};document.querySelector('#app').innerHTML=PlayroomGameScreen.resumeCard({state,gameName:'Спроси рыбу',action:'data-resume'})+PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Спроси рыбу'});});
+  await check('resume and results');await page.screenshot({path:path.join(shots,`avatars-results-${width}.png`)});
  }
 }));
