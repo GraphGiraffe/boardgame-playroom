@@ -364,7 +364,7 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
 
 test('local Pages production deploy uploads once without GitHub and rolls back on failed smoke',()=>{
  const code=String.raw`
-import importlib.util, os, tempfile
+import importlib.util, json, os, tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -386,12 +386,15 @@ for fail in (False,True):
  def prepare(public,sums,wrapper,destination,catalog_channel=""):destination.mkdir();return {'sha256':'b'*64}
  def smoke(url,*args,**kwargs):
   if fail and url=='https://new.example':raise ValueError('smoke failed')
+  if kwargs.get('report_path'):kwargs['report_path'].write_text(json.dumps({'appVersion':'0.18.0','catalog':{'collection':'0.7.0','sha256':'c'*64}}))
  args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.4',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
  with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
   try:report=m.run(args)
   except ValueError:
    assert fail and pages.rollbacks==[old]
-  else:assert not fail and report['status']=='published' and not pages.rollbacks
+  else:
+   assert not fail and report['status']=='published' and not pages.rollbacks
+   assert report['productionVerified']=={'appVersion':'0.18.0','catalog':{'collection':'0.7.0','sha256':'c'*64}}
  assert pages.uploads==['production']
 `;
  require('node:child_process').execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
