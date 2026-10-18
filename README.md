@@ -2,6 +2,8 @@
 
 Текущая пара — [приложение 0.17.6](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.6) и [коллекция 0.6.5](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.6.5) из 12 игр. Локальная игра с ботами, передача телефона и сетевая комната через WebRTC доступны в одном приложении.
 
+Кандидат 0.18: [RC26](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0-rc.26), коллекция RC19. Новые настройки и исправления — [отчёт](docs/RC-0.18.0-rc.26.md); стабильная пара выше сохраняется.
+
 ## Начать играть
 
 Из [релиза 0.17.6](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.17.6) скачайте:
