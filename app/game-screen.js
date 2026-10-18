@@ -182,6 +182,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
   function fitOpponentHand(mini,stage){
     const count=mini.children.length;if(!count)return;
+    mini.style.setProperty('--opponent-viewport-height',(mini.firstElementChild.offsetHeight*.5+4)+'px');
     mini.style.removeProperty('--opponent-card-width');
     const ratio=Number(mini.querySelector('[data-piece-ratio]')?.dataset.pieceRatio);
     if(ratio>0&&ratio<=1){const height=parseFloat(stage.style.getPropertyValue('--opponent-card-height'))||40;mini.style.setProperty('--opponent-card-width',height*ratio+'px');}
@@ -276,6 +277,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       table.style.setProperty('--score-columns',columns);table.style.setProperty('--score-rows',Math.ceil(rows.length/columns));table.dataset.scoreColumns=String(columns);
     }
   }
+  function fitCardOverlaps(stage){
+    for(const stack of stage.querySelectorAll('[data-card-overlap]')){
+      const fixedStep=Number(stack.dataset.cardOverlap);
+      let previous=null;
+      for(const card of stack.children){
+        card.style.marginInlineStart=previous?Math.min(0,previous.peek-previous.width)+'px':'0px';
+        const box=card.getBoundingClientRect(),corner=card.querySelector('.shared-card-corner:not(.bottom),.card-corner:not(.bottom)')?.getBoundingClientRect();
+        previous={width:box.width,peek:Math.min(box.width,fixedStep>0?fixedStep:corner?Math.ceil(corner.right-box.left+2):box.width)};
+      }
+    }
+  }
   const replayFitters=new WeakMap();
   function layoutScene(host){
     const scene=host.querySelector('.scene'),previous=replayFitters.get(host);
@@ -304,8 +316,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const miniWidth=Math.max(28,Math.min(48,portrait?cardWidth*.5:h*.07)),miniHeight=miniWidth*1.4;
       stage.style.setProperty('--opponent-card-width',miniWidth+'px');
       stage.style.setProperty('--opponent-card-height',miniHeight+'px');
-      stage.style.setProperty('--opponent-viewport-height',(miniHeight+4)+'px');
-      stage.dataset.croppedHands='false';
+      stage.style.setProperty('--opponent-viewport-height',(miniHeight*.5+4)+'px');
+      stage.dataset.croppedHands='true';
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
       const fallback=stage.dataset.preferredSeating==='circle'&&(w<280||h<200||(!portrait&&h<430&&roster>3&&stage.dataset.opponentHands==='true'));
       stage.dataset.seating=fallback?'row':stage.dataset.preferredSeating;
@@ -337,8 +349,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         return stage.dataset.seating==='circle'&&groups.some((box,i)=>overlap(box,ownBox)||groups.slice(i+1).some(other=>overlap(box,other)));
       };
       const participants=stage.querySelector('.layout-participants'),field=stage.querySelector('.layout-field');
-      const cramped=stage.dataset.denseRoster==='true'||seatsOverlap()||(participants&&participants.scrollHeight>participants.clientHeight+2)||(field&&field.clientHeight<Math.min(180,h*.35));
-      if(cramped){stage.style.setProperty('--opponent-viewport-height',(miniHeight*.5+4)+'px');stage.dataset.croppedHands='true';fitField(stage);fitHand(stage);}
       if(stage.dataset.seating==='circle'&&(seatsOverlap()||field?.clientHeight<80)){
         stage.dataset.seating='row';stage.dataset.seatingFallback='true';fitField(stage);fitHand(stage);
       }
@@ -357,7 +367,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow='auto';}
-      fitField(stage);fitScoreTables(stage);}
+      fitField(stage);fitScoreTables(stage);fitCardOverlaps(stage);}
     if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);

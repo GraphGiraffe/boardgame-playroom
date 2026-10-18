@@ -309,3 +309,24 @@ test('preparation is durable but does not create game turns; public projection e
  assert.equal(state.timeline.turn,2);assert.deepEqual(state.timeline.starts,[4,5]);
  assert.equal(state.timeline.playStart,4);game.validate(state);
 });
+
+
+test('mini-card assets compile identically with their renderer and styles in both builders',()=>{
+ const script=`
+import importlib.util,json,sys
+from pathlib import Path
+out=[]
+for name,folder in [('app',sys.argv[1]),('packs',sys.argv[2])]:
+ spec=importlib.util.spec_from_file_location(name,Path(folder)/'build.py')
+ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ manifest=Path(sys.argv[2])/'packs/gofish/manifest.json'
+ out.append(module.read_source_pack(manifest) if name=='app' else module.build_pack(manifest.parent))
+print(json.dumps(out))
+`;
+ const [app,pak]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
+ assert.deepEqual(app,pak);
+ assert(app.manifest.sharedAssetPacks.includes('mini-cards'));
+ for(const file of ['renderer.js','styles.css'])assert.equal(typeof app.files['assets/shared-packs/mini-cards/'+file],'string');
+ assert(app.files['view.js'].includes('root.PlayroomMiniCards=api'));
+ assert(app.files['styles.css'].includes('.mini-card[data-rank="10"]'));
+});

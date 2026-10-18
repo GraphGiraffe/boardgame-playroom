@@ -242,7 +242,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .app-game-layout .player-data{display:flex;flex-wrap:wrap;align-items:center;gap:3px;min-width:0}
 .app-game-layout .player-data .player-badges{display:contents}
 .app-game-layout .player-data .player-side{font-size:9px}
-.app-game-layout .player-panel .avatar{width:26px;height:26px;min-width:26px;flex:none;border-radius:9px;font-size:13px}
+.app-game-layout .player-panel .avatar{width:26px;height:26px;min-width:26px;flex:none;font-size:13px}
 
 @media(max-width:370px){.app-game-layout[data-layout-mode="phone-portrait"] .player-panel.opponent-hand .player-info{padding-inline:0}}
 
@@ -468,16 +468,16 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .pack-row:focus-visible{outline:3px solid var(--color-interaction-available,#638658);outline-offset:2px}
 
 /* Avatar images leave the seat-coloured rim visible, including opaque uploads. */
-.avatar{position:relative;isolation:isolate;flex:none;overflow:hidden}
+.avatar{position:relative;isolation:isolate;flex:none;overflow:hidden;aspect-ratio:1;box-sizing:border-box;border-radius:22%}
 .avatar .avatar-clip{position:absolute;inset:9%;border-radius:24%;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .avatar .avatar-art{display:block;width:100%;height:100%;object-fit:contain;border-radius:inherit}
 .profile-identity-row{display:flex;align-items:center;gap:10px}.profile-identity-row>.field{flex:1;min-width:0}
 .profile-avatar-button{padding:0;border:0;background:none;flex:none;border-radius:12px;cursor:pointer;min-width:44px;min-height:44px;display:grid;place-items:center}
-.profile-avatar-button>.avatar{width:48px;height:48px;border-radius:13px;font-size:22px}
+.profile-avatar-button>.avatar{width:48px;height:48px;font-size:22px}
 .lobby-profile>.profile-avatar-button{align-self:end;margin-bottom:0}
 .avatar-picker-backdrop{z-index:100;padding:16px}.avatar-picker-modal{display:flex;flex-direction:column;max-width:600px;width:100%;max-height:calc(100dvh - 32px);overflow:auto}
 .avatar-picker-modal>.modal-head{display:flex;align-items:center;gap:12px;flex:none;position:sticky;top:0;background:var(--paper);z-index:1}.avatar-picker-modal h2{flex:1;text-align:left;font-size:24px}
-.avatar-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.avatar-option{min-width:0;aspect-ratio:1;display:grid;place-items:center;padding:3px;border:2px solid transparent;background:transparent;border-radius:12px}.avatar-option .avatar{width:100%;height:100%;border-radius:10px;font-size:20px;background:var(--color-surface-raised,#e6e9dc)}
+.avatar-options{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}.avatar-option{min-width:0;aspect-ratio:1;display:grid;place-items:center;padding:3px;border:2px solid transparent;background:transparent;border-radius:12px}.avatar-option .avatar{width:100%;height:100%;font-size:20px;background:var(--color-surface-raised,#e6e9dc)}
 .avatar-option[aria-pressed=true]{border-color:var(--green);background:var(--color-surface-selected,#e0e8cb)}
 
 @media(max-width:420px){.avatar-picker-modal{padding:16px}.avatar-options{gap:3px}.avatar-option{padding:2px;border-radius:9px}.avatar-picker-modal h2{font-size:22px}}
@@ -496,7 +496,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .resume-person{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%}
 .resume-person-name{min-width:0;overflow-wrap:anywhere;line-height:1.35}
 .resume-person .player-avatar-wrap{width:24px;height:24px;flex:none}
-.resume-person .avatar{width:24px;height:24px;min-width:24px;border-radius:7px;font-size:12px}
+.resume-person .avatar{width:24px;height:24px;min-width:24px;font-size:12px}
 .resume-person .player-medallion{width:12px;height:12px;right:-3px;top:-3px}
 .resume-person .participant-role svg{width:12px;height:12px}
 .resume-person.saved-current-turn{text-decoration:none}.resume-person.saved-current-turn>.resume-person-name{text-decoration:underline;text-underline-offset:.2em;text-decoration-thickness:2px}
@@ -656,8 +656,8 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 
 #app .app-game-layout[data-dense-roster="true"] .player-panel.opponent-hand{min-height:40px}
 
-/* Crop the viewport only when the full hand competes with the field. */
-#app .app-game-layout:not([data-surface="player"]) .opponent-hand .player-hand .mini-hand{height:var(--opponent-viewport-height,44px);min-height:var(--opponent-viewport-height,44px);max-height:var(--opponent-viewport-height,44px);align-items:start;align-content:start;overflow-y:hidden;padding-block:2px!important}
+/* Every player-card hand is a cropped viewport over full-size pieces. */
+#app .app-game-layout .opponent-hand .player-hand .mini-hand{flex:none!important;height:var(--opponent-viewport-height,24px)!important;min-height:var(--opponent-viewport-height,24px)!important;max-height:var(--opponent-viewport-height,24px)!important;align-items:start;align-content:start;overflow-y:hidden;padding-block:2px!important}
 #app .app-game-layout:not([data-surface="player"]) .opponent-hand .mini-hand>*{width:var(--opponent-card-width,28px)!important;min-width:var(--opponent-card-width,28px)!important;height:var(--opponent-card-height,40px)!important;min-height:var(--opponent-card-height,40px)!important;max-height:var(--opponent-card-height,40px)!important;flex-basis:var(--opponent-card-width,28px)!important;margin-left:calc(var(--mini-step,28px) - var(--opponent-card-width,28px))!important}
 #app .app-game-layout:not([data-surface="player"]) .opponent-hand .mini-hand>*:first-child{margin-left:0!important}
 #app .app-game-layout:not([data-surface="player"]) .opponent-hand .mini-hand .public-card>*{width:var(--opponent-card-width,28px)!important;min-width:var(--opponent-card-width,28px)!important;height:var(--opponent-card-height,40px)!important;min-height:var(--opponent-card-height,40px)!important}
