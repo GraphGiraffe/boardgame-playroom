@@ -1,6 +1,6 @@
 # Выпуск ХОД · 0.18
 
-Пара стабильной линии: приложение **0.18.1**, коллекция **0.7.1**. Точное состояние, SHA, проверки и deployment — [RELEASE-0.18](RELEASE-0.18.md). Версии игр независимы. main — stable, dev — integration; опубликованные теги/bytes неизменны.
+Пара стабильной линии: приложение **0.18.2**, коллекция **0.7.1**. Точное состояние, SHA, проверки и deployment — [RELEASE-0.18](RELEASE-0.18.md). Версии игр независимы. main — stable, dev — integration; опубликованные теги/bytes неизменны.
 
 ## Подготовка
 
@@ -13,7 +13,7 @@
 # repository playroom-paks
 python3 build.py --output-dir dist/release-0.7.1
 # repository playroom
-python3 build.py --all-games --pwa --remote-catalog --packs-dir ../playroom-paks/packs --output-dir dist/release-0.18.1
+python3 build.py --all-games --pwa --remote-catalog --packs-dir ../playroom-paks/packs --output-dir dist/release-0.18.2
 ```
 
 Приложение поставляет playroom.html, playroom-all-games.html, playroom-pwa.zip, playroom-source.zip, tabletop-core.zip, README-TEST.txt/CHANGELOG и SHA256SUMS. Коллекция — 12 versioned JSON, collection/source/shared-assets ZIP, отдельные asset-pack ZIP и SHA256SUMS. Добавленные provenance/notes включить в пересчитанный SHA256SUMS до загрузки. ZIP CRC и скачанные public bytes проверить независимо.
@@ -24,7 +24,7 @@ python3 build.py --all-games --pwa --remote-catalog --packs-dir ../playroom-paks
 
 Паки публикуются через `packs-publish.yml`: `checks=none`, `release=v0.7.1`, пустой production channel. Immutable files загружаются первыми, catalog snapshot и атомарный current pointer — последними. `only` для одной игры; bootstrap только для отсутствующего каталога. Старые файлы остаются. Откат: тот же workflow с rollback=<snapshot sha>, без release.
 
-Оболочка публикуется через `prerelease.yml`, `operation=deploy`, `checks=none`, `release=v0.18.1` на main. Существующий защищённый Pages project/origin, приватная wrapper и R2 binding сохраняются; автоматические Git builds остаются выключенными. Скрипт проверяет rollback point, скачанные assets, protected runtime/catalog/offline и canonical deployment. Public ZIP **не содержит** private worker/routes/secrets. Не создавать второй проект.
+Оболочка публикуется через `prerelease.yml`, `operation=deploy`, `checks=none`, `release=v0.18.2` на main. Существующий защищённый Pages project/origin, приватная wrapper и R2 binding сохраняются; автоматические Git builds остаются выключенными. Скрипт проверяет rollback point, скачанные assets, protected runtime/catalog/offline и canonical deployment. Public ZIP **не содержит** private worker/routes/secrets. Не создавать второй проект.
 
 Переход API 3 согласован как общий cutover: зафиксировать старый catalog snapshot и deployment; опубликовать совместимую коллекцию и сразу оболочку. Если app deploy не прошёл, вернуть также старый каталог; app rollback сам по себе не откатывает R2. Установленные старые паки/данные остаются локально; UpgradeService требует явного подтверждения владельца и позволяет экспорт.
 
