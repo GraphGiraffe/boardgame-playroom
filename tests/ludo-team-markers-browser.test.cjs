@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
@@ -12,7 +13,7 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     await page.goto(server.url);
     await page.locator('[data-start=ludo]').click();
     await page.locator('[data-command=room-rules]').click();
-    await page.locator('#room-rules-form [name=preset]').selectOption('teams');
+    await selectChoice(page.locator('#room-rules-form [name=preset]'),'teams');
     await page.locator('#room-rules-form [name=firstPlayerMode][value=assigned]').check();
     await page.locator('#room-rules-form').evaluate(form=>form.requestSubmit());
     await page.evaluate(()=>{
@@ -35,11 +36,11 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     await page.locator('[data-command=lobby-start]').click();
     await page.locator('.ludo-board').waitFor();
     await page.locator('.table-tools [data-command=settings]').click();
-    await page.locator('#setting-seating').selectOption('row');await page.locator('.modal [data-command=close-modal]').click();
+    await selectChoice(page.locator('#setting-seating'),'row');await page.locator('.modal [data-command=close-modal]').click();
     assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');
     assert.equal(await page.locator('.player-panel:not([data-seat-copy]) .player-medallion.is-team').count(),4,'row seating preserves every team badge');
     await page.locator('.table-tools [data-command=settings]').click();
-    await page.locator('#setting-seating').selectOption('anchors');await page.locator('.modal [data-command=close-modal]').click();
+    await selectChoice(page.locator('#setting-seating'),'anchors');await page.locator('.modal [data-command=close-modal]').click();
     assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'anchors');
     const game=await inspect('.seat-group .player-panel .player-medallion.is-team');
     assert.equal(game.length,4,'anchored game cards keep all four team badges');

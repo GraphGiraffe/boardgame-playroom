@@ -4,10 +4,10 @@
 
 | Блок | Подблоки |
 | --- | --- |
-| core | state, session-runtime, model, domain, appearance, localization, packs, screen |
+| core | state, session-runtime, model, domain, appearance, localization, packs, screen, test-selection |
 | input | gestures, motion, hands, feedback |
 | games | layout, actions |
-| ui | navigation, history, room, appearance |
+| ui | navigation, history, room, appearance, results, rules, settings, settings-help |
 | storage | profile, journal, history |
 | network | authority, table, transport, resume |
 | pairing | codes, audio, pwa |
@@ -25,6 +25,23 @@ node scripts/codex/test.cjs --changed origin/dev --list
 ```
 
 `--changed` сравнивает текущую рабочую копию с указанной базой (по умолчанию origin/dev), включая незакоммиченные изменения и неигнорируемые новые файлы. `tests/affected.cjs` связывает изменённые модули с зависимыми подблоками. Один файл выполняется один раз при объединении выборок. Изменение только сценария запускает этот сценарий; документы не требуют продуктовых тестов. Изменение неизвестного пути или инфраструктуры запуска выбирает полный набор — отсутствие правила не означает отсутствие зависимостей.
+
+Для малых проверок экранов добавлены иерархические типы:
+
+```bash
+node scripts/codex/test.cjs screen --list
+node scripts/codex/test.cjs screen:phone:portrait
+node scripts/codex/test.cjs screen:phone:landscape
+node scripts/codex/test.cjs ui/rules
+node scripts/codex/test.cjs ui/settings
+node scripts/codex/test.cjs ui/settings-help
+node scripts/codex/test.cjs case/rule-settings-browser --name 'screen:phone:landscape'
+node scripts/codex/test.cjs case/rc2-presentation-browser --name 'RC7 Ludo offers'
+```
+
+Типы указаны в `types` записи `tests/blocks.cjs`. Каждый родитель выбирает потомков по `:`, а runner фильтрует заголовки сценариев внутри файла. Заголовок типизированного сценария начинается с типа, например `screen:phone:landscape …`. Пересекающиеся селекторы объединяются без повторного запуска. Пока типизированы новые малые проверки правил, руки/рассадки и справок; это не полная физическая матрица всех игровых экранов. Старые большие файлы доступны по `case/… --name`, их регистрация и полные проверки сохраняются.
+
+`--name` — буквальный фрагмент заголовка, разрешён только с одним `case/…`. Пустое совпадение не считается успехом, даже если Node сообщает о прошедшем пустом файле. Прямой запуск runner без селектора запрещён; `npm test` по-прежнему явно выбирает полный профиль `all` и используется только при обоснованном сквозном риске. `--list` показывает выбранные файлы и фильтр без выполнения.
 
 Селектор `case/ИМЯ` запускает один зарегистрированный файл `tests/ИМЯ.test.cjs`. Его можно объединять с блоками и подблоками через запятую. Неизвестный селектор завершает запуск с ошибкой; пустой успешный прогон не считается проверкой. Для небольшой независимой правки выбирайте сценарии по затронутому поведению и фиксируйте выбор в выпуске. Например, изменение подписи счётчика в меню проверяется `case/rc2-hub-browser`; для изменений правил, сохранений или сетевого контракта добавляйте соответствующие блоки и совместную проверку паков.
 

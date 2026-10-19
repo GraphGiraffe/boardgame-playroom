@@ -39,7 +39,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function fieldHelp(text){
     if(!text)return '';
     const id='rule-help-'+(++helpSequence),label=esc(ruleText('more'));
-    return `<span class="rule-help"><button type="button" popovertarget="${id}" aria-label="${label}" title="${label}">${root.TabletopUI.helpers.icon('help')}</button><span id="${id}" class="mini-help-popover" popover="auto" role="note">${esc(text)}</span></span>`;
+    return `<span class="rule-help"><button type="button" popovertarget="${id}" aria-label="${label}" title="${label}">${root.TabletopUI.helpers.icon('help').replace('</svg>','<circle class="help-focus-ring" cx="12" cy="12" r="14"/>' + '</svg>')}</button><span id="${id}" class="mini-help-popover" popover="auto" role="note">${esc(text)}</span></span>`;
   }
   function gameRulesMarkup(game,settings=[]){
     const rules=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];

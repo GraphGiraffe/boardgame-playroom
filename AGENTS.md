@@ -1,6 +1,6 @@
 # Работа с ХОД 0.18
 
-Приложение 0.18.0, коллекция 0.7.0; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](docs/ROADMAP.md). Публикация подтверждается [release evidence](docs/RELEASE-0.18.md), не номером в исходнике.
+Приложение 0.18.1, коллекция 0.7.1; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](docs/ROADMAP.md). Публикация подтверждается [release evidence](docs/RELEASE-0.18.md), не номером в исходнике.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.

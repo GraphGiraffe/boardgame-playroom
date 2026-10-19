@@ -1,6 +1,6 @@
 # SDK 0.18 · API 3
 
-`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.0. Источники и публикация — [RELEASE-0.18](RELEASE-0.18.md).
+`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.1. Источники и публикация — [RELEASE-0.18](RELEASE-0.18.md).
 
 ## Независимые модули
 
