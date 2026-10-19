@@ -260,3 +260,7 @@
 [S6]: https://brainium.helpshift.com/hc/en/3-solitaire/faq/459-what-is-vegas-mode/
 [S7]: https://docs.kde.org/stable_kf6/en/kpat/kpat/rules-specific.html
 [S8]: https://documentation.help/Solitaire/sol788g.htm
+
+## Дополнение после анализа
+
+По отдельному запросу пользователя подготовлена [смена пака в комнате](ROOM-PACK-SELECTION.md): ограничения по реальным людям, удаление лишних ботов, фильтр сетевого solo и явный локальный transportMode при создании комнаты. Это точечная инфраструктурная доработка; она не реализует Косынку, её правила, board-only layout, Undo или подсчёт XP. Исходный аудит выше относится к стабильной базе 0.18.2.

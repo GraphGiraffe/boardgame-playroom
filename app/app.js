@@ -255,7 +255,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     catch(_){
       // Legacy saves still open. Rebuild a locked view from the actual session.
       const g=meta(session.game),host={id:playerProfile.id,nickname:playerProfile.name};
-      let draft=roomService.create({name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      let draft=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       draft=roomService.configure(draft.id,host.id,{transportMode:'hotseat'});
       const hostIndex=Math.max(0,players.findIndex(p=>!p.bot));
       if(hostIndex)draft=roomService.moveParticipant(draft.id,host.id,host.id,draft.seats[hostIndex].id);
@@ -508,7 +508,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const rules=defaultRules(gameId,g);
     const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df"),avatar:profileAvatar};
-    room=roomService.create({name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+    room=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     lobbyParticipantId=host.id;room=roomService.configure(room.id,host.id,{transportMode:'hotseat'});
     for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
     renderLobby();
@@ -614,13 +614,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function showRoomGameEditor(){
     if(!room||roomService.snapshot(room.id).phase!=='lobby'||room.ownerId!==lobbyParticipantId)return;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{favorites:[]};
-    const available=orderedVisibleGames().filter(g=>V.supports(g.id,'player')&&V.supports(g.id,'table')).sort((a,b)=>Number(preferences.favorites.includes(b.id))-Number(preferences.favorites.includes(a.id)));
+    const available=orderedVisibleGames().filter(g=>(room.transportMode!=='network'||g.max>1)&&V.supports(g.id,'player')&&V.supports(g.id,'table')).sort((a,b)=>Number(preferences.favorites.includes(b.id))-Number(preferences.favorites.includes(a.id)));
     if(!available.length)return toast(globalThis.PlayroomMessages.text("ui.app.631826417487"));
     openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.3bba8537ff5d"))}<div class="room-choice-list">${available.map((g,i)=>`${i&&preferences.favorites.includes(available[i-1].id)&&!preferences.favorites.includes(g.id)?'<hr class="room-choice-divider">':''}${GameScreen.packRow({id:g.id,version:g.version||'',name:g.name,manifest:catalog[g.id]||g,selectable:true,attrs:`data-room-game="${esc(g.id)}"`})}`).join('')}</div>`);modalBack=renderLobby;
   }
   function updateRoomGame(form){
     try{
-      const gameId=typeof form==='string'?form:form.elements.gameId.value,g=meta(gameId),active=activatePack(gameId);
+      const gameId=typeof form==='string'?form:form.elements.gameId.value,g=meta(gameId);
+      if(g){const blocker=roomService.gameChangeBlocker(room.id,{min:g.min,max:g.max,allowed:g.playerCounts});if(blocker)throw Error(blocker);}
+      const active=activatePack(gameId);
       if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error(globalThis.PlayroomMessages.text("ui.app.5d39a9ae84f6"));
       const rules=defaultRules(gameId,g);
       room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,

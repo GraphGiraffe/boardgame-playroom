@@ -193,9 +193,11 @@ test('smaller pack compacts overflow and preserves participant identity',()=>{
   assert.equal(after.seats[0].participantId,'host');assert.equal(after.seats[1].participantId,'guest');
   assert.equal(after.participants.find(p=>p.id==='guest').seatId,'seat-2');assert.equal(after.firstParticipantId,'guest');
 });
-test('smaller pack rejects excess occupants atomically',()=>{
+test('smaller pack removes excess bots instead of rejecting human players',()=>{
   const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.setLocalSeat(room.id,'host','seat-4',{kind:'bot'});
-  const before=rooms.snapshot(room.id);assert.throws(()=>rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'0.1.0'},constraints:{min:2,max:2}}),/меньше мест/);assert.deepEqual(rooms.snapshot(room.id),before);
+  const before=rooms.snapshot(room.id),after=rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'0.1.0'},constraints:{min:2,max:2}});
+  assert.equal(after.participants.filter(p=>p.bot).length,1);assert.equal(after.seats[0].participantId,'host');assert.equal(after.seats[1].participantId,before.seats[1].participantId);
+  assert(!after.participants.some(p=>p.id===before.seats[3].participantId));
 });
 test('shuffle resolves once and rules notices clear on readiness and a new match',()=>{
  const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat',seatOrder:'random'});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});
@@ -325,4 +327,61 @@ test('start validation rejects unsupported rosters before countdown and cancels 
  assert.equal(rooms.canStart(room.id),true,'unused seats do not block a valid roster');
  rooms.beginCountdown(room.id,'host');rooms.setConnected(room.id,'host',false);time=4000;
  const result=rooms.tick(room.id);assert.equal(result.started,false);assert.equal(result.room.phase,'lobby');assert(result.reason);assert(calls>0);
+});
+
+
+test('pack change seats humans before bots and never adds more bots on expansion',()=>{
+ const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat'});
+ rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Мика'});
+ rooms.setLocalSeat(room.id,'host','seat-3',{kind:'bot',nickname:'Лис'});
+ rooms.setLocalSeat(room.id,'host','seat-4',{kind:'human',nickname:'Кира'});
+ const before=rooms.snapshot(room.id),human=before.seats[3].participantId;
+ const small=rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'1.0.0'},constraints:{min:2,max:2}});
+ assert.deepEqual(small.seats.map(s=>s.participantId),['host',human]);assert.equal(small.participants.filter(p=>p.bot).length,0);
+ assert.equal(small.participants.find(p=>p.id===human).nickname,'Кира');
+ const big=rooms.changeGame(room.id,'host',{game:{id:'uno',name:'UNO',version:'1.0.0'},constraints:{min:2,max:6}});
+ assert.equal(big.participants.filter(p=>p.bot).length,0);assert.equal(big.seats.filter(s=>!s.participantId).length,4);
+});
+
+test('excess real players reject a switch without changing the room or dropping guests',()=>{
+ const {rooms,room}=createRoom();
+ for(const [id,seat] of [['anna','seat-2'],['maria','seat-4']]){rooms.join(room.id,{id,nickname:id});rooms.claimSeat(room.id,id,seat);}
+ rooms.setReady(room.id,'host',true);const before=rooms.snapshot(room.id);
+ assert.throws(()=>rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'1.0.0'},constraints:{min:2,max:2}}),/игроков: 3.*мест: 2/i);
+ assert.deepEqual(rooms.snapshot(room.id),before);
+});
+
+test('network switch keeps disconnected humans, observers and identities while trimming bots',()=>{
+ const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.setLocalSeat(room.id,'host','seat-3',{kind:'bot'});
+ rooms.join(room.id,{id:'guest',nickname:'Маша'});rooms.claimSeat(room.id,'guest','seat-4');
+ rooms.join(room.id,{id:'observer',nickname:'Зритель'});rooms.setConnected(room.id,'guest',false);
+ const before=rooms.snapshot(room.id),after=rooms.changeGame(room.id,'host',{game:{id:'checkers',name:'Шашки',version:'1.0.0'},constraints:{min:2,max:2}});
+ assert.deepEqual(after.seats.map(s=>s.participantId),['host','guest']);assert.equal(after.participants.filter(p=>p.bot).length,0);
+ assert.deepEqual(after.participants.find(p=>p.id==='observer'),{...before.participants.find(p=>p.id==='observer'),ready:false});
+ assert.equal(after.participants.find(p=>p.id==='guest').connected,false);assert.equal(after.code,before.code);
+});
+
+test('solo packs are local only, with atomic rejection on network mode and pack changes',()=>{
+ const rooms=service(),solo={id:'solo',name:'Соло',version:'1.0.0'};
+ assert.throws(()=>rooms.create({name:'Соло-комната',game:solo,host:{id:'host',nickname:'Иван'},constraints:{min:1,max:1}}),/Соло-игры/);
+ const local=rooms.create({name:'Соло-комната',game:solo,host:{id:'host',nickname:'Иван'},transportMode:'hotseat',constraints:{min:1,max:1}});
+ const before=rooms.snapshot(local.id);assert.throws(()=>rooms.configure(local.id,'host',{transportMode:'network',name:'Changed'}),/Соло-игры/);assert.deepEqual(rooms.snapshot(local.id),before);
+ const net=createRoom(),saved=net.rooms.snapshot(net.room.id);assert.throws(()=>net.rooms.changeGame(net.room.id,'host',{game:solo,constraints:{min:1,max:1}}),/Соло-игры/);assert.deepEqual(net.rooms.snapshot(net.room.id),saved);
+});
+
+test('local change to solo drops bots; mixed single-to-multiplayer packs remain network eligible',()=>{
+ const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat'});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});
+ const solo=rooms.changeGame(room.id,'host',{game:{id:'solo',name:'Соло',version:'1.0.0'},constraints:{min:1,max:1}});
+ assert.deepEqual(solo.seats.map(s=>s.participantId),['host']);assert.equal(solo.participants.length,1);
+ const net=createRoom();assert.equal(net.rooms.gameChangeBlocker(net.room.id,{min:1,max:4}),null);
+});
+
+test('growing a pack keeps the old bot count and clears a removed assigned bot',()=>{
+ const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});
+ const old=rooms.snapshot(room.id),bot=old.seats[1].participantId;
+ const grown=rooms.changeGame(room.id,'host',{game:{id:'larger',name:'Большая',version:'1.0.0'},constraints:{min:2,max:6}});
+ assert.deepEqual(grown.participants.filter(p=>p.bot).map(p=>p.id),[bot]);
+ rooms.configure(room.id,'host',{transportMode:'hotseat',firstPlayerMode:'assigned',firstParticipantId:bot});
+ const solo=rooms.changeGame(room.id,'host',{game:{id:'solo',name:'Соло',version:'1.0.0'},rules:{firstPlayerMode:'assigned'},constraints:{min:1,max:1}});
+ assert.equal(solo.firstParticipantId,null);assert.equal(solo.firstPlayerMode,'rules');
 });

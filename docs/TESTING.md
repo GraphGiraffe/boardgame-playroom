@@ -16,6 +16,7 @@
 
 ```bash
 node scripts/codex/test.cjs ui/history
+node scripts/codex/test.cjs case/room-pack-switch-browser
 node scripts/codex/test.cjs ui/history,ui/room
 node scripts/codex/test.cjs case/rc2-hub-browser
 node scripts/codex/test.cjs case/rc2-hub-browser,ui/room
