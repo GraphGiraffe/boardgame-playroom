@@ -3,7 +3,7 @@
 :is(#app,#modal-root) .icon-btn{width:var(--ui-target);min-width:var(--ui-target);height:var(--ui-target);padding:0;border-radius:var(--ui-control-radius);flex-shrink:0}
 svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-align:middle}
 .ui-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:var(--ui-gap);flex-shrink:0}
-:is(#app,#modal-root) button:focus-visible,:is(#app,#modal-root) input:focus-visible,:is(#app,#modal-root) select:focus-visible{outline:3px solid var(--ui-focus);outline-offset:3px}
+:is(#app,#modal-root) button:focus-visible,:is(#app,#modal-root) input:focus-visible,:is(#app,#modal-root) select:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
 :is(#app,#modal-root) .icon-btn:disabled{opacity:.43;cursor:default}
 #modal-root .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
 #modal-root .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--ui-target);padding-bottom:12px;margin-bottom:16px}
@@ -846,3 +846,11 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 /* The personal surface owns its grid, independent of the table seating. */
 #app .app-game-layout[data-surface="player"] .players-panels{grid-template-columns:repeat(var(--player-columns,2),minmax(0,1fr))!important;grid-template-rows:repeat(var(--player-rows,1),minmax(110px,1fr))!important;grid-auto-rows:minmax(110px,1fr)}
 .app-game-layout .hand-scroll-hint{display:none}
+
+/* Focus follows the control silhouette; the help target stays easy to tap. */
+.rule-help>button{border-radius:50%}
+/* Paint the ring in the icon's own coordinates to avoid outline raster offsets. */
+.rule-help>button svg{overflow:visible}
+.rule-help .help-focus-ring{fill:none;stroke:var(--ui-focus);stroke-width:2.5;opacity:0;pointer-events:none}
+:is(#app,#modal-root) .rule-help>button:focus-visible{outline:none}
+.rule-help>button:focus-visible .help-focus-ring{opacity:1}

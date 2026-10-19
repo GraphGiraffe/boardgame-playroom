@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 
 async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
 const {test}=require('node:test');
@@ -156,7 +157,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
     await check('Closing a room discards its setup and a new game starts fresh',async open=>{
       const {page}=await open();await page.locator('[data-start=uno]').click();
       await page.locator('[data-room-title]').fill('Другая комната');await page.locator('[data-room-title]').press('Tab');
-      await page.locator('[data-command=room-rules]').click();await page.locator('[name=preset]').selectOption('quick');await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+      await page.locator('[data-command=room-rules]').click();await selectChoice(page.locator('[name=preset]'),'quick');await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
       await page.locator('[data-command=lobby-leave]').click();assert.equal(await page.locator('.modal').count(),0);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room()),null);
       await page.locator('[data-start=checkers]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().game.id),'checkers');
     });

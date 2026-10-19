@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -137,9 +138,9 @@ test('Manual UNO declarations, accusations and device handoff through the real a
         const {page} = await open();
         await page.locator('[data-start=uno]').click();
         await page.locator('[data-command=room-rules]').click();
-        assert.equal(await page.locator('[name=option-unoMode]').inputValue(),'manual');await page.locator('[name=option-unoMode]').selectOption(mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        assert.equal(await readChoice(page.locator('[name=option-unoMode]')),'manual');await selectChoice(page.locator('[name=option-unoMode]'),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'human',nickname:'Игрок'});b.renderLobby();});
-        await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=option-unoMode]').inputValue(),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-command=room-rules]').click();assert.equal(await readChoice(page.locator('[name=option-unoMode]')),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await page.locator('[data-command=lobby-start]').click();
         const saved = await read(page);
         assert.equal(saved.options.unoMode, mode);

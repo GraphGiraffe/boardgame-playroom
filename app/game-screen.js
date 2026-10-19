@@ -27,9 +27,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       svg.setAttribute('preserveAspectRatio','xMidYMid meet');
     }
   }
-  function rangeSetting({id,label,min=0,max=3,step=1,value,display,describedby='',bounds=false}){
+  function rangeSetting({id,label,min=0,max=3,step=1,value,display,describedby='',bounds=false,name='',choices=null}){
     const stops=Array.from({length:Math.round((max-min)/step)+1},(_,i)=>min+i*step);
-    return `<label class="settings-range" for="${esc(id)}" style="--range-progress:${(value-min)/(max-min)*100}%;--range-allowed:100%"><span class="settings-range-heading"><span>${esc(label)}</span><output id="${esc(id)}-value" for="${esc(id)}">${esc(display)}</output></span><span class="settings-range-track"><input type="range" id="${esc(id)}" min="${min}" max="${max}" step="${step}" value="${value}" aria-valuetext="${esc(display)}"${describedby?` aria-describedby="${esc(describedby)}"`:''}><span class="settings-range-dots" aria-hidden="true">${stops.map(stop=>`<i data-range-stop="${stop}" style="left:${(stop-min)/(max-min)*100}%"></i>`).join('')}</span></span>${bounds?`<span class="settings-range-bounds" aria-hidden="true"><span>${min}%</span><span>${max}%</span></span>`:''}</label>`;
+    return `<label class="settings-range" for="${esc(id)}" style="--range-progress:${(value-min)/(max-min)*100}%;--range-allowed:100%"><span class="settings-range-heading"><span>${esc(label)}</span><output id="${esc(id)}-value" for="${esc(id)}">${esc(display)}</output></span><span class="settings-range-track"><input type="range" id="${esc(id)}"${name?` name="${esc(name)}"`:""}${choices?` data-choice-options="${esc(JSON.stringify(choices))}"`:""} min="${min}" max="${max}" step="${step}" value="${value}" aria-valuetext="${esc(display)}"${describedby?` aria-describedby="${esc(describedby)}"`:''}><span class="settings-range-dots" aria-hidden="true">${stops.map(stop=>`<i data-range-stop="${stop}" style="left:${(stop-min)/(max-min)*100}%"></i>`).join('')}</span></span>${bounds?`<span class="settings-range-bounds" aria-hidden="true"><span>${min}%</span><span>${max}%</span></span>`:''}</label>`;
   }
   // CSS zoom changes screen rectangles, while layout offsets stay in local pixels.
   function layoutRect(node){

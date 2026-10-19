@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
@@ -36,14 +37,14 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   assert.equal(await page.locator('[data-room-game]').first().getAttribute('data-room-game'),second);
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=room-rules]').click();
-  await page.locator('#room-rules-form [name=preset]').selectOption('hard');
+  await selectChoice(page.locator('#room-rules-form [name=preset]'),'hard');
   await page.locator('#room-rules-form [name="option-deck"]').selectOption('52');
   await page.locator('#room-rules-form').evaluate(form=>form.requestSubmit());
   await page.locator('[data-command=lobby-leave]').click();
   await page.reload();
   await page.locator('[data-start=pexeso]').first().click();
   await page.locator('[data-command=room-rules]').click();
-  assert.equal(await page.locator('#room-rules-form [name=preset]').inputValue(),'hard');
+  assert.equal(await readChoice(page.locator('#room-rules-form [name=preset]')),'hard');
   assert.equal(await page.locator('#room-rules-form [name="option-deck"]').inputValue(),'52');
   await page.locator('.modal [data-command=close-modal]').click();
   await page.locator('[data-command=lobby-start]').click();
@@ -58,7 +59,7 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   assert.equal(await page.locator('.recent-section .game-tile').getAttribute('data-game'),'pexeso');
   await page.locator('[data-start=gofish]').first().click();
   await page.locator('[data-command=room-rules]').click();
-  assert.equal(await page.locator('#room-rules-form [name=preset]').inputValue(),'classic');
+  assert.equal(await readChoice(page.locator('#room-rules-form [name=preset]')),'classic');
   assert.equal(await page.locator('#room-rules-form [name="option-deck"]').inputValue(),'52');
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await fixture.close();}

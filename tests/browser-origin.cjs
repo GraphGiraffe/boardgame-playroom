@@ -22,4 +22,13 @@ async function serveBrowserFixture(root){
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   return {url:`http://127.0.0.1:${server.address().port}/`,close:()=>new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))};
 }
-module.exports={serveBrowserFixture};
+// Exercise either the legacy list or its discrete range replacement by semantic ID.
+async function selectChoice(locator,value){
+  if(await locator.evaluate(e=>e.tagName==='SELECT'))return locator.selectOption(value);
+  const index=await locator.evaluate((e,value)=>JSON.parse(e.dataset.choiceOptions).findIndex(o=>o.value===value),value);
+  if(index<0)throw Error('Choice is unavailable: '+value);
+  await locator.focus();await locator.press('Home');for(let i=0;i<index;i++)await locator.press('ArrowRight');
+  await locator.dispatchEvent('change');
+}
+async function readChoice(locator){return locator.evaluate(e=>e.dataset.choiceOptions?JSON.parse(e.dataset.choiceOptions)[Number(e.value)].value:e.value);}
+module.exports={serveBrowserFixture,selectChoice,readChoice};

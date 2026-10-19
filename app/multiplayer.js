@@ -9,8 +9,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   ];
 
 class RoomService extends Rooms.RoomService {constructor(options={}){super({idFactory:Store.uuid,clock:Store.now,random:Math.random,tokenFactory:Store.secureResumeToken,...options});}}
-function describeRules(rules={},settings=[],hasHands=false){
-    const rows=[{label:globalThis.PlayroomMessages.text("ui.multiplayer.b5d827de5168"),value:String(rules.presetLabel||rules.preset||globalThis.PlayroomMessages.text("ui.multiplayer.4da4da9da138"))}];
+function describeRules(rules={},settings=[],hasHands=false,presetSetting=null){
+    const rows=[{label:presetSetting?.label||globalThis.PlayroomMessages.text("ui.multiplayer.b5d827de5168"),value:String(presetSetting?.options?.find(option=>option.value===rules.preset)?.label||rules.presetLabel||rules.preset||globalThis.PlayroomMessages.text("ui.multiplayer.4da4da9da138"))}];
     const fields=Array.isArray(settings)?settings:[];
     for(const [key,value] of Object.entries(rules.options||{})){
       const field=fields.find(item=>item?.key===key);
