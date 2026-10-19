@@ -1,24 +1,20 @@
-# Выпуск 0.18.1 / 0.7.1
+# Выпуск 0.18.2 / 0.7.1
 
-Пара выпуска: приложение **0.18.1**, коллекция **0.7.1**, engineApi 3 / viewApi 2 / protocol 2. Факт публикации подтверждают записи GitHub Releases, скачанные assets и protected production report. Точные main SHA и companion pair записываются в README-TEST.txt артефактов.
+Пара: приложение **0.18.2**, существующая коллекция **0.7.1**, engineApi 3 / viewApi 2 / protocol 2. Факт публикации подтверждается записью GitHub Release, скачанными SHA256/ZIP и production report; версия исходников сама по себе не означает обновление сайта.
 
-- [Приложение и SDK](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.1).
-- [Коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.1).
+- [Приложение и SDK](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.2).
+- [Коллекция без переиздания](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.1).
 - [Сайт](https://playroom-hod-test.pages.dev).
-- [Состав патча и проверки](PATCH-0.18.1.md).
+- [Состав патча и проверки](PATCH-0.18.2.md).
 
-## Изменения
+## Изменения и проверки
 
-Компактные смысловые блоки правил, два дискретных слайдера в строке, короткие названия и значения. Колоды остаются списками. Рыба: 36/52; Акулина: 35/51 в интерфейсе, исходные ID 36/52. Завершение внизу; безлимитная позиция ∞ последняя. «Игрок №1» и «Порядок» наверху, радио-кнопки компактнее.
+Три группы фильтров библиотеки скрыты по умолчанию; кнопка с SVG-воронкой находится после «Все» и «Избранное». Сворачивание сохраняет выбранные значения и результаты. После перезагрузки группы снова скрыты.
 
-Рука (Прямо/Веером) и рассадка выбираются слайдерами. Справки «?» находятся у названий; Escape закрывает только справку. Контуры фокуса повторяют форму контролов; у справки кольцо имеет общий центр с SVG-иконкой.
+Целевой source gate: `node scripts/codex/test.cjs case/library-filters-browser,case/rc2-hub-browser` — 5/5; 320/390 portrait, 740×390 landscape и desktop 1280×800. Проверены focus, Enter/Space, aria-expanded, переполнение, сохранение фильтра при переключении «Все»/«Избранное» и прежний сценарий избранного/порядка игр. Скриншоты проверены визуально. Полный игровой/сетевой набор не запускается для этого адресного UI-патча. SHA256/ZIP и protected runtime/catalog/offline проверяются при выпуске и deploy.
 
-Тесты правил, настроек и справок выделены в малые case; типы screen:phone:portrait / screen:phone:landscape фильтруют отдельные сценарии. Старые большие файлы поддерживают case/… --name; пустой фильтр не считается успешной проверкой.
+Источники и точная companion pair записываются в README-TEST.txt и SOURCE-PROVENANCE.json. Сборка выполняется из окончательного main SHA, коллекция — ae2e030cf3f709b0388fc846de4c699b2c15c3bc. Workflow использует опубликованный PWA ZIP; приватные worker/routes и секреты не включаются в public assets. Существующие Pages project, защита и R2 binding сохраняются.
 
-## Проверка и совместимость
+Правила, RNG, privacy, stateVersion и pack versions не меняются. Старые exact-version паки, сохранения, теги и bytes остаются неизменными. Предыдущая стабильная оболочка и точка отката: [app 0.18.1](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.1), deployment `06249d72-c1f9-4102-93f6-44c06dd33dde`; catalog 0.7.1 `3fa93bbceeb20c55d3a1bc4bafc4d1accfa57924c59efe102d388edfda166734`.
 
-Для UI-патча выбран `node scripts/codex/test.cjs screen:phone,core/test-selection`, без полного игрового цикла. Коллекция отдельно проходит syntax/build/SHA256. Сборки выполняются из окончательных main SHA; проверяются ZIP CRC и SHA256 локальных и скачанных опубликованных файлов, protected runtime/catalog/offline. Физические Android/iOS остаются ручной приёмкой.
-
-Правила, RNG, privacy и stateVersion не меняются. Старые exact-version паки, сохранения, теги и bytes не переписываются. Origin, защита и R2 binding сохраняются. Публикация коллекции и приложения независима.
-
-Предыдущая стабильная пара: [app 0.18.0](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.0) / [packs 0.7.0](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.0). Она остаётся точкой отката; сквозной source gate этого базового выпуска был 1004/1004. Планы новых игр/скинов остаются спецификацией. Процедура — [RELEASING](RELEASING.md).
+Предыдущий патч настроек описан в [PATCH-0.18.1](PATCH-0.18.1.md); новые игры/скины остаются спецификацией. Процедура — [RELEASING](RELEASING.md).

@@ -9,6 +9,7 @@ test('hub favorites, recent game, pack order, visibility and rules survive reloa
   assert.equal(await page.locator('.game-tile').count(),12);
   assert.equal(await page.locator('.collection-count').innerText(),'ПОКАЗАНО: 12 · СКРЫТО: 0');
   assert.equal(await page.locator('.hub-filters>[role=group]').count(),4);
+  await page.locator('[data-hub-filters-toggle]').click();
   await page.locator('[data-tag-kind=type][data-tag=cards]').click();assert.equal(await page.locator('.game-tile').count(),5);
   await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();assert.equal(await page.locator('.game-tile').count(),2);
   await page.locator('[data-filter=favorites]').click();await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.game-tile').count(),2,'scope preserves both tag groups');

@@ -1,4 +1,4 @@
-# Tabletop Core · 0.18.1
+# Tabletop Core · 0.18.2
 
 Ядро ХОД исполняет GameModel API 3 и не зависит от DOM, IndexedDB или WebRTC. Правила, представление, локализация и Web renderer разделены. API 1/2 не поддерживается; старые примеры с `Core.register({create, legal, apply})` не являются контрактом этой версии.
 

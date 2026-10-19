@@ -48,6 +48,7 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file":"library-filters-browser.test.cjs","profiles":[],"subblock":"ui/library-filters","types":["screen:phone:portrait","screen:phone:landscape","screen:desktop"]},
     {"file":"rule-settings-browser.test.cjs","profiles":[],"subblock":"ui/rules","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"settings-layout-browser.test.cjs","profiles":[],"subblock":"ui/settings","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"settings-help-browser.test.cjs","profiles":[],"subblock":"ui/settings-help","types":["screen:phone:portrait"]},
