@@ -5,8 +5,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df",
-      "renderedSha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df"
+      "sha256": "9f2d275a4f4a30e37190f474b15e1328023e04e362736bfa0f63af0a1392416f",
+      "renderedSha256": "9f2d275a4f4a30e37190f474b15e1328023e04e362736bfa0f63af0a1392416f"
     },
     {
       "source": "shared/components/game-components.css",
@@ -27,8 +27,8 @@
       "source": "shared/assets/catalog.json",
       "target": "themes/assets.json",
       "format": "text",
-      "sha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a",
-      "renderedSha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a"
+      "sha256": "9e5760fbc8893872dd24f840cd19129ca686ed598578875fd748bfc4a952b99e",
+      "renderedSha256": "9e5760fbc8893872dd24f840cd19129ca686ed598578875fd748bfc4a952b99e"
     },
     {
       "source": "shared/locales/ru/components.json",
@@ -51,6 +51,13 @@
       "globalName": "PlayroomCharacterAssets",
       "sha256": "aa2d117904018ff528ea443858b101d30fb22672dd7f40a66b4e89ee494f5014",
       "renderedSha256": "7284169e4e25ce364eaf2e3a77cf2f82697223273604e9d7cb385892b325d681"
+    },
+    {
+      "source": "shared/asset-packs/mini-split-deck/renderer.js",
+      "target": "core/mini-split-deck.js",
+      "format": "text",
+      "sha256": "6af8c90b09495bf1a5ae4d45a919d33e6e72fb10dcba18ab7da0735e87c2b232",
+      "renderedSha256": "6af8c90b09495bf1a5ae4d45a919d33e6e72fb10dcba18ab7da0735e87c2b232"
     }
   ]
 }

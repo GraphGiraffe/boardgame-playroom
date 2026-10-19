@@ -99,7 +99,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){
     if(state?.status==='finished'&&(!network||!connected))return '';
     const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
-    const progress=roundText(state?.scene?.round)||(state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
+    const progress=roundText(state?.scene?.round)||(state?.players?.length>1&&state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
     roomName=network?roomName:'';
     const game=[gameName,progress].filter(Boolean).join(' · '),room=[kind,roomName].filter(Boolean).join(' · ');
     const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:'';
@@ -176,7 +176,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full',hidden:true},
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
-      <div class="table-status" aria-live="polite"><span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span><span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
+      <div class="table-status" aria-live="polite">${turnText?`<span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span>`:''}<span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),state.players.length>1&&state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;

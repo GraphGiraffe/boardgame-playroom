@@ -54,3 +54,5 @@ node scripts/codex/test.cjs case/rc2-presentation-browser --name 'RC7 Ludo offer
 
 
 Версии в исторических именах case/rc2-* обозначают происхождение теста, а не поддерживаемый старый API. Все запускаются на текущих исходниках.
+
+Пасьянсы: `node scripts/codex/test.cjs games/solitaire` (правила и затронутый мобильный экран); отдельно `case/solitaire`, `case/solitaire-browser`. Наследование скинов: `case/skin-preferences`, существующие `core/appearance`/`case/appearance-browser`. Не подменять эти сценарии полным профилем.

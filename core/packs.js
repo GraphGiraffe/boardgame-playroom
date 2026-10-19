@@ -42,6 +42,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(m.tags!==undefined||m.playModes!==undefined){if(!Tags)throw Error(globalThis.PlayroomMessages.text("ui.packs.ab9cbd0aeab5"));Tags.validate(m);}
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error(globalThis.PlayroomMessages.text("ui.packs.483f600985f1"));
     if(m.tileTheme!==undefined&&!['green','coral','blue','gold','violet'].includes(m.tileTheme))throw Error(globalThis.PlayroomMessages.text("ui.packs.964115e4eeda"));
+    if(m.skinFamilies!==undefined&&(!Array.isArray(m.skinFamilies)||m.skinFamilies.length>32||m.skinFamilies.some(f=>typeof f!=='string'||!ID.test(f))||new Set(m.skinFamilies).size!==m.skinFamilies.length)||m.defaultSkins!==undefined&&(!record(m.defaultSkins)||Object.entries(m.defaultSkins).some(([family,variant])=>!m.skinFamilies?.includes(family)||typeof variant!=='string'||!ID.test(variant))))throw Error('PACK_SKINS_INVALID');
     if(m.viewApi!==2)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
     if(m.engineApi!==3||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));

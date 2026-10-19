@@ -14,6 +14,7 @@
 | Хранение, точные версии, обновление | [Данные](DEVELOPER-DATA.md) |
 | Контейнер и сборка пака | [Формат](PACK-FORMAT.md) |
 | Проверки и выпуск | [Тесты](TESTING.md), [релиз](RELEASING.md) |
+| Пасьянсы и наследование скинов в рабочей ветке | [Реализация](SOLITAIRE-IMPLEMENTATION.md) |
 | Ближайшие патчи | [Roadmap](ROADMAP.md), [подготовка расширений](NEXT-PATCHES.md) |
 
 Автор пака начинает с [руководства коллекции](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/main/docs/AUTHORING.md). Все примеры относятся к текущему API. Новая механика сначала получает владельца слоя и понятное имя; игровое правило не переносится в Web renderer.

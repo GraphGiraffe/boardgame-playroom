@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"skin-preferences.test.cjs","profiles":[],"subblock":"core/appearance"},
     {"file":"test-selection.test.cjs","profiles":[],"subblock":"core/test-selection"},
     {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
     {"file":"session-runtime.test.cjs","profiles":["app"],"subblock":"core/session-runtime"},
@@ -32,6 +33,8 @@ module.exports = {
     {"file": "quick-play.test.cjs", "profiles": [], "subblock": "input/feedback"},
   ]},
   games: {label: "Правила и интерфейс игр", cases: [
+    {"file":"solitaire.test.cjs","profiles":[],"subblock":"games/solitaire"},
+    {"file":"solitaire-browser.test.cjs","types":["screen:phone"],"profiles":[],"subblock":"games/solitaire/screen"},
     {"file":"rc2-presentation-browser.test.cjs","profiles":[],"subblock":"games/layout"},
     {"file": "game-layout-browser.test.cjs", "profiles": ["app", "layout", "smoke"], "subblock": "games/layout"},
     {"file": "views.test.cjs", "profiles": [], "subblock": "games/layout"},

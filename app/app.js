@@ -196,7 +196,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function stopSounds() {soundTicket++;audio.stop();}
   function cancelBot() { clearTimeout(botTimer); botTimer=null; authority?.cancelBot(); }
+  function clearViewHints(){delete viewState.hint;delete screenController.viewState.hint;}
   function setLocalPaused(value){
+    if(value)clearViewHints();
     paused=value;clearTimeout(autoPassTimer);autoPassTimer=null;reactionShownAt=null;
     if(!session||historyOrigin?.kind==='library')return;
     const player=session.current.players.findIndex(p=>!p.bot);if(player<0)return;
@@ -356,7 +358,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       layoutId:sessionId||session.createdAt,gameName:game.name,subtitle:session.options.presetLabel||globalThis.PlayroomMessages.text("ui.app.4da4da9da138"),
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
-      turnText,turnExtra:replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
+      turnText:game.max===1?'':turnText,turnExtra:game.max===1||replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
       scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}${icon('play')}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
@@ -375,11 +377,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!transition&&!replay&&gate===null)presentationReady();
     scheduleBot();scheduleAutoPass();
   }
+  function historyStarts(){return session.current.players.length===1?Array.from({length:session.states.length},(_,i)=>i):session.current.timeline?.starts||[];}
   function historyStart(){return session.current.timeline?.playStart??0;}
   function historyMarkup() {
     const idx=replayIndex??session.states.length-1;
     const chooser=historyOrigin?.kind==='library'&&isPass()?`<label class="history-viewer">${globalThis.PlayroomMessages.text("ui.app.f54f58cf08df")}<select id="history-viewer" aria-label="${globalThis.PlayroomMessages.text("ui.app.55228669ae30")}">${session.current.players.map((p,i)=>`<option value="${i}" ${i===viewer?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
-    return chooser+GameScreen.historyMarkup({minimum:historyStart(),turnStarts:session.current.timeline?.starts||[],roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
+    return chooser+GameScreen.historyMarkup({minimum:historyStart(),turnStarts:historyStarts(),roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
   }
   function scrubHistory(index) {
     const slider=$('#replay-range'),focused=document.activeElement===slider;input?.cancel();stopReplay();replayIndex=Math.max(historyStart(),Math.min(session.states.length-1,index));selected=null;renderTable();
@@ -515,7 +518,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function roomRulesFromForm(form){
     const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,choiceValue(form.elements['option-'+field.key])]));
-    const rules={firstPlayerMode:form.elements.firstPlayerMode.value,seatOrder:form.elements.seatOrder.value,preset:choiceValue(form.elements.preset),presetLabel:(meta(game).presets||[]).find(p=>p.id===choiceValue(form.elements.preset))?.label||choiceValue(form.elements.preset),openHands:!!form.elements.openHands?.checked,options:packOptions};
+    const rules={firstPlayerMode:(form.elements.firstPlayerMode?.value||'rules'),seatOrder:(form.elements.seatOrder?.value||'normal'),preset:choiceValue(form.elements.preset),presetLabel:(meta(game).presets||[]).find(p=>p.id===choiceValue(form.elements.preset))?.label||choiceValue(form.elements.preset),openHands:!!form.elements.openHands?.checked,options:packOptions};
     return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],!!catalog[game]?.capabilities?.hands,catalog[game]?.presetSetting)};
   }
   function latestRoomEvent(type){return room?.events?.slice().reverse().find(event=>!type||event.type===type)||null;}
@@ -601,7 +604,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     };
     const body=groups.filter(group=>!group.end).map(renderGroup).join(''),ending=groups.filter(group=>group.end).map(renderGroup).join(''),rest=[...controls.values()].join('');
     const common=`<div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div>`;
-    openModal(`${modalHead(globalThis.PlayroomMessages.text('ui.app.803a31d997e9',{p0:String(g.name)}))}<form id="room-rules-form" data-game="${esc(state.game.id)}"><section class="rule-group rule-common">${common}</section>${body}${rest}<section class="rule-group rule-common" ${manifest.capabilities?.hands?'':'hidden'}>${manifest.capabilities?.hands?`<label class="switch">${settingTitle(globalThis.PlayroomMessages.text('ui.app.957e469d885d'),PlayroomLobbyView.ruleText('openHands'))}<input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}</section>${ending}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);
+    openModal(`${modalHead(globalThis.PlayroomMessages.text('ui.app.803a31d997e9',{p0:String(g.name)}))}<form id="room-rules-form" data-game="${esc(state.game.id)}"><section class="rule-group rule-common" ${g.max===1?'hidden':''}>${common}</section>${body}${rest}<section class="rule-group rule-common" ${manifest.capabilities?.hands?'':'hidden'}>${manifest.capabilities?.hands?`<label class="switch">${settingTitle(globalThis.PlayroomMessages.text('ui.app.957e469d885d'),PlayroomLobbyView.ruleText('openHands'))}<input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}</section>${ending}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);
     const form=$('#room-rules-form');for(const input of form.querySelectorAll('[data-choice-options]'))syncChoice(input);syncRuleVisibility(form);
   }
   function syncRuleVisibility(form){
@@ -752,7 +755,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     closeModal(true);renderLobby();
   }
   function openHistory(from=null) {
-    interruptAction();if(!historyOrigin)historyOrigin=captureHistoryOrigin('live');
+    clearViewHints();interruptAction();if(!historyOrigin)historyOrigin=captureHistoryOrigin('live');
     setLocalPaused(true);gate=null;playerTargets?.cancel();feedback.clear();cancelBot();stopReplay();selected=null;historyOpen=true;replayIndex=Math.max(historyStart(),from??session.states.length-1);renderTable();
   }
   function startReplay() {
@@ -805,8 +808,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'history-close':closeHistory,
     'replay-round-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,-1,historyStart());render();},
     'replay-round-next'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,1,historyStart());render();},
-    'replay-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,-1,historyStart());render();},
-    'replay-next'(){const before=currentState();stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,session.current.timeline?.starts,1,historyStart());render();playSounds(before,currentState());},
+    'replay-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,historyStarts(),-1,historyStart());render();},
+    'replay-next'(){const before=currentState();stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,historyStarts(),1,historyStart());render();playSounds(before,currentState());},
     'replay-play'(){if(replayTimer){stopReplay();return render();}startReplay();},
     room:renderLobby,'room-hotseat-confirm'(){modalBack=null;setRoomOption('transportMode','hotseat',true);},
     pause(){interruptAction();stopSounds();setLocalPaused(!paused);cancelBot();render();},result:showResult,
@@ -817,7 +820,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     canSelect(source){return screen==='table'&&!!session&&!$('#modal-root').children.length&&!isReplay()&&!paused&&gate===null&&!transition&&(viewer===session.current.turn||source.hasAttribute('data-hand-preview'));},
     canCommit(source){return screen==='table'&&!!session&&!$('#modal-root').children.length&&!isReplay()&&!paused&&gate===null&&(!transition||activeActions(session.current).some(action=>Protocol.canonical(action)===Protocol.canonical(JSON.parse(source?.dataset.action||'null'))));},
     getSelected(){return selected;},
-    select(piece){selected=piece;renderTable();},
+    select(piece){clearViewHints();selected=piece;renderTable();},
     commit(action,context){act(viewer,action,context);}
   });
   playerTargets=new globalThis.PlayroomPlayerTarget({
@@ -959,7 +962,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(event.key==='Escape'){
       const popover=document.querySelector('[popover]:popover-open');
       if(popover){event.preventDefault();popover.hidePopover();return;}
-      if($('#modal-root').children.length)closeModal();else if(historyOpen)commands['history-close']();
+      if($('#modal-root').children.length)closeModal();else if(historyOpen)commands['history-close']();else if(screen==='table'&&viewState.hint){clearViewHints();renderTable();}
       return;
     }
     if(event.key==='Tab'){
@@ -980,7 +983,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   });
   window.addEventListener('pagehide',()=>{
     stopSounds();if(session)save();
-    try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?viewState:{},scroll:screen==='table'?{top:$('#app [data-scene-scroll]')?.scrollTop||0,left:$('#app [data-scene-scroll]')?.scrollLeft||0}:null}));}catch(_){}
+    try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?Object.fromEntries(Object.entries(viewState).filter(([key])=>key!=='hint')):{},scroll:screen==='table'?{top:$('#app [data-scene-scroll]')?.scrollTop||0,left:$('#app [data-scene-scroll]')?.scrollLeft||0}:null}));}catch(_){}
   });
   packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,onCatalog(){
     rememberPackUpdates('read');rememberPackUpdates('dismissed');if(screen==='hub')renderHub();
@@ -1021,7 +1024,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
     resumeSession(sessionId);
-    if(navigation.viewState&&typeof navigation.viewState==='object'){viewState=navigation.viewState;screenController.viewState=viewState;}
+    if(navigation.viewState&&typeof navigation.viewState==='object'){viewState=navigation.viewState;delete viewState.hint;screenController.viewState=viewState;}
     if(navigation.scroll){const board=$('#app [data-scene-scroll]');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
   }else render();
   if(globalThis.PlayroomRemotePacks){

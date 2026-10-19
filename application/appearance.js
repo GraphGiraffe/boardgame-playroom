@@ -192,5 +192,37 @@
     }
   }
 
-  return Object.freeze({ThemeCatalog, AppearanceService, AppearanceError});
+  // Separate local preferences: changing a theme never removes per-game choices.
+  class SkinPreferences {
+    constructor({assets,repository}) {
+      this.assets=assets;this.repository=repository;this.state={formatVersion:1,main:{},packs:{}};
+      try{const saved=repository.read();if(saved)this.state=this.validate(saved);}catch(_){/* Corrupt local preferences use safe defaults. */}
+    }
+    validate(value){
+      requireValue(record(value)&&value.formatVersion===1&&record(value.main)&&record(value.packs),'SKINS_INVALID');
+      const skins=map=>record(map)&&Object.entries(map).every(([family,id])=>Object.hasOwn(this.assets,family)&&typeof id==='string'&&idPattern.test(id));
+      requireValue(skins(value.main)&&Object.keys(value.packs).length<=1024&&Object.entries(value.packs).every(([id,map])=>/^[a-z][a-z0-9_-]{0,63}$/.test(id)&&skins(map)),'SKINS_INVALID');return clone(value);
+    }
+    snapshot(){return freeze(clone(this.state));}
+    choose(draft,family,variant,packId=null){
+      requireValue(Object.hasOwn(this.assets,family)&&(variant===null||this.assets[family].variants.includes(variant))&&(!packId||/^[a-z][a-z0-9_-]{0,63}$/.test(packId)),'SKINS_INVALID');
+      const target=packId?(Object.hasOwn(draft.packs,packId)?draft.packs[packId]:(draft.packs[packId]={})):draft.main;
+      if(variant===null)delete target[family];else target[family]=variant;
+    }
+    resetAll(draft,family,fallback){
+      requireValue(Object.hasOwn(this.assets,family),'SKINS_INVALID');
+      // Materialize Main so pack defaults do not reappear after resetting.
+      this.choose(draft,family,draft.main[family]||fallback||this.assets[family].default);
+      for(const map of Object.values(draft.packs))delete map[family];
+    }
+    resolve(family,{packId=null,defaults={},theme={},draft=null}={}){
+      const state=draft||this.state,spec=this.assets[family];
+      requireValue(spec,'SKINS_INVALID');
+      const requested=(Object.hasOwn(state.packs,packId)?state.packs[packId][family]:null)||state.main[family]||defaults[family]||theme[family]||spec.default;
+      return spec.variants.includes(requested)?requested:spec.default;
+    }
+    save(draft){const next=this.validate(draft);this.repository.write(clone(next));this.state=next;return this.snapshot();}
+  }
+
+  return Object.freeze({ThemeCatalog, AppearanceService, AppearanceError, SkinPreferences});
 });

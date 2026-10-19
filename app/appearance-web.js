@@ -19,9 +19,11 @@
       write(value) { storage().setItem(KEY,JSON.stringify(value)); }
     };
     const service = new root.PlayroomAppearance.AppearanceService({catalog, repository, idFactory});
+    const skinKey='playroom.skins.v1';
+    const skins=new root.PlayroomAppearance.SkinPreferences({assets:resources.assets,repository:{read(){const raw=storage().getItem(skinKey);return raw?JSON.parse(raw):null;},write(value){storage().setItem(skinKey,JSON.stringify(value));}}});
+    let skinDraft=null;
     function apply(theme) {
-      const previousResolver=root.PlayroomAssetResolver;
-      root.PlayroomAssetResolver=new root.PlayroomGameComponents.AssetResolver({catalog:resources.assets,skins:theme.skins,palette:theme.palette,renderers:{'round-token':root.PlayroomComponents.roundTokenArt,counter:params=>params.style==='score'?root.PlayroomGameComponents.scoreBadge(params,{roundTokenArt:value=>root.PlayroomAssetResolver.render('round-token',value)}):root.PlayroomGameComponents.countBadge(params.value,params.label,params)}});
+      root.PlayroomAssetResolver=new root.PlayroomGameComponents.AssetResolver({catalog:resources.assets,skins:theme.skins,skinFor:(family,packId)=>skins.resolve(family,{packId,defaults:root.PlayroomCatalog?.[packId]?.defaultSkins||{},theme:theme.skins,draft:skinDraft}),palette:theme.palette,renderers:{'round-token':root.PlayroomComponents.roundTokenArt,counter:params=>params.style==='score'?root.PlayroomGameComponents.scoreBadge(params,{roundTokenArt:value=>root.PlayroomAssetResolver.render('round-token',value)}):root.PlayroomGameComponents.countBadge(params.value,params.label,params)}});
       const element = document.documentElement;
       for (const [name,value] of Object.entries(theme.palette)) element.style.setProperty('--color-'+name.replaceAll('.','-'),value);
       for (const [name,slot] of Object.entries(aliases)) element.style.setProperty(name,theme.palette[slot]);
@@ -30,13 +32,16 @@
       element.dataset.appearancePreset=theme.id;
       for (const [family,variant] of Object.entries(theme.skins)) element.setAttribute('data-skin-'+family,variant);
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme.palette['surface.canvas']);
-      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){if(node.dataset.assetFamily!=='card-back'&&previousResolver?.resolve(node.dataset.assetFamily).variant===root.PlayroomAssetResolver.resolve(node.dataset.assetFamily).variant)continue;const template=document.createElement('template');template.innerHTML=root.PlayroomAssetResolver.render(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));const fresh=template.content.firstElementChild;if(fresh&&fresh.tagName===node.tagName){for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);}}
+      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){const template=document.createElement('template');template.innerHTML=root.PlayroomAssetResolver.render(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));const fresh=template.content.firstElementChild;if(fresh&&fresh.tagName===node.tagName){for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);}}
       // Dedicated preference notification: it does not invoke the game-options redraw path.
       document.dispatchEvent(new CustomEvent('playroom:appearance',{detail:{id:theme.id,mode:theme.mode}}));
     }
     const unsubscribe=service.subscribe(event=>apply(event.theme));
     apply(service.active());
-    return Object.freeze({service,catalog,translator,assets:resources.assets,destroy:unsubscribe});
+    return Object.freeze({service,catalog,translator,skins,assets:resources.assets,
+      previewSkins(draft){skinDraft=skins.validate(draft);apply(service.shown());},
+      cancelSkins(){skinDraft=null;apply(service.shown());},
+      saveSkins(draft){skins.save(draft);skinDraft=null;apply(service.shown());},destroy:unsubscribe});
   }
   root.PlayroomAppearanceWeb=Object.freeze({create,storageKey:KEY});
 })(globalThis);

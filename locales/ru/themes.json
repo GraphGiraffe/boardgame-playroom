@@ -165,5 +165,12 @@
   "themes.color.material.pawn.rim": "Ободок фишек",
   "themes.color.material.pawn.side": "Тень боковой грани фишек",
   "themes.color.material.bubble.success": "Успешная игровая реплика",
-  "themes.color.material.bubble.error": "Ошибочная игровая реплика"
+  "themes.color.material.bubble.error": "Ошибочная игровая реплика",
+  "themes.skin-main": "Основной",
+  "themes.skin-reset": "Сбросить все",
+  "themes.skin-reset-help": "Все игры с этим типом компонентов будут использовать Основной. Применяется после сохранения.",
+  "themes.skin-help": "Основной применяется ко всем совместимым играм без индивидуального выбора. Исходный вид пасьянсов — «Мини: номинал / масть». Явный выбор Основного заменяет исходный вид.",
+  "themes.skin-games": "По играм",
+  "themes.skin-saved": "Скины сохранены на этом устройстве.",
+  "themes.skin-original": "Исходный вид"
 }

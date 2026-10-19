@@ -10,7 +10,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   'use strict';
   const tokenLayout=globalThis.PlayroomTokenLayout||(typeof require==='function'?require('./token-layout.js'):null);
   const {firstSymbol,numberPath,numberMark}=Components;
-  const assetArt=(family,params,fallback)=>{const output=globalThis.PlayroomAssetResolver?globalThis.PlayroomAssetResolver.render(family,params):fallback(params);const end=output.indexOf('>');return output.slice(0,end)+` data-asset-family="${esc(family)}"${family==='score-table'?'':` data-asset-params="${esc(JSON.stringify(params))}"`}`+output.slice(end);};
+  let renderingPack=null;
+  const assetArt=(family,params,fallback)=>{params={...params,...(renderingPack?{packId:renderingPack}:{})};const output=globalThis.PlayroomAssetResolver?globalThis.PlayroomAssetResolver.render(family,params):fallback(params);const end=output.indexOf('>');return output.slice(0,end)+` data-asset-family="${esc(family)}"${family==='score-table'?'':` data-asset-params="${esc(JSON.stringify(params))}"`}`+output.slice(end);};
   const roundTokenArt=params=>assetArt('round-token',params||{},Components.roundTokenArt);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -243,6 +244,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if(value.fieldSizing!==undefined&&!['fit','content','scroll'].includes(value.fieldSizing))throw Error('Invalid field sizing');
     if(['content','scroll'].includes(value.fieldSizing)&&value.fieldAspect!==undefined)throw Error('Content fields cannot set fieldAspect');
     if(value.actionReserve!==undefined&&typeof value.actionReserve!=='boolean')throw Error('Invalid action reserve');
+    if(value.hidePlayers!==undefined&&(typeof value.hidePlayers!=='boolean'||value.hidePlayers&&state?.players?.length!==1))throw Error('Invalid solo layout');
     const layout=value.layout||{};
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
@@ -267,7 +269,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     }
     const unified=!!state?.players;
     let self='';
-    if(unified){
+    if(unified&&!value.hidePlayers){
       const order=seatOrder(state.players.length,viewer);
       if(circular&&viewer>=0&&surface!=='table')order.push(viewer);
       const panels=order.map(i=>({player:i,html:playerPanel(state,i,viewer,content?.[i]||{},actions)}));
@@ -302,8 +304,8 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        try { const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
-        catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); }
+        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
+        catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); } finally {renderingPack=previousPack;}
       },
       cover(id){
         try { return packs.get(id)?.cover?.() || ''; }
