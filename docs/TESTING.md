@@ -7,7 +7,7 @@
 | core | state, session-runtime, model, domain, appearance, localization, packs, screen, test-selection |
 | input | gestures, motion, hands, feedback |
 | games | layout, actions |
-| ui | navigation, history, room, appearance, results, rules, settings, settings-help |
+| ui | library-filters, navigation, history, room, appearance, results, rules, settings, settings-help |
 | storage | profile, journal, history |
 | network | authority, table, transport, resume |
 | pairing | codes, audio, pwa |
