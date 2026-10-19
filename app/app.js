@@ -130,7 +130,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }));
     const rules={preset:preset.id,presetLabel:preset.label||preset.name||preset.id,
       firstPlayerMode:['rules','random','assigned'].includes(saved.firstPlayerMode)?saved.firstPlayerMode:'rules',seatOrder:saved.seatOrder==='random'?'random':'normal',openHands:!!catalog[gameId]?.capabilities?.hands&&saved.openHands===true,options};
-    rules.display=Multiplayer.describeRules(rules,fields,!!catalog[gameId]?.capabilities?.hands);
+    rules.display=Multiplayer.describeRules(rules,fields,!!catalog[gameId]?.capabilities?.hands,catalog[gameId]?.presetSetting);
     return rules;
   }
   function rememberRules(gameId,rules){
@@ -513,9 +513,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     renderLobby();
   }
   function roomRulesFromForm(form){
-    const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,form.elements['option-'+field.key].value]));
-    const rules={firstPlayerMode:form.elements.firstPlayerMode.value,seatOrder:form.elements.seatOrder.value,preset:form.elements.preset.value,presetLabel:form.elements.preset.selectedOptions[0].textContent,openHands:!!form.elements.openHands?.checked,options:packOptions};
-    return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],!!catalog[game]?.capabilities?.hands)};
+    const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,choiceValue(form.elements['option-'+field.key])]));
+    const rules={firstPlayerMode:form.elements.firstPlayerMode.value,seatOrder:form.elements.seatOrder.value,preset:choiceValue(form.elements.preset),presetLabel:(meta(game).presets||[]).find(p=>p.id===choiceValue(form.elements.preset))?.label||choiceValue(form.elements.preset),openHands:!!form.elements.openHands?.checked,options:packOptions};
+    return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],!!catalog[game]?.capabilities?.hands,catalog[game]?.presetSetting)};
   }
   function latestRoomEvent(type){return room?.events?.slice().reverse().find(event=>!type||event.type===type)||null;}
   function renderLobby(){
@@ -563,15 +563,53 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function kickLobbyParticipant(targetId){try{room=roomService.kick(room.id,lobbyParticipantId,targetId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function showRoomRules(){
     const state=roomService.snapshot(room.id),game=meta(state.game.id);
-    const rows=state.rules.display||Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],!!catalog[state.game.id]?.capabilities?.hands);
+    const rows=state.rules.display||Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],!!catalog[state.game.id]?.capabilities?.hands,catalog[state.game.id]?.presetSetting);
     openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.ee9cd4deefad",{p0:String(game.name)}))),p1:String(PlayroomLobbyView.rulesMarkup(state,rows,game,catalog[state.game.id]?.settings||[]))}));modalBack=renderLobby;
   }
   function showRoomHelp(){openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)))}));modalBack=renderLobby;}
-  function showRoomRulesEditor(){
-    const state=roomService.snapshot(room.id),g=meta(state.game.id),presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text("ui.app.a39ad47c9222")}],fields=catalog[state.game.id]?.settings||[];
-    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.803a31d997e9",{p0:String(g.name)}))}<form id="room-rules-form" data-game="${esc(state.game.id)}"><div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.b5d827de5168")}</span><select name="preset">${presets.map(p=>`<option value="${esc(p.id)}" ${state.rules.preset===p.id?'selected':''}>${esc(p.label||p.name||p.id)}</option>`).join('')}</select></label>${fields.map(field=>`<div class="field rule-field" data-rule-field="${esc(field.key)}"><label for="rule-${esc(field.key)}">${esc(field.label)}</label>${PlayroomLobbyView.fieldHelp(field.help)}<select id="rule-${esc(field.key)}" name="option-${esc(field.key)}">${field.options.map(option=>`<option value="${esc(option.value)}" ${state.rules.options?.[field.key]===option.value?'selected':''}>${esc(option.label)}</option>`).join('')}</select></div>`).join('')}${catalog[state.game.id]?.capabilities?.hands?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.957e469d885d")}</span><input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}>${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText('openHands'))}</label>`:''}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);syncRuleVisibility($('#room-rules-form'));
+  // Range positions are UI indices; saved/domain values remain the pack's exact IDs.
+  function choiceValue(input){
+    const choices=input?.dataset.choiceOptions;
+    return choices?JSON.parse(choices)[Number(input.value)]?.value:input?.value;
   }
-  function syncRuleVisibility(form){if(!form)return;for(const field of catalog[form.dataset.game]?.settings||[]){const row=form.querySelector('[data-rule-field="'+field.key+'"]');if(row)row.hidden=!!field.visibleWhen&&!Object.entries(field.visibleWhen).every(([key,value])=>form.elements['option-'+key]?.value===String(value));}}
+  function syncChoice(input){
+    if(!input?.dataset.choiceOptions)return;
+    const options=JSON.parse(input.dataset.choiceOptions),option=options[Number(input.value)];
+    if(!option)return;
+    input.setAttribute('aria-valuetext',option.label==='∞'?'Без ограничения':option.label);
+    document.getElementById(input.id+'-value').textContent=option.label;
+    input.closest('.settings-range').style.setProperty('--range-progress',(Number(input.value)/(options.length-1)*100)+'%');
+  }
+  function settingTitle(label,help){
+    return `<span class="setting-title"><span class="setting-title-text">${esc(label)}</span>${PlayroomLobbyView.fieldHelp(help)}</span>`;
+  }
+  function ruleControl(field,name,value){
+    const options=field.options,id='rule-'+name,index=Math.max(0,options.findIndex(option=>option.value===value));
+    if(options.length===1)return `<input type="hidden" name="${esc(name)}" value="${esc(options[0].value)}">`;
+    const control=field.control==='slider'?GameScreen.rangeSetting({id,name,label:field.label,max:options.length-1,value:index,display:options[index].label,choices:options}):`<label class="field" for="${esc(id)}"><span>${esc(field.label)}</span><select id="${esc(id)}" name="${esc(name)}">${options.map((option,i)=>`<option value="${esc(option.value)}" ${i===index?'selected':''}>${esc(option.label)}</option>`).join('')}</select></label>`;
+    return `<div class="rule-field" data-rule-field="${esc(field.key||'preset')}">${control.replace(`<span>${esc(field.label)}</span>`,settingTitle(field.label,field.help))}</div>`;
+  }
+  function showRoomRulesEditor(){
+    const state=roomService.snapshot(room.id),g=meta(state.game.id),manifest=catalog[state.game.id]||{},presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text("ui.app.a39ad47c9222")}],fields=manifest.settings||[];
+    const preset=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))};
+    const controls=new Map([['preset',ruleControl(preset,'preset',state.rules.preset)],...fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default)])]);
+    const groups=manifest.ruleGroups||[{fields:['preset',...fields.map(field=>field.key)]}];
+    const renderGroup=group=>{
+      const keys=group.fields.filter(key=>controls.has(key)),visible=keys.some(key=>key==='preset'?preset.options.length>1:fields.find(field=>field.key===key)?.options.length>1);
+      return `<section class="rule-group" ${visible?'':'hidden'}>${group.label?`<h3>${esc(group.label)}</h3>`:''}<div class="rule-grid">${keys.map(key=>{const html=controls.get(key);controls.delete(key);return html;}).join('')}</div></section>`;
+    };
+    const body=groups.filter(group=>!group.end).map(renderGroup).join(''),ending=groups.filter(group=>group.end).map(renderGroup).join(''),rest=[...controls.values()].join('');
+    const common=`<div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div>`;
+    openModal(`${modalHead(globalThis.PlayroomMessages.text('ui.app.803a31d997e9',{p0:String(g.name)}))}<form id="room-rules-form" data-game="${esc(state.game.id)}"><section class="rule-group rule-common">${common}</section>${body}${rest}<section class="rule-group rule-common" ${manifest.capabilities?.hands?'':'hidden'}>${manifest.capabilities?.hands?`<label class="switch">${settingTitle(globalThis.PlayroomMessages.text('ui.app.957e469d885d'),PlayroomLobbyView.ruleText('openHands'))}<input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}</section>${ending}<div class="modal-foot"><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);
+    const form=$('#room-rules-form');for(const input of form.querySelectorAll('[data-choice-options]'))syncChoice(input);syncRuleVisibility(form);
+  }
+  function syncRuleVisibility(form){
+    if(!form)return;
+    for(const field of catalog[form.dataset.game]?.settings||[]){
+      const row=form.querySelector('[data-rule-field="'+field.key+'"]');
+      if(row)row.hidden=!!field.visibleWhen&&!Object.entries(field.visibleWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value));
+    }
+  }
   function showRoomGameEditor(){
     if(!room||roomService.snapshot(room.id).phase!=='lobby'||room.ownerId!==lobbyParticipantId)return;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{favorites:[]};
@@ -641,21 +679,29 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const duel=(settingsRoom?settingsRoom.seats.filter(s=>s.participantId).length:Number(document.querySelector('.app-game-layout')?.dataset.playerCount)||session?.current.players.length)===2;
     const stage=document.querySelector('.app-game-layout'),rowOnly=duel||globalThis.PlayroomViews.get(seatingGame)?.seating==='row';
     const seatingValue=rowOnly?'row':settings.seatingByGame[seatingGame]==='row'?'row':'anchors';
-    const canAnchor=true;
     const hasCardHand=!seatingGame||(catalog[seatingGame]?.capabilities?.hands&&catalog[seatingGame]?.category==='cards');
     const invite=settingsRoom?.transportMode!=='hotseat'&&!options.client&&settingsRoom?.ownerId===(lobbyParticipantId||playerProfile?.id)?GameScreen.addPlayerButton():'';
     openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.985b5e0f2ccf")).replace('</header>','')}<div class="settings-header-actions">${GameScreen.iconButton('data-command="fullscreen"',globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),'full')}${GameScreen.iconButton(settingsRoom&&!options.client?'data-command="room-help"':'data-command="help"',globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),'help')}</div></header><div class="settings-overview"><div class="settings-quick">${quick}${invite}${!quick.includes('data-command="rules"')&&(options.sharedRules||settingsRoom||session&&screen==='table')?`<button class="icon-btn" title="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" aria-label="${globalThis.PlayroomMessages.text("ui.app.7f7b0ffbbfe0")}" ${options.sharedRules?'data-shared-rules':options.client?'data-net-action="rules"':session&&screen==='table'?'data-command="rules"':settingsRoom?'data-command="room-rules-view"':'data-command="rules"'}>${icon('rules')}</button>`:''}</div><button type="button" class="icon-btn settings-themes" data-appearance-editor aria-label="${globalThis.PlayroomMessages.text('ui.app.themes-button')}" title="${globalThis.PlayroomMessages.text('ui.app.themes-button')}">${icon('palette')}</button><div class="settings-personal">${profile}</div></div>
-      ${seatingGame&&!rowOnly?`<label class="field seating-setting"><span>${globalThis.PlayroomMessages.text('ui.app.seating.label')}</span><select id="setting-seating" data-game="${esc(seatingGame)}">${(rowOnly?['row']:[canAnchor?'anchors':'circle','row']).map(value=>`<option value="${value}" ${seatingValue===value?'selected':''}>${globalThis.PlayroomMessages.text('ui.app.seating.'+value)}</option>`).join('')}</select><small>${globalThis.PlayroomMessages.text('ui.app.seating.local')}</small></label>`:''}
-      ${hasCardHand?`<label class="field"><span>${globalThis.PlayroomMessages.text('ui.app.hand-shape.label')}</span><select id="setting-hand-shape">${['straight','arc'].map(value=>`<option value="${value}" ${settings.handShape===value?'selected':''}>${globalThis.PlayroomMessages.text('ui.app.hand-shape.'+value)}</option>`).join('')}</select></label>`: ''}
+      <div class="settings-grid settings-layout-grid">${hasCardHand?GameScreen.rangeSetting({id:'setting-hand-shape',label:globalThis.PlayroomMessages.text('ui.app.hand-shape.label'),max:1,value:settings.handShape==='arc'?1:0,display:globalThis.PlayroomMessages.text('ui.app.hand-shape.'+settings.handShape),choices:['straight','arc'].map(value=>({value,label:globalThis.PlayroomMessages.text('ui.app.hand-shape.'+value)}))}):''}${seatingGame&&!rowOnly?GameScreen.rangeSetting({id:'setting-seating',label:globalThis.PlayroomMessages.text('ui.app.seating.label'),max:1,value:seatingValue==='row'?1:0,display:globalThis.PlayroomMessages.text('ui.app.seating.'+seatingValue),choices:['anchors','row'].map(value=>({value,label:globalThis.PlayroomMessages.text('ui.app.seating.'+value)}))}).replace('id="setting-seating"',`id="setting-seating" data-game="${esc(seatingGame)}"`):''}</div>
       <label class="switch"><span>${globalThis.PlayroomMessages.text('ui.app.show-last-game')}</span><input type="checkbox" id="setting-last-game" ${settings.showLastGame?'checked':''}></label>
       ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
-      <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.b10ca6a74592")}</span><input type="checkbox" id="setting-quick-play" aria-describedby="setting-quick-play-description" ${settings.quickPlay?'checked':''}></label>
-      <div class="settings-grid">${GameScreen.rangeSetting({id:'setting-volume',label:globalThis.PlayroomMessages.text('ui.app.77e13b86fbed'),value:settings.sound?volumeLevels.indexOf(settings.volume):0,display:volumeLabels[settings.sound?volumeLevels.indexOf(settings.volume):0]})}${GameScreen.rangeSetting({id:'setting-speed',label:globalThis.PlayroomMessages.text('ui.app.62af90477d26'),value:speedLevels.indexOf(settings.animationSpeed),display:animationPresets[settings.animationSpeed].label,describedby:'setting-speed-description'})}</div>
+      <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.b10ca6a74592")}</span><input type="checkbox" id="setting-quick-play" ${settings.quickPlay?'checked':''}></label>
+      <div class="settings-grid">${GameScreen.rangeSetting({id:'setting-volume',label:globalThis.PlayroomMessages.text('ui.app.77e13b86fbed'),value:settings.sound?volumeLevels.indexOf(settings.volume):0,display:volumeLabels[settings.sound?volumeLevels.indexOf(settings.volume):0]})}${GameScreen.rangeSetting({id:'setting-speed',label:globalThis.PlayroomMessages.text('ui.app.62af90477d26'),value:speedLevels.indexOf(settings.animationSpeed),display:animationPresets[settings.animationSpeed].label,describedby:''})}</div>
       ${GameScreen.rangeSetting({id:'setting-scale',label:globalThis.PlayroomMessages.text('ui.app.interface-scale'),min:50,max:150,step:10,value:globalThis.PlayroomInterfaceScale.applied,display:globalThis.PlayroomInterfaceScale.applied+'%',bounds:true})}
       <details class="settings-details"><summary>${globalThis.PlayroomMessages.text("ui.app.2a1b034b41db")}</summary><div class="sound-preview"><label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.12c1d95abaf7")}</span><select id="sound-preview" data-sound-control ${settings.sound?'':'disabled'}><optgroup label="${globalThis.PlayroomMessages.text("ui.app.5d74e9a8efa5")}">${soundOptions}</optgroup>${packSounds}</select></label><button class="btn secondary" data-command="sound-preview" data-sound-control ${settings.sound?'':'disabled'} aria-label="${globalThis.PlayroomMessages.text("ui.app.7c5ead6299f2")}">${icon('play')}</button></div></details>
-      <details class="settings-details"><summary>${globalThis.PlayroomMessages.text("ui.app.e2d7a2109816")}</summary>${!nickname?("<p class=\"lead\">"+globalThis.PlayroomMessages.text("ui.app.d940e6fdee3b")+"</p>"):''}<p class="lead" id="setting-quick-play-description">${globalThis.PlayroomMessages.text("ui.app.b5d22d15d394")}</p><p class="lead" id="setting-speed-description">${animationPresets[settings.animationSpeed].description}</p><p class="lead">${globalThis.PlayroomMessages.text("ui.app.b42de89d2283")}</p></details>
       ${session&&screen==='table'?`<button class="btn plain" data-start="${session.game}" style="width:100%;margin-top:10px">${icon('reset')} ${globalThis.PlayroomMessages.text("ui.app.b3490a21344b")}</button>`:''}`);
-    globalThis.PlayroomInterfaceScale.sync();
+    attachSettingsHelp();globalThis.PlayroomInterfaceScale.sync();
+  }
+  function attachSettingsHelp(){
+    const root=document.querySelector('.modal:has(.settings-overview)');if(!root)return;
+    for(const id of ['setting-player-name','setting-hand-shape','setting-seating','setting-last-game','setting-auto-pass','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
+      const input=root.querySelector('#'+id);if(!input)continue;
+      const field=input.closest('.settings-range,.field,.switch'),wrapper=document.createElement('div');
+      wrapper.className='setting-with-help';field.before(wrapper);wrapper.append(field);
+      const title=field.querySelector('.settings-range-heading > span')||field.querySelector(':scope > span'),label=title.textContent;
+      title.outerHTML=settingTitle(label,globalThis.PlayroomMessages.text('ui.app.help.'+id));
+      wrapper.querySelector('.rule-help>button')?.setAttribute('aria-label','Справка: '+label);
+    }
   }
   function showCardHelp() {
     const cards=[...document.querySelectorAll('.own-hand .hand-card[data-tooltip]')],seen=new Set();
@@ -866,18 +912,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   document.addEventListener('input',event=>{if(event.target.matches('#profile-form [name=playerName],#setting-player-name,.lobby-profile [name=nickname]'))for(const button of document.querySelectorAll('[data-avatar-picker]'))button.innerHTML=TabletopUI.avatar({name:event.target.value,avatar:profileAvatar},0);});
   document.addEventListener('change',event=>{
     if(event.target.id==='history-viewer'&&historyOrigin?.kind==='library'){stopReplay();viewer=Number(event.target.value);renderTable();return;}
-    if(event.target.closest('#room-rules-form')){syncRuleVisibility(event.target.form);return;}
+    if(event.target.closest('#room-rules-form')){syncChoice(event.target);syncRuleVisibility(event.target.form);return;}
     try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(globalThis.PlayroomMessages.error(error));renderLobby();return;}
     if(event.target.id==='setting-player-name'){try{playerProfile=profileStore.save(event.target.value);}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
     if(['setting-scale','setting-speed','setting-quick-play','setting-auto-pass','setting-volume','setting-seating','setting-hand-shape','setting-last-game'].includes(event.target.id)){
       if(event.target.id==='setting-volume'){const index=Number(event.target.value);settings.sound=index>0;if(index>0)settings.volume=volumeLevels[index];soundTicket++;audio.setEnabled(settings.sound);audio.setVolume(settings.volume);document.querySelectorAll('[data-sound-control]').forEach(el=>el.disabled=!settings.sound);}
       else if(event.target.id==='setting-scale'){settings.interfaceScale=Math.min(Number(event.target.value),globalThis.PlayroomInterfaceScale.limit);GameScreen.allowLayoutChange(document.querySelector('#app'),{allowLayoutChange:true});globalThis.PlayroomInterfaceScale.set(settings.interfaceScale);}
       else if(event.target.id==='setting-quick-play')settings.quickPlay=event.target.checked;
-      else if(event.target.id==='setting-seating'){const game=event.target.dataset.game;if(game&&['circle','anchors','row'].includes(event.target.value))settings.seatingByGame[game]=event.target.value;}
-      else if(event.target.id==='setting-hand-shape')settings.handShape=event.target.value==='arc'?'arc':'straight';
+      else if(event.target.id==='setting-seating'){const game=event.target.dataset.game;if(game&&['circle','anchors','row'].includes(choiceValue(event.target)))settings.seatingByGame[game]=choiceValue(event.target);}
+      else if(event.target.id==='setting-hand-shape')settings.handShape=choiceValue(event.target)==='arc'?'arc':'straight';
       else if(event.target.id==='setting-last-game')settings.showLastGame=event.target.checked;
       else if(event.target.id==='setting-auto-pass')settings.autoPass=event.target.checked;
-      else {settings.animationSpeed=speedLevels[Number(event.target.value)]||'normal';$('#setting-speed-description').textContent=animationPresets[settings.animationSpeed].description;}
+      else {settings.animationSpeed=speedLevels[Number(event.target.value)]||'normal';}
       document.body.classList.toggle('reduced-motion',pace().duration===0);
       try{localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));}catch(_){}
       window.dispatchEvent(new Event('playroom:game-options'));
@@ -887,7 +933,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
   });
   document.addEventListener('input',event=>{
-    const input=event.target;if(!['setting-scale','setting-volume','setting-speed'].includes(input.id))return;
+    const input=event.target;if(input.dataset.choiceOptions){syncChoice(input);if(input.closest('#room-rules-form'))syncRuleVisibility(input.form);return;}if(!['setting-scale','setting-volume','setting-speed'].includes(input.id))return;
     if(input.id==='setting-scale')input.value=String(Math.min(Number(input.value),globalThis.PlayroomInterfaceScale.limit));
     const value=Number(input.value),display=input.id==='setting-scale'?value+'%':input.id==='setting-volume'?volumeLabels[value]:animationPresets[speedLevels[value]].label;
     input.setAttribute('aria-valuetext',display);document.getElementById(input.id+'-value').textContent=display;
@@ -903,6 +949,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-player-replacement]')){event.preventDefault();event.target.click();return;}
     if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-player-target]')){event.preventDefault();showPlayerActions(Number(event.target.dataset.playerTarget));return;}
     if(event.key==='Escape'){
+      const popover=document.querySelector('[popover]:popover-open');
+      if(popover){event.preventDefault();popover.hidePopover();return;}
       if($('#modal-root').children.length)closeModal();else if(historyOpen)commands['history-close']();
       return;
     }

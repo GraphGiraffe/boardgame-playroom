@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"test-selection.test.cjs","profiles":[],"subblock":"core/test-selection"},
     {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
     {"file":"session-runtime.test.cjs","profiles":["app"],"subblock":"core/session-runtime"},
     {"file":"model-contract.test.cjs","profiles":[],"subblock":"core/model"},
@@ -47,6 +48,9 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file":"rule-settings-browser.test.cjs","profiles":[],"subblock":"ui/rules","types":["screen:phone:portrait","screen:phone:landscape"]},
+    {"file":"settings-layout-browser.test.cjs","profiles":[],"subblock":"ui/settings","types":["screen:phone:portrait","screen:phone:landscape"]},
+    {"file":"settings-help-browser.test.cjs","profiles":[],"subblock":"ui/settings-help","types":["screen:phone:portrait"]},
     {"file":"interface-scale.test.cjs","profiles":[],"subblock":"ui/appearance"},
     {"file": "appearance-browser.test.cjs", "profiles": [], "subblock": "ui/appearance"},
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},

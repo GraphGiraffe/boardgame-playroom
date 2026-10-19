@@ -31,3 +31,8 @@
 #app .app-game-layout .opponent-hand[data-compact-identity="true"] .participant-role svg{width:10px;height:10px}
 #app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading strong{font-size:10px}
 #app .app-game-layout[data-dense-roster="true"] .opponent-hand[data-compact-identity="true"] .player-info{padding:0;gap:2px}
+
+/* A range's visible control is its rounded thumb, not its transparent hit area. */
+:is(#app,#modal-root) .settings-range input[type=range]:focus-visible{outline:none}
+.settings-range input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
+.settings-range input[type=range]:focus-visible::-moz-range-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}

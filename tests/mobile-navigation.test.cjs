@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -109,7 +110,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       });
       const create=async(game,name,{hidden=false,preset='classic'}={})=>{
         await home();await press(page.locator(`.game-tile [data-start="${game}"]`).first());
-        await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=room-rules]').click();await page.locator('[name=preset]').selectOption(preset);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command=room-rules]').click();await selectChoice(page.locator('[name=preset]'),preset);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
         await page.evaluate(name=>{const b=PlayroomAppBridge,r=b.room();b.roomService.rename(r.id,r.ownerId,name);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:name+' · друг'});b.renderLobby();},name);
         if(['uno','domino','durak'].includes(game)){await page.locator('[data-command=room-rules]').click();if(hidden)await page.locator('[name=openHands]').uncheck();else await page.locator('[name=openHands]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());}
         await press(page.locator('[data-command=lobby-start]'));

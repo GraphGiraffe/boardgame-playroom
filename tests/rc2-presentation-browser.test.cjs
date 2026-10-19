@@ -1,4 +1,5 @@
 'use strict';
+const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/rc2-presentation');
@@ -267,9 +268,9 @@ test('RC4 local seating can be changed without actions, ownership changes or rev
  await page.locator('.table-tools [data-command=settings]').click();
  assert.equal(await page.locator('.settings-personal [data-appearance-picker]').count(),0);
  for(const width of [320,390,1090]){await page.setViewportSize({width,height:900});assert(await page.locator('[data-quick-shortcut]').evaluateAll(nodes=>nodes.every(n=>Math.abs(n.getBoundingClientRect().y-nodes[0].getBoundingClientRect().y)<1)));}
- await page.locator('#setting-seating').selectOption('row');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions('uno').seating),'auto','another game keeps its own default');
- await page.locator('.table-tools [data-command=settings]').click();await page.locator('#setting-seating').selectOption('anchors');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
- assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.oldmaid),'anchors');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'anchors');
+ await selectChoice(page.locator('#setting-seating'),'row');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');assert.equal(await page.evaluate(()=>PlayroomAppBridge.gameOptions('uno').seating),'auto','another game keeps its own default');
+ await page.locator('.table-tools [data-command=settings]').click();await selectChoice(page.locator('#setting-seating'),'anchors');await page.locator('#modal-root [data-command=close-modal]').click();assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
+ assert.equal(await page.locator('.seat-group .mini-hand .public-card').count(),0,'opponents remain hidden');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.oldmaid),'anchors');await page.reload();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await readChoice(page.locator('#setting-seating')),'anchors');
 }));
 test('RC4 phone tiles preserve square geometry, symmetrical header and readable artwork',{timeout:45000},async()=>fixture(async page=>{
  for(const width of [320,390,520]){
@@ -402,14 +403,14 @@ test('RC7 Ludo offers corners or row and orientation fallback does not rewrite s
  const rejected=await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();try{b.roomService.beginCountdown(r.id,r.ownerId);return false;}catch(_){return b.roomService.snapshot(r.id).phase==='lobby';}});assert(rejected,'real pack rejects a two-person team roster before countdown');
  for(const seat of ['seat-3','seat-4'])await page.locator(`[data-room-cycle="${seat}"]`).click();
  await page.locator('[data-command="lobby-start"]').click();await page.locator('.table-tools [data-command="settings"]').click();
- assert.deepEqual(await page.locator('#setting-seating option').evaluateAll(nodes=>nodes.map(n=>n.value)),['anchors','row']);
- await page.locator('#setting-seating').selectOption('anchors');await page.locator('#modal-root [data-command="close-modal"]').click();
+ assert.deepEqual(await page.locator('#setting-seating').evaluate(e=>JSON.parse(e.dataset.choiceOptions).map(o=>o.value)),['anchors','row']);
+ await selectChoice(page.locator('#setting-seating'),'anchors');await page.locator('#modal-root [data-command="close-modal"]').click();
  await page.setViewportSize({width:740,height:360});await page.waitForFunction(()=>document.querySelector('.app-game-layout').dataset.anchorCompactControls==='true');
  assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'circle');
- await page.locator('.table-tools [data-command="settings"]').click();assert.equal(await page.locator('#setting-seating').inputValue(),'anchors');
+ await page.locator('.table-tools [data-command="settings"]').click();assert.equal(await readChoice(page.locator('#setting-seating')),'anchors');
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).seatingByGame.ludo),'anchors');
  await page.locator('#modal-root [data-command="close-modal"]').click();await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.querySelector('.app-game-layout').dataset.seating==='circle');
- await page.locator('.table-tools [data-command="settings"]').click();await page.locator('#setting-seating').selectOption('row');await page.locator('#modal-root [data-command="close-modal"]').click();
+ await page.locator('.table-tools [data-command="settings"]').click();await selectChoice(page.locator('#setting-seating'),'row');await page.locator('#modal-root [data-command="close-modal"]').click();
  for(const [width,height]of [[390,844],[740,360],[768,1024],[1024,768]]){
   await page.setViewportSize({width,height});const panels=await page.locator('.layout-participants .player-panel').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {w:r.width,h:r.height};}));assert(panels.every(p=>p.w>=80&&p.h>=44),JSON.stringify(panels));
   await page.screenshot({path:path.join(root,'tmp_files/rc7-review',`ludo-${width}x${height}-chosen-row.png`)});
@@ -504,7 +505,7 @@ test('RC10 hidden domino tiles have distinct outlined backs and 4:7 proportions'
 test('RC11 optional card arc persists and follows scrolling without affecting domino',{timeout:60000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/rc11-arc');fs.mkdirSync(dir,{recursive:true});
  await page.locator('[data-command="settings"]').first().click();
- await page.locator('#setting-hand-shape').selectOption('arc');
+ await selectChoice(page.locator('#setting-hand-shape'),'arc');
  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).handShape),'arc');
  await page.locator('.modal [data-command="close-modal"]').click();
  for(const [width,height]of [[390,844],[844,390],[640,320],[768,1024],[1024,768],[1920,1080]]){
@@ -515,9 +516,9 @@ test('RC11 optional card arc persists and follows scrolling without affecting do
   const measure=()=>track.evaluate(t=>({overflow:t.scrollWidth-t.clientWidth,cards:[...t.querySelectorAll('.hand-card')].map(c=>{const r=c.getBoundingClientRect(),b=t.getBoundingClientRect();return {angle:parseFloat(getComputedStyle(c).rotate),top:r.top-b.top,bottom:b.bottom-r.bottom};})}));
   const size=()=>page.evaluate(()=>({cards:[...document.querySelectorAll('.layout-hand .hand-card')].map(c=>[c.offsetWidth,c.offsetHeight]),panels:[...document.querySelectorAll('.player-panel')].map(c=>[c.offsetWidth,c.offsetHeight]),hand:[document.querySelector('.hand-track').offsetWidth,document.querySelector('.hand-track').offsetHeight]}));
   const arcSize=await size();
-  await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('straight');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
+  await page.locator('[data-command="settings"]').first().click();await selectChoice(page.locator('#setting-hand-shape'),'straight');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
   assert.deepEqual(await size(),arcSize,'shape choice preserves card, player panel and hand viewport dimensions');
-  await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('arc');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
+  await page.locator('[data-command="settings"]').first().click();await selectChoice(page.locator('#setting-hand-shape'),'arc');await page.locator('.modal [data-command="close-modal"]').click();await page.evaluate(()=>rcRender());
   let box=await measure();assert(box.cards.some(c=>Math.abs(c.angle)>1));assert(box.cards.every(c=>c.top>=-1&&c.bottom>=-1),JSON.stringify({width,height,box}));
   await page.screenshot({path:path.join(dir,`uno-${width}x${height}.png`)});
   await track.locator('.hand-card').first().focus();
@@ -533,8 +534,8 @@ test('RC11 optional card arc persists and follows scrolling without affecting do
   await scene(page,'domino');assert.equal(await page.locator('.hand-track.is-arc').count(),0);
  }
  await page.reload();await page.locator('.game-tile').first().waitFor();
- await page.locator('[data-command="settings"]').first().click();assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
- await page.locator('#setting-hand-shape').selectOption('straight');await page.locator('.modal [data-command="close-modal"]').click();
+ await page.locator('[data-command="settings"]').first().click();assert.equal(await readChoice(page.locator('#setting-hand-shape')),'arc');
+ await selectChoice(page.locator('#setting-hand-shape'),'straight');await page.locator('.modal [data-command="close-modal"]').click();
  await scene(page,'uno');assert.equal(await page.locator('.hand-track.is-arc').count(),0);
 }));
 
@@ -547,12 +548,12 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
  assert.equal(await page.locator('#setting-last-game').isChecked(),false);
  assert.equal(await page.locator('#setting-volume').inputValue(),'3');
  assert.equal(await page.locator('#setting-speed').inputValue(),'2');
- assert.equal(await page.locator('#setting-hand-shape').inputValue(),'arc');
+ assert.equal(await readChoice(page.locator('#setting-hand-shape')),'arc');
  await page.screenshot({path:path.join(dir,'defaults.png')});
  await page.setViewportSize({width:320,height:640});
  const heading=await page.locator('.modal-head').evaluate(h=>({height:h.querySelector('h2').getBoundingClientRect().height,overflow:h.scrollWidth-h.clientWidth}));assert(heading.height<30&&heading.overflow<=1);
- const edges=await page.locator('.modal').evaluate(m=>['.settings-header-actions','.settings-themes','#setting-player-name','#setting-hand-shape','#setting-last-game'].map(s=>m.querySelector(s).getBoundingClientRect().right));assert(Math.max(...edges)-Math.min(...edges)<=1,JSON.stringify(edges));
- const insets=await page.locator('.modal').evaluate(m=>{const r=m.getBoundingClientRect(),left=m.querySelector('.modal-head>.icon-btn').getBoundingClientRect().left,right=m.querySelector('#setting-hand-shape').getBoundingClientRect().right;return {left:left-r.left,right:r.right-right};});assert(Math.abs(insets.left-insets.right)<=1,JSON.stringify(insets));assert.equal(await page.locator('#setting-hand-shape').locator('..').locator('small').count(),0);
+ const edges=await page.locator('.modal').evaluate(m=>['.settings-header-actions','.settings-themes','#setting-player-name','.settings-layout-grid','.setting-with-help:has(#setting-last-game)'].map(s=>m.querySelector(s).getBoundingClientRect().right));assert(Math.max(...edges)-Math.min(...edges)<=1,JSON.stringify(edges));
+ const insets=await page.locator('.modal').evaluate(m=>{const r=m.getBoundingClientRect(),left=m.querySelector('.modal-head>.icon-btn').getBoundingClientRect().left,right=m.querySelector('.settings-layout-grid').getBoundingClientRect().right;return {left:left-r.left,right:r.right-right};});assert(Math.abs(insets.left-insets.right)<=1,JSON.stringify(insets));
  await page.screenshot({path:path.join(dir,'settings-320.png')});await page.setViewportSize({width:1098,height:1238});
  await page.locator('#setting-volume').evaluate(e=>{e.value='0';e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));});await page.locator('#setting-quick-play').uncheck();await page.locator('#setting-auto-pass').uncheck();
  await page.reload();await page.locator('.game-tile').first().waitFor();
@@ -574,7 +575,7 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
 },{settings:null}));
 
 test('RC12 small fans stay centered, symmetric and overlapping',{timeout:45000},async()=>fixture(async page=>{
- await page.locator('[data-command="settings"]').first().click();await page.locator('#setting-hand-shape').selectOption('arc');await page.locator('.modal [data-command="close-modal"]').click();
+ await page.locator('[data-command="settings"]').first().click();await selectChoice(page.locator('#setting-hand-shape'),'arc');await page.locator('.modal [data-command="close-modal"]').click();
  const dir=path.join(root,'tmp_files/rc12-ui');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height] of [[390,844],[640,320],[844,390],[1024,768]])for(const count of [1,2,3,4,6]){
   await page.setViewportSize({width,height});await scene(page,'uno');
@@ -600,7 +601,7 @@ test('RC15 popovers preserve form layout and fixed choices hide without losing v
   await page.screenshot({path:path.join(shots,`rc15-hub-${width}.png`)});
   await page.evaluate(()=>{document.querySelector('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal"><div class="modal-body"><form><fieldset><legend>Игрок №1 ${PlayroomLobbyView.fieldHelp('Первый ход определяется правилами игры.')}</legend></fieldset><label class="field"><span>Набор правил</span><select name="preset"><option value="classic">Классика</option></select></label><label class="switch"><span>Открытые руки</span><input type="checkbox">${PlayroomLobbyView.fieldHelp('Все участники видят карты друг друга. Это меняет видимость рук, но не допустимые действия.')}</label></form></div></section></div>`;});
   assert.equal(await page.locator('select[name=preset]').isVisible(),false);
-  assert.equal(await page.locator('select[name=preset]').inputValue(),'classic');
+  assert.equal(await readChoice(page.locator('select[name=preset]')),'classic');
   const before=await page.locator('.switch').boundingBox();
   for(const button of await page.locator('.rule-help>button').all()){
    await button.click();const popup=page.locator('.mini-help-popover:popover-open');await popup.waitFor();
