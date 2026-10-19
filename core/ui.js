@@ -24,6 +24,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     duel:"<circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"18\" cy=\"6\" r=\"3\"/><path d=\"M1 21v-5a5 5 0 0 1 10 0v5m2 0v-5a5 5 0 0 1 10 0v5\"/>",
     three:"<circle cx=\"12\" cy=\"5\" r=\"2.5\"/><circle cx=\"4\" cy=\"10\" r=\"2.5\"/><circle cx=\"20\" cy=\"10\" r=\"2.5\"/><path d=\"M8 19v-7a4 4 0 0 1 8 0v7M1 22v-6a3 3 0 0 1 6 0v6m10 0v-6a3 3 0 0 1 6 0v6\"/>",
     teams:"<circle cx=\"4\" cy=\"5\" r=\"2\"/><circle cx=\"9\" cy=\"8\" r=\"2\"/><circle cx=\"15\" cy=\"8\" r=\"2\"/><circle cx=\"20\" cy=\"5\" r=\"2\"/><path d=\"M1 17v-5a3 3 0 0 1 6 0m-1 7v-5a3 3 0 0 1 6 0v5m0 0v-5a3 3 0 0 1 6 0v5m-1-7a3 3 0 0 1 6 0v5M1 22h9m4 0h9\"/>",
+    filter:'<path d="M3 4h18l-7 8v7l-4 2v-9Z"/>',
     star:"<path d=\"m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1Z\"/>",
     shuffle:"<path d=\"M3 6h2c6 0 8 12 14 12h3m-4-4 4 4-4 4M3 18h2c2 0 4-2 6-5m2-3c2-3 4-4 6-4h3m-4-4 4 4-4 4\"/>",
     ship:"<path d=\"M2 16h20l-4 5H6ZM8 15V8h8v7m-4-7V3m0 2h5\"/>",
