@@ -205,6 +205,14 @@ core=json.loads('['+re.search(r'const CORE=\\[(.*?)\\];',worker,re.S).group(1).r
 assert all(ref=='./' or ref[2:] in items for ref in core)
 assert {'./'+ref for ref in refs} <= set(core), 'Every HTML script/style entrypoint must be precached'
 assert all(ref[2:] in items for ref in json.loads(re.search(r'const INTEGRITY=(.*?);',worker).group(1)))
+source_bytes=Path.read_bytes
+def missing_asset(path):
+ data=source_bytes(path)
+ return data.replace(b'const CORE=[',b"const CORE=['./missing-shell.js',") if path==build.ROOT/'sw.js' else data
+with patch.object(Path,'read_bytes',missing_asset):
+ try: build.pwa_runtime_items()
+ except ValueError as error: assert 'missing-shell.js' in str(error)
+ else: raise AssertionError('Missing precache assets must stop packaging')
 assert items==dict(build.pwa_runtime_items())
 cache=lambda output: re.search(r"const CACHE='([^']+)'",output['sw.js'].decode()).group(1)
 assert cache(items)!='playroom-pwa-v0.15.0'

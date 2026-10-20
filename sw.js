@@ -7,7 +7,7 @@ const CORE=[
   './platform/web/interface-scale.js','./app/interface-scale.css',
   './app/hub-presenter.js',
   './application/upgrade-service.js','./app/upgrade-ui.js',
-  './core/messages.js','./core/character-assets.js','./core/avatars.js','./app/avatar-picker.js',
+  './core/messages.js','./core/character-styles.js','./core/avatars.js','./app/avatar-picker.js',
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./installed-packs.js',
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',
   './app/appearance.css','./app/appearance-models.js','./app/appearance-web.js','./app/appearance-ui.js',
