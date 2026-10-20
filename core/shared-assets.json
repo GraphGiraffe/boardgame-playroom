@@ -5,15 +5,15 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df",
-      "renderedSha256": "d06bdf776b58ff641ffddfdbbf663aac94b29f0661d18517855b6c11d69520df"
+      "sha256": "035e5fc7cb7b6c982bb233a752d1ca527930b52826279338d4d51e523428f364",
+      "renderedSha256": "035e5fc7cb7b6c982bb233a752d1ca527930b52826279338d4d51e523428f364"
     },
     {
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "94a72f07c027e2bd78b13abb34c303d8ea9af575f3e430ab0c0c28fd3330ab12",
-      "renderedSha256": "94a72f07c027e2bd78b13abb34c303d8ea9af575f3e430ab0c0c28fd3330ab12"
+      "sha256": "660a102d51e547cf62442496b378cd5951169702efe506c1e8cd1f6e426da6c4",
+      "renderedSha256": "660a102d51e547cf62442496b378cd5951169702efe506c1e8cd1f6e426da6c4"
     },
     {
       "source": "shared/sounds/standard-sounds.json",
@@ -27,8 +27,8 @@
       "source": "shared/assets/catalog.json",
       "target": "themes/assets.json",
       "format": "text",
-      "sha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a",
-      "renderedSha256": "f4f0c86143a3e33eeab146d1d97ce4ab82e0a59353feb7375d593b0584056c7a"
+      "sha256": "af62e8b547253f8a46fc7a0674d34f3dbb4d057e4f03e39e19d359b45e21130c",
+      "renderedSha256": "af62e8b547253f8a46fc7a0674d34f3dbb4d057e4f03e39e19d359b45e21130c"
     },
     {
       "source": "shared/locales/ru/components.json",
@@ -45,12 +45,19 @@
       "renderedSha256": "00d8f7cafd8d091c9d93284b3ffa3dc5a9ab1b14aff5120caab3b42914efa90d"
     },
     {
-      "source": "shared/asset-packs/characters/catalog.json",
-      "target": "core/character-assets.js",
+      "source": "shared/asset-packs/mini-split-deck/renderer.js",
+      "target": "core/mini-split-deck.js",
+      "format": "text",
+      "sha256": "4c7c83d85170ca4745e8e8f924481bb3c0317db4d319013901e66a9efd434623",
+      "renderedSha256": "4c7c83d85170ca4745e8e8f924481bb3c0317db4d319013901e66a9efd434623"
+    },
+    {
+      "source": "shared/asset-packs/character-styles/catalog.json",
+      "target": "core/character-styles.js",
       "format": "module",
-      "globalName": "PlayroomCharacterAssets",
-      "sha256": "aa2d117904018ff528ea443858b101d30fb22672dd7f40a66b4e89ee494f5014",
-      "renderedSha256": "7284169e4e25ce364eaf2e3a77cf2f82697223273604e9d7cb385892b325d681"
+      "globalName": "PlayroomCharacterStyles",
+      "sha256": "eef9fb253ba891f7f333cf133bd16fa3ff6cc6c7f461b6c8a5e32ba8fd790880",
+      "renderedSha256": "dbb8cbef16b80c6b3304ef3cdb1a38a20d55ddf69a1d694a1289fff32105ec6d"
     }
   ]
 }

@@ -52,15 +52,17 @@
       const rect = rectOf(el);
       if (!rect || root.getComputedStyle(el).visibility === 'hidden') continue;
       const hand = el.closest(handSelector), boundary = rectOf(hand || scene);
-      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, public: publicEntity(el) });
+      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, public: publicEntity(el),...(scene.querySelector('[data-motion-layout=cards]')&&publicEntity(el)&&(action?.type==='replay-back'||['draw','replay'].includes(action?.type)&&el.dataset.motionZone==='waste')?{clone:styledClone(el)}:{}) });
     }
     const owner = Number.isInteger(actor) ? [...(scene?.querySelectorAll('[data-player-index]') || [])].find(el => Number(el.dataset.playerIndex) === actor) : null;
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
-    let stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back')||scene?.querySelector('.mini-hand .piece-back');
+    let stockBack = scene?.querySelector('[data-motion-stock] .piece-back, .stock-button .piece-back, .stock-button .shared-card-back')||scene?.querySelector('.mini-hand .piece-back');
     if(!stockBack&&root.TabletopUI?.helpers?.back){const template=doc.createElement('template');template.innerHTML=root.TabletopUI.helpers.back();stockBack=template.content.firstElementChild;}
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
+    const anchors=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-anchor]')){const rect=rectOf(el);if(rect)anchors.set(el.dataset.motionAnchor,rect);}
     const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
-    return { flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: poseOf(stockBack)||poseOf(scene?.querySelector('.stock-button')), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    const stockControl=scene?.querySelector('.stock-button,.solitaire-stock')||doc.querySelector('.scene-header-actions .solitaire-stock');
+    return { anchors, flips, actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: scene?.querySelector('[data-motion-layout="cards"]')?(poseOf(stockControl)||poseOf(stockBack)):(poseOf(stockBack)||poseOf(stockControl)), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el) {
     for (const node of [el, ...el.querySelectorAll('*')]) {
@@ -102,15 +104,44 @@
   function cancel() {
     if (running) running.finish();
   }
+  // Public ordered transfers use named scene anchors and canonical face templates.
+  function playTransfers(snapshot,scene,steps,duration) {
+    const doc=root.document,templates=[...scene.querySelectorAll('[data-motion-template]')],anchors=[...scene.querySelectorAll('[data-motion-anchor]')];
+    const flights=steps.slice(0,104).map(step=>{
+      if(!step||typeof step.entity!=='string'||typeof step.from!=='string'||typeof step.to!=='string')return null;
+      const face=templates.find(el=>el.dataset.motionTemplate===step.entity)?.firstElementChild,to=rectOf(anchors.find(el=>el.dataset.motionAnchor===step.to));
+      const origin=snapshot.entities?.get(step.entity)?.rect||snapshot.anchors?.get(step.from)||rectOf(anchors.find(el=>el.dataset.motionAnchor===step.from));
+      return face&&to&&origin?{face,to,from:{...origin,width:to.width,height:to.height}}:null;
+    }).filter(Boolean);
+    if(!flights.length)return Promise.resolve();
+    return new Promise(resolve=>{
+      const layer=doc.createElement('div'),animations=[],timers=[],hidden=[];layer.className='playroom-motion-layer';layer.setAttribute('aria-hidden','true');doc.body.append(layer);let ended=false;
+      const run={finish(){if(ended)return;ended=true;timers.forEach(clearTimeout);animations.forEach(a=>a.cancel());for(const item of hidden){if(item.value)item.el.style.setProperty('visibility',item.value,item.priority);else item.el.style.removeProperty('visibility');}layer.remove();root.removeEventListener('resize',run.finish);if(running===run)running=null;resolve();}};
+      running=run;root.addEventListener('resize',run.finish);
+      const destinations=new Set(steps.map(step=>step.to));
+      for(const anchor of anchors.filter(el=>destinations.has(el.dataset.motionAnchor)))for(const el of anchor.querySelectorAll('[data-entity]')){hidden.push({el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')});el.style.setProperty('visibility','hidden','important');}
+      const pace=Math.max(80,Math.min(240,duration*.4)),stride=pace+30;
+      try{flights.forEach(({face,from,to},index)=>{
+        const mover=doc.createElement('div'),clone=styledClone(face);mover.className='playroom-motion-flight';mover.dataset.motionKind='transfer';mover.dataset.motionIndex=String(index);
+        Object.assign(mover.style,{width:to.width+'px',height:to.height+'px',zIndex:String(Math.round(from.y))});
+        Object.assign(clone.style,{position:'absolute',left:'0',top:'0',visibility:'visible',width:to.width+'px',height:to.height+'px',transform:'none',margin:'0'});mover.append(clone);layer.append(mover);
+        const at=p=>`translate3d(${p.x}px,${p.y}px,0)`;
+        const animation=mover.animate([{transform:at(from)},{transform:at(to)}],{duration:pace,delay:index*stride,easing:'ease-out',fill:'both'});animations.push(animation);
+        timers.push(setTimeout(()=>{mover.style.zIndex=String(2000+index);},index*stride));
+      });timers.push(setTimeout(run.finish,(flights.length-1)*stride+pace+30));}catch(_){run.finish();}
+    });
+  }
   function play(snapshot, { duration = 500, settle = 160, draws, effects:effectTiming={flip:280,pair:700} } = {}) {
     cancel();
     duration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
     if (!snapshot || !duration) return Promise.resolve();
     const doc = root.document, scene = doc.querySelector('.scene');
     if (!scene) return Promise.resolve();
+    const transferNode=scene.querySelector('[data-motion-transfers]');
+    if(transferNode?.dataset.motionTrigger===snapshot.action?.type){let steps;try{steps=JSON.parse(transferNode.dataset.motionTransfers);}catch(_){}if(Array.isArray(steps)&&steps.length)return playTransfers(snapshot,scene,steps,duration);}
     const entities = snapshot.entities instanceof Map ? snapshot.entities : new Map();
     const flights = [], used = new Set();
-    const current = snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-entity]')];
+    const current = snapshot.diceOnly?[]:[...scene.querySelectorAll('[data-entity]')].filter(el=>!el.closest('[data-motion-template]')&&root.getComputedStyle(el).visibility!=='hidden');
     let sequence=null;
     try { sequence=snapshot.sequence||JSON.parse(scene.querySelector('[data-motion-sequence]')?.dataset.motionSequence||'null'); } catch (_) {}
     if(snapshot.diceOnly||sequence?.trigger!==snapshot.action?.type)sequence=null;
@@ -123,9 +154,35 @@
       const to=rectOf(routeEntity),origin=anchorRect(sequence.origin),from=entities.get(sequence.entity)?.rect||{x:origin.x+(origin.width-to.width)/2,y:origin.y+(origin.height-to.height)/2,width:to.width,height:to.height};
       flights.push({el:routeEntity,from,to,kind:'route',sequence,duration:duration+sequence.steps.length*duration/4+(sequence.jump?settle+duration:0)});used.add(routeEntity);
     }else sequence=null;
-    const card = snapshot.action?.card;
+    const card = snapshot.action?.card,autoCards=!!scene.querySelector('[data-motion-layout="cards"]');
+    if(autoCards){let reveals=0;
+      for(const el of current.filter(publicEntity)){
+        const before=entities.get(el.dataset.entity),to=poseOf(el);if(!to)continue;
+        const anchor=el.closest('[data-motion-anchor]')?.dataset.motionAnchor;
+        const back=snapshot.action?.type==='replay-back',drawing=['draw','replay'].includes(snapshot.action?.type);
+        let from=before?.pose||before?.rect||(!back&&drawing&&(el.dataset.motionZone==='waste'||snapshot.action?.type==='draw')?snapshot.stock:null)||(back?snapshot.anchors?.get(el.dataset.motionHome):null)||snapshot.anchors?.get(anchor);
+        if(snapshot.playedFrom&&card!=null&&el.dataset.entity==='card-'+card)from=snapshot.playedFrom;
+        if(!from)continue;
+        if(before&&Math.hypot(from.x-to.x,from.y-to.y)<1&&Math.abs(from.width-to.width)<1)continue;
+        const reveal=!before&&!back&&(el.dataset.motionZone==='waste'&&drawing||anchor?.startsWith('tableau-'));
+        flights.push({el,from,to,kind:reveal?'reveal':'move',delay:reveal?reveals++*duration*.15:0,duration:reveal?duration*.7:duration*.55});used.add(el);
+      }
+      // Keep the previously visible waste beneath the newly dealt fan. It is
+      // absent from the final DOM, but must slide into the pile rather than blink out.
+      if(['draw','replay'].includes(snapshot.action?.type)&&current.some(el=>el.dataset.motionZone==='waste'&&!entities.has(el.dataset.entity))){
+        const waste=scene.querySelector('[data-motion-anchor="waste"]'),target=rectOf(waste),ids=new Set(current.map(el=>el.dataset.entity));
+        const previous=[];
+        if(target)for(const [id,before]of entities)if(before.clone&&!ids.has(id)){const to={...(before.pose||before.rect),x:target.x,y:target.y};previous.push({el:null,art:before.clone,from:before.pose||before.rect,to,kind:'shift',duration:duration*.3});}
+        flights.unshift(...previous);
+        const shifts=duration*.3;
+        for(const flight of flights)if(flight.kind==='reveal')flight.delay=(flight.delay||0)+shifts;
+        if(snapshot.stockBack&&snapshot.stock&&!scene.querySelector('.solitaire-stock .shared-card-back'))flights.unshift({el:null,art:snapshot.stockBack,from:snapshot.stock,to:snapshot.stock,kind:'hold',duration:shifts+duration});
+      }
+      if(snapshot.action?.type==='replay-back'&&snapshot.stock){const ids=new Set(current.map(el=>el.dataset.entity));for(const [id,before]of entities){if(!ids.has(id)&&before.clone)flights.push({el:null,art:before.clone,from:before.rect,to:snapshot.stock,kind:'move',duration:duration*.7});}}
+    }
+
     const publicNow = snapshot.routeOnly?[]:current.filter(publicEntity);
-    const played = (draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
+    const played = (autoCards||draws?.some(c=>c.to==='table')?[]:publicNow).filter(el => {
       if(el.closest('[data-motion-effect="flip"]')||el.hasAttribute('data-reveal-active')||snapshot.revealedEntities?.includes(el.dataset.entity))return false;
       if (card != null) return el.dataset.entity.endsWith(`-${card}`);
       const before = entities.get(el.dataset.entity);
@@ -181,7 +238,7 @@
       root.addEventListener('resize',onResize);
       running = run;
       try {
-        for (const { el, from, to, kind, back, player, sequence:route, delay = 0, duration: flightDuration = duration } of flights) {
+        for (const { el, art, from, to, kind, back, player, sequence:route, delay = 0, duration: flightDuration = duration } of flights) {
           const mover = doc.createElement('div'); mover.className = 'playroom-motion-flight'; mover.dataset.motionKind = kind;
           mover.style.width = `${to.width}px`; mover.style.height = `${to.height}px`;
           let clone;
@@ -189,7 +246,7 @@
             clone = snapshot.stockBack?.cloneNode(true) || doc.createElement('div');
             clone.classList.add('piece-back', 'playroom-motion-piece'); clone.setAttribute('aria-hidden', 'true');
             Object.assign(clone.style, { position: 'absolute', left: '0', top: '0', minWidth: '0', minHeight: '0', transform: 'none' });
-          } else clone = styledClone(el);
+          } else clone = art?art.cloneNode(true):styledClone(el);
           if(snapshot.routeOnly)clone.style.translate='none';
           clone.dataset.motionKind = kind;
           if (player != null) { mover.dataset.motionPlayer = player; clone.dataset.motionPlayer = player; }
@@ -198,11 +255,18 @@
             Object.assign(clone.style,{left:'0',top:'0',transformOrigin:'0 0',rotate:'none',translate:'none',scale:'none',transform:`scale(${scale})`});
           }
           mover.append(clone); layer.append(mover);
+          if(kind==='reveal'){
+            const backFace=snapshot.stockBack?.cloneNode(true);
+            if(backFace){Object.assign(backFace.style,{position:'absolute',left:'0',top:'0',width:to.width+'px',height:to.height+'px',minWidth:'0',minHeight:'0',visibility:'visible',margin:'0',transformOrigin:'50% 50%',backfaceVisibility:'hidden'});mover.append(backFace);animations.push(backFace.animate([{transform:'rotateY(0deg)',offset:0},{transform:'rotateY(90deg)',offset:.5},{transform:'rotateY(90deg)',offset:1}],{duration:flightDuration,delay,fill:'both'}));}
+            clone.style.backfaceVisibility='hidden';animations.push(clone.animate([{transform:'rotateY(-90deg)',offset:0},{transform:'rotateY(-90deg)',offset:.5},{transform:'rotateY(0deg)',offset:1}],{duration:flightDuration,delay,fill:'both'}));
+          }
+
           const entry = el ? { el, visibility: el.style.getPropertyValue('visibility'), priority: el.style.getPropertyPriority('visibility') } : null;
           if (entry) { restore.push(entry); el.style.setProperty('visibility', 'hidden', 'important'); }
           const sx = Math.min(from.width / to.width,from.height / to.height), sy = sx, lift = kind === 'move' ? 12 : Math.min(90, Math.hypot(from.x - to.x, from.y - to.y) * .18 + 22);
           const transform = (x,y,xScale,yScale) => `translate3d(${x}px,${y}px,0) scale(${xScale},${yScale})`;
           let frames = [{ transform: transform(from.x,from.y,sx,sy), offset: 0 }, { transform: transform((from.x+to.x)/2,Math.max(0,Math.min(from.y,to.y)-lift),(sx+1)/2,(sy+1)/2), offset: .52 }, { transform: transform(to.x,to.y,1,1), offset: 1 }];
+          if(kind==='hold'||kind==='shift')frames=[{transform:transform(from.x,from.y,1,1)},{transform:transform(to.x,to.y,1,1)}];
           if(kind==='play'||kind==='draw'){
             const start=from.angle||0,delta=((to.angle||0)-start+540)%360-180;
             const at=(x,y,scale,angle)=>`translate3d(${x}px,${y}px,0) rotate(${angle}deg) scale(${scale}) translate(-50%,-50%)`;

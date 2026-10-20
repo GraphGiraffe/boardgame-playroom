@@ -251,7 +251,7 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
   const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:3,viewApi:2,sha256:sha,
     url:`/api/packs/files/${manifest.id}/${manifest.version}/${sha}.playroom-pack.json`};
   assert.equal(Remote.validate({format:'playroom-catalog',version:1,collection:'0.6.5',packs:[entry]}).packs[0].engineApi,3);
-  for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(typeof a.files[file],'string');
+  for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(a.files[file],undefined,'source is already compiled into entrypoints');
   const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
   const before=E.GAMES,views=UI.createRegistry();
   const manager=new Packs({engine:E,views,catalog:{},storage:{get:()=>null,set(){}}});
@@ -326,7 +326,30 @@ print(json.dumps(out))
  const [app,pak]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
  assert.deepEqual(app,pak);
  assert(app.manifest.sharedAssetPacks.includes('mini-cards'));
- for(const file of ['renderer.js','styles.css'])assert.equal(typeof app.files['assets/shared-packs/mini-cards/'+file],'string');
+ for(const file of ['renderer.js','styles.css'])assert.equal(app.files['assets/shared-packs/mini-cards/'+file],undefined,'compiled asset entrypoint has no redundant separate copy');
  assert(app.files['view.js'].includes('root.PlayroomMiniCards=api'));
  assert(app.files['styles.css'].includes('.mini-card[data-rank="10"]'));
+});
+
+test('prepared packs omit bundled sources, duplicate asset entrypoints and authoring notes',()=>{
+ const script=`
+import json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);p=root/'shared/pack_compiler.py';ns={'__file__':str(p)};exec(compile(p.read_text(),str(p),'exec'),ns)
+result=[]
+for pack in sorted((root/'packs').iterdir()):
+ if not (pack/'manifest.json').is_file():continue
+ source=json.loads((pack/'manifest.json').read_text());bundle=ns['build_pack'](pack);files=bundle['files'];modules=source.get('sourceModules',{})
+ consumed=modules.get('rules',[])+modules.get('view',[])+[p for paths in modules.get('locales',{}).values() for p in paths]
+ assert not set(consumed)&set(files)
+ assert not any(p.endswith('.md') for p in files)
+ for name in source.get('sharedAssetPacks',[]):
+  spec=json.loads((root/'shared/asset-packs'/name/'manifest.json').read_text())
+  for filename in spec.get('scripts',[])+spec.get('styles',[]):assert 'assets/shared-packs/'+name+'/'+filename not in files
+ if pack.name=='pexeso':assert not any(p.startswith('assets/shared-packs/characters/') for p in files)
+ if pack.name=='battleship':assert 'base64' not in files['sounds.js'] and len([p for p in files if p.endswith('.wav')])==4
+ result.append(pack.name)
+print(json.dumps(result))
+`;
+ const ids=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8'}));assert.equal(ids.length,14);
 });

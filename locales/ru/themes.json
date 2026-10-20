@@ -26,7 +26,7 @@
   "themes.quick": "Выбрать тему",
   "themes.choose": "Тема",
   "themes.edit": "Редактировать",
-  "themes.save-apply": "Сохранить и применить",
+  "themes.save-apply": "Принять",
   "themes.copy-name": "Копия: {name}",
   "themes.delete-question": "Удалить тему «{name}»?",
   "themes.standard": "Стандартный",
@@ -165,5 +165,13 @@
   "themes.color.material.pawn.rim": "Ободок фишек",
   "themes.color.material.pawn.side": "Тень боковой грани фишек",
   "themes.color.material.bubble.success": "Успешная игровая реплика",
-  "themes.color.material.bubble.error": "Ошибочная игровая реплика"
+  "themes.color.material.bubble.error": "Ошибочная игровая реплика",
+  "themes.skin-reset": "Сбросить все",
+  "themes.skin-saved": "Скины сохранены на этом устройстве.",
+  "themes.four-colors": "4 цвета",
+  "themes.only-title": "Темы",
+  "themes.family.character-face": "Карты персонажей",
+  "themes.avatar-style": "Стиль аватаров",
+  "themes.avatar-minimal": "Стандартный",
+  "themes.avatar-simple": "Простой"
 }

@@ -14,3 +14,6 @@
 
 /* All hand surfaces participate in manual scroll arbitration, including disabled pieces. */
 .layout-self,.own-hand .hand-track{touch-action:none!important}
+
+/* Immediate board drags keep their card silhouette without a selection frame. */
+.playroom-drag-ghost[data-drag-start="immediate"]{outline:none!important}

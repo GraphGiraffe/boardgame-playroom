@@ -145,3 +145,13 @@ test('appearance model runs without browser APIs, time, randomness or game engin
   assert.equal(active,'light');
   for(const name of ['document','window','localStorage','TabletopCore'])assert.equal(context[name],undefined);
 });
+
+test('existing theme selection previews without editing built-ins or persisting until Save',()=>{const e=environment();const before=copy(e.service.snapshot());e.service.previewSelection('dark');assert.equal(e.service.shown().id,'dark');assert.deepEqual(e.service.snapshot(),before);assert.equal(e.writes(),0);e.service.cancelPreview();assert.equal(e.service.shown().id,'light');e.service.previewSelection('dark');e.service.select('dark');assert.equal(e.stored().activeId,'dark');assert.equal(e.catalog.builtin('dark').palette['surface.canvas'],'#18211d');});
+
+test('avatar style is a separate local theme preference: preview, cancel, persistence and old preferences',()=>{
+ const e=environment({formatVersion:1,activeId:'light',presets:[]});assert.equal(e.service.avatarStyle(),'minimal');assert.equal(environment({formatVersion:1,activeId:'light',presets:[],avatarStyle:'detailed'}).service.avatarStyle(),'minimal');
+ e.service.previewAvatarStyle('simple');assert.equal(e.service.avatarStyle(),'simple');assert.equal(e.writes(),0);e.service.cancelPreview();assert.equal(e.service.avatarStyle(),'minimal');
+ e.service.saveAvatarStyle('simple');assert.equal(e.stored().avatarStyle,'simple');e.service.select('dark');assert.equal(e.service.avatarStyle(),'simple');assert.equal(environment(e.stored()).service.avatarStyle(),'simple');
+ e.fail(true);assert.throws(()=>e.service.saveAvatarStyle('minimal'),/quota/);assert.equal(e.service.avatarStyle(),'simple');assert.throws(()=>e.service.previewAvatarStyle('bad'),/AVATAR_STYLE_INVALID/);
+ const old=copy(e.catalog.builtin('light'));delete old.skins['character-face'];assert.equal(e.catalog.validate(old).skins['character-face'],'minimal');
+});

@@ -57,10 +57,10 @@
       requireValue(record(source.palette) && Object.keys(source.palette).length === this.#slots.length &&
         this.#slots.every(key => Object.hasOwn(source.palette, key) &&
           typeof source.palette[key] === 'string' && /^#[a-f0-9]{6}$/i.test(source.palette[key])), 'PALETTE_INVALID');
-      requireValue(record(source.skins) && Object.keys(source.skins).length === Object.keys(this.#assets).length &&
-        Object.keys(this.#assets).every(family => Object.hasOwn(source.skins, family) &&
+      requireValue(record(source.skins) && Object.keys(source.skins).every(family=>Object.hasOwn(this.#assets,family)) &&
+        Object.keys(this.#assets).every(family => !Object.hasOwn(source.skins,family)?this.#assets[family].optional===true:
           typeof source.skins[family] === 'string' && idPattern.test(source.skins[family])), 'SKINS_INVALID');
-      const preset = {formatVersion:1, id:source.id, mode:source.mode, palette:clone(source.palette), skins:clone(source.skins)};
+      const preset = {formatVersion:1, id:source.id, mode:source.mode, palette:clone(source.palette), skins:Object.fromEntries(Object.entries(this.#assets).map(([family,asset])=>[family,source.skins[family]||asset.default]))};
       if (source.name !== undefined) {
         requireValue(typeof source.name === 'string' && source.name.trim().length > 0 && source.name.trim().length <= 64, 'PRESET_NAME_INVALID');
         preset.name = source.name.trim();
@@ -94,6 +94,7 @@
     #idFactory;
     #state;
     #preview = null;
+    #avatarPreview = null;
     #listeners = new Set();
     #warnings = [];
     constructor({catalog, repository, idFactory}) {
@@ -102,7 +103,7 @@
       this.#catalog = catalog;
       this.#repository = repository;
       this.#idFactory = idFactory;
-      this.#state = freeze({formatVersion:1, activeId:catalog.defaultId, presets:[]});
+      this.#state = freeze({formatVersion:1, activeId:catalog.defaultId, presets:[],avatarStyle:'minimal'});
       try {
         const saved = repository.read();
         if (saved != null) {
@@ -118,7 +119,7 @@
           }
           const validActive = catalog.isBuiltin(saved.activeId) || seen.has(saved.activeId);
           if (!validActive) this.#warnings.push('ACTIVE_PRESET_MISSING');
-          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets});
+          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets,avatarStyle:['minimal','simple'].includes(saved.avatarStyle)?saved.avatarStyle:'minimal'});
         }
       } catch (error) { this.#warnings.push(error.code || 'PREFERENCES_UNAVAILABLE'); }
     }
@@ -149,7 +150,7 @@
       // Persist before changing live preferences, so a storage error rolls back.
       this.#repository.write(clone(next));
       this.#state = freeze(next);
-      this.#preview = null;
+      this.#preview = null;this.#avatarPreview=null;
       this.#emit(type);
     }
     createDraft(sourceId, name) {
@@ -164,7 +165,15 @@
       this.#emit('preview');
       return this.#preview;
     }
-    cancelPreview() { this.#preview = null; this.#emit('preview-cancelled'); }
+    previewSelection(id) {
+      this.#preview=this.#catalog.resolve(this.#find(id));
+      this.#emit('preview');
+      return this.#preview;
+    }
+    avatarStyle(){return this.#avatarPreview||this.#state.avatarStyle||'minimal';}
+    previewAvatarStyle(style){requireValue(['minimal','simple'].includes(style),'AVATAR_STYLE_INVALID');this.#avatarPreview=style;this.#emit('avatar-preview');}
+    saveAvatarStyle(style){requireValue(['minimal','simple'].includes(style),'AVATAR_STYLE_INVALID');this.#commit({...clone(this.#state),avatarStyle:style},'avatar-saved');}
+    cancelPreview() { this.#preview = null;this.#avatarPreview=null;this.#emit('preview-cancelled'); }
     saveDraft(draft, {activate = false} = {}) {
       requireValue(!this.#catalog.isBuiltin(draft?.id), 'BUILTIN_IMMUTABLE');
       const preset = this.#catalog.validate(draft);
@@ -172,7 +181,7 @@
       const exists = this.#state.presets.some(item => item.id === preset.id);
       requireValue(exists || this.#state.presets.length < 32, 'PRESET_LIMIT');
       const presets = this.#state.presets.filter(item => item.id !== preset.id).concat(preset);
-      this.#commit({formatVersion:1, activeId:activate?preset.id:this.#state.activeId, presets}, 'saved');
+      this.#commit({...clone(this.#state),formatVersion:1, activeId:activate?preset.id:this.#state.activeId, presets}, 'saved');
       return this.#catalog.resolve(preset);
     }
     select(id) {
@@ -187,10 +196,43 @@
     remove(id) {
       requireValue(!this.#catalog.isBuiltin(id), 'BUILTIN_IMMUTABLE');
       this.#find(id);
-      this.#commit({formatVersion:1, activeId:this.#state.activeId===id?this.#catalog.defaultId:this.#state.activeId,
+      this.#commit({...clone(this.#state),formatVersion:1, activeId:this.#state.activeId===id?this.#catalog.defaultId:this.#state.activeId,
         presets:this.#state.presets.filter(item => item.id !== id)}, 'removed');
     }
   }
 
-  return Object.freeze({ThemeCatalog, AppearanceService, AppearanceError});
+  // Separate local preferences: changing a theme never removes per-game choices.
+  class SkinPreferences {
+    constructor({assets,repository}) {
+      this.assets=assets;this.repository=repository;this.state={formatVersion:1,main:{},packs:{}};
+      try{const saved=repository.read();if(saved)this.state=this.validate(saved);}catch(_){/* Corrupt local preferences use safe defaults. */}
+    }
+    validate(value){
+      requireValue(record(value)&&value.formatVersion===1&&record(value.main)&&record(value.packs),'SKINS_INVALID');
+      const skins=map=>record(map)&&Object.entries(map).every(([family,id])=>Object.hasOwn(this.assets,family)&&typeof id==='string'&&idPattern.test(id));
+      requireValue(skins(value.main)&&Object.keys(value.packs).length<=1024&&Object.entries(value.packs).every(([id,map])=>/^[a-z][a-z0-9_-]{0,63}$/.test(id)&&skins(map)),'SKINS_INVALID');return clone(value);
+    }
+    snapshot(){return freeze(clone(this.state));}
+    choose(draft,family,variant,packId=null){
+      requireValue(Object.hasOwn(this.assets,family)&&(variant===null||packId&&variant==='inherit'||this.assets[family].variants.includes(variant))&&(!packId||/^[a-z][a-z0-9_-]{0,63}$/.test(packId)),'SKINS_INVALID');
+      const target=packId?(Object.hasOwn(draft.packs,packId)?draft.packs[packId]:(draft.packs[packId]={})):draft.main;
+      if(variant===null)delete target[family];else target[family]=variant;
+    }
+    resetAll(draft,family,fallback){
+      requireValue(Object.hasOwn(this.assets,family),'SKINS_INVALID');
+      // Materialize Main so pack defaults do not reappear after resetting.
+      this.choose(draft,family,draft.main[family]||fallback||this.assets[family].default);
+      for(const map of Object.values(draft.packs))delete map[family];
+    }
+    resolve(family,{packId=null,defaults={},theme={},draft=null}={}){
+      const state=draft||this.state,spec=this.assets[family];
+      requireValue(spec,'SKINS_INVALID');
+      const individual=Object.hasOwn(state.packs,packId)?state.packs[packId][family]:null;
+      const requested=(individual==='inherit'?state.main[family]||theme[family]:individual||state.main[family]||defaults[family]||theme[family])||spec.default;
+      return spec.variants.includes(requested)?requested:spec.default;
+    }
+    save(draft){const next=this.validate(draft);this.repository.write(clone(next));this.state=next;return this.snapshot();}
+  }
+
+  return Object.freeze({ThemeCatalog, AppearanceService, AppearanceError, SkinPreferences});
 });

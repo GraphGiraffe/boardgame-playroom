@@ -854,3 +854,49 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 .rule-help .help-focus-ring{fill:none;stroke:var(--ui-focus);stroke-width:2.5;opacity:0;pointer-events:none}
 :is(#app,#modal-root) .rule-help>button:focus-visible{outline:none}
 .rule-help>button:focus-visible .help-focus-ring{opacity:1}
+
+/* A solo field has no player columns to reserve in any orientation. */
+#app .app-game-layout[data-view-api="2"][data-solo-field="true"]{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:minmax(0,1fr) auto!important;grid-template-areas:"field" "actions"!important;padding:4px!important;gap:4px!important}
+#app .app-game-layout[data-solo-field="true"]>.layout-actions{grid-area:actions!important;align-self:end;position:static!important;width:100%!important}
+#app .app-game-layout[data-solo-field="true"]>.layout-field{grid-area:field!important;position:relative!important;inset:auto!important;width:auto!important;max-width:none!important;min-height:0}
+#app .table-shell:has([data-solo-field="true"]) .table-header{position:static;inset:auto;width:100%;pointer-events:auto;flex-wrap:wrap}
+#app .table-shell:has([data-solo-field="true"]) .table-heading{width:auto;flex:1 1 100px}
+#app .table-shell:has([data-solo-field="true"]) .table-tools{width:auto;flex:0 0 auto}
+#app .table-shell:has([data-solo-field="true"]) .table-status{display:flex;min-height:20px;padding:0 6px;align-items:center}
+#app .table-shell:has([data-solo-field="true"]) .status-details{position:static;width:100%;max-width:100%;height:20px;padding:0;background:none;display:flex;align-items:center}
+#app .table-shell:has([data-solo-field="true"]) :is(.turn-extra,.status-event){position:static;inset:auto;width:auto;max-width:100%;text-align:left;font-size:11px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Solo landscape status shares the reserved action row instead of taking field height. */
+@media(orientation:landscape){
+ #app .table-shell:has(.solitaire-action-row){position:relative}
+ #app .table-shell:has(.solitaire-action-row) .table-status{position:absolute;bottom:16px;right:16px;width:calc((100% - 230px)/2);min-height:0;height:auto;padding:0;z-index:2;pointer-events:none;background:none}
+ #app .table-shell:has(.solitaire-action-row) .status-details{height:auto;justify-content:flex-end}
+ #app .table-shell:has(.solitaire-action-row) .turn-extra{display:none}
+ #app .table-shell:has(.solitaire-action-row) .status-event{text-align:right}
+}
+
+/* Opt-in landscape scene controls share the header without covering the field. */
+@media(orientation:landscape){
+ #app .app-game-layout[data-action-placement="header-landscape"]{grid-template-rows:minmax(0,1fr)!important;grid-template-areas:"field"!important}
+ #app .table-header:has(.scene-header-actions){flex-wrap:nowrap;gap:8px}
+ #app .table-header:has(.scene-header-actions) .table-heading{flex:0 1 auto;min-width:100px;max-width:170px}
+ #app .table-header>.scene-header-actions{flex:1 1 0;min-width:0;padding:0}
+ #app .scene-header-actions .solitaire-footer-stats{display:grid;gap:0;font-size:10px}
+ #app .scene-header-actions .solitaire-controls{gap:4px}
+ #app .scene-header-actions .solitaire-footer-right{font-size:10px}
+}
+
+@media(orientation:portrait){
+ #app .table-shell .table-status:has([data-scene-status="portrait"]){display:flex;flex-direction:column;align-items:stretch;gap:0;height:auto;min-height:44px;padding:2px 6px}
+ #app .table-status>[data-scene-status="portrait"]{display:flex;align-items:center;gap:14px;height:24px;min-height:24px;padding:0;font-size:12px}
+ #app .table-shell .table-status:has([data-scene-status="portrait"]) .status-details{height:18px;min-height:18px}
+ #app .table-status:has([data-scene-status="portrait"]) .turn-extra:empty{display:none}
+}
+
+/* Shared card-table surfaces are presentation tokens, outside saved game rules. */
+:root{--card-table-face:var(--color-surface-card-table,#c9dfb5);--card-slot-face:var(--color-material-card-slot,#aeb2af)}
+:root[data-appearance-mode=dark]{--card-table-face:var(--color-surface-card-table,#244737);--card-slot-face:var(--color-material-card-slot,#9aaea2)}
+.app-game-layout[data-layout-family=cards]>.layout-field{background:var(--card-table-face);border-radius:12px}
+
+:root[data-appearance-mode=dark] .shared-card-slot{background:var(--card-slot-face)}
+:root[data-appearance-mode=dark] .shared-card-slot:disabled{opacity:.85}

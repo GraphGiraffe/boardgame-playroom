@@ -308,7 +308,10 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45);
       assert(frames.every(frame => frame.busy));
       const next = trace.moves.find(move => move.move === 2);
-      assert(next.t - frames.at(-1).t >= 1100, 'Next bot waits for the complete reveal and its own thinking gap');
+      const settled=trace.samples.find(sample=>sample.move===1&&!sample.busy&&sample.t>=frames.at(-1).t);
+      assert(settled,'The complete reveal settles before the next bot acts');
+      const gap=next.t-settled.t,delay=require('../core/game-flow.js').presets.slow.botDelay;
+      assert(gap>=delay-100&&gap<=delay+350,`Next bot thinking gap follows the selected pace: ${gap}ms vs ${delay}ms`);
       assert.equal(await page.locator('.opponent-hand [data-entity^="card-"]').count(), 0, 'Other hidden bot cards stay unidentified');
     });
 
@@ -319,7 +322,8 @@ test('Animation presets persist and stage real card flights before the next acto
       const trace = await stopTrace(page), busy = trace.samples.filter(sample => sample.move === 1 && sample.busy);
       assert.equal(trace.samples.some(sample => sample.pieces.length), false);
       assert(busy.length >= 4);
-      assert(busy.at(-1).t - busy[0].t >= 550, 'Reduced motion must preserve slow observation time');
+      const elapsed=busy.at(-1).t-busy[0].t,hold=require('../core/game-flow.js').effectTimes.slow.reveal;
+      assert(elapsed>=hold-100&&elapsed<=hold+250,`Reduced motion keeps one selected observation hold: ${elapsed}ms vs ${hold}ms`);
     });
 
     await check('A normal draw visibly transfers one card back from stock into the hand', async open => {

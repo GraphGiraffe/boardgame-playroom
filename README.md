@@ -1,6 +1,6 @@
 # ХОД · 0.18
 
-Настольные игры в браузере: локально с ботами, передача устройства и сетевая комната WebRTC. Приложение **0.18.2** и независимая коллекция **0.7.1** включают 12 игр. [Сайт](https://playroom-hod-test.pages.dev) · [релиз приложения](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.1) · [коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.1).
+Настольные игры в браузере: локально с ботами, передача устройства и сетевая комната WebRTC. Приложение **0.18.3** и независимая коллекция **0.7.1** включают 12 игр. [Сайт](https://playroom-hod-test.pages.dev) · [релиз приложения](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.18.1) · [коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.7.1).
 
 ## Начать играть
 
@@ -15,7 +15,7 @@
 
 ## Что нового
 
-0.18.2: фильтры библиотеки скрыты по умолчанию и раскрываются кнопкой после «Все»/«Избранное»; выбранные значения сохраняются при сворачивании.
+0.18.3: фильтры библиотеки скрыты по умолчанию и раскрываются кнопкой после «Все»/«Избранное»; выбранные значения сохраняются при сворачивании.
 
 0.18.1: компактные блоки правил со слайдерами, короткие подписи, отдельное завершение партии, ∞ в конце лимитов. «Прямо»/«Веером» и рассадка выбираются слайдерами; справки «?» стоят у названий. Колоды Рыбы — 36/52, Акулины — 35/51 в игре.
 
@@ -33,8 +33,8 @@ node scripts/codex/test.cjs core,input,games,ui,storage,network,pairing
 bash scripts/codex/serve.sh
 ```
 
-Выбирайте адресные блоки для обычных правок; [TESTING](docs/TESTING.md). Сервер 127.0.0.1:4173; сначала проверьте занятость порта. [Cloud](docs/CODEX-CLOUD.md).
+Выбирайте адресные блоки для обычных правок; [TESTING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md). Сервер 127.0.0.1:4173; сначала проверьте занятость порта. [Cloud](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/CODEX-CLOUD.md).
 
-[Индекс разработчика](docs/DEVELOPER-INDEX.md) · [архитектура](docs/DEVELOPER-ARCHITECTURE.md) · [SDK](docs/SDK-0.18.md) · [UI API](docs/GAME-ELEMENTS-API.md) · [roadmap](docs/ROADMAP.md) · [релиз и evidence](docs/RELEASE-0.18.md) · [CONTRIBUTING](CONTRIBUTING.md).
+[Индекс разработчика](docs/DEVELOPER-INDEX.md) · [архитектура](docs/DEVELOPER-ARCHITECTURE.md) · [SDK](docs/SDK-0.18.md) · [UI API](docs/GAME-ELEMENTS-API.md) · [roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md) · [релиз и evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md) · [CONTRIBUTING](CONTRIBUTING.md).
 
-Планируемые Паук/Косынка/Тысяча и новые скины пока не реализованы; [спецификация подготовки](docs/NEXT-PATCHES.md).
+Паук и Косынка, стандартные/простые персонажи и новые стили карт включены; Тысяча и следующие наборы остаются в плане; [спецификация подготовки](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/NEXT-PATCHES.md).

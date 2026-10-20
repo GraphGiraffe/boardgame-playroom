@@ -1,6 +1,6 @@
 # Разработчику ХОД · 0.18
 
-Действующий контракт: приложение **0.18.2**, коллекция **0.7.1**, engineApi **3**, viewApi **2**, сетевой protocol **2**. Источники и фактическое состояние публикации — [RELEASE-0.18](RELEASE-0.18.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
+Действующий контракт: приложение **0.18.3**, коллекция **0.7.2**, engineApi **3**, viewApi **2**, сетевой protocol **2**. Источники и фактическое состояние публикации — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
 
 | Вопрос | Руководство |
 |---|---|
@@ -13,7 +13,9 @@
 | Роли, authority, Стол, reconnect | [Сеть](DEVELOPER-MULTIPLAYER.md) |
 | Хранение, точные версии, обновление | [Данные](DEVELOPER-DATA.md) |
 | Контейнер и сборка пака | [Формат](PACK-FORMAT.md) |
-| Проверки и выпуск | [Тесты](TESTING.md), [релиз](RELEASING.md) |
-| Ближайшие патчи | [Roadmap](ROADMAP.md), [подготовка расширений](NEXT-PATCHES.md) |
+| Проверки и выпуск | [Тесты](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md), [релиз](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md) |
+| Пасьянсы и наследование скинов в рабочей ветке | [Реализация](SOLITAIRE-IMPLEMENTATION.md) |
+| Защита от повторных ошибок: ассеты, сохранения, скины, жесты | [Инварианты и проверки](DEVELOPMENT-REGRESSIONS.md) |
+| Ближайшие патчи | [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md), [подготовка расширений](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/NEXT-PATCHES.md) |
 
 Автор пака начинает с [руководства коллекции](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/main/docs/AUTHORING.md). Все примеры относятся к текущему API. Новая механика сначала получает владельца слоя и понятное имя; игровое правило не переносится в Web renderer.

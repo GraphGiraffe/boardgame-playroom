@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"skin-preferences.test.cjs","profiles":[],"subblock":"core/appearance"},
     {"file":"test-selection.test.cjs","profiles":[],"subblock":"core/test-selection"},
     {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
     {"file":"session-runtime.test.cjs","profiles":["app"],"subblock":"core/session-runtime"},
@@ -18,6 +19,7 @@ module.exports = {
     {"file": "artwork.test.cjs", "profiles": ["app"], "subblock": "core/packs"},
   ]},
   input: {label: "Ввод и игровые эффекты", cases: [
+    {"file":"solitaire-input.test.cjs","profiles":[],"types":["screen:phone"],"subblock":"input/solitaire"},
     {"file": "drag.test.cjs", "profiles": ["app", "core-ui"], "subblock": "input/gestures"},
     {"file": "drag-app.test.cjs", "profiles": [], "subblock": "input/gestures"},
     {"file": "motion.test.cjs", "profiles": [], "subblock": "input/motion"},
@@ -32,6 +34,8 @@ module.exports = {
     {"file": "quick-play.test.cjs", "profiles": [], "subblock": "input/feedback"},
   ]},
   games: {label: "Правила и интерфейс игр", cases: [
+    {"file":"solitaire.test.cjs","profiles":[],"subblock":"games/solitaire"},
+    {"file":"solitaire-browser.test.cjs","types":["screen:phone"],"profiles":[],"subblock":"games/solitaire/screen"},
     {"file":"rc2-presentation-browser.test.cjs","profiles":[],"subblock":"games/layout"},
     {"file": "game-layout-browser.test.cjs", "profiles": ["app", "layout", "smoke"], "subblock": "games/layout"},
     {"file": "views.test.cjs", "profiles": [], "subblock": "games/layout"},
@@ -48,6 +52,7 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file":"room-pack-switch-browser.test.cjs","profiles":[],"subblock":"ui/room","types":["screen:phone:portrait"]},
     {"file":"library-filters-browser.test.cjs","profiles":[],"subblock":"ui/library-filters","types":["screen:phone:portrait","screen:phone:landscape","screen:desktop"]},
     {"file":"rule-settings-browser.test.cjs","profiles":[],"subblock":"ui/rules","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"settings-layout-browser.test.cjs","profiles":[],"subblock":"ui/settings","types":["screen:phone:portrait","screen:phone:landscape"]},

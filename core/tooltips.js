@@ -4,6 +4,10 @@
   let attached = false, tooltip = null, source = null, pending = null, timer = null;
   let input = 'keyboard', shownBy = null, observer = null, pendingOrigin = null, focusFrame = null;
 
+  let press=null, holdTimer=null, lingerTimer=null, suppressUntil=0, manualClick=false;
+  const textFor=element=>(element?.dataset.tooltip||element?.getAttribute('title')||element?.getAttribute('aria-label')||'').trim();
+  function clearPress(){clearTimeout(holdTimer);holdTimer=null;press=null;}
+  function dismiss(){clearPress();hide();}
   function cancelPending() { clearTimeout(timer); timer = null; if (focusFrame !== null) root.cancelAnimationFrame(focusFrame); focusFrame = null; pending = null; pendingOrigin = null; }
   function removeDescription(element) {
     if (!element) return;
@@ -12,13 +16,13 @@
     else element.removeAttribute('aria-describedby');
   }
   function hide() {
-    cancelPending(); observer?.disconnect(); removeDescription(source);
+    clearTimeout(lingerTimer);lingerTimer=null;cancelPending(); observer?.disconnect(); removeDescription(source);
     source = null; shownBy = null;
     if (tooltip) { tooltip.hidden = true; tooltip.textContent = ''; }
   }
   function show(element, origin) {
     cancelPending();
-    const text = element?.dataset.tooltip?.trim();
+    const text = textFor(element);
     if (!text || !element.isConnected || !document.body) return hide();
     hide(); source = element; shownBy = origin;
     if (!tooltip || !tooltip.isConnected) {
@@ -39,8 +43,8 @@
     tooltip.style.left = `${x}px`; tooltip.style.top = `${y}px`;
     const descriptions = new Set((element.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
     descriptions.add(tooltipId); element.setAttribute('aria-describedby', [...descriptions].join(' '));
-    observer ||= new MutationObserver(() => { if (source && (!source.isConnected || source.dataset.tooltip?.trim() !== tooltip.textContent)) hide(); });
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tooltip'] });
+    observer ||= new MutationObserver(() => { if (source && (!source.isConnected || textFor(source) !== tooltip.textContent)) hide(); });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-tooltip','title','aria-label'] });
   }
   function elementFor(event) { return event.target instanceof Element ? event.target.closest('[data-tooltip]') : null; }
   function over(event) {
@@ -53,7 +57,37 @@
     if (!previous || previous.contains(event.relatedTarget)) return;
     if (pending === previous || (source === previous && shownBy === 'pointer')) hide();
   }
-  function down(event) { input = event.pointerType === 'touch' ? 'touch' : 'pointer'; hide(); }
+  function down(event) {
+    input=event.pointerType==='touch'?'touch':'pointer';
+    if(press&&event.isPrimary===false){suppressUntil=performance.now()+800;dismiss();return;}
+    dismiss();suppressUntil=0;
+    if(input!=='touch'||event.isPrimary===false)return;
+    const element=event.target.closest?.('button,[role="button"]');
+    // Card dragging and inspection retain their own pointer contract.
+    if(!element||!textFor(element)||element.closest('[inert],[data-drag-piece],[data-select],[data-swipe-action],[data-swipe-select]'))return;
+    const current=press={element,id:event.pointerId,x:event.clientX,y:event.clientY,held:false};
+    holdTimer=setTimeout(()=>{holdTimer=null;if(press===current&&element.isConnected){current.held=true;show(element,'touch');}},450);
+  }
+  function move(event){
+    if(!press||press.id!==event.pointerId||press.held)return;
+    if(Math.hypot(event.clientX-press.x,event.clientY-press.y)>10){clearTimeout(holdTimer);holdTimer=null;}
+  }
+  function end(event){
+    if(!press||press.id!==event.pointerId)return;
+    const current=press,element=current.element;
+    const inside=event.type==='pointerup'&&element.isConnected&&!element.closest('[inert]')&&element.contains(document.elementFromPoint(event.clientX,event.clientY));
+    clearPress();
+    if(!current.held){if(!inside)suppressUntil=performance.now()+800;return;}
+    suppressUntil=performance.now()+800;event.preventDefault();event.stopImmediatePropagation();
+    if(inside){hide();manualClick=true;try{element.click();}finally{manualClick=false;}}
+    else if(source===element&&tooltip&&!tooltip.hidden){shownBy='touch-linger';lingerTimer=setTimeout(hide,2000);}
+    else hide();
+  }
+  function click(event){
+    if(!manualClick&&performance.now()<suppressUntil){event.preventDefault();event.stopImmediatePropagation();}
+  }
+  function context(event){if(press||shownBy==='touch'||shownBy==='touch-linger')event.preventDefault();}
+
   function focus(event) {
     if (input === 'touch') return;
     const next = elementFor(event); if (!next) return;
@@ -72,29 +106,29 @@
     const current = pendingOrigin === 'focus' ? pending : source;
     if (current && current.contains(event.target) && !current.contains(event.relatedTarget)) hide();
   }
-  function scroll() { if (pendingOrigin !== 'focus') hide(); }
+  function scroll() {if(shownBy==='touch'||shownBy==='touch-linger')return;if(pendingOrigin!=='focus')dismiss();}
   function key(event) {
-    input = 'keyboard';
+    input = 'keyboard';clearPress();suppressUntil=0;
     if (event.key === 'Escape' || (pendingOrigin === 'focus' && ['PageUp','PageDown','Home','End','ArrowUp','ArrowDown'].includes(event.key))) hide();
   }
-  const listeners = [['pointerover', over], ['pointerout', out], ['pointerdown', down], ['focusin', focus], ['focusout', blur], ['keydown', key]];
+  const listeners = [['pointerover', over], ['pointerout', out], ['pointerdown', down], ['pointermove',move], ['pointerup',end], ['pointercancel',end], ['click',click], ['contextmenu',context], ['focusin', focus], ['focusout', blur], ['keydown', key]];
   function attach() {
     if (attached) return api;
     attached = true; listeners.forEach(([type, handler]) => document.addEventListener(type, handler, true));
-    root.addEventListener('scroll', scroll, { capture: true, passive: true }); root.addEventListener('resize', hide);
-    root.addEventListener('wheel', hide, { capture: true, passive: true }); root.addEventListener('blur', hide);
-    root.visualViewport?.addEventListener('resize', hide); root.visualViewport?.addEventListener('scroll', scroll);
+    root.addEventListener('scroll', scroll, { capture: true, passive: true }); root.addEventListener('resize', dismiss);
+    root.addEventListener('wheel', dismiss, { capture: true, passive: true }); root.addEventListener('blur', dismiss);
+    root.visualViewport?.addEventListener('resize', dismiss); root.visualViewport?.addEventListener('scroll', scroll);
     return api;
   }
   function destroy() {
-    hide(); attached = false; listeners.forEach(([type, handler]) => document.removeEventListener(type, handler, true));
+    dismiss();suppressUntil=0;attached = false; listeners.forEach(([type, handler]) => document.removeEventListener(type, handler, true));
     document.removeEventListener('DOMContentLoaded', attach);
-    root.removeEventListener('scroll', scroll, true); root.removeEventListener('resize', hide);
-    root.removeEventListener('wheel', hide, true); root.removeEventListener('blur', hide);
-    root.visualViewport?.removeEventListener('resize', hide); root.visualViewport?.removeEventListener('scroll', scroll);
+    root.removeEventListener('scroll', scroll, true); root.removeEventListener('resize', dismiss);
+    root.removeEventListener('wheel', dismiss, true); root.removeEventListener('blur', dismiss);
+    root.visualViewport?.removeEventListener('resize', dismiss); root.visualViewport?.removeEventListener('scroll', scroll);
     tooltip?.remove(); tooltip = null;
   }
-  const api = root.PlayroomTooltips = { attach, hide, destroy };
+  const api = root.PlayroomTooltips = { attach, hide:dismiss, destroy };
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root.document) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attach, { once: true });

@@ -58,7 +58,7 @@
     "feedback.unread": "#e6b366",
     "history.unread": "#5c8359",
     "history.boundary": "#b5cda4",
-    "material.card.face": "#fffdf6",
+    "material.card.face": "#fffbed",
     "material.card.ink": "#264e43",
     "material.card.red": "#b94f40",
     "material.card.rim": "#e5e6d4",
@@ -67,7 +67,7 @@
     "material.card-back.rim": "#d3c997",
     "material.card-back.pattern": "#e3d9aa",
     "material.card-back.mark": "#d7b36c",
-    "material.die.face": "#e4e7d7",
+    "material.die.face": "#fffbed",
     "material.die.rim": "#879d80",
     "material.die.side": "#546c55",
     "material.die.ink": "#243c2d",
@@ -81,7 +81,7 @@
     "material.checker-dark.ring": "#315940",
     "material.checker-dark.side": "#1d3c2c",
     "material.checker-dark.mark": "#f1e9c4",
-    "material.domino.face": "#d7ddc9",
+    "material.domino.face": "#fffbed",
     "material.domino.rim": "#82957d",
     "material.domino.side": "#4a614c",
     "material.domino.divider": "#99aa8b",
@@ -117,6 +117,7 @@
     "board": "classic",
     "counter": "classic",
     "bubble": "classic",
-    "score-table": "classic"
+    "score-table": "classic",
+    "character-face": "minimal"
   }
 }

@@ -9,12 +9,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 })(typeof globalThis!=='undefined'?globalThis:this,function(Scheduler){
   'use strict';
   const presets=Object.freeze({
-    instant:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.8ccdd302cc82"),duration:0,settle:100,botDelay:220,description:globalThis.PlayroomMessages.text("ui.game-flow.7a9797cec6ab")}),
-    fast:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.1827190b896f"),duration:220,settle:80,botDelay:300,description:globalThis.PlayroomMessages.text("ui.game-flow.7eec92696d24")}),
-    normal:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.84ab7f7de9c0"),duration:520,settle:160,botDelay:650,description:globalThis.PlayroomMessages.text("ui.game-flow.0378708df51b")}),
-    slow:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.6e503025a34b"),duration:1100,settle:650,botDelay:1200,description:globalThis.PlayroomMessages.text("ui.game-flow.f113b5c47975")})
+    instant:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.8ccdd302cc82"),duration:0,settle:0,botDelay:80,description:globalThis.PlayroomMessages.text("ui.game-flow.7a9797cec6ab")}),
+    fast:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.1827190b896f"),duration:160,settle:30,botDelay:100,description:globalThis.PlayroomMessages.text("ui.game-flow.7eec92696d24")}),
+    normal:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.84ab7f7de9c0"),duration:340,settle:80,botDelay:250,description:globalThis.PlayroomMessages.text("ui.game-flow.0378708df51b")}),
+    slow:Object.freeze({label:globalThis.PlayroomMessages.text("ui.game-flow.6e503025a34b"),duration:650,settle:180,botDelay:500,description:globalThis.PlayroomMessages.text("ui.game-flow.f113b5c47975")})
   });
-  const effectTimes=Object.freeze({instant:Object.freeze({skip:250,reveal:200,speech:900,flip:0,pair:450,diceReveal:500}),fast:Object.freeze({skip:250,reveal:300,speech:900,flip:180,pair:450,diceReveal:800}),normal:Object.freeze({skip:450,reveal:500,speech:1200,flip:280,pair:700,diceReveal:1100}),slow:Object.freeze({skip:700,reveal:800,speech:1600,flip:400,pair:1000,diceReveal:1500})});
+  const effectTimes=Object.freeze({instant:Object.freeze({skip:80,reveal:100,speech:300,flip:0,pair:250,diceReveal:250}),fast:Object.freeze({skip:120,reveal:180,speech:450,flip:120,pair:350,diceReveal:450}),normal:Object.freeze({skip:220,reveal:320,speech:700,flip:200,pair:500,diceReveal:700}),slow:Object.freeze({skip:400,reveal:500,speech:1000,flip:300,pair:750,diceReveal:1000})});
   const speed=value=>Object.hasOwn(presets,value)?value:'normal';
   const quickPlay=options=>!!options?.quickPlay;
   function viewingTime(capabilities,state){

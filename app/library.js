@@ -14,7 +14,7 @@
     write(session,id){return this.localized(()=>super.write(session,id));}
     localized(operation){try{return operation();}catch(error){
       const key={LIBRARY_NOT_FOUND:'sessions.not-found',LIBRARY_REMOVED:'sessions.removed'}[error.code];
-      if(key)globalThis.PlayroomMessages.error(error)=this.translator.text(key);
+      if(key)error.message=this.translator.text(key);
       throw error;
     }}
   }

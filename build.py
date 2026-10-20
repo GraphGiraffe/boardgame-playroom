@@ -280,6 +280,10 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
         raise ValueError("Service worker CORE list is missing")
     core_urls = set(re.findall(r"['\"]([^'\"]+)['\"]", core_match.group(1)))
     core_urls.update("./" + aliases.get(name, name) for name in urls)
+    shipped_urls = {"./" + aliases.get(name, name) for name, _ in items}
+    missing_core = core_urls - shipped_urls - {"./"}
+    if missing_core:
+        raise ValueError("Service worker precaches missing assets: " + ", ".join(sorted(missing_core)))
     worker = worker[:core_match.start()] + "const CORE=" + json.dumps(sorted(core_urls)) + ";" + worker[core_match.end():]
     items = [(name, worker.encode("utf-8") if name == "sw.js" else content) for name, content in items]
     items = [(aliases.get(name, name), content) for name, content in items]

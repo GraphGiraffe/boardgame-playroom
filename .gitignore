@@ -14,3 +14,6 @@ icons/icon-512.png
 
 app/appearance-models.js
 tmp_files/
+
+# Pinned developer-tools checkout, never runtime sources
+.playroom-utils/

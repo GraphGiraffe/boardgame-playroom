@@ -75,9 +75,9 @@ test('cartoon Pexeso cards resolve offline in the pack and shared client rendere
    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Пексесо',state,viewer:actor,actions:[],scene,turnText:'Ваш ход'});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
    const asset=document.querySelector('.pexeso-character-card image').getAttribute('href');
    const exported=PlayroomPacks.exportView('pexeso',session.packVersion);
-   return {asset:asset.startsWith('data:image/webp;base64,'),deck:state.data.deckSize,avatars:document.querySelectorAll('.player-avatar-wrap .avatar-art').length,portableAssets:Object.keys(exported.assets).filter(path=>path.startsWith('assets/shared-packs/characters/runtime/')).length};
+   return {asset:asset.startsWith('data:image/svg+xml;base64,'),deck:state.data.deckSize,avatars:document.querySelectorAll('.player-avatar-wrap .avatar-art').length,portableAssets:Object.keys(exported.assets).filter(path=>path.startsWith('assets/shared-packs/characters/runtime/')).length};
   });
-  assert.deepEqual(values,{asset:true,deck:96,avatars:2,portableAssets:48});
+  assert.deepEqual(values,{asset:true,deck:96,avatars:2,portableAssets:0});
   await page.waitForFunction(()=>[...document.querySelectorAll('.avatar-art')].every(img=>img.complete&&img.naturalWidth>0));
   await capture(page,'rc4-pexeso-characters');
   assert.deepEqual(errors,[]);

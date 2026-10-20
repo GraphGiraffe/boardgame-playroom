@@ -38,7 +38,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           await root.PlayroomMotion?.play({...snapshot,action:{type:route.trigger},sequence:route,routeOnly:true},{duration:pace.duration,settle:pace.settle});
           if(generation!==this.generation)return;this.routePoints.set(route.entity,route.jump||route.steps.at(-1)||route.origin);this.positionRoutes();
         }:routes.length?null:event===motionEvent?motion:null;
-        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?timing.speech:0});
+        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
       }
       if(!this.active&&!defer)this.next();
     }
@@ -54,7 +54,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(item.speech&&item.motion)Promise.resolve(item.motion()).then(finish,finish);else finish();
       },item.duration);else finish();};
       if(item.reveal)Promise.resolve(this.revealer?.enter(item.snapshot,item.timing)).then(hold,hold);
-      else if(item.motion&&!item.speech)Promise.resolve(item.motion()).then(hold,hold);
+      else if(item.motion&&!item.speech){
+        const moving=Promise.resolve(item.motion()).catch(()=>{});
+        // The visual effect and its minimum readable interval share one budget.
+        if(item.duration)this.timer=this.clock.setTimeout(()=>{this.timer=null;if(valid())moving.then(finish,finish);},item.duration);
+        else moving.then(finish,finish);
+      }
       else if(!item.duration)finish();else hold();
     }
     whenIdle(){return this.active||this.queue.length?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
@@ -103,7 +108,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(this.bubbleEvent!==item.id||!this.bubble?.isConnected){
         this.bubble?.remove();const bubble=mount.ownerDocument.createElement('span');this.bubble=bubble;this.bubbleEvent=item.id;
         bubble.className=root.TabletopUI.helpers.components.bubbleClass({kind:'game',result:speech.result});bubble.setAttribute('role','status');bubble.dataset.feedbackEvent=String(item.id);
-        const message=speech.text||root.PlayroomMessages.text('ui.game-feedback.380e3dbd6730',{p0:String(speech.icon==='cards'?root.PlayroomMessages.text('ui.game-feedback.515f651ab064'):root.PlayroomMessages.text('ui.game-feedback.10a9e1f55f14')),p1:String(speech.count||'')});bubble.setAttribute('aria-label',message);
+        const message=item.text||speech.text||root.PlayroomMessages.text('ui.game-feedback.380e3dbd6730',{p0:String(speech.icon==='cards'?root.PlayroomMessages.text('ui.game-feedback.515f651ab064'):root.PlayroomMessages.text('ui.game-feedback.10a9e1f55f14')),p1:String(speech.count||'')});bubble.setAttribute('aria-label',message);
         if(speech.icon==='cards'){const icon=mount.ownerDocument.createElement('span');icon.className='game-speech-icon';icon.innerHTML=root.TabletopUI.icon('cards');const count=mount.ownerDocument.createElement('b');count.textContent=String(speech.count);bubble.append(icon,count);}
         else bubble.textContent=speech.icon==='cross'?'✕':speech.text;
         this.layer.append(bubble);
