@@ -101,7 +101,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    const geometry=await page.evaluate(()=>{
     const E=TabletopCore,issues=[];
     for(const id of E.GAMES.map(g=>g.id)){
-     const game=E.get(id),players=Array.from({length:Math.max(2,game.min)},(_,i)=>({name:`Игрок ${i+1}`}));
+     const game=E.get(id),players=Array.from({length:Math.min(game.max,Math.max(2,game.min))},(_,i)=>({name:`Игрок ${i+1}`}));
      let state=E.createGame(id,{players,seed:17}),before;
      const measure=()=>{const projected=E.project(state,state.turn),actions=E.legalActions(state),scene=PlayroomViews.render(projected,state.turn,actions);
       document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game.name,state:projected,viewer:state.turn,actions,scene});PlayroomGameScreen.layoutScene(document.querySelector('#app'));

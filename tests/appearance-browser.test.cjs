@@ -26,8 +26,7 @@ async function choose(page,id) {
   if(openedSettings)await page.locator('[data-command=settings]:visible').first().click();
   await page.locator('.settings-themes').click();
   await page.locator('.appearance-editor [data-appearance-choice]').selectOption(id);
-  await page.locator('[data-appearance-action=apply]').click();
-  await page.locator('[data-appearance-action=close]').click();
+  await page.locator('#appearance-selection button[type=submit]').click();
   assert.equal(await page.locator('.appearance-dialog').count(),0);
   if(openedSettings)await page.locator('#modal-root [data-command=close-modal]').first().click();
 }
@@ -40,50 +39,15 @@ function contrast(foreground,background) {
   const a=luminance(foreground),b=luminance(background);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
 }
 
-test('theme editor copies immutable presets, previews, cancels, saves, reloads and deletes',{timeout:60000},async()=>fixture(async({page})=>{
-  fs.mkdirSync(captures,{recursive:true});
-  assert.equal(await page.locator('.side-nav [data-command=help]').count(),0);
-  assert.equal(await page.locator('.topbar [data-command=help]').count(),1);
-  await choose(page,'dark');
-  assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');
-  assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),'#18211d');
-  const backgrounds=await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>getComputedStyle(n).backgroundColor));
-  for(const color of backgrounds){const rgb=color.match(/\d+/g).slice(0,3).map(Number);assert(Math.max(...rgb)<130,`Dark tile: ${color}`);}
-  await page.screenshot({path:path.join(captures,'dark-hub-390.png'),fullPage:true});
-  await page.locator('[data-appearance-editor]:visible').first().click();
-  assert.equal(await page.locator('[data-appearance-action=edit]').count(),0);
-  await page.locator('[data-appearance-action=copy]').click();
-  await page.locator('[name=themeName]').fill('Моя ночь');
-  await page.locator('[data-appearance-color="surface.canvas"]').evaluate(el=>{el.value='#101820';el.dispatchEvent(new Event('input',{bubbles:true}));});
-  assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),'#101820');
-  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');
-  await page.locator('[data-appearance-action=cancel-draft]').click();
-  assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),'#18211d');
-  await page.locator('[data-appearance-action=copy]').click();
-  await page.locator('[name=themeName]').fill('Моя ночь');
-  await page.locator('[data-appearance-color="surface.canvas"]').evaluate(el=>{el.value='#101820';el.dispatchEvent(new Event('input',{bubbles:true}));});
-  await page.locator('#appearance-draft button[type=submit]').click();
-  const id=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId);
-  assert.match(id,/^custom-/);
-  assert.equal(await page.evaluate(()=>PlayroomAppearanceUI.runtime.catalog.builtin('dark').palette['surface.canvas']),'#18211d');
-  await page.screenshot({path:path.join(captures,'custom-editor-390.png'),fullPage:true});
-  await page.keyboard.press('Escape');await page.reload();await page.locator('.game-tile').first().waitFor();
-  assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),id);
-  await page.locator('[data-appearance-editor]:visible').first().click();
-  await page.locator('[data-appearance-action=edit]').click();await page.locator('[name=themeName]').fill('Тихий вечер');
-  await page.locator('#appearance-draft button[type=submit]').click();
-  assert.equal(await page.locator('[data-appearance-choice] option:checked').textContent(),'Тихий вечер');
-  await page.locator('[data-appearance-action=remove]').click();
-  await page.locator('[data-appearance-action=confirm-remove]').click();
-  assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),'light');
-  await page.keyboard.press('Escape');
-  for(const [width,height] of [[320,640],[740,390]]){
-    await page.setViewportSize({width,height});await page.locator('[data-appearance-editor]:visible').first().click();
-    await page.locator('[data-appearance-action=copy]').click();
-    const size=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,dialog:document.querySelector('.appearance-dialog').getBoundingClientRect().toJSON()}));
-    assert(size.scroll<=size.width+1);assert(size.dialog.left>=0&&size.dialog.right<=width+1);
-    await page.screenshot({path:path.join(captures,`editor-${width}.png`)});await page.keyboard.press('Escape');
-  }
+test('theme editor previews, cancels, saves, reloads and edits existing custom presets',{timeout:60000},async()=>fixture(async({page})=>{
+ fs.mkdirSync(captures,{recursive:true});await choose(page,'dark');assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');
+ await page.locator('[data-appearance-editor]:visible').first().click();assert.equal(await page.locator('[data-appearance-action=copy],[data-appearance-action=apply]').count(),0);assert(!await page.locator('.appearance-body').innerText().then(t=>t.includes('Стандартную тему')));
+ await page.locator('[data-appearance-choice]').selectOption('light');assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');await page.locator('[data-appearance-action=cancel-selection]').click();assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');await page.keyboard.press('Escape');
+ const id=await page.evaluate(()=>{const s=PlayroomAppearanceUI.runtime.service,d=s.createDraft('dark','Моя ночь');s.saveDraft(d);return d.id;});
+ await page.locator('[data-appearance-editor]:visible').first().click();await page.locator('[data-appearance-choice]').selectOption(id);await page.locator('[data-appearance-action=edit]').click();await page.locator('[data-appearance-color="surface.canvas"]').evaluate(el=>{el.value='#101820';el.dispatchEvent(new Event('input',{bubbles:true}));});assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),'#101820');await page.locator('[data-appearance-action=cancel-draft]').click();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');
+ await page.locator('[data-appearance-action=edit]').click();await page.locator('[name=themeName]').fill('Тихий вечер');await page.locator('#appearance-draft button[type=submit]').click();await page.keyboard.press('Escape');await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),id);
+ await page.locator('[data-appearance-editor]:visible').first().click();await page.locator('[data-appearance-action=remove]').click();await page.locator('[data-appearance-action=confirm-remove]').click();assert.equal(await page.locator('html').getAttribute('data-appearance-preset'),'light');await page.keyboard.press('Escape');
+ for(const width of [320,740]){await page.setViewportSize({width,height:width===320?740:390});await page.locator('[data-appearance-editor]:visible').first().click();assert(await page.locator('.appearance-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));await page.keyboard.press('Escape');}
 }));
 
 test('switching preserves local table, scrolling, history slider and an already open settings dialog',{timeout:60000},async()=>fixture(async({page})=>{
@@ -99,9 +63,9 @@ test('switching preserves local table, scrolling, history slider and an already 
     window.appearanceBoard=board;
     return {raw:localStorage.getItem('playroom.session.v1'),top:board.scrollTop,left:board.scrollLeft,rect:board.getBoundingClientRect().toJSON()};
   });
-  const materialBefore=await page.locator('.shared-die-art rect').first().evaluate(node=>getComputedStyle(node).fill);
+  const materialBefore=await page.locator('.shared-die-art rect[stroke]').first().evaluate(node=>getComputedStyle(node).stroke);
   await choose(page,'dark');
-  const materialAfter=await page.locator('.shared-die-art rect').first().evaluate(node=>getComputedStyle(node).fill);
+  const materialAfter=await page.locator('.shared-die-art rect[stroke]').first().evaluate(node=>getComputedStyle(node).stroke);
   assert.notEqual(materialAfter,materialBefore,'The live shared die uses local theme material bindings');
   const after=await page.evaluate(()=>{const b=document.querySelector('.yatzy-board');return {same:b===window.appearanceBoard,raw:localStorage.getItem('playroom.session.v1'),top:b.scrollTop,left:b.scrollLeft,rect:b.getBoundingClientRect().toJSON()};});
   assert(after.same);assert.equal(after.raw,before.raw);assert.equal(after.top,before.top);assert.equal(after.left,before.left);assert.deepEqual(after.rect,before.rect);
@@ -146,4 +110,58 @@ test('projected shared screen switches appearance without publishing a game comm
   const result=await page.evaluate(()=>({same:document.querySelector('.yatzy-board')===appearanceNetwork.board,state:JSON.stringify(appearanceNetwork.client.snapshot)===appearanceNetwork.state,pending:appearanceNetwork.client.pending,revision:appearanceNetwork.authority.revision}));
   assert.deepEqual(result,{same:true,state:true,pending:null,revision:1});
   await page.evaluate(()=>{appearanceNetwork.mounted.destroy();appearanceNetwork.client.close();appearanceNetwork.authority.dispose();});
+}));
+
+test('main menu edits themes only, games hide single-choice skin families and empty blocks',{timeout:45000},async()=>fixture(async({page})=>{
+ await page.evaluate(()=>PlayroomAppearanceUI.openEditor());assert.equal(await page.locator('#appearance-title').innerText(),'Темы');assert.equal(await page.locator('#skin-preferences,[data-preview-family]').count(),0);await page.locator('[data-appearance-action=close]').click();
+ for(const game of ['checkers','domino','uno']){await page.locator(`[data-start=${game}]`).first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.game-scene').waitFor();await page.evaluate(()=>PlayroomAppearanceUI.openEditor());assert.equal(await page.locator('#skin-preferences').count(),0,game+' has no selectable skin variants');await page.locator('[data-appearance-action=close]').click();await page.evaluate(()=>PlayroomAppBridge.showHub());}
+ await page.locator('[data-start=klondike]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();await page.locator('[data-command=settings]:visible').first().click();assert.equal(await page.locator('#modal-root [data-start]').count(),0,'settings omit the redundant new-game configuration shortcut');await page.locator('.settings-themes').click();assert.equal(await page.locator('#appearance-title').innerText(),'Темы и скины');assert.equal(await page.locator('#skin-preferences [data-skin-family=card-face]').count(),6);assert.equal(await page.locator('[data-skin-group=two-color] [data-skin-variant]').count(),3);assert.equal(await page.locator('[data-skin-group=four-color] [data-skin-variant]').count(),3);for(const width of [320,390]){await page.setViewportSize({width,height:740});assert(await page.locator('[data-skin-group=two-color]').evaluate(el=>new Set([...el.children].map(c=>c.getBoundingClientRect().y)).size===1),'two-colour samples fit one row');assert(await page.locator('.appearance-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1));}assert.equal(await page.locator('#skin-preferences details,#skin-preferences summary,.appearance-skin-caption,[data-appearance-action=copy],[data-appearance-action=apply]').count(),0);assert(!await page.locator('.appearance-body').innerText().then(t=>t.includes('Стандартную тему')));await page.locator('[data-appearance-choice]').selectOption('dark');assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');assert.equal(await page.locator('[data-skin-variant=classic] .shared-face').evaluate(el=>getComputedStyle(el).color),'rgb(38, 78, 67)');assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.appearance.v1')),null);assert.equal(await page.locator('#appearance-selection button[type=submit]').innerText(),'Принять');assert.deepEqual(await page.locator('.appearance-confirm-actions>button').allTextContents(),['Отмена','Принять']);await page.locator('#appearance-selection button[type=submit]').click();assert.equal(await page.locator('.appearance-dialog').count(),0,'accept closes only the appearance dialog');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');assert.equal(await page.locator('[data-skin-family=card-back],[data-skin-family=domino],[data-skin-family=board],[data-skin-family=checker]').count(),0);assert.equal(await page.locator('[data-skin-reset]').count(),0);
+ assert(await page.locator('#modal-root .settings-themes').isVisible(),'closing editor returns to game settings');
+}));
+
+test('main themes preview avatar sets; Pexeso exposes its character deck without changing avatar style or game state',{timeout:45000},async()=>fixture(async({page})=>{
+ await page.evaluate(()=>PlayroomAppearanceUI.openEditor());assert.equal(await page.locator('[data-avatar-style-choice]').count(),2);
+ assert.equal(await page.locator('[data-avatar-style-choice]').first().getAttribute('data-avatar-style-choice'),'minimal');
+ assert.equal(await page.locator('[data-avatar-style-choice=detailed]').count(),0);assert.equal(await page.locator('[data-avatar-style-choice=minimal]').getAttribute('aria-label'),'Стандартный');
+ await page.locator('[data-avatar-style-choice=minimal]').click();assert.equal(await page.locator('html').getAttribute('data-avatar-style'),'minimal');assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.appearance.v1')),null);
+ await page.locator('[data-appearance-action=close]').click();assert.equal(await page.locator('html').getAttribute('data-avatar-style'),'minimal');
+ await page.evaluate(()=>PlayroomAppearanceUI.openEditor());await page.locator('[data-avatar-style-choice=simple]').click();await page.locator('#appearance-selection button[type=submit]').click();assert.equal(await page.locator('.appearance-dialog').count(),0);await page.reload();assert.equal(await page.locator('html').getAttribute('data-avatar-style'),'simple');
+ await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();const state=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
+ await page.evaluate(()=>PlayroomAppearanceUI.openEditor());assert.equal(await page.locator('[data-avatar-style-choice],[data-skin-family=card-face]').count(),0);assert.equal(await page.locator('[data-skin-family=character-face]').count(),2);
+ assert.equal(await page.locator('[data-skin-family=character-face]').first().getAttribute('data-skin-variant'),'minimal');assert.equal(await page.locator('[data-skin-family=character-face][aria-pressed=true]').getAttribute('data-skin-variant'),'minimal');
+ for(const image of await page.locator('[data-skin-family=character-face] [data-character-id]').all())assert.equal(await image.getAttribute('data-character-id'),'circle-red');
+ await page.locator('[data-skin-family=character-face][data-skin-variant=minimal]').click();await page.locator('#appearance-selection button[type=submit]').click();assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),state);assert.equal(await page.locator('html').getAttribute('data-avatar-style'),'simple');
+ await page.locator('.pexeso-grid [data-action]').first().click();await page.locator('.pexeso-character-card [data-character-style=minimal]').waitFor();assert((await page.locator('.pexeso-character-card image').first().getAttribute('href')).startsWith('data:image/svg+xml'));
+}));
+
+for(const [name,key] of [['QuotaExceededError','ui.app.save-quota'],['SecurityError','ui.app.save-unavailable'],['Error','ui.app.save-failed']])test(`session save reports ${name} without blaming pack assets`,{timeout:45000},async()=>fixture(async({page})=>{
+ assert.equal(await page.locator('[data-game=pexeso] [data-character-style=minimal]').count(),2,'cover uses minimal characters');
+ await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();
+ const raw=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));assert(raw&&!raw.includes('data:image/')&&!raw.includes('renderer.js'));
+ await page.evaluate(name=>{const original=Storage.prototype.setItem;window.restoreSessionWrites=()=>Storage.prototype.setItem=original;Storage.prototype.setItem=function(key,value){if(key==='playroom.session.v1')throw new DOMException('test save failure',name);return original.call(this,key,value);};},name);
+ await page.locator('.pexeso-grid [data-action]').first().click();
+ await page.waitForFunction(key=>document.querySelector('#toast')?.textContent.includes(PlayroomMessages.text(key)),key);
+ assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),raw,'failed write preserves previous saved party');await page.evaluate(()=>restoreSessionWrites());
+}));
+
+for(const failure of ['archive','active'])test(`failed local start (${failure}) preserves previous session and allows retry`,{timeout:45000},async()=>fixture(async({page})=>{
+ await page.locator('[data-start=klondike]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();
+ const previous=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));const id=JSON.parse(previous).libraryId;
+ await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator('[data-start=pexeso]').first().click();
+ await page.evaluate(failure=>{const original=Storage.prototype.setItem;window.restoreSessionWrites=()=>Storage.prototype.setItem=original;Storage.prototype.setItem=function(key,value){if(failure==='archive'?key.startsWith('playroom.paused.v1.'):key==='playroom.session.v1'&&JSON.parse(value).game==='pexeso')throw new DOMException('test quota','QuotaExceededError');return original.call(this,key,value);};},failure);
+ for(let attempt=0;attempt<2;attempt++){
+  await page.locator('[data-command=lobby-start]').click();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes(PlayroomMessages.text('ui.app.save-quota')));
+  assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),previous);
+  assert.equal(await page.locator('.room-setup-modal').count(),1,'failed activation stays in lobby');
+ }
+ await page.evaluate(()=>restoreSessionWrites());await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();
+ const result=await page.evaluate(id=>({game:JSON.parse(localStorage.getItem('playroom.session.v1')).game,old:JSON.parse(localStorage.getItem('playroom.paused.v1.'+id)).game}),id);assert.deepEqual(result,{game:'pexeso',old:'klondike'});
+}));
+
+test('Pexeso keeps the empty cell at the centre of a 5 by 5 twelve-pair layout',{timeout:45000},async()=>fixture(async({page})=>{
+ await page.evaluate(()=>{const s=new TabletopSession(TabletopCore,'pexeso',{seed:31,preset:'medium',mode:'solo',players:[{name:'Иван'},{name:'Тео',bot:true}]});new PlayroomLibrary(()=>localStorage,TabletopCore,TabletopSession,PlayroomPacks).activate(s,'twelve-pairs');});
+ await page.reload();await page.locator('[data-command=resume]').first().click();await page.locator('.pexeso-grid').waitFor();let square=false;
+ for(const [width,height] of [[390,844],[320,740],[740,390]]){await page.setViewportSize({width,height});await page.waitForTimeout(150);const state=await page.locator('.pexeso-grid').evaluate(grid=>{const gap=grid.querySelector('[data-grid-gap]'),cols=Number(grid.style.getPropertyValue('--grid-columns')),rows=Number(grid.style.getPropertyValue('--grid-rows'));return {cols,rows,gap:gap.hidden,index:[...grid.children].indexOf(gap),cards:grid.querySelectorAll('.pexeso-slot').length};});assert.equal(state.cards,24);if(state.cols===5&&state.rows===5){square=true;assert.equal(state.gap,false);assert.equal(state.index,12);}else assert.equal(state.gap,true);}
+ assert(square,'phone geometry uses 5 by 5');
+ const sounds=await page.evaluate(()=>{const view=PlayroomPacks.exportView('battleship');return Object.values(view.sounds).map(cue=>({inline:cue.src.startsWith('data:audio/'),copies:Object.values(view.assets).filter(src=>src===cue.src).length}));});assert.equal(sounds.length,4);assert(sounds.every(s=>s.inline&&s.copies===1));
 }));

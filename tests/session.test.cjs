@@ -325,3 +325,8 @@ test('library metadata index lists and finds references without loading a full h
   step(session);library.write(session,'indexed-game');assert.equal(fresh.list()[0].move,21);
   library.remove('indexed-game');assert.deepEqual(fresh.list(),[]);
 });
+
+test('removed local saves preserve the library error instead of throwing during localization',()=>{
+ const Library=require('../app/library.js');const library=new Library(()=>({getItem:()=>null}),Core,Session);
+ assert.throws(()=>library.write(create({seed:'removed-local'}),'removed-local'),error=>error.code==='LIBRARY_REMOVED'&&error.name==='Error');
+});

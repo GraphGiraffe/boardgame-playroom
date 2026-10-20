@@ -155,7 +155,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return true;
   }
   function createGame(game, options = {}) {
-    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, { name: globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: true }];
+    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, ...(pack.max===1?[]:[{ name: globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: true }])];
     if (players.length < pack.min || players.length > pack.max) throw Error(globalThis.PlayroomMessages.text("ui.engine.8d8e0eef63ac",{p0:String(pack.min),p1:String(pack.max)}));
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error(globalThis.PlayroomMessages.text("ui.engine.4046d56fe0ac"));

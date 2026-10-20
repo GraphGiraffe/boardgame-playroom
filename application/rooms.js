@@ -52,15 +52,17 @@ class RoomService{
       if(allowed&&!allowed.length)throw Error(globalThis.PlayroomMessages.text("ui.rooms.b53b19298863"));
       return {min,max,allowed:allowed?.sort((a,b)=>a-b)||null};
     }
-    create({name,game,host,hostMode='player',rules={},constraints}={}){
+    create({name,game,host,hostMode='player',transportMode='network',rules={},constraints}={}){
       if(!game?.id||!game?.name)throw Error(globalThis.PlayroomMessages.text("ui.rooms.52b5bfed853b"));
       if(!host?.id)throw Error(globalThis.PlayroomMessages.text("ui.rooms.02b3c4ab2dfa"));
       if(!['player','table'].includes(hostMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.2ea68ba1e6ed"));
       const playerConstraints=this._constraints(constraints);
+      if(!['hotseat','network'].includes(transportMode))throw Error(globalThis.PlayroomMessages.text('ui.rooms.a0f99d0264a3'));
+      if(transportMode==='network'&&playerConstraints.max===1)throw Error(globalThis.PlayroomMessages.text('ui.rooms.solo-network-unavailable'));
       const timestamp=this.clock(),id=this.idFactory();
       const room={
         id,code:this._code(),name:normalizeRoomName(name),phase:'lobby',revision:1,lobbyRevision:1,rulesRevision:1,
-        ownerId:host.id,hostMode,transportMode:'network',firstPlayerMode:rules.firstPlayerMode||'rules',seatOrder:rules.seatOrder||'normal',firstParticipantId:null,game:clone(game),rules:clone(rules),constraints:playerConstraints,
+        ownerId:host.id,hostMode,transportMode,firstPlayerMode:rules.firstPlayerMode||'rules',seatOrder:rules.seatOrder||'normal',firstParticipantId:null,game:clone(game),rules:clone(rules),constraints:playerConstraints,
         participants:[{id:host.id,nickname:normalizeName(host.nickname||host.name),...(normalizeAvatar(host.avatar)?{avatar:normalizeAvatar(host.avatar)}:{}),role:hostMode==='player'?'player':'table',seatId:null,ready:false,connected:true,isHost:true,joinedAt:timestamp}],
         seats:Array.from({length:playerConstraints.max},(_,i)=>({id:'seat-'+(i+1),index:i,sideId:i,participantId:null})),
         createdAt:timestamp,updatedAt:timestamp,eventSequence:0,events:[],countdownEndsAt:null
@@ -83,6 +85,7 @@ class RoomService{
     configure(roomId,hostId,changes={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       if(Object.keys(changes).some(key=>key!=='name'))this._newMatch(room);
+      if(changes.transportMode==='network'&&room.constraints.max===1)throw Error(globalThis.PlayroomMessages.text('ui.rooms.solo-network-unavailable'));
       if(changes.name!==undefined)room.name=normalizeRoomName(changes.name);
       if(changes.transportMode!==undefined){if(!['hotseat','network'].includes(changes.transportMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.a0f99d0264a3"));if(changes.transportMode==='hotseat'){
         const host=this._participant(room,hostId);
@@ -206,20 +209,35 @@ class RoomService{
       room.lobbyRevision++;this._touch(room);this._emit(room,'became-spectator',globalThis.PlayroomMessages.text("ui.rooms.cf67267fc630",{p0:String(participant.nickname)}),{participantId});
       return this.snapshot(roomId);
     }
+    gameChangeBlocker(roomId,constraints){
+      const room=this._room(roomId),next=this._constraints(constraints);
+      if(room.transportMode==='network'&&next.max===1)return globalThis.PlayroomMessages.text('ui.rooms.solo-network-unavailable');
+      const humans=room.participants.filter(p=>p.role==='player'&&!p.bot).length;
+      return humans>next.max?globalThis.PlayroomMessages.text('ui.rooms.players-exceed-slots',{players:String(humans),slots:String(next.max)}):null;
+    }
     changeGame(roomId,hostId,{game,rules={},constraints}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       this._newMatch(room);
       if(!game?.id||!game?.name||!game?.version)throw Error(globalThis.PlayroomMessages.text("ui.rooms.885ec2a160b1"));
       const next=this._constraints(constraints);
-      const occupied=room.seats.filter(seat=>seat.participantId);
-      if(occupied.length>next.max)
-        throw Error(globalThis.PlayroomMessages.text("ui.rooms.30f131a5f158"));
-      const players=room.participants.filter(p=>p.role==='player'&&p.seatId).length;
-      if(players>next.max)throw Error(globalThis.PlayroomMessages.text("ui.rooms.28153b8d66bc"));
-      room.seats=Array.from({length:next.max},(_,i)=>room.seats[i]||
-        {id:'seat-'+(i+1),index:i,sideId:i,participantId:null});
-      for(const old of occupied.filter(seat=>seat.index>=next.max).sort((a,b)=>a.index-b.index)){const free=room.seats.find(seat=>!seat.participantId);free.participantId=old.participantId;free.closed=false;this._participant(room,old.participantId).seatId=free.id;}
+      const blocker=this.gameChangeBlocker(roomId,next);if(blocker)throw Error(blocker);
+      const seatIndex=p=>room.seats.find(seat=>seat.participantId===p.id)?.index??Number.MAX_SAFE_INTEGER;
+      const bySeat=(a,b)=>seatIndex(a)-seatIndex(b);
+      const humans=room.participants.filter(p=>p.role==='player'&&!p.bot).sort(bySeat);
+      const bots=room.participants.filter(p=>p.role==='player'&&p.bot).sort(bySeat);
+      const keptBots=bots.slice(0,Math.max(0,next.max-humans.length));
+      const dropped=new Set(bots.slice(keptBots.length).map(p=>p.id));
+      const seats=Array.from({length:next.max},(_,i)=>({...room.seats[i],id:'seat-'+(i+1),index:i,sideId:i,participantId:null}));
+      const place=(p,seat)=>{seat.participantId=p.id;seat.closed=false;p.seatId=seat.id;};
+      // Existing human seats take priority; displaced humans fill any remaining
+      // slots before even the first bot is considered. Preserve participant IDs.
+      const displaced=[];
+      for(const p of humans){const index=seatIndex(p);if(index<next.max)place(p,seats[index]);else displaced.push(p);}
+      for(const p of displaced)place(p,seats.find(seat=>!seat.participantId));
+      for(const p of keptBots)place(p,seats.find(seat=>!seat.participantId));
+      room.seats=seats;room.participants=room.participants.filter(p=>!dropped.has(p.id));
       delete room.startOrderResolved;room.firstPlayerMode=rules.firstPlayerMode||'rules';room.seatOrder=rules.seatOrder||'normal';
+      if(room.firstParticipantId&&!room.participants.some(p=>p.id===room.firstParticipantId)){room.firstParticipantId=null;if(room.firstPlayerMode==='assigned')room.firstPlayerMode='rules';}
       room.game=clone(game);room.rules=clone(rules);room.constraints=next;
       room.rulesRevision++;room.lobbyRevision++;
       for(const p of room.participants)p.ready=!!p.bot;

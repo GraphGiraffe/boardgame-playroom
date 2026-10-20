@@ -15,7 +15,7 @@ test('Context tooltips: escaped text, keyboard ARIA, viewport bounds and lifecyc
     const hostile = '<img src=x onerror="alert(1)"> & обычный текст. '.repeat(3);
     await page.locator('#top').evaluate((el, value) => { el.dataset.tooltip = value; }, hostile);
     await page.locator('#bottom').evaluate(el => { el.dataset.tooltip = 'Описание у правого нижнего края: '.repeat(12); });
-    await page.locator('#touch').evaluate(el => { el.dataset.tooltip = 'Удержание не должно открывать эту подсказку.'; });
+    await page.locator('#touch').evaluate(el => { el.dataset.tooltip = 'Подсказка кнопки на телефоне.'; });
     await page.addStyleTag({ path: path.join(root, 'core/tooltips.css') });
     await page.addScriptTag({ path: path.join(root, 'core/tooltips.js') });
     const tip = page.locator('#playroom-context-tooltip');
@@ -59,7 +59,7 @@ test('Context tooltips: escaped text, keyboard ARIA, viewport bounds and lifecyc
       return !event.defaultPrevented;
     });
     assert.equal(allowed, true, 'touch gestures must remain untouched');
-    await page.waitForTimeout(220); assert.equal(await tip.isVisible(), false, 'touch does not create a hold tooltip');
+    await page.waitForTimeout(220); assert.equal(await tip.isVisible(), false, 'short touch does not open a tooltip before the hold threshold');
     await page.keyboard.press('Tab');
     await page.locator('#bottom').focus(); await tip.waitFor({ state: 'visible' });
     await page.evaluate(() => PlayroomTooltips.destroy());
@@ -68,4 +68,26 @@ test('Context tooltips: escaped text, keyboard ARIA, viewport bounds and lifecyc
     assert.equal(await page.locator('[role=tooltip]').count(), 0, 'destroy removes delegated listeners');
     assert.deepEqual(errors, []);
   } finally { await context.close(); await browser.close(); }
+});
+
+test('touch hold: release on button activates once; release outside cancels and retains tooltip for two seconds',async()=>{
+ const browser=await chromium.launch({executablePath:executablePath(),headless:true,args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:600},hasTouch:true}),page=await context.newPage();
+ try{
+  await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><button id="action" title="Действие кнопки" style="position:absolute;left:30px;top:180px;width:110px;height:50px">Кнопка</button><button id="other" style="position:absolute;left:230px;top:180px;width:110px;height:50px">Другая</button><button id="card" data-drag-piece="card-1" data-tooltip="Карта" style="position:absolute;left:30px;top:300px;width:70px;height:98px">Карта</button>');
+  await page.evaluate(()=>{window.actions=0;window.others=0;document.querySelector('#action').onclick=()=>actions++;document.querySelector('#other').onclick=()=>others++;});
+  await page.addStyleTag({path:path.join(root,'core/tooltips.css')});await page.addScriptTag({path:path.join(root,'core/tooltips.js')});
+  const client=await context.newCDPSession(page),tip=page.locator('#playroom-context-tooltip');
+  const start=async(x,y)=>client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+  const move=async(x,y)=>client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y}]});
+  const end=()=>client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await start(70,205);await tip.waitFor({state:'visible'});assert.equal(await tip.innerText(),'Действие кнопки');assert.equal(await page.evaluate(()=>actions),0);await end();
+  assert.equal(await tip.isVisible(),false);assert.equal(await page.evaluate(()=>actions),1,'native compatibility click must not repeat the long-tap action');
+  await start(70,205);await tip.waitFor({state:'visible'});await move(270,205);await end();
+  assert.equal(await page.evaluate(()=>actions),1);assert.equal(await page.evaluate(()=>others),0,'release over another button must not activate it');
+  const released=Date.now();await page.waitForTimeout(1100);assert(await tip.isVisible(),'cancelled hold remains readable');await tip.waitFor({state:'hidden',timeout:1800});assert(Date.now()-released>=1900);
+  await page.touchscreen.tap(70,205);assert.equal(await page.evaluate(()=>actions),2,'ordinary tap stays immediate');assert.equal(await tip.isVisible(),false);
+  await start(65,340);await page.waitForTimeout(520);assert.equal(await tip.isVisible(),false,'card drag/inspection must keep its own hold behavior');await end();
+  await page.evaluate(()=>PlayroomTooltips.destroy());
+ }finally{await context.close();await browser.close();}
 });

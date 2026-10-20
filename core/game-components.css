@@ -1,4 +1,4 @@
-/* Vendored from playroom-paks/shared/components/game-components.css; sha256=94a72f07c027e2bd78b13abb34c303d8ea9af575f3e430ab0c0c28fd3330ab12 */
+/* Vendored from playroom-paks/shared/components/game-components.css; sha256=660a102d51e547cf62442496b378cd5951169702efe506c1e8cd1f6e426da6c4 */
 .game-speech{position:fixed;z-index:60;display:inline-flex;align-items:center;justify-content:center;gap:4px;max-width:min(180px,70vw);min-width:24px;min-height:24px;padding:4px 8px;border:1px solid var(--color-border-subtle,#90b088);border-radius:13px;background:var(--color-bubble-game,#e6f2df);color:var(--color-text-primary,#244c35);box-shadow:0 4px 10px #183b2b25;font:700 clamp(13px,1.5vw,16px)/1.3 system-ui;white-space:normal;pointer-events:none}
 .game-speech:after{content:'';position:absolute;bottom:-5px;left:12px;width:7px;height:7px;transform:rotate(45deg);border-right:1px solid var(--color-border-subtle,#90b088);border-bottom:1px solid var(--color-border-subtle,#90b088);background:inherit}
 .game-speech.is-chat{background:var(--color-bubble-chat,#fffdf4);border-color:var(--color-border-subtle,#d8dacd);color:var(--color-text-primary,#283c30)}
@@ -33,3 +33,8 @@ body.reduced-motion .player-panel.is-turn-skipped,.reduced-motion .player-panel.
 [data-interaction-shape="circle"]{--interaction-ring-width:2px}
 
 .action-reveal-content{position:absolute;left:var(--reveal-x,50%);top:var(--reveal-y,50%);transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:12px;max-width:calc(100vw - 24px)}
+
+/* One exposed header contains both rank and suit for compact vertical stacks. */
+.inline-index-face .shared-card-corner{display:flex;flex-direction:row;align-items:center;gap:3px;top:3px;left:4px;font-size:15px;line-height:17px;white-space:nowrap}
+.inline-index-face .shared-card-corner small{font-size:15px;line-height:17px}
+.inline-index-face .shared-card-corner.bottom{top:auto;left:auto;bottom:3px;right:4px}

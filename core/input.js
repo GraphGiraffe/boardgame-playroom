@@ -6,11 +6,12 @@
   'use strict';
   // Browser input only. The host owns selection, legal target rendering and
   // authoritative actions; this module never infers a move or accesses rules.
+  const requiredFeedback=new WeakMap();
   function attach({ canStart = () => true, canSelect = canStart, canCommit = canStart, getSelected = () => null, select, commit } = {}) {
     if (typeof select !== 'function' || typeof commit !== 'function') throw Error('TabletopInput requires select and commit callbacks');
     if (!root.document?.documentElement) throw Error('TabletopInput.attach requires a browser document');
     const doc = root.document, capture = doc.documentElement;
-    let active = null, suppress = null, pendingCommit = 0, disposed = false, preview = null;
+    let active = null, suppress = null, pendingCommit = 0, disposed = false, preview = null, blankTap = null, doubleAt = -Infinity;
     const handlers = [];
     const listen = (node, type, handler, options) => { node.addEventListener(type, handler, options); handlers.push(() => node.removeEventListener(type, handler, options)); };
     const sourceAt = target => target instanceof root.Element ? target.closest('[data-drag-piece],[data-swipe-action],[data-swipe-select]') : null;
@@ -21,6 +22,15 @@
     };
     function handleClick(event) {
       if (disposed || event.defaultPrevented) return false;
+      const feedback=event.target?.closest?.('[data-feedback-required]');
+      if(feedback&&!feedback.closest('[inert]')){
+        const scope=feedback.closest('.table-shell')||feedback.closest('.game-scene');
+        if(scope){for(const target of scope.querySelectorAll(feedback.dataset.feedbackRequired)){
+          const old=requiredFeedback.get(target);if(old)root.clearTimeout(old);
+          target.classList.remove('piece-required');void target.offsetWidth;target.classList.add('piece-required');
+          requiredFeedback.set(target,root.setTimeout(()=>{target.classList.remove('piece-required');requiredFeedback.delete(target);},900));
+        }event.preventDefault();return true;}
+      }
       const source = event.target?.closest?.('[data-action],[data-select],[data-cell],[data-drop-select]');
       if (!usable(source)) return false;
       if (source.hasAttribute('data-action')) {
@@ -34,6 +44,21 @@
         select(source.hasAttribute('data-drop-select') || !same ? value : null);
       }
       return true;
+    }
+    function doubleSource(target) {
+      if(target?.closest?.('button,a,input,select,textarea,[data-select],[data-drag-stack-member],[data-view-key]'))return null;
+      const source=target?.closest?.('[data-double-action]');return usable(source)?source:null;
+    }
+    function commitDouble(source,event) {
+      const now=performance.now(),action=readAction(source?.dataset.doubleAction);
+      if(!action||now-doubleAt<450||!canCommit(source))return;
+      doubleAt=now;blankTap=null;event.preventDefault();commit(action,{source});
+    }
+    function doubleTap(event) {
+      if(event.pointerType==='mouse'||active)return;
+      const source=doubleSource(event.target),now=performance.now();
+      if(source&&blankTap?.source===source&&now-blankTap.at<=350&&Math.hypot(event.clientX-blankTap.x,event.clientY-blankTap.y)<24){commitDouble(source,event);return;}
+      blankTap=source?{source,at:now,x:event.clientX,y:event.clientY}:null;
     }
     function clearPreview() { preview?.classList.remove('is-hand-preview'); preview = null; }
     function previewDown(event) {
@@ -87,6 +112,7 @@
       s.hover?.classList.remove('playroom-drop-hover');
       s.source.classList.remove('playroom-drag-source');
       s.renderedSource?.classList.remove('playroom-drag-source');
+      for(const node of s.stackSources||[])node.classList.remove('playroom-drag-source');
       s.ghost?.remove();
       capture.classList.remove('playroom-dragging');
       restoreScroll(s);
@@ -94,10 +120,12 @@
       try { if (capture.hasPointerCapture(s.id)) capture.releasePointerCapture(s.id); } catch (_) { /* Pointer already ended. */ }
     }
     function cancel() {
+      const cancelled=active?.immediate&&active.phase==='dragging'&&String(getSelected())===String(active.piece);
       clearPreview();
       if (active?.phase !== 'pending' && active) suppress = { id: active.id, x: active.x, y: active.y, until: performance.now() + 700 };
       cleanup();
       if (pendingCommit) { root.cancelAnimationFrame(pendingCommit); pendingCommit = 0; }
+      if(cancelled&&!disposed)select(null);
     }
     function beginDrag(s) {
       if (active !== s || disposed || s.phase !== 'pending') return;
@@ -113,13 +141,26 @@
       s.offsetX=Math.max(0,Math.min(s.width,s.startX-(pose.x??rect.left)+(s.vertical?0:s.segment*(unit?.width||0))));
       s.offsetY=Math.max(0,Math.min(s.height,s.startY-(pose.y??rect.top)+(s.vertical?s.segment*(unit?.height||0):0)));
       s.boundary=s.source.closest('[data-drag-boundary]')?.getBoundingClientRect();
-      s.ghost=shape&&unit?doc.createElement('div'):s.source.cloneNode(true);
+      const member=s.source.closest('[data-drag-stack-member]'),stack=member?.closest('[data-drag-stack]');
+      s.stackIndex=member?Number(member.dataset.dragStackMember):null;
+      const members=stack&&Number.isInteger(s.stackIndex)?[...stack.querySelectorAll('[data-drag-stack-member]')].filter(node=>Number(node.dataset.dragStackMember)>=s.stackIndex):[];
+      if(members.length>1){
+        s.ghost=doc.createElement('div');s.ghost.className='playroom-drag-stack';
+        let bottom=rect.bottom;
+        for(const node of members){const face=node.firstElementChild,r=face?.getBoundingClientRect();if(!r)continue;
+          const clone=face.cloneNode(true),css=root.getComputedStyle(face);
+          Object.assign(clone.style,{position:'absolute',left:(r.left-rect.left)+'px',top:(r.top-rect.top)+'px',width:r.width+'px',height:r.height+'px',minWidth:'0',minHeight:'0',margin:'0',padding:css.padding,border:css.border,borderRadius:css.borderRadius,boxShadow:css.boxShadow,color:css.color,background:css.background,transform:'none'});
+          s.ghost.append(clone);bottom=Math.max(bottom,r.bottom);
+        }
+        s.height=bottom-rect.top;
+      }else s.ghost=shape&&unit?doc.createElement('div'):s.source.cloneNode(true);
       if(shape&&unit){s.ghost.className='playroom-composite-ghost';s.ghost.style.gridTemplateColumns=`repeat(${s.vertical?1:Number(shape[1])},1fr)`;s.ghost.style.gridTemplateRows=`repeat(${s.vertical?Number(shape[1]):1},1fr)`;for(let i=0;i<Number(shape[1]);i++)s.ghost.append(doc.createElement('span'));}
       for (const el of [s.ghost, ...s.ghost.querySelectorAll('*')]) {
         el.removeAttribute('id'); el.removeAttribute('data-drag-piece'); el.removeAttribute('data-select'); el.removeAttribute('data-action'); el.removeAttribute('data-entity'); el.removeAttribute('data-swipe-action'); el.removeAttribute('data-swipe-select'); el.removeAttribute('data-hand-preview');
       }
       s.ghost.classList.remove('is-selected', 'is-playable', 'is-hand-preview');
       s.ghost.classList.add('playroom-drag-ghost');
+      if(s.immediate)s.ghost.dataset.dragStart='immediate';
       s.ghost.inert = true;
       s.ghost.setAttribute('aria-hidden', 'true'); s.ghost.setAttribute('tabindex', '-1');
       if ('disabled' in s.ghost) s.ghost.disabled = true;
@@ -132,6 +173,7 @@
       if (active !== s) return;
       s.renderedSource = [...doc.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
       s.renderedSource?.classList.add('playroom-drag-source');
+      if(members.length>1){const fresh=s.renderedSource?.closest('[data-drag-stack]');s.stackSources=[...(fresh?.querySelectorAll('[data-drag-stack-member]')||[])].filter(node=>Number(node.dataset.dragStackMember)>=s.stackIndex).map(node=>node.firstElementChild).filter(Boolean);for(const node of s.stackSources)node.classList.add('playroom-drag-source');}
       paint(s);
     }
     function scrollHand(s) {
@@ -168,7 +210,7 @@
       if (event.pointerType === 'mouse' && (!actionable || !source.hasAttribute('data-drag-piece'))) return;
       const scrollableX = !!scroll.x, scrollableY = !!scroll.y;
       if (scrollOnly && !scrollableX && !scrollableY) return;
-      const s = { source, scrollOnly, drag: actionable && source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollX:scroll.x, scrollY:scroll.y, scrollableX, scrollableY, scrollAxis: null, scrollLeft: scroll.x?.scrollLeft || 0, scrollTop: scroll.y?.scrollTop || 0, timer: 0, ghost: null, hover: null };
+      const s = { source, scrollOnly, drag: actionable && source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', immediate:source.dataset.dragStart==='immediate', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollX:scroll.x, scrollY:scroll.y, scrollableX, scrollableY, scrollAxis: null, scrollLeft: scroll.x?.scrollLeft || 0, scrollTop: scroll.y?.scrollTop || 0, timer: 0, ghost: null, hover: null };
       active = s;
       // Touch Events stay bound to their original touchstart node even after
       // pointer capture moves to <html>. select() may detach that node; keep
@@ -179,9 +221,10 @@
       }
       s.contextMenu = event => { if (active === s) event.preventDefault(); };
       source.addEventListener('contextmenu', s.contextMenu, true);
-      if (s.drag) s.timer = root.setTimeout(() => beginDrag(s), s.touch ? 220 : 180);
-      // No render, capture, preventDefault or selection here: a quick tap uses
-      // the browser's ordinary click and the host's accessible click handler.
+      if(s.drag&&s.immediate){beginDrag(s);if(event.cancelable)event.preventDefault();}
+      if (s.drag&&!s.immediate) s.timer = root.setTimeout(() => beginDrag(s), s.touch ? 220 : 180);
+      // Other modes defer render and capture so a quick tap uses the ordinary
+      // accessible click handler; immediate board pieces are already lifted.
     }
     function pointerMove(event) {
       const s = active;
@@ -190,7 +233,8 @@
       s.x = event.clientX; s.y = event.clientY;
       const dx = s.x - s.startX, dy = s.y - s.startY;
       if (s.phase === 'pending') {
-        if (!s.touch && Math.hypot(dx, dy) >= 5) beginDrag(s);
+        if(s.immediate&&s.drag&&Math.hypot(dx,dy)>=3)beginDrag(s);
+        else if (!s.touch && Math.hypot(dx, dy) >= 5) beginDrag(s);
         else if (s.touch && s.scrollableY && Math.abs(dy) > 7 && Math.abs(dy) > Math.abs(dx) * 1.1) {
           s.phase = 'scrolling'; s.scrollAxis = 'y'; s.track=s.scrollY; clearTimeout(s.timer); clearPreview(); takeCapture(s);
         } else if (s.touch && (s.scrollableX || !s.drag) && Math.abs(dx) > 7 && Math.abs(dx) > Math.abs(dy) * 1.1) {
@@ -231,7 +275,9 @@
         if (!s.source.hasAttribute('data-swipe-action') && s.source.hasAttribute('data-swipe-select')) selection = s.source.dataset.swipeSelect;
       }
       if (s.phase !== 'pending') suppress = { id: s.id, x: s.x, y: s.y, until: performance.now() + 700 };
+      const cancelled=s.immediate&&s.phase==='dragging'&&!action&&selection===null&&Math.hypot(s.x-s.startX,s.y-s.startY)>=3;
       cleanup();
+      if(cancelled&&String(getSelected())===String(s.piece))select(null);
       // Let pointerup and its compatibility click finish against stable DOM.
       if (action || selection !== null) pendingCommit = root.requestAnimationFrame(() => {
         pendingCommit = 0;
@@ -251,6 +297,8 @@
     // Pointer cancellation alone does not consistently reset Chrome's touch
     // gesture state, which can otherwise swallow the next physical tap.
     listen(doc, 'touchmove', event => { if (active?.touch && active.phase !== 'pending' && event.cancelable) event.preventDefault(); }, { capture: true, passive: false });
+    listen(doc, 'pointerup', doubleTap, true);
+    listen(doc, 'dblclick', event=>{const source=doubleSource(event.target);if(source)commitDouble(source,event);}, true);
     listen(doc, 'pointerup', pointerUp, true);
     listen(doc, 'pointerup', clearPreview, true);
     listen(doc, 'pointercancel', clearPreview, true);

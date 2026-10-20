@@ -44,9 +44,11 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
       try {
         await page.goto(url);
         const capture=async name=>{if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`${name}-${width}x${height}.png`)});}};await capture('hub');
-        const nav=page.locator('.side-nav');
+        const nav=page.locator('.side-nav'),totalGames=await page.locator('.game-tile').count();
+        const cardsLabel=await page.locator('[data-tag-kind=type][data-tag=cards]').getAttribute('aria-label');
+        const cardGames=await page.locator('.game-tile').evaluateAll((nodes,label)=>nodes.filter(node=>[...node.querySelectorAll('.tag-type')].some(tag=>tag.getAttribute('aria-label')===label)).length,cardsLabel);
         assert.equal(await nav.isVisible(),true);
-        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Темы и скины']);
+        assert.deepEqual(await nav.locator('button').allTextContents(),['Все игры','Мои партии','Темы']);
         for (const button of await nav.locator('button').all()) {
           const b=await button.boundingBox(); assert(b.width>=44&&b.height>=44&&b.x>=0&&b.x+b.width<=width+1);
         }
@@ -60,8 +62,9 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('.modal [data-command=close-modal]').first());
         await press(nav.locator('[data-command=home]'));
         for(const command of ['packs','settings']){await press(page.locator(`[data-command=${command}]`).first());await capture(command);await press(page.locator('.modal [data-command=close-modal]').first());}
-        await press(page.locator('[data-tag-kind=type][data-tag=cards]')); assert.equal(await page.locator('.game-tile').count(),5);
-        await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),12);
+        await press(page.locator('[data-hub-filters-toggle]'));
+        await press(page.locator('[data-tag-kind=type][data-tag=cards]')); assert.equal(await page.locator('.game-tile').count(),cardGames);
+        await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),totalGames);
         if(mobile){
           await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
           const footer=await page.locator('.hub-footer').boundingBox(),bar=await nav.boundingBox();

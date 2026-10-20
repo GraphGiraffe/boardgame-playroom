@@ -59,7 +59,7 @@ test('standalone UI shares source and target policies without browser or game de
   assert.deepEqual(actionsIn(H.target(id,many)),[]);
   const first=UI.createRegistry(), second=UI.createRegistry();
   first.register('example',()=>({api:2,family:'board',elements:{field:'<p>Ready</p>'}}),()=>'<svg></svg>');
-  assert.equal(first.render({game:'example'},0,[]),UI.composeScene({api:2,family:'board',elements:{field:'<p>Ready</p>'}}));
+  assert.equal(first.render({game:'example'},0,[]),UI.composeScene({api:2,family:'board',elements:{field:'<p>Ready</p>'}},{state:{game:'example'}}));
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);

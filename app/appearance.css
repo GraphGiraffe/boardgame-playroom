@@ -30,3 +30,24 @@
 
 /* The same picker is available inside Settings when the table toolbar is full. */
 @media(max-width:360px){#app .table-tools>[data-appearance-picker]{display:none}}
+
+/* Canonical component samples, wrapping without changing game geometry. */
+.appearance-skin-row{display:flex;flex-wrap:wrap;gap:12px;padding:4px}
+.appearance-skin-choice{display:grid;place-items:center;padding:5px;border:2px solid transparent;border-radius:12px;background:transparent;color:var(--ink);cursor:pointer;box-shadow:none;min-width:56px;min-height:56px}
+.appearance-skin-choice[aria-pressed=true]{border-color:var(--green);background:var(--color-surface-panel)}
+.appearance-skin-art{display:block;width:64px;aspect-ratio:var(--sample-ratio);pointer-events:none}
+.appearance-skin-art>svg{display:block;width:100%;height:100%}
+
+.appearance-skin-choice{align-content:start;gap:5px}
+
+#skin-preferences>h3{font-size:15px;margin:14px 0 8px}
+
+.appearance-skin-art[data-preview-family=card-face]{color:var(--color-material-card-ink,#264e43)}
+
+.appearance-skin-row[data-skin-group]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:8px}
+.appearance-skin-row[data-skin-group] .appearance-skin-choice{min-width:0;width:100%}
+.appearance-skin-art{max-width:100%}
+
+.appearance-confirm-actions{flex-wrap:nowrap;justify-content:flex-end}.appearance-confirm-actions>.btn{flex:1;min-width:0}
+
+.appearance-avatar-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.appearance-avatar-options .avatar-option{width:100%;aspect-ratio:1;min-width:0;padding:6px}.appearance-avatar-options .avatar{width:100%;height:100%;aspect-ratio:1}.appearance-avatar-options .avatar-art{width:100%;height:100%;object-fit:contain}
