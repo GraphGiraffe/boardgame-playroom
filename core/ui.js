@@ -240,7 +240,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeScene(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null}={}) {
+  function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
@@ -290,6 +290,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     }
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
     return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+  }
+
+  function composeScene(value,context={}) {
+    const previousPack=renderingPack;
+    try {renderingPack=context.state?.game||previousPack;return composeSceneValue(value,context);}
+    finally {renderingPack=previousPack;}
   }
 
   function createRegistry() {
