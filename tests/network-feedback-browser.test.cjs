@@ -123,7 +123,7 @@ test('network turn uses shared quick-play and pacing, animates a new revision on
     assert.equal(accepted.ok,true);
     await page.evaluate(next=>qaClient.emit(next),accepted.snapshot);
     await page.waitForFunction(()=>qaAnimations.filter(x=>x.kind==='play').length===1);
-    assert.deepEqual(await page.evaluate(()=>qaAnimations.filter(x=>x.kind==='play').map(x=>x.duration)),[220]);
+    assert.deepEqual(await page.evaluate(()=>qaAnimations.filter(x=>x.kind==='play').map(x=>x.duration)),[require('../core/game-flow.js').presets.fast.duration]);
     assert.equal(await page.evaluate(()=>qaAnimations.filter(x=>x.kind==='capture').length),1);
     await page.evaluate(next=>qaClient.emit(next),accepted.snapshot);
     assert.equal(await page.evaluate(()=>qaAnimations.filter(x=>x.kind==='play').length),1,'Duplicate ACK/snapshot must be silent');

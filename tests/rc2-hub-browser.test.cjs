@@ -6,29 +6,32 @@ const root=path.resolve(__dirname,'..');
 test('hub favorites, recent game, pack order, visibility and rules survive reload',{timeout:90000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);await page.evaluate(()=>localStorage.clear());await page.reload();if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
-  assert.equal(await page.locator('.game-tile').count(),12);
-  assert.equal(await page.locator('.collection-count').innerText(),'ПОКАЗАНО: 12 · СКРЫТО: 0');
+  const manifests=await page.evaluate(()=>PlayroomInstalledPacks.map(pack=>pack.manifest)),total=manifests.length;
+  const tagged=(...tags)=>manifests.filter(pack=>tags.every(tag=>pack.tags.includes(tag))).length;
+  assert.deepEqual((await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(node=>node.dataset.game))).sort(),manifests.map(pack=>pack.id).sort());
+  assert.equal(await page.locator('.game-tile').count(),total);
+  assert.equal(await page.locator('.collection-count').innerText(),`ПОКАЗАНО: ${total} · СКРЫТО: 0`);
   assert.equal(await page.locator('.hub-filters>[role=group]').count(),4);
   await page.locator('[data-hub-filters-toggle]').click();
-  await page.locator('[data-tag-kind=type][data-tag=cards]').click();assert.equal(await page.locator('.game-tile').count(),5);
-  await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();assert.equal(await page.locator('.game-tile').count(),2);
-  await page.locator('[data-filter=favorites]').click();await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.game-tile').count(),2,'scope preserves both tag groups');
+  await page.locator('[data-tag-kind=type][data-tag=cards]').click();assert.equal(await page.locator('.game-tile').count(),tagged('cards'));
+  await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();assert.equal(await page.locator('.game-tile').count(),tagged('cards','combinations'));
+  await page.locator('[data-filter=favorites]').click();await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.game-tile').count(),tagged('cards','combinations'),'scope preserves both tag groups');
   await page.locator('[data-tag-kind=type][data-tag=cards]').click();await page.locator('[data-tag-kind=mechanic][data-tag=combinations]').click();
   await page.locator('[data-format=duel]').click();assert.equal(await page.locator('.game-tile').count(),3);await page.locator('[data-format=duel]').click();
   for(const width of [320,390,768]){await page.setViewportSize({width,height:740});assert(await page.locator('.filter-format').evaluate(row=>{const items=[...row.querySelectorAll('button')].map(b=>b.getBoundingClientRect());return items.length===8&&items.every(r=>Math.abs(r.top-items[0].top)<1)&&row.scrollWidth<=row.clientWidth+1;}));}
   await page.setViewportSize({width:390,height:740});
   const ids=await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),first=ids[0],second=ids[1],third=ids.find(id=>![first,second,'pexeso','gofish'].includes(id));
   await page.locator(`.game-tile[data-game="${second}"] .tile-favorite`).click();await page.locator('[data-filter=favorites]').click();assert.deepEqual(await page.locator('.game-tile').evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),[second]);
-  await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.favorites-section .game-tile').count(),1);assert.equal(await page.locator('.other-section .game-tile').count(),11);await page.locator('.topbar-tools [data-command=packs]').click();
+  await page.locator('[data-filter=all]').click();assert.equal(await page.locator('.favorites-section .game-tile').count(),1);assert.equal(await page.locator('.other-section .game-tile').count(),total-1);await page.locator('.topbar-tools [data-command=packs]').click();
   await page.locator(`[data-pack-move="${second}"][data-direction="-1"]`).click();await page.locator('.modal [data-command=close-modal]').click();assert.equal(await page.locator('.game-tile').first().getAttribute('data-game'),second);
   await page.locator('.topbar-tools [data-command=packs]').click();await page.locator(`[data-pack-visibility="${first}"]`).click();await page.locator('.modal [data-command=close-modal]').click();assert.equal(await page.locator(`.game-tile[data-game="${first}"]`).count(),0);
-  assert.equal(await page.locator('.collection-count').innerText(),'ПОКАЗАНО: 11 · СКРЫТО: 1');
+  assert.equal(await page.locator('.collection-count').innerText(),`ПОКАЗАНО: ${total-1} · СКРЫТО: 1`);
   await page.locator('.topbar-tools [data-command=packs]').click();await page.locator(`[data-pack-visibility="${third}"]`).click();await page.locator('.modal [data-command=close-modal]').click();
-  assert.equal(await page.locator('.collection-count').innerText(),'ПОКАЗАНО: 10 · СКРЫТО: 2');
+  assert.equal(await page.locator('.collection-count').innerText(),`ПОКАЗАНО: ${total-2} · СКРЫТО: 2`);
   await page.setViewportSize({width:320,height:740});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'counter overflows phone');
-  await page.locator('[data-edit-toggle]').click();assert.equal(await page.locator('.collection-count').innerText(),'ВСЕГО: 12 · СКРЫТО: 2');await page.locator('[data-edit-toggle]').click();
+  await page.locator('[data-edit-toggle]').click();assert.equal(await page.locator('.collection-count').innerText(),`ВСЕГО: ${total} · СКРЫТО: 2`);await page.locator('[data-edit-toggle]').click();
   await page.locator('.topbar-tools [data-command=packs]').click();await page.locator(`[data-pack-visibility="${third}"]`).click();await page.locator('.modal [data-command=close-modal]').click();
-  assert.equal(await page.locator('.collection-count').innerText(),'ПОКАЗАНО: 11 · СКРЫТО: 1');
+  assert.equal(await page.locator('.collection-count').innerText(),`ПОКАЗАНО: ${total-1} · СКРЫТО: 1`);
   await page.reload();assert.equal(await page.locator('.game-tile').first().getAttribute('data-game'),second);assert.equal(await page.locator(`.game-tile[data-game="${first}"]`).count(),0);
   await page.locator('[data-filter=favorites]').click();assert.equal(await page.locator('.game-tile').count(),1);await page.locator('[data-filter=all]').click();
   for(const width of [320,390]){await page.setViewportSize({width,height:740});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`horizontal overflow at ${width}`);}
