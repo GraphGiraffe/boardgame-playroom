@@ -1,6 +1,6 @@
 # Работа с ХОД 0.18
 
-Приложение 0.18.3, коллекция 0.7.1; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md), не номером в исходнике.
+Приложение 0.18.3, коллекция 0.7.2; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md), не номером в исходнике.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.
@@ -12,12 +12,9 @@
 
 ## Проверки
 
-```sh
-bash scripts/codex/setup.sh --packs-dir ../playroom-paks/packs
-node scripts/codex/test.cjs core,input,games,ui,storage,network,pairing
-```
+Следовать [локальному порядку проверок и бюджету Actions/RC](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/VALIDATION-POLICY.md). Выбирать минимальные blocks/subblocks/case по затронутому поведению, смотреть `--list`, выполнять локально с точным companion. Полный набор не запускать автоматически для выпуска. Успешные проверки не повторять без изменения проверенных исходников; после исправления повторять затронутые сценарии. Документация не требует продуктовых тестов/Actions.
 
-Полный список нужен для сквозного релизного риска; для задачи выбирать blocks/case из [TESTING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md). Без companion не заявлять проверку игр. Build/SHA256 обязательны для выпуска. UI: 320/390 portrait, короткий landscape, scroll/drag/swipe, private views, history, motion, стабильность размеров до/после действий. Сначала существующие сценарии.
+Для публикации `checks=none`; обязательные Build/SHA/ZIP и protected runtime/catalog/offline verification сохраняются. Удалённые source tests — только выбранные и при обоснованной необходимости. Один локально проверенный кандидат по умолчанию; не создавать новый RC/прогон для каждого merge.
 
 ## Ветки
 
