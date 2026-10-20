@@ -211,12 +211,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   // Independent transform properties compose with selection/drag's transform.
   // Geometry uses untransformed offsets so scrolling never feeds back into fit.
+  function cardExposure(card,axis){const raw=card?.querySelector('[data-card-stacking]')?.dataset.cardStacking;if(!raw)return 0;try{const n=JSON.parse(raw)[axis];return Number.isFinite(n)&&n>0&&n<=1?n:0;}catch{return 0;}}
   const arcTracks=new WeakSet();
   function fitHandArc(track){
     const enabled=root.PlayroomAppBridge?.gameOptions?.().handShape==='arc';
     track.classList.toggle('is-arc',enabled);
     const row=track.querySelector('.hand-fan-row');if(!row)return;
-    const pieceWidth=row.firstElementChild?.offsetWidth||0,step=Math.min(parseFloat(track.style.getPropertyValue('--fan-peek'))||16,pieceWidth*.65);
+    const pieceWidth=row.firstElementChild?.offsetWidth||0,step=Math.min(parseFloat(track.style.getPropertyValue('--fan-peek'))||16,pieceWidth);
     row.style.setProperty('grid-template-columns',(row.children.length>1?`repeat(${row.children.length-1},${step}px) `:'')+pieceWidth+'px','important');
     const style=track.ownerDocument.defaultView.getComputedStyle(track),left=Math.max(parseFloat(style.paddingLeft),row.offsetLeft-track.scrollLeft),right=Math.min(track.clientWidth-parseFloat(style.paddingRight),row.offsetLeft+row.offsetWidth-track.scrollLeft);
     const center=(left+right)/2,half=Math.max(1,(right-left)/2),count=row.children.length;
@@ -250,7 +251,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     if(!track.classList.contains('is-arc'))for(const item of track.querySelectorAll('.hand-card')){const corner=item.querySelector('.card-corner:not(.bottom)');if(corner)peek=Math.max(peek,Math.ceil(layoutRect(corner).right-layoutRect(item).left+2));}
     if(count>1&&card){const width=card.offsetWidth;peek=Math.max(peek,Math.min(width,(available-2*width-10)/Math.max(1,count-2)));}
-    if(card)peek=Math.min(peek,card.offsetWidth*.65);
+    const axis=track.classList.contains('is-arc')?'arc':'horizontal',exposure=Math.max(0,...[...track.querySelectorAll('.hand-card')].map(item=>cardExposure(item,axis)));
+    if(card)peek=Math.max(card.offsetWidth*exposure,Math.min(peek,card.offsetWidth*Math.max(.65,exposure)));
     track.style.setProperty('--fan-reveal-space',card?Math.max(0,card.offsetWidth-peek)+'px':'0px');
     track.style.setProperty('--fan-peek',peek+'px');
     track.classList.toggle('is-tight',parseFloat(track.style.getPropertyValue('--fan-reveal-space'))<(card?.offsetWidth||0)-peek);
@@ -267,7 +269,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const key of ['width','height','justify-self','align-self'])slot.style.removeProperty(key);
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
     const grid=field.querySelector('[data-card-count]');
-    if(grid){const count=Number(grid.dataset.cardCount);let best={size:0,columns:1,rows:count};for(let columns=2;columns<=count;columns++){const rows=Math.ceil(count/columns),size=Math.min((width-8-(columns-1)*4)/columns,(height-8-(rows-1)*4)/rows/1.4);if(size>best.size)best={size,columns,rows};}grid.style.setProperty('--grid-columns',best.columns);grid.style.setProperty('--grid-rows',best.rows);grid.style.setProperty('--grid-card-width',Math.max(1,best.size)+'px');}
+    if(grid){const count=Number(grid.dataset.cardCount);let best={size:0,columns:1,rows:count};for(let columns=2;columns<=count;columns++){const rows=Math.ceil(count/columns),size=Math.min((width-8-(columns-1)*4)/columns,(height-8-(rows-1)*4)/rows/1.4);if(size>best.size)best={size,columns,rows};}const gap=grid.querySelector('[data-grid-gap=\"center\"]');if(gap)gap.hidden=best.columns!==5||best.rows!==5;grid.style.setProperty('--grid-columns',best.columns);grid.style.setProperty('--grid-rows',best.rows);grid.style.setProperty('--grid-card-width',Math.max(1,best.size)+'px');}
 
     if(stage.dataset.fieldSizing==='scroll'||field.querySelector('[data-card-count]')){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
 
@@ -307,7 +309,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(const card of stack.children){
         card.style.marginInlineStart=previous?Math.min(0,previous.peek-previous.width)+'px':'0px';
         const box=layoutRect(card),cornerNode=card.querySelector('.shared-card-corner:not(.bottom),.card-corner:not(.bottom)'),corner=cornerNode?layoutRect(cornerNode):null;
-        previous={width:box.width,peek:Math.min(box.width,fixedStep>0?fixedStep:corner?Math.ceil(corner.right-box.left+2):box.width)};
+        previous={width:box.width,peek:Math.min(box.width,Math.max(box.width*cardExposure(card,'horizontal'),fixedStep>0?fixedStep:corner?Math.ceil(corner.right-box.left+2):box.width))};
       }
     }
   }
@@ -326,6 +328,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const stage=scene?.querySelector('.app-game-layout');
+    if(stage?.dataset.actionPlacement==='header-landscape'){
+      const header=host.querySelector('.table-header'),actions=stage.querySelector('.layout-actions')||header?.querySelector('.scene-header-actions');
+      if(actions&&header){const landscape=host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches;
+        if(landscape){actions.classList.add('scene-header-actions');if(actions.parentElement!==header)header.insertBefore(actions,header.querySelector('.table-tools'));}
+        else{actions.classList.remove('scene-header-actions');if(actions.parentElement!==stage)stage.append(actions);}
+      }
+    }
+
+    // A scene can reserve portrait status content without owning the host bar.
+    const statusContent=host.querySelector('[data-scene-status="portrait"]'),statusHome=stage?.querySelector('[data-scene-status-home]'),statusBar=host.querySelector('.table-status');
+    if(statusContent&&statusHome&&statusBar){const portrait=!host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches,target=portrait?statusBar:statusHome;if(statusContent.parentElement!==target)target.prepend(statusContent);}
+
     const layoutKey=stage?JSON.stringify([host.querySelector('.table-shell')?.dataset.layoutIdentity,scene.clientWidth,scene.clientHeight,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating]):null;
     let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
     if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');

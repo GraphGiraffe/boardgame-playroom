@@ -332,3 +332,11 @@ test('ZiL+ rewards raw doubles after all moves and has no extra-roll cells',()=>
  r=move(start([2]));assert.equal(r.position.turn,1,'one die cannot be a double');
  r=move(start([1,1],63));assert.equal(r.position.status,'finished');assert(!r.events.some(e=>e.type==='snakes.extra'),'no bonus after finishing');
 });
+
+test('Go Fish asks show rank symbols while retaining complete event descriptions',()=>{
+ const P=require(path.join(packs,'packs/gofish/presentation/scene.js')),locale=require(path.join(packs,'packs/gofish/locales/ru/game.json'));
+ const {Translator}=require('../presentation/localization.js'),t=new Translator({catalogs:{ru:locale}});
+ for(const [rank,label] of [[7,'7'],[11,'В'],[12,'Д'],[13,'К'],[14,'Т'],[15,'Дж']]){
+  const event=P.event({type:'gofish.asked',actor:0,params:{rank,target:1}});assert.equal(t.text(event.speech.text.key,event.speech.text.params),label);assert.equal(event.message.key,'gofish.events.asked');
+ }
+});

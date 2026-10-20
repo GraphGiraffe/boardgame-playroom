@@ -1,6 +1,6 @@
 # SDK 0.18 · API 3
 
-`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.2. Источники и публикация — [RELEASE-0.18](RELEASE-0.18.md).
+`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.2. Источники и публикация — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md).
 
 ## Независимые модули
 
@@ -92,7 +92,7 @@ Presentation может объявлять `scene.round:{number,limit:null|integ
 
 engineApi 3 и network protocol 2 обязательны. API 1/2 не исполняются в новом runtime. Старые данные не переписываются; подтверждение полного обновления отдельно от загрузки, исходные данные можно выгрузить. Опубликованные старые файлы и теги неизменны.
 
-Публикация приложения и коллекции независима; процедура и cutover — [RELEASING](RELEASING.md).
+Публикация приложения и коллекции независима; процедура и cutover — [RELEASING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md).
 
 Порядок физических мест не меняется при reverse UNO: `scene.turnOrder` описывает очередь, направление показывается отдельным индикатором. Перестановка карточек при изменении направления сбивала бы жесты и привычные позиции игроков.
 

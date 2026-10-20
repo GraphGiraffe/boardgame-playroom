@@ -19,6 +19,7 @@ module.exports = {
     {"file": "artwork.test.cjs", "profiles": ["app"], "subblock": "core/packs"},
   ]},
   input: {label: "Ввод и игровые эффекты", cases: [
+    {"file":"solitaire-input.test.cjs","profiles":[],"types":["screen:phone"],"subblock":"input/solitaire"},
     {"file": "drag.test.cjs", "profiles": ["app", "core-ui"], "subblock": "input/gestures"},
     {"file": "drag-app.test.cjs", "profiles": [], "subblock": "input/gestures"},
     {"file": "motion.test.cjs", "profiles": [], "subblock": "input/motion"},

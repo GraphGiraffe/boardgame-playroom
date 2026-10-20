@@ -104,10 +104,13 @@
       return '{"librarySummary":'+JSON.stringify(this.summary(session))+',"libraryId":'+JSON.stringify(id)+','+raw.slice(1);
     }
     activate(session, id) {
-      const store = this.storage(), previous = store.getItem(ACTIVE);
+      const store = this.storage(), previous = store.getItem(ACTIVE), next = this.encode(session,id);
       // Both writes are atomic. If either fails, the previous active save survives.
-      if (previous && identity(previous) !== id) store.setItem(PREFIX + identity(previous), previous);
-      store.setItem(ACTIVE, this.encode(session,id));
+      if (previous && identity(previous) !== id) {
+        const archiveKey=PREFIX+identity(previous);
+        if(store.getItem(archiveKey)!==previous)store.setItem(archiveKey,previous);
+      }
+      store.setItem(ACTIVE, next);
       // Cleanup is optional: records() prefers the active version if both remain.
       try { store.removeItem(PREFIX + id); } catch (_) {}
     }

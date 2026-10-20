@@ -39,3 +39,7 @@ const target = H.boardTarget(command, {kind:'move', color:'#3e9168'});
 ## Соло-поле
 
 `hidePlayers: true` разрешён только сцене с одним игроком: не создаёт панели участников/self, сохраняя field и actions. Не меняет правила и проекции. Пасьянсы используют этот режим вместе с `fieldSizing: "scroll"`.
+
+Соло-сцена с `hidePlayers` маркируется `data-solo-field`, занимает полную ширину в обоих положениях и может использовать общий нижний `elements.actions`. Для источника с немедленным drag: `data-drag-start="immediate"`; группа размечается контейнером `data-drag-stack` и обёртками `data-drag-stack-member="индекс"`. Input клонирует только уже разрешённые renderer источники, без вычисления правил.
+
+Opt-in `actionPlacement: "header-landscape"` переносит общий action slot в центр заголовка только в landscape; portrait возвращает его в исходный слот. `data-double-action` задаёт авторизованную команду двойного нажатия на пустую часть поля; интерактивные дочерние элементы исключены. `data-motion-layout="cards"` включает публичные перемещения по entity ID, `data-motion-anchor` — стабильные точки для открытия/истории. Публичные упорядоченные переносы описываются `data-motion-transfers`/`data-motion-trigger` и каноническими лицами `data-motion-template`. Скрытые идентичности не используются; ordinary drag не ждёт анимационного удержания. Отключённая анимация не задерживает команду.

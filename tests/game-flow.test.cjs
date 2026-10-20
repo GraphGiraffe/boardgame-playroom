@@ -22,11 +22,11 @@ test('Local and network mode call the exact same motion engine and preferences',
   assert.equal(local.pace().duration,network.pace().duration);
   assert.equal(network.quickPlay,false);
   settings.quickPlay=true;settings.animationSpeed='slow';
-  assert.equal(network.quickPlay,true);assert.equal(local.pace().duration,1100);
+  assert.equal(network.quickPlay,true);assert.equal(local.pace().duration,650);
   const before=network.capture({actor:1,viewer:0,action:{type:'draw'}});
   await network.play(before,{draws:[{player:1,count:2,from:'stock'}]});
   assert.deepEqual(calls[0],['capture',{actor:1,viewer:0,action:{type:'draw'}}]);
-  assert.equal(calls[1][2].duration,1100);assert.equal(calls[1][2].draws[0].count,2);
+  assert.equal(calls[1][2].duration,650);assert.equal(calls[1][2].draws[0].count,2);
   settings.animationSpeed='instant';assert.equal(local.capture({actor:0}),null);
   network.cancel();assert.deepEqual(calls.at(-1),['cancel']);
 });
@@ -69,7 +69,7 @@ test('presentation cancellation releases its waiter and timer even when a render
 
 
 test('Whole actions use the UNO reveal budget without adding it to long presentations',async()=>{
-  for(const [animationSpeed,minimum]of Object.entries({instant:200,fast:660,normal:1060,slow:1600})){
+  for(const [animationSpeed,minimum]of Object.entries({instant:100,fast:420,normal:720,slow:1100})){
     const timers=new Map();let id=0,finished=false;
     const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
     let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[{reveal:{kind:"card"}}]}).then(()=>finished=true);

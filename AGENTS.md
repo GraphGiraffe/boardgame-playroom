@@ -1,6 +1,6 @@
 # Работа с ХОД 0.18
 
-Приложение 0.18.2, коллекция 0.7.1; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](docs/ROADMAP.md). Публикация подтверждается [release evidence](docs/RELEASE-0.18.md), не номером в исходнике.
+Приложение 0.18.3, коллекция 0.7.1; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md), не номером в исходнике.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.
@@ -17,8 +17,16 @@ bash scripts/codex/setup.sh --packs-dir ../playroom-paks/packs
 node scripts/codex/test.cjs core,input,games,ui,storage,network,pairing
 ```
 
-Полный список нужен для сквозного релизного риска; для задачи выбирать blocks/case из [TESTING](docs/TESTING.md). Без companion не заявлять проверку игр. Build/SHA256 обязательны для выпуска. UI: 320/390 portrait, короткий landscape, scroll/drag/swipe, private views, history, motion, стабильность размеров до/после действий. Сначала существующие сценарии.
+Полный список нужен для сквозного релизного риска; для задачи выбирать blocks/case из [TESTING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md). Без companion не заявлять проверку игр. Build/SHA256 обязательны для выпуска. UI: 320/390 portrait, короткий landscape, scroll/drag/swipe, private views, history, motion, стабильность размеров до/после действий. Сначала существующие сценарии.
 
 ## Ветки
 
-Task branch → Draft PR → dev squash. Stable: dev → main merge commit, затем fast-forward dev без force. Проверки/Actions вручную, push/Ready их не запускает. [CONTRIBUTING](CONTRIBUTING.md), [RELEASING](docs/RELEASING.md). Очистка только по доказанному включению изменений, с backup и сохранением уникальных работ.
+Task branch → Draft PR → dev squash. Stable: dev → main merge commit, затем fast-forward dev без force. Проверки/Actions вручную, push/Ready их не запускает. [CONTRIBUTING](CONTRIBUTING.md), [RELEASING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md). Очистка только по доказанному включению изменений, с backup и сохранением уникальных работ.
+
+## Предотвращение повторных регрессий
+
+Перед изменением упаковки, скинов, жестов или сохранений прочитать [точные инварианты и проверки](docs/DEVELOPMENT-REGRESSIONS.md). Аудитировать готовые артефакты; повторы между самостоятельными паками допустимы. Исходные мастера сохранять вне runtime. Подготовить exact companion перед игровыми тестами; выбранные проверки и offline HTML доказывают только свой scope. Релиз/публикация требуют отдельного поручения.
+
+## Владение средствами разработки
+
+Общие навыки, операционные инструменты, roadmap, Cloud/test/release инструкции — в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/PROJECT.md). Здесь остаются продуктовый код, SDK/правила/ассеты, авторские контракты и собственные проверки. Operational scripts — совместимые shims; установите соседний utils либо PLAYROOM_UTILS_ROOT. Не копировать реализацию обратно.
