@@ -19,3 +19,5 @@
 | Ближайшие патчи | [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md), [подготовка расширений](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/NEXT-PATCHES.md) |
 
 Автор пака начинает с [руководства коллекции](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/main/docs/AUTHORING.md). Все примеры относятся к текущему API. Новая механика сначала получает владельца слоя и понятное имя; игровое правило не переносится в Web renderer.
+
+Мобильные контракты 0.18.4: [размеры](SIZE-SYSTEM.md), [навигация и установка](NAVIGATION-AND-INSTALL.md), [приоритет тестовых версий](PACK-VERSION-PRIORITY.md).

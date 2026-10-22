@@ -12,6 +12,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     accept(events=[],cues=[],pack,{silent=false,mode='normal',snapshot=null,motion=null,defer=false}={}){
       const additions=events.filter(e=>Number.isSafeInteger(e?.id)&&e.id>this.cursor);if(!additions.length)return;
       this.cursor=additions.at(-1).id;if(silent)return;
+      // Preserve the displayed turn across the entire committed effect queue.
+      if(this.presentationTurn==null){const stage=this.mount()?.querySelector('.app-game-layout');if(stage?.dataset.turnPlayer!=null)this.presentationTurn=Number(stage.dataset.turnPlayer);}
       const timing=times[mode]||times.normal;
       if(snapshot)snapshot.revealedEntities=additions.flatMap(e=>e.reveal?.cards?.map(card=>'card-'+card.id)|| (e.reveal?.entity?[e.reveal.entity]:[]));
       const motionEvent=additions.findLast(e=>e.transfer)||additions.findLast(e=>e.reveal||e.presentation)||additions.at(-1);
@@ -38,14 +40,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           await root.PlayroomMotion?.play({...snapshot,action:{type:route.trigger},sequence:route,routeOnly:true},{duration:pace.duration,settle:pace.settle});
           if(generation!==this.generation)return;this.routePoints.set(route.entity,route.jump||route.steps.at(-1)||route.origin);this.positionRoutes();
         }:routes.length?null:event===motionEvent?motion:null;
-        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
+        if(animated||effect||ids.length)this.queue.push({...event,pack,ids,timing,snapshot,motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.speech&&event.reveal?.kind==='card'?timing.speech:event.reveal?timing.reveal:event.feedback?.kind==='skip'?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
       }
+      if(!this.active&&!this.queue.length)this.presentationTurn=null;
       if(!this.active&&!defer)this.next();
     }
     next(){
       if(this.timer!==null){this.clock.clearTimeout(this.timer);this.timer=null;}
-      this.active=this.queue.shift()||null;this.refresh();
-      if(!this.active){this.restoreRoutes();for(const done of this.waiters.splice(0))done();return;}
+      // Keep the request beside its owner through the answer and card movement.
+      const next=this.queue[0];
+      if(this.request&&(!next||next.reveal)){
+        const request=this.request;this.request=null;const generation=this.generation;
+        request.finish().then(()=>{if(generation===this.generation)this.next();});return;
+      }
+      this.active=this.queue.shift()||null;if(!this.active)this.presentationTurn=null;this.refresh();
+      if(!this.active){this.restoreRoutes();this.positionTurn();for(const done of this.waiters.splice(0))done();return;}
       const item=this.active,generation=this.generation;if(item.ids.length)this.play(item.ids,item.pack);
       const valid=()=>generation===this.generation&&item===this.active;
       const finish=()=>{if(!valid())return;Promise.resolve(this.revealer?.finish()).then(async()=>{if(valid()&&item.reveal&&item.presentation?.sequence)await item.motion?.();if(valid())this.next();});};
@@ -53,7 +62,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         // Questions/answers remain readable before the associated transfer.
         if(item.speech&&item.motion)Promise.resolve(item.motion()).then(finish,finish);else finish();
       },item.duration);else finish();};
-      if(item.reveal)Promise.resolve(this.revealer?.enter(item.snapshot,item.timing)).then(hold,hold);
+      if(item.speech&&item.reveal?.kind==='card'&&root.PlayroomMotion?.beginRequest){
+        this.request=root.PlayroomMotion.beginRequest(item.snapshot,item.speech.speaker,item.reveal.card,item.timing.flip||0);
+        if(this.bubble)this.bubble.style.visibility='hidden';
+        this.request.ready.then(()=>{if(valid()){this.position();hold();}},finish);
+      }
+      else if(item.reveal)Promise.resolve(this.revealer?.enter(item.snapshot,item.timing)).then(hold,hold);
       else if(item.motion&&!item.speech){
         const moving=Promise.resolve(item.motion()).catch(()=>{});
         // The visual effect and its minimum readable interval share one budget.
@@ -63,12 +77,22 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       else if(!item.duration)finish();else hold();
     }
     whenIdle(){return this.active||this.queue.length?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
+    positionTurn(){
+      const mount=this.mount(),stage=mount?.querySelector('.app-game-layout');if(!stage)return;
+      const held=this.presentationTurn!=null&&(this.active||this.queue.length||this.request);
+      if(held)stage.dataset.presentationTurn=String(this.presentationTurn);else delete stage.dataset.presentationTurn;
+      const turn=Number(held?this.presentationTurn:stage.dataset.turnPlayer);
+      for(const panel of stage.querySelectorAll('.player-panel[data-player-index]')){
+        const active=panel.dataset.turnPrimary!=='false'&&Number(panel.dataset.playerIndex)===turn;
+        panel.classList.toggle('is-turn',active);if(active)panel.setAttribute('aria-current','true');else panel.removeAttribute('aria-current');
+      }
+    }
     position(){
       const bubble=this.bubble,mount=this.mount(),speech=this.active?.speech;if(!bubble||!mount||!speech)return;
       const panel=[...mount.querySelectorAll(`.player-panel[data-player-index="${speech.speaker}"]`)].find(node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.right>0;});
       bubble.hidden=!panel;bubble.style.visibility=panel?'':'hidden';if(!panel)return;
-      const box=panel.getBoundingClientRect(),r=bubble.getBoundingClientRect(),doc=mount.ownerDocument,win=doc.defaultView;
-      const left=Math.max(8,Math.min(box.right-r.width,win.innerWidth-r.width-8));
+      const box=(panel.querySelector('.player-avatar-wrap .avatar,.avatar')||panel).getBoundingClientRect(),r=bubble.getBoundingClientRect(),doc=mount.ownerDocument,win=doc.defaultView;
+      const left=Math.max(8,Math.min(box.left+box.width/2-r.width/2,win.innerWidth-r.width-8));
       const top=box.top-r.height-8>=8?box.top-r.height-8:Math.min(box.bottom+8,win.innerHeight-r.height-8);
       bubble.style.left=left+'px';bubble.style.top=Math.max(8,top)+'px';
     }
@@ -92,8 +116,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     refresh(){
       this.restorePending();
       const mount=this.mount();if(!mount)return;
-      this.positionRoutes();
-      const item=this.active;this.revealer?.show(item?.reveal,item?.pack);
+      this.positionRoutes();this.positionTurn();
+      const item=this.active;this.revealer?.show(item?.speech&&item.reveal?.kind==='card'?null:item?.reveal,item?.pack);
       const pending=new Set(this.queue.flatMap(event=>event.reveal?.cards?.map(card=>'card-'+card.id)||[]));
       for(const el of mount.querySelectorAll('[data-entity]'))if(pending.has(el.dataset.entity)&&!el.closest('.hand-track,.mini-hand')){this.pendingRevealTargets.push({el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')});el.style.setProperty('visibility','hidden','important');}
       const skipped=item?.feedback?.kind==='skip'?item.feedback.player:null;
@@ -115,7 +139,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       this.position();
     }
-    clear(){if(this.routePoints?.size||this.active?.diceRoll)root.PlayroomMotion?.cancel();this.restoreRoutes();this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
+    clear(){this.request?.cancel();this.request=null;if(this.routePoints?.size||this.active?.diceRoll)root.PlayroomMotion?.cancel();this.restoreRoutes();this.restorePending();this.generation++;this.revealer?.clear();if(this.timer!==null)this.clock.clearTimeout(this.timer);this.timer=null;this.queue=[];this.active=null;this.presentationTurn=null;this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
     destroy(){this.clear();root.removeEventListener?.('resize',this.reposition);root.document?.removeEventListener('scroll',this.reposition,true);}
   }
   GameFeedback.times=Object.freeze(times);return GameFeedback;

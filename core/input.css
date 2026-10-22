@@ -1,19 +1,19 @@
 /* core/input.js scrolls overflowed hands along their available axis. Holding
    first picks a piece up; a free vertical gesture remains a play gesture. */
-[data-drag-piece],[data-swipe-action],[data-swipe-select]{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
-[data-drag-piece]{cursor:grab}
-.playroom-dragging,.playroom-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
-.playroom-drag-source{opacity:.38!important}
-.playroom-drag-ghost{position:fixed!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;margin:0!important;z-index:1100!important;pointer-events:none!important;opacity:.96!important;box-sizing:border-box!important;transition:none!important;animation:none!important;outline:3px solid #d39739!important;outline-offset:-2px!important;box-shadow:0 12px 24px #1c342c40!important;max-width:100vw!important;max-height:100dvh!important;will-change:transform}
-.playroom-drag-ghost *{pointer-events:none!important}
-.playroom-composite-ghost.playroom-drag-ghost{display:grid!important;opacity:.58!important;border:2px solid #315d62!important;border-radius:4px!important;background:#6b9390!important}
-.playroom-composite-ghost.playroom-drag-ghost>span{min-width:0;min-height:0;border:1px solid #355d62}
-.playroom-composite-ghost.playroom-drag-invalid{border-color:#ab4438!important;background:#c98579!important;outline-color:#ab4438!important}
-[data-drop-piece].playroom-drop-hover{outline:3px solid #d39739!important;outline-offset:4px;background-color:#e9e4b9!important;box-shadow:0 0 0 7px #d3973925!important}
-@media(prefers-reduced-motion:reduce){.playroom-drag-ghost{will-change:auto}}
+[data-drag-piece],[data-swipe-action],[data-swipe-select]{touch-action:none;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;}
+[data-drag-piece]{cursor:grab;}
+.playroom-dragging,.playroom-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important;}
+.playroom-drag-source{opacity:var(--ui-opacity-drag-source,.38)!important;}
+.playroom-drag-ghost{position:fixed!important;top:0!important;left:0!important;right:auto!important;bottom:auto!important;margin:0!important;z-index:1100!important;pointer-events:none!important;opacity:var(--ui-opacity-drag-ghost,.96)!important;box-sizing:border-box!important;transition:none!important;animation:none!important;outline:var(--size-border-3_0,2px) solid #d39739!important;outline-offset:-2px!important;box-shadow:0 12px 24px #1c342c40!important;max-width:100vw!important;max-height:100dvh!important;will-change:transform;}
+.playroom-drag-ghost *{pointer-events:none!important;}
+.playroom-composite-ghost.playroom-drag-ghost{display:grid!important;opacity:var(--ui-opacity-composite-ghost,.58)!important;border:var(--size-border-2_0,2px) solid #315d62!important;border-radius:var(--size-radius-4_0,4px)!important;background:#6b9390!important;}
+.playroom-composite-ghost.playroom-drag-ghost>span{min-width:0;min-height:0;border:var(--size-border-1_0,1px) solid #355d62;}
+.playroom-composite-ghost.playroom-drag-invalid{border-color:#ab4438!important;background:#c98579!important;outline-color:#ab4438!important;}
+[data-drop-piece].playroom-drop-hover{outline:var(--size-border-3_0,2px) solid #d39739!important;outline-offset:var(--ui-drop-offset,4px);background-color:#e9e4b9!important;box-shadow:0 0 0 7px #d3973925!important;}
+@media(prefers-reduced-motion:reduce){.playroom-drag-ghost{will-change:auto;}}
 
 /* All hand surfaces participate in manual scroll arbitration, including disabled pieces. */
-.layout-self,.own-hand .hand-track{touch-action:none!important}
+.layout-self,.own-hand .hand-track{touch-action:none!important;}
 
 /* Immediate board drags keep their card silhouette without a selection frame. */
-.playroom-drag-ghost[data-drag-start="immediate"]{outline:none!important}
+.playroom-drag-ghost[data-drag-start="immediate"]{outline:none!important;}

@@ -1,11 +1,11 @@
-:root{--interface-viewport-height:calc(100dvh / var(--interface-scale,1));--interface-viewport-width:calc(100vw / var(--interface-scale,1))}
+:root{--ui-viewport-height:calc(100dvh / var(--ui-interface-scale,1));--ui-viewport-width:calc(100vw / var(--ui-interface-scale,1));--interface-viewport-height:calc(100dvh / var(--interface-scale,1));--interface-viewport-width:calc(100vw / var(--interface-scale,1))}
 /* Layout roots zoom; drag, motion and tooltip layers keep screen coordinates. */
-#app,#modal-root,#toast,.app-update-banner,.appearance-dialog{zoom:var(--interface-scale,1)}
+#app .app-shell,#modal-root,#avatar-picker-root,#toast,.app-update-banner,.appearance-dialog{zoom:var(--ui-interface-scale,1)}
 #app .table-shell:has(.table-header){height:var(--interface-viewport-height,100dvh)}
-#app .sidebar{height:var(--interface-viewport-height,100dvh)}
-#modal-root .modal,#modal-root .avatar-picker-modal{max-height:calc(var(--interface-viewport-height,100dvh) - 32px)}
-.appearance-dialog{max-height:calc(var(--interface-viewport-height,100dvh) - 24px);max-width:calc(var(--interface-viewport-width,100vw) - 24px)}
-#app .table-shell .history-panel{max-height:calc(var(--interface-viewport-height,100dvh) * .25)}
+#app .sidebar{height:var(--ui-viewport-height,100dvh)}
+#modal-root .modal,#modal-root .avatar-picker-modal{max-height:calc(var(--ui-viewport-height,100dvh) - 32px)}
+.appearance-dialog{max-height:calc(var(--ui-viewport-height,100dvh) - 24px);max-width:calc(var(--ui-viewport-width,100vw) - 24px)}
+#app .table-shell .history-panel{max-height:calc(var(--ui-viewport-height,100dvh) * .25)}
 .settings-range{display:block;min-width:0;margin-block:12px;color:var(--ink);font-size:12px;font-weight:700}
 .settings-grid .settings-range{margin:0}
 .settings-range-heading{display:flex;align-items:start;justify-content:space-between;flex-wrap:wrap;gap:2px 6px;min-height:32px}
@@ -36,3 +36,14 @@
 :is(#app,#modal-root) .settings-range input[type=range]:focus-visible{outline:none}
 .settings-range input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
 .settings-range input[type=range]:focus-visible::-moz-range-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
+
+/* One frame for full editing/list surfaces; compact confirmations keep content height. */
+#modal-root .modal-backdrop:has(>.modal[data-dialog-size="large"]){padding:var(--ui-dialog-viewport-inset,20px)}
+#modal-root .modal[data-dialog-size="large"]{
+ width:min(100%,var(--ui-dialog-large-max-width,680px))!important;
+ max-width:var(--ui-dialog-large-max-width,680px)!important;
+ height:calc(var(--ui-viewport-height,100dvh) - 2 * var(--ui-dialog-viewport-inset,20px));
+ max-height:calc(var(--ui-viewport-height,100dvh) - 2 * var(--ui-dialog-viewport-inset,20px));
+ padding:var(--ui-dialog-padding,14px)!important;
+}
+#modal-root .modal[data-dialog-size="large"]>.modal-body{flex:1;min-height:0}

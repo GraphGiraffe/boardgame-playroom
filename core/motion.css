@@ -1,4 +1,14 @@
-.playroom-motion-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:40;contain:strict}
-.playroom-motion-layer *{pointer-events:none!important}
-.playroom-motion-flight{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;pointer-events:none}
-.playroom-motion-piece{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important}
+.playroom-motion-layer{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:40;contain:strict;}
+.playroom-motion-layer *{pointer-events:none!important;}
+.playroom-motion-flight{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;pointer-events:none;}
+.playroom-motion-piece{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important;}
+
+[data-motion-pending]{visibility:hidden!important}
+
+/* The clipped hand phase ends only once the card clears the pocket rim. */
+.playroom-request-layer{position:fixed;inset:0;z-index:43;pointer-events:none;overflow:hidden;contain:strict}
+.playroom-request-layer *{pointer-events:none!important}
+/* Player identity sits behind the hand; the pocket edge covers its lower half. */
+.app-game-layout .player-panel>.player-info{position:relative;z-index:0}
+.app-game-layout .player-panel>.player-hand{position:relative;z-index:1}
+.app-game-layout .player-panel>.player-hand:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--color-border-subtle,#bac9a6);z-index:2;pointer-events:none}

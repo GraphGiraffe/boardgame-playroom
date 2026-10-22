@@ -52,7 +52,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         for (const button of await nav.locator('button').all()) {
           const b=await button.boundingBox(); assert(b.width>=44&&b.height>=44&&b.x>=0&&b.x+b.width<=width+1);
         }
-        assert.equal(await nav.evaluate(e=>getComputedStyle(e).position),mobile?'fixed':'static');
+        assert.equal(await nav.evaluate(e=>getComputedStyle(e).position),mobile&&height>=width?'fixed':'static');
         await press(nav.locator('[data-command=sessions]'));
         await page.locator('.saved-games-list').waitFor();
         assert.equal(await page.locator('.saved-empty').isVisible(),true);await capture('sessions');
@@ -65,7 +65,7 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         await press(page.locator('[data-hub-filters-toggle]'));
         await press(page.locator('[data-tag-kind=type][data-tag=cards]')); assert.equal(await page.locator('.game-tile').count(),cardGames);
         await press(nav.locator('[data-command=home]')); assert.equal(await page.locator('.game-tile').count(),totalGames);
-        if(mobile){
+        if(mobile&&height>=width){
           await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
           const footer=await page.locator('.hub-footer').boundingBox(),bar=await nav.boundingBox();
           assert(footer.y+footer.height<=bar.y,'navigation must not cover the final hub content');
@@ -79,7 +79,8 @@ test('The hub navigation remains available on phones and desktop', {timeout:6000
         const restoredRoom=await page.evaluate(()=>PlayroomAppBridge.room());
         assert.equal(restoredRoom.phase,'playing');
         await press(page.locator('.lobby-header [data-command=close-modal]'));
-        assert.equal(await page.locator('.uno-scene').count(),1,'lobby dismissal returns to the game');
+        assert.equal(await page.locator('.side-nav').count(),1,'lobby dismissal returns to the game list');
+        assert.equal(await page.locator('.uno-scene').count(),0);
         // Persistent saves must survive without any test-only sessionStorage marker.
         await page.evaluate(()=>sessionStorage.clear());
         await page.reload();if(await page.locator('.handoff [data-command=unlock]').count())await press(page.locator('.handoff [data-command=unlock]'));if(await page.locator('.table-heading [data-command=home]').count())await press(page.locator('.table-heading [data-command=home]'));await press(page.locator('.side-nav [data-command=sessions]'));await page.locator('.saved-games-list').waitFor();assert.equal(await page.locator('.saved-game[data-session-id]').count(),1);await press(page.locator('.saved-game [data-resume-id]'));await page.locator('.uno-scene').waitFor();

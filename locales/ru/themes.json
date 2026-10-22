@@ -173,5 +173,7 @@
   "themes.family.character-face": "Карты персонажей",
   "themes.avatar-style": "Стиль аватаров",
   "themes.avatar-minimal": "Стандартный",
-  "themes.avatar-simple": "Простой"
+  "themes.avatar-simple": "Простой",
+  "themes.reset-all-skins": "Сбросить все скины",
+  "themes.confirm-reset-skins": "Сбросить все скины к значениям по умолчанию?"
 }

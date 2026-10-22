@@ -10,7 +10,7 @@ test('UNO accusation publishes localized target metadata',()=>{
   if(enhanced)assert.match(pack.rules.join(' '),/коснитесь его имени или руки/);
   const s=make(),before=s.data.hands[0].length;
   const action=Engine.reactions(s,0).find(a=>a.type==='accuse-uno'&&a.target===1);
-  if(enhanced){assert.equal(action.targetPrompt,'UNO!');assert.match(action.confirmation,/Штраф за ошибку: \+2 карты/);}
+  if(enhanced){assert.equal(action.targetPrompt,'UNO!');assert.equal(action.confirmation,undefined,'The player-card menu performs the accusation without a second confirmation');}
   const out=Engine.applyAction(s,0,{type:'accuse-uno',target:1});
   assert.equal(out.turn,s.turn,'Reactions must not consume regular turns');
   assert.equal(out.data.hands[0].length,before+2,'False accusation penalizes accuser');

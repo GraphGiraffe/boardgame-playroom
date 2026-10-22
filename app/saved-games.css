@@ -36,3 +36,28 @@
 @media(max-width:760px){.saved-game-actions{justify-content:flex-end}.saved-game h2{margin-top:8px}.saved-game p{line-height:1.45}}
 
 .saved-game h2 .saved-progress{font-size:12px;font-weight:400;letter-spacing:normal}.saved-game .saved-status{font-size:12px}.saved-game .resume-participants{margin:8px 0}
+
+/* Identity above; compact information and actions share the footer. */
+.saved-game{grid-template-columns:minmax(0,1fr);gap:8px}
+.saved-game-main,.saved-game-details{min-width:0}
+.saved-game-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.saved-game-footer .saved-game-actions{justify-content:flex-end;align-self:center}
+.saved-game-details p{margin:2px 0}
+.saved-game .saved-status{font-size:12px}
+.saved-game .resume-participants{margin:6px 0 0}
+.saved-game-actions .saved-delete{margin-left:0}
+
+.saved-game h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}.saved-game h2 strong{font:inherit;font-weight:700}.saved-game h2 .saved-mode{font-size:14px;font-weight:400;color:var(--muted)}
+
+.saved-status .pill{display:inline-flex;align-items:center;gap:6px}.saved-state-icon{display:inline-flex;align-items:center;justify-content:center;width:1em;height:1em;line-height:1;flex:none}.saved-state-icon svg{width:1em;height:1em}.saved-status>.saved-progress{color:var(--muted)}
+
+.saved-game[data-network-session-id] .saved-status .pill{background:var(--color-surface-tile-blue,#dbe9e8);color:var(--ink)}
+
+.saved-game{background:var(--color-surface-raised,#e6e9dc)}
+.saved-game:not([data-network-session-id]) .saved-status .pill{background:var(--color-surface-tile-green,#e2ead7)}
+#app .saved-game{background:var(--color-surface-raised,#e6e9dc)}
+
+/* Distinguish transport badges from the card surface. */
+#app .saved-game .saved-status .pill{border:1px solid color-mix(in srgb,var(--green) 42%,transparent)}
+#app .saved-game:not([data-network-session-id]) .saved-status .pill{background:color-mix(in srgb,var(--color-surface-tile-green,#e2ead7) 76%,var(--green))}
+#app .saved-game[data-network-session-id] .saved-status .pill{background:color-mix(in srgb,var(--color-surface-tile-blue,#dbe9e8) 76%,#527b8d);border-color:#7798a5}
