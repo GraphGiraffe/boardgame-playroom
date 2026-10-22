@@ -20,6 +20,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function canonical(value){return JSON.stringify(value,(_,item)=>record(item)?Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])):item);}
   function compare(a,b){
     const ma=SEMVER.exec(a),mb=SEMVER.exec(b);
+    // Explicit prerelease/test versions outrank ordinary releases for new games.
+    // Within each group retain SemVer order; saved sessions keep their exact version.
+    const special=match=>!!match[4];
+    if(special(ma)!==special(mb))return special(ma)?1:-1;
     for(let i=1;i<4;i++){const x=BigInt(ma[i]),y=BigInt(mb[i]);if(x!==y)return x>y?1:-1;}
     if(!ma[4]||!mb[4])return ma[4]? -1:mb[4]?1:0;
     const x=ma[4].split('.'),y=mb[4].split('.');
