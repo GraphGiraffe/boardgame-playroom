@@ -142,8 +142,10 @@ test('Domino selection and drag gestures through the real application', {timeout
       await page.mouse.move(source.x, source.y); await page.mouse.down();
       await page.waitForTimeout(HOLD_MS);
       await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
-      const destination = await center(await targetFor(page, 'd12', 'left'));
+      const target=await targetFor(page,'d12','left'),box=await target.boundingBox(),ghost=await page.locator('.playroom-drag-ghost').boundingBox();
+      const destination={x:box.x+box.width/2,y:box.y+box.height+ghost.height/2-8};
       await page.mouse.move(destination.x, destination.y, {steps: 8});
+      assert(await target.evaluate(el=>el.classList.contains('playroom-drop-hover')),'partial ghost overlap highlights the chosen domino endpoint');
       await page.mouse.up();
       await expectMove(page, 1);
       await page.waitForTimeout(100);
@@ -157,7 +159,8 @@ test('Domino selection and drag gestures through the real application', {timeout
       await page.mouse.move(source.x, source.y); await page.mouse.down();
       await page.waitForTimeout(HOLD_MS);
       await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
-      const outside = await center(page.locator('.table-title'));
+      // Keep the whole enlarged ghost outside all magnetic target regions.
+      const outside = {x: -100, y: -100};
       await page.mouse.move(outside.x, outside.y, {steps: 8}); await page.mouse.up();
       await page.waitForTimeout(80);
       assert.deepEqual(await state(page), before);
@@ -192,10 +195,12 @@ test('Domino selection and drag gestures through the real application', {timeout
       assert(await track.evaluate(el => el.scrollWidth > el.clientWidth + 100));
       const source = await track.evaluate(el => {
         const box = el.getBoundingClientRect();
-        const item = [...el.querySelectorAll('[data-drag-piece]')].map(e => e.getBoundingClientRect())
-          .find(r => r.left + r.width / 2 > box.left + box.width * 0.6 && r.right < box.right);
-        if (!item) throw Error('No visible draggable tile for horizontal swipe');
-        return {x: item.left + item.width / 2, y: item.top + item.height / 2};
+        const left=Math.max(0,box.left),right=Math.min(innerWidth,box.right);
+        for(const tile of [...el.querySelectorAll('[data-drag-piece]')].reverse()){
+          const r=tile.getBoundingClientRect(),x=(Math.max(left,r.left)+Math.min(right,r.right))/2,y=(Math.max(box.top,r.top)+Math.min(box.bottom,r.bottom))/2;
+          if(r.right>left&&r.left<right&&x>left+168&&x<right&&tile.contains(document.elementFromPoint(x,y)))return {x,y};
+        }
+        throw Error('No visible draggable tile for horizontal swipe');
       });
       await touch(cdp, 'touchStart', source);
       for (let step = 1; step <= 4; step++) await touch(cdp, 'touchMove', {x: source.x - step * 42, y: source.y});

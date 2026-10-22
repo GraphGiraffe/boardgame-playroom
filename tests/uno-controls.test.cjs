@@ -37,7 +37,7 @@ async function layout(page,{handCount=7}={}) {
     const arrow=direction?r(direction):null,field=r(center);
     if(arrow&&Math.abs(arrow.x+arrow.width/2-field.x-field.width/2)>1)errors.push('direction not centered above the piles');
     if(arrow&&arrow.bottom>field.top+1)errors.push('direction not above piles');
-    for(const mini of document.querySelectorAll('.mini-hand'))for(const card of mini.querySelectorAll('.uno-card,.piece-back')){
+    for(const mini of document.querySelectorAll('.mini-hand'))for(const card of mini.querySelectorAll('.uno-card,.piece-back,.shared-card-back')){
       const m=r(mini),c=r(card),parent=r(mini.closest('.opponent-hand'));
       if(c.top<m.top-1||m.bottom>parent.bottom+1||m.height>=c.height)errors.push('opponent hand must crop the full-size cards inside its panel');
     }
@@ -117,7 +117,7 @@ test('Responsive UNO utilities, turn direction and cropped opponent hands stay s
             assert.deepEqual(await page.locator('.opponent-hand[data-player-index]').evaluateAll(els=>els.map(el=>el.dataset.playerIndex)),order,'player positions must not reorder with turn direction');
             if(players===2)assert.equal(await page.locator('.uno-direction').count(),0,'duel has no turn-direction arrow');
             else assert.equal(await page.locator('.uno-direction').getAttribute('data-direction'),variant==='reverse'?'-1':'1');
-            if(variant==='closed')assert(await page.locator('.opponent-hands .piece-back').count()>0);
+            if(variant==='closed')assert(await page.locator('.opponent-hands :is(.piece-back,.shared-card-back)').count()>0);
             if(variant==='paused')assert.equal(await page.locator('.uno-call').isEnabled(),false);
             if(variant==='wild')assert.equal(await page.locator('.color-choice').count(),4);
             if(players===4&&handCount===8&&variant==='closed'&&viewport.width===390){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'playroom-v0.7-uno-hidden-phone.png')});}

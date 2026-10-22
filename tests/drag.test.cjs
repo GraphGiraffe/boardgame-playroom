@@ -62,6 +62,25 @@ test('Pointer input preserves tap, touch scrolling and drag/drop across DOM repl
       const p=await center(page.locator('[data-drag-piece=p0]'));await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+8,p.y);
       assert.equal(await page.locator('.playroom-drag-ghost').count(),1);await page.mouse.move(380,820);await page.mouse.up();assert.equal(await page.evaluate(()=>trace.commits.length),0);
     });
+    await check('Ghost overlap and a small edge gap acquire the same highlighted target on release',async page=>{
+      for(const gap of [-16,6]){
+        await mouseHold(page);const box=await page.locator('.drop').first().boundingBox();
+        await page.mouse.move(box.x+box.width/2,box.y+box.height+48+gap);
+        assert.equal(await page.locator('.playroom-drop-hover').count(),1,'ghost overlap or six-pixel gap highlights a target outside the pointer');
+        await page.mouse.up();
+      }
+      await page.waitForFunction(()=>trace.commits.length===2);
+      await mouseHold(page);const box=await page.locator('.drop').first().boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height+48+16);
+      assert.equal(await page.locator('.playroom-drop-hover').count(),0,'distant ghost does not acquire a target');await page.mouse.up();assert.equal(await page.evaluate(()=>trace.commits.length),2);
+      await mouseHold(page);await page.mouse.move(-12,box.y+box.height/2);assert.equal(await page.locator('.playroom-drop-hover').count(),0,'clamped ghost cannot commit after pointer leaves viewport');await page.mouse.up();assert.equal(await page.evaluate(()=>trace.commits.length),2);
+    });
+    await check('Neighboring magnet zones have one deterministic boundary and commit the highlighted choice',async page=>{
+      await mouseHold(page);await page.locator('.wrong').evaluate(n=>{n.dataset.dropPiece='p0';n.dataset.action=JSON.stringify({type:'play',card:'p0',side:'right'});});
+      const a=await page.locator('.drop').first().boundingBox(),b=await page.locator('.wrong').boundingBox(),mid=(a.x+a.width+b.x)/2;
+      await page.mouse.move(mid-2,a.y+a.height/2);assert.equal(await page.locator('.playroom-drop-hover').count(),1);assert.equal(await page.locator('.drop').first().evaluate(n=>n.classList.contains('playroom-drop-hover')),true);
+      await page.mouse.move(mid+2,a.y+a.height/2);assert.equal(await page.locator('.playroom-drop-hover').count(),1);assert.equal(await page.locator('.wrong').evaluate(n=>n.classList.contains('playroom-drop-hover')),true);
+      await page.mouse.up();await page.waitForFunction(()=>trace.commits.length===1);assert.equal(await page.evaluate(()=>trace.commits[0].side),'right');
+    });
     await check('Wrong-piece, malformed and outside targets never commit', async page => {
       for(const target of ['.wrong','.broken',null]){
         await mouseHold(page);const p=target?await center(page.locator(target)):{x:380,y:800};await page.mouse.move(p.x,p.y);await page.mouse.up();await page.waitForTimeout(30);

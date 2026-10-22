@@ -24,6 +24,10 @@
     const values=[...service.list(),...(draft&&!service.list().some(item=>item.id===draft.id)?[draft]:[])];
     return values.map(preset=>`<option value="${esc(preset.id)}" ${preset.id===(draft?.id||sourceId)?'selected':''}>${esc(label(preset))}</option>`).join('');
   }
+  function themeSlider() {
+    const presets=service.list(),index=Math.max(0,presets.findIndex(preset=>preset.id===(draft?.id||sourceId)));
+    return root.PlayroomGameScreen.rangeSetting({id:'appearance-theme-slider',label:t('themes.choose'),max:presets.length-1,value:index,display:label(presets[index]),choices:presets.map(preset=>({value:preset.id,label:label(preset)}))}).replace('id="appearance-theme-slider"','id="appearance-theme-slider" data-appearance-slider'+(draft?' disabled':''));
+  }
   function editorFields() {
     if(!draft)return '';
     const groups=new Map();
@@ -66,17 +70,25 @@
     return `<fieldset class="appearance-palette-group"><legend>${esc(t('themes.avatar-style'))}</legend><div class="appearance-avatar-options">${root.PlayroomAvatars.styles.map(style=>`<button type="button" class="avatar-option" data-avatar-style-choice="${style}" aria-label="${esc(t('themes.avatar-'+style))}" title="${esc(t('themes.avatar-'+style))}" aria-pressed="${avatarDraft===style}"><span class="avatar">${root.PlayroomAvatars.content('circle-red','',style)}</span></button>`).join('')}</div></fieldset>`;
   }
   function bodyMarkup() {
-    if(mode==='picker')return `<label class="field"><span>${esc(t('themes.choose'))}</span><select data-appearance-choice>${options()}</select></label><p class="appearance-hint">${esc(t('themes.local'))}</p><p class="appearance-status" data-appearance-status role="status"></p>`;
-    const preset=selected(),choice=`<label class="field"><span>${esc(t('themes.choose'))}</span><select data-appearance-choice ${draft?'disabled':''}>${options()}</select></label>`;
+    if(mode==='picker')return `${themeSlider()}<p class="appearance-status" data-appearance-status role="status"></p>`;
+    const preset=selected(),choice=themeSlider();
     const controls=!packId&&!draft&&!preset.builtin?`<div class="appearance-actions">${actionButton('edit','themes.edit','edit')}${actionButton('remove','themes.delete','trash')}</div>`:'';
     const remove=confirmRemove?`<section class="appearance-confirm"><p>${esc(t('themes.delete-question',{name:label(preset)}))}</p><div class="appearance-actions">${actionButton('confirm-remove','themes.delete','trash')}${actionButton('cancel-remove','themes.cancel')}</div></section>`:'';
-    const content=draft?choice+editorFields():`<form id="appearance-selection">${choice}${controls}${remove}${avatarFields()}${skinFields()}<div class="appearance-actions appearance-confirm-actions">${actionButton('cancel-selection','themes.cancel')}<button type="submit" class="btn">${esc(t('themes.save-apply'))}</button></div></form>`;
-    return `${content}<p class="appearance-status" data-appearance-status role="status"></p><p class="appearance-hint">${esc(t('themes.local'))}</p>`;
+    const content=draft?choice+editorFields():`<form id="appearance-selection"><div class="appearance-overview">${choice}${avatarFields()}</div>${controls}${remove}${skinFields()}<div class="appearance-actions appearance-confirm-actions">${actionButton('cancel-selection','themes.cancel')}<button type="submit" class="btn">${esc(t('themes.save-apply'))}</button></div></form>`;
+    return `${content}<p class="appearance-status" data-appearance-status role="status"></p>`;
   }
 
   function render() {
     const body=dialog.querySelector('.appearance-body'),top=body.scrollTop;
-    body.innerHTML=bodyMarkup();body.scrollTop=top;
+    dialog.querySelector(':scope>.appearance-confirm-actions')?.remove();
+    body.innerHTML=bodyMarkup();
+    const footer=body.querySelector('.appearance-confirm-actions');
+    if(footer){
+      const form=footer.closest('form');
+      for(const button of footer.querySelectorAll('button'))button.setAttribute('form',form.id);
+      dialog.append(footer);
+    }
+    body.scrollTop=top;
   }
   function close() {
     if(!dialog)return;
@@ -94,7 +106,7 @@
     returnFocus=document.activeElement;scrollY=root.scrollY;
     dialog=document.createElement('dialog');dialog.className='appearance-dialog appearance-'+mode;
     dialog.setAttribute('aria-labelledby','appearance-title');
-    dialog.innerHTML=`<header class="appearance-head"><button type="button" class="icon-btn" data-appearance-action="close" aria-label="${esc(t('common.close'))}">${icon('close')}</button><h2 id="appearance-title">${esc(t(mode==='editor'?(packId?'themes.title':'themes.only-title'):'themes.quick'))}</h2></header><div class="appearance-body"></div>`;
+    dialog.innerHTML=`<header class="appearance-head"><button type="button" class="icon-btn" data-appearance-action="close" aria-label="${esc(t('common.close'))}">${icon('close')}</button><h2 id="appearance-title">${esc(t(mode==='editor'?(packId?'themes.title':'themes.only-title'):'themes.quick'))}</h2><button type="button" class="icon-btn appearance-reset" data-appearance-action="reset-skins" aria-label="${esc(t('themes.reset-all-skins'))}" title="${esc(t('themes.reset-all-skins'))}">${icon('undo')}</button></header><div class="appearance-body"></div>`;
     document.body.append(dialog);render();
     dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
     dialog.showModal();
@@ -102,9 +114,10 @@
   function preview() {
     try{service.preview(draft);status();}catch(error){status(errorText(error),true);}
   }
-  function act(action) {
+  async function act(action) {
     switch(action){
       case 'close':close();return;
+      case 'reset-skins':if(!await root.PlayroomGameScreen.confirmDialog(t('themes.confirm-reset-skins')))return;skinDraft={formatVersion:1,main:{},packs:{}};runtime.previewSkins(skinDraft);render();return;
       case 'cancel-selection':service.cancelPreview();avatarDraft=service.avatarStyle();runtime.cancelSkins();sourceId=service.snapshot().activeId;skinDraft=JSON.parse(JSON.stringify(runtime.skins.snapshot()));render();return;
       case 'edit':draft=JSON.parse(JSON.stringify(selected()));confirmRemove=false;preview();render();return;
       case 'cancel-draft':service.cancelPreview();draft=null;render();return;
@@ -136,8 +149,8 @@
     if(!dialog?.contains(event.target))return;
     event.stopImmediatePropagation();
     const target=event.target;
-    if(target.hasAttribute('data-appearance-choice')){
-      sourceId=target.value;
+    if(target.hasAttribute('data-appearance-choice')||target.hasAttribute('data-appearance-slider')){
+      sourceId=target.hasAttribute('data-appearance-slider')?service.list()[Number(target.value)]?.id:target.value;
       if(mode==='picker'){try{service.select(sourceId);close();}catch(error){status(errorText(error),true);}}
       else{try{service.previewSelection(sourceId);confirmRemove=false;render();}catch(error){status(errorText(error),true);}}
     }else if(draft&&target.dataset.appearanceSkin){draft.skins[target.dataset.appearanceSkin]=target.value;preview();}
@@ -145,13 +158,13 @@
   function submit(event) {
     if(!dialog?.contains(event.target))return;
     event.preventDefault();event.stopImmediatePropagation();
-    if(event.target.id==='appearance-selection'){try{if(service.snapshot().activeId!==sourceId)service.select(sourceId);else service.cancelPreview();if(packId&&skinFamilies().length)runtime.saveSkins(skinDraft);if(!packId&&service.snapshot().avatarStyle!==avatarDraft)service.saveAvatarStyle(avatarDraft);close();}catch(error){status(errorText(error),true);}return;}
+    if(event.target.id==='appearance-selection'){try{if(service.snapshot().activeId!==sourceId)service.select(sourceId);else service.cancelPreview();if(skinDraft)runtime.saveSkins(skinDraft);if(!packId&&service.snapshot().avatarStyle!==avatarDraft)service.saveAvatarStyle(avatarDraft);close();}catch(error){status(errorText(error),true);}return;}
     if(event.target.id!=='appearance-draft'||!draft)return;
     try{draft.name=event.target.elements.themeName.value;service.saveDraft(draft,{activate:true});sourceId=draft.id;close();}
     catch(error){status(errorText(error),true);}
   }
   function keydown(event) {
-    if(!dialog)return;
+    if(!dialog||document.querySelector(".app-confirm-dialog[open]"))return;
     event.stopImmediatePropagation();
     if(event.key==='Escape'){event.preventDefault();close();}
   }

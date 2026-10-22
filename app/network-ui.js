@@ -4,6 +4,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const SessionAccess=root.PlayroomSessionAccess,W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore,ClientHistory=root.PlayroomNetworkClientHistory;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let hostRooms=null;
+  let installHomeVisible=false;
   const bridge=()=>hostRooms?{...root.PlayroomAppBridge,roomService:hostRooms}:root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
@@ -182,14 +183,30 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const scope=document.querySelector('.filter-scope');
     if(scope&&!document.getElementById('network-join-button')){const button=document.createElement('button');button.className='btn secondary';button.id='network-join-button';button.type='button';button.textContent=globalThis.PlayroomMessages.text('ui.network-ui.25177fb5362b');scope.appendChild(button);}
 
-    if(hasActiveRoom()&&networkInMenu){
+    if(hasActiveRoom()&&(networkInMenu||intro&&!document.querySelector('.table-shell'))){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
       if(parent){const markup=root.PlayroomGameScreen.resumeCard({state:(clientGameClient||hostGameClient)?.snapshot?.state,gameName:room?.game?.name||'',roomName:room?.name||'',network:true,connected,participants:(clientRoom?clientPresence||roomPresence(room):roomPresence(room)).participants,teamLayouts:room?.game?.teamLayouts||{},action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
         const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+(clientRoom?clientPresence?.revision||room?.revision:room?.revision)+':'+connected+':'+(room?.name||'')+':'+(clientRecovery?.state||'')+':'+((clientGameClient||hostGameClient)?.snapshot?.revision??'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);const card=document.querySelector('.network-resume-card');if(card)card.dataset.renderKey=key;}
       }
     }
 
-    if(intro&&PWA?.canInstall?.()&&!PWA.standalone&&!document.getElementById('pwa-install-button')){const btn=document.createElement('button');btn.className='btn secondary';btn.id='pwa-install-button';btn.type='button';btn.textContent=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");let actions=intro.querySelector('.lobby-actions');if(!actions){actions=document.createElement('div');actions.className='lobby-actions hub-intro-actions';intro.appendChild(actions);}actions.appendChild(btn);}
+    if(!hasActiveRoom())document.querySelector('.network-resume-card')?.remove();
+
+    if(intro&&(PWA?.canInstall?.()&&!PWA.standalone)&&!document.getElementById('pwa-install-button')){
+      const btn=document.createElement('button');btn.className='btn hub-install-button';btn.id='pwa-install-button';btn.type='button';
+      const label=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");
+      btn.setAttribute('aria-label',label);btn.title=label;btn.innerHTML=root.PlayroomGameScreen.icon('install');
+      intro.querySelector('.intro-heading')?.appendChild(btn);
+    }
+    if(!PWA?.canInstall?.()||PWA.standalone)document.getElementById('pwa-install-button')?.remove();
+    const installButton=document.getElementById('pwa-install-button');
+    const homeVisible=!!installButton&&!!intro?.closest('.is-active')&&!document.querySelector('dialog[open],#modal-root>*');
+    if(homeVisible&&!installHomeVisible&&!root.matchMedia('(prefers-reduced-motion: reduce)').matches&&!document.body.classList.contains('reduced-motion')){
+      installButton.getAnimations().forEach(animation=>animation.cancel());
+      const background=getComputedStyle(installButton).backgroundColor;
+      installButton.animate([{backgroundColor:background},{backgroundColor:'#528a69',offset:.5},{backgroundColor:background}],{duration:800,iterations:3,easing:'ease-in-out'});
+    }
+    installHomeVisible=homeVisible;
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     const room=b.room?.(),lobby=$('.lobby-shell');
@@ -273,8 +290,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         '<button class="btn secondary pairing-compact-button" id="net-host-acoustic-listen" type="button" '+captureDisabled()+(" title=\""+globalThis.PlayroomMessages.text("ui.network-ui.b1a06a42aa8a")+"\">")+root.PlayroomGameScreen.icon('mic')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.e63d372642de")+"</button></div>")+soundSettings('host');
       const qr=pairingQr('net-host-token')+("<div class=\"pairing-divider-label\">"+globalThis.PlayroomMessages.text("ui.network-ui.f4b951a3a43d")+"</div>")+scanControls('host');
       const text=pairingText(offerToken,'net-host-token')+
-        ("<form id=\"net-host-answer\"><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.67420efb6419")+"</span><textarea name=\"answer\" rows=\"2\" placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.2c0e47580483")+"\"></textarea></label>")+
-        '<button class="btn secondary pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('connect')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.73f4e4b1d7ec")+"</button></form>");
+        ("<form id=\"net-host-answer\" data-inline-actions><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.67420efb6419")+"</span><textarea name=\"answer\" rows=\"2\" placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.2c0e47580483")+"\"></textarea></label>")+
+        '<button class="btn secondary pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('addPlayer')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.73f4e4b1d7ec")+"</button></form>");
       b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.be876869eb2e",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.946071629ded"),'host','host-offer')),p1:String(network.html),p2:String(pairingMethods('host-offer',{share,sound,qr,text},offerToken)),p3:String(pairingFooter())}));
       syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
     }catch(error){toast(globalThis.PlayroomMessages.error(error));}
@@ -302,8 +319,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const share=("<p class=\"pairing-brief-status\" role=\"status\">"+globalThis.PlayroomMessages.text("ui.network-ui.9f22ac8503f3")+"</p>");
     const sound='<button class="btn pairing-compact-button" id="net-client-acoustic-listen" type="button" '+(microphoneReady()?'':captureDisabled()||'disabled')+'>'+root.PlayroomGameScreen.icon('mic')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.e63d372642de")+"</button>");
     const qr=scanControls('client');
-    const text=("<form id=\"net-client-offer\"><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.a6c341b18bf8")+"</span><textarea name=\"offer\" rows=\"3\" required placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.f677b4d50cc8")+"\"></textarea></label>")+
-      '<button class="btn pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('connect')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.966012379082")+"</button></form>");
+    const text=("<form id=\"net-client-offer\" data-inline-actions><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.a6c341b18bf8")+"</span><textarea name=\"offer\" rows=\"3\" required placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.f677b4d50cc8")+"\"></textarea></label>")+
+      '<button class="btn pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('addPlayer')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.966012379082")+"</button></form>");
     b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.60fe530e2fca",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b"),'client','client-join')),p1:String(pairingMethods('client-join',{share,sound,qr,text})),p2:String(pairingFooter())}));
   }
   async function createClientAnswer(signal,{acoustic=false}={}){
@@ -701,7 +718,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.id==='net-host-acoustic-listen')return runAudio(target,listenHostAnswer);
     if(target.id==='net-client-acoustic-listen')return runAudio(target,listenGuestSound);
     if(target.id==='net-client-acoustic-send')return runAudio(target,sendGuestSound);
-    if(target.id==='pwa-install-button'){PWA?.install?.().catch(error=>toast(globalThis.PlayroomMessages.error(error)));return;}
+    if(target.id==='pwa-install-button'){PWA?.install?.().catch(error=>toast(globalThis.PlayroomMessages.error(error))).finally(ensureButtons);return;}
     if(target.dataset.netShare){sharePair(target.dataset.netShare);return;}
     if(target.dataset.netCopy)return copy(target.dataset.netCopy);
     if(target.dataset.netSeat)return roomCommand({type:'claim-seat',seatId:target.dataset.netSeat});
@@ -713,9 +730,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.dataset.netAction==='dismiss-room'){bridge().closeModal();return;}
     if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
     if(target.dataset.netAction==='collapse'){bridge().closeModal(true);return;}
-    if(target.dataset.netAction==='stop-match'){if(!hostAuthority||!root.confirm(globalThis.PlayroomMessages.text("ui.network-ui.2940743f79f8")))return;void hostAuthority.stopForLobby().then(()=>exitHostGame({stopped:true})).catch(error=>toast(globalThis.PlayroomMessages.error(error)));return;}
-    if(target.dataset.netAction==='leave-active'){if(!root.confirm(globalThis.PlayroomMessages.text("ui.network-ui.e12601e2b36f")))return;if(clientRoom)closeClient();else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();return;}
-    if(target.dataset.netAction==='leave'){if(!root.confirm(globalThis.PlayroomMessages.text("ui.network-ui.e12601e2b36f")))return;closeClient();networkInMenu=false;bridge().showHub();return;}
+    if(target.dataset.netAction==='stop-match'){
+      const authority=hostAuthority;if(!authority)return;
+      bridge().confirmOperation(globalThis.PlayroomMessages.text("ui.network-ui.2940743f79f8"),{isCurrent:()=>hostAuthority===authority,onConfirm:async()=>{await authority.stopForLobby();exitHostGame({stopped:true});}});return;
+    }
+    if(target.dataset.netAction==='leave-active'||target.dataset.netAction==='leave'){
+      const clientId=clientRoom?.id,hostId=hostRoomId;
+      bridge().confirmOperation(globalThis.PlayroomMessages.text("ui.network-ui.e12601e2b36f"),{
+        isCurrent:()=>clientId?clientRoom?.id===clientId:!!hostId&&hostRoomId===hostId,
+        onConfirm:()=>{if(clientId)closeClient();else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();}
+      });return;
+    }
     if(target.dataset.netAction==='rules')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(bridge().modalHead(globalThis.PlayroomMessages.text("ui.network-ui.ee9cd4deefad",{p0:String(clientRoom.game.name)}))),p1:String(PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{},PlayroomCatalog[clientRoom.game.id]?.settings||[]))}));
     if(target.dataset.netAction==='help')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(bridge().modalHead(globalThis.PlayroomMessages.text("ui.network-ui.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(clientRoom))}));
     if(target.dataset.netAction==='settings')return bridge().showSettings({room:clientRoom,participantId:clientParticipantId,client:true});
@@ -754,12 +779,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
   root.addEventListener('playroom-install-available',ensureButtons);
+  root.addEventListener('playroom-installed',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({setAvatar:avatar=>roomCommand({type:'avatar',avatar}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
     client:{recovery:clientRecovery?.report()||null,peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
-  const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true});ensureButtons();
+  const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});ensureButtons();
   root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);

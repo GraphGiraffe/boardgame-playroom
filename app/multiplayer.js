@@ -9,6 +9,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   ];
 
 class RoomService extends Rooms.RoomService {constructor(options={}){super({idFactory:Store.uuid,clock:Store.now,random:Math.random,tokenFactory:Store.secureResumeToken,...options});}}
+function presetLabel(preset,metadata={},presetSetting=null){
+    const label=String(presetSetting?.options?.find(option=>option.value===preset)?.label||metadata.presets?.find(option=>option.id===preset)?.label||preset||globalThis.PlayroomMessages.text("ui.multiplayer.4da4da9da138"));
+    return presetSetting?.label&&/^\d+(?:[.,–—×x: /-]\d+)*$/.test(label.trim())?presetSetting.label+': '+label:label;
+  }
 function describeRules(rules={},settings=[],hasHands=false,presetSetting=null){
     const rows=[{label:presetSetting?.label||globalThis.PlayroomMessages.text("ui.multiplayer.b5d827de5168"),value:String(presetSetting?.options?.find(option=>option.value===rules.preset)?.label||rules.presetLabel||rules.preset||globalThis.PlayroomMessages.text("ui.multiplayer.4da4da9da138"))}];
     const fields=Array.isArray(settings)?settings:[];
@@ -22,5 +26,5 @@ function describeRules(rules={},settings=[],hasHands=false,presetSetting=null){
     return rows;
   }
 const seatColor=index=>{const known=COLORS[index];return known?{value:globalThis.TabletopUI?.helpers.playerColor(index)||'var(--color-seat-'+index+','+known[0]+')',label:known[1]}:{value:'hsl('+Math.round((index*137.508)%360)+' 46% 50%)',label:String(index+1)};};
-return {...Rooms,...Store,COLORS,seatColor,describeRules,RoomService};
+return {...Rooms,...Store,COLORS,seatColor,presetLabel,describeRules,RoomService};
 });

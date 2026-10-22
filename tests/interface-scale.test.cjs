@@ -46,7 +46,8 @@ test('all packs keep square boards and contained slots at every available scale 
     for(const selector of ['.layout-self','.layout-field','.layout-participants']){const el=document.querySelector(selector);if(!el?.getClientRects().length)continue;const r=el.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('slot outside '+selector+' '+JSON.stringify(r.toJSON()));}
     const participants=document.querySelector('.layout-participants');if(participants?.getClientRects().length&&getComputedStyle(participants).overflowY==='auto'&&participants.scrollHeight>participants.clientHeight+3)errors.push('players require scroll '+participants.scrollHeight+'/'+participants.clientHeight);
     const board=document.querySelector('.snakes-board,.ludo-board,.checker-board');if(board){const r=board.getBoundingClientRect();if(Math.abs(r.width-r.height)>1)errors.push('board aspect');}
-    for(const name of document.querySelectorAll('.player-heading strong')){if(!name.getClientRects().length)continue;const style=getComputedStyle(name);if(name.getBoundingClientRect().height>parseFloat(style.lineHeight)*3.1*(PlayroomInterfaceScale.applied/100))errors.push('unreadable vertical name '+name.textContent+' '+JSON.stringify({height:name.getBoundingClientRect().height,width:name.getBoundingClientRect().width,line:style.lineHeight,offset:name.offsetHeight,cols:document.querySelector('.app-game-layout').style.getPropertyValue('--focus-player-columns'),grid:getComputedStyle(document.querySelector('.players-panels')).gridTemplateColumns}));}
+    // The game scene is not CSS-zoomed: computed line-height already uses screen CSS pixels.
+    for(const name of document.querySelectorAll('.player-heading strong')){if(!name.getClientRects().length)continue;const style=getComputedStyle(name);if(name.getBoundingClientRect().height>parseFloat(style.lineHeight)*3.1)errors.push('unreadable vertical name '+name.textContent+' '+JSON.stringify({height:name.getBoundingClientRect().height,width:name.getBoundingClientRect().width,line:style.lineHeight,offset:name.offsetHeight,cols:document.querySelector('.app-game-layout').style.getPropertyValue('--focus-player-columns'),grid:getComputedStyle(document.querySelector('.players-panels')).gridTemplateColumns}));}
     if(document.documentElement.scrollWidth>innerWidth+1)errors.push('horizontal overflow');return errors;
    },{scale,game});if(errors.length)await page.screenshot({path:path.join(shots,`failure-${game}-${width}-${scale}.png`)});assert.deepEqual(errors,[],`${game} ${width}x${height} ${scale}%`);
    if((scale===50||scale===limit)&&['uno','snakes','gofish'].includes(game)&&[390,844].includes(width))await page.screenshot({path:path.join(shots,`${game}-${width}-${scale}.png`)});
@@ -75,4 +76,72 @@ test('scaled live games preserve their session and card input uses screen coordi
   await change(page,'setting-scale',100);assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),before,'scale is a local preference, not a game command');
   await page.locator('.modal [data-command=close-modal]').first().click();
  }
+}));
+
+test('standard size catalogue has discrete monotonic families and valid component roles',()=>{
+ const Sizes=require('../platform/web/element-sizes.js');
+ for(const family of Object.values(Sizes.catalogue.families)){assert.deepEqual(family,[...new Set(family)].sort((a,b)=>a-b));}
+ for(const [width,height] of [[390,844],[844,390],[1280,800]]){
+  let previous=0;for(const scale of Sizes.catalogue.scaleStops){const sizes=Sizes.resolve(scale,width,height);assert(Sizes.catalogue.families.card.includes(sizes.card));assert(sizes.card>=previous);assert(sizes.control>=32);previous=sizes.card;}
+ }
+ assert.equal(Sizes.resolve(100,390,844).card,50);assert.equal(Sizes.resolve(50,390,844).card,24);
+});
+
+test('standard size roles match across packs and shrink without compensating root zoom',{timeout:60000},async()=>fixture(async page=>{
+ for(const [width,height]of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});
+  for(const scale of [100,70,50])for(const game of ['spider','klondike','uno','durak','gofish','oldmaid','domino','pexeso','checkers','snakes','ludo','yatzy','battleship','tictactoe']){
+   const result=await page.evaluate(async({scale,game})=>{
+    PlayroomInterfaceScale.set(scale);const E=TabletopCore,definition=E.get(game),state=E.createGame(game,{seed:17,players:Array.from({length:definition.min},(_,i)=>({name:'Игрок '+i,bot:i>0}))}),s=E.project(state,0),host=document.querySelector('#app');
+    PlayroomGameScreen.update(host,PlayroomGameScreen.render({gameName:definition.name,state:s,viewer:0,scene:PlayroomViews.render(s,0,E.legalActions(state,0),{}),turnText:'Ваш ход'}));PlayroomGameScreen.allowLayoutChange(host,{allowLayoutChange:true});PlayroomGameScreen.layoutScene(host);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const card=host.querySelector('.solitaire-card,.layout-hand .hand-card'),resolved=PlayroomElementSizes.resolve(scale,innerWidth,innerHeight),size=game==='domino'?parseFloat(getComputedStyle(card.closest('.hand-track')).getPropertyValue('--tile-width')):card?.classList.contains('solitaire-card')?parseFloat(getComputedStyle(card).getPropertyValue('--size-card')):resolved['hand-card'],ratio=game==='domino'?1.75:1.4,board=host.querySelector('.checker-board,.ludo-board,.snakes-board');
+    const physical=[...host.querySelectorAll('.layout-field [data-size-role=card]')].filter(e=>!e.closest('.pexeso-grid')).map(e=>({width:parseFloat(getComputedStyle(e).width),height:parseFloat(getComputedStyle(e).height),size:parseFloat(getComputedStyle(e).getPropertyValue('--size-card'))}));
+    return {bodyFont:parseFloat(getComputedStyle(document.body).fontSize),expectedBodyFont:PlayroomElementSizes.nearest('type',16*scale/100),physical,ratio,width:card?parseFloat(getComputedStyle(card).width):null,height:card?parseFloat(getComputedStyle(card).height):null,size,zoom:getComputedStyle(host).zoom,overflow:document.documentElement.scrollWidth>innerWidth+1,sceneBottom:host.querySelector('.scene').getBoundingClientRect().bottom,viewportHeight:innerHeight,board:board?{width:board.getBoundingClientRect().width,height:board.getBoundingClientRect().height}:null};
+   },{scale,game});
+   assert.equal(result.bodyFont,result.expectedBodyFont,game+' inherited font size');assert.equal(Number(result.zoom),1,game+' root zoom');assert.equal(result.overflow,false,game+' document overflow');assert(result.sceneBottom<=result.viewportHeight+1,game+' scene outside viewport');
+   if(result.width!==null){assert(Math.abs(result.width-result.size)<1,`${game} ${width} ${scale}: ${result.width} != ${result.size}`);assert(Math.abs(result.height-result.size*result.ratio)<1,game+' ratio');}
+   for(const physical of result.physical){assert(Math.abs(physical.width-physical.size)<1,game+' field card width');assert(Math.abs(physical.height-physical.size*1.4)<1,game+' field card height');}
+   if(result.board)assert(Math.abs(result.board.width-result.board.height)<1,game+' square');
+  }
+ }
+}));
+
+test('standard grid profiles use complete tile spans and standard physical spacing',()=>{
+ const S=require('../platform/web/element-sizes.js');
+ for(const width of [320,390,600,768,844,1000,1280,1920])for(const percent of S.catalogue.scaleStops){const grid=S.layoutGrid(width,percent);assert([4,8,12].includes(grid.columns));assert.equal(grid.tileColumns*4,grid.columns);assert(S.catalogue.families.space.includes(grid.margin));assert(S.catalogue.families.space.includes(grid.gutter));assert.equal(grid.maxContentWidth,1280);}
+ assert.equal(S.layoutGrid(390,100).columns,8);assert.equal(S.layoutGrid(390,50).columns,8);assert.equal(S.layoutGrid(640,100,280).tileColumns,3);assert.equal(S.layoutGrid(1280,100).columns,12);
+});
+
+test('standard layout guides follow real content and never intercept input or change geometry',{timeout:30000},async()=>fixture(async page=>{
+ const settings=page.locator('.topbar-tools [data-command=settings]').first(),before=await settings.boundingBox();
+ await page.evaluate(()=>PlayroomLayoutGuides.show({baseline:8,columns:true,centers:true,zones:true}));
+ assert.equal(await page.locator('#playroom-layout-guides [data-guide-column]').count(),8);assert(await page.locator('#playroom-layout-guides [data-guide-padding]').count()>0);assert.equal(await page.locator('#playroom-layout-guides').getAttribute('aria-hidden'),'true');assert.equal(await page.locator('#playroom-layout-guides').evaluate(e=>getComputedStyle(e).pointerEvents),'none');assert.deepEqual(await settings.boundingBox(),before);
+ const geometry=await page.evaluate(()=>PlayroomLayoutGuides.geometry());assert(geometry.content.left>=0&&geometry.content.right<=390);assert.equal(geometry.grid.columns,8);
+ await settings.click();await page.locator('#setting-scale').waitFor();await change(page,'setting-scale',50);await page.waitForFunction(()=>document.querySelectorAll('#playroom-layout-guides [data-guide-column]').length===8);assert.equal(await page.locator('#setting-scale').inputValue(),'50');
+ await page.evaluate(()=>PlayroomLayoutGuides.hide());assert.equal(await page.locator('#playroom-layout-guides').count(),0);
+}));
+
+test('standard portal icons stay centered at reduced density',{timeout:30000},async()=>fixture(async page=>{
+ const centered=async selector=>{const rect=await page.locator(selector).first().evaluate(e=>{const a=e.getBoundingClientRect(),b=e.querySelector('svg').getBoundingClientRect();return {dx:b.x+b.width/2-a.x-a.width/2,dy:b.y+b.height/2-a.y-a.height/2};});assert(Math.abs(rect.dx)<=1&&Math.abs(rect.dy)<=1,selector+' '+JSON.stringify(rect));};
+ await page.locator('.topbar-tools [data-command=settings]').first().click();await change(page,'setting-scale',50);await page.locator('.settings-personal [data-avatar-picker]').click();await page.locator('.avatar-options').waitFor();await centered('#avatar-picker-root .icon-btn');await page.locator('[data-avatar-option=circle-red]').click();await page.locator('.modal [data-command=close-modal]').first().click();await page.evaluate(()=>PlayroomAppearanceUI.openEditor());await page.locator('.appearance-dialog').waitFor();await centered('.appearance-dialog .icon-btn');
+}));
+
+test('phone library preserves two portrait and three landscape columns with side navigation at every density',{timeout:60000},async()=>fixture(async page=>{
+ for(const [width,height,columns]of [[320,640,2],[390,844,2],[640,280,3],[844,390,3]]){
+  await page.setViewportSize({width,height});
+  for(const scale of [50,100,150]){
+   await page.evaluate(scale=>PlayroomInterfaceScale.set(scale),scale);
+   const state=await page.evaluate(()=>{const grid=document.querySelector('.game-grid'),side=document.querySelector('.sidebar'),nav=document.querySelector('.side-nav'),main=document.querySelector('.hub-main');return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,featured:[...grid.querySelectorAll('.featured')].map(e=>getComputedStyle(e).gridColumnEnd),sidebar:getComputedStyle(side).display,navPosition:getComputedStyle(nav).position,sideRight:side.getBoundingClientRect().right,mainLeft:main.getBoundingClientRect().left,overflow:document.documentElement.scrollWidth>innerWidth+1};});
+   assert.equal(state.columns,columns,JSON.stringify({width,height,scale,state}));assert(!state.overflow);assert(state.featured.every(x=>x==='auto'));
+   if(width>height){assert.equal(state.sidebar,'flex');assert.equal(state.navPosition,'static');assert(state.sideRight<=state.mainLeft+1);}else assert.equal(state.navPosition,'fixed');
+  }
+ }
+}));
+
+test('release0.18.3 defines the100% menu and settings baseline independently of game-piece scale',{timeout:30000},async()=>fixture(async page=>{
+ await page.setViewportSize({width:384,height:797});await page.evaluate(()=>PlayroomInterfaceScale.set(100));
+ const hub=await page.evaluate(()=>({heading:parseFloat(getComputedStyle(document.querySelector('.intro h1')).fontSize),description:parseFloat(getComputedStyle(document.querySelector('.intro p')).fontSize),button:document.querySelector('.topbar-tools .icon-btn').getBoundingClientRect().width,columns:getComputedStyle(document.querySelector('.game-grid')).gridTemplateColumns.split(' ').length,zoom:Number(getComputedStyle(document.querySelector('.app-shell')).zoom),overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}));
+ assert(Math.abs(hub.heading-31.9872)<.05);assert.equal(hub.description,12);assert.equal(hub.button,44);assert.equal(hub.columns,2);assert.equal(hub.zoom,1);assert(!hub.overflow);
+ await page.locator('.topbar-tools [data-command=settings]').first().click();assert.equal(await page.locator('.modal h2').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)),18);
+ await change(page,'setting-scale',50);assert.equal(await page.evaluate(()=>Number(getComputedStyle(document.querySelector('.app-shell')).zoom)),.5);assert.equal(await page.evaluate(()=>PlayroomElementSizes.resolve(50,innerWidth,innerHeight).card),24);
 }));

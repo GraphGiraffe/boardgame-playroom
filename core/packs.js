@@ -20,6 +20,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function canonical(value){return JSON.stringify(value,(_,item)=>record(item)?Object.fromEntries(Object.keys(item).sort().map(k=>[k,item[k]])):item);}
   function compare(a,b){
     const ma=SEMVER.exec(a),mb=SEMVER.exec(b);
+    // Explicit prerelease/test versions outrank ordinary releases for new games.
+    // Within each group retain SemVer order; saved sessions keep their exact version.
+    const special=match=>!!match[4];
+    if(special(ma)!==special(mb))return special(ma)?1:-1;
     for(let i=1;i<4;i++){const x=BigInt(ma[i]),y=BigInt(mb[i]);if(x!==y)return x>y?1:-1;}
     if(!ma[4]||!mb[4])return ma[4]? -1:mb[4]?1:0;
     const x=ma[4].split('.'),y=mb[4].split('.');
@@ -46,6 +50,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(m.viewApi!==2)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
     if(m.engineApi!==3||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
+    if(m.shortName!==undefined&&(typeof m.shortName!=='string'||!m.shortName.trim()||m.shortName.length>60))throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error(globalThis.PlayroomMessages.text("ui.packs.a2c15b806ca4"));
     for(const path of paths){if(!pathOK(path)||typeof bundle.files[path]!=='string')throw Error(globalThis.PlayroomMessages.text("ui.packs.dc8bf4d2602b",{p0:String(path)}));if(!/\.(?:js|css|svg|json|txt|md)$/i.test(path))asset(bundle,path);}
     for(const [entry,fallback]of [['rules','rules.js'],['view','view.js'],['styles','styles.css']]){
