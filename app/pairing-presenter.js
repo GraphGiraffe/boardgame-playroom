@@ -1,7 +1,46 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 /* Pairing Web presenter; connection ownership and operations are injected ports. */
 (function(root){'use strict';root.PlayroomPairingPresenter={create(ports){
-const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener=null;};
+  // Keep selection inside the app instead of opening the Android select sheet.
+  function chooseNetworkOption(event){
+    const select=event.target.closest?.('.pairing-network-choice select,.pairing-sound-settings select');
+    if(!select||select.disabled)return;
+    if(event.type==='keydown'&&!['Enter',' ','ArrowDown','ArrowUp'].includes(event.key))return;
+    event.preventDefault();
+    if(document.querySelector('.pairing-choice-dialog'))return;
+    const dialog=document.createElement('dialog');
+    dialog.className='appearance-dialog pairing-choice-dialog';
+    const title=select.getAttribute('aria-label')||select.closest('label')?.querySelector('span')?.textContent||'';
+    dialog.innerHTML='<header class="appearance-head"><button class="icon-btn" type="button" aria-label="'+ports.esc(root.PlayroomMessages.text('ui.game-screen.a7a4033657e8'))+'">'+root.PlayroomGameScreen.icon('close')+'</button><h2>'+ports.esc(title)+'</h2></header><div class="appearance-body pairing-choice-list" role="group" aria-label="'+ports.esc(title)+'">'+[...select.options].map((option,index)=>'<div class="pairing-choice-row"><button type="button" class="pairing-choice-option" data-choice="'+index+'" aria-pressed="'+option.selected+'" '+(option.disabled?'disabled':'')+'><span class="'+(option.dataset.savedAddress?'pairing-saved-label':'')+'">'+ports.esc(option.textContent)+'</span></button>'+(option.dataset.savedAddress?'<button type="button" class="icon-btn" data-delete-address="'+ports.esc(option.dataset.savedAddress)+'" aria-label="'+ports.esc(root.PlayroomMessages.text('ui.pairing-presenter.delete-address')+' '+option.dataset.savedAddress)+'">'+root.PlayroomGameScreen.icon('trash')+'</button>':'')+'</div>').join('')+'</div>';
+    const close=()=>{dialog.close();dialog.remove();if(select.isConnected)select.focus({preventScroll:true});};
+    dialog.querySelector('.appearance-head .icon-btn').onclick=close;
+    dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
+    dialog.addEventListener('keydown',event=>event.stopPropagation());
+    dialog.addEventListener('click',event=>{
+      const remove=event.target.closest('[data-delete-address]');
+      if(remove){
+        const address=remove.dataset.deleteAddress,selectedAddress=select.selectedOptions[0]?.dataset.address;
+        try{localStorage.setItem(KNOWN_IP_KEY,JSON.stringify(savedIpEntries().map(item=>item.address).filter(ip=>ip!==address)));}
+        catch(_){toast(root.PlayroomMessages.text('ui.pairing-presenter.a76775137e52'));return;}
+        const role=select.closest('[data-pairing-network]').dataset.pairingNetwork,signal=pairSignal(role);
+        select.value='all';select.dataset.userChoice='true';
+        updateSoundOptions(role,signal,scannedCandidates[role]);
+        if(selectedAddress&&selectedAddress!==address){
+          const remaining=[...select.options].find(option=>option.dataset.address===selectedAddress);
+          if(remaining)select.value=remaining.value;
+        }
+        close();select.dispatchEvent(new Event('change',{bubbles:true}));
+        chooseNetworkOption({target:select,type:'click',preventDefault(){}});
+        return;
+      }
+      const option=event.target.closest('[data-choice]');if(!option)return;
+      select.selectedIndex=Number(option.dataset.choice);
+      close();select.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    document.body.append(dialog);dialog.showModal();
+  }
+  for(const name of ['pointerdown','click','keydown'])document.addEventListener(name,chooseNetworkOption);
+  const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener=null;};
   const stopClientAudio=()=>{ports.clientAudioListener?.stop();ports.clientAudioListener=null;};
   const KNOWN_IP_KEY='playroom.acoustic-known-addresses.v1';
   const usableManualIp=address=>ports.Acoustic.usableIPv4(address);
@@ -27,7 +66,7 @@ const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener
     return [...active,...extra,...saved];
   }
   function soundCandidateLabel(item){
-    const origin=item.source==='saved'?globalThis.PlayroomMessages.text("ui.pairing-presenter.efe5fb61afd3"):
+    const origin=item.source==='saved'?'':
       item.source==='stats'?globalThis.PlayroomMessages.text("ui.pairing-presenter.1c9e3c9aa4c7"):item.source==='probe'?globalThis.PlayroomMessages.text("ui.pairing-presenter.3720e067d021"):'';
     const network=item.kind==='lan'?'LAN':item.kind==='linklocal'?'link-local':
       item.kind==='cgnat'?'CGNAT':item.kind==='public'?globalThis.PlayroomMessages.text("ui.pairing-presenter.de7195cfdbff"):item.kind;
@@ -50,7 +89,7 @@ const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener
       .sort((a,b)=>a.rank-b.rank||b.item.priority-a.item.priority)[0]?.index??-1;
   }
   function soundCandidateOptions(items,selected=-1){
-    return items.map((item,index)=>'<option value="'+index+'" '+(index===selected?'selected':'')+'>'+ports.esc(soundCandidateLabel(item))+'</option>').join('');
+    return items.map((item,index)=>'<option value="'+index+'" data-address="'+ports.esc(item.address)+'" '+(item.source==='saved'?'data-saved-address="'+ports.esc(item.address)+'" ':'')+(index===selected?'selected':'')+'>'+ports.esc(soundCandidateLabel(item))+'</option>').join('');
   }
   function selectionDetails(role,signal){
     const choice=document.getElementById('acoustic-'+role+'-address'),items=soundCandidates(role,signal);
@@ -86,8 +125,8 @@ const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener
       const selected=items[preferred];token=ports.Pairing.COMPACT_PREFIX+ports.Acoustic.pack(signal,{address:selected.address,port:selected.port});
     }catch(_){preferred=-1;}
     if(preferred<0)token=ports.Pairing.fromSignal(kind,signal,{legacy:true});
-    return {preferred,token,html:'<div class="pairing-network-choice" data-pairing-network="'+role+'"><div class="pairing-network-select-row">'+
-      ("<label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.pairing-presenter.7b0565b087d1")+"</span><select id=\"acoustic-")+role+("-address\" aria-label=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.7b0565b087d1")+"\">")+
+    return {preferred,token,html:'<div class="pairing-network-choice" data-pairing-network="'+role+'"><div class="pairing-network-heading"><span class="pairing-method-icon" aria-hidden="true">'+root.PlayroomGameScreen.icon('network')+'</span><span class="pairing-method-title">'+globalThis.PlayroomMessages.text("ui.pairing-presenter.7b0565b087d1")+'</span>'+pairingHelp('network',role)+'</div><div class="pairing-network-select-row">'+
+      ("<label class=\"field\"><select id=\"acoustic-")+role+("-address\" aria-label=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.7b0565b087d1")+"\">")+
       '<option value="all" '+(preferred<0?'selected':'')+(">"+globalThis.PlayroomMessages.text("ui.pairing-presenter.8ac5f2878080")+"</option>")+
       soundCandidateOptions(items,preferred)+("<option value=\"manual\">"+globalThis.PlayroomMessages.text("ui.pairing-presenter.43b1423a52ae")+"</option></select></label>")+
       '<button type="button" class="btn secondary pairing-scan-address" data-net-scan="'+role+("\" title=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.b7e6405a393a")+"\" aria-label=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.b7e6405a393a")+"\">")+root.PlayroomGameScreen.icon('reset')+'</button></div>'+
@@ -95,7 +134,7 @@ const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener
       '<input id="acoustic-'+role+("-manual\" inputmode=\"decimal\" aria-label=\"IPv4 "+globalThis.PlayroomMessages.text("ui.pairing-presenter.4699275a1100")+"\" placeholder=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.6ad59fa0bc04")+"\" autocomplete=\"off\" disabled>")+
       '<button class="btn secondary pairing-icon-action" id="acoustic-'+role+'-save" type="button" data-net-save-ip="'+role+("\" title=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.c608f73c4378")+"\" aria-label=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.c6138d6f5285")+"\">")+root.PlayroomGameScreen.icon('save')+'</button></div>'+
       '</div>'+
-      '<p class="pairing-network-mode" id="acoustic-'+role+'-mode" role="status"></p>'+pairingHelp('network',role)+'</div>'};
+      '<p class="pairing-network-mode" id="acoustic-'+role+'-mode" role="status"></p></div>'};
   }
   function soundSettings(role){
     return '<details class="pairing-sound-settings"><summary>'+root.PlayroomGameScreen.icon('settings')+(" "+globalThis.PlayroomMessages.text("ui.pairing-presenter.d477d3b0b207")+"</summary><div class=\"pairing-sound-fields\">")+
@@ -270,16 +309,18 @@ const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener
       text:globalThis.PlayroomMessages.text("ui.pairing-presenter.cab49d29a9d0"),
       network:globalThis.PlayroomMessages.text("ui.pairing-presenter.0d3c44c98531")
     };
-    const id='pairing-help-'+key;
-    return '<details class="pairing-help-inline" data-pairing-help="'+key+("\"><summary aria-label=\""+globalThis.PlayroomMessages.text("ui.pairing-presenter.f856ae842cad"))+({share:globalThis.PlayroomMessages.text("ui.pairing-presenter.dc120821c212"),sound:globalThis.PlayroomMessages.text("ui.pairing-presenter.6a40ca96136a"),qr:'QR',text:globalThis.PlayroomMessages.text("ui.pairing-presenter.3091aca226ef"),network:globalThis.PlayroomMessages.text("ui.pairing-presenter.7b0565b087d1")})[key]+'" aria-controls="'+id+'">'+root.PlayroomGameScreen.icon('help')+'</summary><div id="'+id+'" class="pairing-help-content"><p>'+ports.esc(messages[key])+'</p>'+
-      (key==='sound'?captureNotice():'')+(key==='network'?'<p id="acoustic-'+role+'-hint"></p><p id="acoustic-'+role+'-discovery"></p><p id="acoustic-'+role+'-pair-status"></p>':'')+'</div></details>';
+    const extra=(key==='sound'?captureNotice():'')+(key==='network'?'<p id="acoustic-'+role+'-hint"></p><p id="acoustic-'+role+'-discovery"></p><p id="acoustic-'+role+'-pair-status"></p>':'');
+    return root.PlayroomLobbyView.fieldHelp(messages[key])
+      .replace('class="rule-help"','class="rule-help pairing-context-help" data-pairing-help="'+key+'"')
+      .replace('</span></span>',extra+'</span></span>');
   }
+
   function pairingMethod(key,title,icon,content,availability){
     const enabled=availability.available;
     return '<details class="pairing-method" data-pairing-method="'+key+'" data-pairing-available="'+enabled+'" '+(enabled?'open':'')+'>'+
       '<summary><span class="pairing-method-icon" aria-hidden="true">'+root.PlayroomGameScreen.icon(icon)+'</span><span class="pairing-method-title">'+title+'</span>'+
-      '<span class="pairing-method-reason" '+(enabled?'hidden':'')+'>'+ports.esc(availability.reason)+'</span><span class="pairing-chevron" aria-hidden="true">'+root.PlayroomGameScreen.icon('chevron')+'</span></summary>'+
-      '<div class="pairing-method-body">'+pairingHelp(key)+content+'</div></details>';
+      pairingHelp(key)+'<span class="pairing-method-reason" '+(enabled?'hidden':'')+'>'+ports.esc(availability.reason)+'</span><span class="pairing-chevron" aria-hidden="true">'+root.PlayroomGameScreen.icon('chevron')+'</span></summary>'+
+      '<div class="pairing-method-body">'+content+'</div></details>';
   }
   function pairingMethods(stage,contents,token){
     const states=methodAvailability(stage,token),sequence=[

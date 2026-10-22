@@ -1,5 +1,6 @@
 (function (root) {
   'use strict';
+  const policy=root.PlayroomSizeCatalogue?.presentation?.interaction||{};
   const tooltipId = 'playroom-context-tooltip';
   let attached = false, tooltip = null, source = null, pending = null, timer = null;
   let input = 'keyboard', shownBy = null, observer = null, pendingOrigin = null, focusFrame = null;
@@ -33,13 +34,13 @@
     tooltip.textContent = text; tooltip.hidden = false;
     const bounds = element.getBoundingClientRect();
     const viewport = root.visualViewport, left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
-    const width = viewport?.width || root.innerWidth, height = viewport?.height || root.innerHeight, margin = 12;
-    tooltip.style.maxWidth = `${Math.max(1, Math.min(320, width - margin * 2))}px`;
+    const width = viewport?.width || root.innerWidth, height = viewport?.height || root.innerHeight, margin = policy.tooltipViewportMarginPx??12;
+    tooltip.style.maxWidth = `${Math.max(1, Math.min(policy.tooltipMaxWidthPx??320, width - margin * 2))}px`;
     tooltip.style.maxHeight = `${Math.max(1, height - margin * 2)}px`;
     const box = tooltip.getBoundingClientRect();
     const x = Math.max(left + margin, Math.min(bounds.left + bounds.width / 2 - box.width / 2, left + width - box.width - margin));
-    const above = bounds.top - box.height - 10;
-    const y = Math.max(top + margin, Math.min(above >= top + margin ? above : bounds.bottom + 10, top + height - box.height - margin));
+    const above = bounds.top - box.height - (policy.tooltipOffsetPx??10);
+    const y = Math.max(top + margin, Math.min(above >= top + margin ? above : bounds.bottom + (policy.tooltipOffsetPx??10), top + height - box.height - margin));
     tooltip.style.left = `${x}px`; tooltip.style.top = `${y}px`;
     const descriptions = new Set((element.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
     descriptions.add(tooltipId); element.setAttribute('aria-describedby', [...descriptions].join(' '));
@@ -50,7 +51,7 @@
   function over(event) {
     if (event.pointerType === 'touch' || event.buttons) return;
     const next = elementFor(event); if (!next || next === source || next === pending) return;
-    hide(); pending = next; pendingOrigin = 'pointer'; timer = setTimeout(() => show(next, 'pointer'), 180);
+    hide(); pending = next; pendingOrigin = 'pointer'; timer = setTimeout(() => show(next, 'pointer'), policy.tooltipHoverMs??180);
   }
   function out(event) {
     const previous = elementFor(event);
@@ -59,28 +60,28 @@
   }
   function down(event) {
     input=event.pointerType==='touch'?'touch':'pointer';
-    if(press&&event.isPrimary===false){suppressUntil=performance.now()+800;dismiss();return;}
+    if(press&&event.isPrimary===false){suppressUntil=performance.now()+(policy.compatibilityClickMs??800);dismiss();return;}
     dismiss();suppressUntil=0;
     if(input!=='touch'||event.isPrimary===false)return;
     const element=event.target.closest?.('button,[role="button"]');
     // Card dragging and inspection retain their own pointer contract.
     if(!element||!textFor(element)||element.closest('[inert],[data-drag-piece],[data-select],[data-swipe-action],[data-swipe-select]'))return;
     const current=press={element,id:event.pointerId,x:event.clientX,y:event.clientY,held:false};
-    holdTimer=setTimeout(()=>{holdTimer=null;if(press===current&&element.isConnected){current.held=true;show(element,'touch');}},450);
+    holdTimer=setTimeout(()=>{holdTimer=null;if(press===current&&element.isConnected){current.held=true;show(element,'touch');}},policy.tooltipHoldMs??450);
   }
   function move(event){
     if(!press||press.id!==event.pointerId||press.held)return;
-    if(Math.hypot(event.clientX-press.x,event.clientY-press.y)>10){clearTimeout(holdTimer);holdTimer=null;}
+    if(Math.hypot(event.clientX-press.x,event.clientY-press.y)>(policy.tooltipMoveTolerancePx??10)){clearTimeout(holdTimer);holdTimer=null;}
   }
   function end(event){
     if(!press||press.id!==event.pointerId)return;
     const current=press,element=current.element;
     const inside=event.type==='pointerup'&&element.isConnected&&!element.closest('[inert]')&&element.contains(document.elementFromPoint(event.clientX,event.clientY));
     clearPress();
-    if(!current.held){if(!inside)suppressUntil=performance.now()+800;return;}
-    suppressUntil=performance.now()+800;event.preventDefault();event.stopImmediatePropagation();
+    if(!current.held){if(!inside)suppressUntil=performance.now()+(policy.compatibilityClickMs??800);return;}
+    suppressUntil=performance.now()+(policy.compatibilityClickMs??800);event.preventDefault();event.stopImmediatePropagation();
     if(inside){hide();manualClick=true;try{element.click();}finally{manualClick=false;}}
-    else if(source===element&&tooltip&&!tooltip.hidden){shownBy='touch-linger';lingerTimer=setTimeout(hide,2000);}
+    else if(source===element&&tooltip&&!tooltip.hidden){shownBy='touch-linger';lingerTimer=setTimeout(hide,policy.tooltipLingerMs??2000);}
     else hide();
   }
   function click(event){

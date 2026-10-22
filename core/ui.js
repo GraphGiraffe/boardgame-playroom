@@ -11,6 +11,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const tokenLayout=globalThis.PlayroomTokenLayout||(typeof require==='function'?require('./token-layout.js'):null);
   const {firstSymbol,numberPath,numberMark}=Components;
   let renderingPack=null;
+  const assetVariant=family=>globalThis.PlayroomAssetResolver?.resolve(family,{packId:renderingPack})?.variant||null;
   const assetLayout=family=>globalThis.PlayroomAssetResolver?.resolve(family,{packId:renderingPack})?.stacking||null;
   const assetArt=(family,params,fallback)=>{params={...params,...(renderingPack?{packId:renderingPack}:{})};const output=globalThis.PlayroomAssetResolver?globalThis.PlayroomAssetResolver.render(family,params):fallback(params);const end=output.indexOf('>');return output.slice(0,end)+` data-asset-family="${esc(family)}"${family==='score-table'?'':` data-asset-params="${esc(JSON.stringify(params))}"`}`+output.slice(end);};
   const roundTokenArt=params=>assetArt('round-token',params||{},Components.roundTokenArt);
@@ -80,7 +81,9 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     image:'<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><path d="m3 17 5-5 4 4 3-3 6 6"/>',
     mic:'<rect x="9" y="2" width="6" height="13" rx="3"/><path d="M6 10v2a6 6 0 0 0 12 0v-2m-6 8v4m-4 0h8"/>',
     share:'<path d="M12 15V3m-4 4 4-4 4 4M6 11H3v10h18V11h-3"/>',
-    qr:'<path d="M3 3h6v6H3Zm12 0h6v6h-6ZM3 15h6v6H3Zm12 0h2v2h-2Zm4 0h2v6h-6v-2h4"/>',
+    install:'<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
+    qr:'<g stroke-linejoin="miter" stroke-width="1.5"><rect x="3" y="3" width="6" height="6"/><rect x="15" y="3" width="6" height="6"/><rect x="3" y="15" width="6" height="6"/></g><g fill="currentColor" stroke="none"><path d="M5 5h2v2H5zM17 5h2v2h-2zM5 17h2v2H5zM12 12h3v3h-3zM18 12h3v3h-3zM15 15h3v3h-3zM12 18h3v3h-3zM18 18h3v3h-3z"/></g>',
+    network:'<rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/>',
     text:'<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
     chevron:'<path d="m6 9 6 6 6-6"/>',
     dice:'<path d="M7 9H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-1M5.5 12h.01M5.5 17h.01M10 17h.01"/><g transform="rotate(10 15 9)"><rect x="9" y="3" width="12" height="12" rx="2"/><path d="M12 6h.01M15 9h.01M18 12h.01"/></g>',
@@ -90,14 +93,15 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
   }[name] || '')+'</svg>';
   const actionAttr = (action,{allowLayoutChange=false}={}) => `data-action="${esc(JSON.stringify(action))}"${allowLayoutChange===true?' data-allow-layout-change="true"':''}`;
-  const actionButton = (action, extra = '') => `<button class="scene-button ${extra}" ${actionAttr(action)}>${esc(action.label || action.type)}</button>`;
+  const button=options=>GameComponents.button(options,{icon});
+  const actionButton=(action,extra='')=>button({label:action.label||action.type,icon:action.icon||'',attrs:actionAttr(action),variant:'game',className:extra});
   const actionBar = (actions, hint) => `<div class="scene-actions">${actions.map(a => actionButton(a)).join('')}${!actions.length && hint ? `<span class="scene-hint">${esc(hint)}</span>` : ''}</div>`;
   // A canonical artboard scales as a whole, including typography and frame.
   // main/compact are trusted pack HTML; neither contains interaction handlers.
   const {art}=GameComponents;
   const countBadge=(value,label,options={})=>assetArt('counter',{value,label,...options},params=>GameComponents.countBadge(params.value,params.label,params));
   const shipSilhouette=size=>assetArt('ship',{size},params=>GameComponents.shipSilhouette(params.size));
-  const back = (kind = 'card') => `<span class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="${globalThis.PlayroomMessages.text("ui.ui.c13a6680430c")}">${assetArt('card-back',{main:'<div class="back-art-face"><span>✦</span></div>',width:69,height:99},GameComponents.cardFace)}</span>`;
+  const back = (kind = 'card') => `<span data-size-role="${kind==='card'?'card':'back'}" class="piece-back ${esc(kind)}-back art-card" role="img" aria-label="${globalThis.PlayroomMessages.text("ui.ui.c13a6680430c")}">${assetArt('card-back',{},GameComponents.cardBack)}</span>`;
   // Display indices only: game indices and private hands remain unchanged.
   function seatOrder(count,viewer=-1,sequence=null){
     const own=Number.isInteger(viewer)&&viewer>=0&&viewer<count;
@@ -140,7 +144,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
     const label=counter.label||(counter.kind==='wins'?globalThis.PlayroomMessages.text("ui.ui.8e5f4bb5654f"):counter.kind==='pieces'?globalThis.PlayroomMessages.text("ui.ui.24b775243171"):globalThis.PlayroomMessages.text("ui.ui.6cc0ad965516"));
-    return assetArt('counter',{style:'score',...counter,label},params=>GameComponents.scoreBadge(params,{roundTokenArt:Components.roundTokenArt}));
+    return assetArt('counter',{style:'score',...counter,label},params=>GameComponents.pieceTypes.badge.render(params,{roundTokenArt:Components.roundTokenArt}));
   }
   function teamFor(layouts,preset,seat){
     const layout=layouts?.[preset];
@@ -162,22 +166,23 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       const metrics=semantic?.metrics?.filter(metric=>['points','wins','pieces'].includes(metric.kind));
       const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
-      const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?(options.backRender?.()||back(options.kind||'card')):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
-      return {handHTML,orderPosition:semantic?.orderPosition??playerOrderPosition(state,index),indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
+      const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?(options.backRender?.()||cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||back(options.kind||'card')):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
+      return {handHTML,inactive:!!options.inactive?.(index,person),orderPosition:semantic?.orderPosition??playerOrderPosition(state,index),indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label})=>({id,kind,value,label}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),countLabel:options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),...(cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
     });
   }
   function playerPanel(state,index,viewer,content={},actions=[]) {
     const orderPosition=Number.isInteger(content.orderPosition)&&content.orderPosition>=1&&content.orderPosition<=8?content.orderPosition:playerOrderPosition(state,index);
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
-    const avatarBadges=(content.badges||[]).filter(b=>b?.position==='avatar-bottom').map(b=>`<span class="player-avatar-label${b.icon?' is-icon':''}" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}">${b.icon?icon(b.icon):esc(b.label)}</span>`).join('');
-    const badges=(content.badges||[]).filter(b=>b?.position!=='avatar-bottom').map(b=>`<span class="player-status-badge ${typeof b==='object'&&['success','danger'].includes(b.tone)?'is-'+b.tone:''}"${typeof b==='object'&&/^#[0-9a-f]{6}$/i.test(b.color||'')?` style="background:${b.color};color:#fff;border-color:${b.color}"`:''}${typeof b==='object'&&b.motion?` data-motion-counter="${esc(b.motion)}"`:''}>${typeof b==='object'&&b.icon?`<span class="player-status-icon" role="img" aria-label="${esc(b.label)}" title="${esc(b.label)}" tabindex="0" data-tooltip="${esc(b.label)}">${icon(b.icon)}</span>`:esc(typeof b==='string'?b:b.label)}</span>`).join('');
+    const renderBadge=b=>GameComponents.pieceTypes.badge.status(b,{icon});
+    const avatarBadges=(content.badges||[]).filter(b=>b?.position==='avatar-bottom').map(renderBadge).join('');
+    const badges=(content.badges||[]).filter(b=>b?.position!=='avatar-bottom').map(renderBadge).join('');
     const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee")}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
-    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
+    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''} ${content.inactive?'is-inactive':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
       <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(globalThis.PlayroomMessages.text("ui.ui.ccc8d5ca0326",{name:person.name}))}"`:''}>
       <span class="player-avatar-wrap">${avatar(person,index,{color,hidden:true})}${playerMedallion({first:state.firstPlayer===index,team:content.team})}${avatarBadges}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):''}</strong><span class="player-turn-position" aria-label="${globalThis.PlayroomMessages.text("ui.ui.ec2c9f35dee9")}${orderPosition}">${orderPosition}</span></span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${[...counters].sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
-      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${content.handHTML?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
+      ${own?'<!--self-controls-->':''}${!own&&content.handCount!==undefined?`<div class="player-hand">${content.handCount!==undefined?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
   }
   function hand(content, count, hint=globalThis.PlayroomMessages.text("ui.ui.473a2525ab0a"), extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles';
@@ -225,7 +230,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if (!Localization) throw Error('Localization module is required');
     return new Localization.Translator({catalogs});
   }
-  const helpers = {viewApi:2,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
+  const helpers = {viewApi:2,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){
@@ -240,7 +245,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null}={}) {
+  function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null,presentationTurn=null}={}) {
     if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
@@ -253,7 +258,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const strategy=seatingPolicy==='row'||(state?.players?.length||0)<=2||seating==='row'?'row':'anchors';
+    const strategy=layout.seats&&seatingPolicy!=='row'?'anchors':'row';
     const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
     const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
@@ -284,12 +289,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
           const seat=layout.seats?.[panel.player]||['south-east','south-west','north-west','north-east'][Math.ceil(relative*4/state.players.length)%4];
           if(!groups.has(seat))groups.set(seat,[]);groups.get(seat).push((panel.player===viewer?panel.html.replace(' is-turn','').replace(' aria-current="true"',''):panel.html).replace(`data-player-index="${panel.player}"`,`data-player-index="${panel.player}" data-seat="${seat}"${panel.player===viewer?` data-seat-copy="true"${layout.duplicateSelf?'':' data-portrait-copy="true"'}`:''}`));
         }
-        e.participants=`<div class="players-panels opponent-hands">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${(seat.endsWith('west')?html.reverse():html).join('')}</div>`).join('')}</div>`;
-      }else e.participants=`<div class="players-panels opponent-hands">${panels.map(panel=>panel.html).join('')}</div>`;
+        e.participants=`<div class="players-panels opponent-hands" data-opponent-count="${panels.filter(panel=>panel.player!==viewer).length}">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${(seat.endsWith('west')?html.reverse():html).join('')}</div>`).join('')}</div>`;
+      }else e.participants=`<div class="players-panels opponent-hands" data-opponent-count="${panels.filter(panel=>panel.player!==viewer).length}">${panels.map(panel=>panel.html).join('')}</div>`;
       if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
     }
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}" data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2" data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}"${Number.isInteger(presentationTurn)?` data-presentation-turn="${presentationTurn}"`:""} data-layout-focus="${focus}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function composeScene(value,context={}) {
@@ -309,12 +314,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         if(options.seating!==undefined&&options.seating!=='row')throw Error('Invalid seating policy');
         packs.set(id,{render,cover,reveal:options.reveal,seating:options.seating,surfaces:Object.freeze({...surfaces})});
       },
-      reveal(id,value){try{return packs.get(id)?.reveal?.(value)||'';}catch(_){return '';}},
+      reveal(id,value){const previousPack=renderingPack;try{renderingPack=id;return packs.get(id)?.reveal?.(value)||'';}catch(_){return '';}finally{renderingPack=previousPack;}},
       supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
       render(state,viewer,actions,ui={}){
-        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
+        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,presentationTurn:ui.presentationTurn,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
         catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); } finally {renderingPack=previousPack;}
       },
       cover(id){

@@ -48,7 +48,7 @@
   "ui.pack-manager.8fbe9b75cbdf": "Отмена",
   "ui.pack-manager.e6acd89e236f": "Установить / обновить",
   "ui.pack-manager.5b14eb96a9b3": " · выбранная версия",
-  "ui.pack-manager.1b04cb684fde": "локальных партий используют эту версию",
+  "ui.pack-manager.1b04cb684fde": "партий используют эту версию",
   "ui.pack-manager.1c6789d896d4": "Удалить ",
   "ui.pack-manager.31780d6c4a33": "Поднять ",
   "ui.pack-manager.324de4c19b50": "Опустить ",
@@ -58,5 +58,11 @@
   "ui.pack-manager.334c3299a899": "Убрать из избранного",
   "ui.pack-manager.8845175f546e": "Пока нет игр",
   "ui.pack-manager.c3b7666b0e32": "Выберите файл пака, чтобы добавить правила, оформление и звуки игры. Подключение к интернету не нужно.",
-  "ui.pack-manager.f4d84f6c28ef": "Не удалось загрузить установленные паки."
+  "ui.pack-manager.f4d84f6c28ef": "Не удалось загрузить установленные паки.",
+  "ui.pack-manager.usage-count": {
+    "one": "{count} партия",
+    "few": "{count} партии",
+    "many": "{count} партий",
+    "other": "{count} партии"
+  }
 }

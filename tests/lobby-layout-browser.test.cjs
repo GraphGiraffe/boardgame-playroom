@@ -42,25 +42,25 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           assert(await button.getAttribute('aria-label'),'icons need accessible labels');
           const box=await button.boundingBox();assert(box.width>=43&&box.height>=43&&box.x>=0&&box.x+box.width<=width+1,'icon target must fit');
         }
-        assert.equal(await lobby.locator('#network-pair-button').locator('..').locator('h2').innerText(),'Игровые места');
+        assert(await lobby.locator('#network-pair-button').locator('..').getAttribute('class').then(x=>x.includes('lobby-primary')));assert.equal(await lobby.getByRole('heading',{name:'Игровые места',exact:true}).count(),0);
         assert.equal(await lobby.locator('[data-command=room-rules]').locator('..').locator('[data-command=room-rules-view]').count(),1);
         if(process.env.PLAYROOM_CAPTURE_DIR){await page.evaluate(()=>{const toast=document.querySelector('#toast');toast.textContent='';toast.classList.remove('show');});fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`room-host-${width}.png`),fullPage:false,animations:'disabled'});}
         assert.deepEqual(await page.evaluate(()=>{
-          const b=PlayroomAppBridge,r=b.room(),body=document.querySelector('.modal-body'),title=document.querySelector('[data-room-title]'),header=document.querySelector('.modal-head');
+          const b=PlayroomAppBridge,r=b.room(),body=document.querySelector('.lobby-roster-scroll'),title=document.querySelector('[data-room-title]'),header=document.querySelector('.modal-head');
           body.scrollTop=Math.min(100,body.scrollHeight-body.clientHeight);const scroll=body.scrollTop,headTop=header.getBoundingClientRect().top;
           title.focus({preventScroll:true});const saved=title.value;title.value='Неоконченный ввод';title.setSelectionRange(3,7);
           b.roomService.setReady(r.id,'layout-player',true);b.renderLobby();
-          const result={sameBody:body===document.querySelector('.modal-body'),sameFocus:document.activeElement===title,value:title.value,selection:[title.selectionStart,title.selectionEnd],scrollStable:Math.abs(body.scrollTop-scroll)<1,headerStable:header.getBoundingClientRect().top===headTop,bodyBelowHeader:body.getBoundingClientRect().top>=header.getBoundingClientRect().bottom};
+          const result={sameBody:body===document.querySelector('.lobby-roster-scroll'),sameFocus:document.activeElement===title,value:title.value,selection:[title.selectionStart,title.selectionEnd],scrollStable:Math.abs(body.scrollTop-scroll)<1,headerStable:header.getBoundingClientRect().top===headTop,bodyBelowHeader:body.getBoundingClientRect().top>=header.getBoundingClientRect().bottom};
           title.value=saved;title.blur();b.roomService.setReady(r.id,'layout-player',false);b.renderLobby();body.scrollTop=0;return result;
         }),{sameBody:true,sameFocus:true,value:'Неоконченный ввод',selection:[3,7],scrollStable:true,headerStable:true,bodyBelowHeader:true});
         const centers=await lobby.locator('.room-transport').evaluate(node=>{const box=node.getBoundingClientRect();return [...node.querySelectorAll('span')].map(span=>{const r=document.createRange();r.selectNodeContents(span);const b=r.getBoundingClientRect();return Math.abs((b.top+b.bottom-box.top-box.bottom)/2);});});assert(centers.every(delta=>delta<3),'toggle text vertically centered');
         if(width===320){
           const control=lobby.locator('[data-room-cycle]').first();await control.scrollIntoViewIfNeeded();
-          const b=await control.boundingBox(),cdp=await context.newCDPSession(page),before=await lobby.locator('.modal-body').evaluate(n=>n.scrollTop);
+          const b=await control.boundingBox(),cdp=await context.newCDPSession(page),before=await lobby.locator('.lobby-roster-scroll').evaluate(n=>n.scrollTop);
           await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:b.x+b.width/2,y:b.y+b.height/2}]});
           for(let i=1;i<=6;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:b.x+b.width/2,y:b.y+b.height/2-i*12}]});
           await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
-          await page.waitForFunction(before=>document.querySelector('.modal-body').scrollTop>before+10,before);await cdp.detach();
+          await page.waitForFunction(before=>document.querySelector('.lobby-roster-scroll').scrollTop>before+10,before);await cdp.detach();
           assert.equal(await page.locator('.room-drag-ghost').count(),0);
         }
         await page.evaluate(()=>{window.dragEvents=[];for(const kind of ['pointerup','pointercancel'])document.addEventListener(kind,e=>dragEvents.push({kind,type:e.pointerType,x:e.clientX,y:e.clientY,drop:document.querySelector('.room-drop-active')?.dataset.roomDrop}),true);});
@@ -71,7 +71,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           const move=async point=>{if(cdp)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point]});else await page.mouse.move(point.x,point.y);await page.waitForTimeout(25);};
           if(cdp){await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});await page.waitForTimeout(300);}else{await page.mouse.move(start.x,start.y);await page.mouse.down();}
           await move({x:start.x+12,y:start.y});await page.locator('.room-drag-ghost').waitFor();
-          for(let i=0;i<80;i++){const b=await to.boundingBox(),dialog=await page.locator('.room-setup-modal .modal-body').boundingBox(),y=b.y+b.height/2;if(y>dialog.y+100&&y<dialog.y+dialog.height-35){await move({x:b.x+b.width/2,y});if(await page.locator('.room-drop-active').getAttribute('data-room-drop').catch(()=>null)===await to.getAttribute('data-room-drop'))break;}await move({x:dialog.x+40,y:y<dialog.y+100?dialog.y+10:dialog.y+dialog.height-10});}
+          for(let i=0;i<80;i++){const b=await to.boundingBox(),dialog=await page.locator('.room-setup-modal .lobby-roster-scroll').boundingBox(),y=b.y+b.height/2;if(y>dialog.y+Math.min(35,dialog.height/4)&&y<dialog.y+dialog.height-Math.min(35,dialog.height/4)){await move({x:b.x+b.width/2,y});if(await page.locator('.room-drop-active').getAttribute('data-room-drop').catch(()=>null)===await to.getAttribute('data-room-drop'))break;}await move({x:dialog.x+40,y:y<dialog.y+dialog.height/2?dialog.y+10:dialog.y+dialog.height-10});}
           assert.equal(await page.evaluate(()=>document.querySelector('.room-drop-active')?.dataset.roomDrop),await to.getAttribute('data-room-drop'),'visible drop target before release');
           if(cdp){await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach();}else await page.mouse.up();await page.waitForTimeout(40);
         };
@@ -141,10 +141,39 @@ test('local stop button saves unfinished hotseat party and retains lobby and dev
   await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Второй'});b.roomService.updateRules(r.id,r.ownerId,{...r.rules,openHands:true});b.renderLobby();});
   const original=await page.evaluate(()=>{const r=PlayroomAppBridge.room();return {id:r.id,seats:r.seats,players:r.participants.map(p=>p.nickname),rules:r.rules};});
   await page.locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();
-  await page.locator('[data-command=room]').click();page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Остановить и сохранить'}).click();
+  await page.locator('[data-command=room]').click();
+  const beforeStop=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
+  await page.getByRole('button',{name:'Остановить и сохранить'}).click();await page.locator('[data-command=confirm-operation]').waitFor();
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().phase),'playing');
+  await page.locator('.modal-foot [data-command=close-modal]').click();await page.locator('.room-setup-modal').waitFor();
+  assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),beforeStop,'cancel preserves the saved party');
+  await page.getByRole('button',{name:'Остановить и сохранить'}).click();await page.locator('[data-command=confirm-operation]').click();
   const stopped=await page.evaluate(()=>{const r=PlayroomAppBridge.room();return {id:r.id,seats:r.seats,players:r.participants.map(p=>p.nickname),rules:r.rules};});assert.deepEqual(stopped,original);
   await page.locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-command=sessions]').click();
-  assert.equal(await page.locator('.saved-self').count(),2);assert.equal(await page.locator('.saved-status').first().innerText().then(t=>t.includes('На паузе')),true);
+  assert.equal(await page.locator('.saved-self').count(),2);assert.equal(await page.locator('.saved-state-icon').first().getAttribute('aria-label'),'На паузе');
   const saved=await page.evaluate(()=>TabletopSession.restore(PlayroomEngine,JSON.parse(localStorage.getItem('playroom.session.v1'))).current);assert.equal(saved.status,'playing');assert.equal(saved.winner,null);
  }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('solo lobbies retain visible configuration, player and launch controls',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  for(const [width,height] of [[320,740],[384,725],[384,797],[797,354]]){
+   const context=await browser.newContext({viewport:{width,height}}),page=await context.newPage();page.setDefaultTimeout(5000);await page.goto(server.url);
+   for(const game of ['klondike','spider']){
+    await page.locator(`[data-start=${game}]`).first().click();
+    const frame=await page.locator('.modal').boundingBox(),config=await page.locator('.lobby-config').boundingBox(),footer=await page.locator('.lobby-footer').boundingBox(),roster=await page.locator('.lobby-roster-scroll').boundingBox();
+    assert(config.height>40&&config.y>=frame.y&&config.y+config.height<=frame.y+frame.height,`${game} ${width}: configuration inside lobby`);
+    assert(roster.height>0,`${game} ${width}: player area has height`);
+    assert(footer.y>=config.y+config.height&&footer.y+footer.height<=frame.y+frame.height,`${game} ${width}: footer inside lobby`);
+    assert.equal(await page.locator('.lobby-seat-row').count(),1);
+    assert.equal(await page.locator('.modal').getAttribute('data-dialog-size'),'large');assert(Math.abs(frame.height-(height-40))<1,'shared full-height lobby frame');
+    const transport=page.locator('[data-room-option=transportMode]');assert(await transport.isDisabled());assert.equal(await transport.isChecked(),false);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().transportMode),'hotseat');
+    assert(await page.locator('.room-transport').evaluate(n=>n.classList.contains('is-local-only')));
+    if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`solo-lobby-${game}-${width}x${height}.png`)});}
+    await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();await page.evaluate(()=>PlayroomAppBridge.showHub());
+   }
+   await context.close();
+  }
+ }finally{await browser.close();await server.close();}
 });

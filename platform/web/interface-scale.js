@@ -15,13 +15,19 @@
     }
     return limit;
   }
+  // Mobile innerWidth/innerHeight may expand around overflowing content.
+  // Use the layout viewport so density cannot feed back into its own limit.
+  function viewport(){const element=root.document?.documentElement;return {width:element?.clientWidth||root.innerWidth,height:root.visualViewport?.scale===1?root.visualViewport.height:root.innerHeight};}
   let requested=100,applied=100;
   function sync(){
     const doc=root.document;if(!doc)return;
-    const limit=maximum(root.innerWidth,root.innerHeight);applied=Math.min(requested,limit);
+    const {width,height}=viewport(),limit=maximum(width,height);applied=Math.min(requested,limit);
     const style=doc.documentElement.style;
-    style.setProperty('--interface-scale',String(applied/100));
+    style.setProperty('--interface-scale','1');
+    style.setProperty('--ui-interface-scale',String(applied/100));
+    root.PlayroomElementSizes?.apply(doc,applied,width,height);
     doc.documentElement.dataset.interfaceScale=String(applied);
+    root.PlayroomLayoutGuides?.refresh();
     const input=doc.getElementById('setting-scale');
     if(input){
       input.value=String(applied);input.dataset.allowedMax=String(limit);input.setAttribute('aria-valuemax',String(limit));
@@ -33,5 +39,5 @@
   }
   function set(value){requested=normalize(value);sync();return applied;}
   root.addEventListener?.('resize',sync);
-  return Object.freeze({normalize,maximum,set,sync,get requested(){return requested;},get applied(){return applied;},get limit(){return maximum(root.innerWidth,root.innerHeight);}});
+  return Object.freeze({normalize,maximum,set,sync,get requested(){return requested;},get applied(){return applied;},get limit(){const {width,height}=viewport();return maximum(width,height);}});
 });

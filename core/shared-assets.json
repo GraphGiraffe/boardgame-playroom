@@ -5,15 +5,15 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "035e5fc7cb7b6c982bb233a752d1ca527930b52826279338d4d51e523428f364",
-      "renderedSha256": "035e5fc7cb7b6c982bb233a752d1ca527930b52826279338d4d51e523428f364"
+      "sha256": "19e701e9cce48833906c9d4d2841db362611a7a0ace8042bb3d5db0a846917c1",
+      "renderedSha256": "19e701e9cce48833906c9d4d2841db362611a7a0ace8042bb3d5db0a846917c1"
     },
     {
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "660a102d51e547cf62442496b378cd5951169702efe506c1e8cd1f6e426da6c4",
-      "renderedSha256": "660a102d51e547cf62442496b378cd5951169702efe506c1e8cd1f6e426da6c4"
+      "sha256": "091838fb60ab99a24080cfb28789f64e8e6868d82909d9df6555f0d0a35cb3bd",
+      "renderedSha256": "091838fb60ab99a24080cfb28789f64e8e6868d82909d9df6555f0d0a35cb3bd"
     },
     {
       "source": "shared/sounds/standard-sounds.json",
@@ -27,8 +27,8 @@
       "source": "shared/assets/catalog.json",
       "target": "themes/assets.json",
       "format": "text",
-      "sha256": "af62e8b547253f8a46fc7a0674d34f3dbb4d057e4f03e39e19d359b45e21130c",
-      "renderedSha256": "af62e8b547253f8a46fc7a0674d34f3dbb4d057e4f03e39e19d359b45e21130c"
+      "sha256": "8ca9c46c1c87039fd5f1eace2b5c63322bee41e16c30a792a59eee19c6f2f664",
+      "renderedSha256": "8ca9c46c1c87039fd5f1eace2b5c63322bee41e16c30a792a59eee19c6f2f664"
     },
     {
       "source": "shared/locales/ru/components.json",
@@ -48,8 +48,8 @@
       "source": "shared/asset-packs/mini-split-deck/renderer.js",
       "target": "core/mini-split-deck.js",
       "format": "text",
-      "sha256": "4c7c83d85170ca4745e8e8f924481bb3c0317db4d319013901e66a9efd434623",
-      "renderedSha256": "4c7c83d85170ca4745e8e8f924481bb3c0317db4d319013901e66a9efd434623"
+      "sha256": "c88d82beaae34968d7f96e47a3d78cbd2c40303b7e15244102d25cbcfee0bc6f",
+      "renderedSha256": "c88d82beaae34968d7f96e47a3d78cbd2c40303b7e15244102d25cbcfee0bc6f"
     },
     {
       "source": "shared/asset-packs/character-styles/catalog.json",

@@ -1,0 +1,129 @@
+/* Game-piece standards; menu/dialog composition is the0.18.3 baseline. */
+:root{--size-card:50px;--size-card-height:70px;--size-die:40px;--size-domino:32px;--size-token:24px;--size-avatar:40px;--size-control:44px}
+#app .layout-field :is(.shared-card,.shared-card-slot):not(.solitaire-card):not(.solitaire-empty){width:var(--size-card);height:var(--size-card-height)}
+#app .layout-field .pexeso-grid :is(.shared-card,.shared-card-slot){width:var(--grid-card-width);height:calc(var(--grid-card-width) * 1.4)}
+#app :is(.shared-die,.die){width:var(--size-die);height:var(--size-die);min-width:0;min-height:0}
+#app .solitaire-control{width:var(--size-control);height:var(--size-control);min-width:var(--size-control);min-height:var(--size-control)}
+#app .layout-field .shared-card:not(.solitaire-card){width:var(--size-card)!important;min-width:0!important;height:var(--size-card-height)!important;min-height:0!important}
+#app .layout-field .pexeso-grid .shared-card{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
+#app .app-game-layout .layout-hand .hand-card{width:var(--scene-card-width)!important;min-width:var(--scene-card-width)!important;height:var(--scene-card-height)!important}
+#app .layout-field [data-size-role="card"]{width:var(--size-card)!important;height:var(--size-card-height)!important;min-width:0!important;min-height:0!important}
+#app .layout-field .pexeso-grid [data-size-role="card"]{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
+body{min-width:320px;font-size:var(--size-type-16_0,16px)}
+#app .app-shell,#modal-root,#avatar-picker-root,.appearance-dialog{font-size:16px}
+/* Preserve the owner's2/3 library composition, with the release spacing and sidebar. */
+#app .game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#app .game-grid .game-tile.featured{grid-column:auto}
+@media(min-width:761px),(orientation:landscape){#app .game-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* Small-phone landscape keeps a side menu rather than the portrait dock. */
+@media(max-width:760px) and (orientation:landscape){
+ #app .app-shell{display:grid;grid-template-columns:140px minmax(0,1fr)}
+ #app .app-shell .sidebar{display:flex;flex-direction:column;position:sticky;top:0;overflow:auto}
+ #app .app-shell .sidebar>.brand{display:flex}
+ #app .app-shell .side-nav{position:static;display:flex;flex-direction:column;gap:8px;margin:16px 0 0;padding:0;border:0;background:transparent;box-shadow:none}
+ #app .app-shell .side-nav .nav-item{flex-direction:row;justify-content:flex-start;gap:8px;min-height:44px;padding:8px;font-size:12px;text-align:left;white-space:normal}
+ #app .app-shell .hub-main{padding-bottom:16px}
+ #app .app-shell .mobile-brand{display:none}
+}
+/* Optical centering correction only; retain release control dimensions. */
+:is(#app,#modal-root,#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button){display:inline-flex;align-items:center;justify-content:center;line-height:1}
+:is(#app,#modal-root,#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button)>svg{display:block;flex:none;margin:0;max-width:100%;max-height:100%}
+
+/* Roomy board controls share a semantic size; five-dice hands keep their own role. */
+#app [data-size-role="board-dice"] :is(.shared-die,.die){width:var(--size-board-die);height:var(--size-board-die);max-width:none;max-height:none}
+/* Replay owns a separate toolbar; play-only dice/adjustment controls reserve no row. */
+#app .scene.replaying .layout-actions:has([data-size-role="board-dice"]):not(:has([data-view-preference])){display:none!important}
+#app .scene.replaying .app-game-layout[data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self:has([data-size-role="board-dice"]){display:none!important}
+
+/* A title may shrink or truncate, but never claims a second toolbar row. */
+#app .table-title{flex:1;min-width:0;overflow:hidden}
+#app .table-title [data-game-title],.lobby-game-line [data-game-title]{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
+#app .table-title p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#app .table-header{flex-wrap:nowrap;min-height:44px}
+.lobby-game-line [data-game-title]{flex:1}
+.lobby-game-line .lobby-tools{flex:none}
+
+#app .table-tools [data-command=fullscreen]{display:inline-flex}
+/* Content field has no scrolling interaction; keep all card layers at one size. */
+#app .uno-scene .layout-field{overflow:clip;scrollbar-gutter:auto}
+#app .uno-scene .uno-play-area{min-height:0;width:100%;max-height:100%}
+#app .uno-scene .uno-discard:before{width:var(--size-card);height:var(--size-card-height)}
+#app .uno-scene .uno-center .piece-back{width:var(--size-card)!important;min-width:var(--size-card)!important;height:var(--size-card-height)!important}
+
+/* Counter art includes a lower rim/shadow; leave room inside the scrolling row. */
+#app .app-game-layout .player-data{padding-block:2px;min-height:0;align-items:center}
+#app .app-game-layout[data-opponent-hands="false"] .player-panel.opponent-hand{min-height:0;justify-content:flex-start}
+#app .app-game-layout[data-opponent-hands="false"] .player-panel .player-info{min-height:0;padding-block:2px}
+
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell{--right-side-width:var(--side-width)}
+ #app .table-shell:has(.yatzy-scene){--right-side-width:max(26%,244px)}
+ #app .app-game-layout.yatzy-scene:not([data-surface="player"]){grid-template-columns:minmax(0,var(--side-width)) minmax(0,1fr) minmax(0,var(--right-side-width))!important}
+ #app .table-shell:has(.yatzy-scene) .table-tools{width:calc(var(--right-side-width) - 8px)}
+ #app .table-status .turn-extra,#app .table-status .status-event{width:calc(var(--right-side-width) - 18px);text-align:left}
+ #app .table-status .turn-label{left:14px}
+ #app .yatzy-scene .yatzy-dice{gap:6px}
+}
+
+#app .app-game-layout .player-panel.is-inactive{background:color-mix(in srgb,var(--paper,#f4f2e8) 60%,#a5aaa5);border-color:#a5aaa5}
+#app .app-game-layout .own-hand[data-hand-count="0"] .hand-track{overflow:hidden!important;min-height:0!important;height:auto!important}
+@media(orientation:landscape) and (min-width:600px){
+ #app .app-game-layout[data-seating="row"] .players-panels{grid-template-columns:repeat(var(--focus-player-columns,1),minmax(0,1fr))!important}
+}
+#app .resume-actions .resume-primary{background:var(--color-action-primary,#356951);border-color:var(--color-action-primary,#356951);color:var(--color-action-on-primary,#fffef8)}
+@media(orientation:landscape) and (min-width:600px){
+ #app .yatzy-scene:is([data-player-count="5"],[data-player-count="6"]) .players-panels{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+
+/* Hand pieces retain the readable release scale independently of field pieces. */
+#app .uno-scene .layout-field{--size-card:var(--size-hand-card,60px);--size-card-height:calc(var(--size-hand-card,60px) * 1.4)}
+#app .uno-scene .game-field-content{overflow:visible!important}
+/* Book summaries are a table, not a coloured card-play surface. */
+#app .gofish-scene>.layout-field{background:transparent}
+#app .gofish-scene .gofish-book-cards .shared-card{width:24px!important;height:34px!important;min-width:24px!important;min-height:34px!important;flex-shrink:0}
+
+/* Compact player headers share one spacing policy across every pack. */
+#app .app-game-layout .player-panel .player-info{align-items:flex-start;padding-top:0;padding-bottom:0}
+#app .app-game-layout .player-panel .player-details{gap:0;align-self:flex-start}
+#app .app-game-layout .player-panel .player-data{padding-block:0;align-items:flex-start;gap:2px}
+#app .app-game-layout .player-panel .player-heading{align-items:flex-start}
+#app .app-game-layout .player-panel .player-hand{margin-top:0;gap:0}
+#app .app-game-layout .player-panel .player-hand .mini-hand{padding-top:0!important}
+
+#app .app-game-layout[data-seating="row"] .players-panels[data-opponent-count="4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
+#app .app-game-layout[data-seating="row"][data-three-opponent-layout="row"] .players-panels[data-opponent-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+#app .app-game-layout[data-seating="row"][data-three-opponent-layout="split"] .players-panels[data-opponent-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+#app .app-game-layout .player-panel .player-heading{padding-right:0;align-items:flex-start}
+#app .app-game-layout .player-panel .player-turn-position{position:static;flex:0 0 16px;margin-left:auto}
+#app .app-game-layout .player-panel .player-info{padding:4px}
+#app .app-game-layout .layout-actions>.game-action-bar{height:100%;align-self:stretch}
+.player-target-menu.is-panel-overlay{box-sizing:border-box;max-width:none;min-width:0;max-height:none;overflow:auto;justify-content:center;box-shadow:none}
+.player-target-menu.is-panel-overlay>.scene-button{min-width:0;width:100%;flex-shrink:0;padding-inline:4px;overflow-wrap:anywhere}
+/* Narrow player cards keep the name and order together above avatar/counters. */
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-info{display:grid;grid-template-columns:20px minmax(0,1fr);gap:2px;padding:4px}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-details{display:contents}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading{grid-column:1/-1;grid-row:1}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-avatar-wrap{grid-column:1;grid-row:2}
+#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-data{grid-column:2;grid-row:2}
+
+/* Paint each overlapping card as a single opaque layer, including SVG artboards. */
+#app .app-game-layout .hand-track.is-fan .hand-card{isolation:isolate;contain:paint}
+#app .app-game-layout .game-action-bar .ui-button--game{border-radius:12px;background:var(--color-table-action,#e2edcc);color:var(--color-table-action-mark,#244f3c);border:1px solid var(--color-border-subtle,#bac9a6);box-shadow:0 3px 0 #c3d1b3}
+
+/* Fixed quick-action slots shared by the library and game header. */
+#app :is(.topbar-tools,.table-tools){display:flex;gap:4px;flex:none;margin-left:auto;}
+#app :is(.topbar-tools,.table-tools)>.icon-btn{display:inline-flex!important;width:44px!important;height:44px!important;min-width:44px!important;align-items:center;justify-content:center;}
+#modal-root .modal-head>[data-command="reset-rules"]{margin-left:auto;flex:none;}
+@media(max-width:760px) and (orientation:portrait){#app .hub-main>.topbar{height:44px;min-height:44px;margin-top:-4px;margin-right:-4px;}}
+
+#modal-root .modal-head>[data-command="reset-rules"]{order:1;}
+#modal-root .modal>[data-fixed-footer]{flex:none;margin:12px 10px 10px;width:auto!important;}
+
+/* The sidebar uses a vertical, equal-size page selector. */
+@media(min-width:761px),(orientation:landscape){
+ #app .hub-page-tabs{grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(2,minmax(44px,1fr));}
+ #app .hub-page-tabs::before{width:auto;height:calc((100% - 8px)/2);left:4px;right:4px;top:4px;bottom:auto;transform:translateY(calc(var(--page-index,0)*100%));}
+ #app .hub-page-tabs>.nav-item{width:100%;min-width:0;white-space:normal;}
+}
+.hub-pages{overflow-anchor:none;}

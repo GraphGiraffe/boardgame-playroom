@@ -73,5 +73,6 @@
   "ui.pairing-presenter.de7195cfdbff": "внешний",
   "ui.pairing-presenter.3720e067d021": " · найден отдельно",
   "ui.pairing-presenter.1c9e3c9aa4c7": " · найден (RTCStats)",
-  "ui.pairing-presenter.efe5fb61afd3": " · внесён пользователем"
+  "ui.pairing-presenter.efe5fb61afd3": " · вручную",
+  "ui.pairing-presenter.delete-address": "Удалить адрес"
 }

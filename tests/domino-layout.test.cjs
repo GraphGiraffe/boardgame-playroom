@@ -118,7 +118,9 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
       await check(`${length} tiles keep proportions inside the application field`, {length, viewport: {width: 320, height: 640}}, async ({page}) => {
         await geometry(page, {count: length});
         const rows = await page.locator('.domino-chain').evaluate(el => new Set([...el.querySelectorAll('.domino-node')].map(n => n.dataset.flowRow)).size);
-        assert.equal(rows, Math.ceil((length + 2) / 5));
+        const placedRows=await page.locator('.domino-chain').evaluate(el=>Number(el.style.getPropertyValue('--domino-rows')));
+        assert.equal(rows,placedRows,'all rows of the centered opening remain in the chain');
+        assert(rows>=Math.ceil((length+2)/5)&&rows<=Math.ceil((length+2)/5)+1);
         fs.mkdirSync(shots, {recursive: true}); await page.screenshot({path: path.join(shots, `domino-${length}-320.png`)});
       });
     }

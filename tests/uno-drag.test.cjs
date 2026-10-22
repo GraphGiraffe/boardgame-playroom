@@ -62,7 +62,7 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
       assert.equal((await state(page)).move,0,'Picking up must not play the card');
       assert.equal(await drop(page).getAttribute('data-drop-piece'),'u1');
       const action=JSON.parse(await drop(page).getAttribute('data-action'));assert(Core.legalActions(saved.states[0],0).some(a=>a.type===action.type&&a.card===action.card));
-      const q=await center(drop(page));await page.mouse.move(q.x,q.y,{steps:6});assert.equal(await page.locator('.playroom-drop-hover').count(),1);await page.mouse.up();await expectMove(page,1);
+      const target=await drop(page).boundingBox(),ghost=await page.locator('.playroom-drag-ghost').boundingBox(),q={x:p.x+target.x+target.width/2-ghost.width/2-ghost.x,y:p.y+target.y+target.height-8-ghost.y};await page.mouse.move(q.x,q.y,{steps:6});assert(q.y>target.y+target.height,'pointer remains below discard');assert.equal(await page.locator('.playroom-drop-hover').count(),1);await page.mouse.up();await expectMove(page,1);
       assert.equal((await state(page)).data.discard.at(-1).id,'u1');assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.equal((await state(page)).move,1);
     });
     await check('Upward mouse movement starts dragging without a hold; a normal click selects before discard commits',{},async({page})=>{

@@ -116,19 +116,19 @@ test('Motion effects move only public pieces and clean up at completion or cance
     });
     await check('Pack routes wait for the die, visit every anchor, hold the landing and then jump',async page=>{
       const result=await page.evaluate(async()=>{
-        document.querySelector('#app').innerHTML='<main class="table-shell"><div class="status-event">Finished</div><section class="scene"><div class="app-game-layout"><div class="player-panel" data-player-index="0"><span data-motion-counter="position">Cell 8</span></div><div class="player-panel is-turn" data-player-index="1"></div><div class="board"><span class="token" data-entity="token-0" style="left:220px;top:50px"></span></div><button class="die" data-motion-lead="roll">6</button></div></section></main>';
+        document.querySelector('#app').innerHTML='<main class="table-shell"><div class="status-event">Finished</div><section class="scene"><div class="app-game-layout"><div class="player-panel" data-player-index="0"><span data-motion-counter="position"><svg><circle r="10"/><text>Cell 8</text></svg></span></div><div class="player-panel is-turn" data-player-index="1"></div><div class="board"><span class="token" data-entity="token-0" style="left:220px;top:50px"></span></div><button class="die" data-motion-lead="roll">6</button></div></section></main>';
         const stage=document.querySelector('.app-game-layout'),board=document.querySelector('.board');
         for(let n=0;n<=8;n++){const anchor=document.createElement('span');anchor.dataset.motionAnchor='cell-'+n;Object.assign(anchor.style,{position:'absolute',left:(n*25)+'px',top:'50px',width:'20px',height:'20px'});board.append(anchor);}
         stage.dataset.motionSequence=JSON.stringify({trigger:'roll',entity:'token-0',player:0,counter:'position',origin:{anchor:'cell-0',label:'Start'},steps:[{anchor:'cell-1',label:'Cell 1'},{anchor:'cell-2',label:'Cell 2'},{anchor:'cell-3',label:'Cell 3'}],jump:{anchor:'cell-8',label:'Cell 8'}});
         const snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:{type:'roll'}}),counter=document.querySelector('[data-motion-counter]');
         const before={w:document.querySelector('.scene').scrollWidth,h:document.querySelector('.scene').scrollHeight};
         const promise=PlayroomMotion.play(snapshot,{duration:120,settle:90}),flight=document.querySelector('[data-motion-kind="route"]'),animation=flight.getAnimations()[0],frames=animation.effect.getKeyframes(),timing=animation.effect.getTiming();
-        const initial=counter.textContent,labels=[];const observer=new MutationObserver(()=>labels.push(counter.textContent));observer.observe(counter,{childList:true});
-        const sizes=[];await new Promise(resolve=>{const sample=()=>{sizes.push({w:document.querySelector('.scene').scrollWidth,h:document.querySelector('.scene').scrollHeight});if(document.querySelector('.playroom-motion-layer'))requestAnimationFrame(sample);else resolve();};sample();});await promise;observer.disconnect();
+        const initial=counter.textContent,labels=[];const observer=new MutationObserver(()=>labels.push(counter.textContent));observer.observe(counter,{childList:true,subtree:true});
+        const sizes=[];await new Promise(resolve=>{const sample=()=>{sizes.push({w:document.querySelector('.scene').scrollWidth,h:document.querySelector('.scene').scrollHeight,frame:counter.querySelectorAll('svg circle').length});if(document.querySelector('.playroom-motion-layer'))requestAnimationFrame(sample);else resolve();};sample();});await promise;observer.disconnect();
         return {initial,labels,before,sizes,offsets:frames.map(f=>f.offset),duration:timing.duration,final:counter.textContent,layers:document.querySelectorAll('.playroom-motion-layer').length,active:document.querySelector('.player-panel.is-turn').dataset.playerIndex};
       });
       assert.equal(result.initial,'Start');assert.deepEqual([...new Set(result.labels)],['Cell 1','Cell 2','Cell 3','Cell 8']);assert.equal(result.duration,420);
-      assert.deepEqual(result.offsets.map(x=>Math.round(x*420)),[0,120,150,180,210,300,420]);assert(result.sizes.every(s=>s.w===result.before.w&&s.h===result.before.h));assert.equal(result.final,'Cell 8');assert.equal(result.layers,0);assert.equal(result.active,'1');
+      assert.deepEqual(result.offsets.map(x=>Math.round(x*420)),[0,120,150,180,210,300,420]);assert(result.sizes.every(s=>s.w===result.before.w&&s.h===result.before.h));assert(result.sizes.every(s=>s.frame===1),'counter frame survives every route step');assert.equal(result.final,'Cell 8');assert.equal(result.layers,0);assert.equal(result.active,'1');
     });
     await check('A final +4 play precedes four staggered hidden-opponent stock transfers',async page=>{
       await page.evaluate(()=>{
