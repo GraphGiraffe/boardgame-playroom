@@ -992,13 +992,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         event.target.closest('.table-shell:not(.network-game)'))scrubHistory(Number(event.target.value));
   });
   // Keep one history boundary while a menu or game is active.
-  const installedApp=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
   const atExitScreen=()=>screen==='hub'&&hubTab==='games'&&!historyOpen&&!document.querySelector('dialog[open],#modal-root>*,.network-game');
   let allowBrowserExit=false;
   let backBoundary=!!history.state?.playroomBackBoundary;
   let restoringBackBoundary=false;
+  let releasingBackBoundary=false;
   const armBack=()=>{
-    if(!backBoundary&&!allowBrowserExit){
+    if(allowBrowserExit||restoringBackBoundary||releasingBackBoundary)return;
+    if(atExitScreen()){
+      // The home screen leaves Back to the browser/OS, including standalone.
+      // Remove our menu guard on arrival, not on the next user Back press.
+      if(backBoundary){releasingBackBoundary=true;backBoundary=false;history.back();}
+      return;
+    }
+    if(!backBoundary){
       history.pushState({...history.state,playroomBackBoundary:true},'');
       backBoundary=true;
     }
@@ -1009,14 +1016,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   document.addEventListener('pointerdown',armBack,{capture:true});
   document.addEventListener('keydown',armBack,{capture:true});
   window.addEventListener('popstate',async()=>{
-    if(allowBrowserExit){
-      // Leave the guard first; a multi-entry jump can silently do nothing
-      // when an externally opened HTML has no earlier browser entry.
-      if(!history.state?.playroomBackBoundary){if(installedApp())window.close();history.back();}
-      return;
+    if(releasingBackBoundary){
+      releasingBackBoundary=false;backBoundary=!!history.state?.playroomBackBoundary;armBack();return;
     }
+    if(allowBrowserExit)return;
     if(!history.state?.playroomBackBoundary){
-      if(!installedApp()&&atExitScreen()){
+      if(atExitScreen()){
         allowBrowserExit=true;backBoundary=false;save();history.back();return;
       }
       // Reuse the activated entry. Pushing a new one here lets Chrome skip
@@ -1048,9 +1053,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return;
     }
     if(hubTab!=='games'){hubTab='games';renderHub();return;}
-    if(!installedApp()||await GameScreen.confirmDialog(globalThis.PlayroomMessages.text('ui.app.confirm-exit-app'))){
-      allowBrowserExit=true;save();history.back();
-    }
+    armBack();
   });
   document.addEventListener('keydown',event=>{
     if((event.key==='Enter'||event.key===' ')&&event.target.matches('[data-player-replacement]')){event.preventDefault();event.target.click();return;}
