@@ -11,7 +11,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const profileStore=new Multiplayer.ProfileStore(()=>localStorage),roomService=new Multiplayer.RoomService({validateStart:state=>{
     try{
       const seats=state.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
-      const players=seats.map(seat=>{const p=state.participants.find(p=>p.id===seat.participantId);return {name:p.nickname,bot:!!p.bot,...(p.avatar?{avatar:p.avatar}:{})};});
+      const players=seats.map(seat=>{const p=state.participants.find(p=>p.id===seat.participantId);return {name:p.nickname,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),...(p.avatar?{avatar:p.avatar}:{})};});
       E.validateState(E.createGame(state.game.id,{...(state.rules.options||{}),players,packVersion:state.game.version,preset:state.rules.preset,openHands:!!state.rules.openHands,seed:1,firstPlayerMode:'assigned',firstPlayer:state.firstPlayerMode==='assigned'?seats.findIndex(s=>s.participantId===state.firstParticipantId):0}));
       return null;
     }catch(_){return globalThis.PlayroomMessages.text('ui.rooms.roster-invalid');}
@@ -132,7 +132,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return [field.key,chosen?chosen.value:field.default??field.options?.[0]?.value];
     }));
     const rules={preset:preset.id,presetLabel:Multiplayer.presetLabel(preset.id,g,catalog[gameId]?.presetSetting),
-      firstPlayerMode:['rules','random','assigned'].includes(saved.firstPlayerMode)?saved.firstPlayerMode:'rules',seatOrder:saved.seatOrder==='random'?'random':'normal',openHands:!!catalog[gameId]?.capabilities?.hands&&saved.openHands===true,options};
+      firstPlayerMode:catalog[gameId]?.capabilities?.firstPlayer===false?'rules':['rules','random','assigned'].includes(saved.firstPlayerMode)?saved.firstPlayerMode:'rules',seatOrder:saved.seatOrder==='random'?'random':'normal',openHands:!!catalog[gameId]?.capabilities?.hands&&saved.openHands===true,options};
     rules.display=Multiplayer.describeRules(rules,fields,!!catalog[gameId]?.capabilities?.hands,catalog[gameId]?.presetSetting);
     return rules;
   }
@@ -156,7 +156,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const isReplay = () => replayIndex !== null;
   const currentState = () => isReplay() ? session.states[replayIndex] : session.current;
   const lastEvent = state => state.events?.[state.events.length - 1];
-  const needsGate = state => isPass()&&!session.options.openHands&&!!state.data.hands&&state.status!=='finished'&&!state.players[state.turn]?.bot;
+  const needsGate = state => isPass()&&!session.options.openHands&&(!!state.data.hands||!!E.decisionWindow?.(state))&&state.status!=='finished'&&!state.players[state.turn]?.bot;
   function placeNotice(){
     if(!noticeElement.classList.contains('show'))return;
     const modal=$('#modal-root .modal');
@@ -267,7 +267,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     catch(_){
       // Legacy saves still open. Rebuild a locked view from the actual session.
       const g=meta(session.game),host={id:playerProfile.id,nickname:playerProfile.name};
-      let draft=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      let draft=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion,...(g.botSettings?{botSettings:g.botSettings}:{})},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       draft=roomService.configure(draft.id,host.id,{transportMode:'hotseat'});
       const hostIndex=Math.max(0,players.findIndex(p=>!p.bot));
       if(hostIndex)draft=roomService.moveParticipant(draft.id,host.id,host.id,draft.seats[hostIndex].id);
@@ -275,6 +275,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const player=players[i];
         if(i===hostIndex)draft=roomService.renameLocalSeat(draft.id,host.id,draft.seats[i].id,player.name);
         else draft=roomService.setLocalSeat(draft.id,host.id,draft.seats[i].id,{kind:player.bot?'bot':'human',nickname:player.name});
+        if(player.bot&&g.botSettings)draft=roomService.configureBot(draft.id,host.id,draft.seats[i].id,{nickname:player.name,avatar:player.avatar||null,botSettings:player.botSettings});
       }
       room=roomService.restoreHotSeatLobby(draft,{hostId:host.id,active:true});
     }
@@ -338,17 +339,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function activeActions(state) {
     if (isReplay()||gate!==null||paused||state.status==='finished'||state.players[viewer]?.bot) return [];
-    const actions=localClient(viewer).snapshot().actions;return transition||awaitingPass?actions.filter(action=>E.reactions?.(state,viewer).some(reaction=>Protocol.canonical(reaction)===Protocol.canonical(action))):actions;
+    const actions=localClient(viewer).snapshot().actions;return transition||awaitingPass&&!E.decisionWindow?.(state)?actions.filter(action=>E.reactions?.(state,viewer).some(reaction=>Protocol.canonical(reaction)===Protocol.canonical(action))):actions;
   }
   function playersMarkup(state,actions=[]) {
     return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
   }
-  function renderTable(animate=false,preserveField=false) {
+  function renderTable(animate=false,preserveField=false,preserveLayout=false) {
     if (!session) return renderHub();
     activateSession();
     const state=currentState(), game=meta(session.game), replay=isReplay(), actions=activeActions(state), passProtected=handoffDelay()>0;
     const shownViewer=gate!==null?-1:viewer,frame=localFrame(state,shownViewer,actions),projected=frame.state;
-    screenController.history.receive(localFrame(session.current,shownViewer));
+    screenController.history.receive(state===session.current?frame:localFrame(session.current,shownViewer));
     screenController.history.open=historyOpen;
     if(replay)screenController.history.select(replayIndex,frame);
     screenController.selection=selected;
@@ -368,18 +369,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       layoutId:sessionId||session.createdAt,gameName:game.name,subtitle:Multiplayer.presetLabel(session.current.preset,game,catalog[session.game]?.presetSetting),
       state:projected,viewer:shownViewer,actions,scoreLabel:game.scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
-      turnText:game.max===1?'':turnText,turnExtra:game.max===1||replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
+      turnText:game.max===1?'':turnText,turnExtra:game.max===1||replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands&&!E.decisionWindow?.(state)?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
-      scene:V.render(projected,shownViewer,actions,{selected,viewState,presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${icon('play')}${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}</button></div>`:''),
+      scene:V.render(projected,shownViewer,actions,{selected,viewState,replay,hotseat:isPass(),presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${icon('play')}${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
       beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.efcdf40bd477"),saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?globalThis.PlayroomMessages.text("ui.app.24735a7161d9"):paused?globalThis.PlayroomMessages.text("ui.app.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.app.65530fd463ea"),icon:finished?'arrow':paused?'play':'pause'}
     });
-    GameScreen.update($('#app'),markup);
+    const keptLayout=GameScreen.update($('#app'),markup,{preserveLayout});
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
-    HandOverflow.sync($('#app'));
-    ensureRoomButton();GameScreen.layoutScene($('#app'));
+    if(!keptLayout)HandOverflow.sync($('#app'));
+    ensureRoomButton();if(!keptLayout)GameScreen.layoutScene($('#app'));
     feedback.refresh();playerTargets?.refresh();
     if(replay)turnNotice.reset();
     else turnNotice.observe({sessionId:sessionId||session.createdAt,revision:state.move,turn:state.turn,viewer,status:state.status,paused,active:screen==='table'&&!transition&&gate===null&&!document.hidden,mount:$('#app')});
@@ -396,7 +397,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function scrubHistory(index) {
     const slider=$('#replay-range'),focused=document.activeElement===slider,before=currentState(),previous=replayIndex??session.states.length-1;
-    input?.cancel();stopReplay();const next=Math.max(historyStart(),Math.min(session.states.length-1,index)),after=session.states[next],events=E.project(after,viewer).events;
+    input?.cancel();stopReplay();const next=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,Math.max(historyStart(),Math.min(session.states.length-1,index)),s=>E.decisionWindow?.(s)),after=session.states[next],events=E.project(after,viewer).events;
     const action=next<previous?{type:'replay-back'}:events.findLast(e=>e.presentation)?.presentation||{type:'replay'};
     const snapshot=next!==previous&&catalog[session.game]?.capabilities?.presentation?.entityMotion?flow.capture({actor:before.turn,action,viewer}):null;
     replayIndex=next;selected=null;renderTable();if(snapshot)void flow.play(snapshot);
@@ -443,16 +444,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function scheduleBot() {
     cancelBot();
     if(transition||!session||screen!=='table'||isReplay()||paused||gate!==null||document.hidden||$('#modal-root').children.length||session.current.status==='finished')return;
-    localAuthority().scheduleBot({delay:pace().botDelay,run:(actor,action)=>act(actor,action),onError(error){paused=true;render();toast(globalThis.PlayroomMessages.error(error));}});
+    if(globalThis.PlayroomPublicSequence?.defer($('#app'),scheduleBot))return;
+    localAuthority().scheduleBot({delay:pace().botDelay,run:(actor,action,context)=>act(actor,action,context),onError(error){paused=true;render();toast(globalThis.PlayroomMessages.error(error));}});
   }
-  function presentFinishedResult(){if(screen==='table'&&!isReplay()&&!$('#modal-root').children.length&&session?.current.status==='finished'&&lastResult!==session.createdAt){lastResult=session.createdAt;showResult();}}
+  function presentFinishedResult(){if(globalThis.PlayroomPublicSequence?.defer(document.querySelector('#app'),presentFinishedResult))return;if(screen==='table'&&!isReplay()&&!$('#modal-root').children.length&&session?.current.status==='finished'&&lastResult!==session.createdAt){lastResult=session.createdAt;showResult();}}
+  function markDeviceHandoff(beforeTurn) {
+    if(isPass()&&session.current.turn!==beforeTurn&&session.current.status!=='finished'&&!session.current.players[session.current.turn]?.bot&&session.current.turn!==viewer)awaitingPass=true;
+  }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
     transition=null;screenController.cancelTransition();flow.cancel();
     if(session!==run.session)return;
-    if(isPass()&&session.current.turn!==run.beforeTurn&&session.current.status!=='finished'&&!session.current.players[session.current.turn]?.bot&&session.current.turn!==viewer){
-      awaitingPass=true;
-    }
+    markDeviceHandoff(run.beforeTurn);
     presentationReady();
     if(redraw&&screen==='table'&&!isReplay())renderTable();
     if(result)presentFinishedResult();
@@ -479,7 +482,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const events=E.project(session.current,viewer).events.filter(event=>event.id>(beforeState.events.at(-1)?.id||0));
       feedback.accept(events,E.soundCues(session.current,viewer,beforeState.events.at(-1)?.id||0),session.game,{defer:!quiet,silent:document.hidden||gate!==null,mode:timing.mode,snapshot,motion:quiet?null:()=>flow.play(snapshot,{draws})});
       save();input?.invalidate();
-      if(quiet){const shownSession=session,revision=session.current.move;renderTable(false,true);if(catalog[session.game]?.capabilities?.presentation?.entityMotion&&snapshot)void flow.play(snapshot).then(()=>{if(session===shownSession&&session.current.move===revision)presentFinishedResult();});else presentFinishedResult();return;}
+      if(quiet&&context.deferRender)return;
+      if(quiet){const shownSession=session,revision=session.current.move;markDeviceHandoff(beforeTurn);renderTable(false,true);if(catalog[session.game]?.capabilities?.presentation?.entityMotion&&snapshot)void flow.play(snapshot).then(()=>{if(session===shownSession&&session.current.move===revision)presentFinishedResult();});else presentFinishedResult();return;}
       screenController.transition({context:{session,beforeTurn},capture:()=>snapshot,
         render(run){transition=run;renderTable();Motion.prepare(snapshot,draws);},
         play:()=>flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before:beforeState,after:session.current}),
@@ -534,7 +538,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const rules=defaultRules(gameId,g);
     const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df"),avatar:profileAvatar};
-    room=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+    room=roomService.create({transportMode:'hotseat',name:globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     lobbyParticipantId=host.id;room=roomService.configure(room.id,host.id,{transportMode:'hotseat'});
     for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
     renderLobby();
@@ -546,11 +550,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function latestRoomEvent(type){return room?.events?.slice().reverse().find(event=>!type||event.type===type)||null;}
   function renderLobby(){
-    if(!room)return;dismissNotice();
+    if(!room)return;
     room=roomService.snapshot(room.id);ensureRoomButton();
     if(screen==='lobby'){screen='hub';renderHub();}
     const state=room,isHost=state.ownerId===lobbyParticipantId;
-    openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,canStart:isHost&&roomService.canStart(state.id),startReason:isHost?roomService.startBlocker(state.id):'',countdown:lobbyCountdown??3,notice:state.phase==='lobby'&&state.participants.find(p=>p.id===lobbyParticipantId)?.rulesNotice?latestRoomEvent('rules-changed')?.text||'':''}),'room-setup-modal');
+    openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,canStart:isHost&&roomService.canStart(state.id),startReason:isHost?roomService.startBlocker(state.id):'',countdown:lobbyCountdown??3}),'room-setup-modal');
+    PlayroomLobbyView.notifyRulesChange(state,lobbyParticipantId,toast);
     PlayroomLobbyView.bindFirst($('#modal-root .lobby-shell'),id=>{room=roomService.configure(room.id,lobbyParticipantId,{firstParticipantId:id});renderLobby();});
     PlayroomLobbyView.bindDrag($('#modal-root .lobby-shell'),{canMove:()=>isHost&&state.phase==='lobby'&&!state.recovery,move(id,slot){room=roomService.moveParticipant(room.id,lobbyParticipantId,id,slot==='spectator'?null:slot);renderLobby();},onError:error=>toast(globalThis.PlayroomMessages.error(error))});
   }
@@ -572,7 +577,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function startHotSeat(){
     room=roomService.prepareStart(room.id,lobbyParticipantId);dismissNotice();
-    const seats=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),players=seats.map(s=>{const p=room.participants.find(p=>p.id===s.participantId);return {name:p.nickname,bot:!!p.bot,...(p.avatar?{avatar:p.avatar}:{})};});
+    const seats=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),players=seats.map(s=>{const p=room.participants.find(p=>p.id===s.participantId);return {name:p.nickname,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),...(p.avatar?{avatar:p.avatar}:{})};});
     if(!players.some(p=>!p.bot))throw Error(globalThis.PlayroomMessages.text("ui.app.dc875925c351"));
     if(room.firstPlayerMode==='assigned'&&!seats.some(s=>s.participantId===room.firstParticipantId))throw Error(globalThis.PlayroomMessages.text("ui.app.467f6abb2682"));
     activatePack(room.game.id,room.game.version);
@@ -588,6 +593,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     gate=needsGate(next.current)?viewer:null;closeModal(true);render();presentationReady();
   }
   function updateLobbyNickname(form){try{room=roomService.rename(room.id,lobbyParticipantId,form.elements.nickname.value);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function showBotSettings({person,config,seatId,readonly=false,remote=false}){
+    const t=key=>globalThis.PlayroomMessages.text('ui.bot-settings.'+key),value=person.botSettings||{strategy:'auto',errorRate:10};let avatar=person.avatar||null;
+    const options=[{id:'auto',label:t('auto'),description:t('auto-help')},...config.strategies];
+    openModal(`${modalHead(t('title'))}<form id="bot-settings-form" data-seat="${esc(seatId)}"><fieldset ${readonly?'disabled':''} class="bot-settings-fields"><div class="profile-identity-row"><button type="button" class="profile-avatar-button" data-bot-avatar aria-label="${esc(t('avatar'))}">${TabletopUI.avatar({name:person.nickname,avatar},0)}</button><label class="field">${esc(t('name'))}<input name="nickname" maxlength="24" required value="${esc(person.nickname)}"></label></div><label class="field">${esc(t('strategy'))}</label><div class="bot-strategies">${options.map(p=>`<label class="bot-strategy"><input type="radio" name="strategy" value="${esc(p.id)}" ${p.id===value.strategy?'checked':''}><span><strong>${esc(p.label)}</strong><small>${esc(p.description)}</small></span></label>`).join('')}</div><label class="field">${esc(t('errors'))}<output id="bot-error-value">${value.errorRate}%</output><input type="range" name="errorRate" min="0" max="100" step="5" value="${value.errorRate}"></label><p class="muted">${esc(t('errors-help'))}</p></fieldset></form>${readonly?'':`<div class="bot-settings-footer" data-fixed-footer><button class="btn secondary" data-command="close-modal">${esc(t('cancel'))}</button><button class="btn" type="submit" form="bot-settings-form">${esc(t('apply'))}</button></div>`}`,'bot-settings-modal');
+    const form=$('#bot-settings-form');const updateErrorRate=()=>{const value=Number(form.elements.errorRate.value);$('#bot-error-value').textContent=value+'%';form.elements.errorRate.classList.toggle('is-high-error-rate',value>50);$('#bot-error-value').classList.toggle('is-high-error-rate',value>50);};form.elements.errorRate.addEventListener('input',updateErrorRate);updateErrorRate();
+    form.querySelector('[data-bot-avatar]').addEventListener('click',()=>globalThis.PlayroomAvatarPicker.open({name:form.elements.nickname.value,selected:avatar,onSelect:value=>{avatar=value;form.querySelector('[data-bot-avatar]').innerHTML=TabletopUI.avatar({name:form.elements.nickname.value,avatar},0);}}));
+    form.addEventListener('submit',event=>{event.preventDefault();if(readonly)return;try{room=roomService.configureBot(room.id,lobbyParticipantId,seatId,{nickname:form.elements.nickname.value,avatar,botSettings:{strategy:form.elements.strategy.value,errorRate:Number(form.elements.errorRate.value)}});renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}});
+    modalBack=remote?()=>globalThis.PlayroomNetworkLibrary.openRoom():renderLobby;
+  }
   function showRoomHuman(seatId){const seat=room.seats.find(s=>s.id===seatId),p=room.participants.find(p=>p.id===seat?.participantId);openModal(`${modalHead(p?globalThis.PlayroomMessages.text("ui.app.11903af3c69a"):globalThis.PlayroomMessages.text("ui.app.c524c19c7ef4"))}<form id="room-human-form" data-seat="${esc(seatId)}" ${p?'data-rename="true"':''}><label class="field">${globalThis.PlayroomMessages.text("ui.app.1da7e9372e2f")}<input name="nickname" maxlength="24" required value="${esc(p?.nickname||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df"))}"></label><button class="icon-btn" aria-label="${p?globalThis.PlayroomMessages.text("ui.app.59322ea5e71f"):globalThis.PlayroomMessages.text("ui.app.c524c19c7ef4")}" type="submit">${icon(p?'save':'addPlayer')}</button></form>`);modalBack=renderLobby;}
   function claimLobbySeat(seatId){const occupant=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId);if(room.ownerId===lobbyParticipantId&&!room.recovery&&occupant&&(occupant.bot||room.transportMode==='hotseat')){showRoomHuman(seatId);return;}if(room.transportMode==='hotseat'&&!room.seats.find(s=>s.id===seatId)?.participantId){showRoomHuman(seatId);return;}try{room=roomService.claimSeat(room.id,lobbyParticipantId,seatId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function kickLobbyParticipant(targetId){try{room=roomService.kick(room.id,lobbyParticipantId,targetId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
@@ -629,7 +643,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return `<section class="rule-group" ${visible?'':'hidden'}>${group.label?`<h3>${esc(group.label)}</h3>`:''}<div class="rule-grid">${keys.map(key=>{const html=controls.get(key);controls.delete(key);return html;}).join('')}</div></section>`;
     };
     const body=groups.filter(group=>!group.end).map(renderGroup).join(''),ending=groups.filter(group=>group.end).map(renderGroup).join(''),rest=[...controls.values()].join('');
-    const common=`<div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div>`;
+    const common=`<div class="start-options">${[['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules',globalThis.PlayroomMessages.text("ui.app.97a31231be5b"),'rules'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle'],['assigned',globalThis.PlayroomMessages.text("ui.app.cfd07e716f9f"),'first']]],['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal',globalThis.PlayroomMessages.text("ui.app.f700823e4396"),'arrow'],['random',globalThis.PlayroomMessages.text("ui.app.8a42883ca3dc"),'shuffle']]]].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>`<fieldset><legend>${label}${PlayroomLobbyView.fieldHelp(PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'))}</legend>${options.map(([value,text,glyph])=>`<label class="start-option"><input type="radio" name="${name}" value="${value}" ${(state[name]||(name==='seatOrder'?'normal':'rules'))===value?'checked':''}>${icon(glyph)}<span>${text}</span></label>`).join('')}</fieldset>`).join('')}</div>`;
     openModal(`${modalHead(globalThis.PlayroomMessages.text('ui.app.803a31d997e9')).replace('</header>',GameScreen.iconButton('data-command="reset-rules"',globalThis.PlayroomMessages.text('ui.app.reset-rules'),'undo')+'</header>')}<form id="room-rules-form" data-game="${esc(state.game.id)}"><section class="rule-group rule-common" ${g.max===1?'hidden':''}>${common}</section>${body}${rest}<section class="rule-group rule-common" ${manifest.capabilities?.hands?'':'hidden'}>${manifest.capabilities?.hands?`<label class="switch">${settingTitle(globalThis.PlayroomMessages.text('ui.app.957e469d885d'),PlayroomLobbyView.ruleText('openHands'))}<input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''}></label>`:''}</section>${ending}<div class="modal-foot" data-fixed-footer><button class="btn secondary" type="button" data-rules="${esc(state.game.id)}">${globalThis.PlayroomMessages.text("ui.app.e2d0b8c5f974")}</button><button class="btn" type="submit" form="room-rules-form">${icon('save')} ${globalThis.PlayroomMessages.text("ui.app.98a9e5a733d4")}</button></div></form>`);
     const form=$('#room-rules-form');for(const input of form.querySelectorAll('[data-choice-options]'))syncChoice(input);syncRuleVisibility(form);
   }
@@ -654,7 +668,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const active=activatePack(gameId);
       if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error(globalThis.PlayroomMessages.text("ui.app.5d39a9ae84f6"));
       const rules=defaultRules(gameId,g);
-      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
+      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
         constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       closeModal(true);renderLobby();
     }catch(error){toast(globalThis.PlayroomMessages.error(error));}
@@ -739,7 +753,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function showCardHelp() {
     const cards=[...document.querySelectorAll('.own-hand .hand-card[data-tooltip]')],seen=new Set();
     const entries=cards.filter(card=>{const text=card.dataset.tooltip;if(seen.has(text))return false;seen.add(text);return true;});
-    const details=entries.map(card=>`<li><strong>${esc(card.getAttribute('aria-label'))}</strong><p>${esc(card.dataset.tooltip)}</p></li>`).join('');
+    const details=entries.map(card=>`<li><strong>${esc(card.getAttribute('aria-label'))}</strong><p>${esc(card.dataset.tooltip)}</p>${card.querySelector('template[data-card-help-art]')?.innerHTML||''}</li>`).join('');
     openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.b7f6f3448201"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.app.9751c986689e")}</p><ul class="card-help-list">${details||("<li>"+globalThis.PlayroomMessages.text("ui.app.91e23b5cc854")+"</li>")}</ul>`);
   }
   function showPlayerActions(target) {
@@ -791,10 +805,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const step=async()=>{
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
-      const before=currentState(),after=session.states[replayIndex+1],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
+      const nextIndex=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,replayIndex+1,s=>E.decisionWindow?.(s));
+      const before=currentState(),after=session.states[nextIndex],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
       const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
       feedback.start(E.project(before,viewer).events);feedback.accept(E.project(after,viewer).events,E.soundCues(after,viewer,before.events.at(-1)?.id||0),session.game,{mode:timing.mode,snapshot,motion:()=>flow.play(snapshot,{draws:cardTransfers(before,after)}),defer:true});
-      replayIndex++;renderTable();Motion.prepare(snapshot,cardTransfers(before,after));await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before,after});
+      replayIndex=nextIndex;renderTable();Motion.prepare(snapshot,cardTransfers(before,after));await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before,after});
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
     replayTimer=setTimeout(step,pace().botDelay);renderTable();
@@ -893,6 +908,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   document.addEventListener('pointercancel',finishHubTouch);
   document.addEventListener('click',event=>{
     if(Date.now()<hubDropSuppress&&event.target.closest('.hub-edit-section')){event.preventDefault();return;}
+    const botSettingsButton=event.target.closest('[data-bot-settings]');if(botSettingsButton){showBotSettings(JSON.parse(botSettingsButton.dataset.botSettings));return;}
+    const decisionPlayer=event.target.closest('[data-decision-player]');if(decisionPlayer&&!event.target.closest('.network-game')&&isPass()&&session&&!transition&&!paused){const actor=Number(decisionPlayer.dataset.decisionPlayer);if(!session.current.players[actor]?.bot&&E.decisionWindow(session.current)?.participants.includes(actor)){gate=actor;awaitingPass=false;renderTable();}return;}
     if(event.target.closest('[data-avatar-picker]')){
       const clientAvatar=event.target.closest('[data-avatar-picker]').hasAttribute('data-avatar-client');
       const input=document.querySelector('#profile-form [name=playerName],#setting-player-name,.lobby-profile [name=nickname]');
@@ -908,7 +925,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.261faa27d0a0"))}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
     const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){if(!screenController.setPreference(preference.dataset.viewPreference,preference.dataset.viewValue))TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};screenController.viewState=viewState;renderTable();return;}
     const viewControl=event.target.closest('[data-view-key]');
-    if(viewControl&&!viewControl.disabled&&screen==='table'){const {viewKey,viewValue}=viewControl.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;renderTable();}return;}
+    if(viewControl&&!viewControl.disabled&&screen==='table'){const {viewKey,viewValue}=viewControl.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;renderTable(false,false,viewControl.dataset.viewLayout==='stable');}return;}
     if(event.target.closest('.player-target-menu'))return;
     const person=event.target.closest('[data-player-target],[data-player-panel-target]');
     if(person){showPlayerActions(Number(person.dataset.playerTarget??person.dataset.playerPanelTarget));return;}
@@ -956,6 +973,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   });
   document.addEventListener('input',event=>{if(event.target.matches('#profile-form [name=playerName],#setting-player-name,.lobby-profile [name=nickname]'))for(const button of document.querySelectorAll('[data-avatar-picker]'))button.innerHTML=TabletopUI.avatar({name:event.target.value,avatar:profileAvatar},0);});
   document.addEventListener('change',event=>{
+    const input=event.target;if(input.dataset.viewRange&&!input.disabled&&!input.closest('.network-game')&&screen==='table'){const choices=JSON.parse(input.dataset.choiceOptions),choice=choices[Number(input.value)];if(choice&&/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(input.dataset.viewRange)){viewState[input.dataset.viewRange]=String(choice.value);renderTable();}return;}
     if(event.target.id==='history-viewer'&&historyOrigin?.kind==='library'){stopReplay();viewer=Number(event.target.value);renderTable();return;}
     if(event.target.closest('#room-rules-form')){syncChoice(event.target);syncRuleVisibility(event.target.form);return;}
     try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(globalThis.PlayroomMessages.error(error));renderLobby();return;}

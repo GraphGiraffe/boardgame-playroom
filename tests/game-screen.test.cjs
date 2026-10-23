@@ -107,6 +107,12 @@ test('one screen queue presents every recovered revision once and separates sele
  client.snapshot=frame(3);await controller.enqueue(client.snapshot);await new Promise(resolve=>setImmediate(resolve));
  assert.deepEqual(shown,[1,2,3]);assert.equal(controller.shown.revision,3);assert.equal(controller.busy,false);
  assert.equal(controller.context(frame(3),{scope:'match'}).viewState.field,'mine');assert.equal(controller.selection,'card');
+ const nextRound=frame(4);nextRound.state.turn=1;
+ assert.equal(controller.context(nextRound,{scope:'match'}).viewState.field,'mine','match choice survives turn change');
+ const other={...nextRound,viewer:1};controller.context(other,{scope:'match'}).viewState.field='theirs';
+ assert.equal(controller.context(nextRound,{scope:'match'}).viewState.field,'mine','hotseat restores each viewer choice');
+ assert.equal(controller.context(other,{scope:'match'}).viewState.field,'theirs');
+ assert.deepEqual(controller.context({...nextRound,sessionId:'new'},{scope:'match'}).viewState,{},'new match clears choices');
  const gone=frame(4);gone.state.data.hands[0]=[];controller.context(gone,{scope:'match'});assert.equal(controller.selection,null);
  assert.deepEqual(controller.send({type:'next'}),{type:'next'});controller.dispose();assert.throws(()=>controller.send({type:'next'}),/SCREEN_CLOSED/);
 });

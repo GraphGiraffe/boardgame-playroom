@@ -328,7 +328,7 @@ print(json.dumps(out))
  assert(app.manifest.sharedAssetPacks.includes('mini-cards'));
  for(const file of ['renderer.js','styles.css'])assert.equal(app.files['assets/shared-packs/mini-cards/'+file],undefined,'compiled asset entrypoint has no redundant separate copy');
  assert(app.files['view.js'].includes('root.PlayroomMiniCards=api'));
- assert(app.files['styles.css'].includes('.mini-card[data-rank="10"]'));
+ assert(app.files['styles.css'].includes('.mini-card>.card-deck-art'));
 });
 
 test('prepared packs omit bundled sources, duplicate asset entrypoints and authoring notes',()=>{
@@ -351,5 +351,5 @@ for pack in sorted((root/'packs').iterdir()):
  result.append(pack.name)
 print(json.dumps(result))
 `;
- const ids=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8'}));assert.equal(ids.length,14);
+ const ids=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8'}));assert.deepEqual(ids,fs.readdirSync(path.join(packs,'packs')).filter(id=>fs.existsSync(path.join(packs,'packs',id,'manifest.json'))).sort());
 });

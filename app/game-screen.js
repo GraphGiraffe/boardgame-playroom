@@ -115,16 +115,67 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return header+'<div class="modal-body">'+template.innerHTML+'</div>'+footerMarkup;
   }
   const DOM=root.PlayroomDOM||(typeof require==='function'?require('../platform/web/dom.js'):null),{patchChildren}=DOM;
-  const pendingScroll=new WeakMap(), fixedLayouts=new WeakMap();
+  const pendingScroll=new WeakMap(), fixedLayouts=new WeakMap(), renderedTrees=new WeakMap(), handReserves=new WeakMap();
+  function reservePlayerHand(panel,height){
+    if(!height)return;
+    let hand=panel.querySelector('.player-hand');
+    if(!hand){hand=panel.ownerDocument.createElement('div');hand.className='player-hand';hand.setAttribute('aria-hidden','true');hand.setAttribute('inert','');panel.append(hand);}
+    hand.style.minHeight=height+'px';
+  }
+  function handReserveKey(host,shell,stage){
+    const win=host.ownerDocument.defaultView;
+    return JSON.stringify([shell.dataset.layoutIdentity,win.innerWidth,win.innerHeight,root.PlayroomInterfaceScale?.applied,stage.dataset.surface]);
+  }
+  // Resize does not necessarily render new markup: discard old viewport measurements first.
+  function resetHandReserveForViewport(host,stage){
+    const reserve=handReserves.get(host),shell=host.querySelector('.table-shell');
+    if(!reserve||!shell||reserve.key===handReserveKey(host,shell,stage))return;
+    handReserves.delete(host);
+    for(const hand of stage.querySelectorAll('.layout-hand,.player-hand'))hand.style.removeProperty('min-height');
+  }
+  // Keep only geometry, never old cards, commands or private markup.
+  function reserveHands(host,next){
+    const shell=next.querySelector('.table-shell'),stage=next.querySelector('.app-game-layout');
+    if(!shell||!stage){handReserves.delete(host);return;}
+    const key=handReserveKey(host,shell,stage);
+    let reserve=handReserves.get(host);
+    const same=reserve?.key===key;
+    if(!same){reserve={key,own:0,players:new Map()};handReserves.set(host,reserve);}
+    if(same){
+      const previous=host.querySelector('.app-game-layout'),hand=previous?.querySelector('.layout-hand');
+      if(hand)reserve.own=Math.max(reserve.own,hand.offsetHeight);
+      for(const panel of previous?.querySelectorAll('.player-panel')||[]){
+        const mini=panel.querySelector('.player-hand');
+        if(mini)reserve.players.set(panel.dataset.playerIndex,Math.max(reserve.players.get(panel.dataset.playerIndex)||0,mini.offsetHeight));
+      }
+    }
+    if(reserve.own){
+      let hand=stage.querySelector('.layout-hand');
+      const parent=stage.querySelector('.layout-self')||stage;
+      if(!hand){hand=host.ownerDocument.createElement('section');hand.className='game-layout-slot layout-hand';hand.dataset.gameElement='hand';hand.setAttribute('aria-hidden','true');hand.setAttribute('inert','');parent.append(hand);}
+      hand.style.minHeight=reserve.own+'px';
+      stage.dataset.hasHand='true';
+    }
+    for(const panel of stage.querySelectorAll('.player-panel')){
+      const height=reserve.players.get(panel.dataset.playerIndex);if(!height)continue;
+      reservePlayerHand(panel,height);
+      stage.dataset.opponentHands='true';
+    }
+  }
   function allowLayoutChange(host,{allowLayoutChange=false}={}){
     if(allowLayoutChange===true)fixedLayouts.delete(host);
   }
-  function update(host,markup){
-    const scrollers=[...host.querySelectorAll('[data-scene-scroll],.hand-track,.hand-scroll')].map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
+  function update(host,markup,{preserveLayout=false}={}){
+    const previous=preserveLayout?renderedTrees.get(host):null;
+    const scrollers=previous?[]:[...host.querySelectorAll('[data-scene-scroll],.hand-track,.hand-scroll')].map(node=>({node,top:node.scrollTop,left:node.scrollLeft}));
     const template=host.ownerDocument.createElement('template');template.innerHTML=markup;
     if(!template.content.querySelector('.table-shell'))fixedLayouts.delete(host);
-    patchChildren(host,template.content);
-    pendingScroll.set(host,scrollers);
+    reserveHands(host,template.content);
+    root.PlayroomPublicSequence?.prepare(host,template.content);
+    patchChildren(host,template.content,previous);
+    renderedTrees.set(host,template.content);
+    if(!previous)pendingScroll.set(host,scrollers);
+    return !!previous;
   }
   function updateModal(modal,content){
     const template=modal.ownerDocument.createElement('template');template.innerHTML=modalContent(content);
@@ -144,7 +195,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const player={...person,...presence},semantic=state.scene?.players?.find(p=>(p.player??p.id)===index);
       const team=semantic?.team||UI.helpers.teamFor(teamLayouts,state.preset,index);
       const self=!player.bot&&(network?!!(selfId&&player.id===selfId||selfIndex===index||player.local):!!player.local);
-      return `<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}"><span class="player-avatar-wrap">${UI.avatar(player,index)}${UI.helpers.playerMedallion({first:state.firstPlayer===index,team})}</span><span class="resume-person-name">${UI.helpers.participantIcon(player,{network})}<span${self?' class="saved-self"':''}>${esc(player.nickname||player.name)}</span></span></span>`;
+      return `<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}"><span class="player-avatar-wrap">${UI.avatar(player,index)}${UI.helpers.playerMedallion({first:state.firstPlayer===index&&root.PlayroomCatalog?.[state.game]?.capabilities?.firstPlayer!==false,team})}</span><span class="resume-person-name">${UI.helpers.participantIcon(player,{network})}<span${self?' class="saved-self"':''}>${esc(player.nickname||player.name)}</span></span></span>`;
     });
     if(network)for(const table of participants.filter(person=>person.role==='table')){
       people.push(`<span class="resume-person resume-table"><span class="resume-person-name">${UI.helpers.participantIcon(table,{network:true})}<span>${esc(table.nickname||table.name||root.PlayroomMessages.text('ui.ui.da639244db1d'))}</span></span></span>`);
@@ -181,7 +232,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const place=state.result?.places?.[i],value=state.result?.values?.[i],detail=state.result?.details?.[i];
       const medal=place?place<=3?UI.playerMedallion({place,layout:UI.helpers.tokenLayout.fan(0,{count:2})}):`<span class="result-place-text" role="img" aria-label="${place} ${globalThis.PlayroomMessages.text("ui.game-screen.200db10c242a")}">${place}</span>`:winningPlayers.includes(i)?'★ ':'';
       const team=playerContent[i]?.team||state.scene?.players?.find(player=>(player.player??player.id)===i)?.team||null;
-      const first=state.firstPlayer===i;
+      const first=state.firstPlayer===i&&root.PlayroomCatalog?.[state.game]?.capabilities?.firstPlayer!==false;
       const playerBadge=UI.playerMedallion({first,team,layout:medal?UI.helpers.tokenLayout.fan(1,{count:2}):null});
       const badge=`<span class="result-awards">${medal}${playerBadge}</span>`;
       const content=playerContent[i]||semanticContent[i]||{},counters=content.counters??[{kind:'points',value:Number.isSafeInteger(player.score)&&player.score>=0?player.score:0,label:scoreLabel}];
@@ -190,15 +241,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const indicators=Array.isArray(content.indicators)?UI.indicators(content.indicators.map(({icon,value,size,label})=>({icon,value,size,label}))):'';
       const primary=`<span class="result-core-counters">${hand}${shown.map(UI.scoreBadge).join('')}</span>${indicators}`;
       const shownIds=new Set([...shown.map(counter=>counter.id||counter.kind),...(Number.isSafeInteger(content.handCount)?[content.handMetricId||'hand-count']:[]),...(content.indicators||[]).map(indicator=>indicator.id).filter(Boolean)]);
+      const botSettings=player.bot&&(state.scene?.players?.find(p=>(p.player??p.id)===i)?.botSettings||player.botSettings);
+      const botConfig=root.TabletopCore?.GAMES?.find(game=>game.id===state.game)?.botSettings;
+      const strategy=botSettings?.resolvedStrategy||botSettings?.strategy;
+      const botDescription=botSettings&&botConfig?`${botConfig.strategies.find(p=>p.id===strategy)?.label||root.PlayroomMessages.text('ui.bot-settings.auto')} · ${root.PlayroomMessages.text('ui.bot-settings.errors')}: ${botSettings.errorRate??botConfig.defaultErrorRate??10}%`:'';
       const extra=(state.result?.metrics||[]).filter(metric=>metric.display!=='ranking'&&!shownIds.has(metric.id)&&Number.isFinite(metric.values?.[i])).map(metric=>`${metric.label}: ${metric.values[i]}`);
-      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span></div>`;
+      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</div>`;
     }).join('');
-    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text("ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
+    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores" data-game="${esc(state.game)}">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text("ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
   }
   function turnNotice({play=()=>{},reducedMotion=()=>false}={}){
     let previous=null,timer=null;
     return {
       observe({sessionId,revision,turn,viewer,status,paused=false,active=true,mount=document}){
+        if(mount.querySelector('.app-game-layout[data-show-turn="false"]')){this.reset();return false;}
         if(!active)return false;
         const next={sessionId,revision,turn};
         const started=active&&previous&&previous.sessionId===sessionId&&revision>previous.revision&&turn!==previous.turn&&turn===viewer&&status==='playing'&&!paused;
@@ -219,6 +275,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     statusExtra='',footerExtra='',saved=null,showSettings=true,network=false,revision=null,scoreLabel=globalThis.PlayroomMessages.text("ui.game-screen.d7ab0767bbee"),playerBadge,historyResult=false,readOnly=false,pause=false,canPause=true,historyCaption='',roomAction=null,fieldToggle=null}={}){
     fieldToggle=network&&!readOnly&&viewer>=0?fieldToggle:null;
     if(!state?.players)throw Error('Projected game state required');
+    const showTurn=!scene.includes(' data-show-turn="false"');
+    if(!showTurn){turnText='';turnExtra='';}
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:globalThis.PlayroomMessages.text("ui.game-screen.24735a7161d9"),name:'trophy'}:roomAction?{...roomAction,label:globalThis.PlayroomMessages.text("ui.game-screen.3a73248bdd79"),name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerText||'');
     if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
@@ -231,7 +289,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full'},
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
-      <div class="table-status" aria-live="polite">${turnText?`<span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span>`:''}<span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),state.players.length>1&&state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
+      <div class="table-status" aria-live="polite">${turnText?`<span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span>`:''}<span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),showTurn&&state.players.length>1&&state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
@@ -319,6 +377,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     fitHandArc(track);
   }
   function fitHand(stage){
+    for(const track of stage.querySelectorAll('.layout-hand .hand-track:not(.is-fan):not(.is-overlapping):has([data-card-shape="square"])')){
+      const count=track.querySelectorAll('.hand-card').length,desired=parseFloat(stage.style.getPropertyValue('--scene-card-width'))||64;
+      const available=track.clientWidth-12,fit=Math.max(32,Math.min(desired,(available-Math.max(0,count-1)*6)/Math.max(1,count)));
+      track.style.setProperty('--scene-card-width',fit+'px');track.style.setProperty('--scene-card-height',fit+'px');
+    }
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-tiles'))fitTileHand(track,stage);
     for(const mini of stage.querySelectorAll('.player-panel .mini-hand'))fitOpponentHand(mini,stage);
     for(const track of stage.querySelectorAll('.layout-hand .hand-track.is-fan'))fitCardHand(track,stage);
@@ -391,6 +454,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   const replayFitters=new WeakMap();
   function layoutScene(host,settled=false){
+    root.PlayroomPublicSequence?.bind(host);
     // Network diagnostics/history can finish mounting after the synchronous render.
     // Measure once more after that DOM transaction, before freezing the viewport.
     if(!settled)host.ownerDocument.defaultView.requestAnimationFrame?.(()=>layoutScene(host,true));
@@ -405,6 +469,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const stage=scene?.querySelector('.app-game-layout');
+    if(stage)resetHandReserveForViewport(host,stage);
     if(stage?.dataset.actionPlacement==='header-landscape'){
       const header=host.querySelector('.table-header'),actions=stage.querySelector('.layout-actions')||header?.querySelector('.scene-header-actions');
       if(actions&&header){const landscape=host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches;
@@ -545,5 +610,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(shell){for(const bar of shell.querySelectorAll('.table-status>.turn-label,.table-status>.status-details'))for(const prop of ['left','right','width'])bar.style.removeProperty(prop);}
 
   }
-  return Object.freeze({gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
+  return Object.freeze({gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

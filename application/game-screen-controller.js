@@ -20,7 +20,11 @@
     this.reviewing=reviewing;
    }
    const key=[identity,frame.game,frame.packVersion,frame.viewer,...(scope==='match'||reviewing?[]:[frame.state.turn])].join(':');
-   if(this.identity!==key){this.identity=key;this.viewState={};}
+   if(scope==='match'&&!reviewing){
+    const match=[identity,frame.game,frame.packVersion].join(':');
+    if(this.matchIdentity!==match){this.matchIdentity=match;this.matchViews=new Map();}
+    this.identity=key;this.viewState=this.matchViews.get(key)||{};this.matchViews.set(key,this.viewState);
+   }else if(this.identity!==key){this.identity=key;this.viewState={};}
    const hand=frame.state.data.hands?.[frame.viewer];if(this.selection!==null&&hand&&!hand.some(card=>card.id===this.selection))this.selection=null;
    return {selected:this.selection,viewState:this.viewState};
   }
@@ -51,7 +55,7 @@
   }
   cancelTransition(){const token=this.operation;if(!token)return;token.cancelled=true;if(token.timer!==null)this.clock.clearTimeout(token.timer);this.operation=null;}
   cancel(){this.epoch++;this.queue=[];this.draining=false;this.queued=this.client?.snapshot?.revision??this.shown?.revision??-1;this.cancelTransition();}
-  dispose(){this.closed=true;this.cancel();this.history.close();this.selection=null;this.viewState={};}
+  dispose(){this.closed=true;this.cancel();this.history.close();this.selection=null;this.viewState={};this.matchViews?.clear();}
  }
  return GameScreenController;
 });

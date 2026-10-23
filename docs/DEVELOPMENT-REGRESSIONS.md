@@ -25,3 +25,7 @@ Current character runtime has two sets: `minimal` (Стандартный, first
 Skins own overlap/exclusion geometry for horizontal/vertical/fan stacking. Apply layout on skin acceptance immediately and reserve maximum visible waste height even when empty. Inspect before/after draw, undo, cancelled drag, history, replay, rotation and skin change; appearance changes must not require a game action. Foundation placeholders use selected skin suit glyphs. Shared card tables use green light/dark palettes, card-shaped rounded slots and beige faces; use shared components rather than per-game copies.
 
 Preserve original art, rejected candidates and chosen versions in source design archives. Compare poses, proportions, faces/accessories and four-finger hands against the original at full size AND actual avatar/card sizes. Standard characters retain the whole-art white silhouette outline, not individual-part outlines. Pack covers/cards share typography and suit geometry. Never replace archived masters with optimized runtime exports.
+
+### Disappearing hands
+
+Within the same game/viewer/viewport, removing or emptying a local or opponent hand must preserve its measured layout zone, including during public playback. Retain only geometry: never retain removed cards, private markup, commands or focus targets. Reserve resets with a new scene identity or viewport/scale change; explicit field reflow does not erase hand reserves. Check removal, repeated empty rendering and restoration in portrait and landscape.

@@ -117,6 +117,17 @@ class RoomService{
       person.nickname=normalizeName(nickname);room.lobbyRevision++;this._touch(room);
       this._emit(room,'participant-renamed',globalThis.PlayroomMessages.text("ui.rooms.bd0758ba8f1c",{p0:String(person.nickname)}),{participantId:person.id});return this.snapshot(roomId);
     }
+    configureBot(roomId,hostId,seatId,{nickname,avatar,botSettings}){
+      const room=this._room(roomId);this._host(room,hostId);this._lobby(room);this._newMatch(room);
+      const person=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId),config=room.game.botSettings;
+      if(!person?.bot||!config)throw Error('BOT_SETTINGS_UNAVAILABLE');
+      const strategy=botSettings?.strategy??'auto',errorRate=botSettings?.errorRate??10;
+      if(strategy!=='auto'&&!config.strategies.some(p=>p.id===strategy)||!Number.isInteger(errorRate)||errorRate<0||errorRate>100||errorRate%5)throw Error('BOT_SETTINGS_INVALID');
+      const name=normalizeName(nickname),old=person.botSettings||{strategy:'auto',errorRate:10},changed=old.strategy!==strategy||old.errorRate!==errorRate;
+      person.nickname=name;person.botSettings={strategy,errorRate};if(avatar!==undefined)person.avatar=avatar;
+      if(changed){room.botSettingsRevision=(room.botSettingsRevision||0)+1;for(const p of room.participants){p.ready=!!p.bot;p.botSettingsNotice=!p.bot;}delete room.startOrderResolved;}
+      room.lobbyRevision++;this._touch(room);this._emit(room,'bot-settings-changed',globalThis.PlayroomMessages.text('ui.bot-settings.changed'),{participantId:person.id,changed});return this.snapshot(roomId);
+    }
     restoreHotSeatLobby(value,{hostId,active=false}={}){
       const room=clone(value);
       if(!room||room.transportMode!=='hotseat'||room.ownerId!==hostId||!Array.isArray(room.seats)||!Array.isArray(room.participants)||!room.participants.some(p=>p.id===hostId&&p.isHost))throw Error(globalThis.PlayroomMessages.text("ui.rooms.6bf95306425a"));
@@ -260,7 +271,7 @@ class RoomService{
       const room=this._room(roomId);this._lobby(room);const participant=this._participant(room,participantId);
       if(participant.role!=='player'||!participant.seatId)throw Error(globalThis.PlayroomMessages.text("ui.rooms.a1c130d9bd0d"));
       if(ready&&participant.replacement&&!participant.replacement.accepted)throw Error(globalThis.PlayroomMessages.text("ui.rooms.6a738803cb95"));
-      participant.ready=!!ready;if(ready)delete participant.rulesNotice;room.lobbyRevision++;this._touch(room);
+      participant.ready=!!ready;if(ready){delete participant.rulesNotice;delete participant.botSettingsNotice;}room.lobbyRevision++;this._touch(room);
       this._emit(room,'ready-changed',globalThis.PlayroomMessages.text("ui.rooms.380e3dbd6730",{p0:String(participant.nickname),p1:String(participant.ready?globalThis.PlayroomMessages.text("ui.rooms.edcdf31ef2c8"):globalThis.PlayroomMessages.text("ui.rooms.0ba46c29d34d"))}),{participantId,ready:participant.ready});
       return this.snapshot(roomId);
     }

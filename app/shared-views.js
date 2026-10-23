@@ -39,7 +39,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const stopReplay=()=>{clearTimeout(replayTimer);replayTimer=null;if(historyOpen){feedback.clear();flow.cancel();transitionActive=false;}};
     const stopScrub=()=>{if(scrubFrame!==null)root.cancelAnimationFrame(scrubFrame);scrubFrame=null;};
     const eventText=s=>s.revision===0?globalThis.PlayroomMessages.text("ui.shared-views.03f70ecc37a6"):s.events?.at(-1)?.text||s.state?.events?.at(-1)?.text||'';
-    function render(){
+    function render(preserveLayout=false){
       if(destroyed)return;
       const live=client.snapshot,source=historyOpen&&controller.history.frame?controller.history.frame:controller.shown||live;
       if(!source)return;
@@ -57,7 +57,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const old=app.querySelector('.hand-track, .hand-cards, .hand-scroll'),scroll=old?.scrollLeft||0;
       const turn=s.state.players[s.state.turn],finished=s.state.status==='finished',current=usable();
       const renderState=usable()?s.state:{...s.state,...(reactionUsable()?{modelProjection:live.state.modelProjection}: {})};
-      const scene=V.render(renderState,s.viewer,current?s.actions:available(),{selected,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer)),surface:actual,quickPlay:flow.quickPlay});
+      const scene=V.render(renderState,s.viewer,current?s.actions:available(),{selected,viewState,replay:historyOpen||readOnly,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer)),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({minimum:controller.history.minimum,index:controller.history.requested??controller.history.index??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:controller.history.boundary,turnStarts:live.state.timeline?.starts||[],roundStarts:(live.state.scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1}))}):'';
       const markup=GameScreen.render({
         layoutId:s.sessionId,fieldToggle:hasTable?{hidden:fieldHidden}:null,network:true,revision:s.revision,gameName:pack.manifest.name,subtitle:'',
@@ -69,12 +69,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         statusExtra:client.pending&&client.deliveryError?("<button class=\"text-btn network-retry\" data-command=\"retry\">"+globalThis.PlayroomMessages.text("ui.shared-views.0c2b4e7e894e")+"</button>"):'',
         footerAction:readOnly?{command:'home',label:globalThis.PlayroomMessages.text("ui.shared-views.c7af5565fd83"),icon:'back'}:finished?{command:'rematch',label:globalThis.PlayroomMessages.text("ui.shared-views.b99497215cf0"),icon:'back'}:{command:'home',label:globalThis.PlayroomMessages.text("ui.shared-views.1fd4bffb137b"),icon:'back'}
       });
-      GameScreen.update(app,markup);
+      const keptLayout=GameScreen.update(app,markup,{preserveLayout:preserveLayout===true});
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       const historyPanel=app.querySelector('.history-panel');
       if(historyPanel)historyPanel.setAttribute('aria-busy',controller.history.frame&&controller.history.requested===null?'false':'true');
-      HandOverflow.sync(app);
-      GameScreen.layoutScene(app);
+      if(!keptLayout)HandOverflow.sync(app);
+      if(!keptLayout)GameScreen.layoutScene(app);
       const shell=app.querySelector('.network-game');if(shell)shell.dataset.mode=historyOpen?'history':'live';
       renderedRevision=s.revision;feedback.refresh();playerTargets?.refresh();
       if(historyOpen||!connected||readOnly)turnNotice.reset();
@@ -117,6 +117,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     input=root.TabletopInput.attach({getSelected:()=>selected,canStart:usable,canSelect:usable,canCommit:source=>usable()||independent(JSON.parse(source?.dataset.action||'null')),select(value){selected=value;render();},commit(action,context){return submit(action,false,context);}});
     playerTargets=new root.PlayroomPlayerTarget({selected:()=>selected,actions:available,commit:action=>{void submit(action,true);},root:()=>app.querySelector('.table-shell')});
     function result(){
+      if(root.PlayroomPublicSequence?.defer(app,result))return;
       const snapshot=client.snapshot;if(snapshot?.state?.status!=='finished')return;
       show(GameScreen.resultMarkup({state:snapshot.state,viewer:snapshot.viewer,gameName:pack.manifest.name,scoreLabel:pack.catalog.scoreLabel||globalThis.PlayroomMessages.text("ui.shared-views.d7ab0767bbee"),network:true}));
     }
@@ -210,7 +211,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const target=event.target.closest('button,[data-player-target],[data-player-panel-target],[data-command],[data-action],[data-select]');
       if(!target||target.disabled)return;
       if(target.dataset.viewPreference){const s=controller.shown||client.snapshot;if(!controller.setPreference(target.dataset.viewPreference,target.dataset.viewValue))H.viewPreferences(s.game,s.viewer,target.dataset.viewPreference,target.dataset.viewValue);viewState={};controller.viewState=viewState;render();return;}
-      if(target.dataset.viewKey){const {viewKey,viewValue}=target.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;render();}return;}
+      if(target.dataset.viewKey){const {viewKey,viewValue}=target.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;render(target.dataset.viewLayout==='stable');}return;}
       const command=target.dataset.command;
       if(command){void action(command).catch(e=>toast(globalThis.PlayroomMessages.error(e)));return;}
       const accused=event.target.closest('[data-player-target],[data-player-panel-target]');
@@ -233,6 +234,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
     }
     function historySliderChange(event){
+      const input=event.target;if(input.dataset.viewRange&&!input.disabled&&input.closest('.table-shell.network-game')){event.stopPropagation();const choices=JSON.parse(input.dataset.choiceOptions),choice=choices[Number(input.value)];if(choice&&/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(input.dataset.viewRange)){viewState[input.dataset.viewRange]=String(choice.value);render();}return;}
       if(event.target.id!=='replay-range'||!event.target.closest('.table-shell.network-game'))return;
       event.stopPropagation();
       stopScrub();stopReplay();

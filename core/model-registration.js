@@ -32,7 +32,7 @@
       timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
     function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
-    function presentScene(projection,players){const scene=presentation.scene(projection);return {...scene,...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
+    function presentScene(projection,players){const scene=presentation.scene(projection);return {...scene,...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,...(person.countLabel?{countLabel:text(person.countLabel,players)}:{}),metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
     function presentEvent(value,players) {
       const description=presentation.event(value),params={...description.message.params};
       if(value.actor!==null)params.player=players[value.actor].name;
@@ -49,6 +49,7 @@
     }
     return {
       id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
+      ...(metadata.botSettings?{botSettings:{strategies:metadata.botSettings.strategies.map(p=>({id:p.id,label:text(p.label),description:text(p.description)})),defaultErrorRate:10}}:{}),
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
@@ -70,6 +71,7 @@
       },
       legal(state, actor) { const projection=model.project(position(state),actor);return model.legalActions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
       reactions(state,actor) { const projection=model.project(position(state),actor);return model.reactions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
+      decisionWindow(state) { return model.decisionWindow(position(state)); },
       reactionWindows(state) { return model.reactionWindows(position(state)).filter(window=>!state.players[window.owner].bot); },
       reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
       botReaction(state,actor) { const command=model.botReaction(position(state),actor);return command?decorated(command,model.project(position(state),actor),state.players):null; },

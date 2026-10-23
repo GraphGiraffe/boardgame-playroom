@@ -7,7 +7,22 @@
   const positions=[...new Set([minimum,...(starts||[]).filter(value=>Number.isSafeInteger(value)&&value>=minimum&&value<=count),count])].sort((a,b)=>a-b);
   return direction<0?positions.filter(value=>value<index).at(-1)??minimum:positions.find(value=>value>index)??count;
  }
+ // A synchronous batch of bot readiness has one visible endpoint in replay.
+ function readyBatchEnd(states,index,windowOf){
+  const botReady=(before,after)=>{
+   if(!before||!after)return false;
+   const a=windowOf(before),b=windowOf(after);
+   if(!a||!b||a.id!==b.id||a.participants.length<2)return false;
+   const added=b.ready.filter(id=>!a.ready.includes(id));
+   const changed=a.participants.filter(id=>b.versions?.[id]!==a.versions?.[id]);
+   return (added.length>0||changed.length>0)&&a.ready.every(id=>b.ready.includes(id))&&[...added,...changed].every(id=>before.players[id]?.bot);
+  };
+  if(!botReady(states[index-1],states[index]))return index;
+  while(index+1<states.length&&botReady(states[index],states[index+1]))index++;
+  return index;
+ }
  class HistoryController {
+  static readyBatchEnd=readyBatchEnd;
   static boundaryIndex=boundaryIndex;
   constructor({read,changed=()=>{},reviewed=()=>{}}={}){this.read=read;this.changed=changed;this.reviewed=reviewed;this.live=null;this.open=false;this.index=null;this.requested=null;this.frame=null;this.ticket=0;this.boundary=null;this.visited=false;this.progress={receivedRevision:-1,presentedRevision:-1,reviewedRevision:null};}
   receive(frame){if(!revision(frame?.revision))throw Error('HISTORY_REVISION_INVALID');if(this.live&&!same(frame,this.live))this.reset();this.live=frame;this.progress.receivedRevision=Math.max(this.progress.receivedRevision,frame.revision);}
