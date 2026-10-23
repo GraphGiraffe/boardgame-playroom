@@ -11,10 +11,12 @@
 #app .layout-field .pexeso-grid [data-size-role="card"]{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
 body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 #app .app-shell,#modal-root,#avatar-picker-root,.appearance-dialog{font-size:16px}
-/* Preserve the owner's2/3 library composition, with the release spacing and sidebar. */
+/* Keep two phone columns; wider libraries add tracks before enlarging tiles. */
 #app .game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 #app .game-grid .game-tile.featured{grid-column:auto}
-@media(min-width:761px),(orientation:landscape){#app .game-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:761px),(orientation:landscape){#app .game-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr))}}
+/* Compact landscape retains the accepted three-column phone composition at every UI scale. */
+@media(max-width:960px) and (orientation:landscape){#app .game-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 /* Small-phone landscape keeps a side menu rather than the portrait dock. */
 @media(max-width:760px) and (orientation:landscape){
  #app .app-shell{display:grid;grid-template-columns:140px minmax(0,1fr)}
@@ -109,7 +111,7 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 
 /* Paint each overlapping card as a single opaque layer, including SVG artboards. */
 #app .app-game-layout .hand-track.is-fan .hand-card{isolation:isolate;contain:paint}
-#app .app-game-layout .game-action-bar .ui-button--game{border-radius:12px;background:var(--color-table-action,#e2edcc);color:var(--color-table-action-mark,#244f3c);border:1px solid var(--color-border-subtle,#bac9a6);box-shadow:0 3px 0 #c3d1b3}
+#app .app-game-layout .game-action-bar .ui-button--game{border-radius:12px;background:var(--color-surface-raised,#e6e9dc);color:var(--color-text-primary,#263c36);border:1px solid var(--color-border-subtle,#bac9a6);box-shadow:0 3px 0 #d4d9c6}
 
 /* Fixed quick-action slots shared by the library and game header. */
 #app :is(.topbar-tools,.table-tools){display:flex;gap:4px;flex:none;margin-left:auto;}
@@ -127,3 +129,45 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
  #app .hub-page-tabs>.nav-item{width:100%;min-width:0;white-space:normal;}
 }
 .hub-pages{overflow-anchor:none;}
+/* Optional per-bot configuration uses the same draft/accept dialog contract. */
+.bot-settings-fields{border:0;padding:0;margin:0;min-width:0}.bot-strategies{display:grid;gap:8px;margin-block:12px 20px}.bot-strategy{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:14px}.bot-strategy span{display:grid;gap:3px}.bot-strategy small{color:var(--muted);font-size:.85em}.bot-settings-footer{display:flex;gap:10px}.bot-settings-footer .btn{flex:1}.bot-strategy-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bot-settings-fields input[type=range]{width:100%}
+.public-sequence{height:100%;width:100%;display:flex;flex-direction:column;min-height:0}.public-sequence-stage{flex:1;min-height:0;position:relative}.public-sequence-stage>[data-public-frame]{height:100%;width:100%}.public-sequence-stage>[hidden]{display:none!important}.public-sequence-controls{display:flex;gap:5px;align-items:center;justify-content:center;flex:none;font-size:12px;padding:4px}.public-sequence-controls output{flex:1;text-align:center}.public-sequence-controls .scene-button{padding:4px 8px;min-height:32px}
+input[type=range].is-high-error-rate{accent-color:var(--color-feedback-danger,#b94f40);--range-color:var(--color-feedback-danger,#b94f40);--range-fill:var(--color-feedback-danger,#b94f40)}output.is-high-error-rate{color:var(--color-feedback-danger,#b94f40)}
+
+/* Square card hands retain the shared player-panel layout. */
+.app-game-layout .layout-hand .hand-track:has([data-card-shape="square"]){height:auto!important;min-height:0!important;padding:6px!important;flex-wrap:wrap;gap:6px;justify-content:safe center;overflow:visible}
+
+/* Optional token presentation in the standard player score area. */
+.player-score.is-token-counter{display:inline-flex!important;align-items:center;gap:1px;background:transparent;padding:0;min-width:0;box-shadow:none;border:0}
+.player-score .counter-token{width:13px;height:15px;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1;stroke-linejoin:round}
+.player-score .counter-token.is-empty{fill:none;opacity:.25}.token-heart{color:var(--color-side-red,#ce735d)}.token-meeple{color:var(--color-side-blue,#668fad)}.token-crown{color:var(--color-side-yellow,#cfac4c)}
+.player-avatar-wrap[data-decision-player]{cursor:pointer}
+
+.app-game-layout.is-public-playback .layout-hand,.app-game-layout.is-public-playback .layout-actions{visibility:hidden;pointer-events:none}
+
+/* Card shape belongs to the shared card type, including the hand fitter. */
+#app .app-game-layout .layout-hand .hand-card[data-card-shape="square"]{height:var(--scene-card-width)!important;aspect-ratio:1}
+
+#app .public-sequence-controls{height:32px;min-height:32px;padding:0;gap:4px}#app .public-sequence-controls .scene-button{height:32px;min-height:32px;padding:4px 6px;line-height:1.1;white-space:nowrap}
+
+.app-game-layout .own-hand:has([data-card-shape="square"]){max-width:none;width:100%;padding:0;margin:0}
+
+.app-game-layout .hand-track:has([data-card-shape="square"])::before,.app-game-layout .hand-track:has([data-card-shape="square"])::after{content:none}
+
+.player-panel:is(.is-turn,.is-ready){--counter-token-empty-fill:var(--color-surface-turn,#dfedcb)}
+
+/* Optional compact counters share the name row without expanding its height. */
+#app .app-game-layout .player-heading:has(.player-heading-counters){display:flex;align-items:center;gap:3px;min-width:0;flex-wrap:nowrap}
+#app .app-game-layout .player-heading:has(.player-heading-counters)>strong{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#app .app-game-layout .player-heading-counters{display:flex;align-items:center;flex:0 0 auto;gap:3px;line-height:1}
+#app .app-game-layout .player-heading-counters .player-score{font-size:11px;min-height:0;padding:0;line-height:1}
+#app .app-game-layout .player-heading-counters .counter-token{width:11px!important;height:11px!important;flex:0 0 11px}
+#app .app-game-layout .player-heading-counters .is-overlapping .counter-token+.counter-token{margin-left:calc(11px * -.54)}
+
+/* Games can request a wider local hand lane through the shared layout contract. */
+@media(orientation:landscape) and (min-width:600px){
+ #app .table-shell:has(.app-game-layout[data-wide-hand="true"]){--side-width:max(22%,150px)}
+ #app .app-game-layout[data-wide-hand="true"]:not([data-surface="player"]){grid-template-columns:minmax(0,var(--side-width)) minmax(0,1fr) minmax(0,30%)!important;column-gap:4px}
+ #app .app-game-layout[data-wide-hand="true"]>.layout-field{padding-inline:0}
+ #app .table-shell:has(.app-game-layout[data-wide-hand="true"]) .table-tools{width:calc(30% - 8px)}
+}

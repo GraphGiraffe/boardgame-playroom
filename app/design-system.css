@@ -51,7 +51,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .players-panels.opponent-hands{display:flex;flex-wrap:wrap;width:100%;max-height:none;gap:6px;justify-content:center;margin:0;align-items:stretch}
 .app-game-layout .player-panel.opponent-hand{display:flex;flex:1 1 120px;max-width:300px;min-width:0;flex-direction:column;align-items:stretch;background:var(--color-surface-game,#f7f7ed88);border:1px solid var(--color-border-subtle,#d6dfc7);border-radius:12px;padding:3px;overflow:hidden}
 .app-game-layout .self-player{background:var(--color-surface-game,#f7f7ed88);border:1px solid var(--color-border-subtle,#d6dfc7);border-radius:12px;padding:3px}
-.app-game-layout .player-panel.is-turn{background:var(--color-surface-turn,#dfedcb);border-color:var(--color-interaction-available,#638658);box-shadow:inset 0 0 0 1px #638658}
+.app-game-layout .player-panel.is-turn,.app-game-layout .player-panel.is-ready{background:var(--color-surface-turn,#dfedcb);border-color:var(--color-interaction-available,#638658);box-shadow:inset 0 0 0 1px #638658}
 .player-info.player-token{display:flex;width:100%;text-align:left;min-height:44px;gap:6px;padding:4px;font-size:11px;align-items:center;border-radius:9px;background:transparent;border:0;color:inherit}
 .player-info .avatar{flex:none;width:26px;height:26px;min-width:26px}
 .player-details{min-width:0;flex:1}.player-details strong{display:block;overflow-wrap:anywhere;font-size:11px}.player-token small{display:block!important;font-size:9px;white-space:normal;color:var(--color-text-secondary,#687761)}
@@ -893,6 +893,14 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
  #app .table-status:has([data-scene-status="portrait"]) .turn-extra:empty{display:none}
 }
 
+/* Scenes without an active-player label keep event and round on one line. */
+@media(orientation:portrait){
+ #app .table-shell .table-status:not(:has(.turn-label,[data-scene-status="portrait"])){display:flex;flex-wrap:nowrap;height:24px;min-height:24px;padding:3px 9px}
+ #app .table-status:not(:has(.turn-label,[data-scene-status="portrait"])) .status-details{display:flex;align-items:center;gap:12px;min-width:0;flex:1}
+ #app .table-status:not(:has(.turn-label,[data-scene-status="portrait"])) .status-event{order:-1;flex:1 1 0;line-height:18px;text-align:left}
+ #app .table-status:not(:has(.turn-label,[data-scene-status="portrait"])) .turn-extra{flex:0 0 auto;line-height:18px;margin-left:auto}
+}
+
 /* Shared card-table surfaces are presentation tokens, outside saved game rules. */
 :root{--card-table-face:var(--color-surface-card-table,#c9dfb5);--card-slot-face:var(--color-material-card-slot,#aeb2af)}
 :root[data-appearance-mode=dark]{--card-table-face:var(--color-surface-card-table,#244737);--card-slot-face:var(--color-material-card-slot,#9aaea2)}
@@ -900,3 +908,13 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 
 :root[data-appearance-mode=dark] .shared-card-slot{background:var(--card-slot-face)}
 :root[data-appearance-mode=dark] .shared-card-slot:disabled{opacity:.85}
+
+/* Hidden card choices preserve the source deck geometry. */
+.player-target-menu.card-choice-dialog>button:has([data-card-shape="square"]){height:72px;aspect-ratio:1}
+.player-target-menu.card-choice-dialog>button [data-card-shape="square"]{display:block;width:100%;height:100%;aspect-ratio:1}
+
+/* Optional public counter in the participant heading replaces turn order. */
+.player-panel .player-heading-counter{position:absolute;right:6px;top:6px}
+.player-panel .player-heading-counter .player-score{margin:0}
+
+.result-scores .result-bot-settings{grid-column:2/-1;color:var(--muted);font-size:11px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;margin-top:4px}

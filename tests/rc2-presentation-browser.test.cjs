@@ -72,13 +72,23 @@ test('playable hand outlines stay inside the scroll viewport and recent teams sh
   assert(focused.width>=2&&focused.width+focused.offset<=0,'keyboard focus and selection keep the complete ring inside the card');
   await page.screenshot({path:path.join(dir,`uno-${width}x${height}-selected.png`)});
  }
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ for(const game of ['uno','checkers','yatzy']){
+  await scene(page,game);
+  if(game==='yatzy')await page.evaluate(()=>{const action=TabletopCore.legalActions(rcSession.current,0).find(a=>a.type==='roll');rcSession.act(0,action);rcRender();});
+  const cue=page.locator('.is-playable').first();assert(await cue.count()>0,game+' playable object');
+  const pulse=await cue.evaluate(n=>{const stage=n.closest('.app-game-layout'),animation=stage.getAnimations().find(a=>a.animationName==='piece-highlight-pulse');if(!animation)return null;animation.pause();animation.currentTime=0;const first=getComputedStyle(n).getPropertyValue('--piece-highlight-strength');animation.currentTime=1300;return [first,getComputedStyle(n).getPropertyValue('--piece-highlight-strength')];});
+  assert(pulse&&pulse[0]!==pulse[1],game+' shared highlight pulses');
+ }
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.app-game-layout').evaluate(n=>getComputedStyle(n).animationName),'none');
  await page.setViewportSize({width:390,height:844});
- await page.evaluate(()=>{
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const names=await page.evaluate(()=>{
   const teams=[{id:'a',label:'А',color:'#638658'},{id:'b',label:'Б',color:'#c97866'}];
   const state={players:['Иван','Луна','Сэм','Кира'].map((name,i)=>({name,bot:i>0})),firstPlayer:2,turn:0,preset:'teams',status:'playing',scene:{round:{number:1},players:[0,1,2,3].map(player=>({player,team:teams[player%2]}))}};
   document.querySelector('#app').innerHTML=PlayroomGameScreen.resumeCard({state,network:true,gameName:'Лудо',roomName:'Комната Иван',participants:[{playerIndex:0,isHost:true}]});
+  return [...document.querySelectorAll('.resume-person')].map(p=>({name:p.querySelector('.resume-person-name>span:last-child').textContent.trim(),y:p.getBoundingClientRect().top}));
  });
- const names=await page.locator('.resume-person').evaluateAll(people=>people.map(p=>({name:p.querySelector('.resume-person-name>span:last-child').textContent.trim(),y:p.getBoundingClientRect().top})));
  assert.deepEqual(names.map(p=>p.name),['Иван','Луна','Сэм','Кира']);assert(names.every(p=>Math.abs(p.y-names[0].y)<1),'teams do not force a new row');
  await page.screenshot({path:path.join(dir,'recent-teams-390.png')});
 }));
@@ -805,7 +815,7 @@ test('all games keep the field stable while selecting and changing action phases
  await page.setViewportSize({width:390,height:844});await scene(page,'uno');
  const result=await page.evaluate(()=>{
   const h=document.querySelector('#app'),box=()=>document.querySelector('.layout-field').getBoundingClientRect().height;
-  const initial=box();document.querySelector('.layout-actions').style.height='110px';PlayroomGameScreen.layoutScene(h);const fixed=box();
+  const initial=box();document.querySelector('.layout-participants').style.minHeight='220px';PlayroomGameScreen.layoutScene(h);const fixed=box();
   PlayroomGameScreen.allowLayoutChange(h,{});PlayroomGameScreen.layoutScene(h);const implicit=box();
   PlayroomGameScreen.allowLayoutChange(h,{allowLayoutChange:true});PlayroomGameScreen.layoutScene(h);
   return {initial,fixed,implicit,changed:box(),attr:PlayroomViews.helpers.actionAttr({type:'draw'},{allowLayoutChange:true})};
@@ -985,5 +995,57 @@ test('avatars remain square with proportional corners in lobby, settings, picker
   await check('game and fish table');
   await page.evaluate(()=>{const state=TabletopCore.project(rcSession.current,0);state.status='finished';state.winners=[0];state.result={places:[1,2,3,4,5,6],values:[6,5,4,3,2,1]};document.querySelector('#app').innerHTML=PlayroomGameScreen.resumeCard({state,gameName:'Спроси рыбу',action:'data-resume'})+PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Спроси рыбу'});});
   await check('resume and results');await page.screenshot({path:path.join(shots,`avatars-results-${width}.png`)});
+ }
+}));
+
+test('hand zones reserve space when own and opponent hands disappear and return',{timeout:60000},async()=>fixture(async page=>{
+ for(const [width,height]of [[390,844],[844,390]])for(const game of ['mage-brawl','uno','domino']){
+  await page.setViewportSize({width,height});await scene(page,game);
+  const result=await page.evaluate(()=>{
+   const host=document.querySelector('#app'),original=PlayroomViews.render;
+   const boxes=()=>['.layout-field','.layout-self',...Array.from(document.querySelectorAll('.layout-participants .player-panel')).map(p=>`.layout-participants .player-panel[data-player-index="${p.dataset.playerIndex}"]`)].map(q=>{const b=document.querySelector(q).getBoundingClientRect();return [b.x,b.y,b.width,b.height];});
+   const before=boxes(),height=document.querySelector('.layout-hand').offsetHeight;
+   let empty=true;
+   PlayroomViews.render=(...args)=>{const template=document.createElement('template');template.innerHTML=original(...args);if(empty){template.content.querySelector('.layout-hand')?.remove();for(const hand of template.content.querySelectorAll('.player-hand'))hand.remove();}return template.innerHTML;};
+   try{
+    rcRender();const absent=boxes(),reserve=document.querySelector('.layout-hand');
+    const blank=reserve?.children.length===0&&reserve.hasAttribute('inert')&&reserve.offsetHeight>=height;
+    rcRender();const repeated=boxes();empty=false;rcRender();
+    return {before,absent,repeated,returned:boxes(),blank,restored:!!document.querySelector('.layout-hand button')};
+   }finally{PlayroomViews.render=original;}
+  });
+  assert(result.blank,game+' keeps an inert blank hand zone');assert(result.restored,game+' restores controls');
+  for(const phase of ['absent','repeated','returned'])for(let i=0;i<result.before.length;i++)for(let j=0;j<4;j++)assert(Math.abs(result.before[i][j]-result[phase][i][j])<1,JSON.stringify({game,width,phase,result}));
+ }
+}));
+
+
+test('Mage Brawl status and hand geometry stay fixed through death and respawn',async()=>fixture(async page=>{
+ for(const [width,height]of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'mage-brawl');
+  const result=await page.evaluate(()=>{
+   const boxes=()=>['.table-status','.layout-field','.mage-grid','.layout-self'].map(q=>{const r=document.querySelector(q).getBoundingClientRect();return [r.x,r.y,r.width,r.height];});
+   const before=boxes(),s=structuredClone(rcSession.current),p=s.data.players[0],hand=[...p.hand],pos=[...p.pos];rcStateOverride=s;
+   s.data.discard.push(...hand);Object.assign(p,{hand:[],health:0,lives:1,pos:null});s.data.phase='respawn';s.data.respawn=[0];s.data.frames=[];rcRender();const death=boxes();
+   s.data.discard.splice(s.data.discard.length-hand.length,hand.length);Object.assign(p,{hand,health:3,pos});s.data.phase='planning';s.data.respawn=[];rcRender();
+   return {before,death,returned:boxes(),turnLabel:!!document.querySelector('.turn-label')};
+  });
+  assert.equal(result.turnLabel,false);
+  for(const phase of ['death','returned'])for(let i=0;i<result.before.length;i++)for(let j=0;j<4;j++)assert(Math.abs(result.before[i][j]-result[phase][i][j])<1,JSON.stringify({width,phase,result}));
+ }
+}));
+
+
+test('hand reserves reset on orientation changes without a render',async()=>fixture(async page=>{
+ for(const game of ['mage-brawl','uno','domino']){
+  await page.setViewportSize({width:390,height:844});await scene(page,game);
+  const boxes=()=>page.evaluate(()=>['.layout-field','.layout-hand','.layout-self'].map(q=>{const r=document.querySelector(q).getBoundingClientRect();return [r.x,r.y,r.width,r.height];}));
+  await page.evaluate(()=>{rcRender();rcRender();});const before=await boxes();
+  await page.setViewportSize({width:844,height:390});
+  await page.evaluate(()=>{PlayroomGameScreen.layoutScene(document.querySelector('#app'));rcUI.viewState={mageSelectedCard:1};rcRender();rcRender();});
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>PlayroomGameScreen.layoutScene(document.querySelector('#app')));
+  const after=await boxes();
+  for(let i=0;i<before.length;i++)for(let j=0;j<4;j++)assert(Math.abs(before[i][j]-after[i][j])<1,JSON.stringify({game,before,after}));
  }
 }));

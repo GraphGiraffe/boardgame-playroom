@@ -244,15 +244,32 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     cancelBot(){const r=records.get(this);r.botOptions=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
     scheduleBot({delay=500,run,onError=()=>{}}={}){
       this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.disposed||r.stopRequested||r.paused||st.status!=='playing')return;
-      const reacting=st.players.findIndex((p,i)=>p.bot&&s.engine.botReaction?.(st,i)),actor=reacting>=0?reacting:st.turn;if(!st.players[actor]?.bot)return;
+      const reacting=st.players.findIndex((p,i)=>p.bot&&s.engine.botReaction?.(st,i)),window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>st.players[i].bot&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!st.players[actor]?.bot)return;
       const action=s.engine.botReaction?.(st,actor)||s.engine.botAction(st,actor);if(!action)return;
       const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
       if(windows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;
-      let wait=Math.max(0,delay);
+      let wait=planning!==undefined&&actor===planning?0:Math.max(0,delay);
       if(['challenge','advance'].includes(control?.kind))for(const window of windows)wait=Math.max(wait,(window.readyAt??window.createdAt+window.descriptor.fallbackMs)+window.descriptor.botMs-this._now());
       const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||s.current.move!==revision)return;
         try{const current=s.engine.botReaction?.(s.current,actor)||s.engine.botAction(s.current,actor);if(!current)return;
           if(this._reactionDecision(actor,current)){this.scheduleBot({delay,run,onError});return;}
+          if(!r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
+            // Drain only this simultaneous decision window, never the following round.
+            const pending=window.participants.filter(i=>st.players[i].bot&&!window.ready.includes(i));
+            for(const [index,id] of pending.entries())for(let part=0;part<16;part++){
+              const live=s.engine.decisionWindow?.(s.current);
+              if(r.disposed||r.paused||r.stopRequested||live?.id!==window.id||live.ready.includes(id))break;
+              const choice=s.engine.botAction(s.current,id);if(!choice)break;
+              const before=s.current.move;
+              // A private draft may require another command before this actor is ready.
+              // Other bots are still pending, so these intermediate renders can be deferred.
+              if(run)run(id,choice,{deferRender:index<pending.length-1});else this.actBot(id,choice);
+              const after=s.engine.decisionWindow?.(s.current);
+              if(s.current.move===before||after?.id!==live.id||after.versions?.[id]===live.versions?.[id])break;
+            }
+            if(!run)this.scheduleBot({delay,onError});
+            return;
+          }
           if(run){run(actor,current);return;}
           if(r.persistence){this.actBotAsync(actor,current).then(()=>this.scheduleBot({delay,onError})).catch(onError);return;}
           this.actBot(actor,current);this.scheduleBot({delay,onError});

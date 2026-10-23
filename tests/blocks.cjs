@@ -34,6 +34,8 @@ module.exports = {
     {"file": "quick-play.test.cjs", "profiles": [], "subblock": "input/feedback"},
   ]},
   games: {label: "Правила и интерфейс игр", cases: [
+    {"file":"mage-brawl.test.cjs","profiles":[],"subblock":"games/mage-brawl"},
+    {"file":"mage-brawl-browser.test.cjs","profiles":[],"subblock":"games/mage-brawl/screen"},
     {"file":"solitaire.test.cjs","profiles":[],"subblock":"games/solitaire"},
     {"file":"solitaire-browser.test.cjs","types":["screen:phone"],"profiles":[],"subblock":"games/solitaire/screen"},
     {"file":"rc2-presentation-browser.test.cjs","profiles":[],"subblock":"games/layout"},
@@ -82,6 +84,7 @@ module.exports = {
     {"file": "network-client-history-browser.test.cjs", "profiles": ["app", "smoke"], "subblock": "storage/history"},
   ]},
   network: {label: "Сетевые партии", cases: [
+    {"file":"mage-brawl-network-browser.test.cjs","profiles":[],"subblock":"network/mage-brawl"},
     {"file":"table-authority.test.cjs","profiles":[],"subblock":"network/table"},
     {"file": "authority.test.cjs", "profiles": ["app"], "subblock": "network/authority"},
     {"file": "multiplayer-lobby.test.cjs", "profiles": ["app", "smoke"], "subblock": "network/authority"},

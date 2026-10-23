@@ -2,10 +2,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 /* Web bootstrap for portable rooms and browser identity storage. */
 (function(root,factory){const api=factory(root.PlayroomRooms||(typeof require==='function'?require('../application/rooms.js'):null),root.PlayroomIdentityStore||(typeof require==='function'?require('../platform/web/identity-store.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomMultiplayer=api;})(globalThis,function(Rooms,Store){
 'use strict';
+  // Odd seats use cool colors; even seats use warm colors (one-based).
   const COLORS=[
     ['#348653',globalThis.PlayroomMessages.text("ui.multiplayer.a4bb19e1436f")],['#d75245',globalThis.PlayroomMessages.text("ui.multiplayer.731c7ce35857")],['#387bbf',globalThis.PlayroomMessages.text("ui.multiplayer.66d12fb99282")],['#d9b136',globalThis.PlayroomMessages.text("ui.multiplayer.b039d623c29e")],
-    ['#e68532',globalThis.PlayroomMessages.text("ui.multiplayer.4aed2cd288de")],['#9055b5',globalThis.PlayroomMessages.text("ui.multiplayer.1174a37a5ab4")],['#42b7d6',globalThis.PlayroomMessages.text("ui.multiplayer.6b64572a4b37")],['#7c858e',globalThis.PlayroomMessages.text("ui.multiplayer.36cd623ea46f")],
-    ['#a76a45',globalThis.PlayroomMessages.text("ui.multiplayer.690cb43da431")],['#6371a0',globalThis.PlayroomMessages.text("ui.multiplayer.03a7adc9a6c4")],['#8a6a58',globalThis.PlayroomMessages.text("ui.multiplayer.206522bddd15")],['#6d8f77',globalThis.PlayroomMessages.text("ui.multiplayer.b3fa5ae77400")]
+    ['#9055b5',globalThis.PlayroomMessages.text("ui.multiplayer.1174a37a5ab4")],['#e68532',globalThis.PlayroomMessages.text("ui.multiplayer.4aed2cd288de")],['#42b7d6',globalThis.PlayroomMessages.text("ui.multiplayer.6b64572a4b37")],['#d66b8f',globalThis.PlayroomMessages.text("ui.multiplayer.pink")],
+    ['#6371a0',globalThis.PlayroomMessages.text("ui.multiplayer.03a7adc9a6c4")],['#a76a45',globalThis.PlayroomMessages.text("ui.multiplayer.690cb43da431")],['#6d8f77',globalThis.PlayroomMessages.text("ui.multiplayer.b3fa5ae77400")],['#8a6a58',globalThis.PlayroomMessages.text("ui.multiplayer.206522bddd15")]
   ];
 
 class RoomService extends Rooms.RoomService {constructor(options={}){super({idFactory:Store.uuid,clock:Store.now,random:Math.random,tokenFactory:Store.secureResumeToken,...options});}}
