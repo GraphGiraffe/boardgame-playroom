@@ -40,19 +40,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }finally{this.recovering=false;}
     }
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
-    async send(action){if(this.closed||!this.snapshot)throw Error(globalThis.PlayroomMessages.text("ui.session-client.a0444837bb86"));if(this.pending)throw Error(globalThis.PlayroomMessages.text("ui.session-client.34ce9807af57"));this.pending=P.command(this.snapshot,action,this.idFactory());return this.retry();}
+    async send(action){if(this.closed||!this.snapshot)throw Error(globalThis.PlayroomMessages.text("ui.session-client.a0444837bb86"));if(this.pending)throw Error(globalThis.PlayroomMessages.text("ui.session-client.34ce9807af57"));this.pending=P.command(this.snapshot,action,this.idFactory());const w=this.snapshot.state?.modelProjection?.decisionWindow;this.pendingDecision=w?{id:w.id,version:w.versions[this.snapshot.viewer],viewer:this.snapshot.viewer,control:this.snapshot.controlRevision||0}:null;return this.retry();}
     retry(){
       if(this.inFlight)return this.inFlight;
       if(!this.pending)return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.session-client.c86acc5fddaa")));
-      const command=this.pending;this.deliveryError=null;
+      let command=this.pending;this.deliveryError=null;
       this.inFlight=Promise.resolve().then(async()=>{
         let receipt;
         try{
-          for(let attempt=0;attempt<2;attempt++){
-            try{receipt=await this.transport.dispatch(P.clone(command));break;}
-            catch(error){if(this.closed||attempt===1)throw error;}
+          for(let rebases=0;rebases<9;rebases++){
+            for(let attempt=0;attempt<2;attempt++){
+              try{receipt=await this.transport.dispatch(P.clone(command));break;}
+              catch(error){if(this.closed||attempt===1)throw error;}
+            }
+            if(receipt.commandId!==command.commandId)throw Error(globalThis.PlayroomMessages.text("ui.session-client.70e1cfc955f9"));
+            const next=receipt.snapshot,w=next?.state?.modelProjection?.decisionWindow,token=this.pendingDecision;
+            const legal=next?.state?.modelProjection?.actions?.some(c=>P.canonical(c)===P.canonical(command.action));
+            if(receipt.code!=='STALE'||rebases===8||!token||!w||w.id!==token.id||w.versions[token.viewer]!==token.version||next.viewer!==token.viewer||next.sessionId!==command.sessionId||next.authorityEpoch!==command.authorityEpoch||(next.controlRevision||0)!==token.control||next.paused||!legal)break;
+            // The authority still checks every global revision. Only unchanged own
+            // decisions in the same barrier can be submitted with a fresh receipt ID.
+            this.accept(next);command=P.command(next,command.action,this.idFactory());this.pending=command;
           }
-          if(receipt.commandId!==command.commandId)throw Error(globalThis.PlayroomMessages.text("ui.session-client.70e1cfc955f9"));
           this.pending=null;
           if(receipt.snapshot)this.accept(receipt.snapshot);
           return receipt;

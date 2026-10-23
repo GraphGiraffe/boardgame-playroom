@@ -26,7 +26,7 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['preparing','reactions','reactionControl','reactionWindows','botReaction'].every(key=>
+        ['preparing','reactions','reactionControl','reactionWindows','botReaction','decisionWindow','botContext'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -105,6 +105,13 @@
         integer(value.humanMs,0,60000)&&integer(value.botMs,value.humanMs,60000)&&integer(value.fallbackMs,0,60000)), 'REACTION_WINDOW_INVALID');
       return snapshot(windows);
     }
+    decisionWindow(position) {
+      this.validate(position);
+      const value=this.#definition.decisionWindow?.(snapshot(position))??null;
+      if(value===null)return null;
+      check(record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&Array.isArray(value.participants)&&new Set(value.participants).size===value.participants.length&&value.participants.every(i=>integer(i,0,position.playerCount-1))&&Array.isArray(value.ready)&&value.ready.every(i=>value.participants.includes(i))&&record(value.versions)&&value.participants.every(i=>integer(value.versions[i],0,Number.MAX_SAFE_INTEGER)), 'DECISION_WINDOW_INVALID');
+      return snapshot({id:value.id,participants:value.participants,ready:value.ready,versions:value.versions});
+    }
     commandFor(position, actor, action, surface = 'player') {
       check(['player','table'].includes(surface), 'ACTION_INVALID');
       const signature = command(action);
@@ -140,7 +147,7 @@
         playerCount:position.playerCount, turn:position.turn, status:position.status,
         ...(position.preset!==undefined?{preset:position.preset}:{}),
         ...(position.revision!==undefined?{revision:position.revision}:{}),
-        winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
+        decisionWindow:this.decisionWindow(position),winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
         actions:this.availableActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
     }
     projectTable(position, actor, events = []) {
@@ -153,7 +160,7 @@
       const projection = this.project(position, actor), actions = this.legalActions(position,actor);
       if (!actions.length) return null;
       const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
-      const chosen = this.#definition.bot?.(projection, actor, actions, memory) ?? actions[0];
+      const chosen = this.#definition.bot?.(projection, actor, actions, memory, snapshot(this.#definition.botContext?.(snapshot(position),actor)||{})) ?? actions[0];
       const found = actions.find(value => command(value) === command(chosen));
       check(found !== undefined, 'BOT_ACTION_INVALID');
       return found;

@@ -81,12 +81,13 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
 }
 
 test('the projected network game reuses the bot GameScreen, opponents and inline history without exposing secret faces',{timeout:50000},async()=>{
+  const server=await require('./browser-origin.cjs').serveBrowserFixture(root);
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   try{
-    await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-    for(const file of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:source(file)});
-    for(const file of ["core/messages.js","presentation/localization.js","core/protocol.js","core/component-assets.js","core/game-components.js","core/token-layout.js","core/ui.js","core/player-target.js","core/motion.js","presentation/scheduler.js","core/game-flow.js","core/hand-overflow.js","app/views.js","application/history-controller.js","application/game-screen-controller.js","platform/web/dom.js","app/game-screen.js","app/game-feedback.js","core/input.js","platform/web/pack-loader.js","app/shared-views.js"])await page.addScriptTag({content:source(file)});
+    // Use the assembled application's dependency graph rather than a stale manual script list.
+    await page.goto(server.url);
+    await page.evaluate(()=>{document.body.innerHTML='<div id="app"></div><div id="modal-root"></div><div id="toast"></div>';});
     const session=new Session(Core,'uno',{seed:123,mode:'pass',preset:'classic',unoMode:'manual',players:[{name:'Игрок А'},{name:'Игрок Б'}],openHands:false});
     const authority=new Authority(session);
     const audience=authority.connect(0);
@@ -100,14 +101,14 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
       const listeners=new Set();
       const client={snapshot,pending:null,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);},
         async history(index){return snapshots[index];},async send(){throw Error('Do not change authoritative state in read-only layout test');}};
-      window.game=PlayroomSharedViews.mount(client,def,{surface:'combined'});game.render();
+      window.qaDefinition=PlayroomAppBridge.packs.exportView(snapshot.game,snapshot.packVersion);window.game=PlayroomSharedViews.mount(client,qaDefinition,{surface:'combined'});game.render();
     },{snapshot,snapshots,def});
     const shell=page.locator('.table-shell.network-game');
     assert.equal(await shell.count(),1);
     assert.equal(await shell.getAttribute('data-viewer'),String(snapshot.viewer));
     assert.equal(await shell.getAttribute('data-revision'),String(snapshot.revision));
     const commands=await shell.locator('.table-tools > button').evaluateAll(nodes=>nodes.map(n=>n.dataset.command));
-    assert.deepEqual(commands.slice(-2),['pause','settings'],'Pause and settings retain the right edge');
+    assert.deepEqual(commands.slice(-2),['fullscreen','settings'],'Fullscreen and settings retain the right edge');
     assert.equal(await shell.locator('.table-tools button svg[data-ui-icon]').count(),commands.length);
 
     assert.equal(await shell.locator('.player-panel .player-token').count(),2);
@@ -135,7 +136,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     // Table mode is read-only and must not inherit a player's own hand.
     await page.evaluate(({snapshot,def})=>{
       const client={snapshot,pending:null,subscribe(){return()=>{};},history:async()=>{throw Error('Not requested');}};
-      window.publicGame=PlayroomSharedViews.mount(client,def,{surface:'table'});publicGame.render();
+      window.publicGame=PlayroomSharedViews.mount(client,qaDefinition,{surface:'table'});publicGame.render();
     },{snapshot:publicSnapshot,def});
     assert.equal(await page.locator('.network-game').getAttribute('data-viewer'),'-1');
     assert.equal(await page.locator('.network-game .scene .own-hand').count(),0);
@@ -143,7 +144,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.equal(await page.locator('.network-game .scene .opponent-hand').count(),2);
     assert.equal(await page.locator('.network-game .scene .uno-art-face').count(),1,'Only the public discard may show a card face');
     await page.evaluate(()=>publicGame.destroy());
-  }finally{await page.close();await browser.close();}
+  }finally{await page.close();await browser.close();await server.close();}
 });
 
 test('personal network layout requires a Table, keeps equal opponent cards and restores the field',{timeout:50000},async()=>{

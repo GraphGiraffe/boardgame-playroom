@@ -470,9 +470,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(networkInMenu&&!force)return;
     if(clientSetupShown&&!force&&!document.querySelector('.room-setup-modal .lobby-shell'))return;
     clientSetupShown=true;
-    if(!clientRoom)return;const room=clientRoom,me=participant(room,clientParticipantId),app=document.getElementById('app');
+    if(!clientRoom)return;const room=clientRoom,app=document.getElementById('app');
     app.inert=!!document.getElementById('modal-root').children.length;
-    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby,notice:room.phase==='lobby'&&me?.rulesNotice?globalThis.PlayroomMessages.text("ui.network-ui.bcabed4ce53a"):''}),'room-setup-modal');
+    bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
+    PlayroomLobbyView.notifyRulesChange(room,clientParticipantId,toast);
     PlayroomLobbyView.bindDrag(document.querySelector('#modal-root .lobby-shell'),{canMove:id=>!room.recovery&&id===clientParticipantId&&room.phase==='lobby'&&!participant(room,id)?.ready,move:(id,slot)=>roomCommand(slot==='table'?{type:'claim-table'}:slot==='spectator'?{type:'spectator'}:{type:'claim-seat',seatId:slot}),onError:error=>toast(globalThis.PlayroomMessages.error(error))});
     if(room.phase==='starting')startClientCountdown();
   }

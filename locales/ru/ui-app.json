@@ -301,5 +301,16 @@
   "ui.app.confirm-reset-rules": "Сбросить правила к значениям по умолчанию?",
   "ui.app.confirm-reset-settings": "Сбросить настройки к значениям по умолчанию?",
   "ui.app.confirm-leave-table": "Выйти из партии в меню?",
-  "ui.app.confirm-exit-app": "Выйти из приложения?"
+  "ui.app.confirm-exit-app": "Выйти из приложения?",
+  "ui.bot-settings.title": "Настройки бота",
+  "ui.bot-settings.auto": "Случайная стратегия",
+  "ui.bot-settings.auto-help": "Один из шести профилей на всю новую партию.",
+  "ui.bot-settings.name": "Никнейм",
+  "ui.bot-settings.avatar": "Выбрать аватар",
+  "ui.bot-settings.strategy": "Стратегия",
+  "ui.bot-settings.errors": "Вероятность ошибки",
+  "ui.bot-settings.errors-help": "Иногда бот выбирает менее выгодный осмысленный ход. Уровни сложности появятся позже.",
+  "ui.bot-settings.cancel": "Отмена",
+  "ui.bot-settings.apply": "Применить",
+  "ui.bot-settings.changed": "Хост изменил настройки бота. Проверьте их и подтвердите готовность заново."
 }
