@@ -33,3 +33,7 @@ Within the same game/viewer/viewport, removing or emptying a local or opponent h
 ## 0.19 presentation performance
 
 Не клонировать все руки/поле ради одного эффекта: выбирать source hands, leaving board refs и затронутые flip slots. Проверять порядок async prepare → ответ/звук → transfer → set/reveal → counters в local/network/history. При resize инвалидировать координатные резервы, сохраняя объявленные зоны пустых рук. Быстрый режим сохраняет видимость действия, instant при наложении выбирает ответ.
+
+## Справка и компактная компоновка · 0.19.2
+
+Общий заголовок стола занимает максимум две строки: если название переносится, подпись режима скрывается; после поворота экрана повторно измерять текст. `template[data-card-help-intro]` задаёт вводный блок справки активного пака. `--square-hand-padding` позволяет уменьшить резерв квадратной руки; значение по умолчанию сохраняет другие паки. Проверять полный offline HTML, восемь игроков и возврат portrait → landscape → portrait. Размер кнопки сверять по computed style: общий `--ui-target` может перекрыть локальные width/height.

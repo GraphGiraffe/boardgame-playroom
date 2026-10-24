@@ -755,8 +755,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function showCardHelp() {
     const cards=[...document.querySelectorAll('.own-hand .hand-card[data-tooltip]')],seen=new Set();
     const entries=cards.filter(card=>{const text=card.dataset.tooltip;if(seen.has(text))return false;seen.add(text);return true;});
+    const intro=document.querySelector('template[data-card-help-intro]')?.innerHTML||'';
     const details=entries.map(card=>`<li><strong>${esc(card.getAttribute('aria-label'))}</strong><p>${esc(card.dataset.tooltip)}</p>${card.querySelector('template[data-card-help-art]')?.innerHTML||''}</li>`).join('');
-    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.b7f6f3448201"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.app.9751c986689e")}</p><ul class="card-help-list">${details||("<li>"+globalThis.PlayroomMessages.text("ui.app.91e23b5cc854")+"</li>")}</ul>`);
+    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.b7f6f3448201"))}${intro}<p class="lead">${globalThis.PlayroomMessages.text("ui.app.9751c986689e")}</p><ul class="card-help-list">${details||("<li>"+globalThis.PlayroomMessages.text("ui.app.91e23b5cc854")+"</li>")}</ul>`);
   }
   function showPlayerActions(target) {
     if(isReplay()||paused||gate!==null||!session)return;
