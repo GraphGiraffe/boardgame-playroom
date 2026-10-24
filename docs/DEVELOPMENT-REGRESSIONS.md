@@ -29,3 +29,7 @@ Preserve original art, rejected candidates and chosen versions in source design 
 ### Disappearing hands
 
 Within the same game/viewer/viewport, removing or emptying a local or opponent hand must preserve its measured layout zone, including during public playback. Retain only geometry: never retain removed cards, private markup, commands or focus targets. Reserve resets with a new scene identity or viewport/scale change; explicit field reflow does not erase hand reserves. Check removal, repeated empty rendering and restoration in portrait and landscape.
+
+## 0.19 presentation performance
+
+Не клонировать все руки/поле ради одного эффекта: выбирать source hands, leaving board refs и затронутые flip slots. Проверять порядок async prepare → ответ/звук → transfer → set/reveal → counters в local/network/history. При resize инвалидировать координатные резервы, сохраняя объявленные зоны пустых рук. Быстрый режим сохраняет видимость действия, instant при наложении выбирает ответ.

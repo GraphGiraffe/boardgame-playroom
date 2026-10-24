@@ -2,13 +2,14 @@
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
   {paths:['core/messages.js','application/session-access.js'],select:['network/table','case/network-main-app']},
-  {paths:['core/messages.js','core/model-values.js','core/events.js','core/model-runtime.js','core/model-registration.js'],select:['core/messages.js','core/model','core/session-runtime','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
+  {paths:['core/messages.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/scene-contract.js','core/model-registration.js'],select:['core/messages.js','core/model','core/session-runtime','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
   {paths:['core/messages.js','core/history.js','core/session-codec.js','core/journal.js'],select:['core/messages.js','core/session-runtime','case/session','case/durable-authority','case/network-store-integrity','case/host-recovery','network/table']},
   {paths:['core/messages.js','app/appearance-ui.js','app/appearance-web.js','app/appearance.css'],select:['ui/appearance']},
   {paths:['core/messages.js','application/appearance.js','themes/'],select:['core/messages.js','core/appearance','ui/appearance']},
   {paths:['core/messages.js','presentation/localization.js','locales/'],select:['core/messages.js','core/localization','ui/appearance']},
   {paths:['core/messages.js','core/command-processor.js'],select:['case/authority','case/durable-authority','network/table','case/uno-reactions','case/uno-social']},
   {paths:['core/messages.js','presentation/scheduler.js'],select:['case/game-flow','case/network-feedback-browser']},
+  {paths:['presentation/plan-player.js','presentation/event-plan.js'],select:['case/game-flow','case/game-feedback','case/network-feedback-browser','case/mage-brawl-browser']},
   {paths:['core/messages.js','core/random.js'],select:['core/messages.js','core/domain','case/engine','case/session','case/rc2-games']},
   {paths:['core/messages.js','core/component-assets.js','core/game-components.js','core/component-assets.json'],select:['core/messages.js','core/domain','case/artwork','case/first-medallion-browser','case/result-team-medallions-browser','case/rc2-games-browser']},
   {paths:['core/messages.js','core/token-layout.js','core/ui.js','core/ui.css','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/design-system.css','app/styles.css'],select:['core/messages.js','core/screen','ui','games','input/hands','network/resume','storage']},

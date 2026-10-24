@@ -47,8 +47,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error(globalThis.PlayroomMessages.text("ui.packs.483f600985f1"));
     if(m.tileTheme!==undefined&&!['green','coral','blue','gold','violet'].includes(m.tileTheme))throw Error(globalThis.PlayroomMessages.text("ui.packs.964115e4eeda"));
     if(m.skinFamilies!==undefined&&(!Array.isArray(m.skinFamilies)||m.skinFamilies.length>32||m.skinFamilies.some(f=>typeof f!=='string'||!ID.test(f))||new Set(m.skinFamilies).size!==m.skinFamilies.length)||m.defaultSkins!==undefined&&(!record(m.defaultSkins)||Object.entries(m.defaultSkins).some(([family,variant])=>!m.skinFamilies?.includes(family)||typeof variant!=='string'||!ID.test(variant))))throw Error('PACK_SKINS_INVALID');
-    if(m.viewApi!==2)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
-    if(m.engineApi!==3||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
+    if(m.viewApi!==3)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
+    if(m.engineApi!==4||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     if(m.shortName!==undefined&&(typeof m.shortName!=='string'||!m.shortName.trim()||m.shortName.length>60))throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error(globalThis.PlayroomMessages.text("ui.packs.a2c15b806ca4"));
@@ -92,7 +92,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
       const scope={PlayroomMessages:root.PlayroomMessages,PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,adaptModel:spec=>{
-        if(m.engineApi!==3||typeof this.modelAdapter!=='function')throw Error(globalThis.PlayroomMessages.text("ui.packs.33a5bbc8c9da"));
+        if(m.engineApi!==4||typeof this.modelAdapter!=='function')throw Error(globalThis.PlayroomMessages.text("ui.packs.33a5bbc8c9da"));
         return this.modelAdapter(this.engine,spec);
       }})};
       const deny=()=>{throw Error(globalThis.PlayroomMessages.text("ui.packs.b485bab9ce53"));};
@@ -107,7 +107,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       if(!rules||!view||typeof rules.name!=='string'||!Number.isInteger(rules.min)||!Number.isInteger(rules.max)||rules.min<1||rules.max<rules.min||rules.max>32||!Array.isArray(rules.presets)||!rules.presets.length||!rules.presets.every(p=>p&&typeof p.id==='string')||!['create','legal','apply'].every(method=>typeof rules[method]==='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.7fc357d22602"));
       if((rules.version&&rules.version!==m.version)||(rules.stateVersion&&rules.stateVersion!==m.stateVersion))throw Error(globalThis.PlayroomMessages.text("ui.packs.5da21a35679c"));
-      if(m.engineApi===3&&rules.modelContractVersion!==1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4e3f1bcc4946"));
+      if(m.engineApi===4&&rules.modelContractVersion!==1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4e3f1bcc4946"));
       const compiled={bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:scope.PlayroomCatalog[m.id],styles:css};
       if(!record(compiled.catalog))throw Error(globalThis.PlayroomMessages.text("ui.packs.f2a5b673a1e5"));
       const token=Object.freeze({id:m.id,version:m.version,manifest:clone(m)});prepared.set(token,{owner:this,compiled});return token;

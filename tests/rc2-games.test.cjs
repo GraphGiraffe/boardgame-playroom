@@ -52,7 +52,7 @@ test('Ludo keeps every pawn visible on a shared start and does not replay the pr
  for(const count of [2,4,8,16]){
   s.data.pawns=s.data.pawns.map((row,p)=>row.map((_,j)=>p*4+j<count?(cell-p*13+52)%52:-1));
   const html=V.render(E.project(s,0),0,E.legalActions(s,0),{});
-  const pawns=[...html.matchAll(/<button class="ludo-pawn[^>]*data-entity="token-(\d)-(\d)"[^>]*>/g)].filter(match=>Number(match[1])*4+Number(match[2])<count);
+  const pawns=[...html.matchAll(/<button[^>]*class="ludo-pawn[^>]*data-entity="token-(\d)-(\d)"[^>]*>/g)].filter(match=>Number(match[1])*4+Number(match[2])<count);
   assert.equal(pawns.length,count);
   const positions=pawns.map(match=>match[0].match(/left:([\d.]+)%;top:([\d.]+)%/).slice(1).join(':'));
   assert.equal(new Set(positions).size,count,`${count} pawns occupy distinct positions`);
@@ -193,7 +193,7 @@ test('Ludo friendly occupied cells keep pawn selection separate from a move',()=
   const projected=E.project(s,0),actions=E.legalActions(s,0),before=JSON.stringify(s),move=actions.find(a=>a.owner===0&&a.pawn===0&&a.dieIndex===0);
   assert(move,'moving onto a friendly occupied cell is legal');
   const html=V.render(projected,0,actions,{viewState:{pawn:'0:0'}});
-  const pawn=html.match(/<button class="ludo-pawn[^>]*data-entity="token-0-1"[^>]*>/)?.[0];
+  const pawn=html.match(/<button[^>]*class="ludo-pawn[^>]*data-entity="token-0-1"[^>]*>/)?.[0];
   assert.match(pawn,/data-view-key="pawn" data-view-value="0:1"/);assert.doesNotMatch(pawn,/data-action=/);
   const cell=html.match(/<button class="ludo-cell[^>]*data-motion-anchor="path-9"[^>]*>/)?.[0];
   assert(cell.includes(V.helpers.actionAttr(move)),'the marked cell still executes the selected move');
@@ -309,5 +309,25 @@ test('Pexeso cartoon pairs vary by seed with all shapes, varied colors and repro
   }
   assert(compositions.size>32,'new seeds select different face sets');
   assert(colorAssignments.size>3,'individual shapes receive different colors across games');
+ }
+});
+
+test('finish order records simultaneous exits, public timing and the last loser',()=>{
+ const Ending=require(require('node:path').join(require('node:fs').realpathSync(__dirname+'/../packs'),'../shared/domain/end-policy.js'));
+ const ending=Ending.create(5,0,'last');
+ Ending.record(ending,[2],{timeline:{turn:8}},'domino');
+ Ending.record(ending,[0,3],{timeline:{turn:15}},'domino');
+ Ending.record(ending,[1],{timeline:{turn:19}},'domino');
+ assert.deepEqual(Ending.places(ending,[0,0,0,0,9],false),[2,3,1,2,4]);
+ assert.deepEqual(Ending.result(ending).lastPlayers,[4]);
+ assert.deepEqual(ending.exits.filter(e=>e.turn===15).map(e=>e.player),[0,3]);
+ for(const game of ['durak','oldmaid']){
+  let s=create(game,4),steps=0;
+  while(s.status==='playing'&&steps++<1500)s=play(s,E.botAction(s));
+  assert.equal(s.status,'finished',game);
+  const groups=s.data.ending.groups;
+  for(let rank=0;rank<groups.length;rank++)for(const player of groups[rank])assert.equal(s.result.places[player],rank+1,game);
+  assert.deepEqual(E.project(s,0).result,s.result);
+  assert(s.result.exits.length>0);assert(s.result.exits.every(e=>e.round>0||e.turn>0));
  }
 });

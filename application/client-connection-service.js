@@ -8,7 +8,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       this.unsubscribe=transport.subscribe?.(s=>this.accept(s));
     }
     accept(snapshot){
-      if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==2||!Number.isSafeInteger(snapshot.revision))return false;
+      if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==3||!Number.isSafeInteger(snapshot.revision))return false;
       if(this.snapshot&&(snapshot.sessionId!==this.snapshot.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error(globalThis.PlayroomMessages.text("ui.session-client.c5aa2db0f54c"));
       if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||!P.sameAudience(snapshot,this.snapshot)||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
       if((snapshot.reactionRevision!==undefined&&(!Number.isSafeInteger(snapshot.reactionRevision)||snapshot.reactionRevision<0))||(snapshot.paused!==undefined&&typeof snapshot.paused!=='boolean')||(snapshot.controlRevision!==undefined&&(!Number.isSafeInteger(snapshot.controlRevision)||snapshot.controlRevision<0)))return false;
@@ -28,7 +28,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     async reconcile(snapshot){
       if(this.closed)throw Error(globalThis.PlayroomMessages.text("ui.session-client.b8adaa326e7c"));
       const previous=this.snapshot;
-      if(!snapshot||snapshot.kind!=='snapshot'||snapshot.protocolVersion!==2||!Number.isSafeInteger(snapshot.revision)||
+      if(!snapshot||snapshot.kind!=='snapshot'||snapshot.protocolVersion!==3||!Number.isSafeInteger(snapshot.revision)||
         (previous&&((['sessionId','authorityEpoch','game','packVersion'].some(k=>snapshot[k]!==previous[k])||!P.sameAudience(snapshot,previous))||
           snapshot.revision<previous.revision||(snapshot.controlRevision||0)<(previous.controlRevision||0))))throw Error(globalThis.PlayroomMessages.text("ui.session-client.f7a7f94750b3"));
       this.recovering=true;
@@ -40,7 +40,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }finally{this.recovering=false;}
     }
     subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
-    async send(action){if(this.closed||!this.snapshot)throw Error(globalThis.PlayroomMessages.text("ui.session-client.a0444837bb86"));if(this.pending)throw Error(globalThis.PlayroomMessages.text("ui.session-client.34ce9807af57"));this.pending=P.command(this.snapshot,action,this.idFactory());const w=this.snapshot.state?.modelProjection?.decisionWindow;this.pendingDecision=w?{id:w.id,version:w.versions[this.snapshot.viewer],viewer:this.snapshot.viewer,control:this.snapshot.controlRevision||0}:null;return this.retry();}
+    async send(action){if(this.closed||!this.snapshot)throw Error(globalThis.PlayroomMessages.text("ui.session-client.a0444837bb86"));if(this.pending)throw Error(globalThis.PlayroomMessages.text("ui.session-client.34ce9807af57"));this.pending=P.command(this.snapshot,action,this.idFactory());const w=this.snapshot.state?.scene?.decisionWindow;this.pendingDecision=w?{id:w.id,version:w.versions[this.snapshot.viewer],viewer:this.snapshot.viewer,control:this.snapshot.controlRevision||0}:null;return this.retry();}
     retry(){
       if(this.inFlight)return this.inFlight;
       if(!this.pending)return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.session-client.c86acc5fddaa")));
@@ -54,8 +54,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
               catch(error){if(this.closed||attempt===1)throw error;}
             }
             if(receipt.commandId!==command.commandId)throw Error(globalThis.PlayroomMessages.text("ui.session-client.70e1cfc955f9"));
-            const next=receipt.snapshot,w=next?.state?.modelProjection?.decisionWindow,token=this.pendingDecision;
-            const legal=next?.state?.modelProjection?.actions?.some(c=>P.canonical(c)===P.canonical(command.action));
+            const next=receipt.snapshot,w=next?.state?.scene?.decisionWindow,token=this.pendingDecision;
+            const legal=next?.state?.scene?.interactions?.some(({command:c})=>P.canonical(c)===P.canonical(command.action));
             if(receipt.code!=='STALE'||rebases===8||!token||!w||w.id!==token.id||w.versions[token.viewer]!==token.version||next.viewer!==token.viewer||next.sessionId!==command.sessionId||next.authorityEpoch!==command.authorityEpoch||(next.controlRevision||0)!==token.control||next.paused||!legal)break;
             // The authority still checks every global revision. Only unchanged own
             // decisions in the same barrier can be submitted with a fresh receipt ID.

@@ -1,7 +1,7 @@
 /* Detect an incompatible installed runtime without deleting the owner's data. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomUpgradeService=api;})(globalThis,function(){
   'use strict';
-  const KEY='playroom.accepted-engine-api',VERSION=3;
+  const KEY='playroom.accepted-engine-api',VERSION=4;
   class UpgradeService {
     constructor(storage){this.storage=storage;}
     inspect(){

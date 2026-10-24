@@ -137,10 +137,20 @@ test('shared component and sound resources are pinned to canonical sources and r
  const canonical=require(path.join(packRoot,'shared/components/game-components.js')),host=require('../core/game-components.js'),catalog=require('../themes/assets.json');
  for(const value of [null,1,6,12])for(const frame of ['flat','raised'])assert.equal(host.dieArt(value,{frame}),canonical.dieArt(value,{frame}));
  for(const king of [false,true])assert.equal(host.checkerArt(king,true),canonical.checkerArt(king,true));
- for(const variant of ['main','compact']){const recipe={main:'<div>A</div>',compact:'<div>B</div>',width:66,height:97,variant};assert.equal(host.cardFace(recipe),canonical.art(recipe,variant));}
+ for(const variant of ['main','compact']){const recipe={main:'<div>A</div>',compact:'<div>B</div>',width:66,height:97,variant};assert.equal(host.cardFace(recipe),canonical.cardFrame(canonical.art(recipe,variant)));}
  for(const [a,b]of [[0,0],[1,6],[6,3]])assert.equal(host.dominoFace(a,b,270),canonical.dominoFace(a,b,270));
  const resolver=new host.AssetResolver({catalog,skins:{die:'missing'},palette:{'material.die.face':'#123456'}});
  assert.equal(resolver.resolve('die').variant,'classic');assert.equal(resolver.resolve('die').missing,true);assert.equal(resolver.resolve('die').materials.face,'#123456');
  assert.throws(()=>resolver.resolve('constructor'),/ASSET_FAMILY_UNKNOWN/);assert.match(resolver.render('die',{value:6}),/viewBox="0 0 60 60"/);
  assert.deepEqual(require('../core/standard-sounds.js'),JSON.parse(fs.readFileSync(path.join(packRoot,'shared/sounds/standard-sounds.json'),'utf8')));
+});
+
+test('entity references distinguish namespaces and full physical IDs',()=>{
+ const C=require('../core/game-components.js');
+ const refs=[C.entityRef('card','7'),C.entityRef('tile','7'),C.entityRef('card','copy-7')];
+ assert.equal(new Set(refs.map(C.entityKey)).size,3);
+ assert.deepEqual(JSON.parse(JSON.stringify(refs[2])),{namespace:'card',id:'copy-7'});
+ assert.throws(()=>C.entityKey('card-7'),/ENTITY_REF_INVALID/);
+ assert.throws(()=>C.entityRef('card-copy','7'),/ENTITY_REF_INVALID/);
+ assert.throws(()=>C.entityKey({namespace:'card',id:'7',face:'secret'}),/ENTITY_REF_INVALID/);
 });

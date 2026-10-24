@@ -11,12 +11,12 @@ const def={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.f
 
 for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false]]){
   test(`history input renders before release, preserves the slider and rejects stale frames (${width}px)`,{timeout:50000},async()=>{
+    const server=await require('./browser-origin.cjs').serveBrowserFixture(root);
     const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
     const page=await browser.newPage({viewport:{width,height},hasTouch:touch,isMobile:touch});
     try{
-      await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-      for(const file of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:source(file)});
-      for(const file of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:source(file)});
+      await page.goto(server.url);
+      await page.evaluate(()=>{document.body.innerHTML='<div id="app"></div><div id="modal-root"></div><div id="toast"></div>';});
       const session=new Session(Core,'uno',{seed:123,mode:'pass',preset:'classic',players:[{name:'А'},{name:'Б'}]});
       const authority=new Authority(session),audience=authority.connect(0);
       for(let i=0;i<4;i++){
@@ -25,6 +25,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       }
       const frames=session.states.map((_,i)=>audience.history(i)),snapshot=audience.snapshot();
       await page.evaluate(({snapshot,frames,def,readOnly})=>{
+        def=PlayroomAppBridge.packs.exportView(snapshot.game,snapshot.packVersion);
         window.qaAudio=[];window.qaFrames=frames;window.qaRequests=[];window.qaDelayed=false;
         window.PlayroomAppBridge={toast(text){document.querySelector('#toast').textContent=text;},audio:{registerPack(){},play(...args){qaAudio.push(args);}}};
         const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('History cannot send commands');},
@@ -76,7 +77,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       assert.equal(await page.locator('.history-panel').count(),0);
       assert.equal(await page.locator('#toast').textContent(),'Некорректная история.','A stale failure must not replace the current message');
       await page.evaluate(()=>qaGame.destroy());
-    }finally{await page.close();await browser.close();}
+    }finally{await page.close();await browser.close();await server.close();}
   });
 }
 
@@ -96,7 +97,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     const action=Core.legalActions(session.current,actor).find(a=>a.type==='draw')||Core.legalActions(session.current,actor)[0];
     if(action){session.act(actor,action);snapshots.push(audience.history(1));}
     const snapshot=audience.snapshot(),publicSnapshot=authority.connect(-1).snapshot();
-    assert(snapshot.state.data.hands[1].every(c=>c.hidden),'Private opponent cards must be absent from projected snapshots');
+    assert(snapshot.state.scene.players[1].hand.every(c=>c.hidden),'Private opponent cards must be absent from projected snapshots');
     await page.evaluate(({snapshot,snapshots,def})=>{
       const listeners=new Set();
       const client={snapshot,pending:null,subscribe(listener){listeners.add(listener);return ()=>listeners.delete(listener);},
@@ -149,27 +150,24 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
 
 test('personal network layout requires a Table, keeps equal opponent cards and restores the field',{timeout:50000},async()=>{
  require('../packs/gofish/rules.js');
+ const server=await require('./browser-origin.cjs').serveBrowserFixture(root);
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{for(const [count,width,height]of [[2,320,740],[4,390,740],[6,740,390]]){
   const page=await browser.newPage({viewport:{width,height}});
   try{
-   await page.route('http://playroom-layout.test/**',route=>route.fulfill({contentType:'text/html',body:'<html><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>'}));
-   await page.goto('http://playroom-layout.test/');
-   for(const file of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:source(file)});
-   for(const file of ["core/messages.js","presentation/localization.js","core/protocol.js","core/component-assets.js","core/game-components.js","core/token-layout.js","core/ui.js","core/player-target.js","core/motion.js","presentation/scheduler.js","core/game-flow.js","core/hand-overflow.js","app/views.js","application/history-controller.js","application/game-screen-controller.js","platform/web/dom.js","app/game-screen.js","app/game-feedback.js","core/input.js","platform/web/pack-loader.js","app/shared-views.js"])await page.addScriptTag({content:source(file)});
-   const bundle=compiled.PlayroomInstalledPacks.find(item=>item.manifest.id==='gofish');
-   const assets=Object.fromEntries(Object.entries(bundle.files).filter(([path])=>path.startsWith('assets/')).map(([path,value])=>[path,typeof value==='string'?'data:image/svg+xml;base64,'+Buffer.from(value).toString('base64'):'data:'+value.mime+';base64,'+value.data]));
-   const definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],assets};
+   await page.goto(server.url);
+   await page.evaluate(()=>{document.body.innerHTML='<div id="app"></div><div id="modal-root"></div><div id="toast"></div>';});
    const session=new Session(Core,'gofish',{seed:17,mode:'network',preset:'classic',players:Array.from({length:count},(_,index)=>({name:'Игрок '+index}))});
    const authority=new Authority(session),snapshot=authority.connect(0).snapshot();
-   await page.evaluate(({snapshot,definition})=>{
+   await page.evaluate(({snapshot})=>{
+    const definition=PlayroomAppBridge.packs.exportView(snapshot.game,snapshot.packVersion);
     window.definition=definition;window.hasTable=false;window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'}),toast:()=>{}};
     window.client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('No gameplay action in layout check');},history(){return {...snapshot,kind:'history'};}};
     window.game=PlayroomSharedViews.mount(client,definition,{tableAvailable:()=>hasTable});game.render();
-   },{snapshot,definition});
+   },{snapshot});
    assert.equal(await page.locator('[data-command="toggle-field"]').count(),0);
    await page.evaluate(()=>{hasTable=true;game.render();});
-   assert.equal(await page.locator('[data-command="pause"]').count(),1);assert.equal(await page.locator('.table-tools [data-command="history"]').count(),0);
+   assert.equal(await page.locator('.table-tools [data-command="pause"]').count(),0,'Pause remains available through settings shortcuts');assert.equal(await page.locator('.table-tools [data-command="history"]').count(),0);
    await page.locator('[data-command="toggle-field"]').click();
    const layout=page.locator('.app-game-layout');assert.equal(await layout.getAttribute('data-surface'),'player');
    assert.equal(await page.locator('.layout-field').isVisible(),false);assert(await page.locator('.layout-hand').isVisible());
@@ -189,5 +187,5 @@ test('personal network layout requires a Table, keeps equal opponent cards and r
    assert.equal(await layout.getAttribute('data-surface'),'combined');assert.equal(await page.locator('[data-command="toggle-field"]').count(),0,'An archive cannot hide its field even with a saved personal preference');
    await page.evaluate(()=>game.destroy());
   }finally{await page.close();}
- }}finally{await browser.close();}
+ }}finally{await browser.close();await server.close();}
 });

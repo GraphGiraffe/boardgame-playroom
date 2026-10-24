@@ -1,10 +1,10 @@
-# Работа с ХОД 0.18
+# Работа с ХОД 0.19
 
-Приложение 0.18.6, коллекция 0.7.4; engineApi 3, viewApi 2, protocol 2. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md), не номером в исходнике.
+Стабильный выпуск 0.19.0 / 0.8.0 использует API 4; предыдущая опубликованная база: приложение 0.18.6, коллекция 0.7.4; engineApi 4, viewApi 3, protocol 3. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.19.md), не номером в исходнике.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.
-- Только API 3, без legacy runtime; старые данные сохранять для экспорта, опубликованные версии не переписывать.
+- Только API 4, без legacy runtime; старые данные сохранять для экспорта, опубликованные версии не переписывать.
 - Authority у хоста; сеть получает проекции, не Session.export. ACK после durable commit; commandId не создаёт второй ход. Resume-token не входит в QR/snapshot/логи.
 - Fixed scene по умолчанию. Динамическая геометрия только opt-in конкретного действия; не всего пака. Публичность проверяется до renderer/эффектов.
 - Канонические shared assets/compiler в коллекции; generated host copies обновлять явной companion сборкой, не руками.

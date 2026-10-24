@@ -1,4 +1,4 @@
-# SDK 0.18 · API 3
+# SDK · API 4 (локальный кандидат)
 
 `tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.2. Источники и публикация — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md).
 
@@ -90,7 +90,7 @@ Presentation может объявлять `scene.round:{number,limit:null|integ
 
 ## Переход и публикация
 
-engineApi 3 и network protocol 2 обязательны. API 1/2 не исполняются в новом runtime. Старые данные не переписываются; подтверждение полного обновления отдельно от загрузки, исходные данные можно выгрузить. Опубликованные старые файлы и теги неизменны.
+engineApi 4 и network protocol 3 обязательны. API 1/2/3 не исполняются в новом runtime. Старые данные не переписываются; подтверждение полного обновления отдельно от загрузки, исходные данные можно выгрузить. Опубликованные старые файлы и теги неизменны.
 
 Публикация приложения и коллекции независима; процедура и cutover — [RELEASING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md).
 
@@ -152,7 +152,7 @@ Authority передаёт публичную `state.timeline` игроку, з�
 
 ## Проверка старта комнаты
 
-RoomService принимает необязательный синхронный чистый порт `validateStart(room)`: null означает допустимый состав, локализованная строка — причину отказа. Общий `startBlocker(roomId)` используется UI и authority; окончательная проверка повторяется перед стартом. Вызов не сохраняет сессию и не расходует живой RNG. Engine API 3 и View API 2 не меняются. `showLastGame` и `seatingByGame` — локальные настройки; responsive fallback меняет только текущую раскладку, не предпочтение. Публичные индексы партий могут содержать optional firstPlayer/presetId/team/playerIndex для компактных карточек; они не используются для игровых прав.
+RoomService принимает необязательный синхронный чистый порт `validateStart(room)`: null означает допустимый состав, локализованная строка — причину отказа. Общий `startBlocker(roomId)` используется UI и authority; окончательная проверка повторяется перед стартом. Вызов не сохраняет сессию и не расходует живой RNG. Текущий контракт: Engine API 4 и View API 3. `showLastGame` и `seatingByGame` — локальные настройки; responsive fallback меняет только текущую раскладку, не предпочтение. Публичные индексы партий могут содержать optional firstPlayer/presetId/team/playerIndex для компактных карточек; они не используются для игровых прав.
 
 Общие имена механик и актуальные UI ограничения — [MECHANICS](MECHANICS.md), [GAME-ELEMENTS-API](GAME-ELEMENTS-API.md).
 

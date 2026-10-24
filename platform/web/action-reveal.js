@@ -12,7 +12,7 @@
       const x=right>left?(left+right)/2:width/2,y=bottom>top?(top+bottom)/2:height/2;
       this.host.style.setProperty('--reveal-x',x+'px');this.host.style.setProperty('--reveal-y',y+'px');
     }
-    target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>el.dataset.entity===this.value?.entity&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'))||(this.value?.kind==='cards'?this.mount()?.querySelector('[data-motion-table]'):null);}
+    target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>this.value?.entity&&el.dataset.entity===root.PlayroomGameComponents.entityKey(this.value.entity)&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'))||(this.value?.kind==='cards'?this.mount()?.querySelector('[data-motion-table]'):null);}
     restore(){if(!this.hidden)return;const {el,value,priority}=this.hidden;el.style.setProperty('visibility',value,priority);el.removeAttribute('data-reveal-active');this.hidden=null;}
     hideTarget(){const el=this.target();if(this.value?.kind==='cards'&&el?.hasAttribute('data-motion-table'))return;if(this.hidden?.el===el)return;this.restore();if(el){this.hidden={el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')};el.setAttribute('data-reveal-active','');el.style.setProperty('visibility','hidden','important');}}
     show(value,pack){
@@ -34,18 +34,18 @@
       }else{this.value=null;return;}
       const content=doc.createElement('div');content.className='action-reveal-content';for(const child of [...host.children])content.append(child);content.append(art);host.append(content);doc.body.append(host);this.host=host;this.hideTarget();this.position();this.reposition=()=>this.position();root.addEventListener?.('resize',this.reposition);root.addEventListener?.('scroll',this.reposition,true);this.observer=root.ResizeObserver?new root.ResizeObserver(this.reposition):null;this.observer?.observe(mount);const field=mount.querySelector('.layout-field');if(field)this.observer?.observe(field);
     }
-    async enter(snapshot,timing){
+    async enter(snapshot,timing,context){
       if(this.entered||!this.host)return;this.entered=true;this.timing=timing;
       const art=this.host.querySelector('.action-reveal-art');
       const reduced=root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||root.document?.body.classList.contains('reduced-motion');
       if(!['card','cards'].includes(this.value?.kind)||!art||reduced||!timing.flip)return;
-      const from=snapshot?.playedFrom||snapshot?.entities?.get(this.value.entity)?.rect||snapshot?.origin,to=art.getBoundingClientRect();
+      const from=snapshot?.playedFrom||(this.value.entity?snapshot?.entities?.get(root.PlayroomGameComponents.entityKey(this.value.entity))?.rect:null)||snapshot?.origin,to=art.getBoundingClientRect();
       if(!from||!to.width||!to.height)return;
       const scale=Math.min(from.width/to.width,from.height/to.height);
       art.classList.add('is-flying');this.animation=art.animate([{transform:`translate(${from.x+from.width/2-to.x-to.width/2}px,${from.y+from.height/2-to.y-to.height/2}px) scale(${scale})`},{transform:'translate(0,0) scale(1)'}],{duration:timing.flip,easing:'ease-out',fill:'both'});
-      const entering=this.animation;await entering.finished.catch(()=>{});entering.cancel();if(this.animation===entering)this.animation=null;art.classList.remove('is-flying');
+      context?.animation(this.animation);const entering=this.animation;await entering.finished.catch(()=>{});entering.cancel();if(this.animation===entering)this.animation=null;art.classList.remove('is-flying');
     }
-    async finish(){
+    async finish(context){
       const value=this.value,art=this.host?.querySelector('.action-reveal-art'),target=this.target();
       const reduced=root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||root.document?.body.classList.contains('reduced-motion');
       if(['card','cards'].includes(this.value?.kind)&&art&&target&&!reduced&&this.timing?.flip!==0&&art.animate){
@@ -53,7 +53,7 @@
         if(from.width&&to.width&&to.height){
           const title=this.host.querySelector('.action-reveal-title');if(title)title.style.opacity='0';
           art.classList.add('is-flying');this.animation=art.animate([{transform:'translate(0,0) scale(1)'},{transform:`translate(${to.x+to.width/2-from.x-from.width/2}px,${to.y+to.height/2-from.y-from.height/2}px) scale(${Math.min(to.width/from.width,to.height/from.height)})`}],{duration:this.timing?.flip||240,easing:'ease-in',fill:'forwards'});
-          await this.animation.finished.catch(()=>{});
+          context?.animation(this.animation);await this.animation.finished.catch(()=>{});
         }
       }
       if(this.value===value)this.clear();

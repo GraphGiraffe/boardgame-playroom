@@ -1,4 +1,4 @@
-# UI API 2 · ХОД 0.18
+# UI API 3 · ХОД 0.18
 
 Пак регистрирует `PlayroomViews.register(id, render, cover, options)`. render получает разрешённые state/viewer/actions/ui и возвращает **элементы сцены**, не собственную оболочку. Эталоны: tictactoe/view.js (поле), gofish/view.js (руки/таблица), yatzy/view.js (таблица), ludo/view.js (маршруты).
 
