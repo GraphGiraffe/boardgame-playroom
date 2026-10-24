@@ -64,5 +64,8 @@
     "few": "{count} партии",
     "many": "{count} партий",
     "other": "{count} партии"
-  }
+  },
+  "ui.pack-manager.update-all": "Обновить всё ({count})",
+  "ui.pack-manager.updating-all": "Обновление…",
+  "ui.pack-manager.update-errors": "Обновлено: {count}. Не удалось обновить: {errors}"
 }
