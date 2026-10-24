@@ -3,13 +3,15 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const UI=require('../core/ui.js'),root=path.resolve(__dirname,'..'),packsDir=path.join(root,'packs'),sharedDir=fs.existsSync(packsDir)?path.join(path.dirname(fs.realpathSync(packsDir)),'shared'):null,read=f=>fs.readFileSync(f.startsWith('shared/')?path.join(sharedDir,f.slice(7)):path.join(root,f),'utf8');
 const sourceSizes=[[590,1032,'snakes'],[1647,973,'snakes'],[1874,550,'durak'],[1397,543,'snakes'],[1055,692,'durak'],[1065,967,'snakes'],[687,538,'domino'],[1742,488,'domino'],[1609,481,'domino'],[832,1032,'domino'],[724,1032,'domino'],[737,1032,'checkers'],[898,1032,'checkers']];
-test('elements API rejects malformed content and geometry',()=>{for(const value of ['old',{api:1},{api:2,family:'cards',elements:{field:''}},{api:2,family:'board',elements:{field:'x',unknown:'x'}},{api:2,family:'board',fieldAspect:0,elements:{field:'x'}},{api:2,family:'cards',elements:{field:'x'},playerContent:[{handCount:-1}]}])assert.throws(()=>UI.composeScene(value));});
+test('elements API rejects malformed content and geometry',()=>{for(const value of ['old',{api:1},{api:3,family:'cards',elements:{field:''}},{api:3,family:'board',elements:{field:'x',unknown:'x'}},{api:3,family:'board',fieldAspect:0,elements:{field:'x'}},{api:3,family:'cards',elements:{field:'x'},playerContent:[{handCount:-1}]}])assert.throws(()=>UI.composeScene(value));});
 test('all packs share player panels and preserve geometry across reported screens, replay and rotation',{timeout:180000,skip:!['uno','domino','durak','checkers','snakes'].every(id=>fs.existsSync(path.join(root,'packs',id,'rules.js')))},async t=>{
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{const context=await browser.newContext({reducedMotion:'reduce'}),page=await context.newPage();
  await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div></body></html>');
- for(const f of ['app/styles.css','app/design-system.css','core/game-components.css','core/ui.css','shared/view-kit.css',...['uno','durak','domino','checkers','snakes'].map(id=>`packs/${id}/styles.css`)])await page.addStyleTag({content:read(f)});
- for(const f of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','core/tag-registry.js','core/tags.js','platform/web/pack-loader.js','core/packs.js','installed-packs.js'])await page.addScriptTag({content:read(f)});
+ const hostStyles=[...read('index.html').matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)].map(m=>m[1]);
+ for(const f of [...hostStyles,'shared/view-kit.css',...['uno','durak','domino','checkers','snakes'].map(id=>`packs/${id}/styles.css`)])await page.addStyleTag({content:read(f)});
+ await page.addScriptTag({content:'globalThis.PlayroomSizeCatalogue='+read('core/size-tokens.json')});
+ for(const f of ['platform/web/element-sizes.js','core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','core/tag-registry.js','core/tags.js','platform/web/pack-loader.js','core/packs.js','installed-packs.js'])await page.addScriptTag({content:read(f)});
  await page.evaluate(()=>{window.packs=new TabletopPacks({engine:TabletopCore,views:PlayroomViews,catalog:{},document,storage:{get:()=>null,set(){}}});packs.bootstrap(PlayroomInstalledPacks);});
  const cases=[...sourceSizes,...[...['uno','durak','domino','checkers','snakes']].flatMap(id=>[[320,640,id],[390,740,id],[740,390,id],[640,280,id],[768,1024,id],[1024,768,id],[1280,900,id],[1920,1080,id]]),...['uno','durak','domino','checkers','snakes'].flatMap(id=>[[390,740,id,'table'],[740,390,id,'table'],[1280,900,id,'table'],[390,740,id,'player'],[740,390,id,'player'],[1280,900,id,'player'],[390,740,id,'open']])];
  let capture=0;
@@ -48,7 +50,7 @@ test('all packs share player panels and preserve geometry across reported screen
     for(const counter of stage.querySelectorAll('[data-score-kind="pieces"]')){const r=counter.getBoundingClientRect();if(Math.abs(r.width-r.height)>1)errors.push('pieces counter is not round');}
     if(stage.querySelectorAll('[data-score-kind="pieces"]').length!==2)errors.push('missing piece counters');
    }
-   const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(visible(dominoBoard)&&dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow');for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?4/7:7/4;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
+   const dominoBoard=document.querySelector('.domino-board');if(dominoBoard){const field=stage.querySelector('.layout-field');if(visible(dominoBoard)&&dominoBoard.scrollWidth>dominoBoard.clientWidth+1||dominoBoard.getBoundingClientRect().left<field.getBoundingClientRect().left-1||dominoBoard.getBoundingClientRect().right>field.getBoundingClientRect().right+1)errors.push('domino field overflow '+JSON.stringify({scroll:dominoBoard.scrollWidth,width:dominoBoard.clientWidth,board:dominoBoard.getBoundingClientRect().toJSON(),field:field.getBoundingClientRect().toJSON()}));for(const tile of dominoBoard.querySelectorAll('.domino-node>.domino-tile')){const r=tile.getBoundingClientRect(),aspect=tile.classList.contains('double')?4/7:7/4;if(Math.abs(r.width/r.height-aspect)>.03)errors.push('table domino aspect');}}
    for(const pip of document.querySelectorAll('.domino-art-face .pip')){const r=pip.getBoundingClientRect();if(Math.abs(r.width-r.height)>.2)errors.push('domino pip stretched');}
    const n=document.querySelectorAll('.player-panel').length;if(n!==document.querySelectorAll('.player-info').length||n<2)errors.push('players missing');
    const active=stage.querySelectorAll('.player-panel.is-turn'),inactive=stage.querySelector('.player-panel:not(.is-turn)');
@@ -60,7 +62,7 @@ test('all packs share player panels and preserve geometry across reported screen
     if(!within(r,p)||r.height<14||badge.textContent.trim()!==badge.dataset.pieceCount)errors.push('count badge clipped or unreadable: '+parent.className+' '+JSON.stringify({count:badge.dataset.pieceCount,x:r.x,y:r.y,w:r.width,h:r.height,p:{x:p.x,y:p.y,w:p.width,h:p.height}}));
     if(badge.classList.contains('is-corner')){if(Math.abs(r.left-p.left)>1||Math.abs(r.top-p.top)>1)errors.push('stock count is not top-left');}
     else if(!badge.classList.contains('is-hand')||!badge.closest('.player-info'))errors.push('hand count is not inside player info');
-    if(badge.classList.contains('is-hand')){const style=getComputedStyle(badge);if(Math.abs(parseFloat(style.width)/parseFloat(style.height)-13/18)>.01||style.transform==='none')errors.push('hand count card shape');}
+    if(badge.classList.contains('is-hand')){const style=getComputedStyle(badge);if(Math.abs(parseFloat(style.width)/parseFloat(style.height)-12/16)>.01||style.transform==='none')errors.push('hand count card shape');}
    }
    for(const panel of stage.querySelectorAll('.player-panel')){const count=panel.dataset.handCount,index=panel.dataset.playerIndex,own=panel.classList.contains('self-player'),badge=panel.querySelector('.player-info .piece-count.is-hand');if(count!==undefined&&badge?.dataset.pieceCount!==count)errors.push('missing or incorrect hand count for '+index);if(panel.querySelectorAll('.piece-count.is-hand').length!==(count!==undefined?1:0))errors.push('duplicate or missing hand count');}
    for(const panel of stage.querySelectorAll('.player-panel')){
@@ -78,7 +80,7 @@ test('all packs share player panels and preserve geometry across reported screen
    for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(!r.width&&!r.height)continue;if(r.width<44||r.height<44||!within(r,{left:0,top:0,right:innerWidth,bottom:innerHeight}))errors.push('toolbar target '+node.dataset.command+' '+JSON.stringify({w:r.width,h:r.height,x:r.x,y:r.y}));}
    for(const hand of document.querySelectorAll('.player-panel .mini-hand')){if(!hand.getClientRects().length)continue;if(['auto','scroll'].includes(getComputedStyle(hand).overflowY)&&hand.scrollHeight>hand.clientHeight+1)errors.push('opponent vertical scroll');if(!hand.classList.contains('is-open')){const miniBox=hand.getBoundingClientRect(),first=hand.firstElementChild?.getBoundingClientRect(),last=hand.lastElementChild?.getBoundingClientRect();if(first&&last&&(first.left<miniBox.left-1||last.right>miniBox.right+1))errors.push('closed hand clipped horizontally');const cards=[...hand.children],steps=cards.slice(1).map((c,i)=>c.getBoundingClientRect().left-cards[i].getBoundingClientRect().left);if(steps.some(x=>Math.abs(x-steps[0])>1))errors.push('uneven opponent hand spacing');const wrap=hand.closest('.player-hand'),info=hand.closest('.player-panel').querySelector('.player-info');if(info&&wrap&&wrap.getBoundingClientRect().top-info.getBoundingClientRect().bottom>6)errors.push('gap between info and hand');}}
    if(document.querySelector('.table-title p')?.textContent.includes('За столом с ботами'))errors.push('redundant mode subtitle');
-   for(const piece of document.querySelectorAll('.checker-piece.owner-1.is-playable'))if(getComputedStyle(piece).outlineColor!=='rgb(255, 220, 147)')errors.push('dark checker lacks contrasting outline');
+   for(const piece of document.querySelectorAll('.checker-piece.owner-1.is-playable'))if(getComputedStyle(piece.querySelector('.piece-contour')).stroke===getComputedStyle(piece.querySelector('.piece-contour')).fill)errors.push('dark checker lacks contrasting outline');
    const self=stage.querySelector('.layout-self'),hand=self?.querySelector('.layout-hand'),info=self?.querySelector('.self-player');if(hand&&info&&info.getBoundingClientRect().top<hand.getBoundingClientRect().bottom-1)errors.push('self info above hand');
    return {errors,mode:stage.dataset.layoutMode,width:scene.clientWidth,height:scene.clientHeight};
   },turn);
@@ -90,12 +92,12 @@ test('all packs share player panels and preserve geometry across reported screen
    await page.setViewportSize({width,height:width===740?390:740});
    await page.evaluate(()=>{
     const state={game:'uno',turn:0,move:0,players:Array.from({length:4},(_,i)=>({name:'Александр '+i,bot:i>0,score:99})),data:{}};
-    const descriptor={api:2,family:'cards',elements:{field:'<div>Поле</div>'},playerContent:state.players.map(()=>({counters:[{kind:'points',value:99},{kind:'wins',value:12}]}))};
+    const descriptor={api:3,family:'cards',elements:{field:'<div>Поле</div>'},playerContent:state.players.map(()=>({counters:[{kind:'points',value:99},{kind:'wins',value:12}]}))};
     document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'UNO',state,viewer:0,actions:[],scene:TabletopUI.composeScene(descriptor,{state,viewer:0}),turnText:'Ваш ход'});
     PlayroomGameScreen.layoutScene(document.querySelector('#app'));
    });
-   const result=await page.evaluate(()=>[...document.querySelectorAll('.player-panel')].map(p=>{const b=p.getBoundingClientRect();return [...p.querySelectorAll('.participant-role,strong,.player-score')].every(n=>{const r=n.getBoundingClientRect();return r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1;})&&p.querySelectorAll('.player-score').length===2;}));
-   assert(result.every(Boolean),'long names and both counters fit at '+width);
+   const result=await page.evaluate(()=>[...document.querySelectorAll('.player-panel')].map(p=>{const b=p.getBoundingClientRect();return {box:b.toJSON(),bad:[...p.querySelectorAll('.participant-role,strong,.player-score')].filter(n=>{const r=n.getBoundingClientRect();return !(r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1);}).map(n=>({class:n.className,box:n.getBoundingClientRect().toJSON()})),count:p.querySelectorAll('.player-score').length};}));
+   assert(result.every(p=>!p.bad.length&&p.count===2),'long names and both counters fit at '+width+' '+JSON.stringify(result));
   }
  });
  await t.test('conditional action rows keep hand, metadata and field geometry unchanged',async()=>{
@@ -111,4 +113,50 @@ test('all packs share player panels and preserve geometry across reported screen
  });
  await context.close();
  }finally{await browser.close();}
+});
+
+test('collection scene geometry survives hidden hands and portrait landscape round trips',{timeout:180000},async t=>{
+ const server=await require('./browser-origin.cjs').serveBrowserFixture(root);
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const page=await browser.newPage({viewport:{width:390,height:844},reducedMotion:'reduce'});
+  await page.goto(server.url);
+  const ids=await page.evaluate(()=>PlayroomInstalledPacks.map(pack=>pack.manifest.id));
+  assert.equal(ids.length,15);
+  for(const game of ids)await t.test(game,async()=>{
+   await page.setViewportSize({width:390,height:844});
+   await page.evaluate(game=>{
+    const E=TabletopCore,definition=E.get(game),count=Math.min(4,definition.max);
+    const state=E.createGame(game,{seed:17,players:Array.from({length:Math.max(definition.min,count)},(_,i)=>({name:'Player '+i,bot:i>0}))});
+    window.geometryState=E.project(state,0);
+    window.geometryRender=()=>{
+     const s=geometryState,markup=PlayroomGameScreen.render({layoutId:'geometry:'+game,gameName:game,state:s,viewer:0,actions:s.actions||[],scene:PlayroomViews.render(s,0,s.actions||[],{}),turnText:''});
+     PlayroomGameScreen.update(document.querySelector('#app'),markup);
+     PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    };
+    geometryRender();
+   },game);
+   await page.waitForTimeout(50);
+   const measure=()=>page.evaluate(()=>{
+    const stage=document.querySelector('.app-game-layout');if(!stage)return {error:document.querySelector('.scene')?.textContent};
+    const box=document.querySelector('.layout-field').getBoundingClientRect();
+    return {box:[box.x,box.y,box.width,box.height],viewport:[innerWidth,innerHeight],mode:stage.dataset.layoutMode,tracks:getComputedStyle(stage).gridTemplateRows,slots:[...stage.children].map(n=>({class:n.className,height:n.getBoundingClientRect().height,style:n.getAttribute('style')}))};
+   });
+   const before=await measure();assert(!before.error,game+' did not render');assert(before.box[2]>0&&before.box[3]>0);
+   await page.evaluate(()=>{
+    for(const node of document.querySelectorAll('.hand-track,.hand-cards,.mini-hand'))node.replaceChildren();
+    PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+   });
+   const hidden=await measure();
+   assert(before.box.every((n,i)=>Math.abs(n-hidden.box[i])<=1),game+' field moved when hands disappeared: '+JSON.stringify({before,hidden}));
+   await page.setViewportSize({width:844,height:390});
+   await page.evaluate(()=>geometryRender());await page.waitForTimeout(50);
+   const landscape=await measure();assert(!landscape.error&&landscape.box[2]>0&&landscape.box[3]>0);
+   await page.setViewportSize({width:390,height:844});
+   await page.evaluate(()=>geometryRender());await page.waitForTimeout(50);
+   const restored=await measure();
+   assert(before.box.every((n,i)=>Math.abs(n-restored.box[i])<=1),game+' did not restore portrait geometry: '+JSON.stringify({before,restored}));
+  });
+  await page.close();
+ }finally{await browser.close();await server.close();}
 });

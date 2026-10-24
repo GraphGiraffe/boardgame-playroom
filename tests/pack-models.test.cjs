@@ -116,7 +116,7 @@ test('card model initialization preserves facts, local hands, blind public choic
  const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js');
  const Deck=require(path.join(packs,'shared/domain/standard-deck.js'));
  for(const id of ['oldmaid','gofish']){
-  const base=path.join(packs,'packs',id),model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle,random:Random.random},Deck));
+  const base=path.join(packs,'packs',id),model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle,random:Random.random,ending:require(path.join(packs,'shared/domain/end-policy.js'))},Deck));
   for(const deck of [36,52,54])for(const count of [2,4,6]){
    let state=model.create({playerCount:count,firstPlayer:count-1,preset:'classic',rng:17,openHands:false,options:{deck}}),steps=0;
    const initial=model.project(state,count-1),table=model.projectTable(state,count-1);
@@ -176,7 +176,7 @@ test('each migrated pack definition executes in isolation with explicit determin
 test('Durak Table allows public responses and masks all hands without private card choices',()=>{
  const {GameModel}=require('../core/model-runtime.js'),Random=require('../core/random.js');
  const base=path.join(packs,'packs/durak'),Deck=require(path.join(packs,'shared/domain/standard-deck.js'));
- const model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle},{Deck,Cards:require(base+'/domain/cards.js')}));
+ const model=new GameModel(require(base+'/domain/game.js')({shuffle:Random.shuffle,ending:require(path.join(packs,'shared/domain/end-policy.js'))},{Deck,Cards:require(base+'/domain/cards.js')}));
  let state=model.create({playerCount:2,firstPlayer:0,preset:'classic',rng:17,options:{variant:'throwin',deck:54}});
  const first=model.legalActions(state,0).find(action=>action.type==='attack');assert(first);
  assert(model.projectTable(state,0).actions.every(action=>!action.card));
@@ -262,7 +262,7 @@ test('a round limit is independent from actions and turns, including the assigne
   assert.deepEqual(reveal.card,played.data.discard.at(-1));assert(projection.data.hands.flat().every(c=>c.hidden));
   for(const id of ['oldmaid','gofish']){
     const s=E.createGame(id,{players,preset:'classic',seed:23}),action=E.legalActions(s,s.turn)[0],n=E.applyAction(s,s.turn,action);
-    const events=E.project(n,-1).events;assert(events.filter(e=>e.transfer).every(e=>!e.reveal),id+' private transfers remain hidden');for(const event of events.filter(e=>e.reveal)){assert(['oldmaid.paired','gofish.booked'].includes(event.type));assert.equal(event.reveal.cards.length,id==='oldmaid'?2:4);}
+    const events=E.project(n,-1).events;assert(events.filter(e=>e.transfer).every(e=>!e.reveal),id+' private transfers remain hidden');for(const event of events.filter(e=>e.reveal)){if(event.type==='gofish.asked'){assert.equal(event.reveal.kind,'card');assert.equal(event.reveal.card.rank,event.params.rank);continue;}assert(['oldmaid.paired','gofish.booked'].includes(event.type));assert.equal(event.reveal.cards.length,id==='oldmaid'?2:4);}
   }
  });
 
@@ -293,6 +293,12 @@ test('ZiL+ deferred effects, shield and automatic second die obey the public com
  const start=(from=0)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17})));p.data.positions[0]=from;p.data.phase='move';p.data.dice=[1,3];return p;};
  const move=p=>model.apply(p,0,{type:'move',dieIndex:0,delta:0});
  let p=start(16),r=move(p);assert.equal(r.position.data.positions[0],34);assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[1,3]);assert.equal(r.events.filter(e=>e.params.automatic).length,1);
+ const presentation=require(path.join(packs,'packs/snakes/presentation/scene.js'));
+ const events=r.events.map((event,id)=>({...event,id,revision:r.position.revision}));
+ const projected=model.project(r.position,-1,events),frames=presentation.eventScenes(projected);
+ assert.equal(frames.length,2);assert.deepEqual(frames.map(frame=>frame.scene.positions[0].cell),r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.to));
+ assert(frames.every(frame=>frame.scene.interactions.length===0));assert.equal(frames.at(-1).scene.objects[0].cell,34);
+
  for(const [from,effect] of [[10,'skip'],[28,'less'],[21,'snake']]){
   p=start(from);p.data.effects[0].shield=true;r=move(p);assert(!r.position.data.effects[0].shield);assert(!r.position.data.effects[0][effect]);assert(r.events.some(e=>e.type==='snakes.protected'));if(effect==='snake')assert.equal(r.position.data.positions[0],22);
  }

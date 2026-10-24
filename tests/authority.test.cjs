@@ -46,3 +46,12 @@ test('recovery reconciles a lost ACK with the original command and never plays i
   await assert.rejects(client.reconcile({...a.snapshot(),viewer:9}),/изменилось/);
  }finally{client.close();authority.dispose();}
 });
+
+
+test('protocol 3 rejects protocol 2 commands without mutating authority',()=>{
+ const {session,authority,a}=make();try{
+  const before=JSON.stringify(session.current),command={...cmd(a),protocolVersion:2};
+  assert.equal(P.version,3);assert.equal(P.validate(command),false);assert.equal(a.dispatch(command).ok,false);
+  assert.equal(JSON.stringify(session.current),before);
+ }finally{authority.dispose();}
+});

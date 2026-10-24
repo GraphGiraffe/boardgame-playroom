@@ -109,20 +109,6 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const start=own?order.indexOf(viewer)+1:0;return Array.from({length:own?count-1:count},(_,i)=>order[(start+i)%count]);
   }
   function playerOrderPosition(state,index){return (index-(Number.isInteger(state.firstPlayer)?state.firstPlayer:0)+state.players.length)%state.players.length+1;}
-  function opponents(state, viewer, cardRender, options = {}) {
-    if (!state.data.hands) return '';
-    return `<div class="opponent-hands">${seatOrder(state.players.length,viewer).map(i => {
-      const p=state.players[i];
-      const cards=state.data.hands[i]||[],open=cards.some(c=>!c.hidden),visible=open?cards:cards.slice(0,5);
-      const attrs=options.playerAttrs?.(i,p)||'',badge=options.playerBadge?.(i,p)||'';
-      const pieces=visible.map((c,index)=>{
-        if(c.hidden)return back();
-        const caption=options.cardLabel?.(c);
-        return `<span class="public-card" data-public-card-index="${index}">${caption!=null?`<span class="public-card-caption" aria-hidden="true">${esc(caption)}</span>`:''}${cardRender(c,'disabled',{variant:'compact',surface:'opponent',interactive:false})}</span>`;
-      }).join('');
-      return `<div class="opponent-hand ${open?'is-open-hand':''} ${i===state.turn?'is-turn':''}" data-player-index="${i}" data-hand-count="${cards.length}" ${open?`style="--open-hand-weight:${Math.max(6,cards.length)};--open-hand-count:${cards.length}"`:''} ${attrs}><span class="opponent-label"><span title="${esc(p.name)}">${esc(p.name)}</span><b>${cards.length}</b>${badge}</span><div class="mini-hand ${open?'is-open':''}" ${open&&!attrs?'tabindex="0"':''} aria-label="${esc(p.name)}: ${cards.length} ${globalThis.PlayroomMessages.text("ui.ui.aba0cb7c22ba")}${open?globalThis.PlayroomMessages.text("ui.ui.c155161522ac"):''}">${pieces}</div></div>`;
-    }).join('')}</div>`;
-  }
   function participantIcon(person={}, {network=person.network===true}={}) {
     const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local&&!person.isHost?'hand':'player';
     const host=network&&person.isHost;
@@ -139,7 +125,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   const playerColor=index=>'var(--color-seat-'+index+','+(playerPalette[index]||'hsl('+Math.round(index*137.508%360)+' 46% 50%)')+')';
   function avatar(person,index=0,{color=null,hidden=false}={}){const name=person.name||person.nickname||'';return `<span class="avatar p${index}" style="background:${color?esc(color):`color-mix(in srgb,${playerColor(index)} 65%,var(--color-surface-panel,#f4f2e8))`};color:var(--color-text-primary,#172b24)" ${hidden?'aria-hidden="true"':`role="img" aria-label="${esc(name)}" title="${esc(name)}"`}>${globalThis.PlayroomAvatars?.content(person.avatar,name)??esc(Array.from(name)[0]||'')}</span>`;}
   function validCounters(counters) {
-    return Array.isArray(counters)&&counters.length<=4&&counters.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&['points','wins','pieces'].includes(c.kind)&&Number.isSafeInteger(c.value)&&c.value>=0&&(c.label===undefined||typeof c.label==='string')&&(c.id===undefined||typeof c.id==='string'&&/^[a-z][a-z0-9-]{0,63}$/.test(c.id))&&(c.display===undefined||c.display&&['heart','meeple','crown'].includes(c.display.icon)&&(c.display.capacity===undefined||Number.isInteger(c.display.capacity)&&c.display.capacity>=1&&c.display.capacity<=8)))&&new Set(counters.map(c=>c.id||c.kind)).size===counters.length;
+    return Array.isArray(counters)&&counters.length<=4&&counters.every(c=>GameComponents.validMetric(c,{localized:true}))&&new Set(counters.map(c=>c.id||c.kind)).size===counters.length;
   }
   function scoreBadge(counter) {
     if(!validCounters([counter]))throw Error('Invalid player counters');
@@ -152,19 +138,19 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const team=layout.teams.find(team=>team&&typeof team.id==='string'&&team.id===layout.seatTeams[seat]);
     return team&&typeof team.label==='string'&&(typeof team.color==='string'||typeof team.colorRole==='string')?team:null;
   }
-  function playerMedallion({first=false,team=null,place=null,layout=null}={}) {
-    if(!first&&!team&&place==null)return '';
-    const label=team?(first?globalThis.PlayroomMessages.text("ui.ui.5a0a57b96032",{p0:String(team.label)}):globalThis.PlayroomMessages.text("ui.ui.a0547497e28d",{p0:String(team.label)})):first?globalThis.PlayroomMessages.text("ui.ui.374e683d6421"):globalThis.PlayroomMessages.text("ui.ui.5e20b8d4db80",{p0:String(place)});
-    const tone=team?'team':place!=null?'place':'first';
+  function playerMedallion({first=false,team=null,place=null,last=false,layout=null}={}) {
+    if(!first&&!team&&place==null&&!last)return '';
+    const label=last?globalThis.PlayroomMessages.text("ui.ui.last-player"):team?(first?globalThis.PlayroomMessages.text("ui.ui.5a0a57b96032",{p0:String(team.label)}):globalThis.PlayroomMessages.text("ui.ui.a0547497e28d",{p0:String(team.label)})):first?globalThis.PlayroomMessages.text("ui.ui.374e683d6421"):globalThis.PlayroomMessages.text("ui.ui.5e20b8d4db80",{p0:String(place)});
+    const tone=last?'last':team?'team':place!=null?'place':'first';
     const literal=team&&/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(team.color||'')?team.color:'';
     const color=team&&/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(team.colorRole||'')?'var(--color-'+team.colorRole.replaceAll('.','-')+','+(literal||'currentColor')+')':literal;
-    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color||layout?` style="${color?`--medallion-color:${esc(color)};`:''}${layout?`left:${layout.x}px;top:${layout.y}px;z-index:${layout.z};`:''}"`:''}>${roundTokenArt({value:place,first})}</span>`;
+    return `<span class="player-medallion is-${tone}${place!=null?` place-${place}${place>3?' is-minor':''}`:''}" role="img" aria-label="${esc(label)}" title="${esc(label)}"${color||layout?` style="${color?`--medallion-color:${esc(color)};`:''}${layout?`left:${layout.x}px;top:${layout.y}px;z-index:${layout.z};`:''}"`:''}>${roundTokenArt({value:place,first})}${last?'<span class="last-player-symbol" aria-hidden="true">×</span>':''}</span>`;
   }
   function playerContent(state, viewer, cardRender, options={}) {
     return state.players.map((person,index)=>{
-      const semantic=state.scene?.players?.find(player=>(player.player??player.id)===index);
+      const semantic=state.scene?.players?.find(player=>player.player===index);
       const metrics=semantic?.metrics?.filter(metric=>['points','wins','pieces'].includes(metric.kind));
-      const cards=semantic?.hand||state.data?.hands?.[index],open=cards?.some(card=>!card.hidden);
+      const cards=semantic?.hand,open=cards?.some(card=>!card.hidden);
       const visible=cards||[];
       const handHTML=index===viewer?'':visible.map((card,i)=>card.hidden?(options.backRender?.()||cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||back(options.kind||'card')):`<span class="public-card" data-public-card-index="${i}">${cardRender?.(card,'disabled',{variant:'compact',surface:'opponent',interactive:false})||''}</span>`).join('');
       return {handHTML,showHand:semantic?.showHand,countLabel:semantic?.countLabel||options.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"),ready:!!options.ready?.(index,person),decisionPlayer:options.decisionPlayer?.(index,person)??null,inactive:!!options.inactive?.(index,person),orderPosition:semantic?.orderPosition??playerOrderPosition(state,index),indicators:options.indicators?.(index,person)||semantic?.indicators||[],...(metrics?{counters:metrics.map(({id,kind,value,label,display})=>({id,kind,value,label,...(display?{display}:{})}))}:options.counters?{counters:options.counters(index,person)}:{}),scoreLabel:options.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee"),...(Number.isSafeInteger(semantic?.handCount)?{handCount:semantic.handCount,handMetricId:'hand-count'}:cards?{handCount:cards.length,handMetricId:'hand-count'}:{}),open:!!open,badges:options.badges?.(index,person)||[],team:semantic?.team||options.team?.(index,person)||null,color:options.color?.(index,person)||'',colorLabel:options.colorLabel?.(index,person)||''};
@@ -178,27 +164,24 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const badges=(content.badges||[]).filter(b=>b?.position!=='avatar-bottom').map(renderBadge).join('');
     const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee")}];
     if(!validCounters(counters))throw Error('Invalid player counters');
-    const headingCounter=counters.find(c=>c.id===content.headingCounter);
+    const headingCounter=content.headingCounter===undefined?null:counters.find(c=>c.id===content.headingCounter);
     const headingCounters=counters.filter(c=>content.headingCounters?.includes(c.id));
     const heading=headingCounter?(headingCounter.value>0?`<span class="player-heading-counter">${scoreBadge(headingCounter)}</span>`:''):content.orderPosition===false?'':`<span class="player-turn-position" aria-label="${globalThis.PlayroomMessages.text('ui.ui.ec2c9f35dee9')}${orderPosition}">${orderPosition}</span>`;
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
     return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''} ${content.inactive?'is-inactive':''} ${content.ready?'is-ready':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
       <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(globalThis.PlayroomMessages.text("ui.ui.ccc8d5ca0326",{name:person.name}))}"`:''}>
-      <span class="player-avatar-wrap"${Number.isInteger(content.decisionPlayer)?` data-decision-player="${content.decisionPlayer}" role="button" tabindex="0" aria-label="${esc(person.name)}"`:""}>${avatar(person,index,{color,hidden:true})}${playerMedallion({first:content.showFirstPlayer!==false&&state.firstPlayer===index,team:content.team})}${avatarBadges}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own&&content.showSelfLabel!==false?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):''}</strong>${heading}${headingCounters.length?`<span class="player-heading-counters">${headingCounters.map(scoreBadge).join('')}</span>`:''}</span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${counters.filter(c=>c!==headingCounter&&!headingCounters.includes(c)).sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
-      ${own?'<!--self-controls-->':''}${!own&&content.showHand!==false&&content.handCount!==undefined?`<div class="player-hand">${content.handCount!==undefined?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML}</div>`:''}</div>`:''}</article>`;
+      <span class="player-avatar-wrap"${Number.isInteger(content.decisionPlayer)?` data-decision-player="${content.decisionPlayer}" role="button" tabindex="0" aria-label="${esc(person.name)}"`:""}>${avatar(person,index,{color,hidden:true})}${playerMedallion({first:content.showFirstPlayer!==false&&state.firstPlayer===index,team:content.team})}<span data-finish-award>${playerMedallion({place:state.scene?.players?.find(p=>p.player===index)?.finishPlace||null,last:state.result?.lastPlayers?.includes(index)||false})}</span>${avatarBadges}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own&&content.showSelfLabel!==false?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):""}</strong>${heading}${headingCounters.length?`<span class="player-heading-counters">${headingCounters.map(scoreBadge).join('')}</span>`:''}</span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${counters.filter(c=>c!==headingCounter&&!headingCounters.includes(c)).sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
+      ${own?'<!--self-controls-->':''}${!own&&content.showHand!==false&&content.handCount!==undefined?`<div class="player-hand">${content.handCount!==undefined?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML||''}</div>`:''}</div>`:''}</article>`;
   }
   function hand(content, count, hint=globalThis.PlayroomMessages.text("ui.ui.473a2525ab0a"), extraControlHTML='', options={}) {
     const cards=Array.isArray(content)?content:null,fan=options.layout==='fan'&&cards?.length,tiles=options.layout==='tiles',overlap=options.layout==='overlap'&&cards?.length;
-    let body=cards?cards.join(''):content;
+    const layout=cards?GameComponents.handLayout(cards):null;
+    let body=layout?layout.html:content;
     if(fan){
-      body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${cards.join('')}</div>`;
+      body=`<div class="hand-fan-row ${cards.length===1?'is-single':''}" style="--fan-count:${cards.length}">${body}</div>`;
     }
     if(overlap){
-      const width='var(--scene-card-width,var(--size-card))';
-      // Reserve both adjacent intervals: a raised card has equal gaps on either side.
-      const raised=cards.map(card=>/class=["'][^"']*\bis-selected\b/.test(card));
-      const columns=cards.map((card,i)=>i===cards.length-1||raised[i]||raised[i+1]?width:`minmax(24px,${width})`).join(' ');
-      body=`<div class="hand-overlap-row" style="--hand-count:${cards.length};grid-template-columns:${columns}">${body}</div>`;
+      body=`<div class="hand-overlap-row" style="--hand-count:${cards.length};grid-template-columns:${layout.columns}">${body}</div>`;
     }
     return `<section class="own-hand" data-hand-count="${count}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.2d10172eed3f")}"><div class="hand-heading"><strong>${globalThis.PlayroomMessages.text("ui.ui.2d10172eed3f")}</strong><span>${esc(hint)}</span>${extraControlHTML?`<div class="hand-tools">${extraControlHTML}</div>`:''}</div><div class="hand-track ${tiles?'is-tiles':''} ${fan?'is-fan':''} ${overlap?'is-overlapping':''} ${(fan&&cards.length>8)||(tiles&&count>7)?'is-long-hand':''}" ${tiles?`style="--hand-columns:${Math.max(1,count)}"`:''}>${body || ("<span class=\"empty-hand\">"+globalThis.PlayroomMessages.text("ui.ui.8c687618fd99")+"</span>")}</div></section>`;
   }
@@ -244,13 +227,14 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const index=Math.max(0,choices.findIndex(c=>c.value===value));
     return globalThis.PlayroomGameScreen.rangeSetting({id:'view-'+key,label,value:index,max:choices.length-1,display:choices[index].label,choices}).replace('<input ',`<input data-view-range="${esc(key)}" ${disabled?'disabled ':''}`);
   }
-  const helpers = {viewApi:2,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,opponents,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
+  const helpers = {viewApi:3,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){
     if(value===undefined)return '';
     const anchor=point=>point&&typeof point==='object'&&typeof point.anchor==='string'&&/^[\w-]{1,80}$/.test(point.anchor)&&(point.label===undefined||typeof point.label==='string');
-    if(!value||typeof value!=='object'||typeof value.trigger!=='string'||typeof value.entity!=='string'||!Number.isInteger(value.player)||value.player<0||typeof value.counter!=='string'||!anchor(value.origin)||!Array.isArray(value.steps)||value.steps.length>100||!value.steps.every(anchor)||(value.jump!==undefined&&!anchor(value.jump)))throw Error('Invalid motion sequence');
+    if(!value||typeof value!=='object'||typeof value.trigger!=='string'||!value.entity||typeof value.entity!=='object'||!Number.isInteger(value.player)||value.player<0||typeof value.counter!=='string'||!anchor(value.origin)||!Array.isArray(value.steps)||value.steps.length>100||!value.steps.every(anchor)||(value.jump!==undefined&&!anchor(value.jump)))throw Error('Invalid motion sequence');
+    GameComponents.entityKey(value.entity);
     return ` data-motion-sequence="${esc(JSON.stringify(value))}"`;
   }
   // Public Table commands are supplied by the authority/model projection.
@@ -259,8 +243,16 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     return (state?.tableActions || []).filter(command => actions.some(action =>
       Object.keys(command).every(key => JSON.stringify(command[key]) === JSON.stringify(action[key]))));
   }
-  function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null,presentationTurn=null}={}) {
-    if(!value||value.api!==2||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 2 required');
+  function fieldContent(value) {
+    if(!value||value.api!==3||!['cards','board'].includes(value.family)||typeof value.elements?.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 3 required');
+    if(value.fieldGroups===undefined)return value.elements.field;
+    const groups=value.fieldGroups;
+    if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');
+    return `<div class="game-field-groups">${['stock','play'].filter(k=>groups[k]).map(k=>`<section class="field-group field-group-${k}" data-field-group="${k}">${groups[k]}</section>`).join('')}</div>`;
+  }
+
+  function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null,presentationTurn=null,presentationField=false}={}) {
+    if(!value||value.api!==3||!['cards','board'].includes(value.family)||!value.elements||typeof value.elements.field!=='string'||!value.elements.field.trim())throw Error('Game elements API 3 required');
     if(Object.keys(value.elements).some(key=>!elementNames.includes(key))||Object.values(value.elements).some(html=>typeof html!=='string'))throw Error('Invalid game elements');
     if(value.fieldAspect!==undefined&&(!Number.isFinite(value.fieldAspect)||value.fieldAspect<=0||value.fieldAspect>10))throw Error('Invalid field aspect');
     if(value.fieldSizing!==undefined&&!['fit','content','scroll'].includes(value.fieldSizing))throw Error('Invalid field sizing');
@@ -274,24 +266,21 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
     if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf','wideHand'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.wideHand!==undefined&&typeof layout.wideHand!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const strategy=layout.seats&&seatingPolicy!=='row'?'anchors':'row';
+    const strategy=layout.seats&&(state?.players?.length||0)>2&&(seatingPolicy||seating)!=='row'?'anchors':'row';
     const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
     const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
     if(surface==='table')actions=tableCommands(state,actions);
     const e={...value.elements},content=value.playerContent;
+    const zoneAttribute=name=>{const id=name==='hand'?'hand-'+viewer:name;return state?.scene?.zones?.some(zone=>zone.id===id)?` data-scene-zone="${esc(id)}"`:'';};
     // A hidden public field must not take a selected private card's targets away.
     if(surface==='player'&&selection!==null){
       const missing=actions.filter(action=>String(action.card)===String(selection)&&!(e.actions||'').includes(actionAttr(action)));
       if(missing.length)e.actions=(e.actions||'')+actionBar(missing);
     }
-    if(value.actionReserve&&(surface!=='table'||state?.modelProjection?.audience==='public')&&!e.actions)e.actions='<div class="scene-actions"></div>';
+    if(value.actionReserve&&(surface!=='table'||state?.scene?.audience==='public')&&!e.actions)e.actions='<div class="scene-actions"></div>';
     if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.showFirstPlayer!==undefined&&typeof p.showFirstPlayer!=='boolean')||(p.showSelfLabel!==undefined&&typeof p.showSelfLabel!=='boolean')||(p.orderPosition!==undefined&&p.orderPosition!==false&&(!Number.isInteger(p.orderPosition)||p.orderPosition<1||p.orderPosition>8))||(p.headingCounters!==undefined&&(!Array.isArray(p.headingCounters)||p.headingCounters.some(id=>typeof id!=='string'||!p.counters?.some(c=>c.id===id))))||(p.headingCounter!==undefined&&(typeof p.headingCounter!=='string'||!p.counters?.some(c=>c.id===p.headingCounter)))||(p.team!==undefined&&p.team!==null&&(!p.team||typeof p.team.label!=='string'||(typeof p.team.color!=='string'&&typeof p.team.colorRole!=='string')))||(p.indicators!==undefined&&!validIndicators(p.indicators))||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(b.color))||(b.position!==undefined&&b.position!=='avatar-bottom')||(b.icon!==undefined&& !['sword','shield','takeCards','adjustDie','lessDie','skipTurn','secondDie','extraTurn'].includes(b.icon)))))))))throw Error('Invalid player content');
-    if(value.fieldGroups!==undefined){
-      const groups=value.fieldGroups;
-      if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');
-      e.field=`<div class="game-field-groups">${['stock','play'].filter(k=>groups[k]).map(k=>`<section class="field-group field-group-${k}" data-field-group="${k}">${groups[k]}</section>`).join('')}</div>`;
-    }
+    e.field=fieldContent(value);
     const unified=!!state?.players;
     let self='';
     if(unified&&!value.hidePlayers){
@@ -307,10 +296,10 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         }
         e.participants=`<div class="players-panels opponent-hands" data-opponent-count="${panels.filter(panel=>panel.player!==viewer).length}">${[...groups].map(([seat,html])=>`<div class="seat-group seat-${seat}" data-seat-group="${seat}">${(seat.endsWith('west')?html.reverse():html).join('')}</div>`).join('')}</div>`;
       }else e.participants=`<div class="players-panels opponent-hands" data-opponent-count="${panels.filter(panel=>panel.player!==viewer).length}">${panels.map(panel=>panel.html).join('')}</div>`;
-      if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,content?.[viewer]||{},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand">${e.hand}</section>`:''}</section>`;
+      if(viewer>=0&&surface!=='table')self=`<section class="layout-self" data-game-element="self">${playerPanel(state,viewer,viewer,{...content?.[viewer],showSelfLabel:false},[])}${e.actions?`<section class="game-layout-slot layout-actions" data-game-element="actions">${e.actions}</section>`:''}${e.hand?`<section class="game-layout-slot layout-hand" data-game-element="hand"${zoneAttribute('hand')}>${e.hand}</section>`:''}</section>`;
     }
-    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.modelProjection?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content">${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="2"${value.showTurn===false?' data-show-turn="false"':''} data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}"${Number.isInteger(presentationTurn)?` data-presentation-turn="${presentationTurn}"`:""} data-layout-focus="${focus}" data-wide-hand="${value.layout?.wideHand===true}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.scene?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${zoneAttribute(name)}${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content"${presentationField?' inert data-presentation-field="true"':''}>${e[name]}</div>`:e[name]}</section>`).join('');
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="3" data-field-topology="${esc(state?.scene?.geometry?.topology||'')}"${value.showTurn===false?' data-show-turn="false"':''} data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}"${Number.isInteger(presentationTurn)?` data-presentation-turn="${presentationTurn}"`:""} data-layout-focus="${focus}" data-wide-hand="${value.layout?.wideHand===true}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function composeScene(value,context={}) {
@@ -334,8 +323,26 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},
+      renderField(state,viewer,scene,ui={}) {
+        const {data,modelProjection,...semantic}=state;
+        if(!scene||scene.audience!==state.scene?.audience)throw Error('Field audience mismatch');
+        const surface=ui.surface||'combined',item=packs.get(state.game),render=surface==='combined'?item?.render:item?.surfaces[surface];
+        if(!render)throw Error('Field renderer unavailable');
+        const previousPack=renderingPack;
+        try {
+          renderingPack=state.game;
+          const value=render({...semantic,scene:{...scene,interactions:[]}},viewer,[],{...ui,fieldScene:null,selected:null,viewState:{},replay:true});
+          return fieldContent(value);
+        }finally{renderingPack=previousPack;}
+      },
       render(state,viewer,actions,ui={}){
-        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;return composeScene(render(state,viewer,allowedActions,ui),{surface,state,viewer,actions:allowedActions,selection:ui.selected,presentationTurn:ui.presentationTurn,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
+        // Rendering receives semantics only; rule projections remain authority inputs.
+        const {data,modelProjection,...sceneState}=state;state=sceneState;
+        if(ui.displayScene){
+          if(ui.displayScene.audience!==state.scene?.audience||ui.displayScene.viewer!==state.scene?.viewer)throw Error('Scene audience mismatch');
+          state={...state,scene:{...ui.displayScene,interactions:[]}};actions=[];
+        }
+        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;const value=render(state,viewer,allowedActions,ui);const recipe=ui.fieldScene?{...value,fieldGroups:undefined,elements:{...value.elements,field:this.renderField(state,viewer,ui.fieldScene,ui)}}:value;return composeScene(recipe,{surface,state,viewer,presentationField:!!ui.fieldScene,actions:allowedActions,selection:ui.selected,presentationTurn:ui.presentationTurn,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
         catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); } finally {renderingPack=previousPack;}
       },
       cover(id){

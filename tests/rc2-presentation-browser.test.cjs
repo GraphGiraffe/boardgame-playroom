@@ -226,7 +226,7 @@ test('RC3 hub uses two columns down to 320px and an accessible icon-only edit co
 }));
 test('RC3 enlarged public move stays at the visible field center through resize',{timeout:45000},async()=>fixture(async page=>{
  await scene(page,'uno');
- await page.evaluate(()=>{window.rcReveal=new PlayroomActionReveal();const card=rcSession.current.data.hands[0][0];rcReveal.show({kind:'card',entity:'card-'+card.id,card},'uno');});
+ await page.evaluate(()=>{window.rcReveal=new PlayroomActionReveal();const card=rcSession.current.data.hands[0][0];rcReveal.show({kind:'card',entity:{namespace:'card',id:card.id},card},'uno');});
  for(const [width,height]of [[1090,900],[390,740],[740,390]]){
   await page.setViewportSize({width,height});await page.evaluate(()=>{PlayroomGameScreen.layoutScene(document.querySelector('#app'));rcReveal.position();});
   const geometry=await page.evaluate(()=>{const f=document.querySelector('.layout-field').getBoundingClientRect(),r=document.querySelector('.action-reveal-content').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,ex:(Math.max(0,f.left)+Math.min(innerWidth,f.right))/2,ey:(Math.max(0,f.top)+Math.min(innerHeight,f.bottom))/2,overflow:document.documentElement.scrollWidth>innerWidth+1};});
@@ -300,11 +300,18 @@ test('RC6 repeated Pexeso mismatches keep both flip sides visible and preserve m
    const cards=rcSession.current.data.board,key=c=>c.character||c.rank+'-'+(['♥','♦'].includes(c.suit)?'red':'black');
    const mate=cards.findIndex((c,i)=>i>0&&key(c)===key(cards[0])),mismatches=cards.map((c,i)=>i).filter(i=>i!==0&&i!==mate),samples=[];
    async function flip(index){
-    const beforeTurn=rcSession.current.turn,action={type:'flip',index},shot=PlayroomMotion.capture({actor:beforeTurn,viewer:0,action});
+    const beforeTurn=rcSession.current.turn,action={type:'flip',index},shot=PlayroomMotion.capture({actor:beforeTurn,viewer:0,action}),initial=TabletopCore.project(rcSession.current,0),cursor=initial.events.at(-1)?.id||0;
     rcSession.act(beforeTurn,action);rcUI={presentationTurn:beforeTurn};rcRender();
-    const pending=PlayroomMotion.play(shot,{duration:220,effects:PlayroomGameFlow.effectTimes.fast});
+    const final=TabletopCore.project(rcSession.current,0);
+    const feedback=new PlayroomGameFeedback({fieldChanged:()=>{rcUI.fieldScene=feedback.fieldScene;rcRender();},mount:()=>document.querySelector('.table-shell')});
+    feedback.renderField=field=>PlayroomViews.renderField(final,0,field,rcUI);
+    feedback.start(initial.events);
+    feedback.accept(final.events.filter(e=>e.id>cursor),[],'pexeso',{mode:'fast',initialScene:initial.scene,finalScene:final.scene,snapshot:shot,motion:context=>PlayroomMotion.play(shot,{duration:220,effects:PlayroomGameFlow.effectTimes.fast,context})});
+    const pending=feedback.whenIdle();
     for(let frame=0;frame<6;frame++){await new Promise(requestAnimationFrame);samples.push(!document.querySelector('[data-motion-kind=play]')&&[...document.querySelectorAll('[data-motion-kind=flip] button')].every(n=>getComputedStyle(n).visibility==='visible'));}
-    await pending;rcUI={};rcRender();
+    await pending;
+    for(let frame=0;frame<3;frame++){await new Promise(requestAnimationFrame);samples.push([...document.querySelectorAll('[data-motion-close]')].every(slot=>getComputedStyle(slot.querySelector('[data-motion-face]')).visibility==='hidden'&&getComputedStyle(slot.querySelector('[data-motion-back]')).visibility==='visible'));}
+    rcUI={};rcRender();feedback.destroy();
     samples.push([...document.querySelectorAll('.pexeso-slot .pexeso-face')].every(n=>getComputedStyle(n).visibility==='visible'));
    }
    await flip(0);await flip(mate);
@@ -706,19 +713,48 @@ test('RC16 public sets reveal every card and fish books use aligned card rows',a
  }
 }));
 test('RC16 a private transfer has a visible back before the public pair reveal',async()=>fixture(async page=>{
- await scene(page,'oldmaid');
- const result=await page.evaluate(async()=>{
-  let event,shot,events,draws;
-  for(let i=0;i<200&&rcSession.current.status!=='finished';i++){
-   const actor=rcSession.current.turn,action=TabletopCore.legalActions(rcSession.current,actor)[0];rcRender();shot=PlayroomMotion.capture({actor,viewer:0,action});const before=rcSession.current.events.at(-1)?.id||0;rcSession.act(actor,action);
-   events=TabletopCore.project(rcSession.current,0).events.filter(e=>e.id>before);event=events.find(e=>e.reveal?.kind==='cards');if(event)break;
+ for(const game of ['oldmaid','gofish']){
+ await scene(page,game);
+ const result=await page.evaluate(async game=>{
+  let event,shot,events,draws,initialScene,beforeState;
+  for(let i=0;i<1500&&rcSession.current.status!=='finished';i++){
+   const actor=rcSession.current.turn,actions=TabletopCore.legalActions(rcSession.current,actor),action=actions[i%actions.length];rcRender();beforeState=rcSession.current;initialScene=TabletopCore.project(rcSession.current,0).scene;shot=PlayroomMotion.capture({actor,viewer:0,action});const before=rcSession.current.events.at(-1)?.id||0;rcSession.act(actor,action);
+   events=TabletopCore.project(rcSession.current,0).events.filter(e=>e.id>before);event=events.find(e=>e.reveal?.kind==='cards');if(game==='gofish'&&!events.some(e=>e.speech&&e.transfer))event=null;if(event)break;
   }
-  if(!event)return null;rcRender();draws=events.filter(e=>e.transfer).map(e=>e.transfer);
-  const f=new PlayroomGameFeedback({mount:()=>document.querySelector('.table-shell')});f.accept(events,[],'oldmaid',{snapshot:shot,mode:'fast',motion:()=>PlayroomMotion.play(shot,{duration:300,draws})});
-  await new Promise(requestAnimationFrame);
-  const back=document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]'),result={back:!!back?.querySelector('.back-art-face,svg'),earlyReveal:!!document.querySelector('.action-reveal')};
-  await f.whenIdle();result.ended=!document.querySelector('.action-reveal');f.destroy();return result;
- });assert.deepEqual(result,{back:true,earlyReveal:false,ended:true});
+  if(!event)return null;
+  const viewer=game==='gofish'?event.actor:0;
+  const render=actual=>{
+   const state=TabletopCore.project(actual,viewer),actions=[];
+   const scene=PlayroomViews.render(state,viewer,actions,{preferences:{},viewState:{},...rcUI});
+   PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:game,state,viewer,actions,scene,turnText:''}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+  };
+  render(beforeState);shot=PlayroomMotion.capture({actor:shot.actor,viewer,action:shot.action,deferDepartures:true});initialScene=TabletopCore.project(beforeState,viewer).scene;
+  events=TabletopCore.project(rcSession.current,viewer).events.filter(e=>e.id>(beforeState.events.at(-1)?.id||0));event=events.find(e=>e.reveal?.kind==='cards');draws=events.filter(e=>e.transfer).map(e=>e.transfer);shot.prepareTransfers(draws);render(rcSession.current);
+  const soundOrder=[];let answerAnimations=[],answerFinished=false,earlyFlight=false,earlyHands=false;
+  const answerDone=()=>answerFinished||answerAnimations.every(a=>a.playState==='finished');
+  const redraw=()=>{rcUI.displayScene=f.displayScene;render(rcSession.current);f.refresh();};
+  const f=new PlayroomGameFeedback({fieldChanged:redraw,mount:()=>document.querySelector('.table-shell'),play:ids=>soundOrder.push({ids,answerVisible:!!f.bubble&&f.active?.speech?.result==='success',answerCompleted:answerDone(),eventId:f.active?.id})}),observed={back:false,earlySet:false,earlyTarget:false,set:false},target=()=>[...document.querySelectorAll('.scene [data-entity]')].find(el=>el.dataset.entity===PlayroomGameComponents.entityKey(event.reveal.entity)&&!el.closest('.hand-track,.mini-hand'));
+  let transferred=false;
+  const sample=()=>{const set=document.querySelector('.action-reveal-art.is-card-set');observed.set ||= !!set;observed.earlySet ||= !!set&&!transferred;const badge=target();observed.earlyTarget ||= !!badge&&getComputedStyle(badge).visibility!=='hidden'&&!transferred;};
+  const present=f.presentCue.bind(f);f.presentCue=async(cue,...rest)=>{await present(cue,...rest);if(cue.kind==='prepare'&&cue.item.speech&&cue.item.transfer){answerAnimations=f.bubble.getAnimations();Promise.all(answerAnimations.map(a=>a.finished)).then(()=>answerFinished=true,()=>{});}};
+  f.accept(events,TabletopCore.soundCues(rcSession.current,0,events[0].id-1),game,{initialScene,finalScene:TabletopCore.project(rcSession.current,viewer).scene,defer:true,snapshot:shot,mode:'fast',motion:async context=>{
+   earlyFlight ||= !answerDone();
+   if(game==='gofish'&&!document.querySelector('[data-motion-pending]'))throw Error('Arrival cards visible before transfer');
+   if(game==='gofish'){
+    const arrival=f.displayScene,owner=event.actor,final=TabletopCore.project(rcSession.current,viewer).scene;
+    if(arrival.players[owner].hand.length!==final.players[owner].hand.length+event.reveal.cards.length)throw Error('Set removed before transfer');
+    if(owner===viewer)for(const card of event.reveal.cards)if(!document.querySelector('.hand-track [data-entity="'+PlayroomGameComponents.entityKey({namespace:'card',id:card.id})+'"]'))throw Error('Set card missing from arrival hand');
+   }
+   const flight=PlayroomMotion.play(shot,{duration:300,draws,context});await new Promise(requestAnimationFrame);
+   observed.back ||= !!document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]');sample();await flight;transferred=true;
+  }});
+  redraw();f.next();
+  const timer=setInterval(()=>{sample();if(!answerDone()&&!document.querySelector('[data-motion-held-hand]'))earlyHands=true;},10);await f.whenIdle();clearInterval(timer);const badge=target();
+  if(game==='gofish'&&events.some(e=>e.speech&&e.transfer)&&(answerAnimations.length===0||earlyFlight||earlyHands))throw Error('Answer animation boundary: '+JSON.stringify({animations:answerAnimations.length,earlyFlight,earlyHands}));
+  if(game==='gofish'&&events.some(e=>e.speech&&e.transfer)&&(!soundOrder.some(c=>c.ids.includes('success')&&c.answerVisible)||soundOrder.some(c=>c.ids.includes('success')&&c.eventId===events.find(e=>e.speech&&e.transfer).id&&!c.answerVisible)))throw Error('Success sound must accompany answer bubble: '+JSON.stringify(soundOrder));
+  const result={...observed,ended:!document.querySelector('.action-reveal'),targetVisible:game!=='gofish'||!!badge&&getComputedStyle(badge).visibility!=='hidden'};f.destroy();return result;
+ },game);assert.deepEqual(result,{back:true,earlySet:false,earlyTarget:false,set:true,ended:true,targetVisible:true},game);
+ }
 }));
 test('RC17 dice retain faces across turns and player colors never repeat',async()=>fixture(async page=>{
  await page.setViewportSize({width:390,height:844});
@@ -871,12 +907,13 @@ test('full boards reserve a square zone and use portrait width before and after 
 test('each committed dice roll animates independently of routes, faces and speed except instant',async()=>fixture(async page=>{
  for(const [game,preset]of [['snakes','plus'],['snakes','classic'],['ludo','classic'],['yatzy','classic']])for(const choice of ['fast','normal','slow','instant','reduced']){
   const mode=choice==='reduced'?'fast':choice;await page.emulateMedia({reducedMotion:choice==='reduced'?'reduce':'no-preference'});await scene(page,game,{preset});
-  const result=await page.evaluate(({mode})=>{
+  const result=await page.evaluate(async({mode})=>{
    const flow=new PlayroomGameFlow.GameFlow({options:()=>({animationSpeed:mode}),motion:PlayroomMotion,reducedMotion:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
    window.rollFeedback=new PlayroomGameFeedback();rollFeedback.start(rcSession.current.events);
    const actor=rcSession.current.turn,action={type:'roll'},snapshot=flow.capture({actor,action,viewer:0});rcSession.act(actor,action);rcUI.presentationTurn=actor;rcRender();
    const events=TabletopCore.project(rcSession.current,0).events;
    rollFeedback.accept(events,[],rcSession.game,{mode,snapshot,motion:()=>flow.play(snapshot)});
+   await new Promise(requestAnimationFrame);
    const count=document.querySelectorAll('[data-motion-kind="roll"]').length;
    const queue=rollFeedback.queue.length;rollFeedback.accept(events,[],rcSession.game,{mode});
    return {count,queue,duplicateQueue:rollFeedback.queue.length};
@@ -886,7 +923,7 @@ test('each committed dice roll animates independently of routes, faces and speed
   await page.evaluate(()=>{rollFeedback.clear();PlayroomMotion.cancel();});
  }
  await page.emulateMedia({reducedMotion:'reduce'});await scene(page,'snakes',{preset:'plus'});
- const gentle=await page.evaluate(()=>{window.rollFeedback=new PlayroomGameFeedback();rollFeedback.accept([{id:100,kind:'roll'}],[],'snakes',{mode:'fast'});return [...document.querySelectorAll('[data-motion-kind="roll"]')].map(el=>el.getAnimations()[0]?.effect.getKeyframes());});
+ const gentle=await page.evaluate(async()=>{window.rollFeedback=new PlayroomGameFeedback();rollFeedback.accept([{id:100,kind:'roll'}],[],'snakes',{mode:'fast'});await new Promise(requestAnimationFrame);return [...document.querySelectorAll('[data-motion-kind="roll"]')].map(el=>el.getAnimations()[0]?.effect.getKeyframes());});
  assert.equal(gentle.length,2);assert(gentle.every(frames=>frames.length&&frames.every(frame=>frame.transform===undefined)));
  await page.evaluate(()=>{rollFeedback.clear();PlayroomMotion.cancel();});
  // Equal faces in the same DOM still animate for every newly accepted event.

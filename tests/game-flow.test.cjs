@@ -63,18 +63,18 @@ test('presentation cancellation releases its waiter and timer even when a render
   const next=scheduler.play(()=>Promise.resolve(),200);assert.equal(timers.size,1);
   [...timers.values()][0].fn();await next;assert.equal(timers.size,0);
   assert.throws(()=>scheduler.play(()=>{},-1),/DELAY_INVALID/);
-  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:{default:750,phases:{setup:0}}}},{data:{phase:'setup'}}),0);
-  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:750}},{data:{}}),750);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:{default:750,phases:{setup:0}}}},{scene:{phase:'setup'}}),0);
+  assert.equal(Flow.viewingTime({presentation:{minimumVisibleMs:750}},{scene:{}}),750);
 });
 
 
-test('Whole actions use the UNO reveal budget without adding it to long presentations',async()=>{
-  for(const [animationSpeed,minimum]of Object.entries({instant:100,fast:420,normal:720,slow:1100})){
+test('Whole actions await the plan without a second reveal clock',async()=>{
+  for(const animationSpeed of Object.keys(Flow.presets)){
     const timers=new Map();let id=0,finished=false;
     const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
     let complete;const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{events:[{reveal:{kind:"card"}}]}).then(()=>finished=true);
-    assert.equal([...timers.values()][0].ms,minimum);
-    [...timers.values()][0].fn();await Promise.resolve();assert.equal(finished,false,'long motion must finish');
+    assert.equal(timers.size,0);
+    await Promise.resolve();assert.equal(finished,false,'the plan must finish');
     complete();await pending;assert.equal(timers.size,0);
     const cancelled=flow.present(()=>new Promise(()=>{}));flow.cancel();await cancelled;assert.equal(timers.size,0);
   }
@@ -88,7 +88,7 @@ test('dice reveal completion unlocks the next action without a hidden card-anima
   complete();await pending;assert.equal(finished,true);
  }
 });
-test('continuations use the real effect lifetime; a new turn of the same actor retains the normal budget',async()=>{
+test('continuations and new turns both use the plan lifetime',async()=>{
  for(const animationSpeed of Object.keys(Flow.presets)){
   const timers=new Map();let id=0,complete;
   const flow=new Flow.GameFlow({options:()=>({animationSpeed}),clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
@@ -96,7 +96,7 @@ test('continuations use the real effect lifetime; a new turn of the same actor r
   const pending=flow.present(()=>new Promise(resolve=>complete=resolve),{before,after});assert.equal(timers.size,0);
   complete();await pending;
   const next=flow.present(()=>Promise.resolve(),{before,after:{...after,timeline:{turn:8}},events:[{reveal:{kind:'card'}}]});
-  assert.equal(timers.size,1,'same actor does not mean same game turn');[...timers.values()][0].fn();await next;
+  assert.equal(timers.size,0,'turn changes do not create another clock');await next;
  }
 });
 
@@ -104,4 +104,96 @@ test('non-card placements do not inherit a card reveal delay',async()=>{
  const timers=[];const flow=new Flow.GameFlow({options:()=>({animationSpeed:'fast'}),clock:{setTimeout:(_,ms)=>timers.push(ms),clearTimeout:()=>{}}});
  for(const event of [{kind:'place'},{kind:'move'}])await flow.present(()=>Promise.resolve(),{events:[event]});
  assert.deepEqual(timers,[]);
+});
+
+
+test('presentation lanes preserve nested motion and cancellation rejects stale callbacks',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0,played=0;
+ const executor=new Scheduler({now:()=>123,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
+ const action=executor.lane('action'),motion=executor.lane('motion');
+ assert.equal(executor.lane('motion'),motion);assert.equal(motion.now(),123);
+ let end;const whole=action.play(()=>new Promise(resolve=>end=resolve),400);
+ const moving=motion.play(()=>Promise.resolve(),100);
+ assert.equal(timers.size,2,'nested movement must not cancel the enclosing action');
+ const ticket=executor.schedule(()=>played++,50),stale=[...timers.values()].at(-1).fn;
+ executor.unschedule(ticket);stale();assert.equal(played,0);
+ executor.cancel();await Promise.all([whole,moving]);assert.equal(timers.size,0);
+ end();await action.whenIdle();assert.equal(played,0);
+});
+
+test('plan groups run simultaneous cues once, preserve remaining time and cancel stale completions',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map(),seen=[];let id=0,now=0,end;
+ const executor=new Scheduler({now:()=>now,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
+ const player=executor.track('frames'),flush=()=>new Promise(setImmediate);
+ const plan={id:'round:1',groups:[{duration:100,cues:[{id:'a',kind:'move'},{id:'b',kind:'damage'}]},{duration:20,cues:[{id:'c',kind:'death'}]}]};
+ const ports={effect:cue=>{seen.push(cue.id);if(cue.id==='b')return new Promise(r=>end=r);},final:(_,status)=>seen.push(status)};
+ const pending=player.play(plan,ports);assert.deepEqual(seen,['a','b']);assert.equal(player.play(plan,ports),pending);
+ now=30;player.pause();assert.equal(timers.size,0);player.setRate(2);player.resume();assert.equal([...timers.values()][0].ms,35);
+ {const [key,timer]=[...timers][0];timers.delete(key);timer.fn();}await flush();assert.deepEqual(seen,['a','b'],'time alone must not finish an effect');end();await flush();assert.deepEqual(seen,['a','b','c']);
+ player.skip();assert.deepEqual(await pending,{status:'skipped'});assert.equal(timers.size,0);player.play(plan,ports);assert.equal(seen.filter(x=>x==='a').length,1);
+ let late;const cancelled=player.play({id:'round:2',groups:[{duration:100,cues:[{id:'d',kind:'move'}]}]},{effect:()=>new Promise(r=>late=r),final:()=>assert.fail('cancel must not expose final state')});
+ executor.cancel();assert.deepEqual(await cancelled,{status:'cancelled'});late();await flush();assert.equal(timers.size,0);
+ const restarted=player.play({id:'round:2',groups:[{duration:10,cues:[{id:'d',kind:'move'}]}]},{effect:cue=>seen.push(cue.id)});assert.equal(seen.at(-1),'d','cancelled scene may be mounted again');player.skip();assert.deepEqual(await restarted,{status:'skipped'});
+ assert.throws(()=>player.play({id:'bad',groups:[{duration:0,cues:[{id:'a',kind:'x'},{id:'a',kind:'y'}]}]}),/CUE_INVALID/);
+});
+
+test('finishing an action preserves public phases; leaving the session cancels them',async()=>{
+ const timers=new Map();let id=0;
+ const flow=new Flow.GameFlow({clock:{setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}});
+ const frames=flow.executor.track('public-sequence');
+ const pending=frames.play({id:'round',groups:[{duration:500,cues:[]}]});
+ flow.cancelAction();assert.equal(timers.size,1);assert.equal(frames.run.done,false);
+ flow.cancel();assert.equal(timers.size,0);assert.deepEqual(await pending,{status:'cancelled'});
+});
+
+
+test('plan clock controls platform animations, delayed labels and cleanup together',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0,now=0,finished,context,cleaned=0,labels=0;
+ const executor=new Scheduler({now:()=>now,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)});
+ const player=executor.track('platform'),calls=[];
+ const animation={finished:new Promise(resolve=>finished=resolve),pause:()=>calls.push('pause'),play:()=>calls.push('play'),cancel:()=>{calls.push('cancel');finished();},playbackRate:1};
+ const pending=player.play({id:'effects',groups:[{duration:0,cues:[{id:'move',kind:'movement'}]}]},{effect:(_,port)=>{
+  context=port;port.animation(animation);port.schedule(()=>labels++,100);port.cleanup(()=>cleaned++);return animation.finished;
+ }});
+ const stale=[...timers.values()][0].fn;
+ now=25;player.pause();assert.equal(timers.size,0);assert.deepEqual(calls,['pause']);
+ player.setRate(2);assert.equal(animation.playbackRate,2);assert.equal(timers.size,0);
+ player.resume();assert.equal([...timers.values()][0].ms,38);assert.equal(calls.at(-1),'play');
+ player.skip();assert.equal((await pending).status,'skipped');assert.equal(cleaned,1);assert.equal(timers.size,0);assert.equal(calls.at(-1),'cancel');
+ stale();assert.equal(labels,0);context.schedule(()=>labels++,1);assert.equal(timers.size,0);
+ const late={...animation,cancel:()=>cleaned++};context.animation(late);assert.equal(cleaned,2);
+});
+
+
+test('a scene commit gates simultaneous visual and audio effects, including cancellation',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),executor=new Scheduler(),player=executor.track('orchestration'),calls=[];
+ let commit,visual,audio;
+ const plan={id:'orchestrated',groups:[{duration:0,cues:[{id:'visual',kind:'movement'},{id:'audio',kind:'sound'}]},{duration:0,cues:[{id:'after',kind:'commit'}]}]};
+ const pending=player.play(plan,{group:index=>index===0?new Promise(resolve=>commit=resolve):undefined,effect:(cue,context)=>{
+  calls.push(cue.id);assert.equal(context.signal.aborted,false);
+  if(cue.id==='visual')return new Promise(resolve=>visual=resolve);
+  if(cue.id==='audio')return new Promise(resolve=>audio=resolve);
+ }});
+ assert.deepEqual(calls,[]);player.pause();commit();await new Promise(setImmediate);assert.deepEqual(calls,[]);
+ player.resume();assert.deepEqual(calls,['visual','audio']);visual();await new Promise(setImmediate);assert.equal(calls.length,2);
+ audio();assert.equal((await pending).status,'complete');assert.deepEqual(calls,['visual','audio','after']);
+ let late,signal;const cancelled=player.play({...plan,id:'cancelled'},{group:(_,g,context)=>{signal=context.signal;return new Promise(resolve=>late=resolve);},effect:()=>assert.fail('late scene must not start effects')});
+ player.cancel();late();await cancelled;assert(signal.aborted);await new Promise(setImmediate);
+});
+
+
+test('explicit delays run concurrently or sequentially and retain remaining time',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map();let id=0,now=0,finish;
+ const executor=new Scheduler({now:()=>now,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}),player=executor.track('delays'),seen=[];
+ const pending=player.play({id:'delays',groups:[
+  {duration:0,cues:[{id:'visual',kind:'animation'},{id:'minimum',kind:'delay',duration:100}]},
+  {duration:0,cues:[{id:'pause',kind:'delay',duration:80}]},
+  {duration:0,cues:[{id:'after',kind:'commit'}]}
+ ]},{effect:cue=>{seen.push(cue.id);if(cue.id==='visual')return new Promise(resolve=>finish=resolve);}});
+ const tick=()=>{const [key,timer]=[...timers][0];timers.delete(key);timer.fn();};
+ now=30;player.pause();assert.equal(timers.size,0);player.setRate(2);player.resume();assert.equal([...timers.values()][0].ms,35);
+ tick();await new Promise(setImmediate);assert.deepEqual(seen,['visual']);finish();await new Promise(setImmediate);
+ assert.equal([...timers.values()][0].ms,40);assert.deepEqual(seen,['visual']);tick();assert.equal((await pending).status,'complete');assert.deepEqual(seen,['visual','after']);
+ assert.throws(()=>player.play({id:'invalid',groups:[{duration:0,cues:[{id:'delay',kind:'delay',duration:-1}]}]}),/DELAY_INVALID/);
+ const cancelled=player.play({id:'cancel-delay',groups:[{duration:0,cues:[{id:'delay',kind:'delay',duration:1000}]}]});player.cancel();assert.equal((await cancelled).status,'cancelled');assert.equal(timers.size,0);
 });

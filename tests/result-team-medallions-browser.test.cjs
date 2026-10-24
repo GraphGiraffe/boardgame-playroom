@@ -9,7 +9,7 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
   const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   const page=await context.newPage();
   try{
-    await page.goto(server.url);
+    await page.goto(process.env.PLAYROOM_RESULT_ARTIFACT?'file://'+path.resolve(process.env.PLAYROOM_RESULT_ARTIFACT):server.url);
     await page.evaluate(()=>{
       const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
       const teams=[{id:'blue',label:'синяя',color:'#668fad'},{id:'red',label:'красная',color:'#ce735d'}];const playerContent=state.players.map((_,index)=>({team:teams[index%2]}));
@@ -44,5 +44,16 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
     const first=await page.locator('.result-awards').first().evaluate(el=>{const disc=el.querySelector('.is-first').getBoundingClientRect(),medal=el.querySelector('.is-place').getBoundingClientRect(),symbol=el.querySelector('.is-first svg').getBoundingClientRect();return {disc:disc.width,medal:medal.width,exposed:disc.right-medal.right,symbolOffset:Math.hypot((symbol.left+symbol.width/2)-(disc.left+disc.width/2),(symbol.top+symbol.height/2)-(disc.top+disc.height/2))};});
     assert.equal(first.disc,first.medal);assert(first.exposed>=4&&first.exposed<=6);assert(first.symbolOffset<1);
     if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-320.png')});
+    await page.evaluate(()=>{
+      const state={status:'finished',winner:0,winners:[0],move:20,players:Array.from({length:6},(_,i)=>({name:'Игрок '+(i+1)})),result:{places:[1,2,3,4,5,6],values:[0,0,0,0,0,1],lastPlayers:[5],exits:[{player:3,kind:'cards',round:5}]}};
+      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Дурак'}),'result-modal');
+    });
+    assert.equal(await page.locator('.result-awards .is-minor').count(),2);
+    assert.equal(await page.locator('.result-awards .is-last').count(),1);
+    const sizes=await page.locator('.result-awards .player-medallion').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,color:getComputedStyle(n.querySelectorAll('circle')[1]).fill})));
+    assert(sizes[3].width<sizes[0].width);assert.equal(sizes[3].color,'rgb(255, 255, 255)');
+    assert.match(await page.locator('.result-modal').innerText(),/Сбросил карты.*Раунд 5/);
+    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'finish-results-320.png')});
+
   }finally{await context.close();await browser.close();await server.close();}
 });

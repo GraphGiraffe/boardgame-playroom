@@ -4,7 +4,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const E = globalThis.TabletopCore || globalThis.PlayroomEngine;
   const V = globalThis.PlayroomViews;
   const Session = globalThis.TabletopSession;
-  const Motion = globalThis.PlayroomMotion, Flow = globalThis.PlayroomGameFlow;
+  const Motion = globalThis.PlayroomMotion.surface(()=>document.querySelector('#app .table-shell')), Flow = globalThis.PlayroomGameFlow;
   const HandOverflow=globalThis.PlayroomHandOverflow;
   const Authority=globalThis.SessionAuthority, Protocol=globalThis.PlayroomProtocol;
   const Multiplayer=globalThis.PlayroomMultiplayer;
@@ -78,13 +78,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   let missedFrom = null, soundTicket = 0;
   let loadWarning = '', modalBack = null, historyOrigin = null, reactionShownAt = null;
   let input = null, packUI = null, playerTargets = null, feedbackSession = null;
-  const feedback=new globalThis.PlayroomGameFeedback({mount:()=>document.querySelector('#app .table-shell'),play:(ids,pack)=>{if(settings.sound&&!document.hidden)void audio.sequence(ids,{pack});}});
+  const presentationExecutor=new globalThis.PlayroomPresentationScheduler();
+  const feedback=new globalThis.PlayroomGameFeedback({fieldChanged:()=>renderTable(),motion:Motion,executor:presentationExecutor,mount:()=>document.querySelector('#app .table-shell'),play:(ids,pack,context)=>{if(settings.sound&&!document.hidden)return audio.batch(ids,{pack,signal:context?.signal});}});
   let transition = null, replayTicket = 0, awaitingPass = false;
   const localPort={get snapshot(){return session?localFrame(session.current,gate!==null?-1:viewer):null;},
     history:index=>localFrame(session.states[index],viewer,[]),
     send(action,{actor=viewer}={}){const client=localClient(actor);return client.dispatch(Protocol.command(client.snapshot(),action,'local-'+(++commandSequence)));}};
   const screenController=new globalThis.PlayroomGameScreenController({client:localPort,report:error=>toast(globalThis.PlayroomMessages.error(error))});
-  function localFrame(state,shownViewer,actions=[]){return {kind:'snapshot',protocolVersion:2,sessionId:sessionId||String(session.createdAt),authorityEpoch:'local:'+session.createdAt,
+  function localFrame(state,shownViewer,actions=[]){return {kind:'snapshot',protocolVersion:3,sessionId:sessionId||String(session.createdAt),authorityEpoch:'local:'+session.createdAt,
     game:session.game,packVersion:session.packVersion,viewer:shownViewer,revision:state.move,historyLength:session.states.length,state:E.project(state,shownViewer),actions,paused};}
 
   try {
@@ -114,7 +115,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const unlockAudio = () => {if(settings.sound&&!document.hidden)void audio.unlock();};
   document.addEventListener('pointerdown',unlockAudio,{capture:true,passive:true});
   document.addEventListener('keydown',unlockAudio,{capture:true});
-  const flow=new Flow.GameFlow({options:()=>settings,motion:Motion,presentation:()=>({minimumVisibleMs:Flow.viewingTime(catalog[session?.game]?.capabilities,session?.current)}),reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const flow=new Flow.GameFlow({executor:presentationExecutor,options:()=>settings,motion:Motion,presentation:()=>({minimumVisibleMs:Flow.viewingTime(catalog[session?.game]?.capabilities,session?E.project(session.current,-1):null)}),reducedMotion:()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches});
   const pace=()=>flow.pace();
   HandOverflow.attach(document);
   document.body.classList.toggle('reduced-motion',pace().duration===0);
@@ -356,6 +357,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const context=screenController.context(frame,{scope:catalog[state.game]?.capabilities?.viewStateScope});
     selected=context.selected;viewState=context.viewState;
 
+    feedback.renderField=scene=>V.renderField(projected,shownViewer,scene,{viewState,presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1});
     const setup=session.options.lobbyConfig;
     const occupied=setup?.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);
     const primary=setup?occupied.findIndex(seat=>seat.participantId===setup.ownerId):projected.players.findIndex(p=>!p.bot);
@@ -371,7 +373,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       playerBadge:(visible,i)=>catalog[visible.game]?.playerBadge?.(visible,i),
       turnText:game.max===1?'':turnText,turnExtra:game.max===1||replay?'':globalThis.PlayroomMessages.text("ui.app.e954f44bf49a",{p0:String(state.move+1),p1:String(!state.data.hands&&!E.decisionWindow?.(state)?globalThis.PlayroomMessages.text("ui.app.182bafd6e1b1"):session.options.openHands?globalThis.PlayroomMessages.text("ui.app.3d9add839803"):globalThis.PlayroomMessages.text("ui.app.a3e084db5bc0"))}),
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
-      scene:V.render(projected,shownViewer,actions,{selected,viewState,replay,hotseat:isPass(),presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${icon('play')}${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}</button></div>`:''),
+      scene:V.render(projected,shownViewer,actions,{displayScene:feedback.displayScene,fieldScene:feedback.fieldScene,selected,viewState,replay,hotseat:isPass(),presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${icon('play')}${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
       beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.efcdf40bd477"),saved:storageOK,
@@ -380,7 +382,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const keptLayout=GameScreen.update($('#app'),markup,{preserveLayout});
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     if(!keptLayout)HandOverflow.sync($('#app'));
-    ensureRoomButton();if(!keptLayout)GameScreen.layoutScene($('#app'));
+    ensureRoomButton();globalThis.PlayroomPublicSequence?.useExecutor($('#app'),flow.executor);if(!keptLayout)GameScreen.layoutScene($('#app'));
     feedback.refresh();playerTargets?.refresh();
     if(replay)turnNotice.reset();
     else turnNotice.observe({sessionId:sessionId||session.createdAt,revision:state.move,turn:state.turn,viewer,status:state.status,paused,active:screen==='table'&&!transition&&gate===null&&!document.hidden,mount:$('#app')});
@@ -399,7 +401,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const slider=$('#replay-range'),focused=document.activeElement===slider,before=currentState(),previous=replayIndex??session.states.length-1;
     input?.cancel();stopReplay();const next=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,Math.max(historyStart(),Math.min(session.states.length-1,index)),s=>E.decisionWindow?.(s)),after=session.states[next],events=E.project(after,viewer).events;
     const action=next<previous?{type:'replay-back'}:events.findLast(e=>e.presentation)?.presentation||{type:'replay'};
-    const snapshot=next!==previous&&catalog[session.game]?.capabilities?.presentation?.entityMotion?flow.capture({actor:before.turn,action,viewer}):null;
+    const snapshot=next!==previous&&catalog[session.game]?.capabilities?.presentation?.entityMotion?flow.capture({actor:before.turn,action,viewer,deferDepartures:true}):null;
     replayIndex=next;selected=null;renderTable();if(snapshot)void flow.play(snapshot);
     if(slider){slider.value=String(replayIndex);$('#replay-range')?.replaceWith(slider);if(focused)slider.focus();}
   }
@@ -453,7 +455,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function finishAction(run,{redraw=true,result=true}={}) {
     if(transition!==run)return;
-    transition=null;screenController.cancelTransition();flow.cancel();
+    transition=null;screenController.cancelTransition();flow.cancelAction();
     if(session!==run.session)return;
     markDeviceHandoff(run.beforeTurn);
     presentationReady();
@@ -472,21 +474,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       pendingAction={session,state:session.current,actor,action,context};return;
     }
     try {
-      if(transition&&independent){const receipt=screenController.send(action,{actor});if(!receipt.ok&&!receipt.ignored)throw Error(receipt.message);feedback.accept(E.project(session.current,viewer).events,E.soundCues(session.current,viewer,feedback.cursor),session.game,{mode:pace().mode});save();renderTable();return;}
-      const beforeState=session.current,beforeTurn=beforeState.turn,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom});
+      if(transition&&independent){const initialScene=E.project(session.current,viewer).scene;const receipt=screenController.send(action,{actor});if(!receipt.ok&&!receipt.ignored)throw Error(receipt.message);const projected=E.project(session.current,viewer);feedback.accept(projected.events,E.soundCues(session.current,viewer,feedback.cursor),session.game,{mode:pace().mode,initialScene,finalScene:projected.scene});save();renderTable();return;}
+      const beforeState=session.current,beforeTurn=beforeState.turn,initialScene=E.project(beforeState,viewer).scene,timing=pace(),snapshot=flow.capture({actor,action,viewer,playedFrom:context.playedFrom,sceneModel:initialScene,deferDepartures:true});
       if(session.current.players[actor]?.bot)localAuthority().actBot(actor,action);
       else {const receipt=screenController.send(action,{actor});if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
       GameScreen.allowLayoutChange($('#app'),context);selected=null;playerTargets?.cancel();
       const quiet=catalog[session.game]?.capabilities?.quietActions?.includes(action.type);
       const draws=cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer));
-      const events=E.project(session.current,viewer).events.filter(event=>event.id>(beforeState.events.at(-1)?.id||0));
-      feedback.accept(events,E.soundCues(session.current,viewer,beforeState.events.at(-1)?.id||0),session.game,{defer:!quiet,silent:document.hidden||gate!==null,mode:timing.mode,snapshot,motion:quiet?null:()=>flow.play(snapshot,{draws})});
+      const projected=E.project(session.current,viewer),events=projected.events.filter(event=>event.id>(beforeState.events.at(-1)?.id||0));
+      feedback.accept(events,E.soundCues(session.current,viewer,beforeState.events.at(-1)?.id||0),session.game,{initialScene,finalScene:projected.scene,defer:!quiet,silent:document.hidden||gate!==null,mode:timing.mode,snapshot,motion:quiet?null:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??draws,transferOnly:step?.transferOnly,context})});
       save();input?.invalidate();
       if(quiet&&context.deferRender)return;
       if(quiet){const shownSession=session,revision=session.current.move;markDeviceHandoff(beforeTurn);renderTable(false,true);if(catalog[session.game]?.capabilities?.presentation?.entityMotion&&snapshot)void flow.play(snapshot).then(()=>{if(session===shownSession&&session.current.move===revision)presentFinishedResult();});else presentFinishedResult();return;}
       screenController.transition({context:{session,beforeTurn},capture:()=>snapshot,
         render(run){transition=run;renderTable();Motion.prepare(snapshot,draws);},
-        play:()=>flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before:beforeState,after:session.current}),
+        play:()=>flow.present(()=>{feedback.next();return feedback.whenIdle();}),
         settle:0,finish:run=>finishAction(run)});
     } catch(error){toast(globalThis.PlayroomMessages.error(error)||globalThis.PlayroomMessages.text("ui.app.691a0701dfac"));void previewSound('error',session?.game);}
   }
@@ -807,9 +809,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
       const nextIndex=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,replayIndex+1,s=>E.decisionWindow?.(s));
       const before=currentState(),after=session.states[nextIndex],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
-      const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer});
-      feedback.start(E.project(before,viewer).events);feedback.accept(E.project(after,viewer).events,E.soundCues(after,viewer,before.events.at(-1)?.id||0),session.game,{mode:timing.mode,snapshot,motion:()=>flow.play(snapshot,{draws:cardTransfers(before,after)}),defer:true});
-      replayIndex=nextIndex;renderTable();Motion.prepare(snapshot,cardTransfers(before,after));await flow.present(()=>{feedback.next();return feedback.whenIdle();},{events,before,after});
+      const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer,sceneModel:E.project(before,viewer).scene,deferDepartures:true});
+      const beforeProjection=E.project(before,viewer),afterProjection=E.project(after,viewer);feedback.start(beforeProjection.events);feedback.accept(afterProjection.events,E.soundCues(after,viewer,before.events.at(-1)?.id||0),session.game,{initialScene:beforeProjection.scene,finalScene:afterProjection.scene,mode:timing.mode,snapshot,motion:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??cardTransfers(before,after),transferOnly:step?.transferOnly,context}),defer:true});
+      replayIndex=nextIndex;renderTable();Motion.prepare(snapshot,cardTransfers(before,after));await flow.present(()=>{feedback.next();return feedback.whenIdle();});
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
     replayTimer=setTimeout(step,pace().botDelay);renderTable();
@@ -923,7 +925,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     if(event.target.closest('.network-game,.shared-modal-backdrop'))return;
     const replacement=event.target.closest('[data-player-replacement]');if(replacement){event.preventDefault();openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.261faa27d0a0"))}<p>${esc(replacement.getAttribute('title')||replacement.dataset.tooltip)}</p>`);return;}
-    const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){if(!screenController.setPreference(preference.dataset.viewPreference,preference.dataset.viewValue))TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);viewState={};screenController.viewState=viewState;renderTable();return;}
+    const preference=event.target.closest('[data-view-preference]');if(preference&&screen==='table'){if(!screenController.setPreference(preference.dataset.viewPreference,preference.dataset.viewValue))TabletopUI.viewPreferences(session.game,viewer,preference.dataset.viewPreference,preference.dataset.viewValue);for(const key of Object.keys(viewState))delete viewState[key];screenController.viewState=viewState;renderTable();return;}
     const viewControl=event.target.closest('[data-view-key]');
     if(viewControl&&!viewControl.disabled&&screen==='table'){const {viewKey,viewValue}=viewControl.dataset;if(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(viewKey)&&viewValue.length<=80){viewState[viewKey]=viewValue;renderTable(false,false,viewControl.dataset.viewLayout==='stable');}return;}
     if(event.target.closest('.player-target-menu'))return;
@@ -1136,6 +1138,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     play:(ids,pack)=>{if(!settings.sound||document.hidden||!ids.length)return;
       const ordered=ids.slice(),request=++audioRequest;audioPending=true;
       void audio.unlock().then(async ok=>{if(request!==audioRequest)return;if(ok&&settings.sound&&!document.hidden)await audio.sequence(ordered,{pack});if(request===audioRequest)audioPending=false;});},
+    batch:(ids,pack,context)=>{if(settings.sound&&!document.hidden)return audio.batch(ids,{pack,signal:context?.signal});},
     stop:()=>{audioRequest++;audioPending=false;audio.stop();}
   }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService:publicRooms,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,confirmOperation,modalHead,showSettings,rememberGame});
   window.addEventListener('resize',()=>GameScreen.fitGameTitles(document));

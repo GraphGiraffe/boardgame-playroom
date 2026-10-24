@@ -9,7 +9,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   'use strict';
   const DB='playroom.network-client-history.v1',COPY=value=>JSON.parse(JSON.stringify(value));
   const id=value=>typeof value==='string'&&value.length>0&&value.length<=128;
-  const valid=s=>s&&s.protocolVersion===2&&['snapshot','history'].includes(s.kind)&&
+  const valid=s=>s&&s.protocolVersion===3&&['snapshot','history'].includes(s.kind)&&
     id(s.sessionId)&&id(s.authorityEpoch)&&id(s.game)&&id(s.packVersion)&&
     Number.isSafeInteger(s.revision)&&s.revision>=0&&Number.isInteger(s.viewer)&&s.viewer>=-1&&s.viewer<=31&&
     s.state&&typeof s.state==='object'&&!Array.isArray(s.state)&&

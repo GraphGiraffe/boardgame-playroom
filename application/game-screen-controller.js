@@ -25,7 +25,7 @@
     if(this.matchIdentity!==match){this.matchIdentity=match;this.matchViews=new Map();}
     this.identity=key;this.viewState=this.matchViews.get(key)||{};this.matchViews.set(key,this.viewState);
    }else if(this.identity!==key){this.identity=key;this.viewState={};}
-   const hand=frame.state.data.hands?.[frame.viewer];if(this.selection!==null&&hand&&!hand.some(card=>card.id===this.selection))this.selection=null;
+   const hand=frame.state.scene?.players.find(person=>person.player===frame.viewer)?.hand;if(this.selection!==null&&hand&&!hand.some(card=>card.id===this.selection))this.selection=null;
    return {selected:this.selection,viewState:this.viewState};
   }
   render(frame,renderer,options={}){this.history.receive(frame);return renderer(frame,this.context(frame,options));}

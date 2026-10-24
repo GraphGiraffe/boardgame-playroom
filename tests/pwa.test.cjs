@@ -66,7 +66,7 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['platform/web/interface-scale.js','app/interface-scale.css','core/messages.js','app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','application/pwa-update-coordinator.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['platform/web/interface-scale.js','app/interface-scale.css','core/messages.js','app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','application/pwa-update-coordinator.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','presentation/event-plan.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
   assert.match(source,/caches\.open\(CACHE\)\)\.match\('\.\/index\.html'\)/);
   assert.match(source,/app\/vendor\/qrcode\.js/);
@@ -155,7 +155,7 @@ test('R2 catalog route verifies snapshot bytes and serves immutable pack files',
 
 test('remote pack loader checks URL, SHA256 and manifest before installation',async()=>{
  const crypto=require('node:crypto'),{RemoteCatalog,validate}=require('../app/remote-catalog.js');
- const bundle={manifest:{id:'uno',version:'0.4.9',stateVersion:1,engineApi:3,viewApi:2}};
+ const bundle={manifest:{id:'uno',version:'0.4.9',stateVersion:1,engineApi:4,viewApi:3}};
  const bytes=Buffer.from(JSON.stringify(bundle)),sha=crypto.createHash('sha256').update(bytes).digest('hex');
  const item={...bundle.manifest,sha256:sha,url:`/api/packs/files/uno/0.4.9/${sha}.playroom-pack.json`};
  const catalog={format:'playroom-catalog',version:1,collection:'0.6.0',packs:[item]};

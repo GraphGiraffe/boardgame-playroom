@@ -5490,7 +5490,7 @@
     }
   },
   "composition": {
-    "selection": "Existing viewApi2 family/focus/hand/surface metadata; never game ID. Profiles label current layout; they do not infer rules or authorization.",
+    "selection": "Existing viewApi3 family/focus/hand/surface metadata; never game ID. Profiles label current layout; they do not infer rules or authorization.",
     "profiles": [
       {
         "id": "solo-field",

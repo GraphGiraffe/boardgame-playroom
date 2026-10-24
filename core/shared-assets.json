@@ -5,15 +5,15 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "79b4f8efa8d26831fb32419ef04d063e2b480f527a6da558aae08d1eff9f4748",
-      "renderedSha256": "79b4f8efa8d26831fb32419ef04d063e2b480f527a6da558aae08d1eff9f4748"
+      "sha256": "2f6bf7eb9b3dc07d647504f85c5e299c8a615c2c20fff1e5ff1eea10ac6b6021",
+      "renderedSha256": "2f6bf7eb9b3dc07d647504f85c5e299c8a615c2c20fff1e5ff1eea10ac6b6021"
     },
     {
       "source": "shared/components/game-components.css",
       "target": "core/game-components.css",
       "format": "text",
-      "sha256": "53dce1dbf51655dae0dbb49312a1d65b05518e4f89291854ad0d60a19785f04c",
-      "renderedSha256": "53dce1dbf51655dae0dbb49312a1d65b05518e4f89291854ad0d60a19785f04c"
+      "sha256": "744ef619fe128c8362ce1bbe5dd9b080c16c7ee67a3ea92146104ed47f4fe867",
+      "renderedSha256": "744ef619fe128c8362ce1bbe5dd9b080c16c7ee67a3ea92146104ed47f4fe867"
     },
     {
       "source": "shared/sounds/standard-sounds.json",

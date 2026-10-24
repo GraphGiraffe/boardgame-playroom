@@ -207,10 +207,11 @@ test('authority preserves model projections, idempotency and read-only spectator
     assert.deepEqual(request.action,{type:'place',cell:4});
     assert.equal(spectator.dispatch(Protocol.command(spectator.snapshot(),{type:'place',cell:4},'forged')).code,'READ_ONLY');
     assert.equal(player.dispatch(request).ok,true);assert.equal(player.dispatch(request).duplicate,true);
-    assert.equal(authority.revision,1);assert.equal(player.snapshot().state.modelProjection.data.board[4],1);
-    const publicView=spectator.snapshot();assert.deepEqual(publicView.state.modelProjection.actions,[]);
-    assert.equal(publicView.state.modelProjection.actor,-1);assert(!JSON.stringify(publicView).includes('never-send-seed'));
-    assert.equal(spectator.history(0).state.modelProjection.data.board[4],null);
+    assert.equal(authority.revision,1);assert.equal(player.snapshot().state.scene.cells[4].owner,1);
+    const publicView=spectator.snapshot();assert.deepEqual(publicView.state.scene.interactions,[]);
+    assert.equal(publicView.state.scene.viewer,-1);assert(!JSON.stringify(publicView).includes('never-send-seed'));
+    assert.equal(spectator.history(0).state.scene.cells[4].owner,null);
+    assert.equal(publicView.state.data,undefined);assert.equal(publicView.state.modelProjection,undefined);
     assert.equal(publicView.state.firstPlayer,1);
     assert.equal(publicView.state.firstPlayerMode,'assigned');
     const other=authority.connect(0);
@@ -239,18 +240,18 @@ for builder in [app,packs]:
   try:builder.bundle_source_modules({'rules.js':'','view.js':''},source,lambda path:'{}')
   except ValueError:pass
   else:raise AssertionError('invalid sourceModules accepted: '+repr(source))
- for api in [0,4,True]:
+ for api in [0,3,5,True]:
   try:builder.validate_manifest({**json.loads(manifest.read_text()),'engineApi':api},'tictactoe')
   except ValueError:pass
   else:raise AssertionError('invalid engineApi accepted')
 print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.parent)],ensure_ascii=False))
 `;
   const [a,b]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
-  assert.deepEqual(a,b);assert.equal(a.manifest.engineApi,3);assert.equal(a.manifest.sourceModules,undefined);
+  assert.deepEqual(a,b);assert.equal(a.manifest.engineApi,4);assert.equal(a.manifest.sourceModules,undefined);
   const Remote=require('../app/remote-catalog.js'),sha='a'.repeat(64),manifest=a.manifest;
-  const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:3,viewApi:2,sha256:sha,
+  const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:4,viewApi:3,sha256:sha,
     url:`/api/packs/files/${manifest.id}/${manifest.version}/${sha}.playroom-pack.json`};
-  assert.equal(Remote.validate({format:'playroom-catalog',version:1,collection:'0.6.5',packs:[entry]}).packs[0].engineApi,3);
+  assert.equal(Remote.validate({format:'playroom-catalog',version:1,collection:'0.6.5',packs:[entry]}).packs[0].engineApi,4);
   for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(a.files[file],undefined,'source is already compiled into entrypoints');
   const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
   const before=E.GAMES,views=UI.createRegistry();
@@ -260,6 +261,7 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
   const state=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1});
   const next=E.applyAction(state,1,{type:'place',cell:4}),projected=E.project(next,0);
   const html=views.render(projected,0,E.legalActions(next,0));assert.match(html,/ttt-cell cross/);assert.match(html,/Клетка 5: X/);
+  assert.equal(views.render({...projected,data:{},modelProjection:null},0,E.legalActions(next,0)),html);
   const spectator=views.render(E.project(next,-1),-1,[],{surface:'table'});assert.doesNotMatch(spectator,/data-action=/);
   const table=E.projectTable(next,0),commands=table.tableActions;
   assert.deepEqual(table.data,E.project(next,-1).data);assert.equal(table.modelProjection.viewer,-1);
@@ -267,6 +269,22 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
   assert.doesNotMatch(views.render(table,-1,[],{surface:'table'}),/data-action=/,'read-only history cannot regain controls');
   assert.throws(()=>E.applyTableAction(next,-1,{type:'place',cell:0}),coded('TABLE_ACTION_UNAVAILABLE'));
   assert.equal(E.applyTableAction(next,0,{type:'place',cell:0}).data.board[0],0);
+  // Authoring examples obey the same scene-only renderer boundary as the collection.
+  const example=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,sys
+from pathlib import Path
+spec=importlib.util.spec_from_file_location('packs_build',Path(sys.argv[1])/'build.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+print(json.dumps(module.build_pack(Path(sys.argv[1])/'examples/private-counter')))
+`,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
+  manager.install(manager.prepare(example));
+  const counter=E.createGame('private-counter',{players:[{name:'One'},{name:'Two'}],seed:17});
+  for(const viewer of [-1,0,1]){
+    const projection=E.project(counter,viewer),markup=views.render(projection,viewer,E.legalActions(counter,viewer));
+    assert.doesNotMatch(markup,/role="alert"/);
+    assert.match(markup,/private-counter-value/);
+    assert.equal(views.render({...projection,data:undefined,modelProjection:undefined},viewer,E.legalActions(counter,viewer)),markup);
+    projection.scene.goals.forEach((goal,index)=>assert.deepEqual(goal,viewer===index?{value:index+2}:{hidden:true}));
+  }
+
   const malformed=JSON.parse(JSON.stringify(a));malformed.files['rules.js']='globalThis.TabletopCore.register({id:"tictactoe",name:"Fake",min:2,max:2,presets:[{id:"classic"}],create(){},legal(){return[]},apply(){}});';
   assert.throws(()=>manager.prepare(malformed),/API 3/);
 });
@@ -352,4 +370,80 @@ for pack in sorted((root/'packs').iterdir()):
 print(json.dumps(result))
 `;
  const ids=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8'}));assert.deepEqual(ids,fs.readdirSync(path.join(packs,'packs')).filter(id=>fs.existsSync(path.join(packs,'packs',id,'manifest.json'))).sort());
+});
+
+
+test('scene boundary rejects ambiguous participants and malformed token metrics without copying',()=>{
+  const S=require('../presentation/scene-contract.js');
+  const scene=presentation.scene(model.project(initial(0),0));
+  assert.equal(S.validate(scene,2),scene);
+  for(const change of [s=>s.players[1].player=0,s=>s.players[0].id=0,
+    s=>s.players[0].metrics.push({...s.players[0].metrics[0]}),
+    s=>s.players[0].metrics[0].value=NaN,
+    s=>s.players[0].metrics[0].value=-1,
+    s=>s.players[0].metrics[0].value=.5,
+    s=>s.players[0].metrics[0].kind='unknown',
+    s=>s.players[0].metrics[0].display={icon:'unknown',capacity:3},
+    s=>s.players[0].metrics[0].display={icon:'heart',capacity:0},
+    s=>s.players[0].metrics[0].display={icon:'heart',capacity:3,overlap:'yes'}]){
+    const bad=JSON.parse(JSON.stringify(scene));change(bad);assert.throws(()=>S.validate(bad,2),/SCENE_/);
+  }
+  const crown={id:'ultimate',kind:'points',value:9,label:'Ultimate',display:{icon:'crown',capacity:1}};
+  assert.equal(S.metric(crown),crown,'accumulated crowns may exceed their minimum slot count');
+  const H=require('../core/ui.js').helpers;
+  for(const capacity of [1,8,9,64]){
+    const metric={...crown,value:capacity,display:{icon:'heart',capacity}};
+    assert.equal(S.metric(metric),metric);
+    assert.doesNotThrow(()=>H.scoreBadge(metric),'scene-approved capacity must render');
+  }
+  assert.throws(()=>S.metric({...crown,display:{icon:'heart',capacity:65}}),/SCENE_/);
+});
+
+test('all installed pack scenes obey participant and metric contracts for every viewer',()=>{
+  const E=require('../core/engine.js');
+  const ids=fs.readdirSync(path.join(packs,'packs')).filter(id=>fs.existsSync(path.join(packs,'packs',id,'manifest.json')));
+  for(const id of ids){
+    require(path.join(packs,'packs',id,'rules.js'));
+    const game=E.get(id);
+    for(const preset of game.presets){
+      const count=preset.id==='teams'?4:game.min;
+      const state=E.createGame(id,{players:Array.from({length:count},(_,i)=>({name:'P'+i,bot:true})),preset:preset.id,seed:17});
+      for(let viewer=-1;viewer<count;viewer++){
+        const projected=E.project(state,viewer);
+        assert.equal(projected.scene.players.length,count,`${id}/${preset.id}/${viewer}`);
+        assert(projected.scene.geometry.topology);assert(projected.scene.zones.length);
+        assert.equal(projected.scene.interactions.length,E.legalActions(state,viewer).length);
+        assert.deepEqual(projected.scene.players.map(p=>p.player).sort((a,b)=>a-b),Array.from({length:count},(_,i)=>i));
+      }
+    }
+  }
+});
+
+
+test('presentation boundary rejects ambiguous effect targets and broken route anchors',()=>{
+ const S=require('../presentation/scene-contract.js');
+ const route={entity:{namespace:'token',id:'0-1'},origin:{anchor:'base-0-1'},steps:[{anchor:'path-0'}]};
+ assert.equal(S.sequence(route),route);
+ const event={reveal:{entity:{namespace:'card',id:'copy-7'}},feedback:{kind:'damage',player:1}};
+ assert.equal(S.event(event,2),event);
+ assert.throws(()=>S.event({reveal:{entity:'card-copy-7'}},2),/ENTITY_REF/);
+ assert.throws(()=>S.event({feedback:{kind:'damage',player:2}},2),/SCENE_FEEDBACK/);
+ assert.throws(()=>S.sequence({...route,steps:[{cell:1}]}),/SCENE_ANCHOR/);
+ assert.throws(()=>S.entity({namespace:'card',id:'7',face:'secret'}),/ENTITY_REF/);
+});
+
+
+test('event scenes use authorized current events, ordered checkpoints and inert geometry',()=>{
+ const E=require('../core/engine.js'),Session=require('../core/session.js');let invalid=null;
+ const adapted=globalThis.PlayroomModelRegistration.adapt(E,{definition:{...definition,id:'checkpoint-fixture'},presentation:{...presentation,eventScenes(p){
+  if(!p.events.length)return [];
+  const frame={eventId:p.events.at(-1).id,scene:{...presentation.scene(p),interactions:[]}};
+  if(invalid==='id')frame.eventId='not-authorized';
+  if(invalid==='actions')frame.scene.interactions=[{command:{type:'place',cell:1},target:{zone:'field'}}];
+  return invalid==='duplicate'?[frame,frame]:[frame];
+ }},locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'1.0.0'});
+ E.register(adapted);const session=new Session(E,adapted.id,{players:[{name:'A'},{name:'B'}],firstPlayerMode:'assigned',firstPlayer:0});
+ session.act(0,{type:'place',cell:0});
+ for(const viewer of [-1,0,1]){const event=session.view(viewer).events.at(-1);assert.equal(event.scene.viewer,viewer);assert.deepEqual(event.scene.interactions,[]);assert.equal(event.scene.cells[0].owner,0);}
+ for(invalid of ['id','duplicate','actions'])assert.throws(()=>session.view(-1),/EVENT_SCENE/);
 });

@@ -9,11 +9,12 @@ function fixture(spec,{size,board={},shrink=null}={}){
  if(size&&size!==d.size)delete d.startingBases; // Synthetic smaller arena has no original spawn metadata.
  d.size=size||d.size;d.board=Array(d.size*d.size).fill('ground');d.board[0]='base';d.board[d.board.length-1]='base';
  for(const [key,value] of Object.entries(board)){const [y,x]=key.split(',').map(Number);d.board[y*d.size+x]=value;}
- d.deck=['air','earth','water','fire'].flatMap(e=>Array(n+1).fill(e));d.discard=[];d.shrink=shrink;
- spec.forEach((v,i)=>{Object.assign(d.players[i],{pos:v.pos,health:3,lives:2,maxHand:Math.max(3,v.hand?.length||0),hand:[v.element||'earth'],ultimate:0},v);for(const card of d.players[i].hand){const j=d.deck.indexOf(card);assert(j>=0);d.deck.splice(j,1);}});
+ d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:n+1},(_,i)=>({id:'card:'+(e*(n+1)+i),element})));d.discard=[];d.shrink=shrink;
+ spec.forEach((v,i)=>{Object.assign(d.players[i],{pos:v.pos,health:3,lives:2,maxHand:Math.max(3,v.hand?.length||0),hand:[v.element||'earth'],ultimate:0},v);d.players[i].hand=d.players[i].hand.map(element=>{const j=d.deck.findIndex(c=>c.element===element);assert(j>=0);return d.deck.splice(j,1)[0];});});
  assert(D.validate(s));return s;
 }
-function round(s,commands){for(const [i,c] of commands.entries())s=model.apply(s,i,c).position;return s;}
+function physicalPlan(s,id,c){if(c.type!=='plan'||c.cardId)return c;return {...c,cardId:s.data.players[id].hand.find(card=>card.element===c.element).id};}
+function round(s,commands){for(const [i,c] of commands.entries())s=model.apply(s,i,physicalPlan(s,i,c)).position;return s;}
 function network(n=2){const session=new Session(E,'mage-brawl',{seed:12,players:Array.from({length:n},(_,i)=>({name:'P'+i}))}),authority=new Authority(session);return {session,authority,ports:Array.from({length:n},(_,i)=>authority.connect(i))};}
 
 test('Mage Brawl: hidden barrier, undo, no opponent plans/hands in every projection',()=>{
@@ -89,7 +90,7 @@ test('all six original profiles and error extremes preserve 2–8 player simulat
  }
 });
 test('authority accepts independent actors but retains strict global revision checks',()=>{
- const {session,authority,ports:[a,b]}=network();try{const stale=Protocol.command(a.snapshot(),a.snapshot().actions[0],'stale');assert(b.dispatch(Protocol.command(b.snapshot(),b.snapshot().actions[0],'b')).ok);assert.equal(a.dispatch(stale).code,'STALE');assert.equal(session.current.data.round,1);assert.equal(authority.connect(-1).snapshot().state.data.players[1].plan,undefined);}finally{authority.dispose();}
+ const {session,authority,ports:[a,b]}=network();try{const stale=Protocol.command(a.snapshot(),a.snapshot().actions[0],'stale');assert(b.dispatch(Protocol.command(b.snapshot(),b.snapshot().actions[0],'b')).ok);assert.equal(a.dispatch(stale).code,'STALE');assert.equal(session.current.data.round,1);assert.equal(authority.connect(-1).snapshot().state.scene.arena.players[1].plan,undefined);}finally{authority.dispose();}
 });
 test('client safely rebases another player ready, and duplicate delivery cannot resolve twice',async()=>{
  const {session,authority,ports:[a,b]}=network();let injected=false,seq=0,calls=[];const client=new Client({snapshot:a.snapshot,dispatch(c){calls.push(c);if(!injected){injected=true;b.dispatch(Protocol.command(b.snapshot(),b.snapshot().actions[0],'b'));}return a.dispatch(c);}},{idFactory:()=>`a-${++seq}`});
@@ -114,7 +115,7 @@ test('square cards share the card type frame and retain arbitrary rotation geome
  assert.match(square,/data-piece-type="card-deck"/);assert.match(square,/viewBox="0 0 100 100"/);assert.match(C.cardBack({shape:'square'}),/data-card-shape="square"/);
  assert.match(C.art({main:'x',width:100,height:100,rotation:90}),/rotate\(90\)/);
  const content=[{counters:[{id:'health',kind:'points',value:3,label:'Здоровье'},{id:'lives',kind:'points',value:2,label:'Жизни'}]}];
- assert.doesNotThrow(()=>UI.composeScene({api:2,family:'board',playerContent:content,elements:{field:'<div></div>'}},{state:{players:[{name:'A'}],turn:0,game:'fixture',data:{}},viewer:0,actions:[]}));
+ assert.doesNotThrow(()=>UI.composeScene({api:3,family:'board',playerContent:content,elements:{field:'<div></div>'}},{state:{players:[{name:'A'}],turn:0,game:'fixture',data:{}},viewer:0,actions:[]}));
 });
 
 test('fixed states match the Python A/v3.0 reference before respawn and random draw',()=>{
@@ -160,15 +161,15 @@ test('completion: occupied bases wait, then explicit respawn becomes available w
  let s=round(fixture([{pos:[0,0]},{pos:[3,3]},{pos:[1,1],element:'fire'}],{size:4}),[plan('earth'),plan('earth'),plan('fire','movement',0)]);
  assert.equal(s.data.phase,'planning');assert.deepEqual(s.data.respawn,[2]);assert.equal(model.legalActions(s,2).length,0);
  // Give the first player a water card while preserving deck cardinality.
- s=clone(s);const before=s.data.players[0].hand.pop();s.data.deck.push(before);s.data.deck.splice(s.data.deck.indexOf('water'),1);s.data.players[0].hand.push('water');
- s=round(s,[plan('water','movement',1),plan(s.data.players[1].hand[0],'attack',2)]);
+ s=clone(s);const before=s.data.players[0].hand.pop();s.data.deck.push(before);s.data.players[0].hand.push(s.data.deck.splice(s.data.deck.findIndex(c=>c.element==='water'),1)[0]);
+ s=round(s,[plan('water','movement',1),plan(s.data.players[1].hand[0].element,'attack',2)]);
  assert.equal(s.data.phase,'respawn');assert.equal(s.turn,2);assert(model.legalActions(s,2).some(c=>c.pos[0]===0&&c.pos[1]===0));
 });
 test('completion: consecutive shrink warnings remove only one ring per completed round; final simultaneous loss is a draw',()=>{
  let s=fixture([{pos:[4,4]},{pos:[5,5]},...Array.from({length:6},()=>({pos:null,lives:0,health:0,hand:[]}))]);s.data.window={id:'round:1',participants:[0,1],ready:[],plans:{},versions:{0:0,1:0}};
  for(let i=0;i<4;i++){
   // Keep a non-moving card available without altering the total card inventory.
-  s=clone(s);for(let id=0;id<2;id++)if(!s.data.players[id].hand.includes('earth')){const card=s.data.players[id].hand.pop();s.data.deck.push(card);s.data.deck.splice(s.data.deck.indexOf('earth'),1);s.data.players[id].hand.push('earth');}
+  s=clone(s);for(let id=0;id<2;id++)if(!s.data.players[id].hand.some(c=>c.element==='earth')){const card=s.data.players[id].hand.pop();s.data.deck.push(card);s.data.players[id].hand.push(s.data.deck.splice(s.data.deck.findIndex(c=>c.element==='earth'),1)[0]);}
   s=round(s,[plan('earth'),plan('earth')]);assert.equal(s.data.inset,i);assert.equal(s.data.size,10);
  }
  assert.equal(s.data.shrink,null);
@@ -203,7 +204,7 @@ test('loot retains accumulated cards through death and respawn, and excludes a d
   for(const viewer of [-1,1,2]){const p=model.project(s,viewer);assert.equal(p.data.players[0].hand,undefined);assert.equal(p.data.players[0].handCount,remaining.length);}
   const command=model.legalActions(s,s.turn)[0];assert.deepEqual(model.apply(clone(s),s.turn,command),model.apply(s,s.turn,command),'restore before respawn is deterministic');s=model.apply(s,s.turn,command).position;
   assert.equal(s.data.players[0].hand.length,Math.max(3,cards.length),'respawn refills the stored hand maximum after losing several cards');assert.equal(s.data.players[0].maxHand,Math.max(3,cards.length));
-  const hand=[...s.data.players[0].hand];for(const card of remaining){const i=hand.indexOf(card);assert(i>=0,'retained card survives respawn');hand.splice(i,1);}assert(D.validate(s));
+  const hand=[...s.data.players[0].hand];for(const card of remaining){const i=hand.findIndex(c=>c.id===card.id);assert(i>=0,'retained card survives respawn');hand.splice(i,1);}assert(D.validate(s));
  }
  for(const lives of [2,1]){
   const s=round(fixture([{pos:[2,2],health:1,lives,element:'water'},{pos:[2,1],maxHand:5},{pos:[4,4]}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
@@ -225,10 +226,10 @@ test('loot authority hides remaining faces from Table and duplicate commands can
  saved.states[0].data=fixture([{pos:[2,2],health:3,hand:['water','fire','air']},{pos:[2,1]},{pos:[2,3]}]).data;
  const session=Session.restore(E,saved),authority=new Authority(session),ports=[0,1,2].map(i=>authority.connect(i));
  try{
-  [plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)].forEach((c,i)=>session.act(i,c));
+  [plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)].forEach((c,i)=>session.act(i,physicalPlan(session.current,i,c)));
   assert.equal(session.current.data.phase,'loot');const shot=ports[1].snapshot(),packet=Protocol.command(shot,shot.actions[0],'loot-once');assert(ports[1].dispatch(packet).ok);
   const bytes=JSON.stringify(session.current);assert(ports[1].dispatch(packet).duplicate);assert.equal(JSON.stringify(session.current),bytes);assert.equal(ports[2].snapshot().actions.length,1);
-  const pub=authority.connect(-1).snapshot();assert.equal(pub.actions.length,0);assert.deepEqual(pub.state.data.loot,{victim:0,player:2,count:1});assert.equal(pub.state.data.players[1].hand,undefined);assert.equal(pub.state.data.players[0].plan,undefined);
+  const pub=authority.connect(-1).snapshot();assert.equal(pub.actions.length,0);assert.deepEqual(pub.state.scene.arena.loot,{victim:0,player:2,count:1});assert.equal(pub.state.scene.arena.players[1].hand,undefined);assert.equal(pub.state.scene.arena.players[0].plan,undefined);
  }finally{authority.dispose();}
 });
 
@@ -254,7 +255,7 @@ test('two actions: private first draft, distinct copies, reset and one final dra
  let s=model.create({playerCount:2,preset:'classic',rng:41,options:{actionsPerTurn:'2'}});
  const before=clone(s),first=model.legalActions(s,0).find(c=>c.action==='attack');s=model.apply(s,0,first).position;
  assert.deepEqual(model.decisionWindow(s).ready,[]);assert.deepEqual(s.data.players[0].hand,before.data.players[0].hand);
- assert(model.legalActions(s,0).filter(c=>c.type==='plan').every(c=>c.cardIndex!==first.cardIndex));
+ assert(model.legalActions(s,0).filter(c=>c.type==='plan').every(c=>c.cardId!==first.cardId));
  for(const viewer of [-1,1]){const p=model.project(s,viewer);assert.equal(p.data.players[0].draft,undefined);assert.equal(p.data.planned,undefined);}
  assert(model.project(s,0).data.planned);assert.throws(()=>model.apply(s,0,first));
  s=model.apply(s,0,{type:'unready'}).position;assert.equal(s.data.drafts[0],undefined);
@@ -273,7 +274,7 @@ test('two-action bots finish games with legal private drafts and conserved cards
 
 test('two actions: first-step death skips second, preserves closed loot before respawn',()=>{
  let s=fixture([{pos:[1,0],hand:['fire','earth','air','water']},{pos:[1,1],health:1,hand:['earth','water','air','fire']}]);s.data.config.steps=2;
- const cs=[[{...plan('fire','attack',1),cardIndex:0},{...plan('earth','movement',0),cardIndex:1}],[{...plan('earth','movement',0),cardIndex:0},{...plan('water','movement',2),cardIndex:1}]];
+ const cs=[[{...plan('fire','attack',1),cardId:s.data.players[0].hand[0].id},{...plan('earth','movement',0),cardId:s.data.players[0].hand[1].id}],[{...plan('earth','movement',0),cardId:s.data.players[1].hand[0].id},{...plan('water','movement',2),cardId:s.data.players[1].hand[1].id}]];
  for(const id of [0,1])for(const c of cs[id])s=model.apply(s,id,c).position;
  assert.equal(s.data.phase,'loot');assert.equal(s.data.players[1].lives,1);assert.equal(s.data.players[1].health,0);assert.equal(s.data.players[0].maxHand,5);
  assert(!s.data.frames.some(f=>f.step===1&&f.effect?.actor===1));assert.deepEqual(s.data.drafts,{});assert(D.validate(s));
@@ -288,7 +289,7 @@ test('two actions: first-step death skips second, preserves closed loot before r
   const first=model.legalActions(s,0).find(c=>c.action===action);s=model.apply(s,0,first).position;
   const second=model.legalActions(s,0).filter(c=>c.type==='plan');assert(second.length);
   assert.equal(second.some(c=>c.action===action),enabled==='0');
-  if(enabled==='1'){assert.throws(()=>model.apply(s,0,{...first,cardIndex:(first.cardIndex+1)%4,element:s.data.players[0].hand[(first.cardIndex+1)%4]}));assert(second.every(c=>c.action!==action));}
+  if(enabled==='1'){assert.throws(()=>model.apply(s,0,{...first,cardId:second[0].cardId,element:second[0].element}));assert(second.every(c=>c.action!==action));}
   const bot=model.botAction(s,0);assert(second.some(c=>JSON.stringify(c)===JSON.stringify(bot)));assert(D.validate(model.apply(s,0,bot).position));
   s=model.apply(s,0,{type:'unready'}).position;assert(model.legalActions(s,0).some(c=>c.action===action));
  }
@@ -310,4 +311,59 @@ test('projectile presentation endpoints: misses leave arena, walls and targets s
   const fx=s.data.frames.find(f=>f.effect?.actor===0)?.effect;
   assert.deepEqual(fx.projectile,{end:[2,stop==='miss'?s.data.size+1:3],miss:stop==='miss'});
  }
+});
+
+ test('physical cards retain identity across order changes and never leak through public effects',()=>{
+ let s=fixture([{pos:[1,1],hand:['earth','earth','fire']},{pos:[3,3]}]);
+ const original=s.data.players[0].hand.map(c=>c.id),chosen=model.legalActions(s,0).find(c=>c.cardId===original[1]&&c.action==='attack'&&c.direction===0);
+ s.data.players[0].hand.reverse();assert(D.validate(s));
+ s=model.apply(s,0,chosen).position;s=model.apply(s,1,model.legalActions(s,1).find(c=>c.action==='attack'&&c.direction===2)).position;
+ assert(s.data.players[0].hand.some(c=>c.id===original[0]));
+ const publicData=model.project(s,-1);assert.doesNotMatch(JSON.stringify(publicData),/cardId|card:\d+/);
+ const bad=clone(s);bad.data.deck[0]=clone(bad.data.players[0].hand[0]);assert.equal(D.validate(bad),false);
+ assert.throws(()=>model.apply(s,0,{...model.legalActions(s,0)[0],cardId:'card:unknown'}));
+ });
+
+test('durable simultaneous bots persist without intermediate readiness broadcasts or timers',async()=>{
+ const session=new Session(E,'mage-brawl',{seed:12,players:[{name:'Human'},...Array.from({length:3},(_,i)=>({name:'Bot'+i,bot:true}))]}),timers=new Map(),writes=[],seen=[];let timerId=0;
+ const authority=new Authority(session,{clock:{setTimeout:(f,ms)=>{timers.set(++timerId,{f,ms});return timerId;},clearTimeout:id=>timers.delete(id)},persistence:{async commit(entry){writes.push(entry);},async recordReceipt(){}}});
+ try{
+  authority.connect(-1).subscribe(snapshot=>seen.push(snapshot));
+  authority.scheduleBot();assert.equal(timers.size,1);const task=[...timers.values()][0];timers.clear();assert.equal(task.ms,0);await task.f();
+  assert.equal(seen.length,1);assert.deepEqual(E.decisionWindow(session.current).ready,[1,2,3]);
+  assert.equal(writes.length,3);assert.equal(timers.size,0);assert.equal(session.current.data.round,1);
+  for(const snapshot of seen)assert(snapshot.state.scene.arena.players.every(p=>!p.hand&&!p.plan));
+ }finally{authority.dispose();}
+});
+
+test('failed durable bot batch exposes committed readiness and stops without retry timers',async()=>{
+ const session=new Session(E,'mage-brawl',{seed:12,players:[{name:'Human'},{name:'Bot1',bot:true},{name:'Bot2',bot:true}]}),timers=new Map(),seen=[],errors=[];let timerId=0,writes=0;
+ const authority=new Authority(session,{clock:{setTimeout:f=>{timers.set(++timerId,f);return timerId;},clearTimeout:id=>timers.delete(id)},persistence:{async commit(){if(++writes===2)throw Error('disk full');},async recordReceipt(){}}});
+ try{
+  authority.connect(-1).subscribe(snapshot=>seen.push(snapshot));authority.scheduleBot({onError:error=>errors.push(error)});
+  const task=[...timers.values()][0];timers.clear();await task();
+  assert.equal(errors.length,1);assert.equal(seen.length,1);assert.deepEqual(E.decisionWindow(session.current).ready,[1]);
+  assert.equal(session.current.move,1);assert.equal(timers.size,0);
+ }finally{authority.dispose();}
+});
+
+test('decision window copies plans, exports only participant versions and rejects ambiguous membership',()=>{
+ const W=require('../../playroom-paks/shared/domain/decision-window.js');
+ const w=W.create('round:1',[0,2]),plan={type:'plan',cardId:'private-card'};W.put(w,2,plan);plan.cardId='changed';
+ assert.equal(w.plans[2].cardId,'private-card');w.versions.secret='private-card';
+ assert.deepEqual(W.describe(w),{id:'round:1',participants:[0,2],ready:[2],versions:{0:0,2:1}});
+ assert.throws(()=>W.create('round:1',[0,0]),/DECISION_WINDOW_INVALID/);
+ assert.deepEqual(W.describe(W.create('round:1',[])).participants,[]);
+ const before=JSON.stringify(w);assert.throws(()=>W.put(w,1,plan),/DECISION_ACTOR_INVALID/);assert.equal(JSON.stringify(w),before);
+ const cycle={};cycle.self=cycle;assert.throws(()=>W.put(w,0,cycle));assert.equal(JSON.stringify(w),before);
+});
+
+test('public phase plan distinguishes damage, fall, death and killer without private plans',()=>{
+ const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js');
+ const player={pos:[0,0],health:0,lives:1,maxHand:3,kills:0,ultimate:0,handCount:3,hand:[{id:'private'}]};
+ const frame={phase:'attack-fire',board:['floor'],players:[player],outcomes:[{player:0,damage:2,death:true,fall:true,at:[0,0],killers:[1]}]};
+ const plan=P.presentationPlan({round:2,board:['floor'],players:[player],draft:'private',frames:[{...frame,phase:'start',outcomes:[]},frame]});
+ assert.deepEqual(plan.groups.flatMap(g=>g.cues.map(c=>c.kind)),['damage','fall','death','kill']);
+ assert.equal(plan.groups.at(-1).cues.at(-1).target.entity.id,'1');
+ assert(!JSON.stringify(plan.scenes[plan.final]).includes('private'));
 });

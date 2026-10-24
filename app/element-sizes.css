@@ -34,14 +34,14 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 /* Roomy board controls share a semantic size; five-dice hands keep their own role. */
 #app [data-size-role="board-dice"] :is(.shared-die,.die){width:var(--size-board-die);height:var(--size-board-die);max-width:none;max-height:none}
 /* Replay owns a separate toolbar; play-only dice/adjustment controls reserve no row. */
-#app .scene.replaying .layout-actions:has([data-size-role="board-dice"]):not(:has([data-view-preference])){display:none!important}
+#app .scene.replaying .layout-actions:has([data-size-role="board-dice"]):not(:has([data-view-preference])){display:flex!important;pointer-events:none}
 #app .scene.replaying .app-game-layout[data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self:has([data-size-role="board-dice"]){display:none!important}
 
 /* A title may shrink or truncate, but never claims a second toolbar row. */
 #app .table-title{flex:1;min-width:0;overflow:hidden}
 #app .table-title [data-game-title],.lobby-game-line [data-game-title]{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
 #app .table-title p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#app .table-header{flex-wrap:nowrap;min-height:44px}
+#app .table-shell .table-header{flex-wrap:nowrap;min-height:44px}
 .lobby-game-line [data-game-title]{flex:1}
 .lobby-game-line .lobby-tools{flex:none}
 
@@ -92,10 +92,6 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 #app .app-game-layout .player-panel .player-hand{margin-top:0;gap:0}
 #app .app-game-layout .player-panel .player-hand .mini-hand{padding-top:0!important}
 
-#app .app-game-layout[data-seating="row"] .players-panels[data-opponent-count="4"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-
-#app .app-game-layout[data-seating="row"][data-three-opponent-layout="row"] .players-panels[data-opponent-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}
-#app .app-game-layout[data-seating="row"][data-three-opponent-layout="split"] .players-panels[data-opponent-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 #app .app-game-layout .player-panel .player-heading{padding-right:0;align-items:flex-start}
 #app .app-game-layout .player-panel .player-turn-position{position:static;flex:0 0 16px;margin-left:auto}
 #app .app-game-layout .player-panel .player-info{padding:4px}

@@ -19,7 +19,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const quickPlay=options=>!!options?.quickPlay;
   function viewingTime(capabilities,state){
     const value=capabilities?.presentation?.minimumVisibleMs;
-    const milliseconds=typeof value==='number'?value:value?.phases?.[state?.data?.phase]??value?.default??0;
+    const milliseconds=typeof value==='number'?value:value?.phases?.[state?.scene?.phase]??value?.default??0;
     return Number.isFinite(milliseconds)?Math.max(0,Math.min(milliseconds,2000)):0;
   }
   function timing(options={},reduced=false){
@@ -37,24 +37,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       {actor:Number.isInteger(previous.state?.turn)?previous.state.turn:null,action:{type:'action'},events:[]};
   }
   class GameFlow {
-    constructor({options=()=>({}),motion=null,reducedMotion=()=>false,presentation=()=>({}),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)}}={}){
-      this.options=options;this.motion=motion;this.reducedMotion=reducedMotion;this.presentation=presentation;this.scheduler=new Scheduler(clock);this.actions=new Scheduler(clock);
+    constructor({options=()=>({}),motion=null,reducedMotion=()=>false,presentation=()=>({}),clock=Scheduler.clock,executor=new Scheduler(clock)}={}){
+      this.options=options;this.motion=motion;this.reducedMotion=reducedMotion;this.presentation=presentation;this.executor=executor;this.scheduler=this.executor.lane('motion');this.actions=this.executor.lane('action');
     }
     get quickPlay(){return quickPlay(this.options());}
     pace(){return timing(this.options(),this.reducedMotion());}
     capture(context){const pace=this.pace();return pace.duration&&this.motion?.capture?this.motion.capture(context):null;}
-    play(snapshot,{draws=[],minimumVisibleMs=this.presentation().minimumVisibleMs||0}={}){
+    play(snapshot,{draws=[],context,transferOnly=false,minimumVisibleMs=this.presentation().minimumVisibleMs||0}={}){
       const pace=this.pace();
+      if(transferOnly&&snapshot)snapshot={...snapshot,transferOnly:true};
+      if(context)return this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws,effects:effectTimes[pace.mode],context});
       return this.scheduler.play(()=>this.motion?.play(snapshot,{duration:pace.duration,settle:pace.settle,draws,effects:effectTimes[pace.mode]}),Math.min(minimumVisibleMs,effectTimes[pace.mode].reveal));
     }
-    present(effect,{events=[],before=null,after=null}={}){
-      const pace=this.pace(),times=effectTimes[pace.mode];
-      const dice=events.some(event=>event.kind==='roll'||event.reveal?.kind==='dice');
-      const continuation=before?.status==='playing'&&after?.status==='playing'&&before.turn===after.turn&&
-        !before.timeline?.preparing&&!after.timeline?.preparing&&Number.isSafeInteger(before.timeline?.turn)&&before.timeline.turn===after.timeline?.turn;
-      return this.actions.play(effect,dice||continuation||!events.some(event=>event.reveal?.kind==='card'||event.kind==='skip')?0:(pace.duration?2*times.flip:0)+times.reveal);
-    }
-    cancel(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
+    // The plan owns reading, movement and reveal time. This lane only owns
+    // cancellation of the enclosing UI action, never a competing effect clock.
+    present(effect){return this.actions.play(effect);}
+    cancelAction(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
+    cancel(){this.executor.cancel();this.motion?.cancel?.();}
   }
   return Object.freeze({presets,effectTimes,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
 });

@@ -15,15 +15,16 @@ const definition={...base,id:'table-access-test',
  reduce:(state,actor,action)=>({position:{...state,turn:1-actor,data:{...state.data,die:action.type==='roll'?2:3}},events:[]}),
  project:(state,viewer)=>({die:state.data.die,hands:state.data.hands.map((hand,owner)=>owner===viewer?hand:hand.map(()=>({hidden:true})))})};
 E.register(globalThis.PlayroomModelRegistration.adapt(E,{definition,
- presentation:{...presentation,scene:projection=>({contractVersion:1,id:'test-table',family:'board',players:[],die:projection.data.die}),action:()=>({key:'tictactoe.board.label',params:{}})},
+ presentation:{...presentation,scene:projection=>({contractVersion:1,id:'test-table',family:'board',players:projection.data.hands.map((hand,player)=>({player,hand,metrics:[]})),geometry:{topology:'fixed'},zones:[{id:'field',kind:'board'}],objects:[],interactions:projection.actions.map(command=>({command,target:{zone:'field'}})),die:projection.data.die}),action:()=>({key:'tictactoe.board.label',params:{}})},
  locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'}));
 function session(){return new Session(E,definition.id,{seed:'PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});}
 const request=(connection,action={type:'roll'},id='roll-1')=>P.command(connection.snapshot(),action,id);
 function publicOnly(snapshot){
  assert.equal(snapshot.viewer,-1);assert.equal(snapshot.audience,'public');
  assert(!JSON.stringify(snapshot).includes('PRIVATE-'));
- assert(snapshot.state.data.hands.flat().every(card=>card.hidden));
- assert(snapshot.state.modelProjection.data.hands.flat().every(card=>card.hidden));
+ assert.equal(snapshot.state.data,undefined);
+ assert(snapshot.state.scene.players.flatMap(person=>person.hand).every(card=>card.hidden));
+ assert.equal(snapshot.state.modelProjection,undefined);
 }
 
 test('host room policy separates Table, spectator and exact recovered player indexes',()=>{
@@ -48,16 +49,16 @@ test('Table keeps spectator secrets and public dice while private actions stay o
  const authority=new Authority(session()),table=authority.connectTable([0,1]),spectator=authority.connect(-1),phone=authority.connect(0);
  try{
   const snapshot=table.snapshot();publicOnly(snapshot);
-  assert.deepEqual(snapshot.state.data,spectator.snapshot().state.data);
+  assert.deepEqual(snapshot.state.scene.players,spectator.snapshot().state.scene.players);
   assert.deepEqual(snapshot.actions,[{type:'roll'}]);assert.equal(snapshot.actor,0);
-  assert.equal(snapshot.state.modelProjection.data.die,6);
+  assert.equal(snapshot.state.scene.die,6);
   const denied=table.dispatch(request(table,{type:'play',card:'PRIVATE-A'},'private'));
   assert.equal(denied.code,'ILLEGAL');publicOnly(denied.snapshot);assert.equal(authority.revision,0);
-  const own=phone.snapshot();assert.equal(own.state.modelProjection.data.hands[0][0].id,'PRIVATE-A');
+  const own=phone.snapshot();assert.equal(own.state.scene.players[0].hand[0].id,'PRIVATE-A');
   assert.equal(phone.dispatch(request(phone,{type:'play',card:'PRIVATE-A'},'own')).ok,true);
   const history=table.history(0);publicOnly(history);
   assert.deepEqual(history.actions,[]);assert.deepEqual(history.state.tableActions,[]);
-  assert.deepEqual(history.state.modelProjection.actions,[]);assert.equal(history.actor,-1);
+  assert.deepEqual(history.state.scene.interactions,[]);assert.equal(history.actor,-1);
   assert.equal(spectator.dispatch(request(spectator)).code,'READ_ONLY');
  }finally{authority.dispose();}
 });

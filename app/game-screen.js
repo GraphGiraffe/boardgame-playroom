@@ -124,7 +124,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function handReserveKey(host,shell,stage){
     const win=host.ownerDocument.defaultView;
-    return JSON.stringify([shell.dataset.layoutIdentity,win.innerWidth,win.innerHeight,root.PlayroomInterfaceScale?.applied,stage.dataset.surface]);
+    return JSON.stringify([shell.dataset.layoutIdentity,win.innerWidth,win.innerHeight,root.PlayroomInterfaceScale?.applied,stage.dataset.surface,host.ownerDocument.documentElement.dataset.assetGeometry]);
   }
   // Resize does not necessarily render new markup: discard old viewport measurements first.
   function resetHandReserveForViewport(host,stage){
@@ -192,7 +192,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!state?.players)return '';
     const people=state.players.map((person,index)=>{
       const presence=participants.find(p=>p.playerIndex===index)||{};
-      const player={...person,...presence},semantic=state.scene?.players?.find(p=>(p.player??p.id)===index);
+      const player={...person,...presence},semantic=state.scene?.players?.find(p=>p.player===index);
       const team=semantic?.team||UI.helpers.teamFor(teamLayouts,state.preset,index);
       const self=!player.bot&&(network?!!(selfId&&player.id===selfId||selfIndex===index||player.local):!!player.local);
       return `<span class="resume-person ${state.status!=='finished'&&index===state.turn?'saved-current-turn':''}"><span class="player-avatar-wrap">${UI.avatar(player,index)}${UI.helpers.playerMedallion({first:state.firstPlayer===index&&root.PlayroomCatalog?.[state.game]?.capabilities?.firstPlayer!==false,team})}</span><span class="resume-person-name">${UI.helpers.participantIcon(player,{network})}<span${self?' class="saved-self"':''}>${esc(player.nickname||player.name)}</span></span></span>`;
@@ -230,8 +230,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const semanticContent=UI.playerContent(state,viewer,null);
     const scores=state.players.map((player,i)=>({player,i})).sort((a,b)=>(state.result?.places?.[a.i]??0)-(state.result?.places?.[b.i]??0)||a.i-b.i).map(({player,i})=>{
       const place=state.result?.places?.[i],value=state.result?.values?.[i],detail=state.result?.details?.[i];
-      const medal=place?place<=3?UI.playerMedallion({place,layout:UI.helpers.tokenLayout.fan(0,{count:2})}):`<span class="result-place-text" role="img" aria-label="${place} ${globalThis.PlayroomMessages.text("ui.game-screen.200db10c242a")}">${place}</span>`:winningPlayers.includes(i)?'★ ':'';
-      const team=playerContent[i]?.team||state.scene?.players?.find(player=>(player.player??player.id)===i)?.team||null;
+      const medal=state.result?.lastPlayers?.includes(i)?UI.playerMedallion({last:true}):place?UI.playerMedallion({place,layout:UI.helpers.tokenLayout.fan(0,{count:2})}):winningPlayers.includes(i)?'★ ':'';
+      const team=playerContent[i]?.team||state.scene?.players?.find(player=>player.player===i)?.team||null;
       const first=state.firstPlayer===i&&root.PlayroomCatalog?.[state.game]?.capabilities?.firstPlayer!==false;
       const playerBadge=UI.playerMedallion({first,team,layout:medal?UI.helpers.tokenLayout.fan(1,{count:2}):null});
       const badge=`<span class="result-awards">${medal}${playerBadge}</span>`;
@@ -241,12 +241,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const indicators=Array.isArray(content.indicators)?UI.indicators(content.indicators.map(({icon,value,size,label})=>({icon,value,size,label}))):'';
       const primary=`<span class="result-core-counters">${hand}${shown.map(UI.scoreBadge).join('')}</span>${indicators}`;
       const shownIds=new Set([...shown.map(counter=>counter.id||counter.kind),...(Number.isSafeInteger(content.handCount)?[content.handMetricId||'hand-count']:[]),...(content.indicators||[]).map(indicator=>indicator.id).filter(Boolean)]);
-      const botSettings=player.bot&&(state.scene?.players?.find(p=>(p.player??p.id)===i)?.botSettings||player.botSettings);
+      const botSettings=player.bot&&(state.scene?.players?.find(p=>p.player===i)?.botSettings||player.botSettings);
       const botConfig=root.TabletopCore?.GAMES?.find(game=>game.id===state.game)?.botSettings;
       const strategy=botSettings?.resolvedStrategy||botSettings?.strategy;
       const botDescription=botSettings&&botConfig?`${botConfig.strategies.find(p=>p.id===strategy)?.label||root.PlayroomMessages.text('ui.bot-settings.auto')} · ${root.PlayroomMessages.text('ui.bot-settings.errors')}: ${botSettings.errorRate??botConfig.defaultErrorRate??10}%`:'';
       const extra=(state.result?.metrics||[]).filter(metric=>metric.display!=='ranking'&&!shownIds.has(metric.id)&&Number.isFinite(metric.values?.[i])).map(metric=>`${metric.label}: ${metric.values[i]}`);
-      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</div>`;
+      const exit=state.result?.exits?.find(exit=>exit.player===i);
+      const exitText=exit?globalThis.PlayroomMessages.text('ui.game-screen.exit-'+exit.kind)+' · '+globalThis.PlayroomMessages.text(exit.round?'progress.round':'progress.turn',{number:exit.round||exit.turn}):'';
+      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${exitText?`<small class="result-exit">${esc(exitText)}</small>`:''}${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</div>`;
     }).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores" data-game="${esc(state.game)}">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text("ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
   }
@@ -280,7 +282,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:globalThis.PlayroomMessages.text("ui.game-screen.24735a7161d9"),name:'trophy'}:roomAction?{...roomAction,label:globalThis.PlayroomMessages.text("ui.game-screen.3a73248bdd79"),name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerText||'');
     if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
-    return `<main data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title">${gameTitle(gameName,shortName||root.PlayroomCatalog?.[state.game]?.shortName)}<p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
+    return `<main data-field-topology="${esc(state.scene?.geometry?.topology||'')}" data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title">${gameTitle(gameName,shortName||root.PlayroomCatalog?.[state.game]?.shortName)}<p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         ...(primary?[{...primary,attrs:primary.attrs+' data-game-primary="true"'}]:[]),
         {attrs:'data-command="history"',label:globalThis.PlayroomMessages.text("ui.game-screen.c9d00b5b5cd1"),name:'history',active:!!historyHTML,hidden:!!fieldToggle},
@@ -483,7 +485,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(statusContent&&statusHome&&statusBar){const portrait=!host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches,target=portrait?statusBar:statusHome;if(statusContent.parentElement!==target)target.prepend(statusContent);}
 
     if(stage)stage.dataset.threeOpponentLayout=root.PlayroomAppBridge?.gameOptions?.().splitThreeOpponents?'split':'row';
-    const layoutKey=stage?JSON.stringify([host.querySelector('.table-shell')?.dataset.layoutIdentity,scene.clientWidth,scene.clientHeight,stage.dataset.threeOpponentLayout,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating,[...stage.querySelectorAll(".player-panel")].map(panel=>panel.querySelectorAll(".player-indicator").length)]):null;
+    const layoutKey=stage?JSON.stringify([host.ownerDocument.documentElement.dataset.assetGeometry,host.querySelector('.table-shell')?.dataset.layoutIdentity,stage.dataset.fieldTopology,scene.clientWidth,scene.clientHeight,stage.dataset.threeOpponentLayout,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating,[...stage.querySelectorAll(".player-panel")].map(panel=>panel.querySelectorAll(".player-indicator").length)]):null;
     let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
     if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
       for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('overflow');}
@@ -540,11 +542,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       if(stage.dataset.seating==='row'&&participants&&stage.dataset.surface!=='player'){
         const panels=participants.querySelector('.players-panels');
-        if(roster===4){
+        if(roster===4&&participants.clientWidth>=240){
           stage.style.setProperty('--focus-player-columns','2');
           if(panels)panels.dataset.compact=String(participants.clientWidth/2<240);
-        }else if(roster===3){
-          const columns=stage.dataset.threeOpponentLayout==='split'?2:3;
+        }else if(roster===3&&participants.clientWidth>=240){
+          const preferred=stage.dataset.threeOpponentLayout==='split'?2:3;
+          const columns=Math.min(preferred,Math.max(1,Math.floor(participants.clientWidth/80)));
           stage.style.setProperty('--focus-player-columns',columns);
           if(panels)panels.dataset.compact=String(participants.clientWidth/columns<240);
         }else if(portrait){
@@ -591,7 +594,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(primary){primary.dataset.turnPrimary='true';if(Number(index)===Number(stage.dataset.presentationTurn??stage.dataset.turnPlayer)){primary.classList.add('is-turn');primary.setAttribute('aria-current','true');}}
       }
     }
-    if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
+    if(stage){stage.style.zoom='1';const current=stage.querySelector('[data-slide-key]'),prior=previous?.scene?.querySelector('[data-slide-key]');if(previous?.scene!==scene&&current&&prior&&!current.classList.contains('shared-page-deck')&&current.dataset.slideKey!==prior.dataset.slideKey&&!host.ownerDocument.body.classList.contains('reduced-motion')&&!root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches){const direction=Number(current.dataset.slideKey)>Number(prior.dataset.slideKey)?1:-1;current.animate([{transform:`translateX(${direction*24}px)`,opacity:.65},{transform:'translateX(0)',opacity:1}],{duration:220,easing:'ease-out'});}}
     for(const {node,top,left} of pendingScroll.get(host)||[])if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
     pendingScroll.delete(host);
     for(const track of host.querySelectorAll('.hand-track.is-fan'))fitHandArc(track);

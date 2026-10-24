@@ -39,9 +39,9 @@ async function clickMove(page,game){
   else {const card=page.locator('.hand-track .is-playable').first();await card.scrollIntoViewIfNeeded();const p=await cardTouchPoint(card);await page.mouse.click(p.x,p.y);const target=page.locator('.domino-drop-target,.scene-actions [data-action]');if(!await page.locator('.handoff').count()&&await target.count())await target.first().click();}
 }
 function installableCounter(version='0.1.0',step=1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:3,viewApi:2,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'qa-counter',name:'Счётчик',version,engineApi:4,viewApi:3,stateVersion:1,category:'board',tagline:'Пак для проверки установки',author:'QA',capabilities:{hands:false}},files:{
     'rules.js':require('./pack-fixture.cjs').rules({id:'qa-counter',name:'Счётчик',version,key:'count',step}),
-    'view.js':`globalThis.PlayroomViews.register('qa-counter',(s,v,actions)=>({api:2,family:'board',className:'qa-counter-scene',elements:{field:'<div data-view-version="${version}"><output class="qa-count">'+s.data.count+'</output></div>',actions:globalThis.PlayroomViews.helpers.actionBar(actions)}}));`,
+    'view.js':`globalThis.PlayroomViews.register('qa-counter',(s,v,actions)=>({api:3,family:'board',className:'qa-counter-scene',elements:{field:'<div data-view-version="${version}"><output class="qa-count">'+s.scene.count+'</output></div>',actions:globalThis.PlayroomViews.helpers.actionBar(actions)}}));`,
     'styles.css':`.qa-counter-scene{display:flex;justify-content:center;align-items:center}.qa-count{font-size:48px;color:${step===1?'#245440':'#a44238'}}`
   }};
 }
@@ -181,7 +181,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const before=await move(page);await page.reload();await resume(page);assert.equal(await move(page),before);
     });
     await check('Pause does not obscure read-only replay; slider keeps focus and live save unchanged',async open=>{
-      const snapshot=fixture('uno','pass',8),{page}=await open(snapshot);await resume(page);await page.locator('.table-tools [data-command=pause]').click();await page.locator('[data-command=history]').click();assert.equal(await page.locator('.pause-cover').count(),0);
+      const snapshot=fixture('uno','pass',8),{page}=await open(snapshot);await resume(page);await page.locator('.table-tools [data-command=settings]').click();await page.locator('.modal [data-command=pause]').click();await page.locator('[data-command=history]').click();assert.equal(await page.locator('.pause-cover').count(),0);
       await page.locator('#replay-range').focus();await page.keyboard.press('Home');assert.equal(await page.locator('#replay-range').inputValue(),'0');await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#replay-range').inputValue(),'1');assert.equal(await page.locator('#replay-range').evaluate(e=>e===document.activeElement),true);assert.equal(await move(page),snapshot.states.at(-1).move);
       assert.equal(await page.locator('.scene [data-action]').count(),0);await page.locator('[data-command=history-close]').click();assert.equal(await page.locator('.pause-cover').count(),1);
     });
@@ -205,7 +205,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       assert.equal(await page.locator('#setting-sound').count(),0);
       assert.equal(await page.locator('#setting-volume').isDisabled(),false);
       assert.equal(await page.locator('[data-command=sound-preview]').isDisabled(),true);
-      assert.equal(await page.locator('#sound-preview option').count(),31,'26 standard cues including pass/discard/take plus five UNO effects');
+      assert.equal(await page.locator('#sound-preview option').count(),39,'26 standard cues, five UNO effects and eight Mage effects');
       assert.equal(await page.locator('#sound-preview option[value="uno|uno.call"]').textContent(),'Выкрик UNO!');
       await setRange(page,'setting-volume',2);
       await page.waitForFunction(()=>qaAudio.calls.some(c=>c.method==='sequence'&&c.ids[0]==='move'&&c.finished&&c.result));
@@ -302,7 +302,7 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const d=data.states[0].data,zone=d.hands[0].some(c=>c.value==='wild')?d.hands[0]:d.drawPile;
       const wild=zone.splice(zone.findIndex(c=>c.value==='wild'),1)[0];assert(wild);d.hands[0].unshift(wild);
       const {page,context}=await open(data);await resume(page);const cdp=await context.newCDPSession(page);
-      await page.evaluate(()=>{window.touchTrace=[];for(const type of ['pointerdown','pointerup','click'])document.addEventListener(type,e=>touchTrace.push({type,target:e.target.closest('button')?.className,t:performance.now()}),true);});
+      await page.evaluate(()=>{window.touchTrace=[];for(const type of ['pointerdown','pointerup','click'])window.addEventListener(type,e=>touchTrace.push({type,target:e.composedPath().some(node=>node.matches?.('.color-choice'))?'color-choice':e.target?.className,path:e.composedPath().slice(0,3).map(node=>node.tagName),t:performance.now()}),true);});
       const touch=async(type,x,y)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});
       const p=await cardTouchPoint(page.locator('[data-select="'+wild.id+'"]'));
       await touch('touchStart',p.x,p.y);await touch('touchMove',p.x,p.y-55);await touch('touchEnd');
@@ -315,15 +315,17 @@ test('Real browser UI regression and responsive checks',{timeout:180000},async t
       const choice=await page.waitForFunction(()=>{
         const button=document.querySelector('.color-choice');if(!button)return false;
         const r=button.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
-        return r.width>1&&r.height>1&&document.elementFromPoint(x,y)?.closest('.color-choice')===button?{x,y}:false;
+        return r.width>1&&r.height>1&&document.elementFromPoint(x,y)?.closest('.color-choice')===button?{x,y,color:JSON.parse(button.dataset.action).color}:false;
       },null,{timeout:300});
-      const point=await choice.jsonValue();
+      const point=await choice.jsonValue();assert.equal(await move(page),0,'swipe exposes the choice without committing the card');
       await touch('touchStart',point.x,point.y);await touch('touchEnd');
       assert(Date.now()-start<400,'choice must occur inside the former swipe suppression window');
       // CDP may acknowledge touchEnd before Chrome dispatches its native click.
       await page.waitForFunction(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===1,{},{timeout:700}).catch(async()=>assert.fail(JSON.stringify(await page.evaluate(()=>touchTrace))));
-      const trace=await page.evaluate(()=>touchTrace),click=trace.find(e=>e.type==='click'&&e.target==='color-choice');
-      assert(click&&click.t-trace.find(e=>e.type==='pointerup').t<400,'native color click must occur inside the former suppression window');assert.equal(await move(page),1);
+      // After the action rerenders, Chromium may retarget click to the surviving action bar.
+      // Verify its timing plus the exact committed color, rather than detached button identity.
+      const trace=await page.evaluate(()=>touchTrace),click=trace.find(e=>e.type==='click'&&e.t>trace.filter(e=>e.type==='pointerdown').at(-1).t);
+      assert(click&&click.t-trace.find(e=>e.type==='pointerup').t<400,'native color click must occur inside the former suppression window: '+JSON.stringify(trace));assert.equal(await move(page),1);assert.equal((await saved(page)).states.at(-1).data.color,point.color,'the touched color is committed exactly once');
     });
   } finally {await browser.close();await fixtureServer?.close();}
 });
@@ -350,7 +352,7 @@ test('Phone landscape keeps all games visible, tappable and stable across rotati
     return page.evaluate(insets=>{
       const errors=[],scene=document.querySelector('.scene').getBoundingClientRect();
       if(document.documentElement.scrollWidth>innerWidth+1||document.documentElement.scrollHeight>innerHeight+1)errors.push('page overflow');
-      for(const selector of ['.layout-field','.layout-self','.layout-participants','.seat-group'])for(const node of document.querySelectorAll(selector)){if(!node?.getClientRects().length)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector);}
+      for(const selector of ['.layout-field','.layout-self','.layout-participants','.seat-group'])for(const node of document.querySelectorAll(selector)){if(!node?.getClientRects().length)continue;const r=node.getBoundingClientRect();if(r.left<scene.left-1||r.right>scene.right+1||r.top<scene.top-1||r.bottom>scene.bottom+1)errors.push('region outside '+selector+' '+JSON.stringify({region:r.toJSON(),scene:scene.toJSON()}));}
       for(const node of document.querySelectorAll('.table-header button')){const r=node.getBoundingClientRect();if(r.width&&r.height&&(r.width<44||r.height<44))errors.push('touch target');}
       return errors;
     },insets);
@@ -438,7 +440,7 @@ test('Modal gestures scroll their contents without moving the underlying screen'
         await page.evaluate(()=>scrollTo(0,120));
         const before=await page.evaluate(()=>({y:scrollY,top:document.querySelector('#app').getBoundingClientRect().top}));
         const dialog=page.locator('.modal,.lobby-countdown'),box=await dialog.boundingBox(),scroller=await dialog.locator('.modal-body').count()?dialog.locator('.modal-body'):dialog;
-        const x=box.x+box.width/2,y=Math.min(box.y+box.height-40,height-35);
+        const scrollBox=await scroller.boundingBox(),x=scrollBox.x+scrollBox.width/2,y=Math.min(scrollBox.y+scrollBox.height-15,height-35);
         assert(await dialog.evaluate(e=>{
           const head=e.querySelector('.modal-head'),body=e.querySelector('.modal-body');if(!head||!body)return true;
           const h=head.getBoundingClientRect(),b=body.getBoundingClientRect(),layer=document.createElement('div');layer.className='playroom-motion-layer';layer.style.pointerEvents='auto';document.body.appendChild(layer);

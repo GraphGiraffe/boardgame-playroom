@@ -109,8 +109,8 @@
       this.validate(position);
       const value=this.#definition.decisionWindow?.(snapshot(position))??null;
       if(value===null)return null;
-      check(record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&Array.isArray(value.participants)&&new Set(value.participants).size===value.participants.length&&value.participants.every(i=>integer(i,0,position.playerCount-1))&&Array.isArray(value.ready)&&value.ready.every(i=>value.participants.includes(i))&&record(value.versions)&&value.participants.every(i=>integer(value.versions[i],0,Number.MAX_SAFE_INTEGER)), 'DECISION_WINDOW_INVALID');
-      return snapshot({id:value.id,participants:value.participants,ready:value.ready,versions:value.versions});
+      check(record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&Array.isArray(value.participants)&&value.participants.length>0&&new Set(value.participants).size===value.participants.length&&value.participants.every(i=>integer(i,0,position.playerCount-1))&&Array.isArray(value.ready)&&new Set(value.ready).size===value.ready.length&&value.ready.every(i=>value.participants.includes(i))&&record(value.versions)&&value.participants.every(i=>integer(value.versions[i],0,Number.MAX_SAFE_INTEGER)), 'DECISION_WINDOW_INVALID');
+      return snapshot({id:value.id,participants:value.participants,ready:value.ready,versions:Object.fromEntries(value.participants.map(i=>[i,value.versions[i]]))});
     }
     commandFor(position, actor, action, surface = 'player') {
       check(['player','table'].includes(surface), 'ACTION_INVALID');
@@ -186,6 +186,8 @@
         new Set(result.metrics.map(metric => metric.id)).size === result.metrics.length &&
         result.metrics.every(metric => identifier(metric.id) && Array.isArray(metric.values) &&
           metric.values.length === position.playerCount && metric.values.every(Number.isFinite)), 'RESULT_INVALID');
+      check(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(player=>integer(player,0,position.playerCount-1)&&!result.winners.includes(player)),'RESULT_INVALID');
+      check(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(exit=>exit.player)).size===result.exits.length&&result.exits.every(exit=>record(exit)&&integer(exit.player,0,position.playerCount-1)&&['cards','domino','finished'].includes(exit.kind)&&(integer(exit.round,1,Number.MAX_SAFE_INTEGER)||integer(exit.turn,1,Number.MAX_SAFE_INTEGER))),'RESULT_INVALID');
       return snapshot(result);
     }
   }

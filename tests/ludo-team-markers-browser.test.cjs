@@ -35,13 +35,7 @@ test('Ludo team discs and first-player token match in lobby and game; board symb
     if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'ludo-teams-lobby.png')});}
     await page.locator('[data-command=lobby-start]').click();
     await page.locator('.ludo-board').waitFor();
-    await page.locator('.table-tools [data-command=settings]').click();
-    await selectChoice(page.locator('#setting-seating'),'row');await page.locator('.modal [data-command=close-modal]').click();
-    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seating'),'row');
-    assert.equal(await page.locator('.player-panel:not([data-seat-copy]) .player-medallion.is-team').count(),4,'row seating preserves every team badge');
-    await page.locator('.table-tools [data-command=settings]').click();
-    await selectChoice(page.locator('#setting-seating'),'anchors');await page.locator('.modal [data-command=close-modal]').click();
-    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'anchors');
+    assert.equal(await page.locator('.app-game-layout').getAttribute('data-seat-style'),'anchors','automatic layout preserves spatial seats');
     const game=await inspect('.seat-group .player-panel .player-medallion.is-team');
     assert.equal(game.length,4,'anchored game cards keep all four team badges');
     assert.equal(await page.locator('.layout-self .player-medallion.is-team').count(),1,'own controls repeat the same team badge');
@@ -122,7 +116,7 @@ test('Ludo history animates a failed roll even when the committed state belongs 
     const page=await context.newPage();page.setDefaultTimeout(3500);await page.goto(server.url);await page.locator('.resume-banner [data-command="resume"]').click();await page.locator('.ludo-board').waitFor();
     await page.locator('.table-tools [data-command="history"]').click();
     await page.evaluate(()=>{window.historyRolls=0;window.historyRollObserver=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&(node.matches('[data-motion-kind="roll"]')||node.querySelector('[data-motion-kind="roll"]')))historyRolls++;});historyRollObserver.observe(document.body,{childList:true,subtree:true});});
-    await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>historyRolls>0);
+    await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>historyRolls>0).catch(async error=>{error.message+=' '+JSON.stringify(await page.evaluate(()=>({dice:[...document.querySelectorAll('[data-motion-lead]')].map(e=>({lead:e.dataset.motionLead,rect:e.getBoundingClientRect().toJSON()})),history:document.querySelector('#replay-range')?.value,notice:document.querySelector('.toast')?.textContent})));throw error;});
     assert(await page.evaluate(()=>historyRolls>0));
   }finally{await context.close();await browser.close();await server.close();}
 });

@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Store=require('../app/network-client-history.js');
-const frame=(rev=0,viewer=0)=>({kind:'snapshot',protocolVersion:2,sessionId:'game-1',authorityEpoch:'epoch-1',
+const frame=(rev=0,viewer=0)=>({kind:'snapshot',protocolVersion:3,sessionId:'game-1',authorityEpoch:'epoch-1',
   revision:rev,viewer,game:'uno',packVersion:'0.2.1',state:{move:rev,game:'uno',packVersion:'0.2.1',
     players:[{name:'A'},{name:'B'}],data:{hands:[null,[{id:'MY-CARD'}]]}},
   events:[{text:'Ход'}],room:{recovery:{tokens:[{token:'HOST-SECRET'}]}},
@@ -37,7 +37,7 @@ test('client match IDs are scoped by Session, not only by room/seat',()=>{
 
 test('API cutover preserves original data, exports archives and acknowledges the notice once',()=>{
  const Upgrade=require('../application/upgrade-service.js');
- const entries=new Map([['playroom.packs.v1',JSON.stringify({packs:[],quarantined:[{bundle:{manifest:{engineApi:2}}}]})],['playroom.network-resume.secret','private-token']]);
+ const entries=new Map([['playroom.packs.v1',JSON.stringify({packs:[],quarantined:[{bundle:{manifest:{engineApi:3}}}]})],['playroom.network-resume.secret','private-token']]);
  const storage={getItem:key=>entries.get(key)||null,setItem:(key,value)=>entries.set(key,value),key:index=>[...entries.keys()][index],get length(){return entries.size;}};
  const service=new Upgrade(storage);assert.equal(service.inspect(),true);
  const archives={network:{version:1,stores:{frames:[{revision:0}]}}},backup=JSON.parse(service.export(archives));assert.deepEqual(backup.archives,archives);assert(!JSON.stringify(backup).includes('private-token'));

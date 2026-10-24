@@ -9,8 +9,9 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'))), 'shared/view-kit.js');
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
+const loadedGames=[...games,'ludo','pexeso','battleship','yatzy','oldmaid','gofish','klondike','spider','mage-brawl'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...games.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...games.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...loadedGames.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...loadedGames.map(g => `packs/${g}/view.js`)]) {
   const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
   if(match){
     const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
@@ -19,6 +20,15 @@ for (const file of ['core/messages.js','core/random.js','core/model-values.js','
       catalogs[locale]=Object.assign({},...files.map(name=>JSON.parse(fs.readFileSync(path.join(base,name),'utf8'))));
     }
     sandbox.PlayroomPackResources={locales:catalogs};
+    if(match[2]==='view'){
+      const loaded=new Set();
+      const loadAsset=id=>{if(loaded.has(id))return;loaded.add(id);
+        const dir=path.join(path.dirname(sharedKit),'asset-packs',id),spec=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'),'utf8'));
+        for(const dependency of spec.dependencies||[])loadAsset(dependency.id);
+        for(const name of spec.scripts||[])vm.runInContext(fs.readFileSync(path.join(dir,name),'utf8'),sandbox,{filename:id+'/'+name});
+      };
+      for(const id of manifest.sharedAssetPacks||[])loadAsset(id);
+    }
     for(const name of manifest.sharedDomain||[])vm.runInContext(fs.readFileSync(path.join(path.dirname(sharedKit),'domain',name+'.js'),'utf8'),sandbox,{filename:name});
     for(const name of manifest.sourceModules?.[match[2]]||[])vm.runInContext(fs.readFileSync(path.join(base,name),'utf8'),sandbox,{filename:name});
   }
@@ -58,8 +68,8 @@ test('standalone UI shares source and target policies without browser or game de
   assert.match(H.target(id,many), /data-drop-select="card&quot;&lt;&amp;"/);
   assert.deepEqual(actionsIn(H.target(id,many)),[]);
   const first=UI.createRegistry(), second=UI.createRegistry();
-  first.register('example',()=>({api:2,family:'board',elements:{field:'<p>Ready</p>'}}),()=>'<svg></svg>');
-  assert.equal(first.render({game:'example'},0,[]),UI.composeScene({api:2,family:'board',elements:{field:'<p>Ready</p>'}},{state:{game:'example'}}));
+  first.register('example',()=>({api:3,family:'board',elements:{field:'<p>Ready</p>'}}),()=>'<svg></svg>');
+  assert.equal(first.render({game:'example'},0,[]),UI.composeScene({api:3,family:'board',elements:{field:'<p>Ready</p>'}},{state:{game:'example'}}));
   assert.equal(first.cover('example'),'<svg></svg>');
   assert.equal(second.cover('example'),'');
   assert.equal(first.helpers,UI.helpers);
@@ -79,13 +89,13 @@ test('standalone UI shares source and target policies without browser or game de
   assert.match(both,/data-score-kind="points"[^>]*aria-label="Очки &lt;&amp;: 9"/);
   assert.match(both,/is-wins[^>]*data-score-kind="wins"/);assert(both.indexOf('data-score-kind="points"')<both.indexOf('data-score-kind="wins"'));
   assert.doesNotMatch(both,/>Игрок|>Бот|очки:|победы:/);
-  for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:2,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
+  for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:3,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
 
   const pieces=H.playerPanel({players:[{name:'A',score:0}],turn:0},0,0,{counters:[{kind:'wins',value:0},{kind:'pieces',value:12,label:'Светлые шашки'}]});
   assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*><svg class="round-token-art medallion-art"/);
   assert.doesNotMatch(pieces,/>12 шашек</);
   const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
-  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.doesNotMatch(empty,/class="mini-hand/);
+  assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.match(empty,/class="mini-hand [^"]*"[^>]*><\/div>/);
 });
 
 test('every legal action remains reachable through card, colour, side or cell selection', () => {
@@ -103,6 +113,24 @@ test('every legal action remains reachable through card, colour, side or cell se
         assert.equal(JSON.stringify(state), before, 'render must not mutate the state');
         state = E.applyAction(state, state.turn, E.botAction(state));
       }
+    }
+  }
+});
+
+test('scene renderers do not read domain projection data', () => {
+  for (const game of ['uno','checkers','ludo','pexeso','battleship','yatzy','domino','oldmaid','gofish','durak','snakes','klondike','spider','mage-brawl']) {
+    let state=make(game,E.get(game).presets[0].id,Math.min(2,E.get(game).max));
+    for(let step=0;step<12&&state.status==='playing';step++) {
+      for(const viewer of [-1,...state.players.map((_,i)=>i)]) {
+        const projected=E.project(state,viewer),actions=E.legalActions(state,viewer);
+        const options={selected:actions.find(a=>a.card)?.card??actions.find(a=>a.from!=null)?.from??null};
+        const expected=V.render(projected,viewer,actions,options);
+        assert.doesNotMatch(expected,/role="alert"/,game+' must render successfully');
+        assert.deepEqual(V.get(game).render({...projected,data:{},modelProjection:null},viewer,actions,options),V.get(game).render(projected,viewer,actions,options),game+' raw renderer step '+step);
+        assert.equal(V.render({...projected,data:{},modelProjection:null},viewer,actions,options),expected,game+' step '+step);
+        assert(V.renderField(projected,viewer,projected.scene,options).length>0,game+' semantic field');
+      }
+      state=E.applyAction(state,state.turn,(['klondike','spider'].includes(game)?E.legalActions(state,state.turn).find(a=>a.type!=='undo'):E.botAction(state)));
     }
   }
 });
@@ -207,7 +235,7 @@ test('UNO previews on click and exposes exact drag/swipe actions without guessin
 test('manual UNO controls are constant and accusations use public player context without hints', () => {
   const state = make('uno', 'classic', 4);
   state.data.uno.mode = 'manual';
-  const callButton = html => html.match(/<button class="scene-button uno-call"[^>]*>UNO!<\/button>/)?.[0];
+  const callButton = html => html.match(/<button[^>]*class="[^"]*\buno-call\b[^"]*"[^>]*><span class="ui-button-label">UNO!<\/span><\/button>/)?.[0];
   const originalCall = callButton(render(state, 0));
   assert.ok(originalCall);
   for (const count of [7, 2, 1]) {
@@ -269,8 +297,8 @@ test('checkers orientation/forced captures and snakes board sizes agree with the
 });
 
 
-test('all source packs provide only API 2 elements with application-owned placement',()=>{
-  for(const game of games){const state=make(game),view=V.get(game).render(E.project(state,state.turn),state.turn,E.legalActions(state),{selected:null});assert.equal(view.api,2);assert.ok(['cards','board'].includes(view.family));assert.equal(typeof view.elements.field,'string');assert.ok(view.elements.field.length);assert.doesNotMatch(Object.values(view.elements).join(''),/class="game-scene/);assert.match(V.render(E.project(state,state.turn),state.turn,[],{}),/data-view-api="2"/);}
+test('all source packs provide only API 3 elements with application-owned placement',()=>{
+  for(const game of games){const state=make(game),view=V.get(game).render(E.project(state,state.turn),state.turn,E.legalActions(state),{selected:null});assert.equal(view.api,3);assert.ok(['cards','board'].includes(view.family));assert.equal(typeof view.elements.field,'string');assert.ok(view.elements.field.length);assert.doesNotMatch(Object.values(view.elements).join(''),/class="game-scene/);assert.match(V.render(E.project(state,state.turn),state.turn,[],{}),/data-view-api="3"/);}
   for(const game of games){
     const state=make(game,'classic',E.get(game).max);
     for(const turn of state.players.keys())for(const viewer of [-1,...state.players.keys()]){
@@ -296,7 +324,7 @@ test('player hands render every hidden piece and score units agree with the rule
     for(const [index,content]of descriptor.playerContent.entries()){
       assert.equal(content.scoreLabel,E.get(game).scoreLabel);
       if(state.data.hands&&index!==0){
-        assert.equal((content.handHTML.match(/class="piece-back /g)||[]).length,state.data.hands[index].length,game);
+        assert.equal((content.handHTML.match(/class="(?:piece-back |shared-card shared-card-back )/g)||[]).length,state.data.hands[index].length,game);
         assert.equal(content.handCount,state.data.hands[index].length);
         assert.equal(content.open,false);
         if(game==='domino'){const open=E.project({...state,openHands:true},0);const publicTiles=V.get(game).render(open,0,[],{selected:null}).playerContent[index];assert.equal((publicTiles.handHTML.match(/viewBox="0 0 48 84"/g)||[]).length,state.data.hands[index].length);}
@@ -324,7 +352,7 @@ test('player hands render every hidden piece and score units agree with the rule
 
 test('scene reserves optional actions and validates generic motion route descriptors',()=>{
   const UI=require('../core/ui.js'),state={turn:0,players:[{name:'A'},{name:'B'}]};
-  const descriptor={api:2,family:'board',actionReserve:true,elements:{field:'<div>Board</div>'}};
+  const descriptor={api:3,family:'board',actionReserve:true,elements:{field:'<div>Board</div>'}};
   assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-action-reserve="true"/);
   assert.match(UI.composeScene(descriptor,{state,viewer:0}),/data-game-element="actions"><div class="scene-actions"><\/div>/);
   assert.doesNotMatch(UI.composeScene(descriptor,{state,viewer:-1,surface:'table'}),/data-game-element="actions"/);
@@ -370,4 +398,62 @@ test('source rule versions match the distributable pack manifests',()=>{
     const manifest=JSON.parse(fs.readFileSync(path.join(root,'packs',game,'manifest.json'),'utf8'));
     assert.equal(E.get(game).version,manifest.version,game+' registration must match its manifest');
   }
+});
+
+
+test('Hand overlap uses explicit instance selection, never markup classes',()=>{
+  const H=sandbox.TabletopUI;
+  const cards=[{id:'copy-1',html:'<button class="is-selected">same face</button>'},{id:'copy-2',selected:true,html:'<button>same face</button>'},{id:'copy-3',html:'<button>same face</button>'},{id:'copy-4',html:'<button>same face</button>'}];
+  const html=H.hand(cards,4,'','',{layout:'overlap'});
+  const width='var(--scene-card-width,var(--size-card))';
+  assert(html.includes('grid-template-columns:'+width+' '+width+' minmax(24px,'+width+') '+width));
+  assert(!html.includes('[object Object]'));
+  assert.throws(()=>H.hand([cards[0],cards[0]],2),/HAND_ITEM_INVALID/);
+  assert.throws(()=>H.hand(['<button>legacy markup</button>'],1),/HAND_ITEM_INVALID/);
+});
+
+
+test('Shared tokens and piece indicators preserve spent capacity and continuous rotation',()=>{
+  const C=sandbox.PlayroomGameComponents;
+  const strip=C.tokenStrip({value:2,capacity:4,icon:'heart'});
+  assert.equal((strip.match(/class="counter-token/g)||[]).length,4);
+  assert.equal((strip.match(/is-empty/g)||[]).length,2);
+  const layers=[...strip.matchAll(/z-index:(\d+)/g)].map(m=>Number(m[1]));
+  assert(Math.min(...layers.slice(0,2))>Math.max(...layers.slice(2)));
+  assert.equal(C.tokenStrip({value:0,capacity:0,icon:'crown'}),'');
+  assert.equal((C.pieceIndicators({value:1,capacity:4,label:'HP'}).match(/is-empty/g)||[]).length,3);
+  assert.throws(()=>C.pieceIndicators({value:5,capacity:4}),/PIECE_INDICATORS_INVALID/);
+  const R=C.rotationController;
+  for(let turns=-12;turns<=12;turns++){
+    assert.equal(R.align(turns,R.direction(turns)),turns);
+    assert.equal(R.align(turns,R.direction(turns+1)),turns+1);
+    assert.equal(R.align(turns,R.direction(turns-1)),turns-1);
+  }
+});
+
+
+test('Shared action selector keeps choice identity, locked positions and accessible labels',()=>{
+ const selector=sandbox.PlayroomGameComponents.actionSelector;
+ const html=selector({key:'mode',label:'Action',value:'attack',stable:true,choices:[{value:'move',label:'Move',disabled:true,marker:1},{value:'attack',label:'Attack',html:'<svg></svg>'}]});
+ assert(html.includes('--page-index:1'));
+ assert(html.includes('data-view-value="move" aria-pressed="false" aria-label="Move" title="Move" disabled'));
+ assert(html.includes('shared-action-marker'));assert(html.includes('data-view-layout="stable"'));
+ assert.throws(()=>selector({key:'mode',label:'Action',value:'x',choices:[{value:'x',label:'X'},{value:'x',label:'Copy'}]}),/CHOICE_INVALID/);
+ assert.throws(()=>selector({key:'mode',label:'Action',value:'missing',choices:[{value:'x',label:'X'}]}),/VALUE_INVALID/);
+});
+
+test('field rendering selects an authorized scene independently of controls and hand',()=>{
+ const UI=sandbox.TabletopUI,registry=UI.createRegistry(),calls=[];
+ registry.register('field-test',(state,viewer,actions,ui)=>{
+  assert.equal(state.data,undefined);assert.equal(state.modelProjection,undefined);
+  calls.push({scene:state.scene,actions,ui});
+  return {api:3,family:'board',elements:{field:`<div>${state.scene.art}</div>`,hand:'<div>current hand</div>',actions:'<button>current controls</button>'},fieldGroups:{play:`<div>${state.scene.art}</div>`}};
+ });
+ const initial={audience:'player',art:'before'},final={audience:'player',art:'after'},state={game:'field-test',scene:final,data:{secret:true},modelProjection:{secret:true}};
+ const field=registry.renderField(state,0,initial,{selected:'secret',viewState:{choice:'private'}});
+ assert.match(field,/before/);assert(!field.includes('hand'));assert(!field.includes('controls'));
+ assert.equal(calls.at(-1).actions.length,0);assert.equal(calls.at(-1).ui.selected,null);assert.equal(calls.at(-1).ui.replay,true);assert.equal(Object.keys(calls.at(-1).ui.viewState).length,0);
+ const html=registry.render(state,0,[],{fieldScene:initial});
+ assert.match(html,/before/);assert(!html.includes('after'));assert.match(html,/current hand/);assert.match(html,/current controls/);
+ assert.equal(state.scene,final);assert.throws(()=>registry.renderField(state,-1,{audience:'public',art:'wrong'}),/audience/);
 });
