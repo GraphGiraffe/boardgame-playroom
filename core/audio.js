@@ -65,12 +65,13 @@
       this._packs.set(pack,map);return this;
     }
     catalog(pack) { const map=new Map(base);for(const [id,definition]of this._packs.get(pack)||[])map.set(id,definition);return [...map].map(([id,definition])=>({id,label:definition.label})); }
-    play(id, {pack, volume=1}={}) {
-      if(!this.enabled||!this.volume||!clamp(volume,0,1,1)||!this._context||this._context.state!=='running')return Promise.resolve(false);
+    play(id, {pack, volume=1,signal}={}) {
+      if(signal?.aborted||!this.enabled||!this.volume||!clamp(volume,0,1,1)||!this._context||this._context.state!=='running')return Promise.resolve(false);
       const definition=this._packs.get(pack)?.get(id)||base.get(id);if(!definition)return Promise.resolve(false);
       const generation=this._generation,context=this._context;
       let resolve;const promise=new Promise(done=>{resolve=done;});
       const group={generation,done:false,sources:new Set(),nodes:new Set(),timer:null,resolve};this._groups.add(group);
+      const abort=()=>this._finish(group,false);signal?.addEventListener('abort',abort,{once:true});group.detach=()=>signal?.removeEventListener('abort',abort);
       while(this._groups.size>LIMITS.groups)this._finish(this._groups.values().next().value,false);
       const start=buffer=>{
         if(group.done||generation!==this._generation||!this.enabled||context.state!=='running'){this._finish(group,false);return;}
@@ -92,6 +93,11 @@
       };
       if(definition.src)this._decode(definition.src,context).then(start,()=>this._finish(group,false));else start(null);
       return promise;
+    }
+    // A presentation group mixes its cues; it never interrupts another group.
+    batch(ids,options={}) {
+      if(!Array.isArray(ids))return Promise.resolve(false);
+      return Promise.all([...new Set(ids)].slice(0,LIMITS.sequence).map(id=>this.play(id,options))).then(values=>values.some(Boolean));
     }
     async sequence(ids, options={}) {
       this.stop();
@@ -130,7 +136,7 @@
     }
     _timeout(group,duration) { group.timer=setTimeout(()=>this._finish(group,true),(duration+.15)*1000); }
     _finish(group,completed) {
-      if(group.done)return;group.done=true;clearTimeout(group.timer);this._groups.delete(group);
+      if(group.done)return;group.done=true;group.detach?.();clearTimeout(group.timer);this._groups.delete(group);
       for(const source of group.sources){source.onended=null;try{source.stop();}catch(_){}this._voices.delete(source);}group.sources.clear();
       for(const node of group.nodes){try{node.disconnect();}catch(_){}}group.nodes.clear();group.resolve(completed);
     }

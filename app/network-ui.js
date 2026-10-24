@@ -646,7 +646,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       closeHostHistory();
       archiveAuthority=null;
       const epoch=last.authorityEpoch;
-      const packet=(frame,kind)=>Object.freeze({protocolVersion:2,kind,sessionId:saved.sessionId,
+      const packet=(frame,kind)=>Object.freeze({protocolVersion:3,kind,sessionId:saved.sessionId,
         authorityEpoch:epoch,revision:frame.revision,game:saved.game,packVersion:saved.packVersion,
         viewer:saved.viewer,audience:saved.viewer<0?'public':'player',state:frame.state,
         events:frame.events,actions:[],cues:[],effects:[],historyLength:last.revision+1});

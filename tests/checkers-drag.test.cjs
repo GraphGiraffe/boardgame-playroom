@@ -103,12 +103,12 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
         const original=await page.locator('.checker-cell.dark:not(.destination)').first().evaluate(el=>getComputedStyle(el).backgroundColor);
         const target=cell(page,28),ring=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth)}));
         assert.equal(ring.background,original,'destination changes only its outline');assert(ring.width>0&&ring.width<=2);
-        assert(await piece(page,42).evaluate(el=>parseFloat(getComputedStyle(el).outlineWidth)<=2),'checker selection ring stays thin');
+        assert(await piece(page,42).evaluate(el=>parseFloat(getComputedStyle(el.querySelector('.piece-contour')).strokeWidth)<=2),'checker selection ring stays thin');
         await page.screenshot({path:path.join(dir,`${theme}-${width}x${height}.png`)});
         await touchDrag(page,cdp,42,28,{cancel:true,inspect:async()=>{
           const hover=await target.evaluate(el=>({background:getComputedStyle(el).backgroundColor,width:parseFloat(getComputedStyle(el).outlineWidth),shadow:getComputedStyle(el).boxShadow}));
           assert.equal(hover.background,original);assert(hover.width>0&&hover.width<=2);assert.equal(hover.shadow,'none');
-          assert(await page.locator('.playroom-drag-ghost').evaluate(el=>parseFloat(getComputedStyle(el).outlineWidth)<=2));
+          assert(await page.locator('.playroom-drag-ghost').evaluate(el=>parseFloat(getComputedStyle(el.querySelector('.piece-contour')).strokeWidth)<=2));
         }});
       }
     });
@@ -181,7 +181,7 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
           const until = performance.now() + 2200;
           function frame() {
             const scene = document.querySelector('.scene'), game = document.querySelector('.game-scene');
-            const el = document.querySelector('.checker-board [data-entity="checker-42"][data-board-cell="28"]');
+            const el = document.querySelector('.checker-board [data-entity="checker-checker-42"][data-board-cell="28"]');
             const r = el?.getBoundingClientRect(), cell = el?.closest('.checker-cell').getBoundingClientRect();
             window.dragFrames.push({overflow: document.documentElement.scrollWidth > innerWidth + 1 || document.documentElement.scrollHeight > innerHeight + 1 || scene.scrollWidth > scene.clientWidth + 1,
               fieldTransform: getComputedStyle(game).transform,

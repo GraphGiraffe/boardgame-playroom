@@ -35,12 +35,15 @@
       for (const [family,variant] of Object.entries(theme.skins)) element.setAttribute('data-skin-'+family,variant);
       document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme.palette['surface.canvas']);
       let layoutChanged=false;
-      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){const template=document.createElement('template');template.innerHTML=root.PlayroomAssetResolver.render(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));const fresh=template.content.firstElementChild;if(fresh&&fresh.tagName===node.tagName){if(fresh.dataset.cardStacking!==node.dataset.cardStacking)layoutChanged=true;for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);}}
+      const geometry=new Map();
+      const recordGeometry=(family,params={})=>{const value=root.PlayroomAssetResolver.resolve(family,params);geometry.set(JSON.stringify([family,params.packId||null]),[value.variant,value.stacking,value.ratio]);};
+      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){const template=document.createElement('template');template.innerHTML=root.PlayroomAssetResolver.render(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));const fresh=template.content.firstElementChild;if(fresh&&fresh.tagName===node.tagName){recordGeometry(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));if(fresh.dataset.cardStacking!==node.dataset.cardStacking)layoutChanged=true;for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);}}
       // Stack geometry is part of the asset preview, independent of game actions.
       for(const node of document.querySelectorAll('[data-asset-stack-family]')){
         const packId=node.closest('[data-appearance-pack]')?.dataset.appearancePack;
         const stacking=root.PlayroomAssetResolver.resolve(node.dataset.assetStackFamily,{packId}).stacking;
         if(!stacking)continue;
+        recordGeometry(node.dataset.assetStackFamily,{packId});
         for(const [property,value] of [['--asset-stack-vertical',stacking.vertical],['--asset-stack-closed',stacking.faceDown]]){
           if(node.style.getPropertyValue(property)!==String(value))layoutChanged=true;
           node.style.setProperty(property,String(value));
@@ -48,6 +51,8 @@
         if(node.dataset.assetStackAxis!==stacking.wasteAxis)layoutChanged=true;
         node.dataset.assetStackAxis=stacking.wasteAxis;
       }
+      const geometryKey=JSON.stringify([...geometry].sort(([a],[b])=>a.localeCompare(b)));
+      if(element.dataset.assetGeometry!==geometryKey){element.dataset.assetGeometry=geometryKey;layoutChanged=true;}
       if(layoutChanged)for(const scene of document.querySelectorAll('.scene')){
         const host=scene.closest('.table-shell')?.parentElement||scene.parentElement;
         if(host)root.PlayroomGameScreen?.layoutScene(host);

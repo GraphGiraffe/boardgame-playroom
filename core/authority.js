@@ -40,7 +40,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         commit:next=>r.session.commitPrepared(next),
         remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
         publish:(before,next)=>{
-          this._publish();if(r.persistence)this.scheduleBot();
+          this._publish();if(r.persistence&&!r.botBatch)this.scheduleBot();
         },
         reject:(code,command)=>({ok:false,code,message:text[code],commandId:command.commandId,revision:this.revision}),
         fence:()=>{r.disposed=true;}
@@ -83,13 +83,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
-      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','data','events','modelProjection','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
+      const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
       const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
-      if(safe.modelProjection)safe.modelProjection={...safe.modelProjection,actions:safe.modelProjection.actions.filter(command=>
-        actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
-      if(safe.modelProjection)safe.scene=s.engine.get(s.game,s.packVersion).scene(safe.modelProjection,safe.players);
+      if(projected.modelProjection){
+        const projection={...projected.modelProjection,actions:projected.modelProjection.actions.filter(command=>
+          actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
+        safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
+      }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return freeze(clone({protocolVersion:2,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      return freeze(clone({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -185,7 +187,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:snapshot()}):reject('ID_CONFLICT');
       if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
       if(r.stopRequested)return reject('PAUSED');
-      if(r.busy)return reject('BUSY');
+      if(r.busy||r.botBatch&&!internalBot)return reject('BUSY');
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
@@ -239,11 +241,33 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     _publish(){
       const r=records.get(this);
+      if(r.botBatch){r.botBatch.changed=true;return;}
       for(const binding of [...r.bindings])if(!binding.closed){let snapshot;try{snapshot=this._snapshot(binding.viewer,undefined,binding);}catch(_){continue;}for(const listener of [...binding.listeners]){try{listener(snapshot);}catch(_){/* View failure cannot roll back a committed move. */}}}
     }
     cancelBot(){const r=records.get(this);r.botOptions=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
+    async _drainDecisionBots(window){
+      const r=records.get(this),s=r.session;
+      // Persist each accepted command, but publish readiness once per window.
+      // A failed write retains earlier committed decisions and publishes that truth.
+      r.botBatch={changed:false};
+      try{
+        for(const actor of window.participants.filter(i=>s.current.players[i].bot&&!window.ready.includes(i))){
+          for(let part=0;part<16;part++){
+            const live=s.engine.decisionWindow?.(s.current);
+            if(r.disposed||r.paused||r.stopRequested||live?.id!==window.id||live.ready.includes(actor))break;
+            const action=s.engine.botAction(s.current,actor);if(!action)break;
+            await this.actBotAsync(actor,action);
+            const after=s.engine.decisionWindow?.(s.current);
+            if(after?.id!==live.id||after.versions[actor]===live.versions[actor])break;
+          }
+        }
+      }finally{
+        const changed=r.botBatch.changed;r.botBatch=null;
+        if(changed&&!r.disposed)this._publish();
+      }
+    }
     scheduleBot({delay=500,run,onError=()=>{}}={}){
-      this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.disposed||r.stopRequested||r.paused||st.status!=='playing')return;
+      this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.paused||st.status!=='playing')return;
       const reacting=st.players.findIndex((p,i)=>p.bot&&s.engine.botReaction?.(st,i)),window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>st.players[i].bot&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!st.players[actor]?.bot)return;
       const action=s.engine.botReaction?.(st,actor)||s.engine.botAction(st,actor);if(!action)return;
       const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
@@ -253,6 +277,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||s.current.move!==revision)return;
         try{const current=s.engine.botReaction?.(s.current,actor)||s.engine.botAction(s.current,actor);if(!current)return;
           if(this._reactionDecision(actor,current)){this.scheduleBot({delay,run,onError});return;}
+          if(r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
+            return this._drainDecisionBots(window).then(()=>this.scheduleBot({delay,onError})).catch(onError);
+          }
           if(!r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
             // Drain only this simultaneous decision window, never the following round.
             const pending=window.participants.filter(i=>st.players[i].bot&&!window.ready.includes(i));

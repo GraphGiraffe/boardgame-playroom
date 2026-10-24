@@ -1,6 +1,6 @@
 # Сеть, роли и восстановление · 0.18
 
-Браузер хоста владеет authority. WebRTC DataChannel — транспорт, не источник прав; protocol 2 передаёт проверяемые команды и разрешённые снимки. application services работают через порты, app/network-ui и app/transports/webrtc связывают их с браузером.
+Браузер хоста владеет authority. WebRTC DataChannel — транспорт, не источник прав; protocol 3 передаёт проверяемые команды и разрешённые снимки. application services работают через порты, app/network-ui и app/transports/webrtc связывают их с браузером.
 
 | Роль | Данные и управление | Иконка |
 |---|---|---|

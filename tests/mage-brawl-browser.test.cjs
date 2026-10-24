@@ -7,9 +7,9 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   for(const [width,height,n] of [[320,568,8],[390,844,2],[390,844,8],[844,390,2],[844,390,8],[820,1180,8],[1180,820,8],[1440,900,8]])await t.test(`${width}x${height}, ${n} players`,async()=>{
-   const ctx=await browser.newContext({viewport:{width,height},playroomProfile:false}),p=await ctx.newPage(),errors=[];p.setDefaultTimeout(7000);p.on('pageerror',e=>errors.push(e.message));
+   const ctx=await browser.newContext({viewport:{width,height},playroomProfile:false,offline:!!process.env.MAGE_LOOT_ARTIFACT}),p=await ctx.newPage(),errors=[];p.setDefaultTimeout(7000);p.on('pageerror',e=>errors.push(e.message));
    try{
-    await p.goto(server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();
+    await p.goto(process.env.MAGE_LOOT_ARTIFACT||server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();
     await p.locator('[data-bot-settings]').first().click();await p.locator('#bot-settings-form [name=strategy][value=fighter]').check();await p.locator('#bot-settings-form [name=nickname]').fill('Боец');await p.locator('.bot-settings-footer [data-command=close-modal]').click();
     assert.equal(await p.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.bot).botSettings),undefined,'cancel does not commit');
     await p.locator('[data-bot-settings]').first().click();await p.locator('#bot-settings-form [name=strategy][value=fighter]').check();await p.locator('#bot-settings-form [name=errorRate]').fill('35');
@@ -29,8 +29,8 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
    }finally{await ctx.close();}
   });
   await t.test('two humans, closed choices and automatic phases',async()=>{
-   const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false}),p=await ctx.newPage();p.setDefaultTimeout(8000);
-   try{await p.goto(server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Борис'});b.renderLobby();});await p.locator('[data-command=lobby-start]').click();await p.locator('[data-command=unlock]').click();
+   const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false,offline:!!process.env.MAGE_LOOT_ARTIFACT}),p=await ctx.newPage();p.setDefaultTimeout(8000);
+   try{await p.goto(process.env.MAGE_LOOT_ARTIFACT||server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Борис'});b.renderLobby();});await p.locator('[data-command=lobby-start]').click();await p.locator('[data-command=unlock]').click();
     await p.locator('.mage-controls [data-action]').click();await p.locator('[data-command=unlock]').waitFor();assert.equal(await p.locator('.mage-card').count(),0,'curtain DOM contains no private hand');await p.locator('[data-command=unlock]').click();
     await p.locator('[data-decision-player="0"]').click();await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.mage-controls [data-action]').getAttribute('aria-label'),'Изменить план');await p.locator('.mage-controls [data-action]').click();await p.locator('.mage-controls [data-action]').click();await p.locator('[data-command=unlock]').click();await p.locator('.mage-controls [data-action]').click();await p.locator('[data-public-sequence]').waitFor();
     if(await p.locator('[data-command=unlock]').count())await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.public-sequence-controls').count(),0);await p.waitForFunction(()=>!document.querySelector('.is-public-playback'),null,{timeout:30000});assert.equal(await p.locator('[data-public-frame]:visible').count(),1);
@@ -40,6 +40,8 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
 });
 
 test('Mage Brawl playback: first render, player health, sounds, final callback and reduced motion',{timeout:30000},async()=>{
+ // Playwright's JS clock does not advance the browser compositor clock.
+ const advance=async(page,ms)=>{await page.evaluate(()=>{for(const a of document.getAnimations())if(Number.isFinite(a.effect.getTiming().iterations)&&a.playState==='running')a.finish();});await page.clock.runFor(ms);};
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
   const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false}),p=await ctx.newPage();
@@ -62,26 +64,27 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
   await p.locator('.mage-ready').click();assert.equal(await p.locator('.is-public-playback').count(),1);
   await p.evaluate(()=>{tempoSession.setPlayerMetadata(0,{bot:true});window.botCountAtPlayback=botTempo.length;});
   await p.clock.runFor(1000);assert.equal(await p.evaluate(()=>botTempo.length===botCountAtPlayback),true,'bots do not overwrite a round while it is being shown');
-  await p.clock.runFor(18000);const trace=await p.evaluate(()=>botTempo);assert(trace.length>3,'bots resume after the presentation');assert(trace.every(t=>!t.playing),'bot-only play respects the same presentation boundary');assert(trace.slice(3).every(t=>t.at>trace[0].at),'later rounds wait for playback');await ctx.close();
+  for(let i=0;i<20;i++)await advance(p,1000);const trace=await p.evaluate(()=>botTempo);assert(trace.length>3,'bots resume after the presentation: '+JSON.stringify(await p.evaluate(()=>({frame:document.querySelector('[data-public-frame]:not([hidden])')?.dataset.publicFrame,count:document.querySelectorAll('[data-public-frame]').length,animations:document.getAnimations().map(a=>({state:a.playState,time:a.currentTime,end:a.effect.getComputedTiming().endTime}))}))));assert(trace.every(t=>!t.playing),'bot-only play respects the same presentation boundary');assert(trace.slice(3).every(t=>t.at>trace[0].at),'later rounds wait for playback');await ctx.close();
   for(const [mode,reduced] of [['normal',false],['fast',false],['instant',false],['normal',true]]){
   const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false}),p=await ctx.newPage();p.setDefaultTimeout(5000);await p.emulateMedia({reducedMotion:reduced?'reduce':'no-preference'});await p.goto(server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.clock.install({time:new Date('2026-10-23T00:00:00Z')});await p.clock.pauseAt(new Date('2026-10-23T00:00:01Z'));
   const initial=await p.evaluate(mode=>{
    const E=TabletopCore;let s=E.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'}]}),d=s.data;
    d.board=Array(16).fill('ground');d.board[0]=d.board[15]='base';d.shrink=null;
-   Object.assign(d.players[0],{pos:[1,1],hand:['earth','air','water']});Object.assign(d.players[1],{pos:[1,2],hand:['fire','earth','water']});d.deck=['air','air','earth','water','fire','fire'];
-   s=E.applyAction(s,0,{type:'plan',element:'earth',action:'attack',direction:1});s=E.applyAction(s,1,{type:'plan',element:'fire',action:'attack',direction:0});
+   Object.assign(d.players[0],{pos:[1,1],hand:['earth','air','water']});Object.assign(d.players[1],{pos:[1,2],hand:['fire','earth','water']});d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:3},(_,i)=>({id:'card:'+(e*3+i),element})));for(const v of d.players)v.hand=v.hand.map(e=>d.deck.splice(d.deck.findIndex(c=>c.element===e),1)[0]);
+   s=E.applyAction(s,0,{type:'plan',cardId:s.data.players[0].hand.find(c=>c.element==='earth').id,element:'earth',action:'attack',direction:1});s=E.applyAction(s,1,{type:'plan',cardId:s.data.players[1].hand.find(c=>c.element==='fire').id,element:'fire',action:'attack',direction:0});
    window.magePlaybackFixture={s,bytes:JSON.stringify(s),sounds:[],done:0};
    const host=document.querySelector('#app');host.innerHTML='<section class="scene" data-animation-speed="'+mode+'">'+PlayroomViews.render(E.project(s,0),0,E.legalActions(s,0),{})+'</section>';
    const first=host.querySelector('[data-public-frame]:not([hidden])'),health=host.querySelector('.player-panel[data-player-index="1"] [data-score-id="health"]');
    const result={index:+first.dataset.publicFrame,health:health.title,finalHealth:s.data.players[1].health,firstPlans:s.data.frames[0].plans,firstHands:s.data.frames[0].players.map(p=>p.handCount)};
    window.PlayroomAppBridge={...PlayroomAppBridge,audio:{play:(ids,pack)=>magePlaybackFixture.sounds.push({ids,pack})}};
+   const scheduler=new PlayroomPresentationScheduler();PlayroomPublicSequence.useExecutor(host,scheduler);window.phaseClock=scheduler.track('public-sequence');
    PlayroomPublicSequence.bind(host);PlayroomPublicSequence.defer(host,()=>magePlaybackFixture.done++);
    return result;
   },mode);
   assert.equal(initial.index,0,'HTML already shows the original frame before bind');assert.equal(initial.health,'Здоровье: 3');assert.equal(initial.finalHealth,1);assert.equal(initial.firstPlans,undefined);assert.deepEqual(initial.firstHands,[3,3]);
   if(mode==='normal'&&!reduced){
    assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'250ms');
-   await p.clock.runFor(1000); // 250 ms start + 750 ms reveal: first attack effect.
+   await advance(p,250);await advance(p,750); // Complete reveal before the attack.
    const repeated=await p.evaluate(()=>{
     const h=document.querySelector('#app'),f=()=>h.querySelector('[data-public-frame]:not([hidden])'),before=f(),projectile=before.querySelector('.mage-projectile'),panel=h.querySelector('.player-panel[data-player-index="1"]'),child=panel.firstElementChild;
     const animation=projectile?.getAnimations()[0],hidden=[];
@@ -92,8 +95,16 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
     return {index:f().dataset.publicFrame,sameFrame:f()===before,hidden: hidden.length,sameAnimation:!!animation&&projectile.getAnimations()[0]===animation,samePlayerChild:panel.firstElementChild===child,sounds:magePlaybackFixture.sounds.length};
    });
    assert.equal(repeated.index,'2');assert(repeated.sameFrame&&repeated.sameAnimation&&repeated.samePlayerChild,'redraw retains active effects and player nodes: '+JSON.stringify(repeated));assert.equal(repeated.hidden,0,'same-frame redraw never hides/restarts the effect');assert.equal(repeated.sounds,2,'redraw does not repeat reveal/attack audio');
+   const paused=await p.evaluate(async()=>{
+    phaseClock.pause();const a=document.querySelector('[data-public-frame]:not([hidden]) .mage-projectile').getAnimations()[0];
+    await a.ready;window.phaseAnimation=a;return {time:a.currentTime,frame:document.querySelector('[data-public-frame]:not([hidden])').dataset.publicFrame};
+   });
+   await p.clock.runFor(2000);
+   assert.deepEqual(await p.evaluate(()=>({time:phaseAnimation.currentTime,frame:document.querySelector('[data-public-frame]:not([hidden])').dataset.publicFrame})),paused,'pause freezes CSS effect and phase together');
+   assert.equal(await p.evaluate(()=>{phaseClock.setRate(2);const rate=phaseAnimation.playbackRate;phaseClock.resume();return rate;}),2);
+
   }
-  if(!reduced&&mode!=='instant'){assert.equal(await p.locator('.public-sequence-controls').count(),0);if(mode==='fast'){assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'141ms');await p.clock.runFor(140);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'0');await p.clock.runFor(1);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'1');await p.clock.runFor(500*await p.locator('[data-public-frame]').count());}else await p.clock.runFor(30000);
+  if(!reduced&&mode!=='instant'){assert.equal(await p.locator('.public-sequence-controls').count(),0);if(mode==='fast'){assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'250ms');await p.clock.runFor(140);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'0');await p.clock.runFor(1);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'1');for(let i=0;i<await p.locator('[data-public-frame]').count();i++)await advance(p,1000);}else for(let i=0;i<await p.locator('[data-public-frame]').count();i++)await advance(p,1000);
    assert.equal(await p.evaluate(()=>magePlaybackFixture.done),1);
    const sounds=await p.evaluate(()=>magePlaybackFixture.sounds);assert(sounds.some(s=>s.pack==='mage-brawl'&&s.ids[0]==='mage.earth'));assert(sounds.some(s=>s.ids[0]==='mage.reveal'));
   }else {assert.equal(await p.evaluate(()=>magePlaybackFixture.sounds.length),0);assert.equal(await p.locator('.is-public-playback').count(),0,'instant/reduced playback has no wait');}
@@ -101,7 +112,7 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
   const redraw=await p.evaluate(()=>{
    const s=magePlaybackFixture.s,E=TabletopCore,h=document.querySelector('#app'),result=[];
    for(const direction of [0,1,2,3]){
-    const ui={viewState:{mageElement:'air',mageAction:'movement',mageDirection:direction}};
+    const ui={viewState:{mageCardId:s.data.players[0].hand.find(c=>c.element==='air')?.id,mageAction:'movement',mageDirection:direction}};
     PlayroomGameScreen.update(h,'<section class="scene">'+PlayroomViews.render(E.project(s,0),0,E.legalActions(s,0),ui)+'</section>');PlayroomPublicSequence.bind(h);
     const shown=h.querySelector('[data-public-frame]:not([hidden])'),last=h.querySelector('[data-public-frame]:last-child');
     result.push({live:shown===last,hidden:h.querySelector('.app-game-layout').classList.contains('is-public-playback'),previews:shown.querySelectorAll('.mage-preview').length,expected:E.project(s,0).data.previews.find(p=>p.command.element==='air'&&p.command.action==='movement'&&p.command.direction===direction)?.cells.length||0});
@@ -136,13 +147,13 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
   assert.equal(await p.locator('.mage-card').first().evaluate(n=>n.style.getPropertyValue('--mage-direction')),'90deg','direction survives round and hotseat');
   const rotation=await p.evaluate(()=>{const samples=[],costs={};for(const [obj,key] of [[TabletopCore,'project'],[PlayroomViews,'render'],[PlayroomGameScreen,'update'],[PlayroomGameScreen,'layoutScene']]){const fn=obj[key];obj[key]=function(...args){const t=performance.now();try{return fn.apply(this,args)}finally{const c=costs[key]||(costs[key]={calls:0,ms:0});c.calls++;c.ms+=performance.now()-t;}};}for(let i=0;i<8;i++){const b=document.querySelector('.mage-rotate:last-child'),t=performance.now();b.click();document.querySelector('.mage-grid').getBoundingClientRect();samples.push(performance.now()-t);}return {samples,costs};});fs.writeFileSync(path.resolve(root,'../tmp_files/mage-brawl/loot-history-2026-10-23/rotation-timings.json'),JSON.stringify(rotation));
   await p.locator('[data-command=history]').click();assert.equal(await p.locator('.mage-hand,.mage-loot-hand,.mage-ready,.mage-rotate,.mage-action-switch,.mage-facing,.mage-preview').count(),0,'history has no private choice UI');
-  await p.locator('[data-command=history-close]').click();if(await p.locator('[data-command=unlock]').count())await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.mage-card').first().evaluate(n=>n.style.getPropertyValue('--mage-direction')),'90deg','history preserves live orientation');
+  await p.locator('[data-command=history-close]').click();if(await p.locator('[data-command=unlock]').count())await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.mage-card').first().evaluate(n=>n.style.getPropertyValue('--mage-direction')),'810deg','history preserves continuous live orientation after two complete rotations');
   const result=await p.evaluate(()=>{
    const E=TabletopCore;let s=E.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'},{name:'C'}]}),d=s.data;
    d.board=Array(36).fill('ground');d.board[0]=d.board[35]='base';d.shrink=null;
-   [[2,2],[2,1],[2,3]].forEach((pos,i)=>Object.assign(d.players[i],{pos,health:3,maxHand:i?3:8,hand:i?['earth']:['water','fire','air','earth','water','fire','air','earth']}));d.deck=['air','earth','water','fire'].flatMap(e=>Array(4).fill(e));d.discard=[];for(const v of d.players)for(const e of v.hand)d.deck.splice(d.deck.indexOf(e),1);
+   [[2,2],[2,1],[2,3]].forEach((pos,i)=>Object.assign(d.players[i],{pos,health:3,maxHand:i?3:8,hand:i?['earth']:['water','fire','air','earth','water','fire','air','earth']}));d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:4},(_,i)=>({id:'card:'+(e*4+i),element})));d.discard=[];for(const v of d.players)v.hand=v.hand.map(e=>d.deck.splice(d.deck.findIndex(c=>c.element===e),1)[0]);
    window.finalLootSource=JSON.parse(JSON.stringify(s));finalLootSource.data.players[0].lives=1;
-   [{element:'water',direction:0},{element:'earth',direction:1},{element:'earth',direction:3}].forEach((c,i)=>s=E.applyAction(s,i,{type:'plan',action:'attack',...c}));
+   [{element:'water',direction:0},{element:'earth',direction:1},{element:'earth',direction:3}].forEach((c,i)=>s=E.applyAction(s,i,{type:'plan',cardId:s.data.players[i].hand.find(card=>card.element===c.element).id,action:'attack',...c}));
    window.lootFixture={s,viewer:1,commits:[],viewState:{}};const host=document.querySelector('#app');
    window.renderLoot=()=>{const f=lootFixture,projected=E.project(f.s,f.viewer),actions=E.legalActions(f.s,f.viewer);PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'loot-dialog',gameName:'Битва магов',state:projected,viewer:f.viewer,actions,scene:PlayroomViews.render(projected,f.viewer,actions,{viewState:f.viewState||{}})}));PlayroomPublicSequence.bind(host);PlayroomGameScreen.layoutScene(host);};renderLoot();
    const simultaneous=[...host.querySelectorAll('[data-public-frame]')].map(f=>f.querySelectorAll('.mage-attack-earth').length).filter(Boolean),reveals=[...host.querySelectorAll('.mage-phase-cards')].map(n=>n.children.length);
@@ -158,7 +169,7 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
   await dialog.locator('.card-choice-heading button').click();assert.equal(await dialog.count(),0);assert.equal(await p.evaluate(()=>lootFixture.commits.length),0,'closing does not choose');await open.click();await dialog.locator('[data-card-index="1"]').click();assert.deepEqual(await p.evaluate(()=>lootFixture.commits),[{actor:1,index:1}]);assert.equal(await dialog.count(),0);
   await open.click();assert.equal(await dialog.locator('[data-card-index]').count(),6);await dialog.locator('[data-card-index="0"]').click();assert.deepEqual(await p.evaluate(()=>lootFixture.commits),[{actor:1,index:1},{actor:2,index:0}]);assert.equal(await dialog.count(),0);assert.equal(await open.count(),0);
   assert.equal(await p.evaluate(()=>lootFixture.s.data.players[0].hand.length),5,'victim retains the unclaimed accumulated cards');
-  await p.evaluate(()=>{window.retainedLootState=lootFixture.s;let s=finalLootSource;[{element:'water',direction:0},{element:'earth',direction:1},{element:'earth',direction:3}].forEach((c,i)=>s=TabletopCore.applyAction(s,i,{type:'plan',action:'attack',...c}));lootFixture.s=s;lootFixture.viewer=1;renderLoot();});
+  await p.evaluate(()=>{window.retainedLootState=lootFixture.s;let s=finalLootSource;[{element:'water',direction:0},{element:'earth',direction:1},{element:'earth',direction:3}].forEach((c,i)=>s=TabletopCore.applyAction(s,i,{type:'plan',cardId:s.data.players[i].hand.find(card=>card.element===c.element).id,action:'attack',...c}));lootFixture.s=s;lootFixture.viewer=1;renderLoot();});
   for(const count of [7,6]){await open.click();assert.equal(await dialog.locator('[data-card-index]').count(),count);await dialog.locator('[data-card-index="0"]').click();}
   assert.deepEqual(await p.evaluate(()=>lootFixture.s.data.players.map(p=>p.hand.length)),[0,2,2],'final death also transfers one chosen card to each killer and replaces played cards');
   await p.evaluate(()=>{lootFixture.s=retainedLootState;renderLoot();});
@@ -168,13 +179,13 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
   await p.evaluate(()=>{lootFixture.viewer=1;renderLoot();});assert.equal(await p.locator('.mage-cell.is-playable[data-action]').count(),0,'other players do not see base selection');
   await p.evaluate(()=>{const f=lootFixture,E=TabletopCore;f.s=E.applyAction(f.s,f.s.turn,E.legalActions(f.s,f.s.turn)[0]);f.viewer=0;renderLoot();});
   await p.setViewportSize({width:390,height:844});
-  const handGeometry=await p.locator('.mage-card').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,right:r.right,id:n.dataset.entity,cls:n.className,parent:n.parentElement.className,transform:getComputedStyle(n).transform};}));fs.writeFileSync(path.resolve(root,'../tmp_files/mage-brawl/loot-history-2026-10-23/hand-geometry.json'),JSON.stringify(handGeometry));assert.equal(new Set(handGeometry.map(r=>r.y)).size,2,'selected card is lifted, all others share one row');assert.equal(new Set(handGeometry.map(r=>r.id)).size,8);assert(handGeometry.at(-1).right<=390);assert(handGeometry[1].x-handGeometry[0].x<handGeometry[0].width,'cards overlap instead of wrapping');
-  const copies=await p.evaluate(()=>{const f=lootFixture,hand=f.s.data.players[f.viewer].hand,index=hand.findIndex((e,i)=>hand.indexOf(e)!==i);f.viewState.mageCardId=`mage-hand:${f.viewer}:${f.s.data.round}:${index}`;renderLoot();return {id:f.viewState.mageCardId,index};});assert.equal(await p.locator('.mage-card.is-selected').count(),1);assert.equal(await p.locator('.mage-card.is-selected').getAttribute('data-entity'),copies.id);
+  const handGeometry=await p.locator('.mage-card').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,right:r.right,id:n.dataset.entity,cls:n.className,parent:n.parentElement.className,transform:getComputedStyle(n).transform};}));fs.writeFileSync(path.resolve(root,'../tmp_files/mage-brawl/loot-history-2026-10-23/hand-geometry.json'),JSON.stringify(handGeometry));assert.equal(new Set(handGeometry.map(r=>r.y)).size,2,'selected card is lifted, all others share one row');assert.equal(new Set(handGeometry.map(r=>r.id)).size,8);assert(handGeometry.at(-1).right<=390);assert(handGeometry.some((r,i)=>i>0&&r.x<handGeometry[i-1].right),'ordinary cards overlap instead of wrapping');assert(handGeometry[1].x>=handGeometry[0].right,'selected first card stays fully exposed');
+  const copies=await p.evaluate(()=>{const f=lootFixture,hand=f.s.data.players[f.viewer].hand,index=hand.findIndex((e,i)=>hand.findIndex(c=>c.element===e.element)!==i);f.viewState.mageCardId=hand[index].id;renderLoot();return {id:f.viewState.mageCardId,index};});assert.equal(await p.locator('.mage-card.is-selected').count(),1);assert.equal(await p.locator('.mage-card.is-selected').getAttribute('data-entity'),'card-'+copies.id);
   assert.equal(await p.locator('.mage-card').count(),8,'respawn refills the earned maximum after two cards were looted');await p.screenshot({path:path.resolve(root,'../tmp_files/mage-brawl/loot-history-2026-10-23/respawn-hand.png')});
   assert.equal(await p.locator('.player-hand').count(),0,'opponent hands are omitted');
   // Reserve life becomes a crown, followed by health; private choice previews rotate together.
   await p.setViewportSize({width:390,height:844});
-  await p.evaluate(()=>{const f=lootFixture;f.s=TabletopCore.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'},{name:'C'}]});f.viewer=2;const d=f.s.data;d.board=Array(d.size*d.size).fill('ground');d.board[0]=d.board[d.board.length-1]='base';d.board[1]='wall';d.board[2]='falling_floor';d.board[3]='spikes';d.startingBases=[[0,0],[d.size-1,d.size-1],[2,2]];d.players[0].pos=[0,0];d.players[1].pos=[d.size-1,d.size-1];Object.assign(d.players[2],{pos:[2,2],hand:['air','earth','water','fire']});d.players[0].hand=['earth'];d.players[1].hand=['water'];d.deck=['air','earth','water','fire'].flatMap(e=>Array(4).fill(e));d.discard=[];for(const v of d.players)for(const e of v.hand)d.deck.splice(d.deck.indexOf(e),1);f.viewState={mageElement:'air',mageAction:'movement',mageDirection:0};renderLoot();});
+  await p.evaluate(()=>{const f=lootFixture;f.s=TabletopCore.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'},{name:'C'}]});f.viewer=2;const d=f.s.data;d.board=Array(d.size*d.size).fill('ground');d.board[0]=d.board[d.board.length-1]='base';d.board[1]='wall';d.board[2]='falling_floor';d.board[3]='spikes';d.startingBases=[[0,0],[d.size-1,d.size-1],[2,2]];d.players[0].pos=[0,0];d.players[1].pos=[d.size-1,d.size-1];Object.assign(d.players[2],{pos:[2,2],hand:['air','earth','water','fire']});d.players[0].hand=['earth'];d.players[1].hand=['water'];d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:4},(_,i)=>({id:'card:'+(e*4+i),element})));d.discard=[];for(const v of d.players)v.hand=v.hand.map(e=>d.deck.splice(d.deck.findIndex(c=>c.element===e),1)[0]);f.viewState={mageCardId:d.players[f.viewer].hand.find(c=>c.element==='air').id,mageAction:'movement',mageDirection:0};renderLoot();});
   const own=p.locator('.player-panel[data-player-index="2"]'),scores=own.locator('.player-details');
   assert.equal(await p.locator('.mage-scene .player-turn-position,.mage-scene .player-medallion.is-first,.player-heading-counter').count(),0);
   assert.equal(await scores.locator('.token-meeple .counter-token:not(.is-empty)').count(),1);
@@ -188,7 +199,7 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
   assert.equal(await scores.locator('[data-score-id=kills]').getAttribute('title'),'Убийства: 3');
   const hearts=await scores.locator('.counter-token').evaluateAll(nodes=>nodes.filter(n=>n.closest('[data-score-id=health]')).map(n=>({x:n.getBoundingClientRect().x,width:n.getBoundingClientRect().width,empty:n.classList.contains('is-empty'),opacity:getComputedStyle(n).opacity})));
   assert.deepEqual(hearts.map(h=>h.empty),[false,true,true]);assert(Math.abs(hearts[1].x-hearts[0].x-hearts[0].width*.46)<.1);assert.equal(hearts[2].opacity,'1');
-  const tokenHearts=await p.locator('.mage-piece[data-mage-player="2"] .mage-token-health .mage-hp-dot').evaluateAll(ns=>ns.map(n=>({x:n.getBoundingClientRect().x,w:n.getBoundingClientRect().width,empty:n.classList.contains('is-empty'),opacity:getComputedStyle(n).opacity})));assert.deepEqual(tokenHearts.map(h=>h.empty),[false,true,true]);assert(tokenHearts[1].x-tokenHearts[0].x>tokenHearts[0].w);assert.equal(tokenHearts[1].opacity,'1');
+  const tokenHearts=await p.locator('.mage-piece[data-mage-player="2"] .mage-token-health .piece-indicator').evaluateAll(ns=>ns.map(n=>({x:n.getBoundingClientRect().x,w:n.getBoundingClientRect().width,empty:n.classList.contains('is-empty'),opacity:getComputedStyle(n).opacity})));assert.deepEqual(tokenHearts.map(h=>h.empty),[false,true,true]);assert(tokenHearts[1].x-tokenHearts[0].x>tokenHearts[0].w);assert.equal(tokenHearts[1].opacity,'1');
   await p.evaluate(()=>{lootFixture.s.data.players[2].health=3;lootFixture.s.data.shrink=lootFixture.s.data.round;renderLoot();});
   assert.equal(await p.locator('.mage-warning').count(),0);assert.equal(await p.locator('.mage-risk').count(),20);
   assert.notEqual(await p.locator('.mage-risk').first().evaluate(n=>getComputedStyle(n,'::after').backgroundColor),'rgba(0, 0, 0, 0)');
@@ -207,7 +218,7 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
   assert.equal(await p.locator('.mage-token .mage-ultimate').count(),1);assert.equal(await p.locator('.mage-token').evaluateAll(nodes=>nodes.some(n=>/\d/.test(n.textContent))),false);
   const switches=p.locator('.mage-action-switch button');assert.equal(await switches.count(),3);assert.deepEqual(await switches.allTextContents(),['','','']);assert.deepEqual(await switches.evaluateAll(nodes=>nodes.map(n=>n.getAttribute('aria-label'))),['Движение','Атака','Ультимейт']);assert.equal(await switches.locator('svg').count(),3);
   for(const [element,color] of Object.entries({air:'#729d98',earth:'#aa844b',water:'#508fa9',fire:'#cb7054'})){
-   await p.evaluate(e=>{lootFixture.viewState.mageElement=e;renderLoot();},element);
+   await p.evaluate(e=>{lootFixture.viewState.mageCardId=lootFixture.s.data.players[lootFixture.viewer].hand.find(c=>c.element===e).id;renderLoot();},element);
    assert(await p.locator('.mage-preview').count()>0,element+' previews');
    assert.equal(await p.locator('.mage-preview').first().evaluate(n=>getComputedStyle(n).getPropertyValue('--mage-selected').trim()),color);
    assert.equal(await p.locator('.mage-selected-token').evaluate(n=>getComputedStyle(n).getPropertyValue('--color-interaction-selected').trim()),'#dfb83d');
@@ -218,7 +229,7 @@ test('Mage Brawl loot view: Akulina dialog, sequential recipients and private sq
    assert.equal(await p.locator('.mage-facing').evaluate(n=>n.style.getPropertyValue('--mage-direction')),direction*90+'deg');
    assert.equal(await p.locator('.mage-card').first().evaluate(n=>n.style.getPropertyValue('--mage-direction')),direction*90+'deg');
   }
-  await p.evaluate(()=>{lootFixture.viewState={mageElement:'air',mageAction:'movement',mageDirection:1};renderLoot();});assert.equal(await p.locator('.mage-facing').evaluate(n=>n.style.getPropertyValue('--mage-direction')),'135deg');assert.equal(await p.locator('.mage-card').first().locator('.mage-card-facing').evaluate(n=>n.style.getPropertyValue('--mage-bearing')),'135deg');
+  await p.evaluate(()=>{lootFixture.viewState={mageCardId:lootFixture.s.data.players[lootFixture.viewer].hand.find(c=>c.element==='air').id,mageAction:'movement',mageDirection:1};renderLoot();});assert.equal(await p.locator('.mage-facing').evaluate(n=>n.style.getPropertyValue('--mage-direction')),'135deg');assert.equal(await p.locator('.mage-card').first().locator('.mage-card-facing').evaluate(n=>n.style.getPropertyValue('--mage-bearing')),'135deg');
   assert.equal(await p.evaluate(()=>{const f=lootFixture,n=document.createElement('div');n.innerHTML=PlayroomViews.render(TabletopCore.project(f.s,f.viewer),f.viewer,TabletopCore.legalActions(f.s,f.viewer),{replay:true,hotseat:true});return n.querySelectorAll('.mage-hand,.mage-loot-hand,.mage-facing,.mage-preview,[data-decision-player],[data-action]').length;}),0,'replay ignores even supplied legal choices');
   assert.equal(await p.evaluate(()=>{const n=document.createElement('div');n.innerHTML=PlayroomViews.render(TabletopCore.project(lootFixture.s,-1),-1,[],{surface:'table'});return n.querySelectorAll('.mage-facing,.mage-selected-token').length;}),0);
   const baseArt=await p.locator('.tile-base').evaluateAll(nodes=>nodes.map(n=>({color:getComputedStyle(n.querySelector('[data-base-color]')).fill,center:getComputedStyle(n.querySelector('circle:last-child')).fill})));
@@ -254,8 +265,8 @@ test('Mage Brawl elemental effects: routes, attacks, damage, death, fall and kil
     let a=[1,1],b=[1,2],action=kind==='move'?'movement':'attack',direction=1;
     if(kind==='move'){a=[2,0];b=[0,3];}if(kind==='fall'){a=[1,2];b=[1,3];}if(kind==='shrink'){a=[2,2];b=[0,2];element='earth';action='movement';}
     Object.assign(d.players[0],{pos:a,hand:[element]});Object.assign(d.players[1],{pos:b,health:kind==='death'?1:3,hand:['earth','water']});
-    d.deck=['air','earth','water','fire'].flatMap(e=>Array(3).fill(e));d.discard=[];for(const v of d.players)for(const e of v.hand)d.deck.splice(d.deck.indexOf(e),1);
-    s=E.applyAction(s,0,{type:'plan',element,action,direction});s=E.applyAction(s,1,{type:'plan',element:'earth',action:'movement',direction:0});
+    d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:3},(_,i)=>({id:'card:'+(e*3+i),element})));d.discard=[];for(const v of d.players)v.hand=v.hand.map(e=>d.deck.splice(d.deck.findIndex(c=>c.element===e),1)[0]);
+    s=E.applyAction(s,0,{type:'plan',cardId:s.data.players[0].hand.find(c=>c.element===element).id,element,action,direction});s=E.applyAction(s,1,{type:'plan',cardId:s.data.players[1].hand.find(c=>c.element==='earth').id,element:'earth',action:'movement',direction:0});
     const projected=E.project(s,-1),host=document.querySelector('#app');host.innerHTML='';PlayroomPublicSequence.bind(host);host.innerHTML=PlayroomGameScreen.render({layoutId:'effects:'+kind+element,gameName:'Битва магов',state:projected,viewer:-1,actions:[],scene:PlayroomViews.render(projected,-1,[],{surface:'table'})});PlayroomGameScreen.layoutScene(host);
     const all=[...host.querySelectorAll('[data-public-frame]')],status=kind==='damage'?'damage':kind==='death'?'death':'fall';
     const index=all.findIndex(f=>kind==='shrink'||kind==='fall'||kind==='death'||kind==='damage'?f.querySelector(`.mage-token[data-public-feedback~="${status}"]`):kind==='move'?f.querySelector('.mage-trail'):f.querySelector('.mage-attack-'+element));
@@ -286,7 +297,7 @@ test('Mage Brawl elemental effects: routes, attacks, damage, death, fall and kil
    if(kind==='death'||kind==='fall')assert.equal(await p.locator('.player-panel[data-player-index="0"][data-public-feedback~="killer"]').count(),1);
    if(kind==='fall'){const out=await p.evaluate(()=>mageEffectFixture.s.data.frames.flatMap(f=>f.outcomes||[]).find(o=>o.fall));assert.deepEqual(out.at,[1,4]);}
    const expected=await p.evaluate(()=>{const f=mageEffectFixture.s.data.frames.find(f=>f.outcomes?.some(o=>o.player===1));return f.players[1];});
-   const token=p.locator('[data-public-frame]:visible .mage-piece[data-mage-player="1"] .mage-token-health');assert.equal(await token.locator('.mage-hp-dot').count(),3);assert.equal(await token.locator('.mage-hp-dot:not(.is-empty)').count(),expected.health,kind+' token matches public HP');
+   const token=p.locator('[data-public-frame]:visible .mage-piece[data-mage-player="1"] .mage-token-health');assert.equal(await token.locator('.piece-indicator').count(),3);assert.equal(await token.locator('.piece-indicator:not(.is-empty)').count(),expected.health,kind+' token matches public HP');
    const panel=p.locator('.player-panel[data-player-index="1"]');assert.equal(await panel.locator('.token-heart .counter-token:not(.is-empty)').count(),expected.health,kind+' health follows damage frame');assert.equal(await panel.locator('.token-meeple .counter-token:not(.is-empty)').count(),expected.lives>1?1:0);assert.equal(await panel.locator('.token-crown .counter-token:not(.is-empty)').count(),expected.ultimate>0?1:0);
    await p.screenshot({path:path.resolve(root,`../tmp_files/mage-brawl/loot-history-2026-10-23/${kind}.png`)});
    await p.clock.runFor(30000);assert.equal(await p.locator('.player-panel[data-public-feedback]:not([data-public-feedback=""])').count(),0,'feedback clears on live frame');

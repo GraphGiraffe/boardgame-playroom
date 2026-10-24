@@ -48,8 +48,8 @@ def validate_manifest(manifest, label):
     ident, version = manifest.get("id"), manifest.get("version")
     if not isinstance(ident, str) or not ID.fullmatch(ident) or not isinstance(version, str) or not SEMVER.fullmatch(version):
         raise ValueError(f"Некорректные ID/версия пака: {label}")
-    if not number_equals(manifest.get("viewApi"), 2):
-        raise ValueError(f"Требуется viewApi 2: {label}")
+    if not number_equals(manifest.get("viewApi"), 3):
+        raise ValueError(f"Требуется viewApi 3: {label}")
     if "tileTheme" in manifest and manifest["tileTheme"] not in ("green", "coral", "blue", "gold", "violet"):
         raise ValueError(f"Некорректная тема карточки: {label}")
     registry = parse_json(Path(__file__).with_name("tags.json").read_text(encoding="utf-8"))
@@ -75,12 +75,17 @@ def validate_manifest(manifest, label):
                 for family, variant in defaults.items())):
         raise ValueError(f"Некорректные скины пака: {label}")
     state = manifest.get("stateVersion")
-    if (type(manifest.get("engineApi")) not in (int, float) or manifest.get("engineApi") != 3 or type(state) not in (int, float)
+    if (type(manifest.get("engineApi")) not in (int, float) or manifest.get("engineApi") != 4 or type(state) not in (int, float)
             or not 1 <= state <= MAX_SAFE_INTEGER or int(state) != state):
         raise ValueError(f"Неподдерживаемый API/состояние пака: {label}")
     name = manifest.get("name")
     if not isinstance(name, str) or not js_trim(name) or len(name.encode("utf-16-le", "surrogatepass")) // 2 > 120:
         raise ValueError(f"Нет названия пака или оно длиннее 120 символов: {label}")
+    if "shortName" in manifest:
+        short_name = manifest["shortName"]
+        if (not isinstance(short_name, str) or not js_trim(short_name)
+                or len(short_name.encode("utf-16-le", "surrogatepass")) // 2 > 60):
+            raise ValueError(f"Неверное короткое название пака: {label}")
     for key, filename in {**ENTRY_POINTS, "sounds": "sounds.js"}.items():
         if key in manifest and manifest[key] != filename:
             raise ValueError(f"Неподдерживаемая точка входа {key}: {label}")

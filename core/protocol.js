@@ -1,6 +1,6 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomProtocol=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  const version=2, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+  const version=3, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
   const clone=x=>JSON.parse(JSON.stringify(x));
   const freeze=x=>{if(x&&typeof x==='object'&&!Object.isFrozen(x)){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
   const canonical=x=>JSON.stringify(x,(_,v)=>record(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
@@ -12,7 +12,7 @@
   const role=snapshot=>snapshot.role||(snapshot.viewer<0?'spectator':'player');
   const sameAudience=(a,b)=>a.viewer===b.viewer&&role(a)===role(b);
   function command(snapshot,action,commandId){
-    const commands=snapshot.state?.modelProjection?.actions;
+    const commands=snapshot.state?.scene?.interactions?.map(interaction=>interaction.command);
     const allowed=Array.isArray(commands)&&commands.find(candidate=>record(action)&&Object.keys(candidate).every(key=>canonical(candidate[key])===canonical(action[key])));
     return {protocolVersion:version,sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,commandId,
       expectedRevision:snapshot.revision,action:clone(allowed||action),...(role(snapshot)==='table'?{actor:snapshot.actor}:{})};

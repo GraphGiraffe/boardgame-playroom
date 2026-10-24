@@ -28,7 +28,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||value<0))throw Error(globalThis.PlayroomMessages.text("ui.engine.12bcf9bc2478"));
     if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isSafeInteger(value)||value<0)))throw Error(globalThis.PlayroomMessages.text("ui.engine.adea212152fd"));
     const order=summary?.order==='asc'?'asc':'desc',places=summary?.places||values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
-    state.result={label:summary?.label||globalThis.PlayroomMessages.text("ui.engine.231d91ffeba0"),values,places,order,...(summary?.metricId?{metricId:summary.metricId,metrics:clone(summary.metrics)}:{}),...(summary?.details?{detailLabel:summary.detailLabel||globalThis.PlayroomMessages.text("ui.engine.fdf0487fc4f1"),details:summary.details,...(summary.detailMetricId?{detailMetricId:summary.detailMetricId}:{})}:{})};
+    state.result={label:summary?.label||globalThis.PlayroomMessages.text("ui.engine.231d91ffeba0"),values,places,order,exits:clone(summary?.exits||[]),lastPlayers:clone(summary?.lastPlayers||[]),...(summary?.metricId?{metricId:summary.metricId,metrics:clone(summary.metrics)}:{}),...(summary?.details?{detailLabel:summary.detailLabel||globalThis.PlayroomMessages.text("ui.engine.fdf0487fc4f1"),details:summary.details,...(summary.detailMetricId?{detailMetricId:summary.detailMetricId}:{})}:{})};
   }
   function finish(state, winner, text, points = 1) {
     complete(state,winner,points);
@@ -49,13 +49,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return [value];
     });
   }
-  // One primary cue per committed action; facts remain separate for speech and replay.
+  // Every authored visible effect owns its sound. Only unstructured legacy facts
+  // compete for one fallback cue per revision.
   function soundCues(state, viewer, afterEventId = 0) {
     const fallback={move:'move',play:'move',action:'move',draw:'draw',take:'take',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'pass'};
     const semantic={skip:'attack.skip',pass:'pass',discard:'discard',draw:'draw',take:'take',reverse:'reverse'};
     const priorities={skip:90,discard:70,reverse:75,pass:60,take:55,draw:40};
     const sounds={'penalty':85,'uno.call':80,'attack.capture':75,'success.special':65,'success.yatzy':65,'success':60,'mismatch':50};
-    const actions=new Map();
+    const actions=new Map(),explicit=[],authored=new Set();
     for(const e of projectedEvents(state,viewer).filter(e=>e.id>afterEventId)){
       const id=e.kind==='finish'
         ? state.winner==null?'draw-game':viewer<0||viewer>=state.players.length?'notify':(state.winners||[state.winner]).includes(viewer)?'victory':'defeat'
@@ -64,9 +65,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const priority=e.kind==='finish'?100:priorities[e.feedback?.kind]||sounds[id]||({draw:40,capture:75,roll:30}[e.kind]??10);
       const revision=e.revision??e.id,previous=actions.get(revision);
       const target=e.sound?.target??e.feedback?.player;
+      if(e.sound?.id||e.transfer||e.reveal||e.speech||e.feedback||e.presentation||e.kind==='finish'){
+        explicit.push({id,eventId:e.id,...(target!=null?{target}:{})});authored.add(revision);continue;
+      }
       if(!previous||priority>previous.priority)actions.set(revision,{priority,cue:{id,eventId:e.id,...(target!=null?{target}:{})}});
     }
-    return [...actions.values()].map(value=>value.cue);
+    const cues=[...explicit,...[...actions].filter(([revision])=>!authored.has(revision)).map(([,value])=>value.cue)];
+    return cues.sort((a,b)=>a.eventId-b.eventId);
   }
   const hidden = cards => cards.map(() => ({ hidden: true }));
   function checkedPack(pack) {
@@ -133,7 +138,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     assertState(typeof state.openHands === 'boolean' && ['playing', 'finished'].includes(state.status), globalThis.PlayroomMessages.text("ui.engine.13c168fbfc51"));
     assertState((state.winner === null || int(state.winner, 0, state.players.length - 1)) && (state.status !== 'playing' || state.winner === null), globalThis.PlayroomMessages.text("ui.engine.755a2d9d4024"));
     assertState(state.winners === undefined || (state.status === 'finished' && Array.isArray(state.winners) && state.winners.length > 0 && state.winners[0] === state.winner && new Set(state.winners).size === state.winners.length && state.winners.every(i => int(i, 0, state.players.length - 1))), globalThis.PlayroomMessages.text("ui.engine.9622aa5191c5"));
-    if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),globalThis.PlayroomMessages.text("ui.engine.8d91204f84a3"));assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,globalThis.PlayroomMessages.text("ui.engine.a91603210473"));}
+    if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(p=>int(p,0,n-1)), 'RESULT_FINISH_INVALID');assertState(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(x=>x?.player)).size===result.exits.length&&result.exits.every(x=>record(x)&&int(x.player,0,n-1)&&['cards','domino','finished'].includes(x.kind)&&(int(x.round,1,Number.MAX_SAFE_INTEGER)||int(x.turn,1,Number.MAX_SAFE_INTEGER))), 'RESULT_FINISH_INVALID');assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),globalThis.PlayroomMessages.text("ui.engine.8d91204f84a3"));assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,globalThis.PlayroomMessages.text("ui.engine.a91603210473"));}
     assertState(record(state.data) && Array.isArray(state.events), globalThis.PlayroomMessages.text("ui.engine.6bb6f415ea1f"));
     let last = 0;
     for (const e of state.events) {

@@ -24,7 +24,7 @@ test('Table public commands survive IndexedDB reload with player receipts and pu
     const table=authority.connectTable([0,1]),receipt=await table.dispatch(JSON.parse(sessionStorage.getItem('table-test-command'))),frame=table.history(0);
     return {duplicate:receipt.duplicate,revision:authority.revision,steps:saved.session.states.length,
      receiptActor:saved.receipts[0].viewer,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role,
-     cell:receipt.snapshot.state.modelProjection.data.board[4],historyActions:frame.state.modelProjection.actions.length,
+     cell:receipt.snapshot.state.scene.cells[4].owner,historyActions:frame.state.scene.interactions.length,
      secret:JSON.stringify(receipt).includes('TABLE-PRIVATE-SEED')};
    }finally{authority.dispose();}
   });

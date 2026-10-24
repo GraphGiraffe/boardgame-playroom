@@ -13,7 +13,7 @@ test('pack updates notify once, remain unread until packs are opened, and rearm 
     const installed=await page.evaluate(()=>[...new Set(PlayroomPacks.list().map(item=>item.id))].slice(0,2));
     assert.equal(installed.length,2);
     let versions=[1,1];
-    await page.route('**/api/packs/catalog',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({format:'playroom-catalog',version:1,collection:'9.9.9',packs:installed.map((id,index)=>({id,version:`9.0.${versions[index]}`,stateVersion:1,engineApi:3,viewApi:2,sha256:'a'.repeat(64),url:`/api/packs/files/${id}/9.0.${versions[index]}/${'a'.repeat(64)}.playroom-pack.json`}))})}));
+    await page.route('**/api/packs/catalog',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({format:'playroom-catalog',version:1,collection:'9.9.9',packs:installed.map((id,index)=>({id,version:`9.0.${versions[index]}`,stateVersion:1,engineApi:4,viewApi:3,sha256:'a'.repeat(64),url:`/api/packs/files/${id}/9.0.${versions[index]}/${'a'.repeat(64)}.playroom-pack.json`}))})}));
     await page.reload();
     await page.locator('.pack-update-notice').waitFor();
     assert.match(await page.locator('.pack-update-notice').innerText(),/2/);

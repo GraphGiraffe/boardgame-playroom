@@ -39,7 +39,7 @@ test('results reuse the first-player disc, under a medal when one is awarded',()
   assert.match(solo,/<span class="result-awards"><span class="player-medallion is-place place-1"[^>]*>.*?<span class="player-medallion is-first"[^>]*aria-label="Первый ход"/);
   assert.equal((solo.match(/player-medallion is-first/g)||[]).length,1);
   const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
-  assert.match(noMedal,/class="result-awards"><span class="result-place-text"[^>]*>4<\/span><span class="player-medallion is-first"/);
+  assert.match(noMedal,/class="result-awards"><span class="player-medallion is-place place-4 is-minor"/);
   assert.match(noMedal,/class="player-medallion is-first"/);
   const teams=Screen.resultMarkup({state:{...state,preset:'teams'},viewer:0,gameName:'Лудо',playerContent:[{team:{id:'blue',label:'синяя',color:'#668fad'}},{team:{id:'red',label:'красная',color:'#ce735d'}}]});
   assert.match(teams,/class="player-medallion is-team"[^>]*aria-label="Команда синяя · первый ход"/);
@@ -63,7 +63,7 @@ test('results reuse player card counters and omit repeated team text',()=>{
 test('local and network deletion share confirmation layout and preserve target routing',()=>{
  for(const network of [false,true]){
   const html=Screen.deleteConfirmation({name:'UNO <&',network,confirmAttrs:network?'data-delete-network-confirm="network-id"':'data-delete-confirm="local-id"'});
-  assert.match(html,/Удалить партию\?/);assert.match(html,/class="lead"/);assert.match(html,/class="modal-foot"/);assert.match(html,/>Оставить</);assert.match(html,/data-ui-icon="trash"/);assert.match(html,/ Удалить</);assert.match(html,/UNO &lt;&amp;/);
+  assert.match(html,/Удалить партию\?/);assert.match(html,/class="lead"/);assert.match(html,/class="modal-foot"/);assert.match(html,/>Оставить</);assert.match(html,/data-ui-icon="trash"/);assert.match(html,/>Удалить</);assert.match(html,/UNO &lt;&amp;/);
   assert.equal(html.includes('только на этом устройстве'),network);
  }
 });
@@ -113,7 +113,7 @@ test('one screen queue presents every recovered revision once and separates sele
  assert.equal(controller.context(nextRound,{scope:'match'}).viewState.field,'mine','hotseat restores each viewer choice');
  assert.equal(controller.context(other,{scope:'match'}).viewState.field,'theirs');
  assert.deepEqual(controller.context({...nextRound,sessionId:'new'},{scope:'match'}).viewState,{},'new match clears choices');
- const gone=frame(4);gone.state.data.hands[0]=[];controller.context(gone,{scope:'match'});assert.equal(controller.selection,null);
+ const gone=frame(4);gone.state.scene={players:[{player:0,hand:[]}]};controller.context(gone,{scope:'match'});assert.equal(controller.selection,null);
  assert.deepEqual(controller.send({type:'next'}),{type:'next'});controller.dispose();assert.throws(()=>controller.send({type:'next'}),/SCREEN_CLOSED/);
 });
 
@@ -161,7 +161,7 @@ test('history clamps preparation and keeps its view controls separate from the l
 
 test('packs describe hand priority and physical seats without changing game identity or legality',()=>{
  const UI=require('../core/ui.js'),state={game:'fixture',players:Array.from({length:4},(_,i)=>({name:'P'+i,score:0})),turn:0,data:{}};
- const descriptor={api:2,family:'board',layout:{focus:'field',seats:['north-west','north-east','south-east','south-west'],duplicateSelf:true},elements:{field:'<div>field</div>'}};
+ const descriptor={api:3,family:'board',layout:{focus:'field',seats:['north-west','north-east','south-east','south-west'],duplicateSelf:true},elements:{field:'<div>field</div>'}};
  const circle=UI.composeScene(descriptor,{state,viewer:0});assert.match(circle,/data-seating="circle"/);assert.match(circle,/data-player-index="0" data-seat="north-west" data-seat-copy="true"/);assert.equal((circle.match(/data-player-index="0"/g)||[]).length,2);
  const row=UI.composeScene(descriptor,{state,viewer:0,seating:'row'});assert.match(row,/data-seating="row"/);assert.equal((row.match(/data-player-index="0"/g)||[]).length,1);
  assert.throws(()=>UI.composeScene({...descriptor,layout:{focus:'unknown'}},{state}),/layout policy/);
@@ -181,18 +181,19 @@ test('Continuation cards share two summary lines and an independent avatar row',
   assert.match(Screen.resumeCard({state,network:true,connected:false}),/is-disconnected/);
 });
 
-test('Toolbar exposes at most three context actions and keeps overflow in settings',()=>{
+test('Toolbar keeps two context actions plus fixed fullscreen and settings slots',()=>{
   const actions=['room','history','pause','full','help'].map(name=>({name,label:name,attrs:'data-command="'+name+'"'}));
   const html=Screen.toolbar(actions);
   assert.equal((html.match(/<button/g)||[]).length,4);
-  assert.doesNotMatch(html,/data-command="full"/);
-  assert.match(Screen.quickAccessMarkup(),/data-command="full"/);
+  assert.match(html,/data-command="full"/);
+  assert.doesNotMatch(html,/data-command="pause"/);
+  assert.match(Screen.quickAccessMarkup(),/data-command="pause"/);
 });
 
 test('duels always render a row even with a saved circular or anchored preference',()=>{
  const UI=require('../core/ui.js'),state={players:[{name:'A'},{name:'B'}],turn:0,data:{}};
  for(const seating of ['circle','anchors','row']){
-  const html=UI.composeScene({api:2,family:'board',layout:{seats:['north-west','south-east'],duplicateSelf:true},elements:{field:'<div>field</div>'}},{state,viewer:0,seating});
+  const html=UI.composeScene({api:3,family:'board',layout:{seats:['north-west','south-east'],duplicateSelf:true},elements:{field:'<div>field</div>'}},{state,viewer:0,seating});
   assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);
  }
 });
@@ -210,3 +211,12 @@ test('continuation avatars carry host, first-player and team badges with regular
     assert.equal(!!html,status!=='finished'||(network&&connected),`${network}/${connected}/${status}`);
   }
  });
+
+test('finish tokens show minor places, last loser and exit time in results and live avatars',()=>{
+ const state={...projected,status:'finished',winner:0,winners:[0],result:{places:[4,5],values:[0,0],lastPlayers:[1],exits:[{player:0,kind:'cards',round:5}]},scene:{players:[{player:0,finishPlace:4},{player:1}]}};
+ const html=Screen.resultMarkup({state,viewer:0,gameName:'Игра'});
+ assert.match(html,/is-minor/);assert.match(html,/is-last/);assert.match(html,/Сбросил карты · Раунд 5/);
+ assert.doesNotMatch(html,/result-place-text/);
+ const UI=require('../core/ui.js');
+ assert.match(UI.playerPanel({...state,status:'playing'},0,0),/player-avatar-wrap[\s\S]*?place-4 is-minor/);
+});

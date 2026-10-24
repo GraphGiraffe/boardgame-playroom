@@ -41,8 +41,8 @@ test('layered model renders assigned marks, public Table controls and projected 
   assert.equal(await page.locator('.network-game .ttt-cell[data-action]').count(),0,'other player turn is read only');
   const history=await page.evaluate(async()=>{
    const {authority,client}=modelNetwork,frame=await client.transport.history(0);
-   return {revision:authority.revision,cell:client.snapshot.state.modelProjection.data.board[4],
-     initial:frame.state.modelProjection.data.board[4],secret:JSON.stringify(client.snapshot).includes('"rng"')};
+   return {revision:authority.revision,cell:client.snapshot.state.scene.cells[4].owner,
+     initial:frame.state.scene.cells[4].owner,secret:JSON.stringify(client.snapshot).includes('"rng"')};
   });
   assert.deepEqual(history,{revision:1,cell:1,initial:null,secret:false});assert.deepEqual(errors,[]);
   await page.evaluate(()=>{modelNetwork.mounted.destroy();modelNetwork.client.close();modelNetwork.authority.dispose();});
@@ -140,7 +140,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
     if(game==='battleship'){
      if(document.querySelectorAll('[data-view-key="fleet"]').length!==2)issues.push('missing public fleet switch');
      if(!document.querySelector('[data-view-preference="followOpponent"]'))issues.push('missing spectator auto-switch');
-     if(PlayroomGameFlow.viewingTime(PlayroomCatalog.battleship.capabilities,{data:{phase:'battle'}})!==750)issues.push('missing minimum shot viewing time');
+     if(PlayroomGameFlow.viewingTime(PlayroomCatalog.battleship.capabilities,{scene:{phase:'battle'}})!==750)issues.push('missing minimum shot viewing time');
     }
    }return issues;
   });assert.deepEqual(publicViews,[]);

@@ -249,7 +249,7 @@ test('simultaneous human windows have independent clocks and accept target-scope
     clock.advance(999);assert.equal(send(2,'accuse-uno',1).ignored,true);
     assert.equal(send(2,'accuse-uno',0).ok,true);assert.equal(clients[2].snapshot().reactionWindows.length,1);
     clock.advance(1);assert.equal(clients[2].dispatch(second).ok,true);
-    assert.deepEqual(authority.connect(0).snapshot().state.data.hands[0].length,3);
+    assert.deepEqual(authority.connect(0).snapshot().state.scene.players[0].hand.length,3);
     const revision=authority.revision;assert.equal(clients[2].dispatch(second).duplicate,true);assert.equal(authority.revision,revision);
   }finally{authority.dispose();}
 });

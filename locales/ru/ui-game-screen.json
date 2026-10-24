@@ -55,5 +55,8 @@
   "ui.game-screen.a7a4033657e8": "Закрыть",
   "ui.game-screen.985b5e0f2ccf": "Настройки",
   "ui.game-screen.69093f8d2817": "Быстрые команды",
-  "ui.game-screen.c58470ab336f": "Подключить игрока или устройство"
+  "ui.game-screen.c58470ab336f": "Подключить игрока или устройство",
+  "ui.game-screen.exit-cards": "Сбросил карты",
+  "ui.game-screen.exit-domino": "Сбросил домино",
+  "ui.game-screen.exit-finished": "Завершил игру"
 }

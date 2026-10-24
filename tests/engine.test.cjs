@@ -331,6 +331,10 @@ test('sound metadata is optional, validated and respects private event visibilit
   assert.equal(E.project(s,1).events.at(-1).sound,null);assert.deepEqual(E.soundCues(E.project(s,1),1,start),[]);s.events.at(-1).publicSound={id:'draw'};assert.deepEqual(E.soundCues(s,1,start),E.soundCues(E.project(s,1),1,start));assert(E.validateState(s));
   for(const sound of [{id:'bad id'},{id:'move',target:99},'move']) {const bad=E.clone(s);bad.events.at(-1).sound=sound;assert.throws(()=>E.validateState(bad),/звук события/);}
   const old=E.clone(s);delete old.events.at(-1).sound;assert(E.validateState(old));assert.equal(E.soundCues(old,0,start)[0].id,'move');
+  const dialogue=create('uno'),from=dialogue.events.at(-1).id;
+  E.event(dialogue,'Question',0,'action',{sound:{id:'move'},speech:{speaker:0,text:'Туз'}});
+  E.event(dialogue,'Answer',1,'play',{sound:{id:'success'},speech:{speaker:1,result:'success'}});
+  assert.deepEqual(E.soundCues(dialogue,0,from).map(c=>c.id),['move','success']);
 });
 
 test('standalone audio library registers scoped pack overrides without a browser', async () => {
@@ -343,6 +347,10 @@ test('standalone audio library registers scoped pack overrides without a browser
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);
   audio.setEnabled(false);assert.equal(await audio.play('move'),false);
+  const started=[],ends=[];audio.play=id=>{started.push(id);return new Promise(resolve=>ends.push(resolve));};
+  let finished=false;const mixed=audio.batch(['move','success','move']).then(()=>finished=true);
+  assert.deepEqual(started,['move','success']);ends[1](true);await Promise.resolve();assert.equal(finished,false);ends[0](true);await mixed;assert.equal(finished,true);
+
 });
 
 // Installed packs run trusted code only after prepare(); each fixture owns a
@@ -359,9 +367,9 @@ function packEnvironment(storage, viewsOverride) {
   return {core, views, catalog, store, manager};
 }
 function installFixture(version = '0.1.0', increment = 1) {
-  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:3,viewApi:2,stateVersion:1},files:{
+  return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:4,viewApi:3,stateVersion:1},files:{
     'rules.js':require('./pack-fixture.cjs').rules({id:'install-fixture',version,key:'count',step:increment,preset:'standard',action:'advance'}),
-    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:2,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
+    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:3,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
     'styles.css':'.fixture { background-image: url("assets/icon.svg"); }',
     'assets/icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1"/></svg>'
   }};
@@ -372,12 +380,12 @@ test('offline packs validate metadata, entries and assets before registry mutati
   const parsed = manager.parse(source);
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null);assert(Object.isFrozen(parsed.files));
   const bad = modify => {const b=JSON.parse(JSON.stringify(source));modify(b);return b;};
-  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=4),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
+  for(const b of [bad(b=>b.manifest.id='../escape'),bad(b=>b.manifest.version='01.0.0'),bad(b=>b.manifest.version='1.0.0-01'),bad(b=>b.manifest.engineApi=3),bad(b=>b.manifest.rules='other.js'),bad(b=>b.files['../escape.js']='x'),bad(b=>delete b.files['view.js']),bad(b=>b.files['assets/image.png']='not a data URL')]) assert.throws(()=>manager.parse(b));
   for(const b of [bad(b=>b.files['view.js']='throw Error("broken view")'),bad(b=>b.files['rules.js']='('),bad(b=>b.files['styles.css']='.x{background:url(https://example.invalid/x.png)}'),bad(b=>b.files['styles.css']='@import "https://example.invalid/x.css";')]) assert.throws(()=>manager.prepare(b));
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null,'failed prepare cannot persist or activate');
   assert.throws(()=>manager.install(source),/подготовьте/);
   assert.throws(()=>manager.parse(bad(b=>b.files['huge.txt']='x'.repeat(4*1024*1024))),/слишком большой/);
-  assert(Pack.compareVersions('1.10.0','1.2.0')>0);assert(Pack.compareVersions('1.0.0','1.0.0-rc.2')>0);assert(Pack.compareVersions('1.0.0-rc.10','1.0.0-rc.2')>0);
+  assert(Pack.compareVersions('1.10.0','1.2.0')>0);assert(Pack.compareVersions('1.0.0','1.0.0-rc.2')<0,'explicit test versions take priority for new games');assert(Pack.compareVersions('1.0.0-rc.10','1.0.0-rc.2')>0);
   const installed=manager.install(manager.prepare(parsed));
   assert.equal(installed.id,'install-fixture');assert.match(installed.styles,/data:image\/svg\+xml/);assert(!installed.styles.includes('url("assets/'));
   assert.equal(installed.catalog.playerBadge(),'0.1.0');assert.match(installed.catalog.asset,/^data:image/);
@@ -391,7 +399,7 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   manager.install(manager.prepare(installFixture('0.2.0',10)));
   assert.equal(core.get('install-fixture').version,'0.2.0');assert.equal(catalog['install-fixture'].playerBadge(),'0.2.0');
   oldSession.act(1,{type:'advance'});assert.equal(oldSession.current.data.count,2,'live old session still dispatches its own rules');
-  assert.equal(views.render(oldSession.current,0,[]),require('../core/ui.js').composeScene({api:2,family:'board',elements:{field:'<p>2</p>'}},{state:oldSession.current,viewer:0,actions:[]}));
+  assert.equal(views.render(oldSession.current,0,[]),require('../core/ui.js').composeScene({api:3,family:'board',elements:{field:'<p>2</p>'}},{state:oldSession.current,viewer:0,actions:[]}));
   const saved=JSON.parse(oldSession.serialize());assert.equal(Session.packVersionOf(saved),'0.1.0');
   const reopened=Session.restore(core,saved);reopened.act(0,{type:'advance'});assert.equal(reopened.current.data.count,3);
   const fresh=new Session(core,'install-fixture');fresh.act(0,{type:'advance'});assert.equal(fresh.current.data.count,10);
@@ -455,7 +463,7 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   assert.throws(()=>E.createGame('uno',{firstPlayerMode:'assigned',firstPlayer:42}));
 });
 
- test('forced skips identify the affected player and choose one sound per committed action',()=>{
+ test('forced skips retain separate ordered dice and consequence sounds',()=>{
   let before,after;
   for(let seed=1;seed<40;seed++){
     before=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],preset:'classic',seed,startPawn:'off'});
@@ -463,7 +471,7 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   }
   assert.notEqual(after.data.dice[0],6);assert.equal(after.turn,1);
   assert.deepEqual(E.project(after,-1).events.at(-1).feedback,{kind:'skip',player:0});
-  assert.deepEqual(E.soundCues(after,-1,before.events.at(-1).id).map(({id,target})=>({id,target})),[{id:'attack.skip',target:0}]);
+  assert.deepEqual(E.soundCues(after,-1,before.events.at(-1).id).map(({id,target})=>({id,target})),[{id:'dice',target:undefined},{id:'attack.skip',target:0}]);
   const domino=create('domino'),tiles=[...domino.data.hands.flat(),...domino.data.stock],end=tiles.find(t=>t.a===6&&t.b===6),own=tiles.find(t=>t.a===0&&t.b===0);
   domino.data.chain=[end];domino.data.hands=[[own],tiles.filter(t=>t!==own&&t!==end)];domino.data.stock=[];domino.turn=0;
   assert(E.legalActions(domino,0).some(a=>a.type==='pass'));
@@ -472,7 +480,7 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   assert.deepEqual(E.soundCues(passed,-1,domino.events.at(-1).id).map(c=>c.id),['attack.skip']);
   const special=uno('red','+2'),s=unoState([[special,uno('green','3')],[uno('blue','1')]],uno('red','5'),[uno('blue','2'),uno('green','2')]);
   const n=act(s,{type:'play',card:special.id});
-  assert.equal(E.soundCues(n,1,s.events.at(-1).id).length,1,'draw, attack and automatic calls never form a sound chorus');
+  const cues=E.soundCues(n,1,s.events.at(-1).id);assert(cues.some(c=>c.id==='attack.light'));assert.equal(new Set(cues.map(c=>c.eventId)).size,cues.length,'one cue per distinct logical event');assert(cues.every((c,i)=>!i||c.eventId>cues[i-1].eventId),'consequences follow event order');
   assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.draw-skipped'),n.players).feedback,{kind:'skip',player:1});
  });
  test('UNO reverse is a skip with two remaining players in a larger roster',()=>{

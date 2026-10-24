@@ -12,7 +12,7 @@ on:
       operation:
         description: Build candidate or manually operate the existing Pages project
         type: choice
-        options: [build, preflight, preview, deploy, rollback]
+        options: [build, preflight, preview, deploy, rollback, verify-existing, activate-existing]
         default: build
       release:
         description: Published release tag for Pages deployment
@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: GraphGiraffe/boardgame-playroom-utils
-          ref: 13ec9fd13f3b1c06a588300cbe30834462683736
+          ref: 2dfc3eb8a121f7e86a58d9f4748317587dcb5a8f
           ssh-key: ${{ secrets.PLAYROOM_UTILS_READ_KEY }}
           path: .playroom-utils
           persist-credentials: false
@@ -99,7 +99,7 @@ jobs:
           python3 app/build.py --packs-dir "$GITHUB_WORKSPACE/companion/packs" --all-games --pwa --remote-catalog --output-dir app/dist/prerelease
           (cd app/dist/prerelease && sha256sum -c SHA256SUMS)
           cp app/CHANGELOG.md app/dist/prerelease/CHANGELOG.md
-          printf '%s\n' 'Playroom release candidate' "App head: ${GITHUB_SHA}" "Packs: API 3, pinned source commit ${PACKS_SHA}" "Checks: ${CHECKS}" 'Production PWA loads games from the protected catalog; the standalone HTML embeds the pinned collection.' > app/dist/prerelease/README-TEST.txt
+          printf '%s\n' 'Playroom release candidate' "App head: ${GITHUB_SHA}" "Packs: API 4, pinned source commit ${PACKS_SHA}" "Checks: ${CHECKS}" 'Production PWA loads games from the protected catalog; the standalone HTML embeds the pinned collection.' > app/dist/prerelease/README-TEST.txt
         env:
           PACKS_SHA: ${{ inputs.packs_sha }}
           CHECKS: ${{ inputs.checks }}
