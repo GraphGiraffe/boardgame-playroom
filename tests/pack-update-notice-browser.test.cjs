@@ -36,3 +36,29 @@ test('pack updates notify once, remain unread until packs are opened, and rearm 
     assert.match(await page.locator('.pack-update-notice').innerText(),/одного пака/);
   }finally{await context.close();await browser.close();await server.close();}
 });
+
+test('update all installs valid packs, retries failures and preserves preferences and old versions',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:740}});
+ const page=await context.newPage();
+ try{
+  await page.goto(server.url);
+  const bundles=await page.evaluate(()=>['uno','ludo'].map(id=>JSON.parse(PlayroomPacks.exportPack(id))));
+  const original=bundles.map(b=>b.manifest.version),crypto=require('node:crypto');let fail=true;const requests=[];
+  const entries=bundles.map(b=>{b.manifest.version='9.0.1';const body=JSON.stringify(b),sha=crypto.createHash('sha256').update(body).digest('hex'),m=b.manifest;return {body,item:{id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,viewApi:m.viewApi,sha256:sha,url:`/api/packs/files/${m.id}/${m.version}/${sha}.playroom-pack.json`}};});
+  await page.route('**/api/packs/catalog',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({format:'playroom-catalog',version:1,collection:'9.0.1',packs:entries.map(e=>e.item)})}));
+  await page.route('**/api/packs/files/**',async r=>{const e=entries.find(e=>r.request().url().endsWith(e.item.url));requests.push(e.item.id);await new Promise(resolve=>setTimeout(resolve,80));await r.fulfill({status:fail&&e.item.id==='uno'?503:200,contentType:'application/json',body:e.body});});
+  const prefs=JSON.stringify({order:['ludo','uno'],hidden:[],favorites:['uno']});
+  await page.evaluate(value=>localStorage.setItem('playroom.pack-display.v1',value),prefs);
+  await page.reload();await page.locator('.pack-hub-button').click();
+  const all=page.locator('[data-pack-update-all]');await all.waitFor();assert.match(await all.innerText(),/2/);await all.click();
+  await page.waitForFunction(()=>document.querySelector('.pack-message')?.textContent.includes('uno:'));
+  assert.deepEqual(requests,['uno','ludo']);assert.deepEqual(await page.evaluate(()=>PlayroomRemotePacks.pending().map(p=>p.id)),['uno']);
+  assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.pack-display.v1')),prefs);
+  assert.equal(await page.evaluate(()=>PlayroomPacks.list().find(p=>p.id==='ludo'&&p.active).version),'9.0.1');
+  fail=false;await all.click();await page.waitForFunction(()=>PlayroomRemotePacks.pending().length===0);await page.waitForFunction(()=>!document.querySelector('[data-pack-update-all]'));
+  assert.deepEqual(requests,['uno','ludo','uno']);
+  for(let i=0;i<bundles.length;i++)assert(await page.evaluate(({id,version})=>PlayroomPacks.list().some(p=>p.id===id&&p.version===version),{id:bundles[i].manifest.id,version:original[i]}));
+ }finally{await context.close();await browser.close();await server.close();}
+});
