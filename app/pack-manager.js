@@ -4,6 +4,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const STORAGE = 'playroom.packs.v1';
   const DISPLAY_STORAGE = 'playroom.pack-display.v1';
+  const DEFAULT_ORDER = ['mage-brawl','uno','ludo','battleship','klondike','spider','durak','pexeso','oldmaid','gofish','yatzy','snakes','domino','checkers','tictactoe'];
   const validId = value => typeof value === 'string' && /^[a-z0-9_-]{1,100}$/.test(value);
   function displayPreferences() {
     try {
@@ -43,11 +44,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     storeDisplay(preferences);
   }
   function ordered(ids,preferences=displayPreferences()) {
-    const sequence=[...new Set(ids)],original=new Map(sequence.map((id,index)=>[id,index]));
-    return sequence.sort((a,b)=>{
-      const ia=preferences.order.indexOf(a),ib=preferences.order.indexOf(b);
-      return (ia<0?preferences.order.length+original.get(a):ia)-(ib<0?preferences.order.length+original.get(b):ib);
-    });
+    const sequence=[...new Set(ids)];
+    const order=new Map([...new Set([...preferences.order,...DEFAULT_ORDER,...sequence])].map((id,index)=>[id,index]));
+    return sequence.sort((a,b)=>order.get(a)-order.get(b));
   }
   function toggleFavorite(id) {
     if(!validId(id))return;
@@ -106,8 +105,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return `<section class="pack-preview" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.13eb691fe3b3")}"><span class="eyebrow">${globalThis.PlayroomMessages.text("ui.pack-manager.080b18f6ca51")}</span><h3>${esc(title(manifest))}</h3><p>${esc(manifest.id)} · ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(manifest.version)}</p>${manifest.description||manifest.tagline?`<p>${esc(manifest.description||manifest.tagline)}</p>`:''}${manifest.author?`<p>${globalThis.PlayroomMessages.text("ui.pack-manager.745b218447d3")}${esc(typeof manifest.author==='string'?manifest.author:manifest.author.name||globalThis.PlayroomMessages.text("ui.pack-manager.0d836c1579f1"))}</p>`:''}<p class="pack-trust">${globalThis.PlayroomMessages.text("ui.pack-manager.48eac42eff92")}</p>${known?("<p>"+globalThis.PlayroomMessages.text("ui.pack-manager.3c343bc73176")+"</p>"):''}<div class="modal-foot"><button class="btn secondary" data-pack-cancel>${globalThis.PlayroomMessages.text("ui.pack-manager.8fbe9b75cbdf")}</button><button class="btn" data-pack-install>${known?globalThis.PlayroomMessages.text("ui.pack-manager.e6acd89e236f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div></section>`;
     }
     function open() {
-      const online=remote?.pending()||[];
-      const onlineMarkup=online.length?`<section class="pack-online"><h3>${globalThis.PlayroomMessages.text("ui.pack-manager.38fe3394cbf8")}</h3>${online.map(item=>`<div class="pack-online-entry"><span>${esc(item.id)} · ${esc(item.version)}</span><button class="btn secondary" data-pack-online="${esc(item.id)}" ${busy?'disabled':''}>${manager.list().some(installed=>installed.id===item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.8a858910555f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div>`).join('')}</section>`:'';
+      const online=remote?.pending()||[],installedIds=new Set(manager.list().map(item=>item.id)),updates=online.filter(item=>installedIds.has(item.id));
+      const onlineMarkup=online.length?`<section class="pack-online"><h3>${globalThis.PlayroomMessages.text("ui.pack-manager.38fe3394cbf8")}</h3>${updates.length?`<button class="btn" data-pack-update-all ${busy?'disabled':''}>${globalThis.PlayroomMessages.text(busy?"ui.pack-manager.updating-all":"ui.pack-manager.update-all",{count:updates.length})}</button>`:''}${online.map(item=>`<div class="pack-online-entry"><span>${esc(item.id)} · ${esc(item.version)}</span><button class="btn secondary" data-pack-online="${esc(item.id)}" ${busy?'disabled':''}>${manager.list().some(installed=>installed.id===item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.8a858910555f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div>`).join('')}</section>`:'';
       openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.61384528c752"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.pack-manager.ef2ae8b855ad")}</p>${onlineMarkup}<label class="btn pack-file">${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}"></label><p class="pack-format">${globalThis.PlayroomMessages.text("ui.pack-manager.0eea560e855d")}</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<div class="pack-bulk-actions"><button class="btn secondary" data-pack-bulk="old" ${manager.list().some(item=>!item.active)?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.a36f32b9cd54")}</button><button class="btn secondary" data-pack-bulk="all" ${manager.list().length||manager.quarantined?.length?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.3c99ffe023e4")}</button></div><button class="btn secondary" data-pack-restore>${globalThis.PlayroomMessages.text("ui.pack-manager.cc9319e91546")}</button>${quarantineMarkup()}`,'pack-manager-modal');
       if(savedScroll!==null){document.querySelector('.pack-manager-modal .modal-body')?.scrollTo(0,savedScroll);savedScroll=null;}
     }
@@ -163,10 +162,31 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         planned=null;onChange();message='';open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.73588c6b9a30"));
       }catch(error){planned=null;message=globalThis.PlayroomMessages.text("ui.pack-manager.493487ffffd3",{p0:String(globalThis.PlayroomMessages.error(error))});onChange();open();}finally{busy=false;}
     }
-    document.addEventListener('change',event=>{if(event.target.id==='pack-file')void read(event.target.files?.[0]);});
+    async function installOnline(ids) {
+      if(busy||!ids.length)return;
+      busy=true;message='';
+      savedScroll=document.querySelector('.pack-manager-modal .modal-body')?.scrollTop??null;
+      open();
+      const errors=[];let completed=0;
+      try {
+        for(const id of ids){
+          try{await remote.install(id,{activate:true});completed++;}
+          catch(error){errors.push(`${id}: ${globalThis.PlayroomMessages.error(error)}`);}
+        }
+      } finally {
+        busy=false;
+        message=errors.length?globalThis.PlayroomMessages.text('ui.pack-manager.update-errors',{count:completed,errors:errors.join('; ')}):'';
+        if(completed)onChange();
+        if(document.querySelector('.pack-manager-modal'))open();
+        if(!errors.length)toast(globalThis.PlayroomMessages.text('ui.pack-manager.c45e419df7a2'));
+        else toast(message);
+      }
+    }
+    document.addEventListener('change',event=>{if(!busy&&event.target.id==='pack-file')void read(event.target.files?.[0]);});
     document.addEventListener('click',event=>{
-      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-bulk],[data-pack-confirm],[data-pack-cancel-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite],[data-pack-online]');if(!button||button.disabled)return;
-      if(button.dataset.packOnline){if(busy)return;busy=true;savedScroll=document.querySelector('.pack-manager-modal .modal-body')?.scrollTop??null;void remote.install(button.dataset.packOnline,{activate:true}).then(()=>{message='';onChange();toast(globalThis.PlayroomMessages.text("ui.pack-manager.c45e419df7a2"));}).catch(error=>{message=globalThis.PlayroomMessages.text("ui.pack-manager.258d60f92502",{p0:String(globalThis.PlayroomMessages.error(error))});}).finally(()=>{busy=false;open();});return;}
+      const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-bulk],[data-pack-confirm],[data-pack-cancel-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite],[data-pack-online],[data-pack-update-all]');if(!button||button.disabled||busy)return;
+      if(button.hasAttribute('data-pack-update-all')){const installed=new Set(manager.list().map(item=>item.id));void installOnline((remote?.pending()||[]).filter(item=>installed.has(item.id)).map(item=>item.id));return;}
+      if(button.dataset.packOnline){void installOnline([button.dataset.packOnline]);return;}
       if(button.hasAttribute('data-pack-cancel-remove')){planned=null;open();return;}
       if(button.hasAttribute('data-pack-confirm')){if(!planned)return;if(button.dataset.packConfirm==='1'&&planned.local.length+planned.network.length){confirmation(planned,2);return;}void commitRemove();return;}
       if(button.hasAttribute('data-pack-bulk')){const all=button.dataset.packBulk==='all';void askRemove(manager.list().filter(item=>all||!item.active),all);return;}
