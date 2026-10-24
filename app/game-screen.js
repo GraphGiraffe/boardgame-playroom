@@ -24,6 +24,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const node of host?.querySelectorAll?.('[data-game-title]')||[]){
       node.style.removeProperty('font-size');
       const win=node.ownerDocument.defaultView,base=parseFloat(win.getComputedStyle(node).fontSize),minimum=14;
+      const tableTitle=node.closest('.table-title');
+      if(tableTitle){
+        node.textContent=node.dataset.fullTitle;
+        for(const size of [base,...(root.PlayroomSizeCatalogue?.families.type||[14,16,18,20]).filter(n=>n>=minimum&&n<base).sort((a,b)=>b-a)]){
+          node.style.fontSize=size+'px';
+          const line=parseFloat(win.getComputedStyle(node).lineHeight);
+          if(node.scrollWidth<=node.clientWidth+1&&node.scrollHeight<=line*2+1)break;
+        }
+        const line=parseFloat(win.getComputedStyle(node).lineHeight);
+        tableTitle.classList.toggle('has-wrapped-title',node.scrollHeight>line+1);
+        continue;
+      }
       const sizes=[base,...(root.PlayroomSizeCatalogue?.families.type||[14,16,18,20]).filter(n=>n>=minimum&&n<base).sort((a,b)=>b-a)];
       for(const text of [...new Set([node.dataset.fullTitle,node.dataset.shortTitle].filter(Boolean))]){
         node.textContent=text;
