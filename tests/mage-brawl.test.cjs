@@ -5,7 +5,7 @@ const {GameModel}=require('../core/model-runtime.js'),D=require('../packs/mage-b
 require('../packs/mage-brawl/rules.js');const model=new GameModel(D);
 const clone=x=>JSON.parse(JSON.stringify(x)),plan=(element,action='movement',direction=0)=>({type:'plan',element,action,direction});
 function fixture(spec,{size,board={},shrink=null}={}){
- const n=spec.length,s=clone(model.create({playerCount:n,preset:'classic',firstPlayer:0,rng:17})),d=s.data;
+ const n=spec.length,s=clone(model.create({playerCount:n,preset:'classic',firstPlayer:0,rng:17,options:{actionsPerTurn:1}})),d=s.data;
  if(size&&size!==d.size)delete d.startingBases; // Synthetic smaller arena has no original spawn metadata.
  d.size=size||d.size;d.board=Array(d.size*d.size).fill('ground');d.board[0]='base';d.board[d.board.length-1]='base';
  for(const [key,value] of Object.entries(board)){const [y,x]=key.split(',').map(Number);d.board[y*d.size+x]=value;}
@@ -15,10 +15,10 @@ function fixture(spec,{size,board={},shrink=null}={}){
 }
 function physicalPlan(s,id,c){if(c.type!=='plan'||c.cardId)return c;return {...c,cardId:s.data.players[id].hand.find(card=>card.element===c.element).id};}
 function round(s,commands){for(const [i,c] of commands.entries())s=model.apply(s,i,physicalPlan(s,i,c)).position;return s;}
-function network(n=2){const session=new Session(E,'mage-brawl',{seed:12,players:Array.from({length:n},(_,i)=>({name:'P'+i}))}),authority=new Authority(session);return {session,authority,ports:Array.from({length:n},(_,i)=>authority.connect(i))};}
+function network(n=2){const session=new Session(E,'mage-brawl',{seed:12,actionsPerTurn:'1',players:Array.from({length:n},(_,i)=>({name:'P'+i}))}),authority=new Authority(session);return {session,authority,ports:Array.from({length:n},(_,i)=>authority.connect(i))};}
 
 test('Mage Brawl: hidden barrier, undo, no opponent plans/hands in every projection',()=>{
- let s=model.create({playerCount:3,preset:'classic',firstPlayer:0,rng:9});const c=model.legalActions(s,2)[0];s=model.apply(s,2,c).position;
+ let s=model.create({playerCount:3,preset:'classic',firstPlayer:0,rng:9,options:{actionsPerTurn:1}});const c=model.legalActions(s,2)[0];s=model.apply(s,2,c).position;
  assert.deepEqual(model.decisionWindow(s).ready,[2]);for(const viewer of [-1,0,1]){const p=model.project(s,viewer);assert.equal(p.data.players[2].hand,undefined);assert.equal(p.data.players[2].plan,undefined);assert.equal(p.data.seed,undefined);assert.equal(p.data.random,undefined);assert.equal(p.data.deck,undefined);assert.deepEqual(p.events,[]);}
  assert.equal(model.projectTable(s,0).actions.length,0);assert.deepEqual(model.project(s,2).data.players[2].plan,c);
  s=model.apply(s,2,{type:'unready'}).position;assert.deepEqual(model.decisionWindow(s).ready,[]);assert.equal(model.decisionWindow(s).versions[2],2);
@@ -26,7 +26,7 @@ test('Mage Brawl: hidden barrier, undo, no opponent plans/hands in every project
 test('same-speed mutual damage is pooled before life rewards',()=>{
  const s=round(fixture([{pos:[1,1],health:2},{pos:[1,2],health:2}]),[plan('earth','attack',1),plan('earth','attack',3)]);
  const impact=s.data.frames.find(f=>f.outcomes?.length);assert.deepEqual(impact.outcomes.map(o=>[o.player,o.damage,o.death,o.killers]),[[0,2,true,[1]],[1,2,true,[0]]]);
- assert.deepEqual(s.data.players.map(p=>[p.health,p.lives,p.ultimate]),[[0,1,1],[0,1,1]]);assert.equal(s.data.phase,'respawn');assert.equal(s.data.players[0].hand.length,0);
+ assert.deepEqual(s.data.players.map(p=>[p.health,p.lives,p.ultimate]),[[0,1,0],[0,1,0]]);assert.equal(s.data.phase,'respawn');assert.equal(s.data.players[0].hand.length,0);
 });
 test('healing and damage on one speed combine before clamping',()=>{
  const s=round(fixture([{pos:[2,2],element:'water',ultimate:1},{pos:[2,3],element:'water'}]),[plan('water','ultimate',1),plan('water','attack',3)]);
@@ -62,10 +62,10 @@ test('shrink retains original coordinates and removes exactly one ring',()=>{
  assert.deepEqual(s.data.frames.find(f=>f.phase==='shrink').outcomes,[{player:0,damage:0,death:true,fall:true,at:[0,2],killers:[]}]);
  assert.equal(s.data.size,4);assert.equal(s.data.inset,1);assert.equal(s.data.players[0].lives,0); // no bases remain for respawn
  assert.deepEqual(s.data.players[1].pos,[2,2]);assert.equal(s.status,'finished');assert.deepEqual(s.winners,[1]);
- const result=model.result(s);assert.deepEqual(result.places,[2,1]);assert.deepEqual(result.metrics,[{id:'survival',values:s.data.players.map(p=>p.eliminatedRound??s.data.round)}]);assert(result.metrics[0].values.every(v=>v<10000));
+ const result=model.result(s);assert.deepEqual(result.places,[2,1]);assert.deepEqual(result.metrics,[{id:'survival',values:s.data.players.map(p=>p.eliminatedRound??s.data.round)},{id:'damage',maximumFractionDigits:1,values:[0,0]}]);assert(result.metrics[0].values.every(v=>v<10000));
 });
 test('respawn is an explicit public base selection before planning',()=>{
- const initial=model.create({playerCount:3,preset:'classic',firstPlayer:0,rng:9}),homes=clone(initial.data.players.map(p=>p.pos));assert.deepEqual(initial.data.startingBases,homes);
+ const initial=model.create({playerCount:3,preset:'classic',firstPlayer:0,rng:9,options:{actionsPerTurn:1}}),homes=clone(initial.data.players.map(p=>p.pos));assert.deepEqual(initial.data.startingBases,homes);
  for(const viewer of [-1,0,1,2])assert.deepEqual(model.project(initial,viewer).data.startingBases,homes);
  const publicHomes=model.project(initial,-1).data.startingBases;assert.throws(()=>{publicHomes[0][0]=-1;},TypeError);assert.deepEqual(initial.data.startingBases,homes,'projection cannot mutate fixed colors');
  const invalid=clone(initial);invalid.data.startingBases[0]=[-1,0];assert.equal(D.validate(invalid),false);
@@ -73,7 +73,7 @@ test('respawn is an explicit public base selection before planning',()=>{
  let s=round(fixture([{pos:[1,1],health:1},{pos:[1,2],health:1}]),[plan('earth','attack',1),plan('earth','attack',3)]);
  s=clone(s);s.data.startingBases=[[0,0],[s.data.size-1,s.data.size-1]];const fixed=clone(s.data.startingBases);
  const first=s.turn,available=model.legalActions(s,first);assert(available.every(c=>c.type==='respawn'));assert.equal(model.legalActions(s,1-first).length,0);
- s=model.apply(s,first,available[0]).position;assert.equal(s.data.players[first].health,3);assert.equal(s.data.players[first].hand.length,4,'mutual killer respawns to their increased maximum');assert.equal(s.data.players[first].maxHand,4);assert.equal(s.data.phase,'respawn');
+ s=model.apply(s,first,available[0]).position;assert.equal(s.data.players[first].health,3);assert.equal(s.data.players[first].hand.length,3,'no reward cards means the original limit');assert.equal(s.data.players[first].maxHand,3);assert.equal(s.data.phase,'respawn');
  s=model.apply(s,s.turn,model.legalActions(s,s.turn)[0]).position;assert.equal(s.data.phase,'planning');assert.equal(model.decisionWindow(s).participants.length,2);assert.deepEqual(s.data.startingBases,fixed);assert.deepEqual(model.project(clone(s),-1).data.startingBases,fixed);
 });
 test('auto profile is fixed for the match, independent per actor; bot decisions are repeatable',()=>{
@@ -186,7 +186,7 @@ test('completion: bot errors roll once, prefer a strictly worse safe meaningful 
 test('fatal same-element damage and overkill grant each source one private choice in clockwise order',()=>{
  for(const health of [1,3])for(const lives of [2,1]){
   let s=round(fixture([{pos:[2,2],health,lives,hand:['water','fire','air']},{pos:[2,1]},{pos:[2,3]}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
-  assert.equal(s.data.phase,'loot');assert.equal(s.turn,1);assert.deepEqual(s.data.loot[0].recipients,[1,2]);assert.deepEqual(s.data.players.map(p=>p.maxHand),[3,4,4],'each same-phase killer grows their maximum once');assert.equal(s.data.players[0].ultimate,lives===2?1:0);assert(D.validate(s));
+  assert.equal(s.data.phase,'loot');assert.equal(s.turn,1);assert.deepEqual(s.data.loot[0].recipients,[1,2]);assert.deepEqual(s.data.players.map(p=>p.maxHand),[3,3,3],'limits wait for actual reward selection');assert.equal(s.data.players[0].ultimate,0);assert(D.validate(s));
   for(const viewer of [-1,0,1,2]){const p=model.project(s,viewer);assert.deepEqual(p.data.loot,{victim:0,player:1,count:2});assert.equal(p.data.players[0].handCount,0);assert.equal(p.data.loot.cards,undefined);assert.equal(p.data.loot.recipients,undefined);}
   assert.equal(model.projectTable(s,1).actions.length,0);assert.equal(model.legalActions(s,2).length,0);assert.throws(()=>model.apply(s,1,{type:'loot',index:99}));
   const expected=s.data.loot[0].cards[1],restored=clone(s);assert.deepEqual(model.apply(restored,1,{type:'loot',index:1}),model.apply(s,1,{type:'loot',index:1}));
@@ -196,25 +196,25 @@ test('fatal same-element damage and overkill grant each source one private choic
  }
 });
 
-test('loot retains accumulated cards through death and respawn, and excludes a different earlier element',()=>{
+test('loot discards the remaining hand and respawn rebuilds to current limit',()=>{
  for(const cards of [['water','fire'],['water','fire','air','earth'],['water','fire','air','earth','water','fire','air','earth']]){
   let s=round(fixture([{pos:[2,2],health:3,hand:cards},{pos:[2,1]},{pos:[2,3]}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
   const remaining=[...s.data.loot[0].cards];let count=0;while(s.data.phase==='loot'){remaining.shift();s=model.apply(s,s.turn,model.legalActions(s,s.turn)[0]).position;count++;assert(D.validate(s));}assert.equal(count,Math.min(2,cards.length-1));assert.equal(s.data.loot,undefined);
-  assert.deepEqual([...s.data.players[0].hand].sort(),[...remaining].sort(),'only the chosen reward cards leave the victim');
-  for(const viewer of [-1,1,2]){const p=model.project(s,viewer);assert.equal(p.data.players[0].hand,undefined);assert.equal(p.data.players[0].handCount,remaining.length);}
+  assert.equal(s.data.players[0].hand.length,0,'unclaimed cards leave the victim too');
+  for(const viewer of [-1,1,2]){const p=model.project(s,viewer);assert.equal(p.data.players[0].hand,undefined);assert.equal(p.data.players[0].handCount,0);}
   const command=model.legalActions(s,s.turn)[0];assert.deepEqual(model.apply(clone(s),s.turn,command),model.apply(s,s.turn,command),'restore before respawn is deterministic');s=model.apply(s,s.turn,command).position;
   assert.equal(s.data.players[0].hand.length,Math.max(3,cards.length),'respawn refills the stored hand maximum after losing several cards');assert.equal(s.data.players[0].maxHand,Math.max(3,cards.length));
-  const hand=[...s.data.players[0].hand];for(const card of remaining){const i=hand.findIndex(c=>c.id===card.id);assert(i>=0,'retained card survives respawn');hand.splice(i,1);}assert(D.validate(s));
+  assert(D.validate(s));
  }
  for(const lives of [2,1]){
   const s=round(fixture([{pos:[2,2],health:1,lives,element:'water'},{pos:[2,1],maxHand:5},{pos:[4,4]}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
-  assert.equal(s.data.players[1].maxHand,6,'a kill raises an already grown limit, including no cards to loot and final death');assert(D.validate(s));
+  assert.equal(s.data.players[1].maxHand,5,'no reward card means no limit increase');assert(D.validate(s));
  }
  const cards=['fire','fire','water','water','air','air','earth','earth'];
  for(const lives of [2,1]){
   let s=round(fixture([{pos:[0,1],lives,hand:cards},{pos:[3,2]}]),[plan('fire','movement',0),plan('earth','attack',1)]);
   assert.equal(s.data.loot,undefined,'fall without a killer has no reward');
-  if(lives===2){assert.equal(s.data.players[0].hand.length,7,'unclaimed cards survive a fall');s=model.apply(s,s.turn,model.legalActions(s,s.turn)[0]).position;assert.equal(s.data.players[0].hand.length,8,'ordinary replacement restores the accumulated size');}
+  if(lives===2){assert.equal(s.data.players[0].hand.length,0,'unclaimed cards are discarded after a fall');s=model.apply(s,s.turn,model.legalActions(s,s.turn)[0]).position;assert.equal(s.data.players[0].hand.length,8,'ordinary replacement restores the accumulated size');}
   else{assert.equal(s.data.players[0].hand.length,0,'final elimination still discards the hand');assert.equal(s.status,'finished');}assert(D.validate(s));
  }
  const s=round(fixture([{pos:[2,2],hand:['water','fire','air']},{pos:[2,1]},{pos:[2,3],element:'fire'}]),[plan('water','attack',0),plan('earth','attack',1),plan('fire','attack',3)]);
@@ -222,7 +222,7 @@ test('loot retains accumulated cards through death and respawn, and excludes a d
 });
 
 test('loot authority hides remaining faces from Table and duplicate commands cannot take twice',()=>{
- const saved=new Session(E,'mage-brawl',{seed:12,players:[{name:'A'},{name:'B'},{name:'C'}]}).export();
+ const saved=new Session(E,'mage-brawl',{seed:12,actionsPerTurn:'1',players:[{name:'A'},{name:'B'},{name:'C'}]}).export();
  saved.states[0].data=fixture([{pos:[2,2],health:3,hand:['water','fire','air']},{pos:[2,1]},{pos:[2,3]}]).data;
  const session=Session.restore(E,saved),authority=new Authority(session),ports=[0,1,2].map(i=>authority.connect(i));
  try{
@@ -252,7 +252,7 @@ test('independent slider rules and double defaults',()=>{
  const bad=clone(s);bad.data.config.steps=3;assert.equal(D.validate(bad),false);
 });
 test('two actions: private first draft, distinct copies, reset and one final draw',()=>{
- let s=model.create({playerCount:2,preset:'classic',rng:41,options:{actionsPerTurn:'2'}});
+ let s=model.create({playerCount:2,preset:'classic',rng:41,options:{actionsPerTurn:'2',differentActionTypes:'0'}});
  const before=clone(s),first=model.legalActions(s,0).find(c=>c.action==='attack');s=model.apply(s,0,first).position;
  assert.deepEqual(model.decisionWindow(s).ready,[]);assert.deepEqual(s.data.players[0].hand,before.data.players[0].hand);
  assert(model.legalActions(s,0).filter(c=>c.type==='plan').every(c=>c.cardId!==first.cardId));
@@ -273,10 +273,10 @@ test('two-action bots finish games with legal private drafts and conserved cards
 });
 
 test('two actions: first-step death skips second, preserves closed loot before respawn',()=>{
- let s=fixture([{pos:[1,0],hand:['fire','earth','air','water']},{pos:[1,1],health:1,hand:['earth','water','air','fire']}]);s.data.config.steps=2;
+ let s=fixture([{pos:[1,0],hand:['fire','earth','air','water']},{pos:[1,1],health:1,hand:['earth','water','air','fire']}]);s.data.config.steps=2;s.data.config.differentActionTypes=false;
  const cs=[[{...plan('fire','attack',1),cardId:s.data.players[0].hand[0].id},{...plan('earth','movement',0),cardId:s.data.players[0].hand[1].id}],[{...plan('earth','movement',0),cardId:s.data.players[1].hand[0].id},{...plan('water','movement',2),cardId:s.data.players[1].hand[1].id}]];
  for(const id of [0,1])for(const c of cs[id])s=model.apply(s,id,c).position;
- assert.equal(s.data.phase,'loot');assert.equal(s.data.players[1].lives,1);assert.equal(s.data.players[1].health,0);assert.equal(s.data.players[0].maxHand,5);
+ assert.equal(s.data.phase,'loot');assert.equal(s.data.players[1].lives,1);assert.equal(s.data.players[1].health,0);assert.equal(s.data.players[0].maxHand,4);
  assert(!s.data.frames.some(f=>f.step===1&&f.effect?.actor===1));assert.deepEqual(s.data.drafts,{});assert(D.validate(s));
  assert.equal(model.project(s,-1).data.players[1].hand,undefined);assert.deepEqual(model.legalActions(s,0),[{type:'loot',index:0},{type:'loot',index:1}]);
  s=model.apply(s,0,{type:'loot',index:0}).position;assert.equal(s.data.phase,'respawn');
@@ -299,10 +299,10 @@ test('two actions: first-step death skips second, preserves closed loot before r
  test('unspent ultimates transfer on every death, accumulate and split clockwise',()=>{
  for(const lives of [1,2]){
  const s=round(fixture([{pos:[2,2],health:1,lives,ultimate:5,element:'water'},{pos:[2,1],ultimate:2},{pos:[2,3],ultimate:1}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
- assert.deepEqual(s.data.players.map(p=>p.ultimate),[lives>1?1:0,5,3]);assert(D.validate(s));
+ assert.deepEqual(s.data.players.map(p=>p.ultimate),[0,5,3]);assert(D.validate(s));
  }
  const s=round(fixture([{pos:[1,1],health:1,ultimate:3,element:'fire'},{pos:[1,2],ultimate:2}]),[plan('fire','ultimate',0),plan('earth','attack',3)]);
- assert.deepEqual(s.data.players.map(p=>p.ultimate),[1,5],'slower ultimate was not spent before death');assert(D.validate(s));
+ assert.deepEqual(s.data.players.map(p=>p.ultimate),[0,5],'slower ultimate was not spent before death');assert(D.validate(s));
  });
 
 test('projectile presentation endpoints: misses leave arena, walls and targets stop flight',()=>{
@@ -325,7 +325,7 @@ test('projectile presentation endpoints: misses leave arena, walls and targets s
  });
 
 test('durable simultaneous bots persist without intermediate readiness broadcasts or timers',async()=>{
- const session=new Session(E,'mage-brawl',{seed:12,players:[{name:'Human'},...Array.from({length:3},(_,i)=>({name:'Bot'+i,bot:true}))]}),timers=new Map(),writes=[],seen=[];let timerId=0;
+ const session=new Session(E,'mage-brawl',{seed:12,actionsPerTurn:'1',players:[{name:'Human'},...Array.from({length:3},(_,i)=>({name:'Bot'+i,bot:true}))]}),timers=new Map(),writes=[],seen=[];let timerId=0;
  const authority=new Authority(session,{clock:{setTimeout:(f,ms)=>{timers.set(++timerId,{f,ms});return timerId;},clearTimeout:id=>timers.delete(id)},persistence:{async commit(entry){writes.push(entry);},async recordReceipt(){}}});
  try{
   authority.connect(-1).subscribe(snapshot=>seen.push(snapshot));
@@ -337,7 +337,7 @@ test('durable simultaneous bots persist without intermediate readiness broadcast
 });
 
 test('failed durable bot batch exposes committed readiness and stops without retry timers',async()=>{
- const session=new Session(E,'mage-brawl',{seed:12,players:[{name:'Human'},{name:'Bot1',bot:true},{name:'Bot2',bot:true}]}),timers=new Map(),seen=[],errors=[];let timerId=0,writes=0;
+ const session=new Session(E,'mage-brawl',{seed:12,actionsPerTurn:'1',players:[{name:'Human'},{name:'Bot1',bot:true},{name:'Bot2',bot:true}]}),timers=new Map(),seen=[],errors=[];let timerId=0,writes=0;
  const authority=new Authority(session,{clock:{setTimeout:f=>{timers.set(++timerId,f);return timerId;},clearTimeout:id=>timers.delete(id)},persistence:{async commit(){if(++writes===2)throw Error('disk full');},async recordReceipt(){}}});
  try{
   authority.connect(-1).subscribe(snapshot=>seen.push(snapshot));authority.scheduleBot({onError:error=>errors.push(error)});
@@ -366,4 +366,144 @@ test('public phase plan distinguishes damage, fall, death and killer without pri
  assert.deepEqual(plan.groups.flatMap(g=>g.cues.map(c=>c.kind)),['damage','fall','death','kill']);
  assert.equal(plan.groups.at(-1).cues.at(-1).target.entity.id,'1');
  assert(!JSON.stringify(plan.scenes[plan.final]).includes('private'));
+});
+
+
+test('respawn lottery is fresh per stage, stable between choices and replayable',()=>{
+ const permutations=new Set();
+ for(let seed=1;seed<=12;seed++){
+  const initial=fixture([{pos:[1,1],health:1},{pos:[1,2],health:1},{pos:[3,1],health:1},{pos:[3,2],health:1}],{board:{'0,5':'base','5,0':'base'}});
+  initial.data.random=seed;
+  const commands=[plan('earth','attack',1),plan('earth','attack',3),plan('earth','attack',1),plan('earth','attack',3)];
+  let s=round(initial,commands);const queue=[...s.data.respawn];
+  assert.equal(s.data.phase,'respawn');assert.deepEqual([...queue].sort(),[0,1,2,3]);permutations.add(queue.join(','));
+  assert.deepEqual(round(clone(initial),commands).data.respawn,queue,'same RNG and commands replay the lottery');
+  const prior=clone(initial);prior.data.respawn=[3,2,1,0];prior.data.first=2;
+  assert.deepEqual(round(prior,commands).data.respawn,queue,'a prior stage queue and seating priority do not carry forward');
+  for(let i=0;i<queue.length;i++){
+   assert.equal(s.turn,queue[i]);assert.deepEqual(model.decisionWindow(s).participants,[queue[i]]);
+   const actor=s.turn,command=model.legalActions(s,actor)[0],restored=clone(s);
+   s=model.apply(s,actor,command).position;
+   assert.deepEqual(model.apply(restored,actor,command).position,s,'restore does not redraw the queue');
+   assert.deepEqual(s.data.respawn,queue.slice(i+1));assert(D.validate(s));
+  }
+  assert.equal(s.data.phase,'planning');
+ }
+ assert(permutations.size>1,'different stage RNG produces different orders');
+});
+
+test('fire ultimate: protected impact still bursts, adjacent shields face the explosion',()=>{
+ for(const protection of ['shield','puddle']){
+  const s=round(fixture([{pos:[2,0],element:'fire',ultimate:1},{pos:[2,2]},{pos:[1,2]},{pos:[3,2]},{pos:[2,4]}],{board:protection==='puddle'?{'2,2':'puddle'}:{}}),[
+   plan('fire','ultimate',1),plan('earth','movement',protection==='shield'?3:0),plan('earth','movement',2),plan('earth','movement',2),plan('earth','movement',0)]);
+  assert.deepEqual(s.data.players.map(p=>p.health),[3,3,3,2,3]);
+  const fx=s.data.frames.find(f=>f.effect?.actor===0)?.effect;
+  assert.deepEqual(fx.burst,{origin:[2,2],cells:[[1,2],[2,3],[3,2],[2,1]]});
+  const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js'),p=P.presentationPlan(s.data);
+  const stages=p.scenes.filter(f=>f.kind==='effects'&&f.phase==='attack-fire');
+  assert.equal(stages.length,3);
+  assert.deepEqual(stages[0].effects[0].origin,[2,0]);assert.deepEqual(stages[0].effects[0].projectile.end,[2,2]);
+  assert.deepEqual(stages[1].effects[0].origin,[2,2]);assert.equal(stages[1].effects[0].projectile,null);
+  assert.deepEqual(stages.slice(0,2).map(f=>f.state.players[3].health),[3,3],'damage follows both flights');
+  assert.equal(stages[2].state.players[3].health,2);assert.equal(stages[2].effects.length,0);
+  const groups=p.groups.filter(g=>stages.includes(p.scenes[g.scene]));
+  assert(groups.slice(0,2).every(g=>g.cues.every(c=>c.kind==='attack')));assert(groups[2].cues.some(c=>c.kind==='damage'));
+ }
+});
+test('fire ultimate: wall bursts once, misses never burst, tile vulnerability still applies',()=>{
+ for(const stop of ['wall','miss']){
+  const s=round(fixture([{pos:[2,1],element:'fire',ultimate:1},{pos:[0,0]}],{board:stop==='wall'?{'2,2':'wall'}:{}}),[plan('fire','ultimate',1),plan('earth')]);
+  const fx=s.data.frames.find(f=>f.effect?.actor===0)?.effect;
+  assert.equal(!!fx.burst,stop==='wall');assert.equal(s.data.players[0].health,stop==='wall'?2:3);
+ }
+ const s=round(fixture([{pos:[2,0],element:'fire',ultimate:1},{pos:[2,2]},{pos:[3,2]}],{board:{'2,2':'puddle','3,2':'forest'}}),[plan('fire','ultimate',1),plan('earth'),plan('earth','movement',2)]);
+ assert.deepEqual(s.data.players.map(p=>p.health),[3,3,1]);
+});
+
+
+test('crown is awarded only on actual respawn, including death without a killer',()=>{
+ let s=round(fixture([{pos:[0,1],element:'fire',ultimate:2},{pos:[2,2]}]),[plan('fire','movement',0),plan('earth')]);
+ assert.equal(s.data.phase,'respawn');assert.equal(s.data.players[0].ultimate,0,'death removes old crowns even without a killer');
+ const cmd=model.legalActions(s,0)[0];s=model.apply(s,0,cmd).position;
+ assert.equal(s.data.players[0].ultimate,1,'successful base selection grants exactly one');
+ let killed=round(fixture([{pos:[1,1],health:1,ultimate:2},{pos:[1,2]}]),[plan('earth','movement',0),plan('earth','attack',3)]);
+ assert.equal(killed.data.players[0].ultimate,0);assert.equal(killed.data.players[1].ultimate,2);
+ killed=model.apply(killed,0,model.legalActions(killed,0)[0]).position;
+ assert.equal(killed.data.players[0].ultimate,1);assert.equal(killed.data.players[1].ultimate,2);
+});
+
+
+test('loot increases hand limit only for actual card recipients, kills and crowns remain independent',()=>{
+ for(const spare of [0,1,2]){
+  let s=round(fixture([{pos:[2,2],health:1,ultimate:3,hand:['water',...['fire','air'].slice(0,spare)]},{pos:[2,1]},{pos:[2,3]}]),[plan('water','attack',0),plan('earth','attack',1),plan('earth','attack',3)]);
+  assert.deepEqual(s.data.players.map(p=>p.maxHand),[3,3,3],'no limit increase before taking a card');
+  assert.deepEqual(model.project(s,-1).data.players.map(p=>p.kills),[0,1,1]);
+  assert.deepEqual(s.data.players.map(p=>p.ultimate),[0,2,1],'crowns split even with no reward cards');
+  for(let i=0;i<spare;i++){
+   const actor=s.turn,command={type:'loot',index:0},before=clone(s);
+   s=model.apply(s,actor,command).position;
+   assert.deepEqual(model.apply(before,actor,command).position,s,'replay grants the same single increment');
+   assert.equal(s.data.players[actor].maxHand,4);
+   assert.throws(()=>model.apply(s,actor,command),'cannot claim the same reward twice');
+  }
+  assert.deepEqual(s.data.players.map(p=>p.maxHand),[3,spare>0?4:3,spare>1?4:3]);
+  assert.equal(s.data.phase,'respawn');assert(D.validate(s));
+ }
+});
+
+
+test('respawn discards excess hand and draws only to the earned limit',()=>{
+ let s=fixture([{pos:[0,1],hand:['fire','water','air','earth','fire','water'],maxHand:4},{pos:[3,2]}]);
+ s=round(s,[plan('fire','movement',0),plan('earth')]);
+ assert.equal(s.data.players[0].hand.length,0);
+ s=model.apply(s,s.turn,model.legalActions(s,s.turn)[0]).position;
+ assert.equal(s.data.players[0].hand.length,4);assert.equal(s.data.players[0].maxHand,4);assert(D.validate(s));
+});
+
+
+test('damage result tracks attacks, pushed falls and spikes without a live metric',()=>{
+ const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js');
+ for(const health of [1,3]){
+  const s=round(fixture([{pos:[2,1],element:'air'},{pos:[2,2],health,lives:1,ultimate:4}],{size:4,board:{'2,3':null}}),[plan('air','attack',1),plan('earth','movement',0)]);
+  assert.equal(s.data.players[0].damageDealt,health);assert.equal(s.data.players[0].kills,1);
+  assert.equal(s.data.players[1].ultimate,0);assert.equal(s.data.players[0].ultimate,4);
+  assert.deepEqual(model.result(s).metrics.find(m=>m.id==='damage').values,[health,0]);
+  assert.equal(P.metric('damage').key,'mage-brawl.metric.damage');
+  assert(!P.playerMetrics(model.project(s,0).data.players[0]).some(m=>m.id==='damage'));assert(D.validate(s));
+ }
+ const spikes=round(fixture([{pos:[2,1],element:'air'},{pos:[2,2],health:1}],{board:{'2,3':'spikes'}}),[plan('air','attack',1),plan('earth','movement',0)]);
+ assert.equal(spikes.data.players[0].damageDealt,1);assert.equal(spikes.data.players[0].kills,1);
+ const attack=round(fixture([{pos:[2,1]},{pos:[2,2],element:'water'}]),[plan('earth','attack',1),plan('water','attack',0)]);
+ assert.equal(attack.data.players[0].damageDealt,2);
+ const shield=round(fixture([{pos:[2,1],element:'fire'},{pos:[2,2]}]),[plan('fire','attack',1),plan('earth','movement',3)]);
+ assert.equal(shield.data.players[0].damageDealt,0);
+});
+
+
+test('shared push damage splits evenly while each pusher receives a kill',()=>{
+ for(const health of [1,3]){
+  const s=round(fixture([{pos:[2,1],element:'air'},{pos:[1,2],element:'air'},{pos:[2,2],element:'water',health}],{board:{'3,3':null}}),[plan('air','attack',1),plan('air','attack',2),plan('water','attack',0)]);
+  assert.deepEqual(s.data.players.map(p=>p.damageDealt),[health/2,health/2,0]);
+  assert.deepEqual(s.data.players.map(p=>p.kills),[1,1,0]);assert(D.validate(s));
+  const metric=D.result(s).metrics.find(m=>m.id==='damage');assert.equal(metric.maximumFractionDigits,1);
+  assert.deepEqual(metric.values,[health/2,health/2,0]);
+ }
+});
+
+test('simultaneous movement cancels shared destinations and permits swaps independently of first seat',()=>{
+ for(const first of [0,1]){
+  let s=fixture([{pos:[3,1],element:'air'},{pos:[1,1],element:'air'}]);s.data.first=first;
+  s=round(s,[plan('air','movement',0),plan('air','movement',1)]);
+  assert.deepEqual(s.data.players.map(p=>p.pos),[[3,1],[1,1]]);assert.deepEqual(s.data.players.map(p=>p.health),[3,3]);
+  s=fixture([{pos:[2,1],element:'air'},{pos:[1,2],element:'air'}]);s.data.first=first;
+  s=round(s,[plan('air','movement',0),plan('air','movement',2)]);
+  assert.deepEqual(s.data.players.map(p=>p.pos),[[1,2],[2,1]]);assert(D.validate(s));
+ }
+});
+
+
+test('engine finishes a mage match with fractional damage and restores the result',()=>{
+ const s=E.createGame('mage-brawl',{seed:19,players:[{name:'A'},{name:'B'}]});
+ const loser=s.data.players[1];s.data.discard.push(...loser.hand);Object.assign(loser,{hand:[],health:0,lives:0,pos:null,ultimate:0,eliminatedRound:1});s.data.players[0].damageDealt=1.5;
+ E.complete(s,0);assert.deepEqual(s.result.details,[1.5,0]);assert(E.validateState(E.clone(s)));
 });

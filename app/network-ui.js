@@ -782,6 +782,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   root.addEventListener('playroom-install-available',ensureButtons);
   root.addEventListener('playroom-installed',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({setAvatar:avatar=>roomCommand({type:'avatar',avatar}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
+    ruleContext:gameId=>{const current=clientRoom||bridge().room();return current?.game?.id===gameId?current.rules:null;},
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},

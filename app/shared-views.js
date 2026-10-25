@@ -182,7 +182,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           break;
         case 'settings':root.PlayroomNetworkLibrary?.showSettings?.({sharedRules:true});break;
         case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;
-        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules};show('<h2>'+globalThis.PlayroomMessages.text('ui.shared-views.7f7b0ffbbfe0')+'</h2>'+(root.PlayroomLobbyView?.gameRulesMarkup?.(game,pack.manifest.settings||[])||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
+        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules};(document.querySelector('#modal-root .settings-overview')?root.PlayroomAppBridge.openModal:show)('<h2>'+globalThis.PlayroomMessages.text('ui.shared-views.7f7b0ffbbfe0')+'</h2>'+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
         case 'fullscreen':
           if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
         case 'retry':{
@@ -206,7 +206,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     function click(event){
       const shortcut=event.target.closest('[data-quick-shortcut][data-command]');if(shortcut){event.stopImmediatePropagation();if(shortcut.dataset.command!=='fullscreen')root.PlayroomAppBridge?.closeModal?.(true);void action(shortcut.dataset.command).catch(error=>toast(globalThis.PlayroomMessages.error(error)));return;}
-      if(event.target.closest('[data-shared-rules]')){event.stopImmediatePropagation();root.PlayroomAppBridge?.closeModal?.(true);void action('rules');return;}
+      if(event.target.closest('[data-shared-rules]')){event.stopImmediatePropagation();void action('rules');return;}
       if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
       // Network controls use exactly the same DOM contract as local play, but
       // must NEVER be delivered to app.js's local Session handlers.

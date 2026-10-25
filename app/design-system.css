@@ -941,3 +941,13 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 #app .app-game-layout .layout-actions:has(>.scene-actions:only-child),
 #app .app-game-layout .layout-actions>.scene-actions{min-height:32px}
 #app .app-game-layout .layout-actions>.scene-actions>button{min-height:32px;height:auto;padding:4px 10px;line-height:1.2}
+
+/* Rulebooks share one reading order in the room, local game and shared table. */
+.game-rules-help .rulebook-section p{margin:.65em 0;line-height:1.65}
+.game-rules-help .rulebook-section h3{margin:1.3em 0 .5em}
+.rulebook-divider{border:0;border-top:1px solid var(--line);margin:1.6em 0}
+.rulebook-option{margin:1em 0 1.4em;break-inside:avoid}
+.rulebook-option h4{margin:0 0 .4em;font-size:1em}
+.rulebook-option p{margin:.45em 0;line-height:1.6}
+.rulebook-option .rulebook-choices{color:var(--muted);font-size:.9em}
+.rulebook-option .rules-mode-note{margin-top:.6em}
