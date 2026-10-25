@@ -10,7 +10,7 @@ test('screen:phone:portrait settings help opens by touch and Escape closes only 
   await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await page.locator('[data-room-cycle=seat-3]').click();await page.locator('.room-setup-modal [data-command=settings]').click();
   assert(!await page.locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
   const before=await page.evaluate(()=>localStorage.getItem('playroom.settings.v1'));
-  for(const id of ['setting-hand-shape','setting-seating','setting-last-game','setting-auto-pass','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
+  for(const id of ['setting-hand-shape','setting-seating','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
    if(id==='sound-preview')await page.locator('.settings-details>summary').click();
    const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"setting-with-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
    assert(await wrapper.locator('.setting-title').evaluate(e=>{const a=e.querySelector('.setting-title-text').getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');

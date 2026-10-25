@@ -10,7 +10,7 @@ const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
-for(const game of ['uno','checkers','snakes','durak','domino'])require('../packs/'+game+'/rules.js');
+for(const game of ['uno','checkers','snakes','durak','domino','ludo'])require('../packs/'+game+'/rules.js');
 const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
 const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"], .action-reveal-art.is-flying';
 
@@ -151,13 +151,14 @@ test('Animation presets persist and stage real card flights before the next acto
     // Seed once; a reload must read the user's current storage without reseeding.
     await page.evaluate(({settings, saved}) => {
       localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,autoPass:false,...settings}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,...settings}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, {settings, saved});
     await page.reload();
     return {page, context, errors};
   }
   async function check(name, fn) {
+    if(process.env.PLAYROOM_SCENARIO&&!new RegExp(process.env.PLAYROOM_SCENARIO).test(name))return;
     await t.test(name, async () => {
       const environments = [];
       try {
@@ -185,7 +186,7 @@ test('Animation presets persist and stage real card flights before the next acto
     });
 
     await check('Manual Hotseat transfer is common to all packs and automatic transfer remains an explicit saved preference', async open => {
-      for(const game of ['uno','checkers','snakes','durak','domino']){
+      for(const game of ['uno','checkers','snakes','durak','domino','ludo']){
         const candidate=new Session(Core,game,{seed:17,mode:'pass',preset:'classic',players:[{name:'Аня'},{name:'Борис'}]});
         let action;
         for(let i=0;i<30;i++){
@@ -195,24 +196,51 @@ test('Animation presets persist and stage real card flights before the next acto
         }
         assert(action,game+' fixture has a turn action');
         for(const automatic of [false,true]){
-          const saved=candidate.export(),before=saved.states.at(-1),{page}=await open({saved,settings:{animationSpeed:'instant',autoPass:automatic}});
+          const saved=candidate.export(),before=saved.states.at(-1),{page}=await open({saved,settings:{animationSpeed:game==='ludo'&&!automatic?'fast':'instant',autoPass:automatic,hotseatAutoPass:{[saved.createdAt+':'+before.turn]:automatic}}});
           await resume(page);
+          if(game==='ludo'&&!automatic)await page.evaluate(()=>{window.handoffFrames=[];window.watchHandoff=true;const watch=()=>{if(!window.watchHandoff)return;const el=document.querySelector('[data-command=pass-device]'),r=el?.getBoundingClientRect();handoffFrames.push({exists:!!el,visible:!!r&&r.width>0&&r.height>0,disabled:el?.disabled,x:r?.x,y:r?.y});requestAnimationFrame(watch);};watch();});
           await page.evaluate(action=>{const button=document.createElement('button');button.dataset.action=JSON.stringify(action);document.querySelector('.scene').append(button);button.click();button.remove();},action);
           await waitMove(page,before.move+1);await ready(page);
           if(!automatic){
             await page.locator('[data-command=pass-device]:not(:disabled)').waitFor();
             assert.equal(await page.locator('.handoff').count(),0,game+' must wait for explicit transfer');
+            assert.equal(await page.locator('[data-command=pass-device]').evaluate((el,corner)=>{const host=el.closest(corner?'.handoff-corner':'.self-player');if(!host)return false;const r=el.getBoundingClientRect(),p=host.getBoundingClientRect();return r.left>=p.left-1&&r.right<=p.right+1&&r.top>=p.top-1&&r.bottom<=p.bottom+1;},game==='ludo'),true,game+' handoff control belongs to its designated corner: '+JSON.stringify(await page.locator('[data-command=pass-device]').evaluate(el=>({button:el.getBoundingClientRect().toJSON(),parent:el.parentElement.getBoundingClientRect().toJSON(),className:el.parentElement.className}))));
+            const compact=await page.locator('[data-command=pass-device]').evaluate(el=>{const r=el.getBoundingClientRect(),panel=el.closest('.player-panel');if(!panel)return {width:r.width,height:r.height,growth:0};const height=panel.getBoundingClientRect().height;el.style.display='none';const natural=panel.getBoundingClientRect().height;el.style.removeProperty('display');return {width:r.width,height:r.height,growth:height-natural};});
+            assert(compact.width<=36.5&&compact.height<=36.5,game+' compact handoff: '+JSON.stringify(compact));assert(Math.abs(compact.growth)<1,game+' handoff must not increase player panel height');
+            if(process.env.PLAYROOM_DRAG_SCREENSHOTS&&['durak','ludo'].includes(game))await page.screenshot({path:path.join(process.env.PLAYROOM_DRAG_SCREENSHOTS,game+'-handoff.png')});
             await page.locator('[data-command=pass-device]').click();
           }
           if(before.data.hands)await page.locator('.handoff').waitFor();
-          else await page.waitForFunction(()=>document.querySelector('[data-command=pass-device]')?.disabled===true);
+          else await page.waitForFunction(()=>document.querySelector('.layout-self>.player-panel')?.dataset.playerIndex===document.querySelector('.app-game-layout')?.dataset.turnPlayer);
+          if(game==='ludo'&&!automatic){await page.waitForTimeout(100);const frames=await page.evaluate(()=>{watchHandoff=false;return handoffFrames;});assert(frames.length>2);assert(frames.every(f=>Math.abs(f.x-frames[0].x)<1&&Math.abs(f.y-frames[0].y)<1),'Ludo handoff corner must not move');assert(frames.every(f=>f.exists&&f.visible),'Ludo handoff must remain visible through animation and transfer: '+JSON.stringify(frames.filter(f=>!f.exists||!f.visible)));assert(await page.locator('[data-command=pass-device]').isDisabled(),'New player sees inactive handoff');}
           assert.equal(await currentMove(page),before.move+1,'handoff is not a game action');
         }
       }
-      const {page}=await open();await page.locator('[data-command=settings]').click();
-      assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);
-      await page.locator('#setting-auto-pass').check();await page.reload();await page.locator('[data-command=settings]').click();
-      assert.equal(await page.locator('#setting-auto-pass').isChecked(),true);
+      const saved=fixture(),{page}=await open({saved,settings:{autoPass:false}});await resume(page);
+      await page.locator('[data-command=settings]').click();await page.locator('#setting-auto-pass').check();
+      const prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));assert.equal(prefs.autoPass,true);assert.equal(prefs.hotseatAutoPass[saved.createdAt+':0'],undefined);assert.equal(prefs.hotseatAutoPass[saved.createdAt+':1'],undefined);
+      await page.locator('.modal [data-command=close-modal]').click();assert.equal(await page.locator('[data-command=pass-device]').count(),0);
+      await playHumanCard(page,saved);await waitMove(page,1);await ready(page);await page.locator('.handoff').waitFor();await page.locator('[data-command=unlock]').click();
+      await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'second player keeps manual handoff');
+      await page.reload();if(await page.locator('.resume-banner [data-command=resume]').count())await resume(page);else if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);
+    });
+
+    await check('Hotseat preferences follow the owner across games and guests only within their lobby', async open => {
+      const {RoomService}=require('../app/multiplayer.js');
+      function lobbySave(id,turn=0,swap=false){
+        const saved=fixture({turn});let serial=0;const service=new RoomService({idFactory:()=>id+'-'+(++serial),clock:()=>1000,random:()=>.1});
+        let lobby=service.create({transportMode:'hotseat',host:{id:'primary',nickname:'Аня'},name:'Тест',game:{id:'uno',name:'UNO',version:saved.packVersion},constraints:{min:2,max:4},rules:{preset:'classic'}});
+        lobby=service.setLocalSeat(lobby.id,'primary',lobby.seats[1].id,{kind:'human',nickname:'Бот 1'});
+        if(swap)lobby=service.moveParticipant(lobby.id,'primary','primary',lobby.seats[1].id);
+        saved.options.lobbyConfig=lobby;return saved;
+      }
+      async function setting(saved,settings){const env=await open({saved,settings});await resume(env.page);await env.page.locator('[data-command=settings]').click();return env.page;}
+      let first=lobbySave('same',0),page=await setting(first,{});assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);await page.locator('#setting-auto-pass').check();let prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));assert.equal(prefs.autoPass,true);
+      page=await setting(lobbySave('same',1),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'guest does not inherit owner preference');await page.locator('#setting-auto-pass').check();prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));
+      page=await setting(lobbySave('same',1),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),true,'same guest in next match keeps preference');
+      page=await setting(lobbySave('same',0,true),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),true,'guest preference follows identity after seat swap');
+      page=await setting(lobbySave('new',1),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'new lobby guest starts with default');
+      page=await setting(lobbySave('new',0),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),true,'owner retains preference in new lobby');
     });
 
     await check('Manual Hotseat transfer preserves the full local UNO response window', async open => {
@@ -340,7 +368,7 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(frames.length >= 3);
       assert(frames.every(frame => frame.busy));
       assert.equal(playedFrames(trace).length, 0);
-      assert(distance(center(frames[0].draws[0]), center(stock)) < 75, 'Draw starts at the stock');
+      assert(distance(center(trace.drawsSeen[0]), center(stock)) < 75, 'Draw starts at the stock: '+JSON.stringify({stock,first:trace.drawsSeen[0]}));
       assert.equal(await currentMove(page), 1);
     });
 

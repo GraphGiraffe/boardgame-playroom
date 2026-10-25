@@ -56,6 +56,13 @@ test('UNO desktop and touch drag/drop through the real application',{timeout:120
       assert.deepEqual(await page.evaluate(()=>arcGhostSize),shape,'drag preserves intrinsic card dimensions');
       await expectMove(page,1);assert.equal((await state(page)).data.discard.at(-1).id,'u1');
     });
+    await check('Table zone accepts a card outside the discard and snaps it',{},async({page})=>{
+      const p=await center(source(page));await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x,p.y-12);await page.locator('.playroom-drag-ghost').waitFor();
+      const zone=await page.locator('.uno-play-area').boundingBox();await page.mouse.move(zone.x+3,zone.y+3,{steps:5});
+      assert.equal(await page.locator('.playroom-drop-hover').count(),1);
+      const a=await drop(page).boundingBox(),b=await page.locator('.playroom-drag-ghost').boundingBox();assert(Math.abs(a.x+a.width/2-b.x-b.width/2)<2);
+      await page.mouse.up();await expectMove(page,1);
+    });
     await check('Mouse hold over a legal card highlights discard and drops exactly one move',{},async({page,saved})=>{
       const p=await center(source(page));await page.mouse.move(p.x,p.y);await page.mouse.down();await page.waitForTimeout(230);
       assert.equal(await page.locator('.playroom-drag-ghost').count(),1);

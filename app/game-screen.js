@@ -174,6 +174,31 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.opponentHands='true';
     }
   }
+  // Structural field grids share the scene lock. Store geometry only, never markup.
+  const gridStyles=new WeakMap();
+  const gridProperties=['grid-template-columns','grid-template-rows','grid-auto-columns','grid-auto-rows','grid-auto-flow','column-gap','row-gap','align-content','justify-content','align-items','justify-items'];
+  function fieldGrids(stage){
+    return [...stage.querySelectorAll('.game-field-groups,[data-layout-grid]')];
+  }
+  function restoreFieldGrids(stage){
+    for(const node of fieldGrids(stage)){
+      const saved=gridStyles.get(node);if(!saved)continue;
+      for(const [key,value,priority] of saved)if(value)node.style.setProperty(key,value,priority);else node.style.removeProperty(key);
+      gridStyles.delete(node);
+    }
+  }
+  function lockFieldGrids(stage,locked){
+    const win=stage.ownerDocument.defaultView;
+    locked.fieldGrids??=new Map();
+    for(const [index,node] of fieldGrids(stage).entries()){
+      const key=node.dataset.layoutGrid||`field-groups:${index}`,css=win.getComputedStyle(node);
+      if(!['grid','inline-grid'].includes(css.display))continue;
+      let geometry=locked.fieldGrids.get(key);
+      if(!geometry){geometry=gridProperties.map(prop=>[prop,css.getPropertyValue(prop)]);locked.fieldGrids.set(key,geometry);}
+      gridStyles.set(node,gridProperties.map(prop=>[prop,node.style.getPropertyValue(prop),node.style.getPropertyPriority(prop)]));
+      for(const [prop,value] of geometry)node.style.setProperty(prop,value,'important');
+    }
+  }
   function allowLayoutChange(host,{allowLayoutChange=false}={}){
     if(allowLayoutChange===true)fixedLayouts.delete(host);
   }
@@ -184,6 +209,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!template.content.querySelector('.table-shell'))fixedLayouts.delete(host);
     reserveHands(host,template.content);
     root.PlayroomPublicSequence?.prepare(host,template.content);
+    restoreFieldGrids(host);
     patchChildren(host,template.content,previous);
     renderedTrees.set(host,template.content);
     if(!previous)pendingScroll.set(host,scrollers);
@@ -293,7 +319,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!showTurn){turnText='';turnExtra='';}
     const primary=historyResult||(!network&&state.status==='finished')?{attrs:'data-command="result"',label:globalThis.PlayroomMessages.text("ui.game-screen.24735a7161d9"),name:'trophy'}:roomAction?{...roomAction,label:globalThis.PlayroomMessages.text("ui.game-screen.3a73248bdd79"),name:'room'}:null;
     const caption=esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerText||'');
-    if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
+    const cornerSlot='<div class="handoff-corner"><!--handoff-control--></div>';
+    const cornerControl=scene.includes(cornerSlot)?beforeFooter:'';
+    if(scene.includes(cornerSlot)){scene=scene.replace(cornerSlot,'');beforeFooter='';}
+    if(beforeFooter&&scene.includes('<!--handoff-control-->'))scene=scene.replace('<!--handoff-control-->',beforeFooter);
+    else if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
     return `<main data-field-topology="${esc(state.scene?.geometry?.topology||'')}" data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title">${gameTitle(gameName,shortName||root.PlayroomCatalog?.[state.game]?.shortName)}<p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         ...(primary?[{...primary,attrs:primary.attrs+' data-game-primary="true"'}]:[]),
@@ -304,7 +334,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
       ],{showSettings})}</div></header>
       <div class="table-status" aria-live="polite">${turnText?`<span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span>`:''}<span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),showTurn&&state.players.length>1&&state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
-      <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}</section>
+      <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}${cornerControl?`<div class="handoff-corner" data-host-control="handoff">${cornerControl}</div>`:''}</section>
       ${historyHTML}
       ${footerExtra?`<div class="table-extra">${footerExtra}</div>`:''}</main>`;
   }
@@ -497,7 +527,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(statusContent&&statusHome&&statusBar){const portrait=!host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches,target=portrait?statusBar:statusHome;if(statusContent.parentElement!==target)target.prepend(statusContent);}
 
     if(stage)stage.dataset.threeOpponentLayout=root.PlayroomAppBridge?.gameOptions?.().splitThreeOpponents?'split':'row';
-    const layoutKey=stage?JSON.stringify([host.ownerDocument.documentElement.dataset.assetGeometry,host.querySelector('.table-shell')?.dataset.layoutIdentity,stage.dataset.fieldTopology,scene.clientWidth,scene.clientHeight,stage.dataset.threeOpponentLayout,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating,[...stage.querySelectorAll(".player-panel")].map(panel=>panel.querySelectorAll(".player-indicator").length)]):null;
+    const layoutKey=stage?JSON.stringify([host.ownerDocument.documentElement.dataset.assetGeometry,host.querySelector('.table-shell')?.dataset.layoutIdentity,scene.clientWidth,scene.clientHeight,stage.dataset.threeOpponentLayout,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating]):null;
+    if(stage)restoreFieldGrids(stage);
     let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
     if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
       for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('overflow');}
@@ -585,6 +616,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       for(const [index,node]of [...stage.querySelectorAll('.layout-actions')].entries())if(locked.actions?.[index]>0){node.style.height=locked.actions[index]+'px';node.style.minHeight=locked.actions[index]+'px';node.style.maxHeight=locked.actions[index]+'px';node.style.overflow='visible';}
       if(own&&locked.self){own.style.height=locked.self+'px';own.style.overflow=own.querySelector('.own-hand[data-hand-count="0"]')?'hidden':'auto';}
+      lockFieldGrids(stage,locked);
       fitField(stage);fitStandardPieces(stage);fitScoreTables(stage);fitCardOverlaps(stage);
       for(const anchor of stage.querySelectorAll('[data-chain-anchor]')){
         const chain=anchor.closest('.domino-chain'),board=chain.closest('.domino-board'),field=stage.querySelector('.layout-field');
