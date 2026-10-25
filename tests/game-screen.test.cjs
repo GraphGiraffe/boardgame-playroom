@@ -220,3 +220,12 @@ test('finish tokens show minor places, last loser and exit time in results and l
  const UI=require('../core/ui.js');
  assert.match(UI.playerPanel({...state,status:'playing'},0,0),/player-avatar-wrap[\s\S]*?place-4 is-minor/);
 });
+
+
+test('result metric fraction precision formats text without creating a counter',()=>{
+ const state={...projected,status:'finished',winner:0,result:{places:[1,2],metrics:[{id:'damage',label:'Урон',maximumFractionDigits:1,values:[1.5,2]}]}};
+ let html=Screen.resultMarkup({state,viewer:0,gameName:'Игра'});
+ assert.match(html,/Урон: 1,5/);assert.match(html,/Урон: 2/);assert(!html.includes('Урон: 2,0'));
+ state.result.metrics[0].values=[1/3,2/3];html=Screen.resultMarkup({state,viewer:0,gameName:'Игра'});
+ assert.match(html,/Урон: 0,3/);assert.match(html,/Урон: 0,7/);
+});

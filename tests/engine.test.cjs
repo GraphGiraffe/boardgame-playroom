@@ -490,3 +490,9 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   assert.equal(n.turn,0);assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.played'),n.players).feedback,{kind:'skip',player:1});
   assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip']);
  });
+
+test('fractional result details survive validation and reject nonfinite values',()=>{
+ const state=create('snakes');state.status='finished';state.winner=0;state.winners=[0];state.result={label:'Место',values:[1,2],places:[1,2],order:'asc',detailLabel:'Урон',details:[1.5,1/3]};
+ assert(E.validateState(state));
+ for(const value of [NaN,Infinity,-1]){const bad=E.clone(state);bad.result.details[0]=value;assert.throws(()=>E.validateState(bad));}
+});
