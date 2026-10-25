@@ -500,3 +500,10 @@ test('simultaneous movement cancels shared destinations and permits swaps indepe
   assert.deepEqual(s.data.players.map(p=>p.pos),[[1,2],[2,1]]);assert(D.validate(s));
  }
 });
+
+
+test('engine finishes a mage match with fractional damage and restores the result',()=>{
+ const s=E.createGame('mage-brawl',{seed:19,players:[{name:'A'},{name:'B'}]});
+ const loser=s.data.players[1];s.data.discard.push(...loser.hand);Object.assign(loser,{hand:[],health:0,lives:0,pos:null,ultimate:0,eliminatedRound:1});s.data.players[0].damageDealt=1.5;
+ E.complete(s,0);assert.deepEqual(s.result.details,[1.5,0]);assert(E.validateState(E.clone(s)));
+});

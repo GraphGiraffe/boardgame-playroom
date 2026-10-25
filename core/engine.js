@@ -26,7 +26,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const summary=forState(state).result?.(state);
     const values=summary?.values??state.players.map((_,index)=>winners.includes(index)?1:0);
     if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||value<0))throw Error(globalThis.PlayroomMessages.text("ui.engine.12bcf9bc2478"));
-    if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isSafeInteger(value)||value<0)))throw Error(globalThis.PlayroomMessages.text("ui.engine.adea212152fd"));
+    if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isFinite(value)||value<0||value>Number.MAX_SAFE_INTEGER)))throw Error(globalThis.PlayroomMessages.text("ui.engine.adea212152fd"));
     const order=summary?.order==='asc'?'asc':'desc',places=summary?.places||values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
     state.result={label:summary?.label||globalThis.PlayroomMessages.text("ui.engine.231d91ffeba0"),values,places,order,exits:clone(summary?.exits||[]),lastPlayers:clone(summary?.lastPlayers||[]),...(summary?.metricId?{metricId:summary.metricId,metrics:clone(summary.metrics)}:{}),...(summary?.details?{detailLabel:summary.detailLabel||globalThis.PlayroomMessages.text("ui.engine.fdf0487fc4f1"),details:summary.details,...(summary.detailMetricId?{detailMetricId:summary.detailMetricId}:{})}:{})};
   }
