@@ -154,6 +154,16 @@ test('Domino selection and drag gestures through the real application', {timeout
       assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
     });
 
+    await check('Table zone chooses and snaps to the nearest legal domino end', {}, async ({page}) => {
+      const p=await center(tile(page));await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x,p.y-12);await page.locator('.playroom-drag-ghost').waitFor();
+      const q=await page.locator('.game-field-content').evaluate(el=>{const r=el.getBoundingClientRect();for(let y=Math.max(0,r.top)+12;y<Math.min(innerHeight,r.bottom);y+=12)for(let x=Math.max(0,r.left)+12;x<Math.min(innerWidth,r.right);x+=12){const hit=document.elementFromPoint(x,y);if(hit?.closest('[data-drop-zone]')&&el.contains(hit)&&!hit.closest('[data-drop-piece]'))return {x,y};}throw Error('No reachable table zone');});
+      const options=await targets(page).evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,action:JSON.parse(n.dataset.action)};}));options.sort((a,b)=>Math.hypot(a.x-q.x,a.y-q.y)-Math.hypot(b.x-q.x,b.y-q.y));
+      await page.mouse.move(q.x,q.y,{steps:5});assert.equal(await page.locator('.playroom-drop-hover').count(),1,JSON.stringify(await page.evaluate(q=>({q,hit:document.elementFromPoint(q.x,q.y)?.outerHTML.slice(0,450),zone:document.elementFromPoint(q.x,q.y)?.closest('[data-drop-zone]')?.className}),q)));
+      assert.equal(JSON.parse(await page.locator('.playroom-drop-hover').getAttribute('data-action')).side,options[0].action.side);
+      const ghost=await page.locator('.playroom-drag-ghost').boundingBox();assert(Math.abs(ghost.x+ghost.width/2-options[0].x)<2);
+      await page.mouse.up();await expectMove(page,1);
+    });
+
     await check('Dropping outside a legal target cancels without changing the game', {}, async ({page}) => {
       const before = await state(page), source = await center(tile(page));
       await page.mouse.move(source.x, source.y); await page.mouse.down();
@@ -238,4 +248,44 @@ test('Domino selection and drag gestures through the real application', {timeout
       await expectMove(page, 2);
     });
   } finally { await browser.close(); }
+});
+
+test('Shared drag selects Ludo routes, Snakes moves and Durak table placements', {timeout:60000}, async t=>{
+ for(const game of ['ludo','snakes','durak'])require('../packs/'+game+'/rules.js');
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const [game,variant] of [['ludo','route'],['ludo','base'],['snakes','route'],['snakes','start'],['durak','attack'],['durak','throw'],['durak','defend']])await t.test(game+' '+variant,async()=>{
+  const saved=new Session(Core,game,{seed:17,mode:'pass',firstPlayerMode:'assigned',firstPlayer:0,diceCount:2,players:[{name:'Аня'},{name:'Борис'}]}).export(),s=saved.states[0];s.turn=0;
+  if(game==='ludo'){Object.assign(s.data,{phase:'move',dice:[2,3],used:[false,false]});s.data.pawns[0]=variant==='base'?[-1,-1,-1,-1]:[7,9,-1,-1];if(variant==='base')s.data.dice=[6,3];}
+  if(game==='snakes'){Object.assign(s.data,{phase:'move',dice:[2,3],adjusting:false});s.data.positions[0]=variant==='start'?0:5;}
+  if(game==='durak'&&['defend','throw'].includes(variant)){
+   const d=s.data,all=[...d.hands.flat(),...d.drawPile],suit=d.trump.suit,cards=all.filter(c=>!c.joker&&c.suit===suit&&c.id!==d.trump.id).sort((a,b)=>a.rank-b.rank),attack=cards.slice(0,2),defence=cards.at(-1),ids=new Set([...attack,defence].map(c=>c.id)),rest=all.filter(c=>!ids.has(c.id)&&c.id!==d.trump.id);
+   Object.assign(d,{composing:false,attacker:1,defender:0,attackCursor:1,boutOrigin:1,table:attack.map(c=>({attack:c,defense:null})),hands:[[defence,...rest.splice(0,5)],rest.splice(0,6)],drawPile:[d.trump,...rest]});
+  }
+  if(game==='durak'&&variant==='throw'){
+   const d=s.data;d.taking=false;d.attacker=0;d.defender=1;d.attackCursor=0;d.boutOrigin=0;
+   const rank=d.table[0].attack.rank,candidate=d.drawPile.find(c=>c.rank===rank&&c.id!==d.trump.id);assert(candidate);d.drawPile=d.drawPile.filter(c=>c.id!==candidate.id);d.drawPile.push(d.hands[0].shift());d.hands[0].unshift(candidate);
+   for(const pair of d.table){const zones=[d.drawPile,...d.hands],zone=zones.find(z=>z.some(c=>c.id!==d.trump.id&&c.id!==candidate.id&&c.suit===pair.attack.suit&&c.rank>pair.attack.rank));assert(zone);const i=zone.findIndex(c=>c.id!==d.trump.id&&c.id!==candidate.id&&c.suit===pair.attack.suit&&c.rank>pair.attack.rank);pair.defense=zone.splice(i,1)[0];}
+  }
+  assert(Core.validateState(s));
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'});
+  await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',autoPass:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+  const page=await context.newPage();page.setDefaultTimeout(5000);
+  try{await page.goto(url);await page.locator('.resume-banner [data-command=resume]').click();if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();
+   const reserved=game==='durak'&&variant!=='defend'?await page.locator('.durak-attack-target').boundingBox():null;
+   if(game==='durak'&&variant!=='defend'){assert(reserved,'Attack slot exists before selection');assert.equal(await page.locator('.durak-attack-target').isDisabled(),true);}
+   const slotAppearance=()=>page.locator('.durak-pair').nth(1).locator('.defense-slot,.defend-target').evaluate(el=>{const c=getComputedStyle(el),r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,border:c.border,borderRadius:c.borderRadius,background:c.backgroundColor,shadow:c.boxShadow,text:el.textContent,art:el.querySelectorAll('svg').length};});
+   const idleSlot=variant==='defend'?await slotAppearance():null;
+   const source=page.locator(game==='ludo'?'.ludo-pawn[data-drag-piece]':game==='snakes'?'.snakes-token[data-drag-piece]':'.hand-track [data-drag-piece]').first();
+   const p=await center(source);await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+8,p.y);await page.locator('.playroom-drag-ghost').waitFor();
+   if(idleSlot){assert.deepEqual(await slotAppearance(),idleSlot,'Starting an unfinished drag must preserve the empty defence appearance');await page.mouse.move(5,400);await page.mouse.up();assert.deepEqual(await slotAppearance(),idleSlot,'Cancelled drag keeps the empty defence appearance');assert.equal((await state(page)).move,0);await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+8,p.y);await page.locator('.playroom-drag-ghost').waitFor();}
+   const target=page.locator('[data-drop-piece][data-action]').nth(variant==='defend'?1:0);await target.waitFor();const expected=JSON.parse(await target.getAttribute('data-action'));
+   const q=game==='durak'&&variant!=='defend'?await center(page.locator('.game-field-content')):await center(target);await page.mouse.move(q.x,q.y,{steps:5});assert.equal(await page.locator('.playroom-drop-hover').count(),1);
+   const dropBox=game==='durak'&&variant!=='defend'?await target.boundingBox():null;
+   if(reserved)for(const key of ['x','y','width','height'])assert(Math.abs(reserved[key]-dropBox[key])<1,`${variant}: drag must preserve reserved ${key}`);
+   if(process.env.PLAYROOM_DRAG_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PLAYROOM_DRAG_SCREENSHOTS,game+'-'+variant+'.png')});
+   await page.mouse.up();await expectMove(page,1);const after=await state(page);assert.equal(after.move,1);assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.equal(expected.type,game==='durak'?(variant==='throw'?'attack':variant):'move');if(variant==='defend')assert.equal(after.data.table[expected.target].defense.id,expected.card);
+   if(dropBox){const placed=await page.locator('.durak-pair .attack-card [data-entity="card-'+expected.card+'"]').boundingBox();assert(placed);for(const key of ['x','y','width','height'])assert(Math.abs(placed[key]-dropBox[key])<2,`${variant}: ${key}: target ${dropBox[key]}, placed ${placed[key]}`);}
+
+  }finally{await context.close();}
+ });}finally{await browser.close();}
 });

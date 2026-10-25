@@ -103,6 +103,17 @@
       const legal=el=>usable(el)&&el.dataset.dropPiece===s.piece&&(el.hasAttribute('data-action')?!!readAction(el.dataset.action)&&canCommit(el):el.dataset.dropSelect===s.piece&&canSelect(el));
       const direct=pointed?.closest('[data-drop-piece]');
       let next=legal(direct)?direct:null;
+      // Packs opt into a table zone; only already-rendered legal targets compete.
+      const zone=pointed?.closest('[data-drop-zone]');
+      if(!next&&!direct&&zone&&!pointed?.closest('.modal-backdrop')){
+        let best=Infinity;
+        for(const target of zone.querySelectorAll('[data-drop-piece]')){
+          if(!legal(target))continue;
+          const rect=visibleDropRect(target);if(!rect)continue;
+          const distance=Math.hypot(x-(rect.left+rect.right)/2,y-(rect.top+rect.bottom)/2);
+          if(distance<best){next=target;best=distance;}
+        }
+      }
       // Explicit wrong/blocked targets and composite grid origins retain their
       // precise semantics; proximity must not redirect them to a different move.
       if(!next&&!direct&&!s.gridShape&&!pointed?.closest('[data-grid-index]')&&!pointed?.closest('.modal-backdrop')){
@@ -130,10 +141,11 @@
       if (!s.ghost) return;
       // A fixed ghost remains entirely inside the viewport, so dragging at an
       // edge cannot enlarge the document's horizontal or vertical scroll area.
-      const left = Math.max(0, Math.min(root.innerWidth - s.width, s.x - s.offsetX));
-      const top = Math.max(0, Math.min(root.innerHeight - s.height, s.y - s.offsetY));
-      s.ghost.style.transform = `translate3d(${left}px, ${top}px, 0)`;
       const target=hoverAt(s, s.x, s.y);
+      const snap=target?.hasAttribute('data-drop-snap')?visibleDropRect(target):null;
+      const left = Math.max(0, Math.min(root.innerWidth - s.width, snap?(snap.left+snap.right-s.width)/2:s.x-s.offsetX));
+      const top = Math.max(0, Math.min(root.innerHeight - s.height, snap?(snap.top+snap.bottom-s.height)/2:s.y-s.offsetY));
+      s.ghost.style.transform = `translate3d(${left}px, ${top}px, 0)`;
       if(s.ghost.classList.contains('playroom-composite-ghost'))s.ghost.classList.toggle('playroom-drag-invalid',!target);
     }
     function takeCapture(s) {
@@ -208,12 +220,12 @@
       s.ghost.inert = true;
       s.ghost.setAttribute('aria-hidden', 'true'); s.ghost.setAttribute('tabindex', '-1');
       if ('disabled' in s.ghost) s.ghost.disabled = true;
-      Object.assign(s.ghost.style, { width: `${s.width}px`, height: `${s.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, flexDirection: style.flexDirection });
+      Object.assign(s.ghost.style, { width: `${s.width}px`, height: `${s.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, borderRadius: style.borderRadius, flexDirection: style.flexDirection });
       s.phase = 'dragging';
       doc.body.append(s.ghost);
       if(pose.angle&&!root.matchMedia?.('(prefers-reduced-motion: reduce)').matches)s.ghost.animate([{rotate:pose.angle+'deg'},{rotate:'0deg'}],{duration:policy.dragStraightenMs??100,easing:'ease-out'});
       capture.classList.add('playroom-dragging'); takeCapture(s);
-      try { select(s.piece); } catch (error) { cancel(); throw error; }
+      try { select(s.piece,{viewKey:s.source.dataset.dragViewKey}); } catch (error) { cancel(); throw error; }
       if (active !== s) return;
       s.renderedSource = [...doc.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
       s.renderedSource?.classList.add('playroom-drag-source');

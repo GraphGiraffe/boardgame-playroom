@@ -17,3 +17,8 @@
 
 /* Immediate board drags keep their card silhouette without a selection frame. */
 .playroom-drag-ghost[data-drag-start="immediate"]{outline:none!important;}
+
+/* The ghost lives outside the scene: reuse printed contours, not its bounding box. */
+.playroom-drag-ghost:has(.piece-contour,.card-outline){outline:none!important;box-shadow:none!important;}
+.playroom-drag-ghost :is(.piece-contour,.card-outline){stroke:var(--color-interaction-selected,#d3aa45)!important;}
+:is(.game-scene,.app-game-layout) [data-drop-piece].playroom-drop-hover:has(.card-outline){outline:none!important;background-color:transparent!important;}

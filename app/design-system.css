@@ -926,3 +926,18 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 .player-medallion.is-last{position:relative}
 .player-avatar-wrap .player-medallion.is-last{position:absolute}
 .last-player-symbol{position:absolute;inset:0;display:grid;place-items:center;padding-bottom:12%;font-size:1em;font-weight:800;color:var(--round-token-mark)}
+
+/* Manual hotseat handoff belongs to the viewer, outside the action/hand layout. */
+.player-panel:has(>.pass-device-button){position:relative;padding-right:44px!important}
+#app .player-panel>.pass-device-button{position:absolute;right:4px;bottom:4px;height:min(36px,calc(100% - 8px));width:auto;aspect-ratio:1;min-width:0;min-height:0;box-sizing:border-box;padding:6px}
+.player-panel>.pass-device-button>svg{width:100%;height:100%}
+#app .handoff-corner>.pass-device-button{width:36px;height:36px;min-width:0;min-height:0;padding:6px}
+.scene>.handoff-corner{position:absolute;right:8px;bottom:8px;z-index:5}
+.handoff-corner:empty{display:none}
+
+.scene:has(>.handoff-corner){position:relative}
+
+/* Context actions keep a compact, permanently reserved row. */
+#app .app-game-layout .layout-actions:has(>.scene-actions:only-child),
+#app .app-game-layout .layout-actions>.scene-actions{min-height:32px}
+#app .app-game-layout .layout-actions>.scene-actions>button{min-height:32px;height:auto;padding:4px 10px;line-height:1.2}

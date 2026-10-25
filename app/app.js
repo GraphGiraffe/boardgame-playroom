@@ -66,7 +66,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   let hubFiltersOpen=false;
   const catalog = globalThis.PlayroomCatalog || {};
   const animationPresets=Flow.presets;
-  const defaultSettings = {sound:true, volume:1, animationSpeed:'normal', interfaceScale:100, handShape:'arc', splitThreeOpponents:false, quickPlay:true,autoPass:true,seating:'circle',seatingByGame:{},showLastGame:false};
+  const defaultSettings = {sound:true, volume:1, animationSpeed:'normal', interfaceScale:100, handShape:'arc', splitThreeOpponents:false, quickPlay:true,autoPass:false,hotseatAutoPass:{},seating:'circle',seatingByGame:{},showLastGame:false};
   let settings=structuredClone(defaultSettings);
   let viewState = {};
   let session = null, screen = 'hub', filter = 'all', selected = null, gate = null, viewer = 0;
@@ -97,6 +97,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if([.3,.6,1].includes(stored?.volume))settings.volume=stored.volume;
     if(typeof stored?.quickPlay==='boolean')settings.quickPlay=stored.quickPlay;
     if(typeof stored?.autoPass==='boolean')settings.autoPass=stored.autoPass;
+    if(stored?.hotseatAutoPass&&typeof stored.hotseatAutoPass==='object')settings.hotseatAutoPass=Object.fromEntries(Object.entries(stored.hotseatAutoPass).filter(([key,value])=>(/^(?:\d+:\d+|\["lobby",)/.test(key)&&key.length<=512)&&typeof value==='boolean'));
     if(typeof stored?.hiddenLocalSession==='string')settings.hiddenLocalSession=stored.hiddenLocalSession;
     if(typeof stored?.showLastGame==='boolean')settings.showLastGame=stored.showLastGame;
     if(stored?.seatingByGame&&typeof stored.seatingByGame==='object'&&!Array.isArray(stored.seatingByGame))settings.seatingByGame=Object.fromEntries(Object.entries(stored.seatingByGame).filter(([id,value])=>Object.hasOwn(catalog,id)&&['circle','anchors','row'].includes(value)));
@@ -375,7 +376,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       replay,busy:!!transition,botThinking:!replay&&!!turnPlayer?.bot,animationSpeed:settings.animationSpeed,
       scene:V.render(projected,shownViewer,actions,{displayScene:feedback.displayScene,fieldScene:feedback.fieldScene,selected,viewState,replay,hotseat:isPass(),presentationTurn:transition?.beforeTurn??(replay?session.states[replayIndex-1]?.turn:undefined),preferences:screenController.preferences(TabletopUI.viewPreferences(state.game,shownViewer)),flipped:shownViewer===1,quickPlay:settings.quickPlay})+(paused&&!replay?`<div class="pause-cover"><h2>${globalThis.PlayroomMessages.text("ui.app.6f02551279d4")}</h2><p>${globalThis.PlayroomMessages.text("ui.app.63b894bbd7b4")}</p><button class="btn" data-command="pause">${icon('play')}${globalThis.PlayroomMessages.text("ui.app.558521e805d1")}</button></div>`:''),
       historyHTML:historyOpen?historyMarkup():'',historyCaption:eventText,historyResult:session.current.status==='finished',roomAction:room?{attrs:'data-command="room"'}:null,pause:paused,readOnly:historyOrigin?.kind==='library',
-      beforeFooter:isPass()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
+      beforeFooter:isPass()&&!autoPassForViewer()&&!replay&&!finished?GameScreen.iconButton('data-command="pass-device"',globalThis.PlayroomMessages.text("ui.app.9e49bec43037"),'arrow',{className:'pass-device-button'+(awaitingPass&&!paused&&!transition&&!passProtected?' handoff-pending':''),disabled:!awaitingPass||!!transition||paused||gate!==null||passProtected}):'',
       footerText:eventText,footerTitle:lastEvent(projected)?.text||globalThis.PlayroomMessages.text("ui.app.efcdf40bd477"),saved:storageOK,
       footerAction:{command:finished?'result':'pause',label:finished?globalThis.PlayroomMessages.text("ui.app.24735a7161d9"):paused?globalThis.PlayroomMessages.text("ui.app.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.app.65530fd463ea"),icon:finished?'arrow':paused?'play':'pause'}
     });
@@ -405,6 +406,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     replayIndex=next;selected=null;renderTable();if(snapshot)void flow.play(snapshot);
     if(slider){slider.value=String(replayIndex);$('#replay-range')?.replaceWith(slider);if(focused)slider.focus();}
   }
+  function hotseatPreference(){
+    if(!session)return null;
+    const lobby=session.options.lobbyConfig,seats=lobby?.seats?.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),participant=seats?.[viewer]?.participantId;
+    const primary=participant?participant===lobby.ownerId:viewer===session.current.players.findIndex(p=>!p.bot);
+    return {primary,key:participant&&lobby.id?JSON.stringify(['lobby',lobby.id,participant]):`${session.createdAt}:${viewer}`,legacyKey:`${session.createdAt}:${viewer}`};
+  }
+  function autoPassForViewer(){
+    const preference=hotseatPreference();
+    return preference?.primary?settings.autoPass:preference?(settings.hotseatAutoPass[preference.key]??settings.hotseatAutoPass[preference.legacyKey]??false):false;
+  }
   function handoffDelay(){
     const window=session&&E.reactionWindows(session.current).find(w=>w.owner===viewer);
     if(!window||window.owner!==viewer)return 0;
@@ -420,9 +431,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     clearTimeout(autoPassTimer);autoPassTimer=null;
     if(!awaitingPass||transition||paused||isReplay()||gate!==null||screen!=='table'||document.hidden||$('#modal-root').children.length)return;
     const wait=handoffDelay();
-    if(settings.autoPass||wait>0)autoPassTimer=setTimeout(()=>{
+    if(autoPassForViewer()||wait>0)autoPassTimer=setTimeout(()=>{
       if(screen!=='table'||document.hidden||$('#modal-root').children.length)return;
-      if(settings.autoPass)transferDevice();else renderTable();
+      if(autoPassForViewer())transferDevice();else renderTable();
     },wait);
     else if($('#app [data-command=pass-device]')?.disabled)renderTable();
   }
@@ -733,7 +744,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       <div class="settings-grid settings-layout-grid">${hasCardHand?GameScreen.rangeSetting({id:'setting-hand-shape',label:globalThis.PlayroomMessages.text('ui.app.hand-shape.label'),max:1,value:settings.handShape==='arc'?1:0,display:globalThis.PlayroomMessages.text('ui.app.hand-shape.'+settings.handShape),choices:['straight','arc'].map(value=>({value,label:globalThis.PlayroomMessages.text('ui.app.hand-shape.'+value)}))}):''}</div>
       <label class="switch"><span>${globalThis.PlayroomMessages.text('ui.app.three-opponents.split')}</span><input type="checkbox" id="setting-three-opponents" ${settings.splitThreeOpponents?'checked':''}></label>
       <label class="switch"><span>${globalThis.PlayroomMessages.text('ui.app.show-last-game')}</span><input type="checkbox" id="setting-last-game" ${settings.showLastGame?'checked':''}></label>
-      ${!settingsRoom||settingsRoom.transportMode==='hotseat'?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${settings.autoPass?'checked':''}></label>`:''}
+      ${screen==='table'&&isPass()&&gate===null&&!historyOpen?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${autoPassForViewer()?'checked':''}></label>`:''}
       <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.b10ca6a74592")}</span><input type="checkbox" id="setting-quick-play" ${settings.quickPlay?'checked':''}></label>
       <div class="settings-grid">${GameScreen.rangeSetting({id:'setting-volume',label:globalThis.PlayroomMessages.text('ui.app.77e13b86fbed'),value:settings.sound?volumeLevels.indexOf(settings.volume):0,display:volumeLabels[settings.sound?volumeLevels.indexOf(settings.volume):0]})}${GameScreen.rangeSetting({id:'setting-speed',label:globalThis.PlayroomMessages.text('ui.app.62af90477d26'),value:speedLevels.indexOf(settings.animationSpeed),display:animationPresets[settings.animationSpeed].label,describedby:''})}</div>
       ${GameScreen.rangeSetting({id:'setting-scale',label:globalThis.PlayroomMessages.text('ui.app.interface-scale'),min:50,max:150,step:10,value:globalThis.PlayroomInterfaceScale.applied,display:globalThis.PlayroomInterfaceScale.applied+'%',bounds:true})}
@@ -854,8 +865,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'room-rules-view':showRoomRules,
     'room-help':showRoomHelp,
     'sound-preview'(){const value=$('#sound-preview')?.value;if(!value)return;const [pack,id]=value.split('|');void previewSound(id,pack||undefined);},
-    unlock(){viewer=gate;gate=null;awaitingPass=false;render();},
     'pass-device':transferDevice,
+    unlock(){viewer=gate;gate=null;awaitingPass=false;render();},
     history(){if(historyOpen)commands['history-close']();else openHistory();},
     'history-close':closeHistory,
     'replay-round-prev'(){stopReplay();replayIndex=globalThis.PlayroomHistoryController.boundaryIndex(replayIndex,session.states.length-1,E.project(session.current,-1).scene?.round?.starts,-1,historyStart());render();},
@@ -872,7 +883,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     canSelect(source){return screen==='table'&&!!session&&!$('#modal-root').children.length&&!isReplay()&&!paused&&gate===null&&!transition&&(viewer===session.current.turn||source.hasAttribute('data-hand-preview'));},
     canCommit(source){return screen==='table'&&!!session&&!$('#modal-root').children.length&&!isReplay()&&!paused&&gate===null&&(!transition||activeActions(session.current).some(action=>Protocol.canonical(action)===Protocol.canonical(JSON.parse(source?.dataset.action||'null'))));},
     getSelected(){return selected;},
-    select(piece){clearViewHints();selected=piece;renderTable();},
+    select(piece,context){clearViewHints();if(context?.viewKey&&/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(context.viewKey))viewState[context.viewKey]=piece;else selected=piece;renderTable();},
     commit(action,context){act(viewer,action,context);}
   });
   playerTargets=new globalThis.PlayroomPlayerTarget({
@@ -981,21 +992,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(event.target.closest('#room-rules-form')){syncChoice(event.target);syncRuleVisibility(event.target.form);return;}
     try{if(event.target.hasAttribute('data-room-title')){setRoomOption('name',event.target.value);return;}if(event.target.dataset.roomOption){setRoomOption(event.target.dataset.roomOption,event.target.type==='checkbox'?(event.target.checked?'network':'hotseat'):event.target.value);return;}}catch(error){toast(globalThis.PlayroomMessages.error(error));renderLobby();return;}
     if(event.target.id==='setting-player-name'){try{playerProfile=profileStore.save(event.target.value);}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
-    if(['setting-scale','setting-speed','setting-quick-play','setting-auto-pass','setting-volume','setting-seating','setting-hand-shape','setting-three-opponents','setting-last-game'].includes(event.target.id)){
+    if(['setting-scale','setting-speed','setting-auto-pass','setting-quick-play','setting-volume','setting-seating','setting-hand-shape','setting-three-opponents','setting-last-game'].includes(event.target.id)){
       if(event.target.id==='setting-volume'){const index=Number(event.target.value);settings.sound=index>0;if(index>0)settings.volume=volumeLevels[index];soundTicket++;audio.setEnabled(settings.sound);audio.setVolume(settings.volume);document.querySelectorAll('[data-sound-control]').forEach(el=>el.disabled=!settings.sound);}
       else if(event.target.id==='setting-scale'){settings.interfaceScale=Math.min(Number(event.target.value),globalThis.PlayroomInterfaceScale.limit);GameScreen.allowLayoutChange(document.querySelector('#app'),{allowLayoutChange:true});globalThis.PlayroomInterfaceScale.set(settings.interfaceScale);}
+      else if(event.target.id==='setting-auto-pass'&&isPass()){const preference=hotseatPreference();if(preference?.primary)settings.autoPass=event.target.checked;else if(preference)settings.hotseatAutoPass={...settings.hotseatAutoPass,[preference.key]:event.target.checked};}
       else if(event.target.id==='setting-quick-play')settings.quickPlay=event.target.checked;
       else if(event.target.id==='setting-seating'){const game=event.target.dataset.game;if(game&&['circle','anchors','row'].includes(choiceValue(event.target)))settings.seatingByGame[game]=choiceValue(event.target);}
       else if(event.target.id==='setting-hand-shape')settings.handShape=choiceValue(event.target)==='arc'?'arc':'straight';
       else if(event.target.id==='setting-three-opponents'){settings.splitThreeOpponents=event.target.checked;GameScreen.allowLayoutChange(document.querySelector('#app'),{allowLayoutChange:true});}
       else if(event.target.id==='setting-last-game')settings.showLastGame=event.target.checked;
-      else if(event.target.id==='setting-auto-pass')settings.autoPass=event.target.checked;
       else {settings.animationSpeed=speedLevels[Number(event.target.value)]||'normal';}
       document.body.classList.toggle('reduced-motion',pace().duration===0);
       try{localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));}catch(_){}
       window.dispatchEvent(new Event('playroom:game-options'));
       if(event.target.id==='setting-last-game'&&screen==='hub')renderHub();
-      if(['setting-seating','setting-hand-shape','setting-three-opponents'].includes(event.target.id)&&screen==='table'&&!document.querySelector('.network-game'))renderTable();
+      if(['setting-seating','setting-hand-shape','setting-three-opponents','setting-auto-pass'].includes(event.target.id)&&screen==='table'&&!document.querySelector('.network-game'))renderTable();
       if(event.target.id==='setting-volume')void previewSound();
     }
   });

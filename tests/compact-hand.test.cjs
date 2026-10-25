@@ -53,6 +53,7 @@ function durakTableFixture(pairCount, ownCount, openHands) {
   assert(Core.legalActions(s, 0).some(a => a.type === 'defend' && a.card === defense.id && a.target === pairCount - 1));
   return saved;
 }
+const durakCardSizes = new Map();
 async function assertDurakTableFit(page, pairCount, openHands, phase, opponentCount = 6) {
   const layout = await page.locator('.durak-scene').evaluate((scene, {pairCount, openHands, opponentCount}) => {
     const issues = [], rect = el => {const r = el.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right};};
@@ -76,11 +77,14 @@ async function assertDurakTableFit(page, pairCount, openHands, phase, opponentCo
     if (scene.querySelectorAll('.public-card').length !== (openHands ? opponentCount : 0)) issues.push('opponent privacy/count changed');
     for (const button of scene.querySelectorAll('.scene-actions button:not(:disabled)')) {
       const r = rect(button), hit = document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
-      if (r.width < 43 || r.height < 43 || !within(r, viewport) || !button.contains(hit)) issues.push(`${button.textContent.trim()} button inaccessible: ${JSON.stringify({rect:r,hit:hit?.outerHTML.slice(0,180)})}`);
+      if (r.width < 43 || r.height < 31 || !within(r, viewport) || !button.contains(hit)) issues.push(`${button.textContent.trim()} button inaccessible: ${JSON.stringify({rect:r,hit:hit?.outerHTML.slice(0,180)})}`);
     }
-    return {issues,regions};
+    const face=rect(scene.querySelector('.durak-table .attack-card .playing-card'));
+    return {issues,regions,cardSize:{width:face.width,height:face.height},viewport:innerWidth+"x"+innerHeight};
   }, {pairCount,openHands,opponentCount});
   assert.deepEqual(layout.issues, [], `${phase}: ${JSON.stringify(layout)}`);
+  const previous=durakCardSizes.get(layout.viewport);if(previous)for(const key of ['width','height'])assert(Math.abs(previous[key]-layout.cardSize[key])<1,`Table card ${key} must stay fixed at ${layout.viewport}`);else durakCardSizes.set(layout.viewport,layout.cardSize);
+  if(process.env.PLAYROOM_DRAG_SCREENSHOTS&&pairCount===6&&phase==='before defense')await page.screenshot({path:path.join(process.env.PLAYROOM_DRAG_SCREENSHOTS,'durak-six-'+layout.viewport+'.png')});
 }
 const card = (page, id) => page.locator(`.own-hand [data-hand-preview="${id}"]`);
 async function state(page) {return page.evaluate(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current);}
@@ -113,6 +117,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
   const hosted=url.startsWith('file:')?await serveBrowserFixture(root):null;
   const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
+    if(process.env.PLAYROOM_SCENARIO&&!new RegExp(process.env.PLAYROOM_SCENARIO).test(name))return;
     await t.test(name, async () => {
       const context = await browser.newContext({viewport: options.viewport || {width: 390, height: 740}, isMobile: !!options.touch, hasTouch: !!options.touch, reducedMotion: 'reduce'});
       await context.addInitScript(saved => {if(sessionStorage.getItem('compact-seeded'))return;sessionStorage.setItem('compact-seeded','1');localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false, handShape:'straight'})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, options.saved || fixture(options.long));
@@ -156,7 +161,7 @@ test('Compact card hands preserve readable previews and each game’s play contr
     await check('Hover and keyboard focus reveal the whole card, including an unplayable card', {}, async ({page}) => {
       for (const id of ['u1', 'u26']) {
         const p = await exposedPoint(card(page, id)); await page.mouse.move(p.x, p.y); await assertFullPreview(page, id);
-        await page.mouse.move(1, 1); await card(page, id).focus(); await assertFullPreview(page, id);
+        await page.mouse.move(1, 1); await page.keyboard.press('Tab'); await card(page, id).focus(); await assertFullPreview(page, id);
         assert.equal((await state(page)).move, 0);
         await card(page, id).evaluate(el => el.blur());
       }
@@ -309,11 +314,39 @@ test('Compact card hands preserve readable previews and each game’s play contr
       for(const id of ids){await card(page,id).scrollIntoViewIfNeeded();await exposedPoint(card(page,id));}
       assert(Math.abs((await track.boundingBox()).height-before.height)<=1);assert.equal((await state(page)).move,0);
     });
+    const fixedSlots = new Map();
+    for(const viewport of [{width:390,height:740},{width:740,height:360}]) for(const occupancy of [0,1,2,3,4,5,6,"empty-stock"]) {
+      const count=occupancy==="empty-stock"?1:occupancy;
+      const saved=durakTableFixture(Math.max(1,count),6,false),s=saved.states[0],d=s.data;
+      if(!count){d.drawPile.push(d.table.pop().attack);d.attacker=0;d.defender=1;d.attackCursor=0;}
+      if(occupancy==="empty-stock")d.discard.push(...d.drawPile.splice(0));
+      Core.validateState(s);Session.restore(Core,saved);
+      await check(`Durak fixed slots at ${occupancy} pairs ${viewport.width}`,{saved,viewport,touch:true},async({page})=>{
+        const measure=()=>page.locator('.game-field-groups').evaluate(grid=>{
+          const base=grid.getBoundingClientRect();
+          return [...grid.querySelectorAll('.durak-stock,[data-durak-slot]')].map(el=>{
+            const r=el.getBoundingClientRect();return {x:r.x-base.x,y:r.y-base.y,width:r.width,height:r.height};
+          });
+        });
+        const current=await measure();assert.equal(current.length,7);
+        assert.equal(await page.locator('.trump-caption').count(),0);
+        assert.equal(await page.locator('.trump-token').count(),1);
+        const corner=await page.locator('.trump-stack').evaluate(el=>{const card=el.querySelector('.shared-card-back,.trump-placeholder').getBoundingClientRect(),badge=el.querySelector('.trump-token').getBoundingClientRect();return {dx:badge.x+badge.width/2-card.right,dy:badge.y+badge.height/2-card.bottom};});
+        assert(Math.abs(corner.dx)<1&&Math.abs(corner.dy)<1,JSON.stringify(corner));
+        if(occupancy==='empty-stock')assert.equal(await page.locator('.trump-placeholder').innerText(),'');
+        const previous=fixedSlots.get(viewport.width);
+        if(previous)current.forEach((r,i)=>Object.keys(r).forEach(k=>assert(Math.abs(r[k]-previous[i][k])<1,`slot ${i} ${k} changed at ${count} pairs: ${JSON.stringify({r,previous:previous[i]})}`)));
+        else fixedSlots.set(viewport.width,current);
+        if(count===0){await page.setViewportSize({width:viewport.height,height:viewport.width});await page.setViewportSize(viewport);await page.waitForFunction(()=>!document.querySelector('.scene[aria-busy="true"]'));const restored=await measure();restored.forEach((r,i)=>Object.keys(r).forEach(k=>assert(Math.abs(r[k]-current[i][k])<1,`slot ${i} ${k} changed after orientation roundtrip`)));}
+        if(process.env.PLAYROOM_CAPTURE_DIR&&([0,6].includes(count)||occupancy==='empty-stock'))await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`durak-fixed-${occupancy}-${viewport.width}.png`)});
+      });
+    }
     for (const [i,viewport] of [{width:320,height:640},{width:390,height:740},{width:390,height:682},{width:740,height:360}].entries()) for (const pairCount of [4,5,6]) {
       const ownCount = (i + pairCount) % 2 ? 3 : 6, openHands = (i + pairCount) % 3 !== 0;
       const saved = durakTableFixture(pairCount,ownCount,openHands), defense = saved.states[0].data.hands[0][0].id;
       await check(`Durak ${pairCount} pairs, ${ownCount} own cards, ${openHands?'open':'closed'} opponent at ${viewport.width}×${viewport.height}`, {saved,viewport,touch:true}, async ({page}) => {
         await assertDurakTableFit(page,pairCount,openHands,'before defense');
+        const contextButton=await page.locator('.layout-actions>.scene-actions>button').first().boundingBox();assert(contextButton&&contextButton.height<=36,'Context action stays compact');
         if (pairCount !== 6) return;
         const p = await exposedPoint(card(page,defense)); await page.touchscreen.tap(p.x,p.y); await expectMove(page,1);
         let s = await state(page); Core.validateState(s); assert.equal(s.data.table.at(-1).defense.id,defense); assert.equal(s.events.filter(e=>e.type==='durak.defended').length,1);
