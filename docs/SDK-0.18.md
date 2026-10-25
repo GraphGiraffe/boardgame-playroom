@@ -1,6 +1,6 @@
-# SDK · API 4 (локальный кандидат)
+# SDK · API 4 (стабильный контракт)
 
-`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.18.2. Источники и публикация — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md).
+`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.19.2. Источники и публикация — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.19.md).
 
 ## Независимые модули
 

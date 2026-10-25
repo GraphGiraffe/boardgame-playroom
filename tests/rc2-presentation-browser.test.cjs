@@ -860,6 +860,26 @@ test('all games keep the field stable while selecting and changing action phases
  assert((await page.locator('.layout-field').boundingBox()).width>100);
 }));
 
+test('structural field grids reject implicit reflow and accept only a true action flag',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await scene(page,'durak');
+ const result=await page.evaluate(()=>{
+  const host=document.querySelector('#app'),grid=()=>host.querySelector('.game-field-groups');
+  const read=()=>{const c=getComputedStyle(grid());return [c.gridTemplateColumns,c.gridTemplateRows,c.columnGap,c.alignItems];};
+  const initial=read(),style=document.createElement('style');
+  style.textContent='.durak-scene .game-field-groups{grid-template-columns:100px 100px!important;column-gap:17px!important;align-items:end!important}';document.head.append(style);
+  // A fresh DOM render must preserve the previous geometry as well.
+  rcRender();const rerendered=read();
+  const indicator=document.createElement('span');indicator.className='player-indicator';host.querySelector('.player-panel').append(indicator);
+  for(const flag of [undefined,false,'true',1]){PlayroomGameScreen.allowLayoutChange(host,{allowLayoutChange:flag});PlayroomGameScreen.layoutScene(host);}
+  const rejected=read();PlayroomGameScreen.allowLayoutChange(host,{allowLayoutChange:true});PlayroomGameScreen.layoutScene(host);const allowed=read();
+  style.remove();PlayroomGameScreen.layoutScene(host);const once=read();
+  return {initial,rerendered,rejected,allowed,once};
+ });assert.deepEqual(result.rerendered,result.initial);assert.deepEqual(result.rejected,result.initial);assert.notDeepEqual(result.allowed,result.initial);assert.deepEqual(result.once,result.allowed);
+ await page.setViewportSize({width:844,height:390});await page.evaluate(()=>rcRender());
+ const columns=await page.locator('.game-field-groups').evaluate(el=>getComputedStyle(el).gridTemplateColumns);
+ assert.notEqual(columns,result.allowed[0]);
+}));
+
 test('ZiL+ has one reversible adjustment choice before either die or destination can move',async()=>fixture(async page=>{
  await page.setViewportSize({width:390,height:844});await scene(page,'snakes',{preset:'plus'});
  const result=await page.evaluate(()=>{

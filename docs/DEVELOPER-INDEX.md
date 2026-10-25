@@ -1,6 +1,6 @@
-# Разработчику ХОД · 0.18
+# Разработчику ХОД · 0.19
 
-Действующий контракт: приложение **0.18.3**, коллекция **0.7.2**, engineApi **3**, viewApi **2**, сетевой protocol **2**. Источники и фактическое состояние публикации — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
+Действующий контракт: приложение **0.19.2**, коллекция **0.8.2**, engineApi **4**, viewApi **3**, сетевой protocol **3**. Источники и фактическое состояние публикации — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.18.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
 
 | Вопрос | Руководство |
 |---|---|
