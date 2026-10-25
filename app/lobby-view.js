@@ -51,12 +51,29 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const id='rule-help-'+(++helpSequence),label=esc(ruleText('more'));
     return `<span class="rule-help"><button type="button" popovertarget="${id}" aria-label="${label}" title="${label}">${root.TabletopUI.helpers.icon('help').replace('</svg>','<circle class="help-focus-ring" cx="12" cy="12" r="14"/>' + '</svg>')}</button><span id="${id}" class="mini-help-popover" popover="auto" role="note">${esc(text)}</span></span>`;
   }
-  function gameRulesMarkup(game,settings=[]){
-    const rules=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];
-    return `<section class="game-rules-help"><h3>${esc(ruleText('basics'))}</h3><ol class="rules-list">${rules.map(rule=>`<li>${esc(rule)}</li>`).join('')}</ol><h3>${esc(ruleText('modes'))}</h3><ul>${(game.presets||[]).map(preset=>`<li><strong>${esc(preset.label||preset.id)}</strong>${preset.description?': '+esc(preset.description):''}</li>`).join('')}</ul><h3>${esc(ruleText('options'))}</h3>${settings.length?`<dl>${settings.map(field=>`<dt>${esc(field.label)}</dt><dd>${esc(field.help||'')}<br><small>${field.options.map(option=>esc(option.label)).join(' · ')}</small></dd>`).join('')}</dl>`:`<p>${esc(ruleText('standard'))}</p>`}</section>`;
+  // Plain-text rule sections: first line is a heading; subsequent lines are paragraphs.
+  // Older packs with single-line rules remain readable without interpreting HTML.
+  function gameRulesMarkup(game,settings=[],{rules=null,rows=null,presetSetting=null,hasHands=false,firstPlayer=true}={}){
+    const paragraphs=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];
+    const sections=paragraphs.map(rule=>{
+      const lines=String(rule).split('\n').filter(line=>line.trim());
+      return lines.length>1?`<section class="rulebook-section"><h3>${esc(lines.shift())}</h3>${lines.map(line=>`<p>${esc(line)}</p>`).join('')}</section>`:`<p>${esc(lines[0]||'')}</p>`;
+    }).join('');
+    const chosen=rows||(rules?root.PlayroomMultiplayer.describeRules(rules,settings,hasHands,presetSetting):[]);
+    const selected=label=>chosen.find(row=>row.label===label)?.value;
+    const note=value=>value===undefined||value===null?'':`<div class="rules-mode-note"><strong>${esc(ruleText('selected'))}</strong> ${esc(value)}</div>`;
+    const option=(title,body,value)=>`<section class="rulebook-option"><h4>${esc(title)}</h4>${body}${note(value)}</section>`;
+    const presets=presetSetting?.options||game.presets||[];
+    const modeLabel=presetSetting?.label||ruleText('mode');
+    const mode=presets.length?option(modeLabel,(presetSetting?.help?`<p>${esc(presetSetting.help)}</p>`:'')+presets.map(p=>`<p><strong>${esc(p.label||p.id||p.value)}</strong>${p.description?' — '+esc(p.description):''}</p>`).join(''),selected(modeLabel)):'';
+    const fields=settings.map(field=>option(field.label,`<p>${esc(field.help||'')}</p><p class="rulebook-choices">${esc(ruleText('choices'))} ${field.options.map(o=>esc(o.label)).join(' · ')}</p>`,selected(field.label))).join('');
+    const shared=game.max>1?(firstPlayer?option(ruleText('firstPlayerLabel'),`<p>${esc(ruleText('firstPlayer'))}</p>`,rules?.firstPlayerMode?ruleText('first.'+rules.firstPlayerMode):null):'')+option(ruleText('seatOrderLabel'),`<p>${esc(ruleText('seatOrder'))}</p>`,rules?.seatOrder?ruleText('order.'+rules.seatOrder):null):'';
+    const hands=hasHands?option(ruleText('openHandsLabel'),`<p>${esc(ruleText('openHands'))}</p>`,rules?ruleText(rules.openHands?'yes':'no'):null):'';
+    return `<section class="game-rules-help"><div class="rulebook-main">${sections}</div><hr class="rulebook-divider"><section class="rulebook-config"><h3>${esc(ruleText('options'))}</h3>${mode}${fields}${shared}${hands}${!mode&&!fields&&!shared&&!hands?`<p>${esc(ruleText('standard'))}</p>`:''}</section></section>`;
   }
   function rulesMarkup(room,rows,game={},settings=[]){
-    return `<dl class="lobby-rule-grid">${rows.map(item=>`<div class="lobby-rule-row"><dt>${esc(item.label)}</dt><dd>${esc(item.value)}</dd></div>`).join('')}</dl>`+gameRulesMarkup(game,settings);
+    const manifest=root.PlayroomCatalog?.[room.game?.id];
+    return gameRulesMarkup(game,settings,{rules:room.rules,rows,presetSetting:manifest?.presetSetting,hasHands:!!manifest?.capabilities?.hands,firstPlayer:manifest?.capabilities?.firstPlayer!==false});
   }
   function helpMarkup(room){
     const count=room.constraints.allowed?.join(', ')||`${room.constraints.min}–${room.constraints.max}`;

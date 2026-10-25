@@ -10,7 +10,7 @@ test('screen:phone:portrait settings help opens by touch and Escape closes only 
   await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await page.locator('[data-room-cycle=seat-3]').click();await page.locator('.room-setup-modal [data-command=settings]').click();
   assert(!await page.locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
   const before=await page.evaluate(()=>localStorage.getItem('playroom.settings.v1'));
-  for(const id of ['setting-hand-shape','setting-seating','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
+  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
    if(id==='sound-preview')await page.locator('.settings-details>summary').click();
    const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"setting-with-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
    assert(await wrapper.locator('.setting-title').evaluate(e=>{const a=e.querySelector('.setting-title-text').getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');
@@ -23,4 +23,30 @@ test('screen:phone:portrait settings help opens by touch and Escape closes only 
   }
   assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('modal origins: game settings rules and room close return to their caller',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage(),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
+ const close=()=>page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+ try{
+  await page.goto(server.url);await page.locator('[data-start=tictactoe]').first().click();
+  const roomId=await page.evaluate(()=>PlayroomAppBridge.room().id);
+  await close();assert.equal(await page.locator('#modal-root .modal').count(),0);
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId,'closing room does not leave it');
+  await page.locator('#app [data-command=room]').click();await page.locator('[data-command=lobby-start]').click();
+  await page.locator('#app .table-shell').waitFor();
+  await page.locator('#app [data-command=settings]').click();
+  assert.equal(await page.locator('.settings-header-actions [data-command=rules]').count(),1);
+  assert.equal(await page.locator('.settings-quick [data-command=rules],.settings-header-actions [data-command=room-help]').count(),0);
+  await page.locator('.settings-header-actions [data-command=rules]').click();await page.locator('.game-rules-help').waitFor();
+  await close();await page.locator('.settings-overview').waitFor();await close();
+  assert.equal(await page.locator('#modal-root .modal').count(),0);assert(await page.locator('#app .table-shell').isVisible());
+  await page.locator('#app [data-command=settings]').click();await page.locator('.settings-quick [data-command=room]').click();
+  await page.locator('.room-setup-modal [data-command=settings]').click();
+  await page.locator('.settings-header-actions [data-command=room-help]').click();await close();await page.locator('.settings-overview').waitFor();await close();await page.locator('.lobby-shell').waitFor();
+  await page.keyboard.press('Escape');assert.equal(await page.locator('#modal-root .modal').count(),0);
+  assert(await page.locator('#app .table-shell').isVisible());assert.equal(await page.evaluate(()=>document.getElementById('app').inert),false);
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId);assert.deepEqual(errors,[]);
+ }finally{await browser.close();await server.close();}
 });

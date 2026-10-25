@@ -15,7 +15,7 @@ for(const [width,height] of [[320,740],[390,740],[740,390]])test(`screen:phone:$
     assert(await form.evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' form fits '+width);
     assert(await form.locator('.start-options').evaluate(e=>e.closest('form').firstElementChild.contains(e)),id+' first player and order stay at the top');
     assert.equal(await form.locator('select:not([name=option-deck])').count(),0,id+' uses rails except deck');
-    assert(await form.locator('.rule-grid:visible').evaluateAll(nodes=>nodes.every(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length===2)),id+' visible rule grid has two columns');
+    assert(await form.evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length===2),id+' visible rule grid has two columns');
     assert(await form.locator('.rule-field:visible .setting-title').evaluateAll(nodes=>nodes.every(e=>{const a=e.querySelector('.setting-title-text').getBoundingClientRect(),button=e.querySelector('.rule-help>button');if(!button)return false;const b=button.getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;})),id+' help sits beside each title');
     if(['gofish','oldmaid'].includes(id)){
      assert.deepEqual(await form.locator('[name=option-deck] option').evaluateAll(nodes=>nodes.map(e=>e.value)),['36','52']);
@@ -26,7 +26,7 @@ for(const [width,height] of [[320,740],[390,740],[740,390]])test(`screen:phone:$
      assert.equal(await readChoice(rail),'0');assert.equal(await rail.getAttribute('aria-valuetext'),'Без ограничения');assert.equal(await form.locator('#rule-option-maxRounds-value').innerText(),'∞');
     }
     if(id==='durak'){
-     assert.equal(await form.locator('[data-rule-field=jokerMode]').isVisible(),false);await form.locator('[name=option-deck]').selectOption('54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());
+     assert.equal(await form.locator('[name=option-deck]').inputValue(),'54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());await form.locator('[name=option-deck]').selectOption('36');assert.equal(await form.locator('[data-rule-field=jokerMode]').isVisible(),false);await form.locator('[name=option-deck]').selectOption('54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());
     }
     if(id==='uno'){
      const before=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.room().rules));await selectChoice(form.locator('[name=preset]'),'quick');
@@ -43,5 +43,43 @@ for(const [width,height] of [[320,740],[390,740],[740,390]])test(`screen:phone:$
   assert.deepEqual(await page.evaluate(()=>{const r=PlayroomAppBridge.room().rules;return [r.preset,r.options.unoMode,r.options.endMode];}),['quick','auto','last']);
   await page.locator('[data-command=lobby-leave]').click();await page.reload();await page.locator('[data-start=uno]').first().click();await page.locator('[data-command=room-rules]').click();
   assert.equal(await readChoice(page.locator('[name=preset]')),'quick');assert.equal(await readChoice(page.locator('[name=option-unoMode]')),'auto');assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('rulebooks: all games explain play before settings and show the current match values',{timeout:90000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage(),errors=[];
+ page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
+ const close=()=>page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+ const shots=path.resolve(root,'../tmp_files/player-rulebooks/screenshots');fs.mkdirSync(shots,{recursive:true});
+ try{
+  await page.goto(process.env.PLAYROOM_URL||server.url);
+  for(const id of ['mage-brawl','uno','durak','gofish','oldmaid','domino','battleship','checkers','ludo','snakes','pexeso','klondike','spider','tictactoe','yatzy']){
+   await page.locator('[data-start="'+id+'"]').first().click();await page.locator('[data-command=room-rules-view]').click();
+   const book=page.locator('.game-rules-help');assert(await book.locator('.rulebook-section').count()>=3,id+' has a full rulebook');
+   assert(await book.evaluate(e=>e.firstElementChild.classList.contains('rulebook-main')&&e.children[1].tagName==='HR'&&e.lastElementChild.classList.contains('rulebook-config')),id+' reading order');
+   const text=await book.innerText();assert(!/поезд|пакетный урон|Windows XP|Доступные действия подсвечиваются|[a-z-]+\.rules\.\d/.test(text),id+' no obsolete text or unresolved keys');
+   assert(await book.locator('.rulebook-config .rules-mode-note').count()>0,id+' selected values');
+   for(const viewport of [{width:390,height:740},{width:740,height:390}]){
+    await page.setViewportSize(viewport);assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' fits '+viewport.width);
+   }
+   await page.setViewportSize({width:390,height:740});
+   if(id==='mage-brawl'){
+    assert(text.includes('Это не усиление его собственных атак'));assert(text.includes('Общее число жизней'));
+    await page.screenshot({path:path.join(shots,'mage-rulebook-start.png')});
+    await book.locator('.rulebook-config').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(shots,'mage-rulebook-settings.png')});
+   }
+   await close();await page.locator('[data-command=lobby-leave]').click();
+  }
+  await page.locator('[data-start="mage-brawl"]').first().click();await page.locator('[data-command=room-rules]').click();
+  await selectChoice(page.locator('[name=option-health]'),'6');await page.locator('#room-rules-form').evaluate(e=>e.requestSubmit());
+  await page.locator('[data-command=lobby-start]').click();await page.locator('#app .table-shell').waitFor();
+  await page.locator('#app [data-command=settings]').click();await page.locator('.settings-header-actions [data-command=rules]').click();
+  const health=page.locator('.rulebook-option').filter({has:page.getByRole('heading',{name:'Здоровье',exact:true})});
+  assert.equal((await health.locator('.rules-mode-note').innerText()).trim(),'В этой партии: 6','live match uses saved rules, not defaults');
+  assert.equal(await page.locator('.rulebook-config h4').filter({hasText:'Первый игрок'}).count(),0,'simultaneous game does not offer a nonexistent setting');
+  assert.equal(await page.evaluate(()=>{const e=document.createElement('div');e.innerHTML=PlayroomLobbyView.gameRulesMarkup({rules:['<b>Title</b>\n<script>bad()</script>','Legacy line'],presets:[]});return e.querySelectorAll('script,b').length;}),0,'rule text is escaped, old single-line rules supported');
+  await close();await page.locator('.settings-overview').waitFor();await close();assert(await page.locator('#app .table-shell').isVisible());
+  assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });
