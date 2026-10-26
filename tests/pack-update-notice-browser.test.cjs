@@ -29,7 +29,8 @@ test('pack updates notify once, remain unread until packs are opened, and rearm 
     await page.locator('.pack-manager-modal').waitFor();
     await page.locator('.pack-manager-modal [data-command=close-modal]').click();
     await page.locator('.side-nav [data-command=home]').click();
-    assert.equal(await page.locator('.pack-hub-button.has-unread').count(),0);
+    assert.equal(await page.locator('.pack-hub-button.has-unread').count(),0);assert.equal(await page.locator('.pack-hub-button.flash-unread').count(),1);
+    await page.locator('.side-nav [data-command=sessions]').click();assert.equal(await page.locator('.pack-hub-button.flash-unread').count(),1);
     versions=[2,1];
     await page.locator('.side-nav [data-command=home]').click();
     await page.locator('.pack-update-notice').waitFor();
@@ -37,7 +38,7 @@ test('pack updates notify once, remain unread until packs are opened, and rearm 
   }finally{await context.close();await browser.close();await server.close();}
 });
 
-test('update all installs valid packs, retries failures and preserves preferences and old versions',{timeout:45000},async()=>{
+test('update all installs valid packs, retries failures and preserves preferences and removes unused old versions',{timeout:45000},async()=>{
  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:740}});
@@ -59,6 +60,6 @@ test('update all installs valid packs, retries failures and preserves preference
   assert.equal(await page.evaluate(()=>PlayroomPacks.list().find(p=>p.id==='ludo'&&p.active).version),'9.0.1');
   fail=false;await all.click();await page.waitForFunction(()=>PlayroomRemotePacks.pending().length===0);await page.waitForFunction(()=>!document.querySelector('[data-pack-update-all]'));
   assert.deepEqual(requests,['uno','ludo','uno']);
-  for(let i=0;i<bundles.length;i++)assert(await page.evaluate(({id,version})=>PlayroomPacks.list().some(p=>p.id===id&&p.version===version),{id:bundles[i].manifest.id,version:original[i]}));
+  for(let i=0;i<bundles.length;i++)assert(!await page.evaluate(({id,version})=>PlayroomPacks.list().some(p=>p.id===id&&p.version===version),{id:bundles[i].manifest.id,version:original[i]}));
  }finally{await context.close();await browser.close();await server.close();}
 });

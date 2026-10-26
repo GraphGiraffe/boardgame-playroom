@@ -104,9 +104,11 @@ test('bot configuration commits atomically, resets only gameplay readiness, and 
  const {RoomService}=require('../app/multiplayer.js');let id=0;const service=new RoomService({idFactory:()=>`room-${++id}`,clock:()=>1000,random:()=>.2});
  let room=service.create({name:'Битва магов',host:{id:'host',nickname:'Хост'},game:{id:'mage-brawl',name:'Битва магов',version:'0.1.0-dev.1',botSettings:E.get('mage-brawl').botSettings},rules:{preset:'classic'},constraints:{min:2,max:8},transportMode:'network'});
  room=service.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Бот'});service.setReady(room.id,'host',true);
- room=service.configureBot(room.id,'host','seat-2',{nickname:'Другой',avatar:null,botSettings:{strategy:'auto',errorRate:10}});assert(room.participants.find(p=>p.id==='host').ready,'cosmetics keep readiness');
- room=service.configureBot(room.id,'host','seat-2',{nickname:'Другой',avatar:null,botSettings:{strategy:'random',errorRate:35}});assert(!room.participants.find(p=>p.id==='host').ready);assert(room.participants.find(p=>p.id==='host').botSettingsNotice);assert.equal(room.participants.find(p=>p.bot).botSettings.strategy,'random');
- const before=JSON.stringify(room);assert.throws(()=>service.configureBot(room.id,'host','seat-2',{nickname:'Invalid',botSettings:{strategy:'bad',errorRate:35}}));assert.equal(JSON.stringify(service.snapshot(room.id)),before);
+ room=service.configureBot(room.id,'host','seat-2',{nickname:'Другой',avatar:null,botSettings:{strategy:'auto',difficulty:'medium'}});assert(room.participants.find(p=>p.id==='host').ready,'cosmetics keep readiness');
+ room=service.configureBot(room.id,'host','seat-2',{nickname:'Другой',avatar:null,botSettings:{strategy:'random',difficulty:'easy'}});assert(!room.participants.find(p=>p.id==='host').ready);assert(room.participants.find(p=>p.id==='host').botSettingsNotice);assert.equal(room.participants.find(p=>p.bot).botSettings.strategy,'random');
+ room=service.setBotsDifficulty(room.id,'host','hard');assert.equal(room.participants.find(p=>p.bot).botSettings.difficulty,'hard');assert.equal(room.participants.find(p=>p.bot).botSettings.strategy,'random');
+ assert.throws(()=>service.setBotsDifficulty(room.id,'host','impossible'));
+ const before=JSON.stringify(room);assert.throws(()=>service.configureBot(room.id,'host','seat-2',{nickname:'Invalid',botSettings:{strategy:'bad',difficulty:'easy'}}));assert.equal(JSON.stringify(service.snapshot(room.id)),before);
  assert.throws(()=>service.configureBot(room.id,'not-host','seat-2',{nickname:'No'}));
 });
 test('square cards share the card type frame and retain arbitrary rotation geometry',()=>{

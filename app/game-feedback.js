@@ -18,6 +18,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       this.cursor=additions.at(-1).id;if(silent)return;
       // Preserve the displayed turn across the entire committed effect queue.
       if(this.presentationTurn==null){const stage=this.mount()?.querySelector('.app-game-layout');if(stage?.dataset.turnPlayer!=null)this.presentationTurn=Number(stage.dataset.turnPlayer);}
+      // The result dialog owns terminal audio; never play it during the final action.
+      const finishIds=new Set(events.filter(event=>event.kind==='finish').map(event=>event.id));
+      cues=cues.filter(cue=>!finishIds.has(cue.eventId));
       const timing=times[mode]||times.normal;
       if(!this.queue.length&&!this.active)this.initialScene=initialScene;this.finalScene=finalScene;
       snapshot?.prepareDepartures?.(finalScene);
@@ -131,7 +134,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const boundary=(this.active||this.queue[0])?.boundary;
       const heldField=boundary?.liveSurfaceMotion?this.displayScene:this.fieldScene||this.displayScene;
       this.motion?.releaseStage?.();this.stagedBoundary=null;this.movedBoundaries=new WeakSet();
-      this.active=null;this.presentationTurn=null;this.clearDepartures();this.restoreRoutes();this.restoreMetrics();this.presentedScene=null;if(heldField)this.fieldChanged?.();this.refresh();this.positionTurn();
+      this.active=null;this.initialScene=null;this.finalScene=null;this.presentationTurn=null;this.clearDepartures();this.restoreRoutes();this.restoreMetrics();this.presentedScene=null;if(heldField)this.fieldChanged?.();this.refresh();this.positionTurn();
       for(const done of this.waiters.splice(0))done();
     }
     whenIdle(){return this.active||this.queue.length||this.request?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}

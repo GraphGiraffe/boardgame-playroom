@@ -120,13 +120,21 @@ class RoomService{
     configureBot(roomId,hostId,seatId,{nickname,avatar,botSettings}){
       const room=this._room(roomId);this._host(room,hostId);this._lobby(room);this._newMatch(room);
       const person=room.participants.find(p=>p.id===room.seats.find(s=>s.id===seatId)?.participantId),config=room.game.botSettings;
-      if(!person?.bot||!config)throw Error('BOT_SETTINGS_UNAVAILABLE');
-      const strategy=botSettings?.strategy??'auto',errorRate=botSettings?.errorRate??10;
-      if(strategy!=='auto'&&!config.strategies.some(p=>p.id===strategy)||!Number.isInteger(errorRate)||errorRate<0||errorRate>100||errorRate%5)throw Error('BOT_SETTINGS_INVALID');
-      const name=normalizeName(nickname),old=person.botSettings||{strategy:'auto',errorRate:10},changed=old.strategy!==strategy||old.errorRate!==errorRate;
-      person.nickname=name;person.botSettings={strategy,errorRate};if(avatar!==undefined)person.avatar=avatar;
+      if(!person?.bot)throw Error('BOT_SETTINGS_UNAVAILABLE');
+      const strategy=botSettings?.strategy??'auto',difficulty=botSettings?.difficulty??'medium';
+      if(strategy!=='auto'&&!(config?.strategies||[]).some(p=>p.id===strategy)||!['easy','medium','hard'].includes(difficulty))throw Error('BOT_SETTINGS_INVALID');
+      const name=normalizeName(nickname),old=person.botSettings||{strategy:'auto',difficulty:'medium'},changed=(old.strategy||'auto')!==strategy||(old.difficulty||'medium')!==difficulty;
+      person.nickname=name;person.botSettings={strategy,difficulty};if(avatar!==undefined)person.avatar=avatar;
       if(changed){room.botSettingsRevision=(room.botSettingsRevision||0)+1;for(const p of room.participants){p.ready=!!p.bot;p.botSettingsNotice=!p.bot;}delete room.startOrderResolved;}
       room.lobbyRevision++;this._touch(room);this._emit(room,'bot-settings-changed',globalThis.PlayroomMessages.text('ui.bot-settings.changed'),{participantId:person.id,changed});return this.snapshot(roomId);
+    }
+    setBotsDifficulty(roomId,hostId,difficulty){
+      const room=this._room(roomId);this._host(room,hostId);this._lobby(room);this._newMatch(room);
+      if(!['easy','medium','hard'].includes(difficulty))throw Error('BOT_SETTINGS_INVALID');
+      const bots=room.participants.filter(p=>p.bot);let changed=false;
+      for(const person of bots){changed||=(person.botSettings?.difficulty??'medium')!==difficulty;person.botSettings={strategy:person.botSettings?.strategy||'auto',difficulty};}
+      if(changed){room.botSettingsRevision=(room.botSettingsRevision||0)+1;for(const p of room.participants){p.ready=!!p.bot;p.botSettingsNotice=!p.bot;}delete room.startOrderResolved;}
+      room.lobbyRevision++;this._touch(room);this._emit(room,'bot-settings-changed',globalThis.PlayroomMessages.text('ui.bot-settings.changed'),{changed});return this.snapshot(roomId);
     }
     restoreHotSeatLobby(value,{hostId,active=false}={}){
       const room=clone(value);
@@ -246,6 +254,7 @@ class RoomService{
       for(const p of humans){const index=seatIndex(p);if(index<next.max)place(p,seats[index]);else displaced.push(p);}
       for(const p of displaced)place(p,seats.find(seat=>!seat.participantId));
       for(const p of keptBots)place(p,seats.find(seat=>!seat.participantId));
+      for(const p of keptBots)if(p.botSettings&&!game.botSettings?.strategies?.some(s=>s.id===p.botSettings.strategy))p.botSettings={strategy:'auto',difficulty:p.botSettings.difficulty||'medium'};
       room.seats=seats;room.participants=room.participants.filter(p=>!dropped.has(p.id));
       delete room.startOrderResolved;room.firstPlayerMode=rules.firstPlayerMode||'rules';room.seatOrder=rules.seatOrder||'normal';
       if(room.firstParticipantId&&!room.participants.some(p=>p.id===room.firstParticipantId)){room.firstParticipantId=null;if(room.firstPlayerMode==='assigned')room.firstPlayerMode='rules';}

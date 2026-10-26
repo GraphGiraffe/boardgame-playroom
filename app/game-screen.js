@@ -261,6 +261,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function deleteConfirmation({name=globalThis.PlayroomMessages.text("ui.game-screen.02c17edea60f"),network=false,confirmAttrs=''}){
     return `${modalHead(globalThis.PlayroomMessages.text("ui.game-screen.97e625bfddc6"))}<p class="lead">${esc(name)} ${globalThis.PlayroomMessages.text("ui.game-screen.c45481781f5f")}${network?globalThis.PlayroomMessages.text("ui.game-screen.9264423128bd"):globalThis.PlayroomMessages.text("ui.game-screen.b01c15488ec5")}. ${globalThis.PlayroomMessages.text("ui.game-screen.6905ded6e0fe")}</p><div class="modal-foot">${UI.button({attrs:'data-command="close-modal"',label:globalThis.PlayroomMessages.text("ui.game-screen.97b65905439a"),variant:'secondary'})}${UI.button({attrs:confirmAttrs,icon:'trash',label:globalThis.PlayroomMessages.text("ui.game-screen.be99b1361201"),variant:'danger'})}</div>`;
   }
+  const soundedResults=new WeakSet();
+  function resultSound(state,viewer){
+    if(state?.status!=='finished')return null;
+    if(viewer<0||viewer>=state.players.length)return 'notify';
+    if(state.winner==null)return 'draw-game';
+    if((state.winners||[state.winner]).includes(viewer))return 'victory';
+    const places=state.result?.places;
+    return places&&places[viewer]<Math.max(...places)?'draw-game':'defeat';
+  }
+  function presentResultSound(owner,state,viewer,play){
+    const sound=resultSound(state,viewer);
+    if(!sound||soundedResults.has(owner))return false;
+    soundedResults.add(owner);play([sound],state.game);return true;
+  }
   function resultMarkup({state,viewer,gameName,scoreLabel=globalThis.PlayroomMessages.text("ui.game-screen.d7ab0767bbee"),playerContent=[],network=false}={}){
     if(!state||state.status!=='finished')return '';
     const winner=state.winner,winningPlayers=state.winners|| (winner==null?[]:[winner]),person=winner==null?null:state.players[winner];
@@ -282,11 +296,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const botSettings=player.bot&&(state.scene?.players?.find(p=>p.player===i)?.botSettings||player.botSettings);
       const botConfig=root.TabletopCore?.GAMES?.find(game=>game.id===state.game)?.botSettings;
       const strategy=botSettings?.resolvedStrategy||botSettings?.strategy;
-      const botDescription=botSettings&&botConfig?`${botConfig.strategies.find(p=>p.id===strategy)?.label||root.PlayroomMessages.text('ui.bot-settings.auto')} · ${root.PlayroomMessages.text('ui.bot-settings.errors')}: ${botSettings.errorRate??botConfig.defaultErrorRate??10}%`:'';
+      const botDescription=player.bot?(botConfig?.strategies?.find(p=>p.id===strategy)?.label||''):'';
       const extra=(state.result?.metrics||[]).filter(metric=>metric.display!=='ranking'&&!shownIds.has(metric.id)&&Number.isFinite(metric.values?.[i])).map(metric=>`${metric.label}: ${Number.isInteger(metric.maximumFractionDigits)&&metric.maximumFractionDigits>=0&&metric.maximumFractionDigits<=6?new Intl.NumberFormat('ru',{maximumFractionDigits:metric.maximumFractionDigits}).format(metric.values[i]):metric.values[i]}`);
       const exit=state.result?.exits?.find(exit=>exit.player===i);
       const exitText=exit?globalThis.PlayroomMessages.text('ui.game-screen.exit-'+exit.kind)+' · '+globalThis.PlayroomMessages.text(exit.round?'progress.round':'progress.turn',{number:exit.round||exit.turn}):'';
-      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon(player)}${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${exitText?`<small class="result-exit">${esc(exitText)}</small>`:''}${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</div>`;
+      return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon({...player,botSettings})}<span class="result-nickname">${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span>${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${exitText?`<small class="result-exit">${esc(exitText)}</small>`:''}</div>`;
     }).join('');
     return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores" data-game="${esc(state.game)}">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text("ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
   }
@@ -496,12 +510,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
   }
-  const replayFitters=new WeakMap();
+  const replayFitters=new WeakMap(),pendingLayouts=new WeakMap();
   function layoutScene(host,settled=false){
     root.PlayroomPublicSequence?.bind(host);
     // Network diagnostics/history can finish mounting after the synchronous render.
     // Measure once more after that DOM transaction, before freezing the viewport.
-    if(!settled)host.ownerDocument.defaultView.requestAnimationFrame?.(()=>layoutScene(host,true));
+    if(!settled&&!pendingLayouts.has(host)){
+      const frame=host.ownerDocument.defaultView.requestAnimationFrame?.(()=>{pendingLayouts.delete(host);layoutScene(host,true);});
+      if(frame!==undefined)pendingLayouts.set(host,frame);
+    }
     fitGameTitles(host);
     const scene=host.querySelector('.scene'),previous=replayFitters.get(host);
     if(previous?.scene!==scene){
@@ -657,5 +674,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(shell){for(const bar of shell.querySelectorAll('.table-status>.turn-label,.table-status>.status-details'))for(const prop of ['left','right','width'])bar.style.removeProperty(prop);}
 
   }
-  return Object.freeze({gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
+  return Object.freeze({gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,resultSound,presentResultSound,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

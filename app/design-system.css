@@ -370,7 +370,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .player-medallion.is-team:has(svg){color:var(--color-action-on-primary,#fffdf4)}
 .result-scores .score-row{display:grid;grid-template-columns:27px 29px minmax(0,1fr) minmax(0,45%);align-items:center;column-gap:6px;text-align:left}
 .result-scores .score-row>.avatar{flex:none}
-.result-scores .result-name{display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
+.result-scores .result-name{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:4px;row-gap:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
 .result-scores .result-name .participant-role{flex:none}
 .result-scores .result-name strong{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis}
 .result-scores .player-medallion{position:static;flex:none;width:22px;height:22px}
@@ -951,3 +951,5 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 .rulebook-option p{margin:.45em 0;line-height:1.6}
 .rulebook-option .rulebook-choices{color:var(--muted);font-size:.9em}
 .rulebook-option .rules-mode-note{margin-top:.6em}
+
+.result-scores .result-nickname{min-width:0;overflow:hidden;text-overflow:ellipsis}.result-scores .result-name .result-bot-settings{grid-column:2;margin-top:3px}

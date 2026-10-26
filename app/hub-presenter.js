@@ -48,7 +48,7 @@ function renderHub() {
     restoringScroll=true;
     ports.interruptAction();ports.input?.cancel();ports.playerTargets?.cancel();ports.feedback.clear();ports.cancelBot(); ports.latestPacks();
     const updates=ports.packUpdates(),unread=updates.some(item=>!ports.packNotices.read.includes(ports.updateKey(item))),newUpdates=updates.filter(item=>!ports.packNotices.dismissed.includes(ports.updateKey(item)));
-    const flashPacks=ports.flashPacksOnHub&&unread;ports.flashPacksOnHub=false;
+    const flashPacks=updates.length>0;ports.flashPacksOnHub=false;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
     const games=orderedVisibleGames().filter(g=>(ports.filter!=='favorites'||preferences.favorites.includes(g.id))&&ports.Tags.matches(g,ports.catalog?.[g.id],ports.hubFilters.format)&&['type','mechanic'].every(kind=>!ports.hubFilters[kind]||ports.Tags.forPack(ports.catalog?.[g.id]).some(t=>t.id===ports.hubFilters[kind])));
     const hiddenCount=ports.E.GAMES.filter(g=>preferences.hidden.includes(g.id)).length;

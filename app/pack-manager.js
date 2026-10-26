@@ -76,6 +76,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const remote=root.PlayroomRemotePacks;
     const title = manifest => manifest.name || manifest.title || manifest.id;
     const references = (id,version) => library.references(id,version);
+    const cleanup=new root.PlayroomPackUpdateCleanup({manager,localReferences:references,networkArchives:()=>networkLibrary.list({strict:true}),activeRoom:()=>!!networkLibrary.hasActiveRoom?.(),compare:manager.constructor.compareVersions});
     function currentBootWarnings(){
       const warnings=root.PlayroomPacks?.warnings||[];
       // A bundled version conflict matters to the user while a saved game
@@ -124,12 +125,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       } catch(error) { if(ticket!==reading)return;message=globalThis.PlayroomMessages.text("ui.pack-manager.2b5db8b50485",{p0:String(globalThis.PlayroomMessages.error(error))}); }
       if(document.querySelector('.pack-manager-modal'))open();
     }
-    function install() {
+    async function install() {
       if(!pending)return;
       try {
         const id=pending.manifest.id;
         manager.install(manager.prepare(pending),{activate:true});
-        pending=null;message='';onChange();open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));
+        pending=null;await cleanup.run(id);message='';onChange();open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));
       } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.9dfa32b39696",{p0:String(globalThis.PlayroomMessages.error(error))});open();}
     }
     async function removalPlan(items,all=false){
@@ -170,7 +171,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const errors=[];let completed=0;
       try {
         for(const id of ids){
-          try{await remote.install(id,{activate:true});completed++;}
+          try{await remote.install(id,{activate:true});completed++;await cleanup.run(id);}
           catch(error){errors.push(`${id}: ${globalThis.PlayroomMessages.error(error)}`);}
         }
       } finally {

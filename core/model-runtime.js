@@ -7,6 +7,7 @@
 })(globalThis, function (Values, Events) {
   'use strict';
   const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
+  const Difficulty=globalThis.PlayroomBotDifficulty||require('./bot-difficulty.js');
   const event=Events.validate, projectEvents=Events.project;
   function validTimeline(value,revision,hasRounds){
     const sequence=(starts,count)=>Array.isArray(starts)&&starts.length===count&&starts[0]===(value.playStart??0)&&starts.every((n,i)=>integer(n,0,revision)&&(!i||n>starts[i-1]));
@@ -23,10 +24,12 @@
         integer(definition.minPlayers, 1, 32) && integer(definition.maxPlayers, definition.minPlayers, 32) &&
         ['create','validate','actions','reduce','project','result'].every(key => typeof definition[key] === 'function') &&
         (definition.bot === undefined || typeof definition.bot === 'function') &&
+        (definition.botHandlesDifficulty===undefined||typeof definition.botHandlesDifficulty==='boolean')&&
+        (definition.botMistakes===undefined||typeof definition.botMistakes==='function')&&
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['preparing','reactions','reactionControl','reactionWindows','botReaction','decisionWindow','botContext'].every(key=>
+        ['preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -156,24 +159,32 @@
       return snapshot({...projected, actor,
         actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command)});
     }
-    botAction(position, actor) {
+    botAction(position, actor, settings) {
       const projection = this.project(position, actor), actions = this.legalActions(position,actor);
       if (!actions.length) return null;
       const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
-      const chosen = this.#definition.bot?.(projection, actor, actions, memory, snapshot(this.#definition.botContext?.(snapshot(position),actor)||{})) ?? actions[0];
+      const context={...snapshot(this.#definition.botContext?.(snapshot(position),actor)||{}),...Difficulty.context(settings,position.rng,this.id+':'+(position.revision||0)+':'+actor)};
+      const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??actions[Math.floor(context.random()*actions.length)];
+      const preferred=actions.find(value=>command(value)===command(selected));
+      check(preferred!==undefined,'BOT_ACTION_INVALID');
+      const chosen=this.#definition.botHandlesDifficulty||settings?.enabled===false?preferred:Difficulty.choose(preferred,this.#definition.botMistakes?.(projection,actor,actions)||actions,context);
       const found = actions.find(value => command(value) === command(chosen));
       check(found !== undefined, 'BOT_ACTION_INVALID');
       return found;
     }
-    botReaction(position,actor) {
+    botReaction(position,actor,settings) {
       const actions=this.reactions(position,actor);
       if(!actions.length||!this.#definition.botReaction)return null;
       const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
-      const chosen=this.#definition.botReaction(this.project(position,actor),actor,actions,memory);
+      const chosen=this.#definition.botReaction(this.project(position,actor),actor,actions,memory,settings);
       if(chosen==null)return null;
       const found=actions.find(value=>command(value)===command(chosen));
       check(found!==undefined,'BOT_REACTION_INVALID');
       return found;
+    }
+    botReactionDelay(position,actor,settings) {
+      const delay=this.#definition.botReactionDelay?.(this.project(position,actor),actor,settings,snapshot(this.#definition.observe?.(snapshot(position),actor)||{}))??null;
+      check(delay===null||integer(delay,0,60000),'BOT_REACTION_DELAY_INVALID');return delay;
     }
     result(position) {
       this.validate(position);

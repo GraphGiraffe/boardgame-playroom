@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..'),packs=path.dirname(fs.realpathSync(path.
 test('Yatzy rules, category schema and presentation execute without engine or browser globals',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  for(const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
+  for(const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js'].map(file=>path.join(root,file))
     .concat(['domain/categories.js','domain/game.js','presentation/scene.js'].map(file=>path.join(packs,'packs/yatzy',file)))){
     vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   }
@@ -49,7 +49,7 @@ test('Yatzy model preserves held dice, limits three throws and accepts a numeric
 test('Battleship runs headless, keeps setup private and grants only public fire commands',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file))
+  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js'].map(file=>path.join(root,file))
     .concat(['domain/geometry.js','domain/game.js','presentation/scene.js'].map(file=>path.join(packs,'packs/battleship',file)));
   for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   const result=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
@@ -153,7 +153,7 @@ test('each migrated pack definition executes in isolation with explicit determin
  for(const [id,dependency]of Object.entries(entries)){
   const context=vm.createContext({}),base=path.join(packs,'packs',id),manifest=JSON.parse(fs.readFileSync(base+'/manifest.json'));
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file));
+  const files=['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js'].map(file=>path.join(root,file));
   for(const file of manifest.sharedDomain||[])files.push(path.join(packs,'shared/domain',file+'.js'));
   files.push(...manifest.sourceModules.rules.map(file=>path.join(base,file)));
   for(const file of files)vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
@@ -204,7 +204,7 @@ test('race endings honor the assigned first-player boundary, ties and complete f
   }
  }
  const model=new GameModel(require(path.join(packs,'packs/ludo/domain/game.js'))({rollDie:()=>1,ending:Ending},require(path.join(packs,'packs/ludo/domain/board.js'))));
- let state=JSON.parse(JSON.stringify(model.create({playerCount:4,firstPlayer:2,preset:'teams',rng:17,options:{endMode:'last'}})));
+ let state=JSON.parse(JSON.stringify(model.create({playerCount:4,firstPlayer:2,preset:'teams',rng:17,options:{endMode:'last',diceCount:1}})));
  state.turn=2;state.data.pawns[0].fill(57);state.data.pawns[2]=[57,57,57,56];state.data.phase='move';state.data.dice=[1];state.data.used=[false];
  let next=model.apply(state,2,{type:'move',owner:2,pawn:3,dieIndex:0}).position;
  assert.equal(next.status,'playing');assert.equal(next.turn,3);assert.deepEqual(next.data.ending.groups,[[0,2]]);
@@ -290,7 +290,7 @@ test('Battleship counts every shot as a turn and both firing queues as a round',
 test('ZiL+ deferred effects, shield and automatic second die obey the public commands',()=>{
  const {GameModel}=require('../core/model-runtime.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
  const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>2,ending:Ending}));
- const start=(from=0)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17})));p.data.positions[0]=from;p.data.phase='move';p.data.dice=[1,3];return p;};
+ const start=(from=0)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17,options:{boardSize:64}})));p.data.positions[0]=from;p.data.phase='move';p.data.dice=[1,3];return p;};
  const move=p=>model.apply(p,0,{type:'move',dieIndex:0,delta:0});
  let p=start(16),r=move(p);assert.equal(r.position.data.positions[0],34);assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[1,3]);assert.equal(r.events.filter(e=>e.params.automatic).length,1);
  const presentation=require(path.join(packs,'packs/snakes/presentation/scene.js'));
@@ -327,7 +327,7 @@ test('ZiL+ bot games terminate and replay deterministically with six players and
 test('ZiL+ rewards raw doubles after all moves and has no extra-roll cells',()=>{
  const {GameModel}=require('../core/model-runtime.js'),Ending=require(path.join(packs,'shared/domain/end-policy.js'));
  const model=new GameModel(require(path.join(packs,'packs/snakes/domain/game.js'))({rollDie:()=>2,ending:Ending}));
- const start=(dice,from=0,boardSize=64)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17,options:{boardSize}})));p.data.phase='move';p.data.dice=dice;p.data.positions[0]=from;return p;};
+ const start=(dice,from=0,boardSize=64)=>{const p=JSON.parse(JSON.stringify(model.create({playerCount:3,firstPlayer:0,preset:'plus',rng:17,options:{boardSize,endMode:'winner'}})));p.data.phase='move';p.data.dice=dice;p.data.positions[0]=from;return p;};
  const move=(p,delta=0)=>model.apply(p,0,{type:'move',dieIndex:0,delta});
  for(const size of [64,100])assert(!Object.values(start([2,2],0,size).data.special).includes('extra'));
  let r=move(start([2,2]));assert.equal(r.position.turn,0);assert.equal(r.position.data.phase,'roll');assert.equal(r.events.at(-1).type,'snakes.extra');

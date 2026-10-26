@@ -43,7 +43,7 @@ test('Battleship manual placement rotates and preserves the fleet rules',()=>{
 });
 
 test('Ludo teams finish together and Yatzy uses classic small straight',()=>{
- let s=create('ludo',4,'teams');s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.dice=[1];s.data.used=[false];s=play(s,{type:'move',owner:2,pawn:3,dieIndex:0});assert.deepEqual(s.winners,[0,2]);
+ let s=E.createGame('ludo',{players:Array.from({length:4},(_,i)=>({name:'P'+i})),preset:'teams',diceCount:1,endMode:'winner',seed:17});s.turn=2;s.data.pawns[0]=[57,57,57,57];s.data.pawns[2]=[57,57,57,56];s.data.phase='move';s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];s=play(s,{type:'move',owner:2,pawn:3,dieIndex:0});assert.deepEqual(s.winners,[0,2]);
  s=create('yatzy');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
 });
 
@@ -63,7 +63,7 @@ test('Ludo keeps every pawn visible on a shared start and does not replay the pr
  // The just-committed roll still animates when no legal move advanced the turn.
  assert.match(V.render(E.project(s,1),1,E.legalActions(s,1),{presentationTurn:0}),/data-motion-lead="roll"/);
  s.turn=0;assert.match(V.render(E.project(s,0),0,E.legalActions(s,0),{}),/data-motion-lead="roll"/);
- s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.dice=[1];s.data.used=[false];
+ s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];
  const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
  const safeCell=route.match(/<button class="ludo-cell ludo-safe[^>]*data-motion-anchor="path-8"[^>]*>[\s\S]*?<\/button>/)?.[0];
  assert(safeCell?.includes('ludo-safe-star'));
@@ -148,8 +148,9 @@ test('board game avatars use the shared distinct seat palette',()=>{
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
- let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});const action=E.botAction(s),privateChanged=E.clone(s);const G=require('../packs/battleship/domain/geometry.js');let seed={rng:23};do{privateChanged.data.ships[1-actor]=G.autoPlace(seed,[],G.fleets[s.preset],true,E.random);}while(!privateChanged.data.ships[1-actor].flat().includes(cell));assert(E.validateState(privateChanged));assert.deepEqual(E.botAction(privateChanged),action);
- assert([cell-1,cell+1,cell-10,cell+10].includes(action.cell),'follow adjacent hit');
+ let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});const actor=s.turn,cell=s.data.ships[1-actor][0][1];s=play(s,{type:'fire',cell});s.turn=actor;const action=E.botAction(s),privateChanged=E.clone(s);const G=require('../packs/battleship/domain/geometry.js');let seed={rng:23};do{privateChanged.data.ships[1-actor]=G.autoPlace(seed,[],G.fleets[s.preset],true,E.random);}while(!privateChanged.data.ships[1-actor].flat().includes(cell));assert(E.validateState(privateChanged));assert.deepEqual(E.botAction(privateChanged),action);
+ // Assess the tactical preference separately from the intentional mistake chance.
+ const tactical=E.clone(s);tactical.players.forEach(p=>p.bot=false);assert([cell-1,cell+1,cell-10,cell+10].includes(E.botAction(tactical).cell),'follow adjacent hit without a deliberate mistake');
 });
 test('Akulina shows who draws and publicly discards pairs without revealing the card',()=>{
  const Authority=require('../core/authority.js');let s=create('oldmaid',4);let pair=null;
@@ -205,7 +206,7 @@ test('Ludo friendly occupied cells keep pawn selection separate from a move',()=
  }
 });
 test('Ludo star squares are safe while the next unmarked square can capture',()=>{
- let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];
+ let s=create('ludo',2);s.turn=0;s.data.phase='move';s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];s.data.pawns=[[7,-1,-1,-1],[47,-1,-1,-1]];
  s=play(s,{type:'move',owner:0,pawn:0,dieIndex:0});assert.equal(s.data.pawns[1][0],47);
 });
 test('Pexeso shows a mismatch through its animation, then closes it before the next turn',()=>{
@@ -330,4 +331,130 @@ test('finish order records simultaneous exits, public timing and the last loser'
   assert.deepEqual(E.project(s,0).result,s.result);
   assert(s.result.exits.length>0);assert(s.result.exits.every(e=>e.round>0||e.turn>0));
  }
+});
+
+
+test('Battleship simultaneous fleet setup keeps private choices and independent readiness',()=>{
+ let s=create('battleship',2,'classic');const first=s.turn,other=1-first;
+ assert(E.legalActions(s,other).some(a=>a.type==='auto'));
+ s=E.applyAction(s,other,{type:'auto'});const fleet=JSON.stringify(s.data.ships[other]);
+ s=E.applyAction(s,first,{type:'auto'});assert.equal(JSON.stringify(s.data.ships[other]),fleet);
+ assert.equal(E.project(s,first).data.ships[other].length,0);
+ assert.equal(E.projectTable(s,first).tableActions.length,0);
+ s=E.applyAction(s,other,{type:'ready'});assert.equal(s.data.phase,'setup');assert.equal(E.legalActions(s,other).length,0);
+ assert.deepEqual(E.decisionWindow(s).ready,[other]);assert(E.legalActions(s,first).some(a=>a.type==='ready'));
+ s=E.applyAction(s,first,{type:'ready'});assert.equal(s.data.phase,'battle');assert.equal(s.turn,first);assert.equal(E.decisionWindow(s),null);assert(E.validateState(s));
+});
+test('Battleship bot search varies by seeded randomness without reading hidden ships',()=>{
+ const factory=require('../packs/battleship/domain/game.js'),G=require('../packs/battleship/domain/geometry.js'),D=factory({random:E.random},G),commands=Array.from({length:100},(_,cell)=>({type:'fire',cell}));
+ const projection={preset:'classic',data:{shots:[[],[]],marks:[[],[]],sunk:[[],[]],announceSinking:true}},seen=new Set();
+ for(let seed=1;seed<=40;seed++){
+  const context={rng:seed*982451653>>>0},a=D.bot(projection,0,commands,{},context);seen.add(a.cell);
+  assert.deepEqual(D.bot(projection,0,commands,{},context),a,'restore repeats the same random choice');
+ }
+ assert(seen.size>20,'search does not follow a fixed board pattern');
+});
+
+
+test('Ludo bots prioritize six exits, captures, then starts and stars using actual board rules',()=>{
+ const setup=(preset='classic')=>{const s=create('ludo',4,preset);s.players.forEach(p=>p.bot=false);s.turn=0;s.data.phase='move';s.data.dice=[1,2];s.data.used=[false,false];s.data.pawns=[[4,7,40,-1],[-1,-1,-1,-1],[-1,-1,-1,-1],[-1,-1,-1,-1]];return s;};
+ let exit=setup();exit.data.dice=[1,6];exit.data.pawns[1][0]=44;
+ assert.equal(E.botAction(exit).pawn,3,'exit on six beats capture');assert.equal(E.botAction(exit).dieIndex,1);
+ let s=setup();s.data.pawns[1][0]=44; // Opponent at global cell 5.
+ assert.equal(E.botAction(s).pawn,0,'capture beats a star, progress and base exit');
+ assert.equal(E.botAction(s).dieIndex,0);
+ s=setup();assert.equal(E.botAction(s).pawn,1,'star beats further progress');
+ s.data.pawns[0]=[12,30,40,42];assert.equal(E.botAction(s).pawn,0,'another player start is safe too');
+ s=setup();s.data.pawns[0]=[6,30,40,42];s.data.pawns[1][0]=45; // Global 6: cannot be captured by these moves.
+ assert.equal(E.botAction(s).pawn,0);assert.equal(E.botAction(s).dieIndex,1,'second die lands on the star');
+ s=setup('teams');s.data.pawns[2][0]=31; // Ally at global 5 is not a capture.
+ assert.equal(E.botAction(s).pawn,1,'ally does not override safe-cell priority');
+ s=setup();s.turn=1;s.data.pawns[0]=[-1,-1,-1,-1];s.data.pawns[1]=[7,30,40,42];assert.equal(E.botAction(s).pawn,0,'stars use owner-relative board rotation');
+ const before=JSON.stringify(s);assert.deepEqual(E.botAction(s),E.botAction(s));assert.equal(JSON.stringify(s),before,'bot evaluation does not mutate the position');
+});
+
+
+test('Ludo bots develop several pawns and escape threats instead of always advancing the leader',()=>{
+ const setup=(preset='classic')=>{const s=E.createGame('ludo',{players:Array.from({length:4},(_,i)=>({name:'P'+i})),preset,diceCount:1,seed:17});s.turn=0;s.data.phase='move';s.data.dice=[5];s.data.used=[false];s.data.pawns=[[5,30,-1,-1],[-1,-1,-1,-1],[-1,-1,-1,-1],[-1,-1,-1,-1]];return s;};
+ let s=setup();s.data.dice=[2];assert.equal(E.botAction(s).pawn,0,'develop lagging pawn when neither move is tactical');
+ s=setup();s.data.pawns[1][0]=13;assert.equal(E.botAction(s).pawn,1,'run from enemy at global 26 beyond a one-die capture');
+ s=setup();s.data.pawns[0]=[0,20,-1,-1];s.data.pawns[1][0]=40;assert.equal(E.botAction(s).pawn,1,'avoid leaving safety into a reachable enemy attack');
+ s=setup('teams');s.data.pawns[2][0]=0;assert.equal(E.botAction(s).pawn,0,'ally behind the leader is not a threat');
+ s=setup();s.data.pawns[0]=[5,52,-1,-1];assert.equal(E.botAction(s).pawn,1,'finish a pawn when no tactical move is needed');
+ // Repeated ordinary choices alternate between pawns instead of driving one home.
+ s=setup();s.data.pawns[0]=[2,3,-1,-1];s.data.dice=[1];const used=new Set();
+ for(let i=0;i<4;i++){const c=E.botAction(s);used.add(c.pawn);s.data.pawns[0][c.pawn]++;}
+ assert.equal(used.size,2);
+});
+
+
+test('Go Fish sorts ranks and asks with the exact selected physical card',()=>{
+ const s=create('gofish',4,'classic','52'),actor=s.turn,hand=s.data.hands[actor],card=hand.find(c=>hand.some(other=>other.id!==c.id&&other.rank===c.rank));assert(card,'seed has duplicate rank');
+ const sibling=hand.find(c=>c.id!==card.id&&c.rank===card.rank),before=JSON.stringify(s);
+ const scene=E.project(s,actor).scene,ranks=scene.players[actor].hand.map(c=>c.rank);assert.deepEqual(ranks,[...ranks].sort((a,b)=>a-b));
+ const actions=E.legalActions(s,actor),a=actions.find(a=>a.cardId===sibling.id);assert(a);assert.equal(a.card,sibling.id);
+ const html=V.render(E.project(s,actor),actor,actions,{selected:sibling.id});assert(html.includes('data-select="'+sibling.id+'"'));assert.equal(JSON.stringify(s),before);
+ const next=E.applyAction(s,actor,a),asked=E.project(next,actor).events.findLast(e=>e.type==='gofish.asked');assert.equal(asked.reveal.card.id,sibling.id);
+ assert(E.project(s,-1).scene.players.every(p=>p.hand.every(c=>c.hidden&&!c.id&&!c.rank)));
+});
+
+
+test('difficulty presets are seeded, fallible, independent per player and Pexeso remembers probabilistically',()=>{
+ const B=require('../core/bot-difficulty.js'),D=require('../packs/pexeso/domain/game.js')({shuffle:E.shuffle},require(path.join(path.dirname(fs.realpathSync(path.join(__dirname,'../packs'))),'shared/domain/standard-deck.js')));
+ const state=D.create({playerCount:2,firstPlayer:0,preset:'easy',rng:17,options:{deck:36}}),cards=state.data.board;
+ const pair=c=>c.rank+'-'+(['♥','♦'].includes(c.suit)?'red':'black'),match=cards.findIndex((c,i)=>i>0&&pair(c)===pair(cards[0]));
+ state.data.flipped=[0];state.data.phase='second';const projection={...state,data:D.project(state)},commands=D.actions(state,0).map(a=>a.command),memory={seen:Object.fromEntries(cards.map((c,i)=>[i,c.id]))};
+ const rates={};for(const difficulty of B.levels){let errors=0;for(let seed=1;seed<=1000;seed++){const context=()=>B.context({difficulty},seed,'memory'),before=JSON.stringify(state),a=D.bot(projection,0,commands,memory,context());assert.deepEqual(a,D.bot(projection,0,commands,memory,context()));assert.equal(JSON.stringify(state),before);if(a.index!==match)errors++;}rates[difficulty]=errors;}
+ assert(rates.easy>rates.medium&&rates.medium>rates.hard&&rates.hard>0,JSON.stringify(rates));
+ const s=E.createGame('pexeso',{seed:17,players:[{name:'A',bot:true,botSettings:{difficulty:'easy'}},{name:'B',bot:true,botSettings:{difficulty:'hard'}}]});assert.equal(s.players[0].botSettings.difficulty,'easy');assert.equal(s.players[1].botSettings.difficulty,'hard');assert.equal(E.createGame('pexeso',{players:[{name:'A',bot:true},{name:'B'}]}).players[0].botSettings.difficulty,'medium');
+});
+
+test('all bot levels complete card, dice and board games without mutating decisions or reading hidden opponents',()=>{
+ for(const id of ['tictactoe','pexeso','gofish','oldmaid','uno','domino','durak','ludo','battleship','yatzy','snakes']){
+  if(!E.GAMES.some(g=>g.id===id))require('../packs/'+id+'/rules.js');
+  for(const difficulty of ['easy','medium','hard']){let s=E.createGame(id,{seed:42,preset:E.get(id).presets[0].id,players:Array.from({length:2},(_,i)=>({name:'P'+i,bot:true,botSettings:{difficulty}})),maxRounds:2}),n=0;
+   while(s.status==='playing'&&n++<2500){const before=JSON.stringify(s),a=E.botAction(s);assert(a,id+'/'+difficulty);assert.deepEqual(E.botAction(s),a);assert.equal(JSON.stringify(s),before);s=E.applyAction(s,s.turn,a);}
+   assert.equal(s.status,'finished',id+'/'+difficulty+' stalled at '+n);assert(E.validateState(s));
+  }
+ }
+});
+
+test('Ludo tutorial distinguishes the initial throw from a six reroll using actual public state',()=>{
+ const tutorial=require('../packs/ludo/presentation/tutorial.js')({format:m=>m.key});
+ for(const sixReroll of ['on','off'])for(const diceCount of [1,2,3]){
+  let s=E.createGame('ludo',{players:[{name:'A',bot:true},{name:'B',bot:true}],seed:17,preset:'classic',sixReroll,diceCount}),found=false;
+  assert.equal(E.project(s,0).scene.repeatSix,false,'initial display of six is not a reroll');
+  for(let i=0;i<150&&s.status==='playing';i++){
+   const actor=s.turn,before=E.project(s,actor),action=E.botAction(s);s=E.applyAction(s,actor,action);
+   const state=E.project(s,s.turn),guide=tutorial({state}),canRoll=E.legalActions(s,s.turn).some(a=>a.type==='roll');
+   if(canRoll&&s.turn===actor&&s.status==='playing'){
+    assert.equal(sixReroll,'on');assert.equal(state.scene.repeatSix,true);assert.equal(guide.steps[0].id,'reroll-six');found=true;break;
+   }
+   if(s.turn!==actor||sixReroll==='off')assert.equal(state.scene.repeatSix,false);
+   if(sixReroll==='off')assert(!guide.required.includes('reroll-six'));
+  }
+  if(sixReroll==='on')assert(found,'six reroll reached with '+diceCount+' dice');
+ }
+});
+
+test('tutorial action prerequisites and repeated dice actions are separate goals',()=>{
+ const Controller=require('../application/tutorial-controller.js'),controller=new Controller(),owner={};
+ const fish=require('../packs/gofish/presentation/tutorial.js')({format:m=>m.key});
+ const ctx={owner,viewer:0,state:{game:'gofish',status:'playing',turn:0,players:[{},{}]},actions:[{type:'ask',cardId:'c1',target:1}],ui:{selected:null}};
+ let definition=fish(ctx);assert.equal(definition.steps[0].id,'card');assert.equal(definition.steps[1].available,false);
+ controller.update(ctx,fish);controller.interact(['opponent']);assert.equal(controller.capture(owner,0).progress.seen.has('opponent'),false);
+ ctx.ui.selected='c1';definition=fish(ctx);assert.equal(definition.steps[0].available,false);assert.equal(definition.steps[1].available,true);
+ const yatzy=require('../packs/yatzy/presentation/tutorial.js')({format:m=>m.key});
+ assert(yatzy({state:{scene:{rolls:0}}}).steps.some(s=>s.id==='roll'));
+ const repeat=yatzy({state:{scene:{rolls:1,dice:[{held:true},{held:false}]}}});assert(repeat.steps.some(s=>s.id==='reroll'));
+ assert(repeat.steps.find(s=>s.id==='release').match({type:'hold',index:0}));assert(!repeat.steps.find(s=>s.id==='hold').match({type:'hold',index:0}));
+});
+
+test('UNO tutorial only teaches a justified declaration or challenge, including outside own turn',()=>{
+ const tutorial=require('../packs/uno/presentation/tutorial.js')({format:m=>m.key});
+ const Controller=require('../application/tutorial-controller.js'),c=new Controller(),owner={};
+ const context={owner,viewer:0,state:{game:'uno',status:'playing',turn:1,players:[{},{}],scene:{declarationOpen:[false,false],declared:[false,false]}},actions:[{type:'declare-uno'},{type:'accuse-uno',target:1}]};
+ let guide=tutorial(context);assert.equal(guide.concurrent,false);assert.equal(guide.steps.find(s=>s.id==='declare-uno').available,false);assert.equal(guide.steps.find(s=>s.id==='accuse-uno').available,false);
+ context.state.scene.declarationOpen=[true,false];c.update(context,tutorial);const token=c.capture(owner,0);assert(token);c.committed(owner,0,{type:'declare-uno'},token);assert(token.progress.seen.has('declare-uno'));
+ context.state.scene.declarationOpen=[false,true];guide=tutorial(context);assert.equal(guide.steps.find(s=>s.id==='challenge-player').selector,'[data-player-target="1"]');assert(guide.steps.find(s=>s.id==='accuse-uno').match({type:'accuse-uno',target:1}));assert(!guide.steps.find(s=>s.id==='accuse-uno').match({type:'accuse-uno',target:0}));
 });

@@ -12,8 +12,8 @@ const seed=()=>new Session(Engine,'uno',{seed:23,mode:'pass',preset:'quick',unoM
 async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
-  for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/first-turn-guide.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
@@ -58,6 +58,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
         async send(){return {ok:true};},emit(next){this.snapshot=next;for(const f of listeners)f(next);}};
       window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{});qaGame.render();
     },{initial,definition});
+    await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
     const action=initial.actions.find(a=>a.type==='declare-uno');
     const receipt=a.dispatch(P.command(initial,action,'browser-uno-1'));
     assert.equal(receipt.ok,true);
@@ -83,6 +84,9 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     assert.match(await modal.innerText(),/Поражение/);
     assert.match(await modal.innerText(),/Джон/);assert.match(await modal.innerText(),/148/);
     assert.deepEqual(await page.evaluate(()=>qaAudio.map(x=>x.ids[0])),['uno.call','defeat']);
+    await modal.locator('[data-command=close-modal]').click();
+    await page.locator('[data-command=result]').first().click();
+    assert.equal(await page.evaluate(()=>qaAudio.length),2,'Reopening results is silent');
     await page.evaluate(next=>qaClient.emit(next),finish);
     assert.equal(await modal.count(),1,'Duplicate finish must not open another dialog');
     assert.equal(await page.evaluate(()=>qaAudio.length),2);
