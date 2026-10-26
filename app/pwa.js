@@ -69,7 +69,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!installPrompt)throw Error(globalThis.PlayroomMessages.text("ui.pwa.30950cf49d2a"));
     const event=installPrompt;installPrompt=null;await event.prompt();return event.userChoice;
   }
-  const announceUpdate=worker=>{if(updates.announce(worker))root.dispatchEvent(new CustomEvent('playroom-update-ready'));};
+  let updateInfo=null,infoWorker=null;
+  const announceUpdate=async worker=>{
+    if(!worker||infoWorker===worker)return;
+    infoWorker=worker;if(!updates.announce(worker))return;
+    const info=await new Promise(resolve=>{
+      const channel=new MessageChannel();
+      const finish=value=>{clearTimeout(timer);channel.port1.close();resolve(value);};
+      const timer=setTimeout(()=>finish({}),2000);
+      channel.port1.onmessage=event=>finish(event.data||{});
+      try{worker.postMessage({kind:'playroom-update-info'},[channel.port2]);}catch(_){finish({});}
+    });
+    if(infoWorker!==worker)return;
+    updateInfo=info;root.dispatchEvent(new CustomEvent('playroom-update-ready'));
+  };
   const setUpdateGuard=guard=>updates.setGuard(guard),releaseUpdate=()=>updates.release();
   const checkUpdate=port=>port?.postMessage({kind:updates.reserve()?'playroom-update-idle':'playroom-update-busy'});
   for(const type of ['click','submit','keydown'])document.addEventListener(type,event=>{
@@ -105,6 +118,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>emitPair(tokenFromUrl(params?.targetURL||'')));
   const incoming=tokenFromUrl(location.href);if(incoming){emitPair(incoming);cleanUrl();}
   root.PlayroomPWA=Object.freeze({
+    get updateInfo(){return updateInfo;},
     secure,
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
     canShare,

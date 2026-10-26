@@ -1,0 +1,9 @@
+{
+  "ui.updates.title": "Доступны обновления",
+  "ui.updates.app": "ХОД",
+  "ui.updates.missing": "Для этой версии список изменений пока не опубликован.",
+  "ui.updates.later": "Позже",
+  "ui.updates.packs": "Обновления паков",
+  "ui.updates.apply": "Обновить приложение",
+  "ui.updates.open": "Обновления"
+}

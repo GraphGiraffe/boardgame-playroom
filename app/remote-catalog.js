@@ -9,6 +9,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const seen=new Set();
     for(const item of input.packs){
       if(!item||!ID.test(item.id)||!SEMVER.test(item.version)||!Number.isSafeInteger(item.stateVersion)||item.stateVersion<1||item.engineApi!==4||item.viewApi!==3||!HEX.test(item.sha256)||item.url!==`/api/packs/files/${item.id}/${item.version}/${item.sha256}.playroom-pack.json`)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.bb5762ca842a"));
+      if(item.releases!==undefined&&(!Array.isArray(item.releases)||item.releases.length>128||item.releases.some(release=>!release||!SEMVER.test(release.version)||!Array.isArray(release.changes)||release.changes.length>128||release.changes.some(line=>typeof line!=='string'||line.length>4000))))throw Error('Invalid pack release notes');
       if(seen.has(item.id))throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.dd2d739e7aa6"));seen.add(item.id);
     }
     return input;

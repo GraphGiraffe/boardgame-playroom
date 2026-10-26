@@ -9,8 +9,8 @@ root.addEventListener('scroll',()=>{
 },{passive:true});
 function orderedVisibleGames(){
     const p=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
-    const order=id=>{const i=p.order.indexOf(id);return i<0?p.order.length+ports.E.GAMES.findIndex(g=>g.id===id):i;};
-    return ports.E.GAMES.filter(g=>!p.hidden.includes(g.id)).sort((a,b)=>order(a.id)-order(b.id));
+    const games=new Map(ports.E.GAMES.map(game=>[game.id,game]));
+    return globalThis.PlayroomPackManager.ordered([...games.keys()],p).filter(id=>!p.hidden.includes(id)).map(id=>games.get(id));
   }
 
 function typeBadge(tag,{button=false,active=false}={}) {
@@ -47,7 +47,7 @@ function renderHub() {
     const targetScroll=pageScroll[ports.hubTab]||0;
     restoringScroll=true;
     ports.interruptAction();ports.input?.cancel();ports.playerTargets?.cancel();ports.feedback.clear();ports.cancelBot(); ports.latestPacks();
-    const updates=ports.packUpdates(),unread=updates.some(item=>!ports.packNotices.read.includes(ports.updateKey(item))),newUpdates=updates.filter(item=>!ports.packNotices.dismissed.includes(ports.updateKey(item)));
+    const updates=ports.packUpdates(),unread=updates.some(item=>!ports.packNotices.read.includes(ports.updateKey(item)));
     const flashPacks=updates.length>0;ports.flashPacksOnHub=false;
     const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
     const games=orderedVisibleGames().filter(g=>(ports.filter!=='favorites'||preferences.favorites.includes(g.id))&&ports.Tags.matches(g,ports.catalog?.[g.id],ports.hubFilters.format)&&['type','mechanic'].every(kind=>!ports.hubFilters[kind]||ports.Tags.forPack(ports.catalog?.[g.id]).some(t=>t.id===ports.hubFilters[kind])));
@@ -69,10 +69,11 @@ function renderHub() {
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">${globalThis.PlayroomMessages.text("ui.app.a9979c201901")}</span><button class="brand mobile-brand" data-command="home" aria-label="${globalThis.PlayroomMessages.text("ui.app.4c890677e7fd")}">${ports.brand}</button>
       <div class="topbar-tools ui-toolbar">${ports.GameScreen.toolbar([
         {attrs:'data-command="packs"',label:unread?globalThis.PlayroomMessages.text("ui.app.d8a7777007bf"):globalThis.PlayroomMessages.text("ui.app.61384528c752"),name:'layers',className:`pack-hub-button${unread?' has-unread':''}${flashPacks?' flash-unread':''}`},
+        ...((updates.length||globalThis.PlayroomPWA?.updateInfo)?[{attrs:'data-command="show-updates"',label:globalThis.PlayroomMessages.text('ui.updates.open'),name:'history'}]:[]),
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.app.f42c392566b5"),name:'full'},
         {attrs:'data-command="help"',label:globalThis.PlayroomMessages.text("ui.app.f416fa0d4d3b"),name:'help'}
       ])}</div></header>
-      <div class="hub-pages shared-page-deck" style="--page-index:${ports.hubTab==='sessions'?1:0}"><section id="hub-games-page" class="shared-page-panel ${ports.hubTab==='games'?'is-active':''}" style="--page-number:0" ${ports.hubTab==='games'?'':'inert aria-hidden="true"'}>${newUpdates.length?`<div class="pack-update-notice" role="status"><span>${newUpdates.length===1?globalThis.PlayroomMessages.text("ui.app.321731f40bb3"):globalThis.PlayroomMessages.text("ui.app.d5db4b177f03",{p0:String(newUpdates.length)})}</span><button type="button" class="btn secondary" data-command="packs">${globalThis.PlayroomMessages.text("ui.app.d4998bc84141")}</button><button type="button" class="icon-btn" data-command="dismiss-pack-updates" aria-label="${globalThis.PlayroomMessages.text("ui.app.c1017c5e5d50")}">${ports.icon('close')}</button></div>`:''}<section class="intro"><div class="intro-heading" data-install-pulse="${ports.hubTab==='games'&&previousTab!=='games'}"><h1><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.14d61d0ff252")}</span><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.032385a2501c")}</span></h1></div><p>${globalThis.PlayroomMessages.text("ui.app.986e006774bc")}<br>${globalThis.PlayroomMessages.text("ui.app.79fb8cc28c70")}<br>${globalThis.PlayroomMessages.text("ui.app.deedde9ad42a")}</p></section>
+      <div class="hub-pages shared-page-deck" style="--page-index:${ports.hubTab==='sessions'?1:0}"><section id="hub-games-page" class="shared-page-panel ${ports.hubTab==='games'?'is-active':''}" style="--page-number:0" ${ports.hubTab==='games'?'':'inert aria-hidden="true"'}><section class="intro"><div class="intro-heading" data-install-pulse="${ports.hubTab==='games'&&previousTab!=='games'}"><h1><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.14d61d0ff252")}</span><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.032385a2501c")}</span></h1></div><p>${globalThis.PlayroomMessages.text("ui.app.986e006774bc")}<br>${globalThis.PlayroomMessages.text("ui.app.79fb8cc28c70")}<br>${globalThis.PlayroomMessages.text("ui.app.deedde9ad42a")}</p></section>
       ${ports.loadWarning?`<p class="recovery-note" role="alert">${ports.esc(ports.loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="${globalThis.PlayroomMessages.text("ui.app.e7c9a9e482fd")}">${ports.icon('close')}</button></p>`:''}
       ${ports.session&&ports.localResumeVisible!==false?ports.GameScreen.resumeCard({hide:'data-command="hide-local-session"',state:ports.E.project(ports.session.current,-1),roomName:ports.session.options?.lobbyConfig?.name||globalThis.PlayroomMessages.text('ui.app.499f4549c0b2',{p0:ports.session.current.players.find(p=>!p.bot)?.name||ports.session.current.players[0]?.name||''}),gameName:ports.meta(ports.session.game).name,teamLayouts:ports.catalog?.[ports.session.game]?.teamLayouts||{}}):''}
       <div class="library-heading">${ports.hubEditing?'':hubFilterMarkup()}<div class="hub-library-tools"><span class="collection-count">${collectionCount}</span><button type="button" class="icon-btn hub-edit-toggle" title="${ports.hubEditing?globalThis.PlayroomMessages.text("ui.app.ef05d57959cf"):globalThis.PlayroomMessages.text("ui.app.93f7d70b0155")}" aria-label="${ports.hubEditing?globalThis.PlayroomMessages.text("ui.app.ef05d57959cf"):globalThis.PlayroomMessages.text("ui.app.93f7d70b0155")}" data-edit-toggle aria-pressed="${ports.hubEditing}">${ports.icon(ports.hubEditing?'check':'edit')}</button></div></div>
@@ -82,6 +83,7 @@ function renderHub() {
     root.scrollTo({top:targetScroll,behavior:'instant'});
     requestAnimationFrame(()=>{restoringScroll=false;});
     if(ports.hubTab==='sessions')refreshNetworkSaved();
+    root.dispatchEvent(new Event('playroom:hub-rendered'));
   }
 
 function moveHubGame(id,group,beforeId=null){

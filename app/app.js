@@ -161,14 +161,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     clearTimeout(noticeTimer);noticeTimer=setTimeout(dismissNotice,globalThis.PlayroomSizeCatalogue?.presentation?.interaction.toastMs??6000);
     noticeElement.innerHTML=`<span>${esc(message)}</span><button class="icon-btn" data-command="dismiss-notice" aria-label="${globalThis.PlayroomMessages.text("ui.app.935e004f83bf")}" title="${globalThis.PlayroomMessages.text("ui.app.935e004f83bf")}">${icon('close')}</button>`;noticeElement.classList.add('show');noticeElement.setAttribute('role','alert');placeNotice();
   }
-  const updateBanner=$('#update-banner'),updateDetail=$('#update-detail');
-  globalThis.PlayroomPWA?.setUpdateGuard(()=>screen==='hub'&&!room&&!transition&&!$('#modal-root').children.length&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()&&storageOK&&!globalThis.PlayroomData.pending);
-  window.addEventListener('playroom-update-ready',()=>{updateBanner.hidden=false;updateDetail.textContent='';});
-  $('#update-now')?.addEventListener('click',async()=>{
-    const button=$('#update-now');button.disabled=true;updateDetail.textContent=globalThis.PlayroomMessages.text("ui.app.ca2c48f1d3e1");
-    try{await globalThis.PlayroomPWA.activateUpdate();updateDetail.textContent=globalThis.PlayroomMessages.text("ui.app.40c739dffde5");}
-    catch(error){updateDetail.textContent=globalThis.PlayroomMessages.error(error);button.disabled=false;}
-  });
+  let shownUpdateKey='';
+  try{shownUpdateKey=localStorage.getItem('playroom.shown-update.v1')||'';}catch(_){}
+  function updateIdle(){return screen==='hub'&&!room&&!transition&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()&&storageOK&&!globalThis.PlayroomData.pending;}
+  globalThis.PlayroomPWA?.setUpdateGuard(()=>updateIdle()&&(!$('#modal-root').children.length||!!$('#modal-root .updates-modal')));
+  function showUpdates(force=false){
+    if(!updateIdle()||$('#modal-root').children.length||document.hidden)return false;
+    const app=globalThis.PlayroomPWA?.updateInfo,items=packUpdates();
+    const key=[app?'app@'+(app.version||'pending'):'',...items.map(updateKey)].join('|');
+    const fresh=items.some(item=>!packNotices.dismissed.includes(updateKey(item)));
+    if(!app&&!items.length||!force&&(key===shownUpdateKey||!app&&!fresh))return false;
+    shownUpdateKey=key;try{localStorage.setItem('playroom.shown-update.v1',key);}catch(_){}
+    rememberPackUpdates('dismissed');
+    openModal(globalThis.PlayroomUpdateDialog.markup({app,installedVersion:appVersion,packs:items.map(item=>({...item,name:meta(item.id)?.name||item.id})),installed:id=>packs.list().filter(p=>p.id===id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',esc,head:modalHead}),'updates-modal');
+    return true;
+  }
+  window.addEventListener('playroom-update-ready',()=>{if(screen==='hub')renderHub();showUpdates();});
+  // Observe screen/dialog transitions, not game frames or a recurring timer.
+  window.addEventListener('playroom:hub-rendered',()=>queueMicrotask(()=>showUpdates()));
+  new MutationObserver(()=>showUpdates()).observe($('#modal-root'),{childList:true});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)showUpdates();});
   function reportSaveFailure(error) {
     const name=error?.name,code=error?.code;
     const key=name==='QuotaExceededError'||name==='NS_ERROR_DOM_QUOTA_REACHED'?'ui.app.save-quota':
@@ -841,6 +853,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     sessions(){leaveTable('sessions');},
     resume(){resumeSession();},
     'hide-local-session'(){settings.hiddenLocalSession=sessionId;settingsStore.write(settings);renderHub();},
+    'show-updates'(){showUpdates(true);},
+    'update-packs'(){closeModal(true);commands.packs();},
+    async 'update-app'(){
+      const button=$('[data-command="update-app"]'),status=$('[data-update-status]');if(!button)return;button.disabled=true;
+      status.textContent=globalThis.PlayroomMessages.text('ui.app.ca2c48f1d3e1');
+      try{await globalThis.PlayroomPWA.activateUpdate();status.textContent=globalThis.PlayroomMessages.text('ui.app.40c739dffde5');}
+      catch(error){status.textContent=globalThis.PlayroomMessages.error(error);button.disabled=false;}
+    },
     packs(){rememberPackUpdates('read');rememberPackUpdates('dismissed');packUI?.open();if(screen==='hub')renderHub();},
     'dismiss-pack-updates'(){rememberPackUpdates('dismissed');renderHub();},
     help:showHelp,settings:showSettings,'reset-rules':async()=>{
