@@ -338,5 +338,8 @@
 
 /* Difficulty belongs to each bot; bulk controls occupy the left footer edge. */
 .bot-difficulty-icons{display:flex;justify-content:space-between;padding:0 3px}.bot-difficulty-icons>span{display:grid;place-items:center;width:38px;height:34px;border-radius:10px;opacity:.5}.bot-difficulty-icons .selected{background:var(--soft);opacity:1;outline:2px solid var(--green)}.bot-difficulty-icons svg{width:25px;height:25px}
-.lobby-bot-levels{display:flex;gap:4px;margin-right:auto}.room-setup-modal .lobby-footer .lobby-bot-levels .icon-btn{width:36px;min-width:36px;height:40px;min-height:40px}.room-setup-modal .lobby-bot-levels~[data-command="lobby-leave"]{margin-right:0}.room-setup-modal .lobby-bot-levels~.lobby-add-player-reserve{display:none}
-@media(max-width:360px){.room-setup-modal .lobby-footer .lobby-primary{gap:3px}.room-setup-modal .lobby-footer .lobby-bot-levels .icon-btn{width:30px;min-width:30px}.lobby-bot-levels{gap:2px}.room-setup-modal .lobby-footer .icon-btn{width:38px;min-width:38px}}
+/* Difficulty belongs to the roster, not the fixed room action bar. */
+.lobby-bot-levels{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.room-setup-modal .lobby-bot-levels .icon-btn{width:36px;min-width:36px;height:40px;min-height:40px}
+.room-setup-modal .lobby-bot-levels [aria-pressed=true]{background:var(--green);color:var(--color-action-on-primary,var(--paper))}
+.room-setup-modal .lobby-card:has(.lobby-bot-levels) .lobby-add-player-reserve{display:none}
