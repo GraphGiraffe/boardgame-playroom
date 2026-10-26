@@ -283,3 +283,19 @@ test('bot declaration choices are stable per episode and difficulty includes imm
  }
 
 });
+
+
+test('UNO learning receives public declaration windows and records an out-of-turn call during feedback',()=>{
+ const Tutorial=require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/presentation/tutorial.js'))({format:m=>m.key});
+ const Controller=require('../application/tutorial-controller.js');
+ let s=fixture([['u1'],['u5','u7']],{turn:1});s.players[0].bot=false;
+ const projected=E.project(s,0);assert.equal(projected.data.uno.situations,undefined);assert.deepEqual(projected.scene.declarationOpen,[true,false]);
+ const owner={},controller=new Controller(),context={owner,viewer:0,state:projected,actions:E.legalActions(s,0),busy:true,active:true};
+ const result=controller.update(context,Tutorial);assert(result.guide.concurrent);assert(result.progress.started);
+ const step=result.guide.steps.find(x=>x.id==='declare-uno');assert(step.available);assert(step.immediate);
+ const token=controller.capture(owner,0);assert(token);
+ s=declare(s,0);controller.committed(owner,0,{type:'declare-uno'},token);
+ const after=controller.update({...context,state:E.project(s,0),actions:E.legalActions(s,0),busy:false},Tutorial);
+ assert(after.progress.seen.has('declare-uno'));assert.equal(after.guide.steps.find(x=>x.id==='declare-uno').available,false);
+ assert.equal(E.project(s,1).scene.declarationOpen[0],false);
+});

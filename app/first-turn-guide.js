@@ -43,7 +43,7 @@
   if(!current)return hide();
   const {state,guide,progress,active,busy,replay}=current;
 
-  if(!guide||guide.complete||!progress?.started||!progress.ownTurn||progress.done||active===false||busy||replay||document.hidden||skipped(state.game)||!document.querySelector('.table-shell'))return hide();
+  if(!guide||guide.complete||!progress?.started||!progress.ownTurn||progress.done||active===false||replay||document.hidden||skipped(state.game)||!document.querySelector('.table-shell'))return hide();
   const dialog=document.querySelector('dialog[open].card-choice-dialog'),modal=document.querySelector('#modal-root');
   const confirmation=modal?.querySelector('[data-command=confirm-action]');
   if(modal?.children.length&&!confirmation)return hide();
@@ -51,7 +51,7 @@
   let target,step,index;
   const order=steps.map((_,i)=>i).sort((a,b)=>Number(progress.seen.has(steps[a].id))-Number(progress.seen.has(steps[b].id)));
   for(const i of order){
-   const item=steps[i];if(item.available===false||progress.seen.has(item.id))continue;
+   const item=steps[i];if(item.available===false||progress.seen.has(item.id)||busy&&!(guide.concurrent&&item.immediate))continue;
    const found=[...scope.querySelectorAll(item.selector)].find(el=>selectable(el)&&visible(el,scope));
    if(found){target=found;step=item;index=i;break;}
   }
