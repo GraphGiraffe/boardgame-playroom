@@ -88,7 +88,7 @@
       legal(state, actor) { const projection=model.project(position(state),actor);return model.legalActions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
       reactions(state,actor) { const projection=model.project(position(state),actor);return model.reactions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
       decisionWindow(state) { return model.decisionWindow(position(state)); },
-      reactionWindows(state) { return model.reactionWindows(position(state)).filter(window=>!state.players[window.owner].bot); },
+      reactionWindows(state) { return model.reactionWindows(position(state)); },
       reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
       botReactionDelay(state,actor) { return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
       botReaction(state,actor) { const command=model.botReaction(position(state),actor,state.players[actor]?.botSettings);return command?decorated(command,model.project(position(state),actor),state.players):null; },

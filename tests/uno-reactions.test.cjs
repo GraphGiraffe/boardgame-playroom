@@ -283,3 +283,71 @@ test('bot declaration choices are stable per episode and difficulty includes imm
  }
 
 });
+
+
+test('UNO learning receives public declaration windows and records an out-of-turn call during feedback',()=>{
+ const Tutorial=require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/presentation/tutorial.js'))({format:m=>m.key});
+ const Controller=require('../application/tutorial-controller.js');
+ let s=fixture([['u1'],['u5','u7']],{turn:1});s.players[0].bot=false;
+ const projected=E.project(s,0);assert.equal(projected.data.uno.situations,undefined);assert.deepEqual(projected.scene.declarationOpen,[true,false]);
+ const owner={},controller=new Controller(),context={owner,viewer:0,state:projected,actions:E.legalActions(s,0),busy:true,active:true};
+ const result=controller.update(context,Tutorial);assert(result.guide.concurrent);assert(result.progress.started);
+ const step=result.guide.steps.find(x=>x.id==='declare-uno');assert(step.available);assert(step.immediate);
+ const token=controller.capture(owner,0);assert(token);
+ s=declare(s,0);controller.committed(owner,0,{type:'declare-uno'},token);
+ const after=controller.update({...context,state:E.project(s,0),actions:E.legalActions(s,0),busy:false},Tutorial);
+ assert(after.progress.seen.has('declare-uno'));assert.equal(after.guide.steps.find(x=>x.id==='declare-uno').available,false);
+ assert.equal(E.project(s,1).scene.declarationOpen[0],false);
+});
+
+
+test('unconfigured UNO bots use medium declaration errors and delays',()=>{
+ const state=play(fixture(),0,'u1');let forgotten=0,delayed=0,immediate=0;
+ for(let episode=1;episode<=400;episode++){
+  state.move=episode;state.data.uno.episode=episode;state.data.uno.situations[0].episode=episode;delete state.players[0].botSettings;
+  const unconfigured=E.botReaction(state,0),delay=E.botReactionDelay(state,0);
+  state.players[0].botSettings={difficulty:'medium'};
+  assert.deepEqual(E.botReaction(state,0),unconfigured);assert.equal(E.botReactionDelay(state,0),delay);
+  if(!unconfigured)forgotten++;else if(delay>0)delayed++;else immediate++;
+ }
+ assert(forgotten>0&&delayed>0&&immediate>0);
+});
+
+test('bot owners keep protection and delayed answers outrun earlier-seat accusers',()=>{
+ const cases=new Map();
+ for(let n=2;n<=108&&cases.size<2;n++){
+  if([5,7,9].includes(n))continue;
+  const initial=fixture([['u5','u7'],['u1','u'+n]],{turn:1});
+  initial.players.forEach(p=>p.botSettings={difficulty:'medium'});
+  const state=play(initial,1,'u1'),answer=E.botReaction(state,1),delay=E.botReactionDelay(state,1);
+  if(!answer)cases.set('forgot',{initial,state});else if(delay>0)cases.set('delayed',{initial,state,delay});
+ }
+ assert.equal(cases.size,2);
+ for(const [kind,{initial,state,delay}] of cases){
+  const saved=new Session(E,'uno',{unoMode:'manual',players:initial.players}).export();saved.states=[initial,state];
+  const session=Session.restore(E,saved),clock=manualClock(),authority=new Authority(session,{clock});
+  try{
+   assert.equal(authority.connect(0).snapshot().reactionWindows[0].owner,1);
+   authority.scheduleBot({delay:10});clock.advance(0);
+   clock.advance((kind==='delayed'?delay:3000)-1);
+   assert.equal(session.current.move,state.move,'no premature accusation or answer');
+   clock.advance(1);
+   if(kind==='delayed'){assert.equal(session.current.data.uno.declared[1],true);assert.equal(session.current.data.hands[1].length,1);}
+   else{assert.equal(session.current.data.hands[1].length,3);assert.equal(visible(session.current).at(-2).kind,'uno-caught');}
+  }finally{authority.dispose();}
+ }
+});
+
+
+test('protected accusation stays visible but disabled until its deadline',()=>{
+ const {authority,clients,send,clock}=onlineFixture();
+ try{
+  send(0,'play');
+  const accusation=()=>clients[1].snapshot().actions.find(a=>a.type==='accuse-uno'&&a.target===0);
+  assert.equal(accusation().disabled,true);
+  assert(!clients[0].snapshot().actions.find(a=>a.type==='declare-uno').disabled);
+  clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
+  clock.advance(999);assert.equal(accusation().disabled,true);
+  clock.advance(1);assert(!accusation().disabled);assert(send(1,'accuse-uno',0).ok);
+ }finally{authority.dispose();}
+});

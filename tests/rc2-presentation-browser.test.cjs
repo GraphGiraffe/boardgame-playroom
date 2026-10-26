@@ -1490,3 +1490,25 @@ test('UNO declaration guidance bypasses the normal input idle delay',async()=>fi
  });
  await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor({timeout:300});
 }));
+
+test('UNO real projected declaration is guided during feedback and learned on click',async()=>fixture(async page=>{
+ await scene(page,'uno',{unoMode:'manual'});
+ await page.evaluate(()=>{
+  rcStateOverride=structuredClone(rcSession.current);const s=rcStateOverride,d=s.data;
+  d.drawPile.push(...d.hands[0].splice(1));s.turn=1;
+  d.uno.situations[0]={episode:0,open:true,settled:false,called:false};d.uno.declared[0]=false;
+  TabletopCore.validateState(s);rcRender();
+  const ctx={owner:rcSession,viewer:0,active:true,busy:true,state:TabletopCore.project(s,0),actions:TabletopCore.legalActions(s,0),ui:{}};
+  PlayroomFirstTurnGuide.update(ctx);
+  document.querySelector('.uno-call').addEventListener('click',event=>{
+   event.preventDefault();event.stopImmediatePropagation();
+   const action=JSON.parse(event.currentTarget.dataset.action),token=PlayroomFirstTurnGuide.capture(rcSession,0);
+   rcStateOverride=TabletopCore.applyAction(rcStateOverride,0,action);
+   PlayroomFirstTurnGuide.committed(rcSession,0,action,token);
+  });
+ });
+ await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor({timeout:400});
+ await page.locator('.uno-call').click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1);
+ await page.reload();assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1);
+}));

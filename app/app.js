@@ -327,7 +327,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function activeActions(state) {
     if (isReplay()||gate!==null||paused||state.status==='finished'||state.players[viewer]?.bot) return [];
-    const actions=localClient(viewer).snapshot().actions;return transition||awaitingPass&&!E.decisionWindow?.(state)?actions.filter(action=>E.reactions?.(state,viewer).some(reaction=>Protocol.canonical(reaction)===Protocol.canonical(action))):actions;
+    const actions=localClient(viewer).snapshot().actions;return transition||awaitingPass&&!E.decisionWindow?.(state)?actions.filter(action=>E.reactions?.(state,viewer).some(reaction=>Protocol.canonical(reaction)===Protocol.canonical((({disabled,...command})=>command)(action)))):actions;
   }
   function playersMarkup(state,actions=[]) {
     return GameScreen.playersMarkup(state,viewer,actions,{scoreLabel:meta(session.game).scoreLabel||globalThis.PlayroomMessages.text("ui.app.d7ab0767bbee"),playerBadge:(projected,i)=>catalog[projected.game]?.playerBadge?.(projected,i)});
