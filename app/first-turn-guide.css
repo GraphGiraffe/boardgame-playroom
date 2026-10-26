@@ -1,0 +1,17 @@
+.first-turn-guide{position:fixed;z-index:2147483647;pointer-events:none;width:0;height:0;transition:left .45s ease,top .45s ease;color:#31594c}
+.first-turn-guide[hidden]{display:none}
+.first-turn-guide .guide-glove{position:absolute;left:-20.25px;top:-1.5px;width:48px;height:60px;max-width:none;filter:drop-shadow(0 2px 2px #183c4340);transform-origin:20.25px 1.5px}
+.first-turn-guide .guide-tap{position:absolute;left:-13px;top:-13px;width:26px;height:26px;border:2px solid #d6ad47;border-radius:50%;opacity:0}
+.first-turn-guide.is-tapping .guide-glove{animation:guide-finger-tap 2.2s .45s infinite}
+.first-turn-guide.is-tapping .guide-tap{animation:guide-touch-ring 2.2s .45s infinite}
+.first-turn-guide .guide-caption{position:absolute;left:var(--caption-x,-95px);top:66px;width:190px;padding:8px 10px;border:1px solid #b6b99a;border-radius:12px;background:#fffbed;color:#31594c;box-shadow:0 2px 8px #183c4322;font:500 12px/1.35 system-ui;text-align:center}
+.first-turn-guide.caption-above .guide-caption{top:auto;bottom:23px}
+@keyframes guide-finger-tap{0%,65%,100%{transform:translateY(-4px) scale(1)}20%{transform:translateY(0) scale(.9)}40%{transform:translateY(-4px) scale(1)}}
+@keyframes guide-touch-ring{0%,60%,100%{opacity:0;transform:scale(.5)}20%{opacity:.9;transform:scale(.6)}50%{opacity:0;transform:scale(1.5)}}
+@media(prefers-reduced-motion:reduce){.first-turn-guide{transition:none}.first-turn-guide.is-tapping :is(.guide-glove,.guide-tap){animation:none}.first-turn-guide .guide-tap{opacity:.6}}
+
+.settings-guide-row{display:flex;align-items:center;gap:10px}.settings-guide-row>.switch{flex:1;min-width:0}.settings-guide-row>.icon-btn{flex:none;width:40px;height:40px;min-height:40px}
+
+.settings-learning{margin:0;padding:0}.settings-learning .settings-guide-row{border-bottom:1px solid var(--line)}.settings-learning .switch{border-bottom:0}
+
+.learning-goals{list-style:none;margin:0;padding:0}.learning-goals li{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.learning-goals input{flex:none;width:22px;height:22px;accent-color:var(--green);opacity:1}.learning-complete{display:flex;align-items:center;gap:10px;color:var(--green);font-weight:700}.learning-complete svg{width:24px;height:24px}

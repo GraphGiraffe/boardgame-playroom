@@ -229,3 +229,17 @@ test('result metric fraction precision formats text without creating a counter',
  state.result.metrics[0].values=[1/3,2/3];html=Screen.resultMarkup({state,viewer:0,gameName:'Игра'});
  assert.match(html,/Урон: 0,3/);assert.match(html,/Урон: 0,7/);
 });
+
+test('all packs use one result sound on first presentation, with neutral intermediate places',()=>{
+ const fs=require('node:fs'),path=require('node:path'),packs=path.join(__dirname,'../packs');
+ for(const game of fs.readdirSync(packs).filter(id=>fs.existsSync(path.join(packs,id,'manifest.json')))){
+  const state={game,status:'finished',winner:0,players:[{},{},{}],result:{places:[1,2,3]}};
+  for(const [viewer,sound] of [[0,'victory'],[1,'draw-game'],[2,'defeat'],[-1,'notify']]){
+   const owner={},heard=[];assert.equal(Screen.presentResultSound(owner,state,viewer,ids=>heard.push(...ids)),true);
+   assert.equal(Screen.presentResultSound(owner,structuredClone(state),viewer,ids=>heard.push(...ids)),false);
+   assert.deepEqual(heard,[sound],game);
+  }
+  assert.equal(Screen.resultSound({...state,winner:null},0),'draw-game');
+  assert.equal(Screen.resultSound({...state,winners:[0,1]},1),'victory');
+ }
+});

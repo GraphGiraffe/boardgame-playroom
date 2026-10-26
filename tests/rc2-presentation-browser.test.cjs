@@ -3,11 +3,11 @@ const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/rc2-presentation');
-async function fixture(run,{settings={sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false}}={}){
+async function fixture(run,{settings={sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false},learningPrompted=true}={}){
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const page=await browser.newPage({viewport:{width:1098,height:1238}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.addInitScript(settings=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(settings&&!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));},settings);
- try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await browser.close();await server.close();}
+ await page.addInitScript(({settings,learningPrompted})=>{if(learningPrompted&&!localStorage.getItem('playroom.learning.v1.rc2'))localStorage.setItem('playroom.learning.v1.rc2',JSON.stringify(Object.fromEntries(['uno','durak','gofish','oldmaid','domino','ludo','snakes','battleship','checkers','tictactoe','pexeso','yatzy','klondike','spider','mage-brawl'].map(id=>[id,{enabled:true,prompted:true,mastered:{}}]))));localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(settings&&!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));},{settings,learningPrompted});
+ try{await page.goto(process.env.PLAYROOM_TEST_ARTIFACT||server.url);await page.locator('.game-tile').first().waitFor({timeout:10000}).catch(error=>{throw Error(errors.join('\n')||error.message);});fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await browser.close();await server.close();}
 }
 async function scene(page,game,options={}){
  await page.evaluate(({game,options})=>{
@@ -713,16 +713,17 @@ test('RC16 public sets reveal every card and fish books use aligned card rows',a
  }
 }));
 test('RC16 a private transfer has a visible back before the public pair reveal',async()=>fixture(async page=>{
- for(const game of ['oldmaid','gofish']){
+ for(const [game,side] of [['oldmaid','recipient'],['oldmaid','source'],['oldmaid','observer'],['gofish','recipient']]){
  await scene(page,game);
- const result=await page.evaluate(async game=>{
+ const result=await page.evaluate(async ({game,side})=>{
   let event,shot,events,draws,initialScene,beforeState;
   for(let i=0;i<1500&&rcSession.current.status!=='finished';i++){
    const actor=rcSession.current.turn,actions=TabletopCore.legalActions(rcSession.current,actor),action=actions[i%actions.length];rcRender();beforeState=rcSession.current;initialScene=TabletopCore.project(rcSession.current,0).scene;shot=PlayroomMotion.capture({actor,viewer:0,action});const before=rcSession.current.events.at(-1)?.id||0;rcSession.act(actor,action);
    events=TabletopCore.project(rcSession.current,0).events.filter(e=>e.id>before);event=events.find(e=>e.reveal?.kind==='cards');if(game==='gofish'&&!events.some(e=>e.speech&&e.transfer))event=null;if(event)break;
   }
   if(!event)return null;
-  const viewer=game==='gofish'?event.actor:0;
+  const transfer=events.find(e=>e.transfer).transfer;
+  const viewer=side==='recipient'?transfer.player:side==='source'?transfer.fromPlayer:[0,1,2,3].find(p=>p!==transfer.player&&p!==transfer.fromPlayer);
   const render=actual=>{
    const state=TabletopCore.project(actual,viewer),actions=[];
    const scene=PlayroomViews.render(state,viewer,actions,{preferences:{},viewState:{},...rcUI});
@@ -745,15 +746,18 @@ test('RC16 a private transfer has a visible back before the public pair reveal',
     if(arrival.players[owner].hand.length!==final.players[owner].hand.length+event.reveal.cards.length)throw Error('Set removed before transfer');
     if(owner===viewer)for(const card of event.reveal.cards)if(!document.querySelector('.hand-track [data-entity="'+PlayroomGameComponents.entityKey({namespace:'card',id:card.id})+'"]'))throw Error('Set card missing from arrival hand');
    }
-   const flight=PlayroomMotion.play(shot,{duration:300,draws,context});await new Promise(requestAnimationFrame);
-   observed.back ||= !!document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]');sample();await flight;transferred=true;
+   const flight=PlayroomMotion.play(shot,{duration:160,draws,context});await new Promise(requestAnimationFrame);
+   observed.back ||= !!document.querySelector('.playroom-motion-piece[data-motion-kind="draw"]');
+   const flights=[...document.querySelectorAll('.playroom-motion-flight[data-motion-kind="draw"]')];
+   if(!flights.length||flights.some(el=>el.getAnimations()[0]?.effect.getTiming().duration<480))throw Error('Hand transfer too short');
+   sample();await flight;transferred=true;
   }});
   redraw();f.next();
   const timer=setInterval(()=>{sample();if(!answerDone()&&!document.querySelector('[data-motion-held-hand]'))earlyHands=true;},10);await f.whenIdle();clearInterval(timer);const badge=target();
   if(game==='gofish'&&events.some(e=>e.speech&&e.transfer)&&(answerAnimations.length===0||earlyFlight||earlyHands))throw Error('Answer animation boundary: '+JSON.stringify({animations:answerAnimations.length,earlyFlight,earlyHands}));
   if(game==='gofish'&&events.some(e=>e.speech&&e.transfer)&&(!soundOrder.some(c=>c.ids.includes('success')&&c.answerVisible)||soundOrder.some(c=>c.ids.includes('success')&&c.eventId===events.find(e=>e.speech&&e.transfer).id&&!c.answerVisible)))throw Error('Success sound must accompany answer bubble: '+JSON.stringify(soundOrder));
   const result={...observed,ended:!document.querySelector('.action-reveal'),targetVisible:game!=='gofish'||!!badge&&getComputedStyle(badge).visibility!=='hidden'};f.destroy();return result;
- },game);assert.deepEqual(result,{back:true,earlySet:false,earlyTarget:false,set:true,ended:true,targetVisible:true},game);
+ },{game,side});assert.deepEqual(result,{back:true,earlySet:false,earlyTarget:false,set:true,ended:true,targetVisible:true},game+' '+side);
  }
 }));
 test('RC17 dice retain faces across turns and player colors never repeat',async()=>fixture(async page=>{
@@ -820,6 +824,18 @@ test('shared board targets preserve special icons, color outcomes, and keep Ludo
   assert.equal(result.hints,0);for(let i=0;i<4;i++){assert(Math.abs(result.before[i]-result.after[i])<1,JSON.stringify(result));assert(Math.abs(result.before[i]-result.selected[i])<1);}
   await page.screenshot({path:path.join(shots,`zil-ludo-${width}.png`)});
  }
+ await scene(page,'ludo',{preset:'teams',diceCount:2});
+ const team=await page.evaluate(()=>{
+  rcStateOverride=TabletopCore.clone(rcSession.current);rcStateOverride.turn=0;
+  Object.assign(rcStateOverride.data,{phase:'move',dice:[2,3],used:[false,false]});rcStateOverride.data.pawns[0]=[57,57,57,57];rcStateOverride.data.pawns[2]=[5,10,-1,-1];
+  rcUI={viewState:{pawn:'0:3'}};rcRender();
+  const stale=document.querySelectorAll('.ludo-pawn.is-selected,.ludo-pawn[aria-pressed="true"]').length;
+  const playable=[...document.querySelectorAll('.ludo-pawn.is-playable')].map(el=>el.dataset.viewValue);
+  rcUI={viewState:{pawn:'2:0'}};rcRender();
+  return {stale,playable,selected:document.querySelector('.ludo-pawn.is-selected')?.dataset.viewValue,targets:document.querySelectorAll('.ludo-target').length};
+ });
+ assert.equal(team.stale,0);assert(team.playable.length>0&&team.playable.every(id=>id.startsWith('2:')));assert.equal(team.selected,'2:0');assert(team.targets>0);
+ await page.screenshot({path:path.join(shots,'ludo-team-valid-selection.png')});
  await scene(page,'snakes',{preset:'plus',boardSize:64});
  const targets=await page.evaluate(()=>{rcStateOverride=TabletopCore.clone(rcSession.current);Object.assign(rcStateOverride.data,{phase:'move',dice:[3,5]});rcStateOverride.data.positions[0]=17;rcRender();const capture=document.querySelector('[data-motion-anchor="cell-22"]'),home=document.querySelector('[data-motion-anchor="cell-20"]');const kinds=[capture.classList.contains('target-capture'),home.classList.contains('target-home')];rcStateOverride.data.positions[0]=8;rcRender();const cell=document.querySelector('[data-motion-anchor="cell-11"]');return {kinds,background:getComputedStyle(cell).backgroundColor,base:cell.style.backgroundColor,icon:getComputedStyle(cell.querySelector('svg')).color,dot:!!cell.querySelector('.board-route-dot'),target:cell.classList.contains('board-target')};});
  assert.deepEqual(targets.kinds,[true,true]);assert(targets.target&&!targets.dot);assert.notEqual(targets.background,targets.base);assert.equal(targets.icon,'rgb(255, 255, 255)');
@@ -1105,4 +1121,372 @@ test('hand reserves reset on orientation changes without a render',async()=>fixt
   const after=await boxes();
   for(let i=0;i<before.length;i++)for(let j=0;j<4;j++)assert(Math.abs(before[i][j]-after[i][j])<1,JSON.stringify({game,before,after}));
  }
+}));
+
+
+test('Battleship reserves opponent fleet indicators from setup through battle',async()=>fixture(async page=>{
+ for(const [width,height] of [[390,844],[360,740],[844,390]]){
+  await page.setViewportSize({width,height});await scene(page,'battleship');
+  const result=await page.evaluate(()=>{
+   const measure=()=>{const slot=document.querySelector('.layout-participants'),panel=slot.querySelector('.player-panel'),indicators=panel.querySelector('.player-indicators');return {height:slot.getBoundingClientRect().height,overflow:slot.scrollHeight-slot.clientHeight,visible:!!indicators&&indicators.getBoundingClientRect().bottom<=slot.getBoundingClientRect().bottom+1,count:panel.querySelectorAll('.fleet-indicator').length};};
+   const before=measure();
+   for(const actor of [0,1]){rcSession.act(actor,{type:'auto'});rcSession.act(actor,{type:'ready'});rcRender();}
+   return {before,after:measure()};
+  });
+  assert.equal(result.before.count,4);assert.equal(result.after.count,4);assert(result.before.visible&&result.after.visible,JSON.stringify({width,result}));assert(result.after.overflow<=1,JSON.stringify({width,result}));assert.equal(result.before.height,result.after.height);
+  await page.screenshot({path:path.join(shots,'battleship-reserved-'+width+'.png')});
+ }
+}));
+
+
+test('Battleship bot prepares itself while auto placement controls only the local fleet',async()=>fixture(async page=>{
+ await page.evaluate(()=>{const write=PlayroomLibrary.prototype.write;PlayroomLibrary.prototype.write=function(session,...args){window.battleLive=session;return write.call(this,session,...args);};});
+ await page.locator('[data-start="battleship"]').first().click();await page.locator('[data-command="lobby-start"]').click();
+ await page.waitForFunction(()=>{const s=window.battleLive?.current;return s?.data.ready[1]&&!s.data.ready[0];});
+ const before=await page.evaluate(()=>{const s=window.battleLive.current;return {own:s.data.ships[0],bot:s.data.ships[1]};});
+ assert.equal(before.own.length,0);assert(before.bot.length>0);
+ await page.getByRole('button',{name:'Расставить флот',exact:true}).click();
+ await page.getByRole('button',{name:'Готово',exact:true}).waitFor();
+ const after=await page.evaluate(()=>window.battleLive.current.data.ships);
+ assert(after[0].length>0);assert.deepEqual(after[1],before.bot);
+ await page.getByRole('button',{name:'Готово',exact:true}).click();
+ await page.waitForFunction(()=>window.battleLive.current.data.phase==='battle');
+}));
+
+test('all pack views release replaced scenes across repeated render cycles',{timeout:90000},async()=>fixture(async page=>{
+ const cdp=await page.context().newCDPSession(page);await cdp.send('Performance.enable');
+ const samples=[];
+ for(let round=0;round<3;round++){
+  for(const game of ['uno','durak','gofish','oldmaid','domino','ludo','snakes','battleship','checkers','tictactoe','pexeso','yatzy','klondike','spider','mage-brawl']){
+   await scene(page,game);await page.evaluate(()=>{for(let i=0;i<8;i++)rcRender();});
+  }
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await cdp.send('HeapProfiler.collectGarbage');
+  const counters=await cdp.send('Memory.getDOMCounters'),metrics=await cdp.send('Performance.getMetrics');
+  samples.push({...counters,heap:metrics.metrics.find(m=>m.name==='JSHeapUsedSize').value});
+ }
+ console.log('Post-GC render-cycle samples:',JSON.stringify(samples));
+ assert(samples[2].nodes<=samples[0].nodes+100,'replaced DOM nodes do not accumulate');
+ assert(samples[2].jsEventListeners<=samples[0].jsEventListeners+20,'listeners do not accumulate');
+ assert(samples[2].heap<=samples[0].heap*1.2+2_000_000,'heap remains bounded after warmup');
+ await cdp.detach();
+}));
+
+
+test('Mage cell highlights stay above tiles without overlapping adjacent cells',async()=>fixture(async page=>{
+ for(const [width,height] of [[390,844],[844,390]]){
+  await page.setViewportSize({width,height});
+  for(const players of [2,4]){
+   await scene(page,'mage-brawl',{players:Array.from({length:players},(_,i)=>({name:'Player '+i}))});
+   const result=await page.locator('.mage-grid').evaluate(grid=>{
+    const cells=[...grid.querySelectorAll('.mage-cell')],rings=[...grid.querySelectorAll('.mage-cell-highlight')],rect=e=>e.getBoundingClientRect();
+    return {acting:cells.filter(c=>c.classList.contains('mage-acting')).length,layer:Number(getComputedStyle(grid.querySelector('.mage-highlights')).zIndex),pieces:Number(getComputedStyle(grid.querySelector('.mage-pieces')).zIndex),cells:cells.map((c,i)=>{const r=rect(c),a=rect(c.querySelector('svg')),h=rect(rings[i]),next=cells[i+1]&&rect(cells[i+1]);return {artInside:a.left>=r.left&&a.right<=r.right+.1&&a.top>=r.top&&a.bottom<=r.bottom+.1,aligned:Math.abs(h.x-r.x)<.1&&Math.abs(h.y-r.y)<.1&&Math.abs(h.width-r.width)<.1&&Math.abs(h.height-r.height)<.1,noOverlap:!next||Math.abs(next.y-r.y)>.1||next.left>=r.right,outline:getComputedStyle(c).outlineStyle};})};
+   });
+   assert.equal(result.acting,0,'empty cells never get an acting ring');assert(result.layer>result.pieces);
+   for(const c of result.cells){assert(c.artInside&&c.aligned&&c.noOverlap,JSON.stringify(c));assert.equal(c.outline,'none');}
+   await page.screenshot({path:path.join(shots,`mage-rings-${players}-${width}.png`)});
+  }
+ }
+}));
+
+test('first-turn guides cover every pack and stay non-interactive above the scene',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ const failures=[];
+ for(const game of ['uno','durak','gofish','oldmaid','domino','ludo','snakes','battleship','checkers','tictactoe','pexeso','yatzy','klondike','spider','mage-brawl']){
+  await scene(page,game);
+  await page.evaluate(()=>{window.refreshGuide=()=>{const state=TabletopCore.project(rcSession.current,0);PlayroomFirstTurnGuide.update({owner:rcSession,state,viewer:0,actions:TabletopCore.legalActions(rcSession.current,0),ui:rcUI,active:true,busy:false});};refreshGuide();});
+  await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor({timeout:5000});
+  const info=await page.evaluate(()=>{const g=document.querySelector('.first-turn-guide');return {visible:!!g&&!g.hidden,text:g?.textContent,pointer:g&&getComputedStyle(g).pointerEvents,actions:[...new Set(TabletopCore.legalActions(rcSession.current,0).map(a=>a.type))]};});
+  if(!info.visible)failures.push({game,...info});else assert.equal(info.pointer,'none');
+  if(['oldmaid','mage-brawl','ludo'].includes(game))await page.screenshot({path:path.join(shots,`guide-${game}.png`)});
+  await page.evaluate(()=>PlayroomFirstTurnGuide.stop());
+ }
+ assert.deepEqual(failures,[]);
+}));
+
+test('first-turn guide follows real Old Maid choices and both Mage planning steps',{timeout:45000},async()=>fixture(async page=>{
+ const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
+ const start=async game=>{
+  await page.locator(`[data-start="${game}"]`).first().click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
+  await page.locator('[data-command="lobby-start"]').click();
+ };
+ await start('oldmaid');await caption.filter({hasText:'соперника'}).waitFor();
+ const targets=page.locator('[data-player-target]');await targets.last().click();
+ await page.locator('dialog[open] .first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ assert.match(await caption.innerText(),/любую карту/);
+ await page.screenshot({path:path.join(shots,'guide-oldmaid-choice.png')});
+ await page.locator('.card-choice-dialog [data-card-index]').last().click();
+ await page.waitForFunction(()=>!document.querySelector('.first-turn-guide:not([hidden])'));
+ await page.evaluate(()=>PlayroomAppBridge.showHub());
+ await start('mage-brawl');await caption.filter({hasText:'тип действия'}).waitFor();
+ assert.match(await caption.innerText(),/атака/,'default movement is already selected');
+ await page.locator('[data-view-key="mageAction"][aria-pressed="true"]').click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.movement),undefined,'clicking the already selected type is not a switch');
+ await caption.filter({hasText:'атака'}).waitFor();
+ // Bypass the suggested action type and choose any other card directly.
+ await page.locator('.mage-card:not([disabled])').last().click();
+ await caption.filter({hasText:'Поверните'}).waitFor();
+ await page.locator('[data-view-key="mageDirection"]').last().click();
+ await caption.filter({hasText:'справку'}).waitFor();
+ await page.locator('[data-command="card-help"]').click();
+ await page.locator('#modal-root [data-command="close-modal"]').first().click();
+ await caption.filter({hasText:'галочкой'}).waitFor();
+ await page.locator('.mage-ready').click();
+ await caption.filter({hasText:'карту стихии'}).waitFor();
+ await page.locator('.mage-card:not([disabled])').first().click();
+ await caption.filter({hasText:'отменить'}).waitFor();
+ await page.locator('.mage-ready').click();
+ await page.waitForFunction(()=>!document.querySelector('.first-turn-guide:not([hidden])'));
+},{settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false}}));
+
+test('first-turn guide preferences persist per pack and resize does not move the field',{timeout:30000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(5000);
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('[data-start="tictactoe"]').first().click();await page.locator('[data-command="lobby-start"]').click();
+ await page.locator('.table-shell [data-command="settings"]').click();
+ const setting=page.locator('#setting-learning-enabled');await setting.uncheck();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.skipped('tictactoe')),true);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.skipped('oldmaid')),false);
+ await page.reload();assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.skipped('tictactoe')),true);
+ await page.evaluate(()=>{PlayroomAppBridge.closeModal(true);PlayroomAppBridge.showHub();});
+ await scene(page,'tictactoe');
+ await page.evaluate(()=>PlayroomFirstTurnGuide.update({owner:rcSession,state:TabletopCore.project(rcSession.current,0),viewer:0,actions:TabletopCore.legalActions(rcSession.current,0),active:true}));
+ await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
+ assert.equal(await page.locator('.first-turn-guide:not([hidden])').count(),0);
+ await page.evaluate(()=>PlayroomFirstTurnGuide.setSkipped('tictactoe',false));
+ for(const viewport of [{width:390,height:844},{width:844,height:390},{width:320,height:640}]){
+  await page.setViewportSize(viewport);await page.locator('.guide-caption').waitFor();
+  const before=await page.locator('.ttt-grid').boundingBox();
+  await page.evaluate(()=>PlayroomFirstTurnGuide.setSkipped('tictactoe',true));
+  await page.evaluate(()=>new Promise(r=>requestAnimationFrame(r)));
+  assert.deepEqual(await page.locator('.ttt-grid').boundingBox(),before);
+  await page.evaluate(()=>PlayroomFirstTurnGuide.setSkipped('tictactoe',false));
+ }
+}));
+
+test('Mage history owns round playback, pause/resume and return to live',{timeout:45000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(6000);
+ await page.evaluate(()=>{
+  const E=TabletopCore,s=new TabletopSession(E,'mage-brawl',{seed:17,mode:'solo',actionsPerTurn:'1',players:[{name:'Иван'},{name:'Тео'}]});
+  for(let i=0;i<60&&s.current.data.round<4&&s.current.status==='playing';i++){
+   const window=E.decisionWindow(s.current),actor=window?.participants.find(p=>!window.ready.includes(p))??s.current.turn,actions=E.legalActions(s.current,actor);
+   s.act(actor,actions.find(a=>a.type==='plan'&&a.action==='movement'&&a.element==='earth')||actions.find(a=>a.type==='plan'&&a.action==='movement')||actions[0]);
+  }
+  if(s.current.data.round<3)throw Error('Fixture must contain several completed rounds');
+  window.testRounds=s.current.timeline.roundStarts;
+  const library=new PlayroomLibrary(()=>localStorage,E,TabletopSession,PlayroomPacks);library.activate(s,'mage-history-test');
+  sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen:'table',sessionId:'mage-history-test'}));
+ });
+ await page.reload();await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('[data-resume-id=mage-history-test]').first().click();await page.locator('.mage-grid').first().waitFor();
+ await page.locator('[data-command="history"]').click();
+ const slider=page.locator('#replay-range');await slider.waitFor();
+ assert.equal(await page.locator('.is-public-playback').count(),0,'Opening history is static');
+ await page.locator('[data-command="replay-round-prev"]').click();
+ const previous=await slider.inputValue();await page.waitForTimeout(400);assert.equal(await slider.inputValue(),previous);assert.equal(await page.locator('.is-public-playback').count(),0);
+ await page.locator('[data-command="replay-round-next"]').click();assert(Number(await slider.inputValue())>Number(previous));
+ await page.locator('[data-command="replay-play"]').click();
+ await page.locator('.is-public-playback [data-public-frame="1"]:not([hidden])').waitFor();
+ assert.match(await page.locator('.turn-extra').innerText(),/Раунд 1/);
+ await page.locator('[data-command="replay-play"]').click();
+ const paused=await page.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),revision=await slider.inputValue();
+ await page.waitForTimeout(1000);assert.equal(await page.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),paused);assert.equal(await slider.inputValue(),revision);
+ await page.locator('[data-command="replay-play"]').click();
+ await page.waitForFunction(before=>document.querySelector('[data-public-frame]:not([hidden])')?.dataset.publicFrame!==before,paused);
+ assert.equal(await slider.inputValue(),revision,'Revision waits for the whole round presentation');
+ await page.locator('[data-command="history-close"]').click();
+ assert.equal(await page.locator('.history-panel,.is-public-playback').count(),0);
+ const live=await page.locator('.mage-grid').last().innerHTML();await page.waitForTimeout(1100);
+ assert.equal(await page.locator('.history-panel,.is-public-playback').count(),0);assert.equal(await page.locator('.mage-grid').last().innerHTML(),live,'No late history frame changes the live board');
+ await page.evaluate(()=>{
+  PlayroomAppBridge.showHub();const library=new PlayroomLibrary(()=>localStorage,TabletopCore,TabletopSession,PlayroomPacks),s=library.open('mage-history-test');
+  window.historyAuthority=new SessionAuthority(s);const channel=historyAuthority.connect(0);
+  const client={snapshot:channel.snapshot(),pending:null,subscribe:()=>()=>{},history:async index=>channel.history(index),send:async()=>({ok:true})};
+  window.sharedHistory=PlayroomSharedViews.mount(client,PlayroomPacks.exportView('mage-brawl'));sharedHistory.render();
+ });
+ await page.evaluate(()=>sharedHistory.openHistory(0));await page.locator('[data-command="replay-play"]').click();
+ await page.locator('.is-public-playback [data-public-frame="1"]:not([hidden])').waitFor();
+ await page.locator('[data-command="replay-play"]').click();
+ const networkFrame=await page.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame');
+ await page.waitForTimeout(900);assert.equal(await page.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),networkFrame);
+ await page.locator('[data-command="replay-play"]').click();
+ await page.waitForFunction(before=>document.querySelector('[data-public-frame]:not([hidden])')?.dataset.publicFrame!==before,networkFrame);
+ await page.locator('[data-command="history-close"]').click();await page.waitForTimeout(700);
+ assert.equal(await page.locator('.history-panel,.is-public-playback').count(),0);
+ await page.evaluate(()=>{sharedHistory.destroy();historyAuthority.dispose();});
+
+}));
+
+
+test('bot difficulty slider, individual settings, lobby bulk buttons and in-game lock',{timeout:45000},async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-start="pexeso"]').click();
+ assert.equal(await page.locator('[data-bots-difficulty]').count(),3);assert.equal(await page.locator('[data-bots-difficulty=medium]').getAttribute('aria-pressed'),'true');
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'bot',nickname:'Третий'});b.renderLobby();});
+ await page.locator('[data-bot-settings]').first().click();assert.equal(await page.locator('[name=difficulty]').inputValue(),'1');assert.equal(await page.locator('[name=errorRate]').count(),0);assert.equal(await page.locator('[name=strategy]').count(),0);
+ await page.locator('[name=difficulty]').fill('2');await page.locator('[form=bot-settings-form]').click();
+ assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.botSettings?.difficulty||'medium')),['hard','medium']);
+ await page.locator('[data-bots-difficulty=easy]').click();assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.botSettings.difficulty)),['easy','easy']);
+ await page.screenshot({path:path.join(shots,'bot-difficulty-lobby.png')});
+ await page.locator('[data-bot-settings]').first().click();await page.screenshot({path:path.join(shots,'bot-difficulty-settings.png')});await page.locator('.bot-settings-footer [data-command=close-modal]').click();
+ await page.locator('[data-command=lobby-start]').click();assert.equal(await page.locator('.participant-role[data-participant-role=bot]').count(),2);
+ const hidden=await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();return PlayroomLobbyView.render({room:r,participantId:r.ownerId,isHost:true}).includes('data-bots-difficulty');});assert.equal(hidden,false);
+ assert.equal(await page.locator('.participant-role[data-bot-difficulty=easy]').count(),2);
+ const icons=await page.evaluate(()=>['easy','medium','hard'].map(difficulty=>{
+  const state=new TabletopSession(TabletopCore,'pexeso',{players:[{name:'Bot',bot:true,botSettings:{difficulty}},{name:'Human'}],seed:3}).current;
+  const saved=JSON.parse(JSON.stringify(state));
+  const resume=document.createElement('div');resume.innerHTML=PlayroomGameScreen.participantsMarkup(saved);
+  const result=document.createElement('div');result.innerHTML=PlayroomGameScreen.resultMarkup({state:{...saved,status:'finished',winner:0},viewer:1,gameName:'Пексесо'});
+  return [resume.querySelector('[data-bot-difficulty]')?.dataset.botDifficulty,result.querySelector('[data-bot-difficulty]')?.dataset.botDifficulty,result.querySelector('.result-bot-settings')===null,resume.querySelector('[data-bot-difficulty] svg')?.innerHTML];
+ }));
+ assert.deepEqual(icons.map(row=>row.slice(0,3)),['easy','medium','hard'].map(level=>[level,level,true]));assert.equal(new Set(icons.map(row=>row[3])).size,3);
+
+}));
+
+
+test('learning reset is confirmed, enables learning and resets only the current pack',async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('[data-start="tictactoe"]').click();await page.locator('[data-command=lobby-start]').click();
+ await page.evaluate(()=>{const G=PlayroomFirstTurnGuide;G.setEnabled('tictactoe',false);G.setEnabled('oldmaid',false);});
+ await page.locator('.table-shell [data-command=settings]').click();
+ const box=page.locator('#setting-learning-enabled');assert.equal(await box.isChecked(),false);
+ await page.locator('[data-restart-guides]').click();await page.locator('[data-confirm-cancel]').click();assert.equal(await box.isChecked(),false);
+ await page.locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();assert.equal(await box.isChecked(),true);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('oldmaid').enabled),false);
+ assert.equal(await page.locator('#sound-preview').count(),0);await page.screenshot({path:path.join(shots,'learning-settings-390.png')});
+}));
+
+test('Battleship guide follows alternate setup choices and waits 500ms after input',{timeout:30000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(5000);await page.setViewportSize({width:390,height:844});
+ await page.locator('[data-start=battleship]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();
+ const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await caption.waitFor();
+ await page.locator('.battle-panel [data-select="new:3"]').click();
+ assert.equal(await caption.count(),0,'hide immediately while user acts');
+ await page.waitForTimeout(350);assert.equal(await caption.count(),0,'do not interrupt activity before half a second');await caption.waitFor();assert.match(await caption.innerText(),/свободную клетку/);
+ await page.locator('.battle-grid [data-action]').first().click();await caption.waitFor();assert.match(await caption.innerText(),/выставленный корабль/);
+ await page.locator('.battle-grid [data-select="ship:0"]').first().click();await caption.waitFor();assert.match(await caption.innerText(),/поворачивает/);
+ // Ignore rotation: move instead; the next hint must follow the real board state.
+ await page.locator('.battle-grid [data-action]').last().click();await caption.waitFor();
+ await page.locator('[data-guide-step=remove]').click();await caption.waitFor();assert.doesNotMatch(await caption.innerText(),/выбранный корабль в запас/);
+ await page.locator('.battle-panel [data-select="new:2"]').click();await page.locator('[data-guide-step=rotate]').click();await page.waitForTimeout(650);assert.equal(await caption.count(),0,'completed placement and rotation are not taught again');
+ await page.screenshot({path:path.join(shots,'battleship-adaptive-guide.png')});
+ await page.locator('[data-action]').filter({hasText:'Расставить флот'}).click();
+ await page.locator('[data-action]').filter({hasText:'Готов'}).click();
+ await caption.waitFor();assert.match(await caption.innerText(),/своё поле/);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.own),undefined,'automatic own view during setup does not teach a manual switch');
+ await page.locator('[data-view-key="fleet"][data-view-value="own"]').click();await caption.waitFor();assert.match(await caption.innerText(),/поле соперника/);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.own),1);
+ await page.locator('[data-view-key="fleet"][data-view-value="enemy"]').click();await caption.waitFor();assert.match(await caption.innerText(),/кнопку с глазом/);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.enemy),2);
+ await page.locator('[data-view-preference="followOpponent"]').click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.follow),1);
+
+}));
+
+test('semantic guides preserve rare goals across turns and classify commands before delayed acknowledgement',async()=>fixture(async page=>{
+ const result=await page.evaluate(()=>{
+  const G=PlayroomFirstTurnGuide,out={};
+  const make=game=>{const owner={},state={game,status:'playing',move:0,turn:0,players:[{},{}],scene:{},events:[]};return {owner,state,viewer:0,actions:[{type:'placeholder'}],ui:{},active:true};};
+  const apply=(ctx,action)=>{G.update(ctx);const token=G.capture(ctx.owner,0);G.committed(ctx.owner,0,action,token);return [...token.progress.seen];};
+  const p=make('pexeso');p.state.scene.selectionCount=0;G.update(p);const first=G.capture(p.owner,0);
+  p.state={...p.state,move:1,scene:{selectionCount:1}};G.update(p);G.committed(p.owner,0,{type:'flip',index:7},first);out.first=[...first.progress.seen];
+  out.second=apply(p,{type:'flip',index:3});
+  const l=make('ludo');l.state.scene={moves:[]};out.roll=apply(l,{type:'roll'});
+  G.update({...l,state:{...l.state,move:2,turn:1}});l.state={...l.state,move:3,scene:{dice:[{value:6}],moves:[{from:-1,command:{owner:0,pawn:2,dieIndex:0}}]}};
+  out.exit=apply(l,{type:'move',owner:0,pawn:2,dieIndex:0});l.state.scene.dice=[{value:3}];out.guaranteedExit=apply(l,{type:'move',owner:0,pawn:2,dieIndex:0});
+  l.state={...l.state,move:4,scene:{moves:[{from:5,command:{owner:0,pawn:1,dieIndex:0}}]}};out.move=apply(l,{type:'move',owner:0,pawn:1,dieIndex:0});
+  l.state={...l.state,preset:'teams',scene:{moves:[],pawns:[{owner:0,progress:56}]}};out.notHome=apply(l,{type:'roll'});
+  l.state.scene.pawns=Array.from({length:4},()=>({owner:0,progress:57}));out.teamRoll=apply(l,{type:'roll'});
+  l.state.scene.moves=[{from:5,command:{owner:2,pawn:1,dieIndex:0}}];out.teamMove=apply(l,{type:'move',owner:2,pawn:1,dieIndex:0});
+
+  const u=make('uno');u.state.scene={manualDeclaration:true};out.ordinary=apply(u,{type:'play',card:'u1'});out.color=apply(u,{type:'play',card:'u101',color:'red'});out.draw=apply(u,{type:'draw'});out.pass=apply(u,{type:'pass'});
+  const n=make('snakes');n.state.preset='plus';n.state.scene={adjusting:false};out.snakes=apply(n,{type:'roll'});
+  n.state={...n.state,move:3,events:[{type:'snakes.extra',player:0,params:{reason:'double'}}]};out.double=apply(n,{type:'roll'});
+  n.state={...n.state,move:4,scene:{adjusting:true}};out.noAdjust=apply(n,{type:'move',delta:0});out.adjust=apply(n,{type:'move',delta:1});
+  const c=make('checkers');c.state.scene={pieces:[{cell:9,king:true}],forced:null};c.actions=[{type:'move',from:9,to:36,capture:false}];out.king=apply(c,{type:'move',from:9,to:36});
+  const m=make('mage-brawl');m.state.scene={arena:{phase:'planning',config:{steps:2},players:[{draft:null}]}};out.mageFirst=apply(m,{type:'plan',action:'movement'});
+  m.state={...m.state,move:1,scene:{arena:{phase:'planning',config:{steps:2},players:[{draft:{cardId:'first'}}]}}};out.mageSecond=apply(m,{type:'plan',action:'attack'});
+  m.state.scene.arena.phase='respawn';out.base=apply(m,{type:'respawn',pos:[0,0]});m.state.scene.arena.phase='loot';out.loot=apply(m,{type:'loot'});
+  m.state.scene.arena.phase='planning';out.ultimate=apply(m,{type:'plan',action:'ultimate'});
+  // Restart invalidates a command from the previous tutorial run.
+  G.update(m);const stale=G.capture(m.owner,0);G.restart('mage-brawl');G.committed(m.owner,0,{type:'plan',action:'ultimate'},stale);out.restart=[...G.capture(m.owner,0).progress.seen];
+  G.stop();return out;
+ });
+ assert.deepEqual(result.first,['first']);assert.deepEqual(result.second,['first','second']);
+ assert.deepEqual(result.roll,['roll']);assert.deepEqual(result.exit,['roll','exit']);assert.deepEqual(result.guaranteedExit,['roll','exit','exit-guaranteed']);assert(result.move.includes('pawn')&&result.move.includes('destination'));assert(!result.notHome.includes('team-roll'));assert(result.teamRoll.includes('team-roll')&&!result.teamRoll.includes('team-move'));assert(result.teamMove.includes('team-move'));
+ assert(!result.ordinary.includes('color'));assert(result.color.includes('color'));assert(result.draw.includes('draw')&&!result.draw.includes('pass'));assert(result.pass.includes('pass'));
+ assert(!result.snakes.includes('double'));assert(result.double.includes('double'));assert(!result.noAdjust.includes('adjust'));assert(result.adjust.includes('adjust'));
+ assert(result.king.includes('king')&&result.king.includes('king-move'));assert(result.mageFirst.includes('card')&&!result.mageFirst.includes('card-second'));assert(result.mageSecond.includes('card-second')&&result.mageSecond.includes('ready-second'));
+ assert(result.base.includes('base'));assert(result.loot.includes('loot-card'));assert(result.ultimate.includes('ultimate'));assert.deepEqual(result.restart,[]);
+}));
+
+test('hint and card help clicks teach separate persistent goals',async()=>fixture(async page=>{
+ for(const game of ['klondike','spider','uno','mage-brawl']){
+  const hint=['klondike','spider'].includes(game),goal=hint?'hint':'help';
+  await page.locator(`[data-start="${game}"]`).first().click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+  await page.locator('[data-command=lobby-start]').click();
+  assert.equal(await page.evaluate(({game,goal})=>PlayroomFirstTurnGuide.settings(game).mastered[goal],{game,goal}),undefined);
+  await page.locator(hint?'[data-view-key="hint"]':'[data-command="card-help"]').click();
+  assert.equal(await page.evaluate(({game,goal})=>PlayroomFirstTurnGuide.settings(game).mastered[goal],{game,goal}),1);
+  if(!hint)await page.locator('#modal-root [data-command="close-modal"]').first().click();
+  await page.locator('#app [data-command="settings"]').click();await page.locator(`[data-learning-list="${game}"]`).click();
+  assert.equal(await page.locator('.learning-goals li').filter({hasText:hint?'кнопку подсказки':'Откройте справку'}).locator('input:checked:disabled').count(),1);
+  await page.evaluate(()=>{PlayroomAppBridge.closeModal(true);PlayroomAppBridge.showHub();});
+ }
+}));
+
+test('Go Fish tutorial selects a card before any opponent and accepts changing that card',async()=>fixture(async page=>{
+ await page.locator('[data-start="gofish"]').first().click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
+ await page.locator('[data-command="lobby-start"]').click();
+ const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
+ await caption.filter({hasText:'карту'}).waitFor();assert.doesNotMatch(await caption.innerText(),/соперника/);
+ await page.locator('.own-hand .hand-card.is-playable').first().click();
+ await caption.filter({hasText:'соперника'}).waitFor();
+ await page.locator('.own-hand .hand-card.is-playable').last().click();
+ await caption.filter({hasText:'соперника'}).waitFor();
+ await page.screenshot({path:path.join(shots,'guide-gofish-card-before-opponent.png')});
+ await page.locator('[data-player-target]').first().click();
+ await page.locator('#app [data-command="settings"]').click();await page.locator('[data-learning-list="gofish"]').click();
+ assert.equal(await page.locator('.learning-goals input').count(),2);
+ assert.equal(await page.locator('.learning-goals input:checked').count(),2);
+ assert.match(await page.locator('.learning-complete').innerText(),/Все действия освоены/);
+
+},{settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false}}));
+
+test('first own turn asks once per pack and user progress survives reload and a new match',async()=>fixture(async page=>{
+ assert.deepEqual(await page.evaluate(()=>{
+  const c=new PlayroomTutorialController(),context={viewer:0,state:{status:'playing',turn:1,players:[{},{}]},actions:[{type:'move'}]},guide={steps:[]};
+  return [c.canOffer(context,guide),c.canOffer({...context,state:{...context.state,turn:0}},guide),c.canOffer(context,{...guide,concurrent:true}),c.canOffer({...context,actions:[]},{...guide,concurrent:true}),c.canOffer({...context,busy:true},{...guide,concurrent:true}),c.canOffer({...context,replay:true},{...guide,concurrent:true}),c.canOffer({...context,active:false},{...guide,concurrent:true})];
+ }),[false,true,true,false,false,false,false]);
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-start=tictactoe]').click();assert.equal(await page.locator('.learning-intro').count(),0);
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+ await page.locator('[data-command=lobby-start]').click();await page.locator('.learning-intro .modal-foot').waitFor();await page.screenshot({path:path.join(shots,'learning-intro-390.png')});await page.locator('[data-learning-choice=yes]').click();await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ await page.locator('#app [data-command="settings"]').click();await page.locator('[data-learning-list="tictactoe"]').click();
+ assert.equal(await page.locator('.learning-goals input:disabled:not(:checked)').count(),1);
+ assert.equal(await page.locator('.learning-complete').count(),0);
+ await page.locator('#modal-root [data-command="close-modal"]').click();await page.locator('#modal-root [data-command="close-modal"]').click();
+ await page.locator('.ttt-cell[data-action]').first().click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('tictactoe').mastered.cell),1);
+ await page.locator('#app [data-command="settings"]').click();await page.locator('[data-learning-list="tictactoe"]').click();
+ assert.equal(await page.locator('.learning-goals input:checked:disabled').count(),1);
+ assert.match(await page.locator('.learning-complete').innerText(),/Все действия освоены/);
+ await page.screenshot({path:path.join(shots,'learning-list-complete.png')});
+
+ await page.reload();assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('tictactoe').mastered.cell),1);
+ await page.evaluate(()=>{PlayroomAppBridge.closeModal(true);PlayroomAppBridge.showHub();});
+ await page.locator('[data-start=tictactoe]').click();await page.locator('[data-command=lobby-start]').waitFor();assert.equal(await page.locator('.learning-intro').count(),0);
+ await page.evaluate(()=>{PlayroomAppBridge.closeModal(true);PlayroomAppBridge.showHub();});
+ await page.locator('[data-start=oldmaid]').click();assert.equal(await page.locator('.learning-intro').count(),0);await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await page.locator('[data-learning-choice=no]').click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('oldmaid').enabled),false);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('tictactoe').enabled),true);
+},{settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false},learningPrompted:false}));
+
+test('UNO declaration guidance bypasses the normal input idle delay',async()=>fixture(async page=>{
+ await scene(page,'uno');
+ await page.evaluate(()=>{
+  const button=document.createElement('button');button.dataset.action=JSON.stringify({type:'declare-uno'});button.textContent='UNO';button.style='position:fixed;left:150px;top:150px;width:80px;height:50px;z-index:2';document.querySelector('.table-shell').append(button);
+  PlayroomFirstTurnGuide.update({owner:{},viewer:0,active:true,state:{game:'uno',status:'playing',turn:1,move:1,players:[{},{}],scene:{declarationOpen:[true,false],declared:[false,false]}},actions:[{type:'declare-uno'}],ui:{}});
+ });
+ await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor({timeout:300});
 }));

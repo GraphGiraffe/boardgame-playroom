@@ -7,11 +7,10 @@ test('screen:phone:portrait settings help opens by touch and Escape closes only 
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
  try{
-  await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await page.locator('[data-room-cycle=seat-3]').click();await page.locator('.room-setup-modal [data-command=settings]').click();
+  await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('uno',false));await page.locator('[data-room-cycle=seat-3]').click();await page.locator('.room-setup-modal [data-command=settings]').click();
   assert(!await page.locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
   const before=await page.evaluate(()=>localStorage.getItem('playroom.settings.v1'));
-  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale','sound-preview']){
-   if(id==='sound-preview')await page.locator('.settings-details>summary').click();
+  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale']){
    const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"setting-with-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
    assert(await wrapper.locator('.setting-title').evaluate(e=>{const a=e.querySelector('.setting-title-text').getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');
    await button.focus();await button.press('ArrowRight');
@@ -30,7 +29,7 @@ test('modal origins: game settings rules and room close return to their caller',
  const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage(),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
  const close=()=>page.locator('#modal-root .modal-head [data-command=close-modal]').click();
  try{
-  await page.goto(server.url);await page.locator('[data-start=tictactoe]').first().click();
+  await page.goto(server.url);await page.locator('[data-start=tictactoe]').first().click();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('tictactoe',false));
   const roomId=await page.evaluate(()=>PlayroomAppBridge.room().id);
   await close();assert.equal(await page.locator('#modal-root .modal').count(),0);
   assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId,'closing room does not leave it');

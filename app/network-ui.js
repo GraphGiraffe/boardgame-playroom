@@ -82,7 +82,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function roomPresence(room){
     const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
     return {kind:'room-presence',roomId:room.id,revision:room.revision,participants:room.participants
-      .map(p=>({id:p.id,nickname:p.nickname,avatar:p.avatar||null,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost,bot:!!p.bot,local:!!p.local,hasConnected:Number.isFinite(p.joinedAt),replacement:p.replacement||null,playerIndex:occupied.find(s=>s.participantId===p.id)?.playerIndex??occupied.findIndex(s=>s.participantId===p.id)}))};
+      .map(p=>({id:p.id,nickname:p.nickname,avatar:p.avatar||null,connected:!!p.connected,seatId:p.seatId,role:p.role,isHost:!!p.isHost,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),local:!!p.local,hasConnected:Number.isFinite(p.joinedAt),replacement:p.replacement||null,playerIndex:occupied.find(s=>s.participantId===p.id)?.playerIndex??occupied.findIndex(s=>s.participantId===p.id)}))};
   }
   function playerMetadata(sessionId,index){
     let data;
@@ -143,7 +143,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const state=clientRecovery?.state||(clientConnected()?'connected':'connecting');
     let wrap=shell.querySelector('.network-reconnect-banner');
     if(!wrap){wrap=document.createElement('div');wrap.className='network-reconnect-banner';wrap.setAttribute('role','status');shell.appendChild(wrap);}
-    if(wrap.dataset.state===state)return;wrap.dataset.state=state;
+    wrap.hidden=!clientRecovery?.report().notice;if(wrap.dataset.state===state)return;wrap.dataset.state=state;
     wrap.innerHTML='<strong>'+connectionLabels[state]+'</strong> '+(state==='connected'?'':globalThis.PlayroomMessages.text("ui.network-ui.6f988523357f"))+
       (state==='invite'?("<button class=\"btn secondary\" id=\"network-reconnect-button\" type=\"button\">"+globalThis.PlayroomMessages.text("ui.network-ui.f260ec9b1579")+"</button>"):'')+
       (" <button class=\"text-btn\" data-net-action=\"diagnostics\">"+globalThis.PlayroomMessages.text("ui.network-ui.493b722e3e1d")+"</button>");
@@ -156,7 +156,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function startRecovery(){
     clientRecovery?.close();const transport=clientTransport,peer=clientPeer;
     clientRecovery=new W.Recovery({pc:peer.pc,transport,
-      onState:report=>{clientMount?.setConnected(report.state==='connected');if(report.state!=='connected')historySync.cancel();showDisconnectBanner();renderPresence();ensureButtons();},
+      onState:report=>{clientMount?.setConnected(report.state==='connected',{notice:report.notice});if(report.state!=='connected')historySync.cancel();showDisconnectBanner();renderPresence();ensureButtons();},
       reconcile:async(snapshot,{recovering})=>{
         if(transport!==clientTransport)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2175de681bca"));
         if(snapshot?.kind==='lobby'){
@@ -168,7 +168,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(snapshot?.kind!=='snapshot')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.dc2965d322a1"));
         if(!clientGameClient)startClientGame(snapshot);
         if(!clientGameClient)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.3777bf0d6091"));
-        if(recovering||clientGameClient.pending){clientMount?.setConnected(false);await clientGameClient.reconcile(snapshot);clientMount?.syncLive();}
+        if(recovering){clientMount?.setConnected(false,{notice:clientRecovery?.report().notice??false});await clientGameClient.reconcile(snapshot);clientMount?.syncLive();}
         else clientGameClient.accept(snapshot);
         if(recovering)void backfillClientHistory(clientGameClient.snapshot,transport,clientRoom.id,clientParticipantId);
       }});

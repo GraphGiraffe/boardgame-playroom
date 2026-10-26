@@ -73,7 +73,7 @@
     constructor(scheduler){this.scheduler=scheduler;this.run=null;this.rate=1;}
     play(plan,ports={}){
       validate(plan);
-      if(this.run?.plan.id===plan.id&&!this.run.cancelled){this.run.ports=ports;return this.run.promise;}
+      if(this.run?.plan.id===plan.id&&!this.run.cancelled){if(!this.run.done)this.run.ports=ports;return this.run.promise;}
       this.cancel();
       let resolve;
       const run={plan,ports,index:-1,paused:false,done:false,timer:null,remaining:0,started:0,waiting:false,effectsDone:false,resolve:null,promise:new Promise(r=>resolve=r)};
@@ -123,7 +123,7 @@
       if(!this.current(run))return;
       this.stopTimer(run);run.done=true;run.context.cancel();
       try{run.ports.final?.(run.plan.final,status);}catch(error){run.ports.error?.(error);}
-      finally{run.resolve({status});}
+      finally{run.resolve({status});this.release(run);}
     }
     fail(run,error){
       if(!this.current(run))return;
@@ -133,7 +133,11 @@
     cancel(){
       const run=this.run;if(!run||run.done)return;
       this.stopTimer(run);run.done=true;run.context.cancel();run.cancelled=true;
-      try{run.ports.cancel?.();}finally{run.resolve({status:'cancelled'});}
+      try{run.ports.cancel?.();}finally{run.resolve({status:'cancelled'});this.release(run);}
+    }
+    release(run){
+      // Retain only the completion receipt for idempotent replay checks.
+      run.plan={id:run.plan.id};run.ports={};run.context=null;run.prepared=null;run.resolve=null;
     }
     whenIdle(){return this.run?.promise||Promise.resolve({status:'idle'});}
   };

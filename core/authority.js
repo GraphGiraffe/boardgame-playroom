@@ -15,6 +15,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function transfers(before,after,events=after.events){
     return events.filter(event=>event.id>(before.events.at(-1)?.id||0)&&event.transfer).map(event=>({...event.transfer,...(event.privateTo!=null?{privateTo:event.privateTo}:{})}));
   }
+  // Decorated actions may have extra presentation fields. Index by each command
+  // shape so authorization preserves subset matching without an N x N scan.
+  function authorizedCommands(commands,actions){
+    const shapes=new Map();
+    return commands.filter(command=>{
+      const keys=Object.keys(command).sort(),shape=JSON.stringify(keys);
+      let allowed=shapes.get(shape);
+      if(!allowed){allowed=new Set(actions.filter(action=>keys.every(key=>Object.hasOwn(action,key))).map(action=>canonical(keys.map(key=>action[key]))));shapes.set(shape,allowed);}
+      return allowed.has(canonical(keys.map(key=>command[key])));
+    });
+  }
   class SessionAuthority {
     constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
@@ -86,8 +97,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
       const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
       if(projected.modelProjection){
-        const projection={...projected.modelProjection,actions:projected.modelProjection.actions.filter(command=>
-          actions.some(action=>Object.keys(command).every(key=>canonical(command[key])===canonical(action[key]))))};
+        const projection={...projected.modelProjection,actions:authorizedCommands(projected.modelProjection.actions,actions)};
         safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
       }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
@@ -273,6 +283,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
       if(windows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;
       let wait=planning!==undefined&&actor===planning?0:Math.max(0,delay);
+      if(control?.kind==='answer'){
+        const reactionDelay=s.engine.botReactionDelay?.(st,actor);
+        if(reactionDelay!=null){
+          r.botReactionEpisodes??=new Map();const episode=action.episode??st.move;let timing=r.botReactionEpisodes.get(actor);
+          if(!timing||timing.episode!==episode){timing={episode,startedAt:this._now()};r.botReactionEpisodes.set(actor,timing);}
+          wait=Math.max(0,timing.startedAt+reactionDelay-this._now());
+        }
+      }
       if(['challenge','advance'].includes(control?.kind))for(const window of windows)wait=Math.max(wait,(window.readyAt??window.createdAt+window.descriptor.fallbackMs)+window.descriptor.botMs-this._now());
       const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||s.current.move!==revision)return;
         try{const current=s.engine.botReaction?.(s.current,actor)||s.engine.botAction(s.current,actor);if(!current)return;

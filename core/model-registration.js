@@ -65,7 +65,7 @@
     }
     return {
       id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
-      ...(metadata.botSettings?{botSettings:{strategies:metadata.botSettings.strategies.map(p=>({id:p.id,label:text(p.label),description:text(p.description)})),defaultErrorRate:10}}:{}),
+      botSettings:{strategies:(metadata.botSettings?.strategies||[]).map(p=>({id:p.id,label:text(p.label),description:text(p.description)})),defaultDifficulty:'medium'},
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
@@ -90,7 +90,8 @@
       decisionWindow(state) { return model.decisionWindow(position(state)); },
       reactionWindows(state) { return model.reactionWindows(position(state)).filter(window=>!state.players[window.owner].bot); },
       reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
-      botReaction(state,actor) { const command=model.botReaction(position(state),actor);return command?decorated(command,model.project(position(state),actor),state.players):null; },
+      botReactionDelay(state,actor) { return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
+      botReaction(state,actor) { const command=model.botReaction(position(state),actor,state.players[actor]?.botSettings);return command?decorated(command,model.project(position(state),actor),state.players):null; },
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.
@@ -109,7 +110,7 @@
       tableProjection(state, actor) { return model.projectTable(position(state),actor,state.events.filter(value=>value.visibility)); },
       tableChoices(state, actor) { const projection=model.projectTable(position(state),actor);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
       tableCommand(state, actor, action) { const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },
-      bot(state, actor) { const chosen = model.botAction(position(state), actor); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
+      bot(state, actor) { const chosen = model.botAction(position(state), actor, {...state.players[actor]?.botSettings,enabled:!!state.players[actor]?.bot}); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
       result(state) {
         const summary = model.result(position(state));
         const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
