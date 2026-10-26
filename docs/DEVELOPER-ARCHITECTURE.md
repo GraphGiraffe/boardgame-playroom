@@ -149,3 +149,7 @@ WebRTC передаёт сообщения; authority хоста принима�
 Новый модуль получает явные зависимости в constructor/factory, владельца состояния и lifecycle. Сервис с состоянием удобно выражать классом; чистые правила и преобразования — функциями. Не наследуйте игровой renderer от сетевого клиента и не создавайте универсальный объект, который одновременно хранит прогресс, вычисляет ход и проигрывает звук.
 
 Для знакомства прочитайте `packs/gofish/{domain/game,presentation/scene,presentation/tutorial}.js`, затем те же части UNO (реакции) и Mage Brawl (одновременные планы). Реальные проверки приложения: `tests/model-contract.test.cjs`, `game-flow.test.cjs`, `game-feedback.test.cjs`, `domain-foundation.test.cjs`, `rc2-presentation-browser.test.cjs`, `network-reconnect-browser.test.cjs`. Выбирайте затронутые сценарии по [политике проверок](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/VALIDATION-POLICY.md); изменение документации не требует запуска всего продукта или нового релиза.
+
+### Static deployment port
+
+`RemoteCatalog` accepts `basePath` (default `/api/packs/`), or the deployment-injected `PlayroomDeployment.catalogBasePath`. Only a local absolute directory path is accepted. The catalog schema and SHA/manifest checks remain identical across CF and GitHub Pages. Hosting tools, encryption and login templates belong to utils, not game/runtime modules.

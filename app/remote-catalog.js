@@ -14,13 +14,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return input;
   }
   class RemoteCatalog {
-    constructor({manager,fetcher=root.fetch?.bind(root),storage=root.localStorage,crypto=root.crypto}={}){
+    constructor({manager,fetcher=root.fetch?.bind(root),storage=root.localStorage,crypto=root.crypto,basePath=root.PlayroomDeployment?.catalogBasePath||'/api/packs/'}={}){
+      if(typeof basePath!=='string'||!/^\/(?!\/)[A-Za-z0-9_/-]*\/$/.test(basePath))throw Error('Invalid catalog base path');
+      this.basePath=basePath;
       this.manager=manager;this.fetcher=fetcher;this.storage=storage;this.crypto=crypto;this.current=null;this.warning='';
       try{this.current=validate(JSON.parse(storage.getItem(KEY)||'null'));}catch(_){}
     }
     async refresh(){
       if(!this.fetcher)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.a1dc0b587e18"));
-      const response=await this.fetcher('/api/packs/catalog',{cache:'no-store',credentials:'same-origin',redirect:'error'});
+      const response=await this.fetcher(this.basePath+'catalog',{cache:'no-store',credentials:'same-origin',redirect:'error'});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.fe3b5e2914ec",{p0:String(response.status)}));
       const text=await response.text();if(text.length>256*1024)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.174d1503aba8"));
       const catalog=validate(JSON.parse(text));
@@ -35,7 +37,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const item=this.pending().find(entry=>entry.id===id);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.3456539518cb"));
       if(!this.crypto?.subtle)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.b01d9b44b6a3"));
-      const response=await this.fetcher(item.url,{cache:'no-store',credentials:'same-origin',redirect:'error'});
+      const response=await this.fetcher(this.basePath+item.url.slice('/api/packs/'.length),{cache:'no-store',credentials:'same-origin',redirect:'error'});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.40a73e8f9f18",{p0:String(response.status)}));
       const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.byteLength>4*1024*1024)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.fb6f028993b8"));
       const hash=[...new Uint8Array(await this.crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');

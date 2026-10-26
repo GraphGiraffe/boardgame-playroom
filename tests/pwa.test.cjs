@@ -169,6 +169,13 @@ test('remote pack loader checks URL, SHA256 and manifest before installation',as
  corrupt=true;await assert.rejects(()=>client.install('uno'),/сумма/);assert.equal(installed,1);
 });
 
+test('remote catalog supports a project subpath without weakening manifest URL validation',async()=>{
+ const {RemoteCatalog}=require('../app/remote-catalog.js');const seen=[];
+ const client=new RemoteCatalog({basePath:'/site/api/packs/',manager:{list:()=>[]},storage:{getItem:()=>null,setItem:()=>{}},fetcher:async url=>{seen.push(url);return new Response(JSON.stringify({format:'playroom-catalog',version:1,collection:'0.8.5',packs:[]}));}});
+ await client.refresh();assert.deepEqual(seen,['/site/api/packs/catalog']);
+ assert.throws(()=>new RemoteCatalog({basePath:'https://foreign.test/'}));
+});
+
 test('incomplete or login-page shell never installs; verified update waits for existing clients',async()=>{
  const vm=require('node:vm'),crypto=require('node:crypto');
  const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
