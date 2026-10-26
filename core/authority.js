@@ -95,7 +95,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
       const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
-      const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT'):[];
+      const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
       if(projected.modelProjection){
         const projection={...projected.modelProjection,actions:authorizedCommands(projected.modelProjection.actions,actions)};
         safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
@@ -117,7 +117,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         let window=r.reactions.get(descriptor.id);
         if(!window){window={descriptor,createdAt:this._now(),readyAt:null,suspended:r.connected.get(descriptor.owner)===false,timer:null,openTimer:null};r.reactions.set(descriptor.id,window);r.reactionRevision++;}
         if(!r.paused&&!window.suspended&&window.readyAt===null&&window.timer===null){
-          window.timer=r.clock.setTimeout(()=>{window.timer=null;this._setReactionReady(window);},Math.max(0,window.createdAt+descriptor.fallbackMs-this._now()));
+          window.timer=r.clock.setTimeout(()=>{window.timer=null;this._setReactionReady(window);},Math.max(0,window.createdAt+(state.players[descriptor.owner]?.bot?0:descriptor.fallbackMs)-this._now()));
         }
       }
       return [...r.reactions.values()];
@@ -278,7 +278,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     scheduleBot({delay=500,run,onError=()=>{}}={}){
       this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.paused||st.status!=='playing')return;
-      const reacting=st.players.findIndex((p,i)=>p.bot&&s.engine.botReaction?.(st,i)),window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>st.players[i].bot&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!st.players[actor]?.bot)return;
+      const reactions=st.players.flatMap((p,i)=>{const action=p.bot&&s.engine.botReaction?.(st,i);return action?[{actor:i,action,control:s.engine.reactionControl?.(st,i,action)}]:[];});
+      // An accusation waiting for protection must not occupy the timer ahead of the owner's answer.
+      const reacting=(reactions.find(r=>r.control?.kind==='answer')||reactions[0])?.actor??-1,window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>st.players[i].bot&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!st.players[actor]?.bot)return;
       const action=s.engine.botReaction?.(st,actor)||s.engine.botAction(st,actor);if(!action)return;
       const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
       if(windows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;

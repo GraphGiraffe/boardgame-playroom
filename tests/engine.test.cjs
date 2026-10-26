@@ -496,3 +496,14 @@ test('fractional result details survive validation and reject nonfinite values',
  assert(E.validateState(state));
  for(const value of [NaN,Infinity,-1]){const bad=E.clone(state);bad.result.details[0]=value;assert.throws(()=>E.validateState(bad));}
 });
+
+
+test('numeric pack versions outrank older suffixes and bootstrap selects the newest base',()=>{
+ const Pack=require('../core/packs.js');
+ assert(Pack.compareVersions('0.6.5','0.6.3-preview.6')>0);
+ assert(Pack.compareVersions('0.6.3-preview.6','0.6.3')>0);
+ assert(Pack.compareVersions('0.6.3-preview.10','0.6.3-preview.6')>0);
+ const {manager}=packEnvironment();
+ manager.bootstrap([installFixture('0.6.3-preview.6'),installFixture('0.6.5')]);
+ assert.equal(manager.list().find(p=>p.active).version,'0.6.5');
+});

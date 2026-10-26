@@ -35,7 +35,8 @@
    for(const id of guide.observed||[])progress.seen.add(id);
    if(saved&&guide.observed?.length)this.#save(context,progress,guide.observed);
    progress.checkpoint=guide.checkpoint;
-   if(!busy&&context.active!==false&&!guide.complete&&!progress.done&&!progress.started&&actions.length&&ownTurn){progress.started=true;progress.move=state.move;progress.turn=guide.turn;}
+   const urgent=guide.concurrent&&(guide.steps||[]).some(step=>step.immediate&&step.available!==false);
+   if((!busy||urgent)&&context.active!==false&&!guide.complete&&!progress.done&&!progress.started&&actions.length&&ownTurn){progress.started=true;progress.move=state.move;progress.turn=guide.turn;}
    const required=guide.required||(guide.steps||[]).map(step=>step.id);
    progress.done=state.status!=='playing'||required.length>0&&required.every(id=>progress.seen.has(id));
    if(progress.done)progress.manual=false;
