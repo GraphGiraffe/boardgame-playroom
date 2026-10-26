@@ -1,6 +1,6 @@
 :root{--ui-viewport-height:calc(100dvh / var(--ui-interface-scale,1));--ui-viewport-width:calc(100vw / var(--ui-interface-scale,1));--interface-viewport-height:calc(100dvh / var(--interface-scale,1));--interface-viewport-width:calc(100vw / var(--interface-scale,1))}
 /* Layout roots zoom; drag, motion and tooltip layers keep screen coordinates. */
-#app .app-shell,#modal-root,#avatar-picker-root,#toast,.app-update-banner,.appearance-dialog{zoom:var(--ui-interface-scale,1)}
+#app .app-shell,#modal-root,#avatar-picker-root,#toast,.appearance-dialog{zoom:var(--ui-interface-scale,1)}
 #app .table-shell:has(.table-header){height:var(--interface-viewport-height,100dvh)}
 #app .sidebar{height:var(--ui-viewport-height,100dvh)}
 #modal-root .modal,#modal-root .avatar-picker-modal{max-height:calc(var(--ui-viewport-height,100dvh) - 32px)}

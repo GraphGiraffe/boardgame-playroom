@@ -257,3 +257,8 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 body,body *{-webkit-user-select:none;user-select:none}
 body input,body textarea,body [contenteditable]:not([contenteditable="false"]),body [contenteditable]:not([contenteditable="false"]) *{-webkit-user-select:text;user-select:text}
 body [contenteditable][contenteditable="false"],body [contenteditable][contenteditable="false"] *{-webkit-user-select:none;user-select:none}
+
+/* Update notes use the normal modal scroller, never a fixed screen banner. */
+.update-changes>section+section{border-top:1px solid var(--color-border-subtle,#c8cbbb);margin-top:1em;padding-top:1em}
+.update-changes li{margin-block:.5em;overflow-wrap:anywhere}
+.updates-modal .modal-foot{flex-wrap:wrap}

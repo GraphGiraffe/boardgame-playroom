@@ -206,7 +206,7 @@ def prepare_dev(packs, source_root):
 def source_files():
     """No game packs, generated preload, symlinks, saves or artifacts enter this archive."""
     paths = {ROOT / name for name in ("index.html", "build.py", "build.sh", "README.md", "manifest.webmanifest", "sw.js") if (ROOT / name).is_file()}
-    for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "AGENTS.md", ".nvmrc"):
+    for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "updates.json", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
     for pattern in ("app/*.js", "app/*.css", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "tooling/*.py", "tooling/*.json", "application/*.js", "presentation/*.js", "platform/web/*.js", "themes/*.json", "locales/*/*.json", "docs/*.md", "tests/*.cjs", "scripts/*.py", "scripts/*.js", "scripts/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
@@ -247,6 +247,15 @@ def ensure_dev_icons():
     for name,content in generated_icons():
         path=ROOT/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
 
+
+def update_release_metadata():
+    info = {"version": _app_version, **json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))}
+    path = ROOT / "sw.js"
+    source = path.read_text(encoding="utf-8")
+    source = re.sub(r"^const UPDATE_INFO=.*?;$", lambda _: "const UPDATE_INFO=" + json.dumps(info, ensure_ascii=False, separators=(",", ":")) + ";", source, count=1, flags=re.M)
+    path.write_text(source, encoding="utf-8")
+
+update_release_metadata()
 
 def pwa_runtime_items(packs=(), remote_catalog=False):
     """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
