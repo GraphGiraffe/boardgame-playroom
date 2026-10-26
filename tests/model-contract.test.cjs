@@ -17,7 +17,7 @@ const coded=code=>error=>error.code===code;
 test('rules and scenes execute headlessly without engine, DOM, clock, storage or ambient RNG',()=>{
   const context=vm.createContext({});
   vm.runInContext('Math.random=Date.now=()=>{throw Error("ambient dependency")};',context);
-  for(const file of ['core/messages.js','core/model-values.js','core/events.js','core/model-runtime.js'].map(file=>path.join(root,file)).concat([path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')])){
+  for(const file of ['core/messages.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js'].map(file=>path.join(root,file)).concat([path.join(packs,'packs/tictactoe/domain/game.js'),path.join(packs,'packs/tictactoe/presentation/scene.js')])){
     vm.runInContext(fs.readFileSync(file,'utf8'),context,{filename:file});
   }
   const value=JSON.parse(vm.runInContext(`JSON.stringify((()=>{
@@ -68,13 +68,13 @@ test('bots receive only authorized projections and must choose an actual canonic
     assert.deepEqual(projection.data,{public:true});assert.equal(projection.authoritySecret,undefined);
     return {...choices[0]};
   }};
-  assert.deepEqual(new GameModel(probe).botAction({...initial(0),authoritySecret:'private'},0),{type:'place',cell:0});
+  assert.deepEqual(new GameModel(probe).botAction({...initial(0),authoritySecret:'private'},0,{enabled:false}),{type:'place',cell:0});
   assert.throws(()=>new GameModel({...probe,bot:()=>({type:'place',cell:99})}).botAction(initial(0),0),coded('BOT_ACTION_INVALID'));
-  assert.equal(model.botAction(initial(0),0).cell,4);
+  assert.equal(model.botAction(initial(0),0,{enabled:false}).cell,4);
   let position=initial(0);for(const cell of [0,3,1,4])position=apply(position,cell);
-  assert.equal(model.botAction(position,0).cell,2);
+  assert.equal(model.botAction(position,0,{enabled:false}).cell,2);
   position=initial(0);for(const cell of [0,3,4])position=apply(position,cell);
-  assert.equal(model.botAction(position,1).cell,8);
+  assert.equal(model.botAction(position,1,{enabled:false}).cell,8);
 });
 
 test('Table has spectator data and only explicitly public controls, including dice',()=>{

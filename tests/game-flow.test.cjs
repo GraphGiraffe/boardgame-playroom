@@ -197,3 +197,16 @@ test('explicit delays run concurrently or sequentially and retain remaining time
  assert.throws(()=>player.play({id:'invalid',groups:[{duration:0,cues:[{id:'delay',kind:'delay',duration:-1}]}]}),/DELAY_INVALID/);
  const cancelled=player.play({id:'cancel-delay',groups:[{duration:0,cues:[{id:'delay',kind:'delay',duration:1000}]}]});player.cancel();assert.equal((await cancelled).status,'cancelled');assert.equal(timers.size,0);
 });
+
+
+test('completed and cancelled plans release scenes and callbacks but preserve idempotence',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),executor=new Scheduler(),player=executor.track('release');
+ for(let i=0;i<100;i++){
+  const scene={cards:Array.from({length:100},(_,id)=>({id}))},plan={id:'release:'+i,scenes:[scene],initial:0,final:0,groups:[]};
+  const done=player.play(plan,{final(){void scene;}});await done;
+  assert.deepEqual(player.run.plan,{id:plan.id});assert.deepEqual(player.run.ports,{});assert.equal(player.run.context,null);
+  assert.equal(player.play(plan,{final:()=>assert.fail('duplicate')}),done);assert.deepEqual(player.run.ports,{});
+ }
+ const done=player.play({id:'cancel-release',groups:[{duration:1000,cues:[]}]},{cancel(){}});player.cancel();await done;
+ assert.equal(player.run.context,null);assert.deepEqual(player.run.ports,{});executor.dispose();
+});

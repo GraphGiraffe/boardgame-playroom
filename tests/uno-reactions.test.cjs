@@ -253,3 +253,33 @@ test('simultaneous human windows have independent clocks and accept target-scope
     const revision=authority.revision;assert.equal(clients[2].dispatch(second).duplicate,true);assert.equal(authority.revision,revision);
   }finally{authority.dispose();}
 });
+
+test('bot declaration choices are stable per episode and difficulty includes immediate delayed and forgotten answers',()=>{
+ const state=play(fixture(),0,'u1'),counts={};let delayed=null,immediate=null;
+ for(const difficulty of ['easy','medium','hard']){
+  const totals={forgot:0,late:0,now:0};state.players[0].botSettings={difficulty};
+  for(let episode=1;episode<=400;episode++){
+   state.move=episode;state.data.uno.episode=episode;state.data.uno.situations[0].episode=episode;
+   const answer=E.botReaction(state,0),delay=E.botReactionDelay(state,0);
+   assert.deepEqual(E.botReaction(state,0),answer);assert.equal(E.botReactionDelay(state,0),delay);
+   if(!answer)totals.forgot++;else if(delay>0){totals.late++;delayed??=E.clone(state);}else{totals.now++;immediate??=E.clone(state);}
+  }
+  assert(totals.forgot>0&&totals.late>0&&totals.now>0,JSON.stringify({difficulty,totals}));counts[difficulty]=totals;
+ }
+ assert(counts.hard.forgot<counts.medium.forgot&&counts.medium.forgot<counts.easy.forgot);
+ assert(counts.hard.now>counts.medium.now&&counts.medium.now>counts.easy.now);
+ const examples=new Map();
+ for(let n=2;n<=108&&examples.size<2;n++){
+  if([5,7,9].includes(n))continue;
+  const initial=fixture([['u1','u'+n],['u5','u7']]);initial.players[0].botSettings={difficulty:'medium'};
+  const state=play(initial,0,'u1');if(!E.botReaction(state,0))continue;
+  const wait=E.botReactionDelay(state,0);examples.set(wait>0?'delayed':'immediate',{initial,state,wait});
+ }
+ assert.equal(examples.size,2);
+ for(const {initial,state,wait} of examples.values()){
+  const saved=new Session(E,'uno',{unoMode:'manual',players:initial.players}).export();saved.states=[initial,state];
+  const session=Session.restore(E,saved),clock=manualClock(),authority=new Authority(session,{clock});
+  try{authority.scheduleBot({delay:500});if(wait){clock.advance(wait-1);assert.equal(session.current.data.uno.declared[0],false);authority.scheduleBot({delay:500});clock.advance(1);}else clock.advance(0);assert.equal(session.current.data.uno.declared[0],true);}finally{authority.dispose();}
+ }
+
+});

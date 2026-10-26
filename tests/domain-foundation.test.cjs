@@ -154,3 +154,60 @@ test('entity references distinguish namespaces and full physical IDs',()=>{
  assert.throws(()=>C.entityRef('card-copy','7'),/ENTITY_REF_INVALID/);
  assert.throws(()=>C.entityKey({namespace:'card',id:'7',face:'secret'}),/ENTITY_REF_INVALID/);
 });
+
+test('tutorial controllers own isolated progress and expose no mutable token state',()=>{
+ const Controller=require('../application/tutorial-controller.js'),a=new Controller(),b=new Controller(),owner={};
+ const context={owner,viewer:0,state:{game:'fixture',status:'playing',players:[{}],turn:0},actions:[{type:'move'}]};
+ const definition={steps:[{id:'move',actions:['move']},{id:'draw',actions:['draw']}]};
+ a.update(context,definition);b.update(context,definition);const token=a.capture(owner,0);
+ token.progress.seen.add('draw');assert.equal(token.progress.seen.has('draw'),false);
+ b.committed(owner,0,{type:'move'},token);assert.equal(b.capture(owner,0).progress.seen.size,0);
+ a.committed(owner,0,{type:'move'},token);assert.deepEqual([...token.progress.seen],['move']);
+ a.restart('fixture');a.update(context,definition);a.committed(owner,0,{type:'draw'},token);assert.equal(a.capture(owner,0).progress.seen.size,0);
+});
+
+test('pack tutorials remain separate pure projection consumers and never load in domain entrypoints',()=>{
+ for(const id of fs.readdirSync(path.join(root,'packs'))){
+  const dir=path.join(root,'packs',id),manifestPath=path.join(dir,'manifest.json');if(!fs.existsSync(manifestPath))continue;
+  const manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));if(!manifest.sourceModules)continue;
+  const tutorial='presentation/tutorial.js';assert(manifest.sourceModules.view.includes(tutorial),id);
+  assert(!manifest.sourceModules.rules.includes(tutorial),id);
+  const code=fs.readFileSync(path.join(dir,tutorial),'utf8');
+  assert.doesNotMatch(code,/\b(?:document|localStorage|setTimeout|fetch|WebSocket|SessionAuthority|TabletopCore)\b/,id);
+  const context=vm.createContext({});vm.runInContext(code,context);assert.equal(typeof context.PlayroomPackTutorial({format:m=>m.key}),'function',id);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir,'view.js'),'utf8'),/guideProgress|const required=|const steps=\[\{/ ,id);
+ }
+});
+
+test('player settings normalization and persistence remain independent of UI and gameplay',()=>{
+ const S=require('../application/player-settings.js'),Store=require('../platform/web/player-settings-store.js'),Guide=require('../platform/web/guide-preferences.js');
+ const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)},store=new Store(()=>storage),guide=new Guide(()=>storage);
+ store.write({autoPass:true,sound:false,hotseatAutoPass:{bad:true,'1:2':true},seatingByGame:{uno:'row',missing:'row'}});guide.setSkipped('uno',true);
+ const result=S.normalize(store.read(),{catalog:{uno:{}},normalizeScale:v=>v||100,normalizeSpeed:v=>v});
+ assert.equal(result.autoPass,true);assert.deepEqual(result.hotseatAutoPass,{'1:2':true});assert.deepEqual(result.seatingByGame,{uno:'row'});assert(guide.skipped('uno'));
+ const first=S.defaults();first.hotseatAutoPass.x=true;assert.deepEqual(S.defaults().hotseatAutoPass,{});
+ const unavailable=new Store(()=>{throw Error('blocked');});assert.deepEqual(unavailable.read(),{});assert.equal(unavailable.write({}),false);
+});
+
+test('user learning persists across sessions, stops tracking when disabled, and respects action revisions',()=>{
+ const Store=require('../platform/web/guide-preferences.js'),Controller=require('../application/tutorial-controller.js');const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)};
+ let user='alice';const store=new Store(()=>storage,()=>user),c=new Controller({store});
+ const context=()=>({owner:{},viewer:0,state:{game:'fixture',status:'playing',turn:0,players:[{}]},actions:[{type:'move'}]});
+ const definition=revision=>({required:['move','new'],revisions:{move:revision},steps:[{id:'move',actions:['move']},{id:'new',actions:['draw']}]});
+ let ctx=context();c.update(ctx,definition(1));let token=c.capture(ctx.owner,0);c.committed(ctx.owner,0,{type:'move'},token);assert.equal(store.read('fixture').mastered.move,1);
+ ctx=context();let result=c.update(ctx,definition(1));assert(result.progress.seen.has('move'));token=c.capture(ctx.owner,0);
+ store.setEnabled('fixture',false);assert.equal(c.update(ctx,definition(1)),null);c.committed(ctx.owner,0,{type:'draw'},token);assert(!store.read('fixture').mastered.new);
+ store.setEnabled('fixture',true);result=c.update(ctx,definition(1));assert(result.progress.seen.has('move'),'resume preserves mastered actions');result=c.update(ctx,definition(2));assert(!result.progress.seen.has('move'),'changed action needs learning again');assert(!result.progress.seen.has('new'));
+ token=c.capture(ctx.owner,0);c.committed(ctx.owner,0,{type:'move'},token);assert.equal(store.read('fixture').mastered.move,2);
+ const restored=new Store(()=>storage,()=>user);assert.equal(restored.read('fixture').mastered.move,2);assert.deepEqual(restored.read('another').mastered,{});
+ user='bob';assert.deepEqual(store.read('fixture').mastered,{});user='alice';c.restart('fixture');assert.deepEqual(store.read('fixture').mastered,{});assert(store.read('fixture').enabled);
+});
+
+test('pack update cleanup preserves referenced versions, active rooms and failed archive reads',async()=>{
+ const Cleanup=require('../application/pack-update-cleanup.js');
+ let items=[{id:'game',version:'1',active:false},{id:'game',version:'2',active:false},{id:'game',version:'3',active:true}],active=false;
+ const cleanup=new Cleanup({manager:{list:()=>items,remove:(id,version)=>{items=items.filter(p=>p.version!==version);}},compare:(a,b)=>Number(a)-Number(b),localReferences:(_,v)=>v==='1'?['saved']:[],networkArchives:async()=>[],activeRoom:()=>active});
+ active=true;assert.deepEqual(await cleanup.run('game'),[]);active=false;assert.deepEqual(await cleanup.run('game'),['2']);assert.deepEqual(items.map(p=>p.version),['1','3']);
+ cleanup.localReferences=()=>[];cleanup.networkArchives=async()=>[{game:'game',packVersion:'1'}];assert.deepEqual(await cleanup.run('game'),[]);
+ cleanup.networkArchives=async()=>{throw Error('archive unavailable');};await assert.rejects(()=>cleanup.run('game'));assert.equal(items.length,2);
+});

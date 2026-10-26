@@ -11,7 +11,7 @@ const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const loadedGames=[...games,'ludo','pexeso','battleship','yatzy','oldmaid','gofish','klondike','spider','mage-brawl'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...loadedGames.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...loadedGames.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...loadedGames.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...loadedGames.map(g => `packs/${g}/view.js`)]) {
   const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
   if(match){
     const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));

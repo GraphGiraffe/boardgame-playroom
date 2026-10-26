@@ -440,6 +440,9 @@
       const from = cue.from === 'table' ? snapshot.table : cue.from === 'hand' ? snapshot.hands?.get(cue.fromPlayer) : snapshot.stock;
       const anchor = cue.to==='table'?(handOrigin(scene?.querySelector('[data-motion-table]'),66,98)||snapshot.table):newHands.get(cue.player) || snapshot.hands?.get(cue.player);
       if (!from || !anchor) continue;
+      // A single hand-to-hand card needs a readable flight even at fast pace.
+      const flightDuration=cue.from==='hand'?Math.max(duration*2,480):duration*(policy.drawFactor??.65);
+      const stagger=duration*(policy.drawStagger??.3);
       const recipients=incomingHand(snapshot,cue.player);
       for (let i = 0; i < cue.count; i++) {
         const el = cue.to==='table'?(i===cue.count-1?publicNow.filter(el=>el.closest('[data-motion-table]')).at(-1):null):cue.player === snapshot.viewer ? handCards[ownIndex++] : recipients[i];
@@ -448,9 +451,9 @@
         const ratio=(parseFloat(snapshot.stockBack?.style.width)/parseFloat(snapshot.stockBack?.style.height))||from.width/from.height;
         const width=Math.min(target.width,target.height*ratio),height=width/ratio;
         const to={x:target.x+(target.width-width)/2,y:target.y+(target.height-height)/2,width,height,angle:target.angle||0};
-        flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: duration * (policy.drawFactor??.65), delay: cueDelay + i * duration * (policy.drawStagger??.3) });
+        flights.push({ el, from, to, kind: 'draw', player: cue.player, back: true, duration: flightDuration, delay: cueDelay + i * stagger });
       }
-      cueDelay+=duration*.65+Math.max(0,cue.count-1)*duration*.3;
+      cueDelay+=flightDuration+Math.max(0,cue.count-1)*stagger;
     }
     const dice = (snapshot.routeOnly||snapshot.transferOnly||snapshot.skipDice?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
     const effects=(snapshot.diceOnly||snapshot.transferOnly?[]:[...scene.querySelectorAll('[data-motion-effect]')]).filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));

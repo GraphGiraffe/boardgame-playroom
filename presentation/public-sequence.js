@@ -1,7 +1,10 @@
 /* Public presentation frames only. Playback has no command/state mutation port. */
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPublicSequence=api;})(globalThis,function(root){
  const Scheduler=root.PlayroomPresentationScheduler||(typeof require==='function'?require('./scheduler.js'):null);
- const hosts=new WeakMap(),pending=new WeakMap(),executors=new WeakMap();
+ const hosts=new WeakMap(),pending=new WeakMap(),executors=new WeakMap(),modes=new WeakMap();
+ function setMode(host,mode){modes.set(host,mode);const state=hosts.get(host);if(mode==='pause'){state?.player.pause();if(state)state.playing=false;}else if(mode==='play')state?.player.resume();}
+ function whenIdle(host){return hosts.get(host)?.player.whenIdle()||Promise.resolve();}
+ function playing(host){const state=hosts.get(host);return !!state&&state.index<(state.last??0);}
  function useExecutor(host,executor){
   if(executors.get(host)===executor)return;
   hosts.get(host)?.player.cancel();hosts.delete(host);pending.delete(host);executors.set(host,executor);
@@ -37,8 +40,9 @@
   if(plan.id!==id||plan.final!==last||plan.initial!==0||plan.groups.length!==last)throw Error('PUBLIC_PLAN_INVALID');
   // DOM patching can reset hidden attributes and scene classes on the same node.
   // Restore the consumed frame on every bind, including after local choice changes.
-  const fresh=state.id!==id;state.node=node;state.id=id;
-  const mode=node.closest('[data-animation-speed]')?.dataset.animationSpeed||'normal',immediate=mode==='instant'||win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const playback=modes.get(host)||'live',scope=playback==='live'?'live':'history',restoring=state.scope==='history'&&scope==='live';
+  const fresh=state.id!==id||state.scope!==scope;state.node=node;state.id=id;state.scope=scope;state.last=last;
+  const mode=node.closest('[data-animation-speed]')?.dataset.animationSpeed||'normal',immediate=playback==='still'||restoring||mode==='instant'||win.matchMedia('(prefers-reduced-motion: reduce)').matches;
   state.mode=mode;
   if(fresh){state.index=immediate?last:0;state.playing=state.index<last;}
   if(immediate){state.index=last;state.playing=false;}
@@ -62,6 +66,7 @@
    scene?.classList.toggle('is-public-playback',state.index<last);
    node.style.setProperty('--sequence-duration',duration()+'ms');scene?.style.setProperty('--sequence-duration',duration()+'ms');
    paintPlayers(scene,frame);
+   const progress=host.querySelector('.turn-extra');if(progress&&frame.dataset.frameProgress)progress.textContent=frame.dataset.frameProgress;
    const label=node.querySelector('[data-sequence-label]'),play=node.querySelector('[data-sequence-play]'),speed=node.querySelector('[data-sequence-speed]');
    if(label)label.textContent=frame.dataset.frameLabel;
    if(play)play.textContent=state.playing?'Ⅱ':'▶';
@@ -73,7 +78,7 @@
   const rate=()=>state.speed*(mode==='fast'?(root.PlayroomGameFlow?.effectTimes.normal.reveal||320)/(root.PlayroomGameFlow?.effectTimes.fast.reveal||180):mode==='slow'?(root.PlayroomGameFlow?.effectTimes.normal.reveal||320)/(root.PlayroomGameFlow?.effectTimes.slow.reveal||500):1);
   const start=()=>{
    state.player.setRate(rate());
-   state.player.play({...plan,id:id+':'+state.replay,groups:immediate?[]:plan.groups.map((group,index)=>({...group,cues:[...group.cues,{id:'frame-effects:'+index,kind:'frame-effects'}]}))},{
+   state.player.play({...plan,id:scope+':'+id+':'+state.replay,groups:immediate?[]:plan.groups.map((group,index)=>({...group,cues:[...group.cues,{id:'frame-effects:'+index,kind:'frame-effects'}]}))},{
     initial:index=>{state.index=immediate?last:index;draw();},
     group:(_index,group,context)=>{state.context=context;state.index=group.scene;state.playing=true;draw();},
     effect:(cue,context)=>{if(cue.kind!=='frame-effects')return;const frame=frames[state.index],audio=root.PlayroomAppBridge?.audio;
@@ -94,8 +99,8 @@
   };
   if(speed)speed.onclick=()=>{state.speed=state.speed===1?2:state.speed===2?4:1;state.player.setRate(rate());draw();};
   if(skip)skip.onclick=()=>state.player.skip();
-  start();draw();
+  if(playback==='pause'){state.player.pause();state.playing=false;}else{start();if(playback==='play')state.player.resume();}draw();
 
  }
- return Object.freeze({bind,defer,prepare,useExecutor});
+ return Object.freeze({bind,defer,prepare,useExecutor,setMode,whenIdle,playing});
 });

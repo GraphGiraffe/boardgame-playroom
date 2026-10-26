@@ -78,9 +78,7 @@
 }
 
 /* The sound library uses the same compact controls as game setup. */
-.sound-preview{display:flex;align-items:flex-end;gap:10px;margin:0 0 10px}
-.sound-preview .field{flex:1;min-width:0}.sound-preview .btn{height:48px;min-width:48px;padding:10px;flex:none}
-.sound-preview select{width:100%;min-width:0}.modal select:disabled{opacity:.55;cursor:not-allowed}
+.modal select:disabled{opacity:.55;cursor:not-allowed}
 
 .result-menu{width:100%;margin-top:12px}
 

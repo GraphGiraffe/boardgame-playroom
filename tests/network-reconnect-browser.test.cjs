@@ -31,6 +31,8 @@ async function profile(page,name){
   catch(error){assert.fail('No profile modal: '+JSON.stringify({diagnostics,errors,error:error.message}));}
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').first().waitFor();
+  // This suite exercises reconnect, not the first-turn learning consent modal.
+  await page.evaluate(()=>{const store=new PlayroomGuidePreferences(()=>localStorage,()=>PlayroomAppBridge.profile().id);for(const game of ['uno','battleship'])store.setEnabled(game,false);});
 }
 async function qrPng(page,selector){
   // The UI replaces its QR when asynchronous IP discovery completes.
@@ -99,7 +101,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   }
   await host.locator('#net-host-answer').waitFor({state:'detached',timeout:15000});
 }
-test('guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno},async()=>{
+for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reconnect preserves authority viewer, room seat and rotated secret', {timeout:90000,skip:!hasUno},async()=>{
   const hosted=await server(),{server:listener,url}=hosted;
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const hc=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),cc=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740},hasTouch:true,isMobile:true});
@@ -107,7 +109,7 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
   const errors=[];host.on('pageerror',e=>errors.push('host: '+e.message));client.on('pageerror',e=>errors.push('client: '+e.message));
   try{
     await profile(host,'Хост');await profile(client,'Гость');
-    await host.locator('[data-start="uno"]').click();
+    await host.locator('[data-start="'+game+'"]').click();
     await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
     await host.locator('[data-room-title]').fill('Возвратный стол');
     await host.locator('[data-room-title]').press('Tab');
@@ -134,6 +136,27 @@ test('guest reload + fresh QR reconnect preserves authority viewer, room seat an
     await host.locator('.table-shell.network-game').waitFor({timeout:12000});
     await client.locator('.table-shell.network-game').waitFor({timeout:12000});
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
+    await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='connected');
+    await client.waitForFunction(()=>document.querySelector('.network-reconnect-banner')?.hidden);
+    const layout=await client.evaluate(()=>{
+      const shell=document.querySelector('.table-shell.network-game'),banner=shell.querySelector('.network-reconnect-banner'),before=shell.getBoundingClientRect();
+      banner.hidden=false;banner.textContent='Восстановление связи. Ваше игровое место сохраняется. Новое приглашение';
+      const after=shell.getBoundingClientRect(),position=getComputedStyle(banner).position;banner.hidden=true;
+      return {before:[before.width,before.height],after:[after.width,after.height],position};
+    });
+    assert.deepEqual(layout.before,layout.after,'connection banner does not resize the game');assert.equal(layout.position,'absolute');
+    if(game==='battleship'){
+      // Guest can finish placement before the starter has placed any ships.
+      await client.getByRole('button',{name:'Расставить флот',exact:true}).click();
+      await client.getByRole('button',{name:'Готово',exact:true}).waitFor();
+      await client.getByRole('button',{name:'Готово',exact:true}).click();
+      await host.locator('.battle-fields.is-setup').waitFor();
+      await host.waitForFunction(()=>[...document.querySelectorAll('.shared-action-row button')].some(button=>button.textContent==='Расставить флот'&&!button.disabled));
+      assert(await host.getByRole('button',{name:'Расставить флот',exact:true}).isEnabled(),'guest readiness does not block host setup');
+      await host.getByRole('button',{name:'Расставить флот',exact:true}).click();
+      await host.getByRole('button',{name:'Готово',exact:true}).click();
+      await Promise.all([host,client].map(page=>page.waitForFunction(()=>!document.querySelector('.battle-fields.is-setup'))));
+    }
     const previousRevision=await client.locator('.table-shell.network-game').getAttribute('data-revision');
     await client.reload();
     await client.locator('#network-join-button').waitFor();

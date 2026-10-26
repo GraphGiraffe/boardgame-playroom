@@ -172,3 +172,9 @@ test('successive stock transfers expose only their arrival and own their flight'
  f.accept(events,[],'any',{initialScene:initial,finalScene:final,motion:(context,step)=>{calls.push(step.draws[0].player);if(calls.length===1)return new Promise(resolve=>finish=resolve);}});
  await flush();assert.deepEqual(calls,[0]);finish();await f.whenIdle();assert.deepEqual(calls,[0,1]);f.destroy();
 });
+
+test('finish audio is owned by the results dialog, not the final action queue',async()=>{
+ const heard=[],feedback=new Feedback({mount:()=>null,play:ids=>heard.push(...ids)});
+ feedback.accept([{id:1,kind:'finish'}],[{eventId:1,id:'victory'}],'uno',{mode:'instant'});
+ await feedback.whenIdle();assert.deepEqual(heard,[]);feedback.destroy();
+});

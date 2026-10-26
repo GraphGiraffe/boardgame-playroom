@@ -41,3 +41,27 @@ test('failed resynchronization requests a fresh invitation, without leaving the 
  const monitor=new W.Recovery({pc,transport:{snapshot:async()=>({})},reconcile:async()=>{throw Error('SECRET bad identity');},interval:100000});
  try{await monitor.check();assert.equal(monitor.state,'invite');assert.equal(monitor.report().error,'sync-failed');assert(!JSON.stringify(monitor.report()).includes('SECRET'));}finally{monitor.close();}
 });
+
+
+test('successful heartbeat reasserts connected after pending-command reconciliation',async()=>{
+ const pc=new EventTarget();pc.connectionState='connected';let enabled=false,count=0;
+ const monitor=new W.Recovery({pc,transport:{snapshot:async()=>({})},reconcile:async()=>{enabled=false;},onState:r=>{enabled=r.state==='connected';if(enabled)count++;},interval:100000});
+ try{await monitor.check();assert(enabled);await monitor.check();assert(enabled);assert.equal(count,2);assert.equal(monitor.events.filter(e=>e.state==='connected').length,1);}finally{monitor.close();}
+});
+test('temporary snapshot timeout retries the live link before requesting a new invitation',async()=>{
+ const pc=new EventTarget();pc.connectionState='connected';let calls=0;
+ const monitor=new W.Recovery({pc,transport:{snapshot:async()=>{if(++calls===1)throw Error('timeout');return {};}},reconcile:async()=>{},interval:100000});
+ try{await monitor.check();assert.equal(monitor.state,'recovering');assert.equal(monitor.error,'request-timeout');await monitor.check();assert.equal(monitor.state,'connected');assert.equal(monitor.graceTimer,null);}finally{monitor.close();}
+});
+
+test('brief recovery stays silent, prolonged recovery notifies, successful host sync clears notice',async()=>{
+ const Recovery=require('../application/recovery-coordinator.js'),link=new EventTarget();link.connectionState='connected';
+ const timers=new Map();let seq=0,fail=false,reconciles=0;
+ const monitor=new Recovery({link,transport:{snapshot:async()=>{if(fail)throw Error('timeout');return {};}},reconcile:async()=>{reconciles++;},visibility:{hidden:false,subscribe:()=>()=>{}},clock:{now:()=>0,setInterval:()=>0,clearInterval(){},setTimeout(fn,ms){timers.set(++seq,{fn,ms});return seq;},clearTimeout(id){timers.delete(id);}}});
+ try{
+  await monitor.check();fail=true;await monitor.check();assert.equal(monitor.report().notice,false);
+  fail=false;await monitor.check();assert.equal(monitor.state,'connected');assert.equal(timers.size,0);
+  fail=true;await monitor.check();const notice=[...timers.values()].find(t=>t.ms===5000);notice.fn();assert.equal(monitor.report().notice,true);
+  fail=false;await monitor.check();assert.equal(monitor.report().notice,false);assert.equal(monitor.state,'connected');assert.equal(reconciles,3);
+ }finally{monitor.close();}
+});

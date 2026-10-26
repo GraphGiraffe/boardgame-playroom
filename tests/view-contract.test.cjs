@@ -63,3 +63,14 @@ test('API 4 rejects previous engine and view contracts before executing plugin c
   assert.throws(()=>manager.prepare(value),error=>!error.message.includes('EXECUTED_LEGACY'));
  }
 });
+
+test('pack tutorial survives activation and failed install without leaking to another pack',()=>{
+ const {manager,views}=env(),first=bundle('2.0.0');
+ first.files['view.js']+="globalThis.PlayroomViews.registerTutorial('view-fixture',()=>({phase:'first',steps:[{selector:'button',text:'Choose'}]}));";
+ manager.install(manager.prepare(first));assert.equal(views.get('view-fixture').tutorial().phase,'first');
+ const bad=bundle('2.0.1');bad.files['view.js']+="globalThis.PlayroomViews.registerTutorial('other',()=>({}));";
+ assert.throws(()=>manager.prepare(bad),/Invalid tutorial/);
+ assert.equal(views.get('view-fixture').tutorial().phase,'first');
+ manager.install(manager.prepare(bundle('2.0.2')));assert.equal(views.get('view-fixture').tutorial,undefined);
+ manager.activate('view-fixture','2.0.0');assert.equal(views.get('view-fixture').tutorial().steps[0].text,'Choose');
+});

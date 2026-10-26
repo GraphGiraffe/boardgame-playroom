@@ -329,3 +329,14 @@
 .pairing-choice-row>.pairing-choice-option{flex:1;min-width:0;}
 .pairing-choice-row>.icon-btn{flex:none;}
 .pairing-saved-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:inherit;}
+
+/* Connection status must not resize the fixed game scene. */
+.table-shell.network-game{position:relative}
+.table-shell.network-game>.network-reconnect-banner{position:absolute;inset:auto 12px 12px;z-index:20;padding:8px 12px;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-panel,var(--paper));box-shadow:0 3px 12px #0002;font-size:12px;line-height:1.4}
+.network-reconnect-banner[hidden]{display:none!important}
+.network-reconnect-banner .btn{min-height:32px;padding:6px 10px;font-size:12px}
+
+/* Difficulty belongs to each bot; bulk controls occupy the left footer edge. */
+.bot-difficulty-icons{display:flex;justify-content:space-between;padding:0 3px}.bot-difficulty-icons>span{display:grid;place-items:center;width:38px;height:34px;border-radius:10px;opacity:.5}.bot-difficulty-icons .selected{background:var(--soft);opacity:1;outline:2px solid var(--green)}.bot-difficulty-icons svg{width:25px;height:25px}
+.lobby-bot-levels{display:flex;gap:4px;margin-right:auto}.room-setup-modal .lobby-footer .lobby-bot-levels .icon-btn{width:36px;min-width:36px;height:40px;min-height:40px}.room-setup-modal .lobby-bot-levels~[data-command="lobby-leave"]{margin-right:0}.room-setup-modal .lobby-bot-levels~.lobby-add-player-reserve{display:none}
+@media(max-width:360px){.room-setup-modal .lobby-footer .lobby-primary{gap:3px}.room-setup-modal .lobby-footer .lobby-bot-levels .icon-btn{width:30px;min-width:30px}.lobby-bot-levels{gap:2px}.room-setup-modal .lobby-footer .icon-btn{width:38px;min-width:38px}}
