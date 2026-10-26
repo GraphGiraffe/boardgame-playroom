@@ -11,7 +11,7 @@
     const active=this.manager.list().find(row=>row.id===id&&row.active);
     if(this.activeRoom()||!active)break;
     if(item.id!==id||item.active||this.compare(item.version,active.version)>=0||this.localReferences(id,item.version).length||archives.some(row=>row.game===id&&row.packVersion===item.version))continue;
-    this.manager.remove(id,item.version);removed.push(item.version);
+    await this.manager.remove(id,item.version);removed.push(item.version);
    }
    return removed;
   }

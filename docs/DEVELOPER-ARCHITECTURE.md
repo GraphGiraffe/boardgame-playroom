@@ -1,6 +1,6 @@
 # Архитектура приложения ХОД
 
-Карта реализации для приложения **0.19.5**, коллекции **0.8.5**: engineApi 4, viewApi 3, protocol 3. Это описание существующего кода, а не план следующего рефакторинга. Начальная точка — [индекс разработчика](DEVELOPER-INDEX.md); точные форматы и проверки — [SDK](SDK-0.18.md). Историческое имя файла SDK не означает API 0.18.
+Карта реализации для приложения **0.19.7-preview.2**, коллекции **0.8.6**: engineApi 4, viewApi 3, protocol 3. Это описание существующего кода, а не план следующего рефакторинга. Начальная точка — [индекс разработчика](DEVELOPER-INDEX.md); точные форматы и проверки — [SDK](SDK-0.18.md). Историческое имя файла SDK не означает API 0.18.
 
 ## Репозитории и направление зависимостей
 
@@ -153,3 +153,7 @@ WebRTC передаёт сообщения; authority хоста принима�
 ### Static deployment port
 
 `RemoteCatalog` accepts `basePath` (default `/api/packs/`), or the deployment-injected `PlayroomDeployment.catalogBasePath`. Only a local absolute directory path is accepted. The catalog schema and SHA/manifest checks remain identical across CF and GitHub Pages. Hosting tools, encryption and login templates belong to utils, not game/runtime modules.
+
+## Локальное хранилище
+
+Паки и локальные партии используют асинхронный durable port IndexedDB, настройки — localStorage. Запуск UI ждёт `PlayroomPacksReady`; успешная запись означает `transaction.oncomplete`. Формат истории пока прежний. Схема, миграция и границы ответственности: [LOCAL-STORAGE.md](LOCAL-STORAGE.md).

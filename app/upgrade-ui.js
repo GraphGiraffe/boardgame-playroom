@@ -14,7 +14,7 @@
     return result;
   }
   root.PlayroomUpgradeUI={show(){
-    const service=new root.PlayroomUpgradeService(root.localStorage);if(!service.inspect())return false;
+    const service=new root.PlayroomUpgradeService(root.localStorage,root.PlayroomData||root.localStorage);if(!service.inspect())return false;
     const t=key=>root.PlayroomMessages.text('upgrade.'+key),dialog=document.createElement('dialog');dialog.className='appearance-dialog';
     dialog.setAttribute('aria-labelledby','upgrade-title');dialog.innerHTML='<div class="appearance-body"><h2 id="upgrade-title">'+t('title')+'</h2><p>'+t('detail')+'</p><div class="appearance-actions"><button class="btn secondary" data-upgrade-export>'+t('export')+'</button><button class="btn" data-upgrade-accept>'+t('accept')+'</button></div></div>';
     dialog.addEventListener('cancel',event=>event.preventDefault());

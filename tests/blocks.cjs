@@ -73,6 +73,7 @@ module.exports = {
     {"file": "lobby-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/room"},
   ]},
   storage: {label: "Сохранения и восстановление", cases: [
+    {"file":"data-storage-browser.test.cjs","profiles":[],"subblock":"storage/local"},
     {"file": "player-profile.test.cjs", "profiles": ["app"], "subblock": "storage/profile"},
     {"file": "durable-authority.test.cjs", "profiles": ["app"], "subblock": "storage/journal"},
     {"file": "host-recovery.test.cjs", "profiles": ["app"], "subblock": "storage/journal"},
@@ -84,6 +85,7 @@ module.exports = {
     {"file": "network-client-history-browser.test.cjs", "profiles": ["app", "smoke"], "subblock": "storage/history"},
   ]},
   network: {label: "Сетевые партии", cases: [
+    {"file":"network-learning-browser.test.cjs","profiles":[],"subblock":"network/learning"},
     {"file":"mage-brawl-network-browser.test.cjs","profiles":[],"subblock":"network/mage-brawl"},
     {"file":"table-authority.test.cjs","profiles":[],"subblock":"network/table"},
     {"file": "authority.test.cjs", "profiles": ["app"], "subblock": "network/authority"},

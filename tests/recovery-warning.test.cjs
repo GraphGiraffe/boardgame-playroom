@@ -16,6 +16,7 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
   page.on('pageerror',error=>errors.push(error.message));
   try{
     await page.goto(url);
+    await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
     const boot=await page.evaluate(()=>({app:!!globalThis.PlayroomAppBridge,
       multiplayer:!!globalThis.PlayroomMultiplayer,network:!!globalThis.PlayroomNetworkDebug,
       scanner:!!globalThis.PlayroomQRScanner,profile:!!document.getElementById('profile-form'),
@@ -27,7 +28,8 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
       }));
     });
     await page.reload();
-    const persisted=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
+    await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
+    const persisted=await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1'));
     assert.ok(persisted,'The damaged save must remain in browser storage after reload');
     try{await page.locator('.recovery-note').waitFor({timeout:10000});}
     catch(error){
@@ -39,10 +41,11 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
     await page.locator('.side-nav [data-command=sessions]').click();
     await page.locator('[data-delete-id]').first().click();
     await page.locator('[data-delete-confirm]').click();
+    await page.locator('[data-delete-id]').waitFor({state:'detached'});
     assert.equal(await page.locator('[data-delete-id]').count(),0);
     await page.locator('.side-nav [data-command=home]').click();
     assert.equal(await page.locator('.recovery-note').count(),0,'No stale warning after removing the broken save');
-    assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),null);
+    assert.equal(await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1')),null);
     // Also filter startup pack-version conflicts when there are no dependent games.
     await page.evaluate(()=>{
       PlayroomPacks.warnings.push('Встроенный пакет uno@0.1.0 отличается от сохранённой версии. Для совместимости партий используется сохранённая версия.');

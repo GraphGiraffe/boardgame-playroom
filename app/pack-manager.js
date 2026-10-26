@@ -53,21 +53,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     setCategory(id,category(id)==='favorites'?'normal':'favorites');
   }
   root.PlayroomCatalog ||= {};
-  if (root.TabletopPacks) {
-    root.PlayroomPacks = new root.TabletopPacks({engine:root.TabletopCore,views:root.PlayroomViews,catalog:root.PlayroomCatalog,
-      storage:{get:()=>localStorage.getItem(STORAGE),set:value=>localStorage.setItem(STORAGE,value)}});
-    try {
-      root.PlayroomPacks.bootstrap(root.PlayroomInstalledPacks || []);
-      if (root.PlayroomPacks.warnings.length) root.PlayroomPackLoadError = root.PlayroomPacks.warnings.join(' ');
-    }
-    catch (error) { root.PlayroomPackLoadError = globalThis.PlayroomMessages.error(error) || globalThis.PlayroomMessages.text("ui.pack-manager.f4d84f6c28ef"); }
-  }
-  root.PlayroomRemotePacks=root.PlayroomRemoteCatalog&&root.PlayroomPacks?new root.PlayroomRemoteCatalog.RemoteCatalog({manager:root.PlayroomPacks}):null;
+  root.PlayroomPacksReady=(async()=>{
+    if(!root.TabletopPacks)return;
+    const data=await new root.PlayroomDataStorage().open();root.PlayroomData=data;
+    root.PlayroomPacks=new root.TabletopPacks({engine:root.TabletopCore,views:root.PlayroomViews,catalog:root.PlayroomCatalog,
+      storage:{get:()=>data.getItem(STORAGE),commit:value=>value===null?data.transact(()=>data.removeItem(STORAGE)):data.put(STORAGE,value)}});
+    await root.PlayroomPacks.bootstrap(root.PlayroomInstalledPacks||[]);
+    root.PlayroomPackLoadError=root.PlayroomPacks.warnings.join(' ');
+    root.PlayroomRemotePacks=root.PlayroomRemoteCatalog?new root.PlayroomRemoteCatalog.RemoteCatalog({manager:root.PlayroomPacks}):null;
+  })();
   // A removed save no longer pins conflicting code under the same version.
   // The default loader remains conservative until explicit references can be checked.
-  function reconcile(manager,library,bundles=root.PlayroomInstalledPacks||[]) {
+  async function reconcile(manager,library,bundles=root.PlayroomInstalledPacks||[]) {
     if(!manager?.bootstrap||!library?.references||!Array.isArray(bundles))return manager?.list?.()||[];
-    const list=manager.bootstrap(bundles,{preserveSavedConflict:(id,version)=>library.references(id,version).length>0});
+    const list=await manager.bootstrap(bundles,{preserveSavedConflict:(id,version)=>library.references(id,version).length>0});
     root.PlayroomPackLoadError=manager.warnings?.join(' ')||'';
     return list;
   }
@@ -97,7 +96,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return `<ul class="pack-list">${list.map(item=>{
         const count = references(item.id,item.version).length;
         const controls=item.active?`<div class="pack-display-actions"><button type="button" data-pack-move="${esc(item.id)}" data-direction="-1" ${ids.indexOf(item.id)===0?'disabled':''} aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.31780d6c4a33")}${esc(title(item.manifest))}">${root.PlayroomGameScreen.icon('up')}</button><button type="button" data-pack-move="${esc(item.id)}" data-direction="1" ${ids.indexOf(item.id)===ids.length-1?'disabled':''} aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.324de4c19b50")}${esc(title(item.manifest))}">${root.PlayroomGameScreen.icon('down')}</button><button type="button" data-pack-visibility="${esc(item.id)}" aria-pressed="${preferences.hidden.includes(item.id)}" aria-label="${preferences.hidden.includes(item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.1e5bec3aab1c"):globalThis.PlayroomMessages.text("ui.pack-manager.0a2a4b837761")} ${esc(title(item.manifest))}" title="${preferences.hidden.includes(item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.1e5bec3aab1c"):globalThis.PlayroomMessages.text("ui.pack-manager.0a2a4b837761")}">${root.PlayroomGameScreen.icon('eye')}</button><button type="button" data-pack-favorite="${esc(item.id)}" aria-pressed="${preferences.favorites.includes(item.id)}" aria-label="${preferences.favorites.includes(item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.334c3299a899"):globalThis.PlayroomMessages.text("ui.pack-manager.05f7734c7fbc")} ${esc(title(item.manifest))}">${root.PlayroomGameScreen.icon('star')}</button></div>`:'';
-        return root.PlayroomGameScreen.packRow({id:item.id,version:item.version,name:title(item.manifest),manifest:item.manifest,nameSuffix:count?globalThis.PlayroomMessages.text("ui.pack-manager.usage-count",{count}):'',usageDescription:count?`${count} ${globalThis.PlayroomMessages.text("ui.pack-manager.1b04cb684fde")}`:'',controls:controls+`<button class="icon-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.1c6789d896d4")}${esc(title(item.manifest))}, ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(item.version)}">${root.PlayroomGameScreen.icon('trash')}</button>`});
+        return root.PlayroomGameScreen.packRow({id:item.id,version:item.version,sizeLabel:root.PlayroomStorageUsage?.format(item.byteSize||0),name:title(item.manifest),manifest:item.manifest,nameSuffix:count?globalThis.PlayroomMessages.text("ui.pack-manager.usage-count",{count}):'',usageDescription:count?`${count} ${globalThis.PlayroomMessages.text("ui.pack-manager.1b04cb684fde")}`:'',controls:controls+`<button class="icon-btn" data-pack-remove="${esc(item.id)}" data-pack-version="${esc(item.version)}" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.1c6789d896d4")}${esc(title(item.manifest))}, ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(item.version)}">${root.PlayroomGameScreen.icon('trash')}</button>`});
       }).join('')}</ul>`;
     }
     function previewMarkup() {
@@ -105,10 +104,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const manifest = pending.manifest, known = manager.list().some(item=>item.id===manifest.id);
       return `<section class="pack-preview" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.13eb691fe3b3")}"><span class="eyebrow">${globalThis.PlayroomMessages.text("ui.pack-manager.080b18f6ca51")}</span><h3>${esc(title(manifest))}</h3><p>${esc(manifest.id)} · ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(manifest.version)}</p>${manifest.description||manifest.tagline?`<p>${esc(manifest.description||manifest.tagline)}</p>`:''}${manifest.author?`<p>${globalThis.PlayroomMessages.text("ui.pack-manager.745b218447d3")}${esc(typeof manifest.author==='string'?manifest.author:manifest.author.name||globalThis.PlayroomMessages.text("ui.pack-manager.0d836c1579f1"))}</p>`:''}<p class="pack-trust">${globalThis.PlayroomMessages.text("ui.pack-manager.48eac42eff92")}</p>${known?("<p>"+globalThis.PlayroomMessages.text("ui.pack-manager.3c343bc73176")+"</p>"):''}<div class="modal-foot"><button class="btn secondary" data-pack-cancel>${globalThis.PlayroomMessages.text("ui.pack-manager.8fbe9b75cbdf")}</button><button class="btn" data-pack-install>${known?globalThis.PlayroomMessages.text("ui.pack-manager.e6acd89e236f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div></section>`;
     }
+    let usageTicket=0;
+    function storageMarkup(){return `<div class="storage-usage" aria-live="polite">${root.PlayroomMessages.text('ui.storage.loading')}</div>`;}
+    async function showUsage(){
+      const ticket=++usageTicket;
+      try{const data=await root.PlayroomStorageUsage.measure(),node=document.querySelector('.pack-manager-modal .storage-usage');if(ticket!==usageTicket||!node)return;const format=root.PlayroomStorageUsage.format,t=(key,size)=>root.PlayroomMessages.text('ui.storage.'+key,{size});
+      node.innerHTML=`<strong>${t('total',data.partial?t('minimum',format(data.total)):format(data.total))}</strong><div class="storage-usage-line" aria-hidden="true">${['app','packs','saves'].map(key=>`<i class="storage-${key}" style="flex:${data[key]}"></i>`).join('')}</div><div class="storage-usage-labels"><span>${t('app',format(data.app))}</span><span>${t('packs',format(data.packs))}</span><span>${t('saves',format(data.saves))}</span></div><small>${t('note')}</small>`;
+      }catch(_){const node=document.querySelector('.pack-manager-modal .storage-usage');if(node&&ticket===usageTicket)node.textContent=root.PlayroomMessages.text('ui.storage.measure-failed');}
+    }
     function open() {
       const online=remote?.pending()||[],installedIds=new Set(manager.list().map(item=>item.id)),updates=online.filter(item=>installedIds.has(item.id));
       const onlineMarkup=online.length?`<section class="pack-online"><h3>${globalThis.PlayroomMessages.text("ui.pack-manager.38fe3394cbf8")}</h3>${updates.length?`<button class="btn" data-pack-update-all ${busy?'disabled':''}>${globalThis.PlayroomMessages.text(busy?"ui.pack-manager.updating-all":"ui.pack-manager.update-all",{count:updates.length})}</button>`:''}${online.map(item=>`<div class="pack-online-entry"><span>${esc(item.id)} · ${esc(item.version)}</span><button class="btn secondary" data-pack-online="${esc(item.id)}" ${busy?'disabled':''}>${manager.list().some(installed=>installed.id===item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.8a858910555f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div>`).join('')}</section>`:'';
-      openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.61384528c752"))}<p class="lead">${globalThis.PlayroomMessages.text("ui.pack-manager.ef2ae8b855ad")}</p>${onlineMarkup}<label class="btn pack-file">${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}"></label><p class="pack-format">${globalThis.PlayroomMessages.text("ui.pack-manager.0eea560e855d")}</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<div class="pack-bulk-actions"><button class="btn secondary" data-pack-bulk="old" ${manager.list().some(item=>!item.active)?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.a36f32b9cd54")}</button><button class="btn secondary" data-pack-bulk="all" ${manager.list().length||manager.quarantined?.length?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.3c99ffe023e4")}</button></div><button class="btn secondary" data-pack-restore>${globalThis.PlayroomMessages.text("ui.pack-manager.cc9319e91546")}</button>${quarantineMarkup()}`,'pack-manager-modal');
+      openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.61384528c752"))}${storageMarkup()}<p class="lead">${globalThis.PlayroomMessages.text("ui.pack-manager.ef2ae8b855ad")}</p>${onlineMarkup}<label class="btn pack-file">${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}"></label><p class="pack-format">${globalThis.PlayroomMessages.text("ui.pack-manager.0eea560e855d")}</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<div class="pack-bulk-actions"><button class="btn secondary" data-pack-bulk="old" ${manager.list().some(item=>!item.active)?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.a36f32b9cd54")}</button><button class="btn secondary" data-pack-bulk="all" ${manager.list().length||manager.quarantined?.length?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.3c99ffe023e4")}</button></div><button class="btn secondary" data-pack-restore>${globalThis.PlayroomMessages.text("ui.pack-manager.cc9319e91546")}</button>${quarantineMarkup()}`,'pack-manager-modal');
+      void showUsage();
       if(savedScroll!==null){document.querySelector('.pack-manager-modal .modal-body')?.scrollTo(0,savedScroll);savedScroll=null;}
     }
     function quarantineMarkup(){
@@ -129,7 +137,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!pending)return;
       try {
         const id=pending.manifest.id;
-        manager.install(manager.prepare(pending),{activate:true});
+        await manager.install(manager.prepare(pending),{activate:true});
         pending=null;await cleanup.run(id);message='';onChange();open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));
       } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.9dfa32b39696",{p0:String(globalThis.PlayroomMessages.error(error))});open();}
     }
@@ -154,9 +162,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!planned||busy)return;busy=true;
       try{
         for(const id of planned.network)await networkLibrary.remove(id);
-        for(const id of planned.local)library.remove(id);
-        for(const item of planned.items)manager.remove(item.id,item.version);
-        if(planned.all&&planned.quarantine)manager.discardQuarantine();
+        for(const id of planned.local)await library.removeAsync(id);
+        for(const item of planned.items)await manager.remove(item.id,item.version);
+        if(planned.all&&planned.quarantine)await manager.discardQuarantine();
         const existing=new Set(manager.list().map(item=>item.id)),preferences=displayPreferences();
         for(const key of ['order','hidden','favorites'])preferences[key]=preferences[key].filter(id=>existing.has(id));
         storeDisplay(preferences);
@@ -184,7 +192,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     document.addEventListener('change',event=>{if(!busy&&event.target.id==='pack-file')void read(event.target.files?.[0]);});
-    document.addEventListener('click',event=>{
+    document.addEventListener('click',async event=>{
       const button=event.target.closest('[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-bulk],[data-pack-confirm],[data-pack-cancel-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite],[data-pack-online],[data-pack-update-all]');if(!button||button.disabled||busy)return;
       if(button.hasAttribute('data-pack-update-all')){const installed=new Set(manager.list().map(item=>item.id));void installOnline((remote?.pending()||[]).filter(item=>installed.has(item.id)).map(item=>item.id));return;}
       if(button.dataset.packOnline){void installOnline([button.dataset.packOnline]);return;}
@@ -207,9 +215,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.25e60c5c8569",{p0:String(globalThis.PlayroomMessages.error(error))});open();}
         return;
       }
-      if(button.hasAttribute('data-pack-restore')){try{manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
+      if(button.hasAttribute('data-pack-restore')){try{await manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
       if(button.hasAttribute('data-pack-quarantine')){openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.221ed3d4d098"))}<p>${globalThis.PlayroomMessages.text("ui.pack-manager.552b9b7cc90b")}</p><button class="btn coral" data-pack-quarantine-confirm="${esc(button.dataset.packQuarantine)}">${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.be99b1361201")}</button>`);return;}
-      if(button.hasAttribute('data-pack-quarantine-confirm')){try{manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
+      if(button.hasAttribute('data-pack-quarantine-confirm')){try{await manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
       if(button.hasAttribute('data-pack-install'))install();
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';open();}
       else return;

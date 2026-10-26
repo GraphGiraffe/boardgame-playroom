@@ -12,9 +12,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function tileTheme(manifest={}){
     return ['green','coral','blue','gold','violet'].includes(manifest.tileTheme)?manifest.tileTheme:({cards:'green',board:'gold',dice:'violet'})[manifest.category]||'green';
   }
-  function packRow({id,version='',name,manifest={},attrs='',selectable=false,controls='',detail='',nameSuffix='',usageDescription=''}={}){
+  function packRow({id,version='',sizeLabel='',name,manifest={},attrs='',selectable=false,controls='',detail='',nameSuffix='',usageDescription=''}={}){
     const tag=selectable?'button':'li',cover=root.PlayroomViews?.cover(id)||icon('board');
-    return `<${tag} ${selectable?'type="button"':''} class="pack-row ${selectable?'pack-item':'pack-entry'}" data-pack-id="${esc(id)}" data-pack-version="${esc(version)}" ${attrs}><span class="pack-art" data-theme="${tileTheme(manifest)}" aria-hidden="true">${cover}</span><span class="pack-summary"><strong>${esc(name||manifest.name||id)}${nameSuffix?`<span class="pack-usage" title="${esc(usageDescription)}"> · ${esc(nameSuffix)}</span>`:''}</strong><small class="pack-version">${esc(id)} · ${esc(version)}</small>${detail}</span>${controls?`<div class="pack-row-controls">${controls}</div>`:''}</${tag}>`;
+    return `<${tag} ${selectable?'type="button"':''} class="pack-row ${selectable?'pack-item':'pack-entry'}" data-pack-id="${esc(id)}" data-pack-version="${esc(version)}" ${attrs}><span class="pack-art" data-theme="${tileTheme(manifest)}" aria-hidden="true">${cover}</span><span class="pack-summary"><strong>${esc(name||manifest.name||id)}${nameSuffix?`<span class="pack-usage" title="${esc(usageDescription)}"> · ${esc(nameSuffix)}</span>`:''}</strong><small class="pack-version">${esc(id)} · ${esc(version)}${sizeLabel?` · ${esc(sizeLabel)}`:''}</small>${detail}</span>${controls?`<div class="pack-row-controls">${controls}</div>`:''}</${tag}>`;
   }
   function gameTitle(name,shortName='',{tag='h1'}={}){
     if(!['h1','h2'].includes(tag))throw Error('Invalid title tag');

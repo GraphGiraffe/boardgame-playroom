@@ -93,10 +93,13 @@
       return this.restore(JSON.parse(record.raw));
     }
     write(session, id) {
+      return this.writeRaw(this.encode(session,id),id);
+    }
+    writeRaw(raw,id) {
       const store = this.storage(), active = store.getItem(ACTIVE);
       const key = active && identity(active) === id ? ACTIVE : PREFIX + id;
       if (key !== ACTIVE && !store.getItem(key)) fail('LIBRARY_REMOVED');
-      store.setItem(key, this.encode(session,id));
+      store.setItem(key, raw);
     }
     encode(session, id) {
       const raw = session.serialize();
@@ -104,7 +107,10 @@
       return '{"librarySummary":'+JSON.stringify(this.summary(session))+',"libraryId":'+JSON.stringify(id)+','+raw.slice(1);
     }
     activate(session, id) {
-      const store = this.storage(), previous = store.getItem(ACTIVE), next = this.encode(session,id);
+      return this.activateRaw(this.encode(session,id),id);
+    }
+    activateRaw(next,id) {
+      const store = this.storage(), previous = store.getItem(ACTIVE);
       // Both writes are atomic. If either fails, the previous active save survives.
       if (previous && identity(previous) !== id) {
         const archiveKey=PREFIX+identity(previous);
@@ -119,6 +125,10 @@
       store.removeItem(PREFIX + id);
       if (active && identity(active) === id) store.removeItem(ACTIVE);
     }
+    persist(operation) { return this.storage().transact?this.storage().transact(operation):Promise.resolve().then(operation); }
+    writeAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.writeRaw(raw,id)); }
+    activateAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.activateRaw(raw,id)); }
+    removeAsync(id) { return this.persist(()=>this.remove(id)); }
     newId() { return this.idFactory(); }
   }
   return Library;

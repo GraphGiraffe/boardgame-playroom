@@ -8,7 +8,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   'use strict';
   const Loader=root.PlayroomPackLoader||(typeof require==='function'?require('../platform/web/pack-loader.js'):null);
   const Tags=root.PlayroomTags||(typeof require==='function'?require('./tags.js'):null);
-  const FORMAT='playroom-pack', STORAGE='playroom.packs.v1', MAX_BYTES=4*1024*1024, MAX_TOTAL=20*1024*1024;
+  const FORMAT='playroom-pack', STORAGE='playroom.packs.v1', MAX_BYTES=4*1024*1024;
   const ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
   const prepared = new WeakMap();
@@ -84,6 +84,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!engine?.registerVersion||!engine?.activatePack||!views?.register||!views?.get||!views?.remove||!record(catalog))throw Error(globalThis.PlayroomMessages.text("ui.packs.acf00eb6a722"));
       this.engine=engine;this.views=views;this.catalog=catalog;this.document=document;this.modelAdapter=modelAdapter;this.storage=storage||{get:()=>root.localStorage?.getItem(STORAGE),set:value=>root.localStorage?.setItem(STORAGE,value)};
       this._items=new Map();this._active=new Map();this._bundled=new Set();this._removed=new Set();this._styles=new Map();this.warnings=[];
+      if(this.storage.commit){let queue=Promise.resolve();for(const name of ['bootstrap','install','remove','discardQuarantine']){const operation=this[name].bind(this);this[name]=(...args)=>{const result=queue.then(()=>operation(...args));queue=result.catch(()=>{});return result;};}}
+
     }
     parse(value){return parse(value);}
     prepare(value){
@@ -106,18 +108,22 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!rules||!view||typeof rules.name!=='string'||!Number.isInteger(rules.min)||!Number.isInteger(rules.max)||rules.min<1||rules.max<rules.min||rules.max>32||!Array.isArray(rules.presets)||!rules.presets.length||!rules.presets.every(p=>p&&typeof p.id==='string')||!['create','legal','apply'].every(method=>typeof rules[method]==='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.7fc357d22602"));
       if((rules.version&&rules.version!==m.version)||(rules.stateVersion&&rules.stateVersion!==m.stateVersion))throw Error(globalThis.PlayroomMessages.text("ui.packs.5da21a35679c"));
       if(m.engineApi===4&&rules.modelContractVersion!==1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4e3f1bcc4946"));
-      const compiled={bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:scope.PlayroomCatalog[m.id],styles:css};
+      const compiled={byteSize:bytes(JSON.stringify(bundle)),bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:scope.PlayroomCatalog[m.id],styles:css};
       if(!record(compiled.catalog))throw Error(globalThis.PlayroomMessages.text("ui.packs.f2a5b673a1e5"));
       const token=Object.freeze({id:m.id,version:m.version,manifest:clone(m)});prepared.set(token,{owner:this,compiled});return token;
     }
-    _descriptor(item){const m=item.bundle.manifest;return{id:m.id,version:m.version,manifest:clone(m),active:this._active.get(m.id)===m.version,bundled:this._bundled.has(key(m.id,m.version))};}
+    _descriptor(item){const m=item.bundle.manifest;return{id:m.id,version:m.version,byteSize:item.byteSize,manifest:clone(m),active:this._active.get(m.id)===m.version,bundled:this._bundled.has(key(m.id,m.version))};}
     list(){return [...this._items.values()].map(item=>this._descriptor(item)).sort((a,b)=>a.id.localeCompare(b.id)||compare(b.version,a.version));}
     _resolve(id,version){
       const candidates=[...this._items.values()].filter(item=>item.bundle.manifest.id===id).sort((a,b)=>compare(b.bundle.manifest.version,a.bundle.manifest.version));
       const item=version?this._items.get(key(id,version)):candidates[0];
       if(!item){const error=Error(globalThis.PlayroomMessages.text("ui.packs.743b49f00699",{p0:String(id),p1:String(version?globalThis.PlayroomMessages.text("ui.packs.12aee5af7b3e",{p0:String(version)}):'')}));Object.assign(error,{code:'PACK_VERSION_MISSING',game:id,packVersion:version});throw error;}return item;
     }
-    _serialized(items=this._items,active=this._active,removed=this._removed){const text=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[...items.values()].map(item=>item.bundle),active:Object.fromEntries(active),removed:[...removed],quarantined:this.quarantined||[],rawBackups:this.rawBackups||[]});if(bytes(text)>MAX_TOTAL)throw Error(globalThis.PlayroomMessages.text("ui.packs.824c9b2079dc"));return text;}
+    _serialized(items=this._items,active=this._active,removed=this._removed){const text=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[...items.values()].map(item=>item.bundle),active:Object.fromEntries(active),removed:[...removed],quarantined:this.quarantined||[],rawBackups:this.rawBackups||[]});return text;}
+    _persist(text,apply){
+      if(this.storage.commit){const before=this.storage.get();return this.storage.commit(text).then(async()=>{try{return apply();}catch(error){await this.storage.commit(before);throw error;}});}
+      this.storage.set(text);return apply();
+    }
     _style(id,css){
       if(!this.document?.createElement)return;
       let node=this._styles.get(id)||this.document.querySelector?.(`style[data-playroom-pack="${id}"]`);
@@ -152,9 +158,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(existing)return activate?this.activate(m.id,m.version):this._descriptor(existing);
       const before=this._serialized(),priorItems=this._items,priorRemoved=this._removed,items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.set(k,item);removed.delete(k);if(activate)active.set(m.id,m.version);
       let previousVersion,previousActive;try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}try{previousActive=this.engine.get(m.id);}catch(_){}
-      this.storage.set(this._serialized(items,active,removed));
+      return this._persist(this._serialized(items,active,removed),()=>{
       try{this.engine.registerVersion(item.rules,{replace:true});this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
+      });
     }
     // Presentation-only payload: no rule execution, Session, or saved state.
     exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
@@ -163,7 +170,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);
       const remaining=[...items.values()].filter(item=>item.bundle.manifest.id===id).sort((a,b)=>compare(b.bundle.manifest.version,a.bundle.manifest.version));
       if(active.get(id)===m.version){if(remaining.length)active.set(id,remaining[0].bundle.manifest.version);else active.delete(id);}
-      const before=this._serialized();this.storage.set(this._serialized(items,active,removed));
+      const before=this._serialized();return this._persist(this._serialized(items,active,removed),()=>{
       let result=null;
       try{
         if(active.has(id))result=this._apply(items.get(key(id,active.get(id))));
@@ -171,11 +178,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }catch(error){try{this.storage.set(before);}catch(_){}throw error;}
       this._items=items;this._active=active;this._removed=removed;this._bundled.delete(k);this.engine.unregisterVersion(id,m.version);
       return result;
+      });
     }
     discardQuarantine(index=null){
       const previous=this.quarantined;
       this.quarantined=index===null?[]:this.quarantined.filter((_,i)=>i!==index);
-      try{this.storage.set(this._serialized());}catch(error){this.quarantined=previous;throw error;}
+      const text=this._serialized(),next=this.quarantined;this.quarantined=previous;
+      return this._persist(text,()=>{this.quarantined=next;});
     }
     bootstrap(bundles=[],options={}){
       if(!Array.isArray(bundles))throw Error(globalThis.PlayroomMessages.text("ui.packs.d0c2c91da454"));
@@ -184,7 +193,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let saved=null,raw=null,readable=true;
       try{raw=this.storage.get();}catch(error){readable=false;this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.bf86059fb52f",{p0:String(error.message)}));}
       if(raw){try{
-        if(bytes(raw)>MAX_TOTAL)throw Error(globalThis.PlayroomMessages.text("ui.packs.572095d4a787"));saved=JSON.parse(raw);
+        saved=JSON.parse(raw);
         if(saved.format!=='playroom-packs'||saved.formatVersion!==1||!Array.isArray(saved.packs)||!record(saved.active))throw Error(globalThis.PlayroomMessages.text("ui.packs.63fdd980cf43"));
         this.quarantined=Array.isArray(saved.quarantined)?saved.quarantined:[];this.rawBackups=Array.isArray(saved.rawBackups)?saved.rawBackups:[];
         for(const k of saved.removed||[])if(typeof k==='string'&&ID.test(k.split('@')[0])&&SEMVER.test(k.split('@')[1]))removed.add(k);
@@ -199,11 +208,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(const [k,bundle]of sources){try{const token=this.prepare(bundle);items.set(k,prepared.get(token).compiled);}catch(error){if(bundled.has(k))throw error;this.quarantined.push({bundle,reason:error.message});}}
       for(const item of items.values()){const m=item.bundle.manifest;if(!active.has(m.id)||compare(m.version,active.get(m.id))>0)active.set(m.id,m.version);}
       if(this.quarantined.length)this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.acf425f8c8f5",{p0:String(this.quarantined.length)}));
-      try{if(readable)this.storage.set(this._serialized(items,active,removed));}catch(error){this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.3738afe7a264",{p0:String(error.message)}));}
+      const publish=()=>{
       for(const item of items.values())this.engine.registerVersion(item.rules,{replace:true});
       this._items=items;this._bundled=bundled;this._removed=removed;this._active=active;
       for(const [id,version]of active)this.activate(id,version);
-      return this.list();
+      return this.list();};
+      if(this.storage.commit)return this._persist(this._serialized(items,active,removed),publish);
+      try{if(readable)this.storage.set(this._serialized(items,active,removed));}catch(error){this.warnings.push(error.message);}
+      return publish();
     }
   }
   Packs.parse=parse;Packs.compareVersions=compare;Packs.STORAGE_KEY=STORAGE;

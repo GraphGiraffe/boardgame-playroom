@@ -2,6 +2,8 @@
 
 Настольные игры в браузере: локально с ботами, передача устройства и сетевая комната WebRTC. Приложение **0.19.6** и независимая коллекция **0.8.6** включают 15 игр. [Сайт](https://graphgiraffe.github.io/playroom-hod-test/) · [релиз приложения](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.19.6) · [коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.8.6).
 
+Текущая предварительная сборка **0.19.7-preview.2** переносит паки и локальные сохранения в IndexedDB и показывает их объём в менеджере паков. Это ещё не опубликованный выпуск; формат истории не меняется. [Хранение данных](docs/LOCAL-STORAGE.md).
+
 ## Начать играть
 
 - `playroom-all-games.html` — автономный файл со всеми играми.
