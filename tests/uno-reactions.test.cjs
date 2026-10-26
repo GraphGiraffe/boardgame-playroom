@@ -299,3 +299,16 @@ test('UNO learning receives public declaration windows and records an out-of-tur
  assert(after.progress.seen.has('declare-uno'));assert.equal(after.guide.steps.find(x=>x.id==='declare-uno').available,false);
  assert.equal(E.project(s,1).scene.declarationOpen[0],false);
 });
+
+
+test('unconfigured UNO bots use medium declaration errors and delays',()=>{
+ const state=play(fixture(),0,'u1');let forgotten=0,delayed=0,immediate=0;
+ for(let episode=1;episode<=400;episode++){
+  state.move=episode;state.data.uno.episode=episode;state.data.uno.situations[0].episode=episode;delete state.players[0].botSettings;
+  const unconfigured=E.botReaction(state,0),delay=E.botReactionDelay(state,0);
+  state.players[0].botSettings={difficulty:'medium'};
+  assert.deepEqual(E.botReaction(state,0),unconfigured);assert.equal(E.botReactionDelay(state,0),delay);
+  if(!unconfigured)forgotten++;else if(delay>0)delayed++;else immediate++;
+ }
+ assert(forgotten>0&&delayed>0&&immediate>0);
+});
