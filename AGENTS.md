@@ -1,6 +1,6 @@
 # Работа с ХОД 0.19
 
-Стабильный выпуск 0.19.7 / 0.8.6 использует API 4; предыдущая опубликованная база: приложение 0.18.6, коллекция 0.7.4; engineApi 4, viewApi 3, protocol 3. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.19.md), не номером в исходнике.
+Стабильный выпуск 0.19.8 / 0.8.6 использует API 4; предыдущая опубликованная база: приложение 0.18.6, коллекция 0.7.4; engineApi 4, viewApi 3, protocol 3. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md). Публикация подтверждается [release evidence](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.19.md), не номером в исходнике.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.
