@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"action-history.test.cjs","profiles":[],"subblock":"core/session-runtime"},
     {"file":"skin-preferences.test.cjs","profiles":[],"subblock":"core/appearance"},
     {"file":"test-selection.test.cjs","profiles":[],"subblock":"core/test-selection"},
     {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
@@ -73,6 +74,7 @@ module.exports = {
     {"file": "lobby-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/room"},
   ]},
   storage: {label: "Сохранения и восстановление", cases: [
+    {"file":"data-storage-browser.test.cjs","profiles":[],"subblock":"storage/local"},
     {"file": "player-profile.test.cjs", "profiles": ["app"], "subblock": "storage/profile"},
     {"file": "durable-authority.test.cjs", "profiles": ["app"], "subblock": "storage/journal"},
     {"file": "host-recovery.test.cjs", "profiles": ["app"], "subblock": "storage/journal"},
@@ -84,6 +86,7 @@ module.exports = {
     {"file": "network-client-history-browser.test.cjs", "profiles": ["app", "smoke"], "subblock": "storage/history"},
   ]},
   network: {label: "Сетевые партии", cases: [
+    {"file":"network-learning-browser.test.cjs","profiles":[],"subblock":"network/learning"},
     {"file":"mage-brawl-network-browser.test.cjs","profiles":[],"subblock":"network/mage-brawl"},
     {"file":"table-authority.test.cjs","profiles":[],"subblock":"network/table"},
     {"file": "authority.test.cjs", "profiles": ["app"], "subblock": "network/authority"},

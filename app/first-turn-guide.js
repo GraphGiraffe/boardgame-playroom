@@ -82,7 +82,9 @@
   on(document,'pointerdown',()=>{pointerHeld=true;activity();});
   on(document,'pointerup',()=>{pointerHeld=false;activity();});on(document,'pointercancel',()=>{pointerHeld=false;activity();});
   for(const type of ['pointermove','keydown','input','click','change'])on(document,type,activity,{passive:true});
-  on(document,'click',interaction);on(document,'change',interaction);
+  // Learn local input before document-level network handlers replace controls or open a modal.
+  // Game commands are still recorded only by committed() after successful acknowledgement.
+  on(root,'click',interaction);on(root,'change',interaction);
   on(document,'scroll',activity);on(document,'visibilitychange',schedule);on(root,'resize',schedule);
  }
  function stop(owner){if(!owner||current?.owner===owner){controller.stop(owner);current=null;learner=null;clearTimeout(idleTimer);idleTimer=null;pointerHeld=false;if(frame)root.cancelAnimationFrame(frame);frame=0;observer?.disconnect();observer=null;listeners?.abort();listeners=null;hide();overlay?.remove();overlay=null;}}

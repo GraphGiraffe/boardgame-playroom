@@ -1,0 +1,13 @@
+{
+  "ui.storage.loading": "Подсчёт объёма…",
+  "ui.storage.total": "Занято: {size}",
+  "ui.storage.minimum": "не менее {size}",
+  "ui.storage.app": "Приложение: {size}",
+  "ui.storage.packs": "Паки: {size}",
+  "ui.storage.saves": "Сохранения: {size}",
+  "ui.storage.note": "Размер данных без служебных расходов браузера. Файл HTML в загрузках не учитывается.",
+  "ui.storage.measure-failed": "Не удалось измерить объём данных",
+  "ui.storage.open-failed": "Не удалось открыть хранилище",
+  "ui.storage.open-detail": "Исходные данные не удалены. Проверьте доступ браузера к хранилищу, закройте другие вкладки приложения и повторите загрузку.",
+  "ui.storage.retry": "Повторить"
+}

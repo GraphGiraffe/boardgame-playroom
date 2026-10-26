@@ -132,8 +132,8 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 .tile-tags{pointer-events:none}
 
 /* Keep long presses on game text from opening the browser selection menu. */
-.table-shell,.table-shell *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-.table-shell input,.table-shell textarea,.table-shell [contenteditable]{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.table-shell,.table-shell *{-webkit-touch-callout:none}
+.table-shell input,.table-shell textarea,.table-shell [contenteditable]:not([contenteditable="false"]){-webkit-touch-callout:default}
 
 /* On narrow hubs fullscreen remains available from Settings. */
 @media(max-width:360px){#app .topbar-tools>[data-command=fullscreen]{display:none}}
@@ -252,3 +252,8 @@ html:has(#modal-root > *),body:has(#modal-root > *),html:has(#app .handoff),body
 .intro-heading .hub-install-button{width:44px;height:44px;min-width:44px;min-height:44px;padding:0;flex:none;display:grid;place-items:center;border-radius:12px;background:var(--green);color:var(--color-action-on-primary,#fff);}
 @media(prefers-reduced-motion:reduce){.intro-heading .hub-install-button{animation:none;}}
 .reduced-motion .intro-heading .hub-install-button{animation:none;}
+
+/* Text selection is an editing affordance, shared by every application surface. */
+body,body *{-webkit-user-select:none;user-select:none}
+body input,body textarea,body [contenteditable]:not([contenteditable="false"]),body [contenteditable]:not([contenteditable="false"]) *{-webkit-user-select:text;user-select:text}
+body [contenteditable][contenteditable="false"],body [contenteditable][contenteditable="false"] *{-webkit-user-select:none;user-select:none}
