@@ -69,7 +69,7 @@ test('export is detached from the live session and from earlier exports', () => 
 test('compact and plain serialization restore exactly the readable export', () => {
   const session = create({seed: 'fixture'});
   step(session);
-  assert.equal(JSON.parse(session.serialize()).version, 2);
+  assert.equal(JSON.parse(session.serialize()).version, 3);
   assert.deepEqual(Session.restore(Core, JSON.parse(session.serialize())).export(), session.export());
   assert.deepEqual(JSON.parse(session.serialize({compact: false})), session.export());
 });
@@ -191,13 +191,13 @@ test('compact initial, middle and final saves preserve all snapshots and the ful
 
 test('compact cache grows by new snapshot data rather than whole history prefixes', () => {
   const session = create({seed: 'fixture'});
-  session.serialize();
-  for (let i = 0; i < 50; i++) { step(session); session.serialize(); }
-  const first = JSON.parse(session.serialize());
-  for (let i = 0; i < 50; i++) { step(session); session.serialize(); }
-  const second = JSON.parse(session.serialize());
+  session.serialize({history:'snapshots'});
+  for (let i = 0; i < 50; i++) { step(session); session.serialize({history:'snapshots'}); }
+  const first = JSON.parse(session.serialize({history:'snapshots'}));
+  for (let i = 0; i < 50; i++) { step(session); session.serialize({history:'snapshots'}); }
+  const second = JSON.parse(session.serialize({history:'snapshots'}));
   assert.ok(second.nodes.length < first.nodes.length * 2.1);
-  assert.ok(session.serialize().length < session.serialize({compact: false}).length * 0.6);
+  assert.ok(session.serialize({history:'snapshots'}).length < session.serialize({compact: false}).length * 0.6);
   assert.equal(Session.restore(Core, second).current.events.length, 101);
 });
 
@@ -211,14 +211,14 @@ test('compact decoder rejects unknown tags, malformed references and duplicate o
     s => { s.nodes.push(['a', [{}]]); }
   ];
   for (const mutate of mutations) {
-    const saved = JSON.parse(create({seed: 'fixture'}).serialize()); mutate(saved);
+    const saved = JSON.parse(create({seed: 'fixture'}).serialize({history:'snapshots'})); mutate(saved);
     assert.throws(() => Session.restore(Core, saved), /Сохранение/);
   }
 });
 
 test('compact decoder bounds nesting depth and exponentially expanding references', () => {
   for (const exponential of [false, true]) {
-    const saved = JSON.parse(create({seed: 'fixture'}).serialize());
+    const saved = JSON.parse(create({seed: 'fixture'}).serialize({history:'snapshots'}));
     saved.nodes = [['a', [null]]];
     for (let i = 1; i < (exponential ? 30 : 130); i++) {
       saved.nodes.push(['a', exponential ? [[i - 1], [i - 1]] : [[i - 1]]]);

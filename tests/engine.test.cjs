@@ -369,7 +369,7 @@ function packEnvironment(storage, viewsOverride) {
 function installFixture(version = '0.1.0', increment = 1) {
   return {format:'playroom-pack',formatVersion:1,manifest:{id:'install-fixture',name:'Installed fixture',version,engineApi:4,viewApi:3,stateVersion:1},files:{
     'rules.js':require('./pack-fixture.cjs').rules({id:'install-fixture',version,key:'count',step:increment,preset:'standard',action:'advance'}),
-    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:3,family:'board',elements:{field:'<p>'+s.data.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
+    'view.js':`globalThis.PlayroomViews.register('install-fixture',s=>({api:3,family:'board',elements:{field:'<p>'+s.scene.count+'</p>'}}),()=>'<svg/>');globalThis.PlayroomCatalog['install-fixture'].playerBadge=()=>${JSON.stringify(version)};globalThis.PlayroomCatalog['install-fixture'].asset=globalThis.PlayroomPack.asset('assets/icon.svg');`,
     'styles.css':'.fixture { background-image: url("assets/icon.svg"); }',
     'assets/icon.svg':'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0h1v1"/></svg>'
   }};
@@ -399,7 +399,7 @@ test('pack updates retain pinned rules, serialize exact versions and reject chan
   manager.install(manager.prepare(installFixture('0.2.0',10)));
   assert.equal(core.get('install-fixture').version,'0.2.0');assert.equal(catalog['install-fixture'].playerBadge(),'0.2.0');
   oldSession.act(1,{type:'advance'});assert.equal(oldSession.current.data.count,2,'live old session still dispatches its own rules');
-  assert.equal(views.render(oldSession.current,0,[]),require('../core/ui.js').composeScene({api:3,family:'board',elements:{field:'<p>2</p>'}},{state:oldSession.current,viewer:0,actions:[]}));
+  assert.equal(views.render(core.project(oldSession.current,0),0,[]),require('../core/ui.js').composeScene({api:3,family:'board',elements:{field:'<p>2</p>'}},{state:core.project(oldSession.current,0),viewer:0,actions:[]}));
   const saved=JSON.parse(oldSession.serialize());assert.equal(Session.packVersionOf(saved),'0.1.0');
   const reopened=Session.restore(core,saved);reopened.act(0,{type:'advance'});assert.equal(reopened.current.data.count,3);
   const fresh=new Session(core,'install-fixture');fresh.act(0,{type:'advance'});assert.equal(fresh.current.data.count,10);
@@ -506,4 +506,15 @@ test('numeric pack versions outrank older suffixes and bootstrap selects the new
  const {manager}=packEnvironment();
  manager.bootstrap([installFixture('0.6.3-preview.6'),installFixture('0.6.5')]);
  assert.equal(manager.list().find(p=>p.active).version,'0.6.5');
+});
+
+
+test('async pack storage commits before activation and restores bytes after renderer failure',async()=>{
+ let raw=null,deny=false;const store={get:()=>raw,commit:async value=>{if(deny)throw Error('QuotaExceededError');raw=value;}};
+ const {manager,views}=packEnvironment(store);await manager.bootstrap([installFixture()]);const before=raw;
+ deny=true;await assert.rejects(manager.install(manager.prepare(installFixture('0.2.0'))),/Quota/);assert.equal(raw,before);assert.equal(manager.list().length,1);
+ deny=false;const register=views.register;views.register=()=>{throw Error('renderer unavailable');};
+ await assert.rejects(manager.install(manager.prepare(installFixture('0.2.0'))),/renderer/);assert.equal(raw,before);assert.equal(manager.list().length,1);
+ views.register=register;await manager.install(manager.prepare(installFixture('0.2.0')));assert.equal(manager.list().length,2);
+ await manager.remove('install-fixture','0.1.0');assert.equal(manager.list().length,1);
 });

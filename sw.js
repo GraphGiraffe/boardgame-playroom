@@ -1,9 +1,10 @@
 'use strict';
 // API 4 shell cache: replace UI assets without deleting authoritative
 // IndexedDB journals or client history. Older published releases remain immutable.
-const CACHE='playroom-pwa-v0.19.6';
+const CACHE='playroom-pwa-v0.19.7';
 const INTEGRITY=null; // Replaced by the PWA builder with public asset hashes.
 const CORE=[
+  './platform/web/data-storage.js','./platform/web/storage-usage.js',
   './platform/web/interface-scale.js','./app/interface-scale.css',
   './app/hub-presenter.js',
   './application/pack-update-cleanup.js','./application/upgrade-service.js','./app/upgrade-ui.js',

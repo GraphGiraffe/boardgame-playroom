@@ -31,9 +31,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     constructor(engine, game, options = {}, runtime = {}) {
       if (!isRecord(options)) throw new Error(globalThis.PlayroomMessages.text("ui.session.d42d73265b68"));
       const packVersion = options.packVersion || engine.get(game).version || '0.1.0';
-      const ownedOptions = freeze(clone({...options, packVersion})), now=clockPort(runtime), createdAt=readTime(now);
+      const configured=clone({...options, seed:options.seed??Math.random().toString(36).slice(2), packVersion}),now=clockPort(runtime),createdAt=readTime(now);
+      const initial=engine.createGame(game,clone(configured));
+      // Freeze resolved names/preset as well as entropy; future UI defaults are not replay inputs.
+      const ownedOptions=freeze({...configured,preset:initial.preset,players:initial.players.map((player,index)=>({...configured.players?.[index],name:player.name,bot:player.bot,...(player.avatar?{avatar:player.avatar}:{})}))});
       records.set(this, {engine, game, options: ownedOptions, now, createdAt, updatedAt: createdAt,
-        history: history([engine.createGame(game, clone(ownedOptions))], engine)});
+        history: history([initial], engine), actions:[], preparedActions:new WeakMap()});
     }
     get engine() { return records.get(this).engine; }
     get game() { return records.get(this).game; }
@@ -60,7 +63,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // persist it atomically with its command receipt before committing it.
     prepare(actor, action) {
       const record=records.get(this);
-      return record.history.prepare(previous => {
+      const command=clone(action);
+      // The same decoration fields are excluded by engine command matching.
+      for(const key of ['label','notify','confirmation','targetPrompt','targetKind','disabled'])if(command)delete command[key];
+      freeze(command);
+      const candidate=record.history.prepare(previous => {
         const changes = [];
         let input = previous;
         for (const [key, metadata] of Object.entries(record.playerMetadata || {})) {
@@ -80,12 +87,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
         return next;
       });
+      if(candidate!==this.current&&record.actions){
+        record.preparedActions.set(candidate,freeze({actor,command,...(candidate.playerChanges?{players:clone(candidate.playerChanges)}:{})}));
+      }
+      return candidate;
     }
     commitPrepared(next) {
       const record=records.get(this),previous=this.current;
       try { record.history.commit(next); }
       catch(error) {if(error.code==='HISTORY_PREPARED_INVALID')throw Error('Prepared transition is no longer current');throw error;}
       if(next===previous)return previous;
+      if(record.actions){
+        const entry=record.preparedActions.get(next);
+        // A missing command must never produce an incomplete replay log.
+        if(entry){record.actions.push(entry);record.preparedActions.delete(next);}else record.actions=null;
+      }
       // Serialization is an optimization. A failed cache update must not
       // invalidate a transition already committed to durable storage.
       if (record.saveCache) {
@@ -103,9 +119,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return this.engine.project(state, player);
     }
     export() { return clone(envelope(this)); }
-    serialize({compact = true} = {}) {
+    serialize({compact = true, history:historyFormat = 'actions'} = {}) {
       if (!compact) return JSON.stringify(envelope(this));
       const record = records.get(this);
+      if(historyFormat==='actions'&&record.actions)return JSON.stringify({format:'playroom-session',version:3,encoding:'actions-v1',game:this.game,packVersion:this.packVersion,options:this.options,createdAt:this.createdAt,updatedAt:this.updatedAt,actions:record.actions,end:{move:this.current.move,fingerprint:Codec.fingerprint(this.current)}});
       if (!record.saveCache) {
         record.saveCache = Codec.create();
         record.saveCache.states = this.states.map(state => Codec.encodeSnapshot(record.saveCache, state));
@@ -116,8 +133,31 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         game: this.game, packVersion:this.packVersion, options, createdAt: this.createdAt, updatedAt: this.updatedAt,
         states: codec.states, journal, nodes: codec.nodes});
     }
+    static restoreActions(engine,saved,runtime={}) {
+      try {
+        const log=Codec.actionLog(saved);
+        // Constructor gets a fixed clock; loading never consults the live clock or bot policy.
+        const initial=new Session(engine,log.game,log.options,{now:()=>log.createdAt});
+        // Validate the envelope once, then reuse the generated immutable timeline.
+        const replay=Session.restore(engine,initial.export(),{now:()=>log.createdAt});
+        const record=records.get(replay);record.actions=[];record.preparedActions=new WeakMap();
+        for(const entry of log.actions){
+          for(const {index,...metadata} of entry.players||[])replay.setPlayerMetadata(index,metadata);
+          const before=replay.current;
+          replay.act(entry.actor,entry.command);
+          if(replay.current===before)throw Error('No-op in action history');
+        }
+        if(Codec.fingerprint(replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');
+        record.updatedAt=log.updatedAt;record.now=clockPort(runtime);
+        return replay;
+      }catch(error){
+        if(error.code==='PACK_VERSION_MISSING')throw error;
+        throw new Error(globalThis.PlayroomMessages.text('ui.session.2bd4c477be41'));
+      }
+    }
     static packVersionOf(saved) { return saved?.packVersion; }
     static restore(engine, saved, runtime = {}) {
+      if(isRecord(saved)&&saved.format==='playroom-session'&&saved.version===3)return Session.restoreActions(engine,saved,runtime);
       if (!isRecord(saved) || saved.format !== 'playroom-session' || ![1, 2].includes(saved.version) ||
           typeof saved.game !== 'string' || !Array.isArray(saved.states) || !saved.states.length) {
         throw new Error(globalThis.PlayroomMessages.text("ui.session.a423ffa2da9e"));

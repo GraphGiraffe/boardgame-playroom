@@ -91,7 +91,7 @@ test('Session clock is injected, prepare is timeless and committed timestamps ne
 test('restore does not read the clock or recreate the game, then advances using the supplied clock',()=>{
   const session=create({now:()=>10});step(session);
   for(const compact of [true,false]){
-    const saved=JSON.parse(session.serialize({compact})),before=creations;let reads=0;
+    const saved=JSON.parse(session.serialize({compact,history:'snapshots'})),before=creations;let reads=0;
     const restored=Session.restore(E,saved,{now:()=>{reads++;return 900;}});
     assert.equal(creations,before);assert.equal(reads,0);assert.deepEqual(restored.export(),session.export());
     step(restored);assert.equal(reads,1);assert.equal(restored.updatedAt,900);assert.equal(session.current.move,1);
