@@ -262,3 +262,84 @@ body [contenteditable][contenteditable="false"],body [contenteditable][contented
 .update-changes>section+section{border-top:1px solid var(--color-border-subtle,#c8cbbb);margin-top:1em;padding-top:1em}
 .update-changes li{margin-block:.5em;overflow-wrap:anywhere}
 .updates-modal .modal-foot{flex-wrap:wrap}
+
+/* Pack-owned illustrations; host-owned rulebook layout, shared across games. */
+.game-rules-help .rulebook-figures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0 12px}
+.game-rules-help .rulebook-figures.is-row{display:flex;flex-wrap:wrap;justify-content:center}
+.game-rules-help .rulebook-figures.is-stack{grid-template-columns:1fr}
+.game-rules-help .rulebook-figure{min-width:0;margin:0;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--color-surface-raised,var(--white));text-align:center}
+.game-rules-help .rulebook-figures.is-row>.rulebook-figure{flex:1 1 88px;max-width:160px}
+.game-rules-help .rulebook-illustration{height:112px;display:flex;justify-content:center;align-items:center}
+.game-rules-help .is-control .rulebook-illustration{height:48px}
+.game-rules-help .is-stack .is-control .rulebook-illustration{height:auto;display:block}
+.game-rules-help .is-stack .is-control .rulebook-illustration>svg{width:100%;height:auto}
+.game-rules-help .rulebook-illustration>svg{display:block;width:auto;max-width:100%;height:100%;overflow:visible}
+.game-rules-help .rulebook-figure figcaption{font-size:13px;line-height:1.4;margin-top:4px}
+.game-rules-help .rulebook-note{border-left:3px solid var(--green);padding:10px 12px;background:var(--color-surface-raised,var(--white));border-radius:0 10px 10px 0;margin:12px 0}
+
+/* Illustrated descriptions: a stable picture column with text alongside. */
+.game-rules-help .rulebook-figures.is-list{grid-template-columns:1fr;gap:8px}
+.game-rules-help .is-list .rulebook-figure{display:grid;grid-template-columns:clamp(64px,20vw,96px) minmax(0,1fr);align-items:center;gap:12px;text-align:left}
+.game-rules-help .is-list .rulebook-illustration{height:auto;aspect-ratio:1}
+.game-rules-help .is-list figcaption{margin:0;white-space:pre-line;font-size:14px}
+.game-rules-help .is-diagram .rulebook-illustration{height:auto;display:block}
+.game-rules-help .is-diagram .rulebook-illustration>svg{width:100%;height:auto}
+/* Short paragraphs, steps and comparisons in public rule documents. */
+.game-rules-help .rulebook-section p{margin:0 0 12px;line-height:1.5}
+.game-rules-help .rulebook-section :is(ul,ol){margin:8px 0 16px;padding-left:24px}
+.game-rules-help .rulebook-section li{margin:0 0 8px;line-height:1.5}
+.game-rules-help .rulebook-table{width:100%;table-layout:fixed;border-collapse:collapse;margin:12px 0 18px;font-size:14px;line-height:1.5}
+.game-rules-help .rulebook-table :is(th,td){border-bottom:1px solid var(--line);padding:9px 8px;vertical-align:top;text-align:left;overflow-wrap:anywhere}
+.game-rules-help .rulebook-table th{background:var(--color-surface-raised,var(--white));font-weight:700}
+.game-rules-help .rulebook-table :is(th,td):first-child{width:29%;font-weight:600}
+/* Rulebook scenes reuse the real piece renderers and common controls, without input. */
+.game-rules-help .rulebook-illustration:has(>.rule-art){height:auto;display:block}
+.game-rules-help .rule-art{display:grid;gap:10px;max-width:100%;color:var(--ink);pointer-events:none}
+.game-rules-help .rule-art-row{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;flex-wrap:wrap}
+.game-rules-help .rule-art [data-size-role="card"]{width:clamp(34px,12vw,60px)!important;height:auto!important;aspect-ratio:5/7;flex:none;min-width:0;padding:0;position:relative;transform:none;overflow:visible}
+.game-rules-help .rule-art [data-size-role="card"]>svg{display:block;width:100%;height:100%}
+.game-rules-help .rule-art button{opacity:1;filter:none}
+.game-rules-help .rule-art .shared-die{width:40px;height:40px;min-width:0;min-height:0;padding:0;flex:none}
+.game-rules-help .rule-art .shared-die>svg{width:100%;height:100%}
+.game-rules-help .rule-art .scene-button{min-height:36px;padding:6px 10px;font-size:13px}
+.game-rules-help .rule-art .ui-button--icon{width:36px;height:36px;padding:6px}
+.game-rules-help .rule-art-arrow{font-size:22px;flex:none}
+.game-rules-help .rule-art-selected{display:inline-flex;outline:3px solid var(--color-selection-edge,#bd9434);outline-offset:2px;border-radius:12px}
+.game-rules-help .rule-art-pawn{display:inline-flex;width:36px;height:36px;flex:none}
+.game-rules-help .rule-art-pawn>svg{width:100%;height:100%}
+.game-rules-help .rule-art-player{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--color-surface-selected,#e0e8cb);font-size:13px}
+.game-rules-help .rule-art-player>svg{width:24px;height:24px}
+.game-rules-help .rule-art-grid{display:grid;grid-template-columns:repeat(var(--rule-columns),minmax(0,1fr));width:min(100%,220px);margin:auto;border:1px solid var(--line)}
+.game-rules-help .rule-art-cell{display:flex;justify-content:center;align-items:center;aspect-ratio:1;background:var(--color-surface-raised,#e6e9db);border:1px solid var(--line);font-size:15px;min-width:0}
+.game-rules-help .rule-art-cell.dark{background:var(--color-board-dark,#84a187)}
+.game-rules-help .rule-art-cell.target{outline:3px solid #bd9434;outline-offset:-3px}
+.game-rules-help .rule-art-cell.hit{background:#f4c6bd;color:#9b453a}
+.game-rules-help .rule-art-cell.miss{background:#fffbed;color:#7d8679}
+.game-rules-help .rule-art-cell>svg{width:82%;height:82%}
+.game-rules-help .rule-art-cell .rule-art-pawn{width:80%;height:80%}
+.game-rules-help .rule-art-domino{display:inline-flex;width:64px;height:37px}
+.game-rules-help .rule-art-domino>svg{width:100%;height:100%}
+.game-rules-help .rule-art-score{width:100%;font-size:13px;border-collapse:collapse}
+.game-rules-help .rule-art-score :is(td,th){border:1px solid var(--line);padding:6px;text-align:center}
+.game-rules-help .rule-art-ship{display:inline-flex;width:90px;height:32px;color:#426f76}
+.game-rules-help .rule-art-ship>svg{width:100%;height:100%}
+.game-rules-help .rule-art .shared-page-tabs{width:100%;min-height:40px;font-size:12px}
+.game-rules-help .rule-art .shared-page-tabs button{font-size:12px;min-width:0;white-space:normal}
+.game-rules-help .rule-art-color{display:inline-block;width:30px;height:30px;border-radius:50%;border:2px solid var(--line)}
+.game-rules-help .rule-art-checker{display:inline-flex;width:56px;height:56px;color:#4d8066}
+.game-rules-help .rule-art-checker>svg{width:100%;height:100%}
+.game-rules-help .rule-art-symbol{display:inline-flex;width:36px;height:36px}
+.game-rules-help .rule-art-symbol>svg{width:100%;height:100%}
+.game-rules-help .rule-art-cell.ship{background:#65949a;box-shadow:inset 0 0 0 3px #426f76}
+.game-rules-help .rule-art .ttt-mark{fill:none;stroke:currentColor;stroke-width:8;stroke-linecap:round}
+.game-rules-help .rule-art .rule-art-domino{width:64px;height:37px;min-width:0;padding:3px;flex:none;flex-direction:row}
+.game-rules-help .rule-art .checker-piece{display:inline-flex;width:80%;height:80%}
+.game-rules-help .rule-art-checker .checker-piece{width:100%;height:100%}
+
+.game-rules-help .rule-art .red-suit{color:var(--color-material-card-red,#d97459)}
+/* Route examples stay small; real effect cells retain their game palette and glyphs. */
+.game-rules-help .rule-art-route{position:relative;width:min(100%,160px);margin:auto}
+.game-rules-help .rule-art-route .rule-art-grid{width:100%}
+.game-rules-help .rule-art-route>svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.game-rules-help .is-list .rulebook-figure:has(.snakes-cell){grid-template-columns:clamp(32px,10vw,48px) minmax(0,1fr)}
+.game-rules-help .rulebook-illustration>.snakes-cell{width:100%;aspect-ratio:1}

@@ -97,7 +97,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }})};
       const deny=()=>{throw Error(globalThis.PlayroomMessages.text("ui.packs.b485bab9ce53"));};
       scope.TabletopCore=scope.PlayroomEngine=Object.freeze({...this.engine,register:pack=>{if(rules||pack?.id!==m.id)throw Error(globalThis.PlayroomMessages.text("ui.packs.1f2cb86505d4"));rules=pack;return pack;},registerVersion:deny,activatePack:deny,unregisterVersion:deny});
-      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,registerTutorial:(id,tutorial)=>{if(!view||id!==m.id||typeof tutorial!=='function')throw Error('Invalid tutorial');view.tutorial=tutorial;},register:(id,render,cover,options={})=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.ced792a28241"));const surfaces=options?.surfaces||{};if(!record(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.73658a6cc21c"));if(options.reveal!==undefined&&typeof options.reveal!=='function')throw Error('Invalid reveal renderer');if(options.seating!==undefined&&options.seating!=='row')throw Error('Invalid seating policy');view={render,cover,reveal:options.reveal,seating:options.seating,surfaces:{...surfaces}};}});
+      scope.PlayroomViews=Object.freeze({helpers:this.views.helpers,registerTutorial:(id,tutorial)=>{if(!view||id!==m.id||typeof tutorial!=='function')throw Error('Invalid tutorial');view.tutorial=tutorial;},register:(id,render,cover,options={})=>{if(view||id!==m.id||typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.ced792a28241"));const surfaces=options?.surfaces||{};if(!record(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.73658a6cc21c"));if(options.illustrations!==undefined&&typeof options.illustrations!=='function')throw Error('Invalid rule illustrations');if(options.reveal!==undefined&&typeof options.reveal!=='function')throw Error('Invalid reveal renderer');if(options.seating!==undefined&&options.seating!=='row')throw Error('Invalid seating policy');view={render,cover,illustrations:options.illustrations,reveal:options.reveal,seating:options.seating,surfaces:{...surfaces}};}});
       scope.TabletopUI=Object.freeze({...this.views.helpers,helpers:this.views.helpers});
       for(const entry of ['rules.js','view.js','sounds.js']){
         if(bundle.files[entry]===undefined)continue;
@@ -138,12 +138,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}
       const previousView=this.views.get(m.id),hadCatalog=Object.hasOwn(this.catalog,m.id),previousCatalog=this.catalog[m.id];
       const oldStyle=this._styles.get(m.id)||this.document?.querySelector?.(`style[data-playroom-pack="${m.id}"]`),previousCSS=oldStyle?.textContent??null;
-      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{surfaces:item.view.surfaces,reveal:item.view.reveal,seating:item.view.seating});if(item.view.tutorial)this.views.registerTutorial?.(m.id,item.view.tutorial);this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
+      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{illustrations:item.view.illustrations,surfaces:item.view.surfaces,reveal:item.view.reveal,seating:item.view.seating});if(item.view.tutorial)this.views.registerTutorial?.(m.id,item.view.tutorial);this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
       catch(error){
         this.engine.unregisterVersion(m.id,m.version);
         if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});
         if(previousRules)this.engine.activatePack(previousRules);
-        if(previousView){this.views.register(m.id,previousView.render,previousView.cover,{surfaces:previousView.surfaces,reveal:previousView.reveal,seating:previousView.seating});if(previousView.tutorial)this.views.registerTutorial?.(m.id,previousView.tutorial);}else this.views.remove(m.id);
+        if(previousView){this.views.register(m.id,previousView.render,previousView.cover,{illustrations:previousView.illustrations,surfaces:previousView.surfaces,reveal:previousView.reveal,seating:previousView.seating});if(previousView.tutorial)this.views.registerTutorial?.(m.id,previousView.tutorial);}else this.views.remove(m.id);
         if(hadCatalog)this.catalog[m.id]=previousCatalog;else delete this.catalog[m.id];
         this._style(m.id,previousCSS);throw error;
       }
@@ -164,7 +164,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
     }
     // Presentation-only payload: no rule execution, Session, or saved state.
-    exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
+    exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),...(item.rules.rulebook?{rulebook:clone(item.rules.rulebook)}:{}),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}
     remove(id,version){
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);

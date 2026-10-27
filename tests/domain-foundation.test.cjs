@@ -125,8 +125,8 @@ test('round token geometry is canonical in packs and the pinned host copy has th
   assert.equal(fs.readFileSync(path.join(root,'core/component-assets.js'),'utf8').split('\n').slice(1).join('\n'),source);
   const canonical=require(path.join(packRoot,'shared/components/round-token.js'));
   const host=require('../core/ui.js').helpers;
-  for(const value of [null,0,1,8,10,99,1000])for(const first of [false,true]){
-    assert.equal(host.roundTokenArt({value,first}).replace(/ data-asset-(?:family|params)="[^"]*"/g,''),canonical.roundTokenArt({value,first}));
+  for(const value of [null,0,1,8,10,99,1000])for(const first of [false,true])for(const profile of ['medallion','pawn']){
+    assert.equal(host.roundTokenArt({value,first,profile}).replace(/ data-asset-(?:family|params)="[^"]*"/g,''),canonical.roundTokenArt({value,first,profile}));
   }
 });
 
@@ -210,4 +210,14 @@ test('pack update cleanup preserves referenced versions, active rooms and failed
  active=true;assert.deepEqual(await cleanup.run('game'),[]);active=false;assert.deepEqual(await cleanup.run('game'),['2']);assert.deepEqual(items.map(p=>p.version),['1','3']);
  cleanup.localReferences=()=>[];cleanup.networkArchives=async()=>[{game:'game',packVersion:'1'}];assert.deepEqual(await cleanup.run('game'),[]);
  cleanup.networkArchives=async()=>{throw Error('archive unavailable');};await assert.rejects(()=>cleanup.run('game'));assert.equal(items.length,2);
+});
+
+test('round token pawn profile puts the white rim on the top only and preserves the artboard',()=>{
+ const geometry=require(path.join(companion,'shared/components/round-token.js'));
+ const pawn=geometry.roundTokenArt({profile:'pawn',value:4}),normal=geometry.roundTokenArt({value:4});
+ assert.match(pawn,/viewBox="0 0 100 100"/);assert.match(pawn,/pawn-token-art/);assert(!normal.includes('pawn-token-art'));
+ const side=pawn.match(/<circle class="pawn-token-side"[^>]+>/)[0],face=pawn.match(/<circle class="piece-contour pawn-token-face"[^>]+>/)[0];
+ assert(!side.includes('stroke='));assert.match(face,/stroke="var\(--round-token-rim/);
+ assert(+side.match(/cy="([\d.]+)"/)[1]+ +side.match(/r="([\d.]+)"/)[1]<=100);
+ assert.match(pawn,/>4<\/text>/);assert.throws(()=>geometry.roundTokenArt({profile:'other'}));
 });

@@ -70,6 +70,16 @@
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
       rules:metadata.rules.map(text),
+      ...(metadata.rulebook?{rulebook:{sections:metadata.rulebook.sections.map(section=>({
+        title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
+        figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
+        ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,
+          ...(block.type==='paragraph'?{text:text(block.text)}:{}),
+          ...(block.type==='list'?{ordered:!!block.ordered,items:(block.items||[]).map(text)}:{}),
+          ...(block.type==='table'?{headers:(block.headers||[]).map(text),rows:(block.rows||[]).map(row=>row.map(text))}:{})
+        }))}:{}),
+        ...(section.note?{note:text(section.note)}:{})
+      }))}}:{}),
       create(state, options) {
         const initial = model.start({playerCount:state.players.length, preset:state.preset,
           firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});

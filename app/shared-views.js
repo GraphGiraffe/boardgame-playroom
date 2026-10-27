@@ -11,7 +11,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let style=document.querySelector?.('style[data-shared-pack="'+manifest.id+'"]');
     if(!style){style=document.createElement('style');style.dataset.sharedPack=manifest.id;document.head.appendChild(style);}
     style.textContent=styles;
-    return {manifest,catalog:catalog[manifest.id],rules:definition.rules||[],sounds:definition.sounds||{}};
+    return {manifest,catalog:catalog[manifest.id],rules:definition.rules||[],rulebook:definition.rulebook||null,sounds:definition.sounds||{}};
   }
   function mount(client,definition,{surface,readOnly=false,onExit=null,connected:initialConnected=true,onPresented=()=>{},onReviewed=()=>{},tableAvailable=()=>false}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
@@ -189,7 +189,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           break;
         case 'settings':root.PlayroomNetworkLibrary?.showSettings?.({sharedRules:true});break;
         case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;
-        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules};(document.querySelector('#modal-root .settings-overview')?root.PlayroomAppBridge.openModal:show)('<h2>'+globalThis.PlayroomMessages.text('ui.shared-views.7f7b0ffbbfe0')+'</h2>'+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
+        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules,rulebook:pack.rulebook};(document.querySelector('#modal-root .settings-overview')?root.PlayroomAppBridge.openModal:show)('<h2>'+globalThis.PlayroomMessages.text('ui.shared-views.7f7b0ffbbfe0')+'</h2>'+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
         case 'fullscreen':
           if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
         case 'retry':{
