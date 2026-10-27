@@ -55,6 +55,11 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest'),'utf8'));
   assert.equal(manifest.display,'standalone');
   assert.equal(manifest.start_url,'./');assert.equal(manifest.scope,'./');
+  const origin='https://example.test';
+  for(const deployment of ['/playroom/','/playroom-hod-test/']){
+    const start=new URL(manifest.start_url,origin+deployment+'manifest.webmanifest');
+    assert.equal(new URL(manifest.id,start.origin).href,origin+'/playroom','installation identity must be stable and distinct from the shared origin root');
+  }
   assert.equal(manifest.share_target.method,'GET');
   assert.equal(manifest.share_target.params.text,'text');
   assert.ok(manifest.protocol_handlers.some(item=>item.protocol==='web+playroom'&&item.url.includes('%s')));
