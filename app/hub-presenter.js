@@ -69,7 +69,6 @@ function renderHub() {
       <main class="hub-main"><header class="topbar"><span class="eyebrow muted">${globalThis.PlayroomMessages.text("ui.app.a9979c201901")}</span><button class="brand mobile-brand" data-command="home" aria-label="${globalThis.PlayroomMessages.text("ui.app.4c890677e7fd")}">${ports.brand}</button>
       <div class="topbar-tools ui-toolbar">${ports.GameScreen.toolbar([
         {attrs:'data-command="packs"',label:unread?globalThis.PlayroomMessages.text("ui.app.d8a7777007bf"):globalThis.PlayroomMessages.text("ui.app.61384528c752"),name:'layers',className:`pack-hub-button${unread?' has-unread':''}${flashPacks?' flash-unread':''}`},
-        ...((updates.length||globalThis.PlayroomPWA?.updateInfo)?[{attrs:'data-command="show-updates"',label:globalThis.PlayroomMessages.text('ui.updates.open'),name:'history'}]:[]),
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.app.f42c392566b5"),name:'full'},
         {attrs:'data-command="help"',label:globalThis.PlayroomMessages.text("ui.app.f416fa0d4d3b"),name:'help'}
       ])}</div></header>

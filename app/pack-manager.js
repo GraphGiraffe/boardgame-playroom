@@ -104,19 +104,49 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const manifest = pending.manifest, known = manager.list().some(item=>item.id===manifest.id);
       return `<section class="pack-preview" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.13eb691fe3b3")}"><span class="eyebrow">${globalThis.PlayroomMessages.text("ui.pack-manager.080b18f6ca51")}</span><h3>${esc(title(manifest))}</h3><p>${esc(manifest.id)} · ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(manifest.version)}</p>${manifest.description||manifest.tagline?`<p>${esc(manifest.description||manifest.tagline)}</p>`:''}${manifest.author?`<p>${globalThis.PlayroomMessages.text("ui.pack-manager.745b218447d3")}${esc(typeof manifest.author==='string'?manifest.author:manifest.author.name||globalThis.PlayroomMessages.text("ui.pack-manager.0d836c1579f1"))}</p>`:''}<p class="pack-trust">${globalThis.PlayroomMessages.text("ui.pack-manager.48eac42eff92")}</p>${known?("<p>"+globalThis.PlayroomMessages.text("ui.pack-manager.3c343bc73176")+"</p>"):''}<div class="modal-foot"><button class="btn secondary" data-pack-cancel>${globalThis.PlayroomMessages.text("ui.pack-manager.8fbe9b75cbdf")}</button><button class="btn" data-pack-install>${known?globalThis.PlayroomMessages.text("ui.pack-manager.e6acd89e236f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div></section>`;
     }
-    let usageTicket=0;
-    function storageMarkup(){return `<div class="storage-usage" aria-live="polite">${root.PlayroomMessages.text('ui.storage.loading')}</div>`;}
-    async function showUsage(){
-      const ticket=++usageTicket;
-      try{const data=await root.PlayroomStorageUsage.measure(),node=document.querySelector('.pack-manager-modal .storage-usage');if(ticket!==usageTicket||!node)return;const format=root.PlayroomStorageUsage.format,t=(key,size)=>root.PlayroomMessages.text('ui.storage.'+key,{size});
-      node.innerHTML=`<strong>${t('total',data.partial?t('minimum',format(data.total)):format(data.total))}</strong><div class="storage-usage-line" aria-hidden="true">${['app','packs','saves'].map(key=>`<i class="storage-${key}" style="flex:${data[key]}"></i>`).join('')}</div><div class="storage-usage-labels"><span>${t('app',format(data.app))}</span><span>${t('packs',format(data.packs))}</span><span>${t('saves',format(data.saves))}</span></div>`;
-      }catch(_){const node=document.querySelector('.pack-manager-modal .storage-usage');if(node&&ticket===usageTicket)node.textContent=root.PlayroomMessages.text('ui.storage.measure-failed');}
+    let opening=0,usageData=null,usageError=false,usageJob=null,usageRevision=0;
+    const currentModal=()=>document.querySelector('.pack-manager-modal');
+    function storageContent(){
+      const t=(key,size)=>root.PlayroomMessages.text('ui.storage.'+key,{size}),format=root.PlayroomStorageUsage.format;
+      const total=usageError?t('measure-failed'):usageData?t('total',usageData.partial?t('minimum',format(usageData.total)):format(usageData.total)):t('loading');
+      return `<strong title="${esc(total)}">${esc(total)}</strong><div class="storage-usage-line" aria-hidden="true">${['app','packs','saves'].map(key=>`<i class="storage-${key}" style="flex:${usageData?usageData[key]:1}"></i>`).join('')}</div><div class="storage-usage-labels">${['app','packs','saves'].map(key=>`<span>${t(key,`<b>${usageData?esc(format(usageData[key])):'—'}</b>`)}</span>`).join('')}</div>`;
     }
-    function open() {
+    function storageMarkup(){return `<div class="storage-usage" aria-live="polite" aria-busy="${!!usageJob}">${storageContent()}</div>`;}
+    async function showUsage(modal,epoch){
+      modal?.querySelector('.storage-usage')?.setAttribute('aria-busy','true');
+      if(!usageJob){
+        usageJob=(async()=>{
+          // A mutation during a measurement needs one fresh pass, not parallel scans.
+          let revision,result,error;
+          do{revision=usageRevision;try{result=await root.PlayroomStorageUsage.measure();error=false;}catch(_){error=true;}}while(revision!==usageRevision);
+          return {data:result,error};
+        })().finally(()=>{usageJob=null;});
+      }
+      const result=await usageJob;
+      if(epoch!==opening||!modal.isConnected||currentModal()!==modal)return;
+      usageData=result.data||usageData;usageError=result.error;
+      const node=modal.querySelector('.storage-usage');if(node){node.innerHTML=storageContent();node.setAttribute('aria-busy','false');}
+    }
+    function onlineMarkup(){
       const online=remote?.pending()||[],installedIds=new Set(manager.list().map(item=>item.id)),updates=online.filter(item=>installedIds.has(item.id));
-      const onlineMarkup=online.length?`<section class="pack-online"><h3>${globalThis.PlayroomMessages.text("ui.pack-manager.38fe3394cbf8")}</h3>${updates.length?`<button class="btn" data-pack-update-all ${busy?'disabled':''}>${globalThis.PlayroomMessages.text(busy?"ui.pack-manager.updating-all":"ui.pack-manager.update-all",{count:updates.length})}</button>`:''}${online.map(item=>`<div class="pack-online-entry"><span>${esc(item.id)} · ${esc(item.version)}</span><button class="btn secondary" data-pack-online="${esc(item.id)}" ${busy?'disabled':''}>${manager.list().some(installed=>installed.id===item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.8a858910555f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div>${globalThis.PlayroomUpdateDialog?.changes(item.releases,manager.list().filter(p=>p.id===item.id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',item.version,esc)||''}`).join('')}</section>`:'';
-      openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.61384528c752"))}${storageMarkup()}${onlineMarkup}<label class="btn pack-file">${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}"></label><p class="pack-format">${globalThis.PlayroomMessages.text("ui.pack-manager.0eea560e855d")}</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<div class="pack-bulk-actions"><button class="btn secondary" data-pack-bulk="old" ${manager.list().some(item=>!item.active)?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.a36f32b9cd54")}</button><button class="btn secondary" data-pack-bulk="all" ${manager.list().length||manager.quarantined?.length?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.3c99ffe023e4")}</button></div><button class="btn secondary" data-pack-restore>${globalThis.PlayroomMessages.text("ui.pack-manager.cc9319e91546")}</button>${quarantineMarkup()}`,'pack-manager-modal');
-      void showUsage();
+      return online.length?`<section class="pack-online"><h3>${globalThis.PlayroomMessages.text("ui.pack-manager.38fe3394cbf8")}</h3>${updates.length?`<button class="btn" data-pack-update-all ${busy?'disabled':''}>${globalThis.PlayroomMessages.text(busy?"ui.pack-manager.updating-all":"ui.pack-manager.update-all",{count:updates.length})}</button>`:''}${online.map(item=>`<div class="pack-online-entry"><span>${esc(item.id)} · ${esc(item.version)}</span><button class="btn secondary" data-pack-online="${esc(item.id)}" ${busy?'disabled':''}>${manager.list().some(installed=>installed.id===item.id)?globalThis.PlayroomMessages.text("ui.pack-manager.8a858910555f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div>${globalThis.PlayroomUpdateDialog?.changes(item.releases,manager.list().filter(p=>p.id===item.id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',item.version,esc)||''}`).join('')}</section>`:'';
+    }
+    function refreshOnline(modal){
+      const region=modal.querySelector('[data-pack-online-region]'),next=onlineMarkup();
+      const template=document.createElement('template');template.innerHTML=next;
+      if(!region||region.innerHTML===template.innerHTML)return;
+      const body=modal.querySelector('.modal-body'),scroll=body?.scrollTop||0;
+      const anchor=[...modal.querySelectorAll('.pack-entry')].find(node=>node.getBoundingClientRect().bottom>body.getBoundingClientRect().top);
+      const top=anchor?.getBoundingClientRect().top;
+      const focused=document.activeElement,packId=region.contains(focused)?focused.dataset.packOnline:null,all=region.contains(focused)&&focused.hasAttribute('data-pack-update-all');
+      region.innerHTML=next;
+      if(body){body.scrollTop=scroll;if(scroll>0&&anchor?.isConnected)body.scrollTop+=anchor.getBoundingClientRect().top-top;}
+      const focus=all?region.querySelector('[data-pack-update-all]'):[...region.querySelectorAll('[data-pack-online]')].find(node=>node.dataset.packOnline===packId);
+      focus?.focus({preventScroll:true});
+    }
+    function open(refreshUsage=false) {
+      openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.61384528c752"))}${storageMarkup()}<div data-pack-online-region>${onlineMarkup()}</div><label class="btn pack-file">${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}<input id="pack-file" type="file" accept=".playroom-pack.json,application/json" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.a069bb09bb4f")}"></label><p class="pack-format">${globalThis.PlayroomMessages.text("ui.pack-manager.0eea560e855d")}</p>${message?`<p class="pack-message" role="alert">${esc(message)}</p>`:''}${previewMarkup()}${listMarkup()}<div class="pack-bulk-actions"><button class="btn secondary" data-pack-bulk="old" ${manager.list().some(item=>!item.active)?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.a36f32b9cd54")}</button><button class="btn secondary" data-pack-bulk="all" ${manager.list().length||manager.quarantined?.length?'':'disabled'}>${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.3c99ffe023e4")}</button></div><button class="btn secondary" data-pack-restore>${globalThis.PlayroomMessages.text("ui.pack-manager.cc9319e91546")}</button>${quarantineMarkup()}`,'pack-manager-modal');
+      if(refreshUsage){usageRevision++;void showUsage(currentModal(),opening);}
       if(savedScroll!==null){document.querySelector('.pack-manager-modal .modal-body')?.scrollTo(0,savedScroll);savedScroll=null;}
     }
     function quarantineMarkup(){
@@ -138,8 +168,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try {
         const id=pending.manifest.id;
         await manager.install(manager.prepare(pending),{activate:true});
-        pending=null;await cleanup.run(id);message='';onChange();open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));
-      } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.9dfa32b39696",{p0:String(globalThis.PlayroomMessages.error(error))});open();}
+        pending=null;await cleanup.run(id);message='';onChange();open(true);toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));
+      } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.9dfa32b39696",{p0:String(globalThis.PlayroomMessages.error(error))});open(true);}
     }
     async function removalPlan(items,all=false){
       const keys=new Set(items.map(item=>item.id+'@'+item.version));
@@ -168,8 +198,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const existing=new Set(manager.list().map(item=>item.id)),preferences=displayPreferences();
         for(const key of ['order','hidden','favorites'])preferences[key]=preferences[key].filter(id=>existing.has(id));
         storeDisplay(preferences);
-        planned=null;onChange();message='';open();toast(globalThis.PlayroomMessages.text("ui.pack-manager.73588c6b9a30"));
-      }catch(error){planned=null;message=globalThis.PlayroomMessages.text("ui.pack-manager.493487ffffd3",{p0:String(globalThis.PlayroomMessages.error(error))});onChange();open();}finally{busy=false;}
+        planned=null;onChange();message='';open(true);toast(globalThis.PlayroomMessages.text("ui.pack-manager.73588c6b9a30"));
+      }catch(error){planned=null;message=globalThis.PlayroomMessages.text("ui.pack-manager.493487ffffd3",{p0:String(globalThis.PlayroomMessages.error(error))});onChange();open(true);}finally{busy=false;}
     }
     async function installOnline(ids) {
       if(busy||!ids.length)return;
@@ -186,7 +216,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         busy=false;
         message=errors.length?globalThis.PlayroomMessages.text('ui.pack-manager.update-errors',{count:completed,errors:errors.join('; ')}):'';
         if(completed)onChange();
-        if(document.querySelector('.pack-manager-modal'))open();
+        if(document.querySelector('.pack-manager-modal'))open(true);
         if(!errors.length)toast(globalThis.PlayroomMessages.text('ui.pack-manager.c45e419df7a2'));
         else toast(message);
       }
@@ -215,14 +245,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         } catch(error) {message=globalThis.PlayroomMessages.text("ui.pack-manager.25e60c5c8569",{p0:String(globalThis.PlayroomMessages.error(error))});open();}
         return;
       }
-      if(button.hasAttribute('data-pack-restore')){try{await manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
+      if(button.hasAttribute('data-pack-restore')){try{await manager.bootstrap(root.PlayroomInstalledPacks||[],{restoreBuiltins:true});onChange();message='';open(true);}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
       if(button.hasAttribute('data-pack-quarantine')){openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.pack-manager.221ed3d4d098"))}<p>${globalThis.PlayroomMessages.text("ui.pack-manager.552b9b7cc90b")}</p><button class="btn coral" data-pack-quarantine-confirm="${esc(button.dataset.packQuarantine)}">${root.PlayroomGameScreen.icon('trash')} ${globalThis.PlayroomMessages.text("ui.pack-manager.be99b1361201")}</button>`);return;}
-      if(button.hasAttribute('data-pack-quarantine-confirm')){try{await manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open();}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
+      if(button.hasAttribute('data-pack-quarantine-confirm')){try{await manager.discardQuarantine(button.dataset.packQuarantineConfirm==='all'?null:Number(button.dataset.packQuarantineConfirm));message='';open(true);}catch(error){message=globalThis.PlayroomMessages.error(error);open();}return;}
       if(button.hasAttribute('data-pack-install'))install();
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';open();}
       else return;
     });
-    return {open(){pending=null;message=currentBootWarnings();open();void remote?.load().then(()=>{if(document.querySelector('.pack-manager-modal')){savedScroll=document.querySelector('.pack-manager-modal .modal-body')?.scrollTop??null;open();onCatalog();}});}};
+    return {open(){
+      const epoch=++opening;pending=null;message=currentBootWarnings();open(true);
+      const modal=currentModal();
+      void remote?.load().then(()=>{
+        if(epoch!==opening||!modal?.isConnected||currentModal()!==modal)return;
+        refreshOnline(modal);onCatalog();
+      });
+    }};
   }
   root.PlayroomPackManager = {create,reconcile,displayPreferences,ordered,category,setCategory,moveGame,toggleFavorite};
 })(globalThis);
