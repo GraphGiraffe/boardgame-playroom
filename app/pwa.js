@@ -2,7 +2,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 (function(root){
   'use strict';
   const Pairing=root.PlayroomPairing;
-  let installPrompt=null;
+  // The encrypted Pages gate may receive the browser event before this runtime
+  // exists. Keep that exact event (prompt() requires a real browser invitation).
+  const installHandoff=root.PlayroomInstallHandoff;
+  let installPrompt=installHandoff?.prompt||null;
+  if(installHandoff){installHandoff.prompt=null;delete root.PlayroomInstallHandoff;}
   const updates=new root.PlayroomPwaUpdateCoordinator({request:worker=>new Promise((resolve,reject)=>{
     const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(Error(globalThis.PlayroomMessages.text("ui.pwa.16263196d581")));},5500);
     channel.port1.onmessage=event=>{clearTimeout(timer);channel.port1.close();resolve(event.data);};
