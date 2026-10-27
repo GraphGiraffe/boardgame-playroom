@@ -58,14 +58,38 @@ test('rulebooks: all games explain play before settings and show the current mat
    await page.locator('[data-start="'+id+'"]').first().click();await page.locator('[data-command=room-rules-view]').click();
    const book=page.locator('.game-rules-help');assert(await book.locator('.rulebook-section').count()>=3,id+' has a full rulebook');
    assert(await book.evaluate(e=>e.firstElementChild.classList.contains('rulebook-main')&&e.children[1].tagName==='HR'&&e.lastElementChild.classList.contains('rulebook-config')),id+' reading order');
-   const text=await book.innerText();assert(!/поезд|пакетный урон|Windows XP|Доступные действия подсвечиваются|[a-z-]+\.rules\.\d/.test(text),id+' no obsolete text or unresolved keys');
+   const text=await book.innerText();assert(!/поезд|пакетный урон|Windows XP|Доступные действия подсвечиваются|[a-z-]+\.(?:rules\.\d|book\.)/.test(text),id+' no obsolete text or unresolved keys');
    assert(await book.locator('.rulebook-config .rules-mode-note').count()>0,id+' selected values');
-   for(const viewport of [{width:390,height:740},{width:740,height:390}]){
+   if(id!=='mage-brawl'){
+    assert(await book.locator('.rule-art').count()>=2,id+' includes game pieces and UI examples');
+    assert.equal(await book.locator('.rule-art:not([inert])').count(),0,id+' rule examples are inert');
+    assert.equal(await book.locator('.rule-art [data-action]').count(),0,id+' examples cannot dispatch game commands');
+   }
+   for(const viewport of [{width:320,height:740},{width:390,height:740},{width:740,height:390}]){
     await page.setViewportSize(viewport);assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' fits '+viewport.width);
+    assert(await book.locator('.rule-art [data-size-role=card]').evaluateAll(cards=>cards.every(card=>{const b=card.getBoundingClientRect();return b.width>=30&&b.width<=61&&b.height<=90;})),id+' example cards stay compact');
+    assert(await book.locator('.rule-art-row').evaluateAll(rows=>rows.every(row=>{const cards=[...row.querySelectorAll('[data-size-role=card]')].map(c=>c.getBoundingClientRect());return cards.length<2||cards.every(c=>Math.abs(c.top+c.height/2-cards[0].top-cards[0].height/2)<1);})),id+' cards in one example step stay on one row');
    }
    await page.setViewportSize({width:390,height:740});
+   if(id!=='mage-brawl'){
+    const figures=book.locator('.rulebook-figure');
+    for(let i=0;i<await figures.count();i++){
+     await figures.nth(i).scrollIntoViewIfNeeded();
+     await page.screenshot({path:path.join(shots,id+'-illustrations'+(i?'-'+i:'')+'.png')});
+    }
+    await page.evaluate(()=>PlayroomAppearanceUI.runtime.service.select('dark'));
+    await figures.first().scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(shots,id+'-illustrations-dark.png')});
+    assert(await book.locator('.rule-art').evaluateAll(nodes=>nodes.every(n=>n.scrollWidth<=n.clientWidth+1)),id+' artwork fits in dark theme');
+    await page.evaluate(()=>PlayroomAppearanceUI.runtime.service.select('light'));
+   }
    if(id==='mage-brawl'){
-    assert(text.includes('Это не усиление его собственных атак'));assert(text.includes('Общее число жизней'));
+    assert(text.includes('его атаки не усиливаются'));
+    assert.equal(await book.locator('.rulebook-figure').count(),23);
+    assert.equal(await book.locator('.rulebook-illustration>svg').count(),23);
+    assert(text.includes('В каждом — 8 фаз'));
+    assert(text.includes('Летящий кулак'));
+    assert.equal(await page.evaluate(()=>PlayroomAppBridge.packs.exportView('mage-brawl').rulebook.sections.length),11,'network export includes public illustrated rules');assert(text.includes('Общее число жизней'));
     await page.screenshot({path:path.join(shots,'mage-rulebook-start.png')});
     await book.locator('.rulebook-config').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(shots,'mage-rulebook-settings.png')});
    }
@@ -74,6 +98,7 @@ test('rulebooks: all games explain play before settings and show the current mat
   await page.locator('[data-start="mage-brawl"]').first().click();await page.locator('[data-command=room-rules]').click();
   await selectChoice(page.locator('[name=option-health]'),'6');await page.locator('#room-rules-form').evaluate(e=>e.requestSubmit());
   await page.locator('[data-command=lobby-start]').click();await page.locator('#app .table-shell').waitFor();
+  await page.locator('[data-learning-choice=no]').click();
   await page.locator('#app [data-command=settings]').click();await page.locator('.settings-header-actions [data-command=rules]').click();
   const health=page.locator('.rulebook-option').filter({has:page.getByRole('heading',{name:'Здоровье',exact:true})});
   assert.equal((await health.locator('.rules-mode-note').innerText()).trim(),'В этой партии: 6','live match uses saved rules, not defaults');
@@ -82,4 +107,46 @@ test('rulebooks: all games explain play before settings and show the current mat
   await close();await page.locator('.settings-overview').waitFor();await close();assert(await page.locator('#app .table-shell').isVisible());
   assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('illustrated rules: offline digital faces, network view and colored help in both themes',{timeout:60000},async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(6000);
+ const out=path.resolve(root,'../tmp_files/illustrated-rules/screenshots');fs.mkdirSync(out,{recursive:true});
+ try{
+  await page.goto(require('node:url').pathToFileURL(path.join(root,'dist/playroom-all-games.html')).href);
+  await page.locator('[data-start=mage-brawl]').first().click();await page.locator('[data-command=room-rules-view]').click();
+  for(const theme of ['light','dark']){
+   await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
+   for(const name of ['Движения','Тайлы']){
+    const section=page.locator('.rulebook-section').filter({has:page.getByRole('heading',{name,exact:true})});await section.scrollIntoViewIfNeeded();
+    assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    if(name==='Тайлы')assert(await section.locator('.is-list .rulebook-figure').evaluateAll(nodes=>nodes.length===9&&nodes.every(n=>{const a=n.querySelector('.rulebook-illustration').getBoundingClientRect(),t=n.querySelector('figcaption').getBoundingClientRect();return a.right<=t.left&&t.width>0;})),'tile descriptions sit beside their artwork');
+    await page.screenshot({path:path.join(out,`${theme}-${name==='Движения'?'movement':'tiles'}.png`)});
+   }
+  }
+  assert.equal(await page.locator('.rulebook-table').count(),4,'effect comparisons use tables');
+  assert(await page.locator('.rulebook-section ol').count()>0,'planning and reward steps use numbered lists');
+  assert.equal(await page.evaluate(()=>{
+   const definition=PlayroomAppBridge.packs.exportView('mage-brawl');const view=PlayroomSharedViews.install(definition);
+   const host=document.createElement('div');host.innerHTML=PlayroomLobbyView.gameRulesMarkup({id:view.manifest.id,rules:view.rules,rulebook:view.rulebook});
+   return host.querySelectorAll('.rulebook-figure').length;
+  }),23,'a view-only network client can render illustrated rules without rules code');
+  await page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(let i=2;i<8;i++)b.roomService.setLocalSeat(r.id,r.ownerId,'seat-'+(i+1),{kind:'bot',nickname:'Бот '+i});b.renderLobby();});
+  await page.locator('[data-command=lobby-start]').click();await page.locator('[data-learning-choice=no]').click();
+  // Card skins can render main/compact variants; check each card instead of counting printed variants.
+  assert(await page.locator('.mage-card:visible').evaluateAll(cards=>cards.length===4&&cards.every(card=>card.querySelector('.mage-spell-art rect[stroke]'))));
+  for(let direction=0;direction<4;direction++){
+   if(direction)await page.locator('[data-view-key=mageDirection]').last().click();
+   await page.locator('[data-command=card-help]').click();
+   assert(await page.locator('.card-help-list .mage-action-diagram>g[style*=color]').count()>0,'help uses elemental colors');
+   assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+   if(direction===1)await page.screenshot({path:path.join(out,'dark-hand-help.png')});
+   await page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+  }
+  for(const viewport of [{width:844,height:390},{width:390,height:844}]){await page.setViewportSize(viewport);assert(await page.locator('.table-shell').evaluate(e=>e.scrollWidth<=e.clientWidth+1));}
+  assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();}
 });

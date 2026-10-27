@@ -952,3 +952,10 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 .rulebook-option .rules-mode-note{margin-top:.6em}
 
 .result-scores .result-nickname{min-width:0;overflow:hidden;text-overflow:ellipsis}.result-scores .result-name .result-bot-settings{grid-column:2;margin-top:3px}
+
+/* Shared selected-state shading for tab sliders, segmented options and range thumbs. */
+:root{--ui-selection-shade:6%}
+:is(#app,#modal-root) .shared-page-tabs::before{background:color-mix(in srgb,var(--color-surface-raised,#e3e8d8),black var(--ui-selection-shade))}
+:is(#app,#modal-root) .segmented label:has(input:checked){background:color-mix(in srgb,var(--color-surface-selected,#e0e8cb),black var(--ui-selection-shade))}
+:is(#app,#modal-root) .settings-range input[type=range]::-webkit-slider-thumb{background:color-mix(in srgb,var(--paper,#f3f0e7),black var(--ui-selection-shade))}
+:is(#app,#modal-root) .settings-range input[type=range]::-moz-range-thumb{background:color-mix(in srgb,var(--paper,#f3f0e7),black var(--ui-selection-shade))}

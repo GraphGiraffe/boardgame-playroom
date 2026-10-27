@@ -31,7 +31,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     star:"<path d=\"m12 2 3 6 7 1-5 5 1 8-6-4-6 4 1-8-5-5 7-1Z\"/>",
     shuffle:"<path d=\"M3 6h2c6 0 8 12 14 12h3m-4-4 4 4-4 4M3 18h2c2 0 4-2 6-5m2-3c2-3 4-4 6-4h3m-4-4 4 4-4 4\"/>",
     ship:"<path d=\"M2 16h20l-4 5H6ZM8 15V8h8v7m-4-7V3m0 2h5\"/>",
-    sword:'<path d="m4 20 4-4m-3-3 6 6m-4-4L17 3h4v4L11 17M9 15 19 5"/>',
+    sword:'<path d="M7 15 18 4l4-2-2 4L9 17Z" fill="currentColor" stroke="none"/><path d="M4 14l6 6M7 17l-4 4" stroke-width="2.2"/>',
     adjustDie:'<text x="12" y="12.5" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-weight="800" font-size="18" font-style="normal" fill="currentColor" stroke="none">±1</text>',
     lessDie:'<path d="M1 12h5"/><rect x="9" y="5" width="14" height="14" rx="3"/><circle cx="13" cy="9" r=".8"/><circle cx="19" cy="15" r=".8"/>',
     skipTurn:'<circle cx="12" cy="12" r="9"/><path d="m6 18 12-12"/>',
@@ -320,12 +320,14 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         if(typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Invalid game view');
         const surfaces=options?.surfaces||{};
         if(typeof surfaces!=='object'||Array.isArray(surfaces)||Object.entries(surfaces).some(([key,fn])=>!['table','player'].includes(key)||typeof fn!=='function'))throw Error('Invalid view surfaces');
+        if(options.illustrations!==undefined&&typeof options.illustrations!=='function')throw Error('Invalid rule illustrations');
         if(options.reveal!==undefined&&typeof options.reveal!=='function')throw Error('Invalid reveal renderer');
         if(options.seating!==undefined&&options.seating!=='row')throw Error('Invalid seating policy');
-        packs.set(id,{render,cover,reveal:options.reveal,seating:options.seating,surfaces:Object.freeze({...surfaces})});
+        packs.set(id,{render,cover,illustrations:options.illustrations,reveal:options.reveal,seating:options.seating,surfaces:Object.freeze({...surfaces})});
       },
       registerTutorial(id,tutorial){const pack=packs.get(id);if(!pack||typeof tutorial!=='function')throw Error('Invalid tutorial');pack.tutorial=tutorial;},
       reveal(id,value){const previousPack=renderingPack;try{renderingPack=id;return packs.get(id)?.reveal?.(value)||'';}catch(_){return '';}finally{renderingPack=previousPack;}},
+      illustration(id,key){if(typeof key!=='string'||!/^[-a-zA-Z0-9._]+$/.test(key))return '';const previousPack=renderingPack;try{renderingPack=id;return packs.get(id)?.illustrations?.(key)||'';}finally{renderingPack=previousPack;}},
       supports(id,surface='combined'){return !!packs.get(id) && (surface==='combined'||typeof packs.get(id).surfaces[surface]==='function');},
       get(id){return packs.get(id);},
       remove(id){return packs.delete(id);},

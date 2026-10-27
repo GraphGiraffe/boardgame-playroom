@@ -56,10 +56,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   // Older packs with single-line rules remain readable without interpreting HTML.
   function gameRulesMarkup(game,settings=[],{rules=null,rows=null,presetSetting=null,hasHands=false,firstPlayer=true}={}){
     const paragraphs=Array.isArray(game.rules)?game.rules:game.rules?[String(game.rules)]:[];
-    const sections=paragraphs.map(rule=>{
+    const plainSections=paragraphs.map(rule=>{
       const lines=String(rule).split('\n').filter(line=>line.trim());
       return lines.length>1?`<section class="rulebook-section"><h3>${esc(lines.shift())}</h3>${lines.map(line=>`<p>${esc(line)}</p>`).join('')}</section>`:`<p>${esc(lines[0]||'')}</p>`;
     }).join('');
+    const rulebook=root.PlayroomRulebookView||(typeof require==='function'?require('./rulebook-view.js'):null);
+    const sections=game.rulebook&&rulebook?rulebook.render(game.rulebook,{esc,illustrate:id=>root.PlayroomViews?.illustration(game.id,id)||''}):plainSections;
     const chosen=rows||(rules?root.PlayroomMultiplayer.describeRules(rules,settings,hasHands,presetSetting):[]);
     const selected=label=>chosen.find(row=>row.label===label)?.value;
     const note=value=>value===undefined||value===null?'':`<div class="rules-mode-note"><strong>${esc(ruleText('selected'))}</strong> ${esc(value)}</div>`;
