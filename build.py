@@ -203,9 +203,15 @@ def prepare_dev(packs, source_root):
     print(f"Для index.html подготовлено паков: {len(packs)}; installed-packs.js и PNG-иконки не входят в исходники приложения.")
 
 
+def licensing_files():
+    """Standard license texts and scope notices travel with public archives."""
+    return [ROOT / name for name in ("LICENSE", "LICENSING.md", "COPYRIGHT")] + sorted((ROOT / "LICENSES").glob("*.txt"))
+
+
 def source_files():
     """No game packs, generated preload, symlinks, saves or artifacts enter this archive."""
     paths = {ROOT / name for name in ("index.html", "build.py", "build.sh", "README.md", "manifest.webmanifest", "sw.js") if (ROOT / name).is_file()}
+    paths.update(licensing_files())
     for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "updates.json", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
@@ -260,6 +266,7 @@ update_release_metadata()
 def pwa_runtime_items(packs=(), remote_catalog=False):
     """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
     paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js"}
+    paths.update(licensing_files())
     # Entry points remain authoritative when portable modules move to new layers.
     document = (ROOT / "index.html").read_text(encoding="utf-8")
     urls = set(re.findall(r'(?:src|href)="([^"]+\.(?:js|css))"', document))
@@ -295,6 +302,7 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
         raise ValueError("Service worker CORE list is missing")
     core_urls = set(re.findall(r"['\"]([^'\"]+)['\"]", core_match.group(1)))
     core_urls.update("./" + aliases.get(name, name) for name in urls)
+    core_urls.update("./" + path.relative_to(ROOT).as_posix() for path in licensing_files())
     shipped_urls = {"./" + aliases.get(name, name) for name, _ in items}
     missing_core = core_urls - shipped_urls - {"./"}
     if missing_core:
@@ -427,6 +435,7 @@ def main():
     page.write_text(html, encoding="utf-8")
     write_zip(archive, [("playroom/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in files])
     core_files = [path for path in files if path.parts[len(ROOT.parts)] in {"core", "application", "presentation", "platform", "themes", "locales"}]
+    core_files.extend(path for path in licensing_files() if path not in core_files)
     core_items = [("tabletop-core/" + path.relative_to(ROOT).as_posix(), path.read_bytes()) for path in core_files]
     # The portable SDK includes the current linked contracts, not a retired API document.
     core_items.extend(("tabletop-core/docs/" + path.name, path.read_bytes())
