@@ -4,7 +4,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const SessionAccess=root.PlayroomSessionAccess,W=root.PlayroomWebRTCTransport,M=root.PlayroomMultiplayer,Pairing=root.PlayroomPairing,PWA=root.PlayroomPWA,QR=root.PlayroomQR,Scanner=root.PlayroomQRScanner,Acoustic=root.PlayroomAcousticPairing,Session=root.TabletopSession,Authority=root.SessionAuthority,SessionClient=root.PlayroomSessionClient,LocalTransport=root.PlayroomLocalTransport,Shared=root.PlayroomSharedViews,NetworkSessionStore=root.PlayroomNetworkSessionStore,ClientHistory=root.PlayroomNetworkClientHistory;
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let hostRooms=null;
-  let installHomeVisible=false;
   const bridge=()=>hostRooms?{...root.PlayroomAppBridge,roomService:hostRooms}:root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
@@ -192,21 +191,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
     if(!hasActiveRoom())document.querySelector('.network-resume-card')?.remove();
 
-    if(intro&&(PWA?.canInstall?.()&&!PWA.standalone)&&!document.getElementById('pwa-install-button')){
-      const btn=document.createElement('button');btn.className='btn hub-install-button';btn.id='pwa-install-button';btn.type='button';
-      const label=globalThis.PlayroomMessages.text("ui.network-ui.a8c0e74a6502");
-      btn.setAttribute('aria-label',label);btn.title=label;btn.innerHTML=root.PlayroomGameScreen.icon('install');
-      intro.querySelector('.intro-heading')?.appendChild(btn);
-    }
-    if(!PWA?.canInstall?.()||PWA.standalone)document.getElementById('pwa-install-button')?.remove();
-    const installButton=document.getElementById('pwa-install-button');
-    const homeVisible=!!installButton&&!!intro?.closest('.is-active')&&!document.querySelector('dialog[open],#modal-root>*');
-    if(homeVisible&&!installHomeVisible&&!root.matchMedia('(prefers-reduced-motion: reduce)').matches&&!document.body.classList.contains('reduced-motion')){
-      installButton.getAnimations().forEach(animation=>animation.cancel());
-      const background=getComputedStyle(installButton).backgroundColor;
-      installButton.animate([{backgroundColor:background},{backgroundColor:'#528a69',offset:.5},{backgroundColor:background}],{duration:800,iterations:3,easing:'ease-in-out'});
-    }
-    installHomeVisible=homeVisible;
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     const room=b.room?.(),lobby=$('.lobby-shell');
@@ -698,7 +682,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }catch(error){toast(globalThis.PlayroomMessages.text("ui.network-ui.232c63fe01d2",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
   document.addEventListener('click',event=>{
-    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],[data-network-history],#pwa-install-button,#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
+    const target=event.target.closest('[data-net-copy],[data-net-share],[data-net-scan],[data-net-save-ip],[data-net-qr-camera],[data-net-qr-gallery],[data-net-seat],[data-net-action],#network-join-button,#network-reconnect-button,#network-pair-button,#network-saved-host-button,[data-network-archive],[data-network-continue],[data-network-history],#net-host-acoustic,#net-host-acoustic-send,#net-host-acoustic-listen,#net-client-acoustic-listen,#net-client-acoustic-send');if(!target)return;
     event.preventDefault();event.stopPropagation();
     if(target.dataset.netAction==='diagnostics'){
       const report=clientRecovery?.report()||{state:'connecting'};
@@ -719,7 +703,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.id==='net-host-acoustic-listen')return runAudio(target,listenHostAnswer);
     if(target.id==='net-client-acoustic-listen')return runAudio(target,listenGuestSound);
     if(target.id==='net-client-acoustic-send')return runAudio(target,sendGuestSound);
-    if(target.id==='pwa-install-button'){PWA?.install?.().catch(error=>toast(globalThis.PlayroomMessages.error(error))).finally(ensureButtons);return;}
     if(target.dataset.netShare){sharePair(target.dataset.netShare);return;}
     if(target.dataset.netCopy)return copy(target.dataset.netCopy);
     if(target.dataset.netSeat)return roomCommand({type:'claim-seat',seatId:target.dataset.netSeat});
@@ -779,8 +762,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     else if(event.target.id==='net-client-nickname')roomCommand({type:'rename',nickname:event.target.elements.nickname.value});
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
-  root.addEventListener('playroom-install-available',ensureButtons);
-  root.addEventListener('playroom-installed',ensureButtons);
   root.PlayroomNetworkLibrary=Object.freeze({setAvatar:avatar=>roomCommand({type:'avatar',avatar}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
     ruleContext:gameId=>{const current=clientRoom||bridge().room();return current?.game?.id===gameId?current.rules:null;},
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});

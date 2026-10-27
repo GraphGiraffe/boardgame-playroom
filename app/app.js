@@ -176,6 +176,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     openModal(globalThis.PlayroomUpdateDialog.markup({app,installedVersion:appVersion,packs:items.map(item=>({...item,name:meta(item.id)?.name||item.id})),installed:id=>packs.list().filter(p=>p.id===id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',esc,head:modalHead}),'updates-modal');
     return true;
   }
+  globalThis.PlayroomHubAction.mount({hasUpdates:()=>!!globalThis.PlayroomPWA?.updateInfo||packUpdates().length>0,report:error=>toast(globalThis.PlayroomMessages.error(error))});
   window.addEventListener('playroom-update-ready',()=>{if(screen==='hub')renderHub();showUpdates();});
   // Observe screen/dialog transitions, not game frames or a recurring timer.
   window.addEventListener('playroom:hub-rendered',()=>queueMicrotask(()=>showUpdates()));

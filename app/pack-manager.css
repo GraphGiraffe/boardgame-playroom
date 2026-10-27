@@ -32,3 +32,9 @@
 .pack-row .pack-usage{font-size:12px;font-weight:400;color:var(--muted);white-space:nowrap}
 
 .storage-usage{margin:0 0 1rem;font-size:.85em;overflow-wrap:anywhere}.storage-usage-line{display:flex;height:8px;border-radius:8px;overflow:hidden;margin:.5rem 0;gap:2px}.storage-app{background:var(--muted,#999)}.storage-packs{background:#548b72}.storage-saves{background:#d2a550}.storage-usage-labels{display:flex;flex-wrap:wrap;gap:.25rem 1rem}.storage-usage small{display:block;color:var(--muted);margin-top:.4rem}
+
+/* Stable accounting skeleton: values never change the number of rows. */
+.storage-usage>strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.storage-usage-labels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.25rem .5rem;line-height:1.4}
+.storage-usage-labels>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.storage-usage-labels b{display:block;font-weight:inherit;overflow:hidden;text-overflow:ellipsis}
