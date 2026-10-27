@@ -187,7 +187,7 @@ test('incomplete or login-page shell never installs; verified update waits for e
  for(const failure of ['missing','login','corrupt',null]){
   const listeners={},writes=[],messages=[];let waits;
   const body='public javascript',hash=crypto.createHash('sha256').update(body).digest('hex');
-  const self={location:{href:'https://example.test/sw.js',origin:'https://example.test'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>[{postMessage:m=>messages.push(m)}]},skipWaiting:()=>{throw Error('must not replace active room');}};
+  const self={location:{href:'https://example.test/sw.js',origin:'https://example.test'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>[{url:'https://example.test/',postMessage:m=>messages.push(m)}]},skipWaiting:()=>{throw Error('must not replace active room');}};
   const sandbox={self,URL,Response,Uint8Array,crypto:crypto.webcrypto,fetch:async path=>new Response(path==='./app/app.js'&&failure==='corrupt'?'wrong version':body,{status:path==='./app/app.js'&&failure==='missing'?503:200,headers:{'content-type':path==='./app/app.js'&&failure==='login'?'text/html':'text/javascript'}}),caches:{open:async()=>({put:async path=>writes.push(path)})}};
   vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),sandbox);
   listeners.install({waitUntil:p=>waits=p});
@@ -259,7 +259,7 @@ def denied(call):
  try:call()
  except (ValueError, KeyError):return
  raise AssertionError('Unsafe deployment accepted')
-with patch.object(build,'installed_script',return_value=json.dumps([{'id':n} for n in ['uno','domino','durak','checkers','snakes','tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']])):
+with patch.object(build,'installed_script',return_value='globalThis.PlayroomInstalledPacks = [];'):
  items=dict(build.pwa_runtime_items())
 private={'_worker.js':'export default {fetch(request,env){return env.ASSETS.fetch(request)}}', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
 with tempfile.TemporaryDirectory() as directory:
@@ -317,6 +317,21 @@ test('active worker rejects stale network assets and limits offline fallback and
  assert.deepEqual(deleted,['playroom-pwa-v0.14.0']);assert.equal(claimed,true);
 });
 
+test('PWA update checks only its application scope and ignores clients closed during the check', async()=>{
+ const vm=require('node:vm'),{MessageChannel}=require('node:worker_threads');
+ const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
+ for(const closed of [false,true]){
+  const listeners={},messages=[],replies=[];let skipped=false,calls=0;
+  const idle={id:'app',url:'https://example.test/playroom-hod-test/?view=home',postMessage(message,ports){messages.push(this.id);if(ports)ports[0].postMessage({kind:'playroom-update-idle'});}};
+  const gone={id:'closed',url:'https://example.test/playroom-hod-test/index.html',postMessage(message,ports){if(ports)ports[0].postMessage({kind:'playroom-update-busy'});}};
+  const outsiders=['https://example.test/pecsoteka/','https://example.test/ROADMAPler/','https://example.test/playroom-hod-test-other/','https://other.test/playroom-hod-test/'].map((url,i)=>({id:'other'+i,url,postMessage(){throw Error('Another application must not receive update messages');}}));
+  const self={location:{href:'https://example.test/playroom-hod-test/sw.js'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>{calls++;return [...(closed&&calls===1?[gone]:[]),idle,...outsiders,...(calls>1?[{id:'new-other',url:'https://example.test/roadmapler/',postMessage(){throw Error('Unrelated new window');}}]:[])];}},skipWaiting:async()=>{skipped=true;}};
+  vm.runInNewContext(source,{self,URL,MessageChannel,setTimeout,clearTimeout});
+  let pending;listeners.message({data:{kind:'playroom-activate-update'},ports:[{postMessage:r=>replies.push(r)}],waitUntil:p=>pending=p});await pending;
+  assert.equal(replies[0]?.ok,true);assert.equal(skipped,true);assert.deepEqual(messages,['app']);
+ }
+});
+
 test('PWA update isolates a waiting build, drops old caches and starts offline with saved data', {timeout:60000}, async()=>{
  const {execFileSync}=require('node:child_process'),http=require('node:http');
  const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
@@ -337,8 +352,9 @@ for marker in ['previous','current']:
 print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  let deployed=0;
  const server=http.createServer((req,res)=>{
-  if(new URL(req.url,'http://localhost').pathname==='/index.html'){res.writeHead(308,{location:'/'});res.end();return;}
-  const name=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html',data=snapshots[deployed][name];
+  if(new URL(req.url,'http://localhost').pathname==='/playroom-hod-test/index.html'){res.writeHead(308,{location:'/playroom-hod-test/'});res.end();return;}
+  if(req.url.startsWith('/ROADMAPler/')){res.writeHead(200,{'content-type':'text/html'});res.end('<title>Other application</title><script>window.messages=[];navigator.serviceWorker.addEventListener(\"message\",e=>messages.push(e.data.kind));</script>');return;}
+  const name=new URL(req.url,'http://localhost').pathname.slice('/playroom-hod-test/'.length)||'index.html',data=snapshots[deployed][name];
   res.writeHead(data?200:404,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'application/octet-stream','cache-control':'no-store'});
   res.end(data?Buffer.from(data,'base64'):'missing');
  });
@@ -346,11 +362,12 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const context=await browser.newContext(),url=`http://127.0.0.1:${server.address().port}/`;
+  const context=await browser.newContext(),url=`http://127.0.0.1:${server.address().port}/playroom-hod-test/`;
   await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'test',name:'Тест'})));
  let page=await context.newPage();await page.goto(url);
   await page.evaluate(()=>navigator.serviceWorker.ready);
   await page.waitForFunction(()=>navigator.serviceWorker.controller);
+  const other=await context.newPage();await other.goto(new URL('/ROADMAPler/',url).href);
   const originalWorker=context.serviceWorkers()[0],second=await context.newPage();await second.goto(url);
   await second.waitForFunction(()=>navigator.serviceWorker.controller);
   await second.evaluate(()=>PlayroomPWA.setUpdateGuard(()=>false));
@@ -373,6 +390,7 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
   await page.locator('[data-command=update-app]').click();
   await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')==='current');
   await second.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')==='current');
+  assert.deepEqual(await other.evaluate(()=>messages),[],'another application receives no update checks or notices');
   await context.setOffline(true);await page.reload();
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'current');
   assert.equal(await page.evaluate(()=>localStorage.getItem('saved-game-marker')),'keep');
@@ -394,7 +412,7 @@ old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-22222222
 class Pages:
  def __init__(self):self.project='existing';self.current=old;self.uploads=[];self.rollbacks=[]
  def api(self,*args,**kwargs):
-  if kwargs.get('suffix')=='/deployments':return [{'id':new,'environment':'production','created_on':'1','url':'https://new.example','deployment_trigger':{'metadata':{'branch':'production','commit_hash':sha}}}]
+  if kwargs.get('suffix')=='/deployments':return [{'id':new,'environment':'production','created_on':'1','url':'https://new.example','deployment_trigger':{'metadata':{'branch':'production','commit_hash':sha,'commit_message':self.message}}}]
   return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':self.current}}
  def production_target(self,value):return {'id':value,'url':'https://old.example'}
  def manual_uploads(self,project):pass
@@ -403,7 +421,7 @@ for fail in (False,True):
  pages=Pages()
  def command(cmd,**kwargs):
   assert cmd[0]!='gh'
-  if cmd[0]=='npx':pages.uploads.append(cmd[cmd.index('--branch')+1]);pages.current=new
+  if cmd[0]=='npx':pages.message=cmd[cmd.index('--commit-message')+1];pages.uploads.append(cmd[cmd.index('--branch')+1]);pages.current=new
  def prepare(public,sums,wrapper,destination,catalog_channel=""):destination.mkdir();return {'sha256':'b'*64}
  def smoke(url,*args,**kwargs):
   if fail and url=='https://new.example':raise ValueError('smoke failed')
@@ -447,7 +465,7 @@ class Pages:
   if method=='PATCH':
    assert set(payload['deployment_configs']['preview'])=={'r2_buckets'}
    self.patches.append(payload);self.buckets=payload['deployment_configs']['preview']['r2_buckets']
-  if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha}}}]
+  if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha,'commit_message':self.message}}}]
   return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':({} if self.patches else None) if empty_env else {'KEEP':{'value':'value'}},'r2_buckets':self.buckets,'compatibility_date':None}}}
  def production_target(self,value):return {'id':value,'url':'https://existing.pages.dev'}
  def manual_uploads(self,project):pass
@@ -457,7 +475,7 @@ for tamper,empty_env in ((False,False),(True,False),(False,True)):
   assert catalog_channel=='0.18-rc.1';destination.mkdir();return {'sha256':'b'*64}
  def command(cmd,**kwargs):
   if cmd[0]=='node':return # Wrapper byte validation has independent real tests.
-  assert cmd[0]=='npx';branch=cmd[cmd.index('--branch')+1];assert branch.startswith('verify-');pages.uploads.append(branch)
+  assert cmd[0]=='npx';pages.message=cmd[cmd.index('--commit-message')+1];branch=cmd[cmd.index('--branch')+1];assert branch.startswith('verify-');pages.uploads.append(branch)
  def smoke(url,runtime=None,online_only=False,report_path=None):
   stable=url=='https://existing.pages.dev'
   if stable:stable_reads.append(url)

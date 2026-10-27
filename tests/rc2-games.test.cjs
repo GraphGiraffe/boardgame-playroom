@@ -458,3 +458,28 @@ test('UNO tutorial only teaches a justified declaration or challenge, including 
  context.state.scene.declarationOpen=[true,false];c.update(context,tutorial);const token=c.capture(owner,0);assert(token);c.committed(owner,0,{type:'declare-uno'},token);assert(token.progress.seen.has('declare-uno'));
  context.state.scene.declarationOpen=[false,true];guide=tutorial(context);assert.equal(guide.steps.find(s=>s.id==='challenge-player').selector,'[data-player-target="1"]');assert(guide.steps.find(s=>s.id==='accuse-uno').match({type:'accuse-uno',target:1}));assert(!guide.steps.find(s=>s.id==='accuse-uno').match({type:'accuse-uno',target:0}));
 });
+
+test('Snakes ±1 allows zero and seven steps and exposes both choices for every die',()=>{
+ for(let die=1;die<=6;die++){
+  const s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[die,3],adjusting:true});
+  const moves=E.legalActions(s).filter(a=>a.type==='move'&&a.dieIndex===0);
+  assert.deepEqual(moves.map(a=>a.delta),[-1,1]);
+ }
+ let s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[6,2],adjusting:true});s.data.positions[0]=90;
+ s=play(s,{type:'move',dieIndex:0,delta:1});assert.equal(s.data.positions[0],97);assert.equal(s.data.lastMove.roll,7);assert(E.validateState(s));
+ s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[6,2],adjusting:true});s.data.positions[0]=96;
+ s=play(s,{type:'move',dieIndex:0,delta:1});assert.equal(s.data.lastMove.landing,97,'seven steps reflect off the finish');assert(E.validateState(s));
+});
+test('Snakes ±1 zero stays put without retriggering cells, consuming a shield or losing a double',()=>{
+ for(const from of [0,14,17,25]){
+  let s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[1,5],adjusting:true});s.data.positions[0]=from;s.data.effects[0].shield=true;
+  const zero=E.project(s,0).scene.moves.find(m=>m.command.dieIndex===0&&m.command.delta===-1);
+  assert.equal(zero.landing,from);assert.deepEqual(zero.route,[]);
+  s=play(s,{type:'move',dieIndex:0,delta:-1});assert.equal(s.data.positions[0],from);assert.equal(s.data.effects[0].shield,true);assert.equal(s.data.effects[0].adjust,false);assert.equal(s.turn,1);assert.equal(s.data.lastMove.roll,0);assert(E.validateState(s));
+ }
+ let s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[1,1],adjusting:true});s=play(s,{type:'move',dieIndex:0,delta:-1});assert.equal(s.turn,0,'original double grants another roll');assert.equal(s.data.phase,'roll');
+});
+test('Snakes ±1 leaves the automatic second die unchanged',()=>{
+ let s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[6,2],adjusting:true});s.data.positions[0]=18;
+ s=play(s,{type:'move',dieIndex:0,delta:1});assert.equal(s.data.positions[0],27);assert.equal(s.data.lastMove.roll,2,'second move uses the original other die');assert(E.validateState(s));
+});

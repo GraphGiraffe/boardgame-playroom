@@ -290,7 +290,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return out;
   }
   const api = { registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
-  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
+  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);
