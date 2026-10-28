@@ -42,6 +42,8 @@ flowchart TB
 | `application/rooms.js`, `session-access.js` | Участники, места, правила → состояние комнаты и viewer/actor | Лобби, готовность, роли, локальные места, настройки ботов |
 | `application/account-service.js` | Auth-порт → статус аккаунта/гостя без токенов | Вход, регистрация, восстановление и явная облачная гостевая идентичность; не игровые роли |
 | `platform/web/supabase-auth.js`, `app/account-ui.js` | Конфигурация + формы → Auth REST/PKCE и модальное окно | HTTP, scoped session store, refresh, UI; [настройка и ограничения](NETWORK-SERVICE.md) |
+| `application/social-service.js` | Аккаунт + RPC-порт → друзья и допуск в cloud room | Социальные сценарии; не игровые роли и не транспорт |
+| `platform/web/supabase-social.js`, `app/social-ui.js`, `server/social.sql` | Явные формы → RPC → проверенные проекции | HTTP/UI и серверные права; [этап 2 и миграция](NETWORK-SERVICE.md#этап-2-друзья-и-доступ-в-приватные-комнаты) |
 | `application/host-session-service.js`, `host-recovery.js` | Комната/архив + порты → authority | Запуск и восстановление сессии хоста |
 | `application/client-connection-service.js`, `history-sync-service.js` | Transport + snapshots/history → состояние клиента | Отправка/получение, согласование истории, pending-запросы |
 | `application/recovery-coordinator.js` | Состояние канала + snapshot/reconcile + clock → состояние восстановления | Проверка связи, синхронизация, задержка уведомления, очистка таймеров |

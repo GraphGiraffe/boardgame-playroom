@@ -16,11 +16,12 @@
   const passwordMode=mode==='password-change'||s.recovery;
   let body;
   if(!s.configured)body=`<p>${text('unavailable')}</p>`;
-  else if(accountView)body=`<p>${esc(s.email)}</p><p class="muted">${text('local-unchanged')}</p><div class="account-actions">${button('password-change','change-password')}${button('logout','logout')}</div>`;
+  else if(accountView)body=`<p>${esc(s.email)}</p><p class="muted">${text('local-unchanged')}</p><div class="account-actions">${button('social','social')}${button('password-change','change-password')}${button('logout','logout')}</div>`;
   else{
    if(s.recovery)mode='password';
    body=`<p class="muted">${text(passwordMode?'password-info':'optional')}</p><form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</fieldset></form>${mode==='password'?'':`<div class="account-actions">${mode==='password-change'?button('account','back'):`${mode!=='login'?button('login','login'):''}${mode!=='signup'?button('signup','signup'):''}${mode!=='recover'?button('recover','recover'):''}`}</div>`}`;
   }
+  if(s.configured&&!accountView&&!passwordMode)body+=`<div class="account-actions">${button('social','social')}</div>`;
   const modal=document.querySelector('.account-modal .account-content');if(!modal)return;
   const view=!s.configured?'unavailable':accountView?'account':'form:'+mode;
   if(modal.dataset.accountView!==view){modal.innerHTML=body+'<p class="account-message" role="status" aria-live="polite"></p>';modal.dataset.accountView=view;}
@@ -45,6 +46,7 @@
  function init(){
   let auth=null;try{if(root.PlayroomNetworkConfig?.url)auth=new root.PlayroomSupabaseAuth.SupabaseAuth(root.PlayroomNetworkConfig);}catch(_){}
   service=new root.PlayroomAccountService({auth,guestId:()=>bridge().profile()?.id});
+  root.PlayroomSocialUI.init({account:service,remote:auth?new root.PlayroomSupabaseSocial({auth}):null});
   service.subscribe(()=>{updateButtons();render();});
   root.addEventListener('online',updateButtons);root.addEventListener('offline',updateButtons);
   if(auth?.hasCallback()){
@@ -55,6 +57,7 @@
  document.addEventListener('click',event=>{
   if(event.target.closest('[data-account-open]')){show();return;}
   const button=event.target.closest('[data-account-mode]');if(!button||service.snapshot().busy)return;
+  if(button.dataset.accountMode==='social'){opened=false;root.PlayroomSocialUI.show();return;}
   if(button.dataset.accountMode==='logout'){mode='login';void execute(()=>service.logout(),'signed-out');return;}
   mode=button.dataset.accountMode;notice='';error='';render();
  });

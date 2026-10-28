@@ -40,5 +40,6 @@
   "ui.account.error.same-password": "Новый пароль должен отличаться от текущего.",
   "ui.account.error.weak-password": "Пароль не соответствует требованиям сервиса. Выберите более длинный и сложный пароль.",
   "ui.account.error.current-password": "Неверный текущий пароль. Проверьте его и повторите попытку.",
-  "ui.account.error.reauthentication": "Для смены пароля войдите в аккаунт заново и повторите попытку."
+  "ui.account.error.reauthentication": "Для смены пароля войдите в аккаунт заново и повторите попытку.",
+  "ui.account.social": "Друзья и комнаты"
 }

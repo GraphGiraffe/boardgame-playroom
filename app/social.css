@@ -1,0 +1,11 @@
+.social-content { min-width: 0; overflow-wrap: anywhere; }
+.social-content form { margin-block: 12px; }
+.social-content fieldset { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 0; border: 0; margin: 0; min-width: 0; }
+.social-content .field { flex: 1 1 180px; min-width: 0; margin: 0; }
+.social-content input,.social-content select { width: 100%; min-width: 0; }
+.social-content ul { list-style: none; padding: 0; }
+.social-content li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 8px; }
+.social-content li > span { flex: 1; min-width: 0; }
+.social-content > button { margin: 4px; }
+.social-code { user-select: text; font-size: .85em; }
+[data-social-message]:empty { display: none; }

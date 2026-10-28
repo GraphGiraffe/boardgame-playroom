@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process');
-test('cloud profiles: PostgreSQL migration is repeatable and RLS separates accounts and guests',{timeout:30000},()=>{
+test('cloud accounts/social: repeatable migrations and server access separate accounts and guests',{timeout:30000},()=>{
  const bin=process.env.PLAYROOM_PG_BIN||'/usr/lib/postgresql/18/bin';
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-account-pg-')),data=path.join(dir,'data');let started=false;
  const exec=(program,args)=>{const r=spawnSync(path.join(bin,program),args,{encoding:'utf8',timeout:15000});if(r.status!==0)throw Error(program+': '+(r.stderr||r.error||r.stdout));return r.stdout;};
@@ -23,5 +23,44 @@ test('cloud profiles: PostgreSQL migration is repeatable and RLS separates accou
   sql(as(a,false,`update public.playroom_profiles set id='${g}' where id='${a}';`),false);
   sql(as(a,false,'delete from public.playroom_profiles;'),false);
   sql('set role anon;select * from public.playroom_profiles;',false);
+  // Stage 2: production RPC tested with distinct authenticated clients and a guest.
+  const social=fs.readFileSync(path.join(__dirname,'../server/social.sql'),'utf8');sql(social);sql(social);
+  const rpc=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_social('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
+  rpc(a,false,'profile',{nickname:'Алиса'});rpc(b,false,'profile',{nickname:'Борис'});
+  rpc(g,true,'profile',{nickname:'Гость'},false);rpc(g,true,'create',{name:'Чужая'},false);
+  for(const table of ['playroom_friendships','playroom_cloud_rooms','playroom_room_members','playroom_room_invites']){
+   sql(as(a,false,`select * from public.${table};`),false);sql(as(a,false,`delete from public.${table};`),false);
+  }
+  sql("set role anon;select public.playroom_social('list');",false);
+  rpc(a,false,'request',{userId:b});rpc(b,false,'request',{userId:a});
+  let list=rpc(a,false,'list');assert.equal(list.friends.length,1);assert.equal(list.friends[0].accepted,false);
+  const edge=list.friends[0].id;
+  rpc(a,false,'accept',{id:edge},false);rpc(g,true,'accept',{id:edge},false);
+  const rid=rpc(a,false,'create',{name:'Закрытая'}).id;
+  rpc(b,false,'room',{roomId:rid},false);rpc(g,true,'room',{roomId:rid},false);
+  rpc(a,false,'invite',{roomId:rid,userId:b},false);
+  rpc(b,false,'accept',{id:edge});
+  const directed=rpc(a,false,'invite',{roomId:rid,userId:b});assert.match(directed.token,/^[0-9a-f]{64}$/);
+  assert(!JSON.stringify(rpc(a,false,'room',{roomId:rid})).includes(directed.token));
+  rpc(g,true,'join',{token:directed.token,nickname:'Гость'},false);
+  assert.equal(rpc(b,false,'list').invitations.length,1);
+  rpc(g,true,'join',{inviteId:directed.id,nickname:'Гость'},false);
+  rpc(a,false,'join',{inviteId:directed.id,nickname:'Алиса'},false);
+  assert.equal(rpc(b,false,'join',{inviteId:directed.id,nickname:'Борис'}).id,rid);
+  assert.equal(rpc(b,false,'list').invitations.length,0);
+  assert.equal(rpc(b,false,'join',{token:directed.token,nickname:'Борис'}).id,rid,'lost-response retry is idempotent');
+  assert.equal(rpc(b,false,'room',{roomId:rid}).invites.length,0);
+  rpc(b,false,'invite',{roomId:rid},false);rpc(b,false,'close',{roomId:rid},false);
+  const open=rpc(a,false,'invite',{roomId:rid});
+  rpc(g,true,'join',{token:open.token,nickname:'Гость'});
+  assert.equal(rpc(g,true,'room',{roomId:rid}).members.length,3);
+  rpc(g,true,'leave',{roomId:rid});rpc(g,true,'room',{roomId:rid},false);
+  rpc(g,true,'join',{token:open.token,nickname:'Гость'},false);
+  const revoked=rpc(a,false,'invite',{roomId:rid});rpc(a,false,'revoke',{roomId:rid,id:revoked.id});rpc(g,true,'join',{token:revoked.token,nickname:'Гость'},false);
+  const expired=rpc(a,false,'invite',{roomId:rid});sql(`update public.playroom_room_invites set expires_at=now()-interval '1 second' where id='${expired.id}';`);rpc(g,true,'join',{token:expired.token,nickname:'Гость'},false);
+  const fresh=rpc(a,false,'invite',{roomId:rid});rpc(a,false,'kick',{roomId:rid,userId:b});rpc(b,false,'room',{roomId:rid},false);rpc(b,false,'join',{token:directed.token,nickname:'Борис'},false);
+  const removed=rpc(a,false,'invite',{roomId:rid,userId:b});rpc(b,false,'remove',{id:edge});rpc(b,false,'join',{token:removed.token,nickname:'Борис'},false);assert.equal(rpc(a,false,'list').friends.length,0);
+  rpc(a,false,'leave',{roomId:rid},false);rpc(a,false,'close',{roomId:rid});rpc(g,true,'join',{token:fresh.token,nickname:'Гость'},false);assert.equal(rpc(a,false,'list').rooms.length,0);
+
  }finally{if(started)exec('pg_ctl',['-D',data,'-m','fast','-w','stop']);fs.rmSync(dir,{recursive:true,force:true});}
 });

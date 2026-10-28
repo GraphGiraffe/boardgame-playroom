@@ -12,7 +12,7 @@
 | Визуальные правила, ассеты и скины | [Дизайн](UI-DESIGN-SYSTEM.md) |
 | Масштаб и дискретные слайдеры | [Настройки](INTERFACE-SCALE.md) |
 | Роли, authority, Стол, reconnect | [Сеть](DEVELOPER-MULTIPLAYER.md) |
-| Сетевой аккаунт, Supabase, гости и настройка сервиса 0.20 | [Сетевой сервис](NETWORK-SERVICE.md) |
+| Сетевой аккаунт, друзья, приватные комнаты и миграции Supabase 0.20 | [Сетевой сервис](NETWORK-SERVICE.md) |
 | Хранение, точные версии, обновление | [Данные](DEVELOPER-DATA.md) |
 | Контейнер и сборка пака | [Формат](PACK-FORMAT.md) |
 | Проверки и выпуск | [Тесты](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md), [релиз](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md) |

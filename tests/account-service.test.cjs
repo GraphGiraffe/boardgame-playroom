@@ -115,3 +115,34 @@ test('normal password change uses the verified email and rejects a different acc
  await assert.rejects(s.updatePassword('old-password','new-password'),e=>e.code==='credentials');
  const login=f.calls.find(c=>c.url.includes('grant_type=password'));assert.equal(JSON.parse(login.body).email,user.email);assert(!f.calls.some(c=>c.method==='PUT'));assert.equal(f.auth.read().user.id,user.id);
 });
+
+const Social=require('../application/social-service.js'),SupabaseSocial=require('../platform/web/supabase-social.js');
+test('social is optional; account changes discard cached data and late responses',async()=>{
+ const account=new Service({auth:{},guestId:'local'});let resolve,calls=0;
+ const social=new Social({account,remote:{call:()=>{calls++;return new Promise(done=>{resolve=done;});}}});
+ assert.equal(calls,0);await assert.rejects(social.refresh(),e=>e.code==='account-required');
+ account.user={id:'alice'};account.emit();const pending=social.refresh();
+ account.user={id:'bob'};account.emit();resolve({profile:{id:'alice'},friends:[],rooms:[]});
+ await assert.rejects(pending,e=>e.code==='account-changed');assert.equal(social.snapshot().profile,null);assert.equal(social.snapshot().busy,false);
+});
+test('social guests cannot manage friends or create rooms; invitation secret stays out of snapshots',async()=>{
+ const account=new Service({auth:{},guestId:'local'});account.user={id:'guest',is_anonymous:true};
+ const calls=[],social=new Social({account,remote:{call:async(action,data)=>{calls.push({action,data});return action==='list'?{profile:null,friends:[],rooms:[]}:action==='invite'?{token:'secret-invite'}:{id:'room'};}}});
+ await assert.rejects(social.perform('create'),e=>e.code==='account-required');assert.equal(calls.length,0);
+ await social.perform('join',{token:'invite',nickname:'Гость'});assert.equal(calls.length,2);
+ account.user={id:'alice',is_anonymous:false};account.emit();
+ const result=await social.perform('invite',{roomId:'room'});assert.equal(result.token,'secret-invite');assert(!JSON.stringify(social.snapshot()).includes('secret-invite'));
+});
+test('social RPC refreshes through Auth, keeps credentials in adapter and reports missing migration safely',async()=>{
+ let request;const remote=new SupabaseSocial({auth:{config,session:async()=>({access_token:'private'})},fetch:async(url,options)=>{request={url,...options};return response({message:'social:invite-invalid'},400);}});
+ await assert.rejects(remote.call('join',{token:'code'}),e=>e.code==='invite-invalid'&&!e.message.includes('private'));
+ assert.equal(request.headers.Authorization,'Bearer private');assert.equal(request.redirect,'error');assert.equal(request.cache,'no-store');assert.equal(JSON.parse(request.body).p_action,'join');
+ remote.fetch=async()=>response({code:'PGRST202',message:'raw server information'},404);
+ await assert.rejects(remote.call('list'),e=>e.code==='setup'&&!e.message.includes('raw'));
+ remote.auth.session=async()=>null;await assert.rejects(remote.call('list'),e=>e.code==='account-required');
+});
+
+test('social adapter rejects a session replaced in another tab before sending a mutation',async()=>{
+ let calls=0;const remote=new SupabaseSocial({auth:{config,session:async()=>({access_token:'private',user:{id:'bob'}})},fetch:async()=>{calls++;throw Error('must not send');}});
+ await assert.rejects(remote.call('create',{name:'room'},{userId:'alice'}),e=>e.code==='account-changed');assert.equal(calls,0);
+});
