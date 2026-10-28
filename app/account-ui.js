@@ -47,6 +47,7 @@
   let auth=null;try{if(root.PlayroomNetworkConfig?.url)auth=new root.PlayroomSupabaseAuth.SupabaseAuth(root.PlayroomNetworkConfig);}catch(_){}
   service=new root.PlayroomAccountService({auth,guestId:()=>bridge().profile()?.id});
   root.PlayroomSocialUI.init({account:service,remote:auth?new root.PlayroomSupabaseSocial({auth}):null});
+  if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal'})});
   service.subscribe(()=>{updateButtons();render();});
   root.addEventListener('online',updateButtons);root.addEventListener('offline',updateButtons);
   if(auth?.hasCallback()){

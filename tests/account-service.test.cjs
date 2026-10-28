@@ -146,3 +146,16 @@ test('social adapter rejects a session replaced in another tab before sending a 
  let calls=0;const remote=new SupabaseSocial({auth:{config,session:async()=>({access_token:'private',user:{id:'bob'}})},fetch:async()=>{calls++;throw Error('must not send');}});
  await assert.rejects(remote.call('create',{name:'room'},{userId:'alice'}),e=>e.code==='account-changed');assert.equal(calls,0);
 });
+
+const CloudSignaling=require('../application/cloud-signaling.js');
+test('cloud signaling: stopping during discovery cancels polling and ignores a late offer',async()=>{
+ let resolve,creates=0;
+ const driver=new CloudSignaling({remote:async action=>action==='request'?{id:'slot',epoch:'epoch'}:new Promise(done=>{resolve=done;}),peers:{client:async()=>{creates++;}},idFactory:()=> 'epoch'});
+ const pending=driver.connect('room');await new Promise(done=>setImmediate(done));driver.stop();resolve({offer:'private-sdp',epoch:'epoch'});
+ await assert.rejects(pending,e=>e.code==='cancelled');assert.equal(creates,0);assert.equal(driver.mode,null);
+});
+test('cloud signaling: stop closes a peer created by an earlier host generation',async()=>{
+ let finish,closed=0;
+ const driver=new CloudSignaling({remote:async action=>action==='host'?{}:action==='poll-host'?[{id:'slot'}]:{userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'},peers:{host:()=>new Promise(done=>{finish=done;})},idFactory:()=> 'epoch'});
+ await driver.host('room','local');await new Promise(done=>setImmediate(done));driver.stop();finish({offer:'private-sdp',close(){closed++;}});await driver.running;assert.equal(closed,1);assert.equal(driver.handles.size,0);
+});

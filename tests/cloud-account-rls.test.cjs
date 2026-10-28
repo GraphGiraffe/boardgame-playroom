@@ -61,6 +61,39 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const fresh=rpc(a,false,'invite',{roomId:rid});rpc(a,false,'kick',{roomId:rid,userId:b});rpc(b,false,'room',{roomId:rid},false);rpc(b,false,'join',{token:directed.token,nickname:'Борис'},false);
   const removed=rpc(a,false,'invite',{roomId:rid,userId:b});rpc(b,false,'remove',{id:edge});rpc(b,false,'join',{token:removed.token,nickname:'Борис'},false);assert.equal(rpc(a,false,'list').friends.length,0);
   rpc(a,false,'leave',{roomId:rid},false);rpc(a,false,'close',{roomId:rid});rpc(g,true,'join',{token:fresh.token,nickname:'Гость'},false);assert.equal(rpc(a,false,'list').rooms.length,0);
+  const signaling=fs.readFileSync(path.join(__dirname,'../server/signaling.sql'),'utf8');sql(signaling);sql(signaling);
+  const signal=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_signal('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
+  const cloud=rpc(a,false,'create',{name:'Соединение'}).id,ep='00000000-0000-4000-8000-000000000099',ep2='00000000-0000-4000-8000-000000000098';
+  const link=rpc(a,false,'invite',{roomId:cloud});rpc(b,false,'join',{token:link.token,nickname:'Борис'});
+  signal(b,false,'request',{roomId:cloud},false);
+  signal(b,false,'host',{roomId:cloud,localRoomId:'local',epoch:ep},false);
+  signal(a,false,'host',{roomId:cloud,localRoomId:'local',epoch:ep});
+  signal(a,false,'host',{roomId:cloud,localRoomId:'other',epoch:ep2},false);
+  signal(g,true,'request',{roomId:cloud},false);
+  const slot=signal(b,false,'request',{roomId:cloud});assert.equal(slot.localRoomId,'local');
+  assert.equal(signal(a,false,'poll-host',{roomId:cloud,epoch:ep}).length,1);
+  signal(g,true,'poll',{roomId:cloud,id:slot.id},false);
+  signal(b,false,'offer',{roomId:cloud,id:slot.id,epoch:ep,signal:'{}'},false);
+  signal(a,false,'offer',{roomId:cloud,id:slot.id,epoch:ep,signal:'{"sdp":"invalid"}'},false);
+  signal(a,false,'offer',{roomId:cloud,id:slot.id,epoch:ep,signal:'{"type":"offer","sdp":"offer"}'});
+  assert(signal(b,false,'poll',{roomId:cloud,id:slot.id}).offer);
+  signal(b,false,'answer',{roomId:cloud,id:slot.id,signal:'{"type":"answer","sdp":"answer"}'});
+  const identity=signal(a,false,'authorize',{roomId:cloud,epoch:ep,id:slot.id});assert.match(identity.participantId,/^[0-9a-f-]{36}$/);assert.equal(identity.userId,b);
+  signal(b,false,'authorize',{roomId:cloud,epoch:ep,id:slot.id},false);
+  const guestLink=rpc(a,false,'invite',{roomId:cloud});rpc(g,true,'join',{token:guestLink.token,nickname:'Гость'});
+  const guestSlot=signal(g,true,'request',{roomId:cloud});assert.notEqual(guestSlot.id,slot.id);
+  signal(g,true,'poll',{roomId:cloud,id:slot.id},false);signal(b,false,'poll',{roomId:cloud,id:guestSlot.id},false);
+  signal(g,true,'poll',{roomId:cloud,id:guestSlot.id});signal(g,true,'host',{roomId:cloud,epoch:ep,localRoomId:'local'},false);
+  sql(`update public.playroom_signals set expires_at=now()-interval '1 second';`);
+  assert.equal(signal(a,false,'authorize',{roomId:cloud,epoch:ep,userId:b}).participantId,identity.participantId,'RTC admission outlives short-lived SDP');
+  const slot2=signal(b,false,'request',{roomId:cloud});assert.notEqual(slot2.id,slot.id);
+  assert.equal(signal(a,false,'authorize',{roomId:cloud,epoch:ep,id:slot2.id}).participantId,identity.participantId,'new RTC keeps the same bound participant');
+  rpc(a,false,'kick',{roomId:cloud,userId:b});signal(a,false,'authorize',{roomId:cloud,epoch:ep,userId:b},false);signal(b,false,'poll',{roomId:cloud,id:slot2.id},false);
+  sql(`update public.playroom_cloud_rooms set host_until=now()-interval '1 second' where id='${cloud}';`);
+  signal(a,false,'poll-host',{roomId:cloud,epoch:ep},false);
+  signal(a,false,'host',{roomId:cloud,localRoomId:'local',epoch:ep2});signal(a,false,'poll-host',{roomId:cloud,epoch:ep},false);
+  for(const table of ['playroom_peer_bindings','playroom_signals'])sql(as(a,false,`select * from public.${table};`),false);
+
 
  }finally{if(started)exec('pg_ctl',['-D',data,'-m','fast','-w','stop']);fs.rmSync(dir,{recursive:true,force:true});}
 });

@@ -495,7 +495,7 @@ class RoomService{
       this.listeners.get(roomId).add(listener);
       return ()=>{const set=this.listeners.get(roomId);set?.delete(listener);if(set&&!set.size)this.listeners.delete(roomId);};
     }
-    connection(roomId){
+    connection(roomId,{boundParticipantId=null}={}){
       this._room(roomId);let participantId=null,lease={};const service=this;
       const packet=()=>participantId?{kind:'lobby',room:this.snapshot(roomId),participantId}:{kind:'room-preview',room:this.preview(roomId)};
       const active=()=>!participantId||service.connectionLeases.get(service._key(roomId,participantId))===lease;
@@ -507,13 +507,14 @@ class RoomService{
           if(!active())throw Error(globalThis.PlayroomMessages.text("ui.rooms.d97ec0ecd6a9"));
           if(command.type==='join'){
             if(participantId)throw Error(globalThis.PlayroomMessages.text("ui.rooms.33a7864d6dad"));
-            // Profile IDs are NOT credentials. Always allocate a fresh identity.
-            const joined=this.join(roomId,{id:this.idFactory(),nickname:command.nickname,avatar:command.avatar});
+            // Profile IDs are not credentials. Only a trusted host binding may fix identity.
+            const joined=this.join(roomId,{id:boundParticipantId||this.idFactory(),nickname:command.nickname,avatar:command.avatar});
             participantId=joined.participantId;
             service.connectionLeases.set(service._key(roomId,participantId),lease);
             return {ok:true,snapshot:packet(),resumeToken:joined.resumeToken};
           }
           if(command.type==='resume'){
+            if(boundParticipantId&&command.participantId!==boundParticipantId)throw Error('ROOM_IDENTITY_MISMATCH');
             if(participantId)throw Error(globalThis.PlayroomMessages.text("ui.rooms.33a7864d6dad"));
             const apply=resumed=>{
               participantId=resumed.participantId;lease={};

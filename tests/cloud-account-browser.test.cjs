@@ -153,7 +153,7 @@ test('cloud social: two clients confirm friendship, invite, join and revoke with
   await a.locator('[data-social-form=create] input').fill('Тестовая');await a.locator('[data-social-form=create] [type=submit]').click();await a.locator('[data-social-target]').selectOption(ids.b);await a.locator('[data-social-action=invite]').click();
   await a.locator('input[value="'+secret+'"]').waitFor();assert.equal(await a.evaluate(()=>JSON.stringify(PlayroomSocialUI.service.snapshot()).includes('a'.repeat(64))),false);
   await a.screenshot({path:path.resolve(__dirname,'../../tmp_files/network-stage2/social-owner-phone.png')});
-  await b.locator('[data-social-action=refresh]').click();await b.locator('[data-social-action=join-targeted]').click();await b.getByText('Доступ в комнату подтверждён.',{exact:false}).waitFor();assert.equal(await b.locator('[data-social-action=invite]').count(),0);assert.equal(await b.locator('.social-content li').count(),2);
+  await b.locator('[data-social-action=refresh]').click();await b.locator('[data-social-action=join-targeted]').click();await b.locator('[data-social-action=connect-cloud]').waitFor();assert.equal(await b.locator('[data-social-action=invite]').count(),0);assert.equal(await b.locator('.social-content li').count(),2);
   await a.locator('[data-social-target]').selectOption(ids.b);await a.locator('[data-social-action=invite]').click();await a.locator('[data-social-action=revoke]').click();await a.locator('[data-social-action=revoke]').waitFor({state:'detached'});
   for(const p of [a,b]){assert(await p.locator('.social-content').evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert(await p.evaluate(()=>!localStorage.getItem('playroom.cloud-social')));}
   assert.deepEqual(errors,[]);

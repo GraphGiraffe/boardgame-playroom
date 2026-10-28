@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const root=path.resolve(__dirname,'..'),hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
+const root=process.env.PLAYROOM_NETWORK_FIXTURE||path.resolve(__dirname,'..'),hasUno=fs.existsSync(path.join(root,'packs/uno/manifest.json'))&&fs.existsSync(path.join(root,'installed-packs.js'));
 
 function server(){
   const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml'};
@@ -48,7 +48,7 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   assert.equal(await phone.locator('.network-game').count(),1,'cosmetic update keeps the live game mounted');
   await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
   await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
-  await phone.locator('.ttt-cell[data-action]').first().waitFor();await phone.locator('.ttt-cell').nth(0).click();
+  await phone.locator('.ttt-cell[data-action]').first().waitFor();if(await phone.locator('[data-learning-choice=no]').isVisible())await phone.locator('[data-learning-choice=no]').click();await phone.locator('.ttt-cell').nth(0).click();
   await host.locator('.ttt-cell.nought').waitFor();
   await table.locator('.ttt-cell[data-action]').first().waitFor();await table.locator('.ttt-cell').nth(1).click();
   await table.waitForFunction(()=>document.querySelectorAll('.ttt-cell.cross').length===2);
@@ -393,4 +393,52 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
 
     assert.deepEqual(errors,[]);
   }catch(error){console.error('Network UI page errors',JSON.stringify(errors));throw error;}finally{await Promise.all([hc.close(),cc.close()]);await browser.close();if(s)await new Promise(r=>s.close(r));}
+});
+
+test('cloud rendezvous: two real RTC clients resume the same playing seat after full page reload',{timeout:90000},async()=>{
+ const {s,url}=await server(),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const h=await browser.newContext({playroomProfile:false,viewport:{width:1000,height:780}}),c=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),host=await h.newPage(),client=await c.newPage(),errors=[];
+ const cloudId='00000000-0000-4000-8000-000000000001',hostId='00000000-0000-4000-8000-000000000002',userId='00000000-0000-4000-8000-000000000003',boundId='00000000-0000-4000-8000-000000000004';
+ let lease=null,slot=null,requests=0;
+ await c.addInitScript(()=>{const Native=window.RTCPeerConnection;window.testCloudPeers=[];window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);window.testCloudPeers.push(this);}};});
+ for(const [context,uid] of [[h,hostId],[c,userId]])await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',async route=>{
+  const req=route.request();requests++;let result;
+  if(req.url().includes('/auth/')){const user={id:uid,email:uid+'@example.test',is_anonymous:false};result=req.url().endsWith('/user')?user:{user,access_token:'access-'+uid,refresh_token:'refresh-'+uid,expires_in:3600};}
+  else{
+   assert(req.url().endsWith('/playroom_signal'));const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(d.roomId,cloudId);
+   if(action==='host'){assert.equal(uid,hostId);lease={epoch:d.epoch,localRoomId:d.localRoomId};result={};}
+   else if(action==='poll-host'){assert.equal(uid,hostId);result=slot?[slot]:[];}
+   else if(action==='request'){assert.equal(uid,userId);slot={id:require('node:crypto').randomUUID(),userId,offer:null,answer:null};result={id:slot.id,...lease};}
+   else if(action==='authorize'){assert.equal(uid,hostId);result={userId,participantId:boundId};}
+   else if(action==='offer'){assert.equal(uid,hostId);assert.equal(d.id,slot.id);if(slot.offer)assert.equal(slot.offer,d.signal);slot.offer=d.signal;result={};}
+   else if(action==='poll'){assert.equal(uid,userId);assert.equal(d.id,slot.id);result={offer:slot.offer,epoch:lease.epoch};}
+   else if(action==='answer'){assert.equal(uid,userId);assert.equal(d.id,slot.id);slot.answer=d.signal;result={};}
+   else throw Error('Unexpected action '+action);
+  }
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
+ });
+ for(const p of [host,client]){p._url=url;p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));}
+ try{
+  await profile(host,'Хост');await profile(client,'Игрок');assert.equal(requests,0);
+  await host.evaluate(()=>PlayroomAccountUI.service.login('host@example.test','password123'));await client.evaluate(()=>PlayroomAccountUI.service.login('client@example.test','password123'));
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode]').check();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
+  await host.evaluate(id=>PlayroomCloudNetwork.host(id),cloudId);
+  await client.evaluate(id=>PlayroomCloudNetwork.connect(id),cloudId);
+  await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());await client.locator('[data-net-seat]:not([disabled])').first().click();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+  await host.locator('[data-command=lobby-ready]').click();await client.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();
+  await client.locator('.network-game[data-viewer="1"]').waitFor();await host.locator('.ttt-cell[data-action]').first().click();await client.locator('.ttt-cell.cross').waitFor();
+  const before=await client.evaluate(()=>PlayroomNetworkDebug().client.participantId);assert.equal(before,boundId);
+  await client.reload();await client.locator('.game-grid').first().waitFor();await client.evaluate(id=>PlayroomCloudNetwork.connect(id),cloudId);
+  await client.locator('.network-game[data-viewer="1"]').waitFor();assert.equal(await client.evaluate(()=>PlayroomNetworkDebug().client.participantId),before);
+  assert.equal(await host.evaluate(()=>{const b=PlayroomAppBridge;return b.roomService.snapshot(b.room().id).participants.length;}),2);
+  const intro=client.locator('[data-learning-choice=no]');if(await intro.isVisible())await intro.click();
+  await client.evaluate(()=>window.testCloudPeers.at(-1).close());
+  await client.waitForFunction(()=>window.testCloudPeers.length>=2&&PlayroomNetworkDebug().client.channel==='connected'&&PlayroomNetworkDebug().client.participantId!==null,{},{timeout:30000});
+  assert.equal(await client.evaluate(()=>PlayroomNetworkDebug().client.participantId),before);
+  assert.equal(await host.evaluate(()=>{const b=PlayroomAppBridge;return b.roomService.snapshot(b.room().id).participants.length;}),2);
+  await client.locator('.ttt-cell[data-action]').first().click();await host.locator('.ttt-cell.nought').waitFor();
+  assert.deepEqual(errors,[]);
+ }finally{await browser.close();await new Promise(resolve=>s.close(resolve));}
 });
