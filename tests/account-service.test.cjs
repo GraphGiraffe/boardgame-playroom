@@ -85,3 +85,10 @@ test('logout queued behind another tab refresh cannot resurrect the local sessio
 test('local identity follows profile creation after startup without cloud calls',()=>{
  let id=null;const s=new Service({auth:null,guestId:()=>id});assert.equal(s.snapshot().id,null);id='new-local-profile';assert.equal(s.snapshot().id,id);assert.equal(s.snapshot().kind,'local');
 });
+test('cached identity is status only: no startup request, validation still uses Auth and failures preserve login',async()=>{
+ const f=fixture(()=>response(user));f.auth.save(tokens());
+ const s=new Service({auth:f.auth,guestId:'local'});assert.equal(s.snapshot().kind,'account');assert.equal(f.calls.length,0);
+ await s.restore();assert.equal(f.calls.length,1);
+ f.auth.fetch=async()=>{throw Error('network unavailable');};await assert.rejects(s.restore(),e=>e.code==='network');
+ assert.equal(s.snapshot().error,'network');assert.equal(s.snapshot().id,user.id);assert(f.values.has(f.auth.key));assert(!JSON.stringify(s.snapshot()).includes('private'));
+});

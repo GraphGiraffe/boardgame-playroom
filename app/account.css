@@ -1,5 +1,9 @@
-.account-settings { padding-top: var(--space-8, 8px); border-top: 1px solid var(--line, #d8dbcf); }
-.account-settings button { width: 100%; }
+.settings-identity { display: flex; align-items: end; gap: 10px; min-width: 0; }
+.settings-identity > :is(.profile-identity-row,.lobby-profile) { flex: 1; min-width: 0; }
+.settings-identity :is(.profile-identity-row,.lobby-profile) .field input { width: 100%; min-width: 0; }
+.account-status-button { flex: 0 0 auto; }
+.account-status-button[data-account-status=account] { color: var(--accent, #356752); }
+.account-status-button[data-account-status=error] { color: var(--danger, #a34d43); }
 .account-form fieldset { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .account-form input { width: 100%; min-width: 0; }
 .account-form .field { margin: 0; gap: 6px; }

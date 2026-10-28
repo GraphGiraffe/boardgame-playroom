@@ -1,5 +1,12 @@
 {
   "ui.account.title": "Сетевой аккаунт",
+  "ui.account.status.local": "Вход не выполнен",
+  "ui.account.status.guest": "Гостевой вход сохранён",
+  "ui.account.status.account": "Вход сохранён",
+  "ui.account.status.busy": "Выполняется запрос",
+  "ui.account.status.error": "Последний запрос не выполнен",
+  "ui.account.status.offline": "Нет подключения к сети",
+  "ui.account.status.unavailable": "Сервис недоступен",
   "ui.account.optional": "Вход нужен для друзей и сетевых комнат. Локально можно играть без аккаунта.",
   "ui.account.local-unchanged": "Локальные партии, никнейм и настройки хранятся на этом устройстве.",
   "ui.account.email": "Email",

@@ -17,6 +17,7 @@
    this.key='playroom.cloud-auth.v1:'+this.config.url;this.pendingKey=this.key+':pkce';this.memory=null;
   }
   read(key=this.key){try{return JSON.parse(this.storage()?.getItem(key)||'null');}catch(_){return key===this.key?this.memory:null;}}
+  cachedUser(){const value=this.read();if(!value?.access_token||!value?.refresh_token||typeof value?.user?.id!=='string')return null;return {id:value.user.id,email:typeof value.user.email==='string'?value.user.email:'',is_anonymous:value.user.is_anonymous===true};}
   write(key,value){try{if(value===null)this.storage()?.removeItem(key);else this.storage()?.setItem(key,JSON.stringify(value));}catch(_){throw fail('storage');}}
   save(result,{recovery=false}={}){
    if(!result?.access_token||!result?.refresh_token||!result?.user?.id||!Number.isFinite(Number(result.expires_in)))throw fail('response');

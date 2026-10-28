@@ -17,7 +17,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const roundTokenArt=params=>assetArt('round-token',params||{},Components.roundTokenArt);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+  const cloudOutline='<path d="M6 18H5a4 4 0 0 1-.6-8A7 7 0 0 1 18 8a5 5 0 0 1 1 10h-1"/>';
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
+    cloud:cloudOutline+'<path d="M6 18h12"/>',
+    'cloud-check':cloudOutline+'<path d="m8 15 3 3 5-6"/>',
+    'cloud-sync':cloudOutline+'<path d="M9 13a3 3 0 0 1 5-1l1 1m0-3v3h-3m3 4a3 3 0 0 1-5 1l-1-1m0 3v-3h3"/>',
+    'cloud-off':cloudOutline+'<path d="m8 13 8 8m0-8-8 8"/>',
+    'cloud-alert':cloudOutline+'<path d="M12 11v5m0 4h.01"/>',
     cards:'<path d="M7.8 5H5.4A2.4 2.4 0 0 0 3 7.4v12a2.4 2.4 0 0 0 2.4 2.4h7.2a2.4 2.4 0 0 0 2.4-2.4"/><g transform="rotate(10 13 10.4)"><rect x="7" y="2" width="12" height="16.8" rx="2.4"/><path d="M10 8V5h3"/></g>',
     board:'<g transform="rotate(10 12 12)"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></g>',
     pieces:"<circle cx=\"9\" cy=\"14\" r=\"7\"/><path d=\"M7 5a7 7 0 1 1 12 11M5 14a4 4 0 0 0 4 4\"/>",
