@@ -749,6 +749,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       <label class="switch"><span>${globalThis.PlayroomMessages.text('ui.app.show-last-game')}</span><input type="checkbox" id="setting-last-game" ${settings.showLastGame?'checked':''}></label>
       ${screen==='table'&&isPass()&&gate===null&&!historyOpen?`<label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.d08b81966d44")}</span><input type="checkbox" id="setting-auto-pass" ${autoPassForViewer()?'checked':''}></label>`:''}
       ${globalThis.PlayroomTutorialSettings.markup(seatingGame)}
+      ${globalThis.PlayroomAccountUI.markup()}
       <label class="switch"><span>${globalThis.PlayroomMessages.text("ui.app.b10ca6a74592")}</span><input type="checkbox" id="setting-quick-play" ${settings.quickPlay?'checked':''}></label>
       <div class="settings-grid">${GameScreen.rangeSetting({id:'setting-volume',label:globalThis.PlayroomMessages.text('ui.app.77e13b86fbed'),value:settings.sound?volumeLevels.indexOf(settings.volume):0,display:volumeLabels[settings.sound?volumeLevels.indexOf(settings.volume):0]})}${GameScreen.rangeSetting({id:'setting-speed',label:globalThis.PlayroomMessages.text('ui.app.62af90477d26'),value:speedLevels.indexOf(settings.animationSpeed),display:animationPresets[settings.animationSpeed].label,describedby:''})}</div>
       ${GameScreen.rangeSetting({id:'setting-scale',label:globalThis.PlayroomMessages.text('ui.app.interface-scale'),min:50,max:150,step:10,value:globalThis.PlayroomInterfaceScale.applied,display:globalThis.PlayroomInterfaceScale.applied+'%',bounds:true})}
@@ -765,7 +766,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const input=root.querySelector('#'+id);if(!input)continue;
       const field=input.closest('.settings-range,.field,.switch'),wrapper=document.createElement('div');
       wrapper.className='setting-with-help';field.before(wrapper);wrapper.append(field);
-      const title=field.querySelector('.settings-range-heading > span')||field.querySelector(':scope > span'),label=title.textContent;
+      const title=field.querySelector('.settings-range-heading > span')||field.querySelector(':scope > span');if(!title)continue;const label=title.textContent;
       title.outerHTML=settingTitle(label,globalThis.PlayroomMessages.text('ui.app.help.'+id));
       wrapper.querySelector('.rule-help>button')?.setAttribute('aria-label','Справка: '+label);
     }
@@ -1169,6 +1170,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     batch:(ids,pack,context)=>{if(settings.sound&&!document.hidden)return audio.batch(ids,{pack,signal:context?.signal});},
     stop:()=>{audioRequest++;audioPending=false;audio.stop();}
   }),profile:()=>playerProfile,room:()=>room,participantId:()=>lobbyParticipantId,roomService:publicRooms,packs,catalog,meta,toast,leaveLobby,renderLobby,openModal,closeModal,confirmOperation,modalHead,showSettings,rememberGame});
+  globalThis.PlayroomAccountUI.init();
   window.addEventListener('resize',()=>GameScreen.fitGameTitles(document));
   let navigation=null;try{navigation=JSON.parse(sessionStorage.getItem('playroom.navigation.v1')||'null');}catch(_){}
   if(navigation?.screen==='table'&&session&&navigation.sessionId===sessionId){
@@ -1186,5 +1188,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(screen==='hub')renderHub();
     });
   }
-  if(!globalThis.PlayroomUpgradeUI?.show()&&!playerProfile?.name)setTimeout(showPlayerNamePrompt,0);
+  if(!globalThis.PlayroomUpgradeUI?.show()&&!playerProfile?.name&&!document.querySelector('.account-modal'))setTimeout(showPlayerNamePrompt,0);
 })();

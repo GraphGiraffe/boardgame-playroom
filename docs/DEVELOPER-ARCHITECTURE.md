@@ -1,6 +1,6 @@
 # Архитектура приложения ХОД
 
-Карта реализации для приложения **0.19.9**, коллекции **0.8.6**: engineApi 4, viewApi 3, protocol 3. Это описание существующего кода, а не план следующего рефакторинга. Начальная точка — [индекс разработчика](DEVELOPER-INDEX.md); точные форматы и проверки — [SDK](SDK-0.18.md). Историческое имя файла SDK не означает API 0.18.
+Карта реализации стабильной базы приложения **0.19.11**, коллекции **0.8.7** и разрабатываемого этапа аккаунтов **0.20**: engineApi 4, viewApi 3, protocol 3. Аккаунты ещё не опубликованы; состояние приёмки описано в [NETWORK-SERVICE](NETWORK-SERVICE.md). Начальная точка — [индекс разработчика](DEVELOPER-INDEX.md); точные форматы и проверки — [SDK](SDK-0.18.md). Историческое имя файла SDK не означает API 0.18.
 
 ## Репозитории и направление зависимостей
 
@@ -40,6 +40,8 @@ flowchart TB
 | `core/session.js`, `history.js`, `session-codec.js` | Команды/кадры → история и архив | Жизнь партии, метаданные участников, восстановление сохранения |
 | `core/authority.js`, `command-processor.js`, `journal.js`, `protocol.js` | Запрос с ролью/revision/commandId → commit/receipt/snapshot | Права, сериализация команд, дедупликация, durable commit до ACK; расписание ботов |
 | `application/rooms.js`, `session-access.js` | Участники, места, правила → состояние комнаты и viewer/actor | Лобби, готовность, роли, локальные места, настройки ботов |
+| `application/account-service.js` | Auth-порт → статус аккаунта/гостя без токенов | Вход, регистрация, восстановление и явная облачная гостевая идентичность; не игровые роли |
+| `platform/web/supabase-auth.js`, `app/account-ui.js` | Конфигурация + формы → Auth REST/PKCE и модальное окно | HTTP, scoped session store, refresh, UI; [настройка и ограничения](NETWORK-SERVICE.md) |
 | `application/host-session-service.js`, `host-recovery.js` | Комната/архив + порты → authority | Запуск и восстановление сессии хоста |
 | `application/client-connection-service.js`, `history-sync-service.js` | Transport + snapshots/history → состояние клиента | Отправка/получение, согласование истории, pending-запросы |
 | `application/recovery-coordinator.js` | Состояние канала + snapshot/reconcile + clock → состояние восстановления | Проверка связи, синхронизация, задержка уведомления, очистка таймеров |

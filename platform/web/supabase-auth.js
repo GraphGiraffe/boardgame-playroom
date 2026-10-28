@@ -1,0 +1,66 @@
+/* Supabase Auth REST adapter. Tokens stay in this adapter and its scoped store. */
+(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomSupabaseAuth=api;})(globalThis,function(){
+ 'use strict';
+ const fail=(code,status=0)=>Object.assign(Error(code),{code,status});
+ function configuration(value){
+  if(!value?.url||!value?.publishableKey)return null;
+  const url=new URL(value.url);
+  if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash||!['','/'].includes(url.pathname))throw fail('configuration');
+  let legacy=false;try{const payload=JSON.parse(globalThis.atob(value.publishableKey.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));legacy=payload.role==='anon';}catch(_){}
+  if(!/^sb_publishable_[A-Za-z0-9_-]+$/.test(value.publishableKey)&&!legacy)throw fail('configuration');
+  return Object.freeze({url:url.origin,publishableKey:value.publishableKey});
+ }
+ class SupabaseAuth{
+  constructor(config,{storage=()=>globalThis.localStorage,fetch=(...args)=>globalThis.fetch(...args),crypto=globalThis.crypto,location=globalThis.location,history=globalThis.history,locks=globalThis.navigator?.locks,now=()=>Date.now()}={}){
+   this.config=configuration(config);if(!this.config)throw fail('configuration');
+   Object.assign(this,{storage,fetch,crypto,location,history,locks,now});
+   this.key='playroom.cloud-auth.v1:'+this.config.url;this.pendingKey=this.key+':pkce';this.memory=null;
+  }
+  read(key=this.key){try{return JSON.parse(this.storage()?.getItem(key)||'null');}catch(_){return key===this.key?this.memory:null;}}
+  write(key,value){try{if(value===null)this.storage()?.removeItem(key);else this.storage()?.setItem(key,JSON.stringify(value));}catch(_){throw fail('storage');}}
+  save(result,{recovery=false}={}){
+   if(!result?.access_token||!result?.refresh_token||!result?.user?.id||!Number.isFinite(Number(result.expires_in)))throw fail('response');
+   const value={access_token:result.access_token,refresh_token:result.refresh_token,user:result.user,expires_at:this.now()+Number(result.expires_in)*1000,recovery};
+   this.write(this.key,value);this.memory=value;return value.user;
+  }
+  async request(path,{body,method=body?'POST':'GET',token}={}){
+   let response;try{response=await this.fetch(this.config.url+'/auth/v1/'+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{apikey:this.config.publishableKey,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});}catch(_){throw fail('network');}
+   let result;try{result=await response.json();}catch(_){if(response.ok&&response.status===204)return null;throw fail('response',response.status);}
+   if(!response.ok){const code=response.status===429?'rate-limit':response.status===401||response.status===403?'credentials':response.status>=500?'unavailable':result?.code==='email_not_confirmed'?'email-not-confirmed':'request';throw fail(code,response.status);}
+   return result;
+  }
+  async locked(fn){return this.locks?.request?this.locks.request(this.key,fn):fn();}
+  async session(){return this.locked(async()=>{
+   const value=this.read();if(!value?.refresh_token||!value?.access_token)return null;
+   if(value.expires_at>this.now()+60000)return value;
+   try{const result=await this.request('token?grant_type=refresh_token',{body:{refresh_token:value.refresh_token}});this.save(result,{recovery:!!value.recovery});return this.read();}
+   catch(error){if([400,401,403].includes(error.status)){this.write(this.key,null);this.memory=null;}throw error;}
+  });}
+  async restore(){const session=await this.session();if(!session)return null;try{return await this.request('user',{token:session.access_token});}catch(error){if(error.status===401){this.write(this.key,null);this.memory=null;}throw error;}}
+  async login(email,password){return this.locked(async()=>this.save(await this.request('token?grant_type=password',{body:{email,password}})));}
+  redirect(){const url=new URL(this.location.href);if(url.protocol!=='https:'&&!(url.protocol==='http:'&&['localhost','127.0.0.1'].includes(url.hostname)))throw fail('redirect');return url.origin+url.pathname;}
+  async challenge(kind){
+   const bytes=new Uint8Array(32);this.crypto.getRandomValues(bytes);
+   const base64=value=>globalThis.btoa(String.fromCharCode(...value)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+   const verifier=base64(bytes),challenge=base64(new Uint8Array(await this.crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))));
+   this.write(this.pendingKey,{verifier,kind,createdAt:this.now()});return {code_challenge:challenge,code_challenge_method:'s256'};
+  }
+  async signup(email,password){const pkce=await this.challenge('signup');const result=await this.request('signup?redirect_to='+encodeURIComponent(this.redirect()),{body:{email,password,...pkce}});if(!result.access_token)return null;this.write(this.pendingKey,null);return this.save(result);}
+  async guest(){return this.save(await this.request('signup',{body:{}}));}
+  isRecovery(){return !!this.read()?.recovery;}
+  async recover(email){const pkce=await this.challenge('recovery');await this.request('recover?redirect_to='+encodeURIComponent(this.redirect()),{body:{email,...pkce}});}
+  hasCallback(){const url=new URL(this.location.href);return url.searchParams.has('code')||url.searchParams.has('error_code');}
+  async callback(){
+   const url=new URL(this.location.href),code=url.searchParams.get('code'),error=url.searchParams.get('error_code');if(!code&&!error)return null;
+   for(const key of ['code','error','error_code','error_description'])url.searchParams.delete(key);
+   this.history.replaceState(this.history.state,'',url.href);
+   const pending=this.read(this.pendingKey);
+   if(error||!pending?.verifier||this.now()-pending.createdAt>3600000){this.write(this.pendingKey,null);throw fail('recovery-link');}
+   const result=await this.request('token?grant_type=pkce',{body:{auth_code:code,code_verifier:pending.verifier}});
+   this.write(this.pendingKey,null);const recovery=pending.kind==='recovery',user=this.save(result,{recovery});return {user,recovery};
+  }
+  async changePassword(password){const session=await this.session();if(!session)throw fail('credentials');const user=await this.request('user',{method:'PUT',token:session.access_token,body:{password}});this.memory={...session,user,recovery:false};this.write(this.key,this.memory);return user;}
+  async logout(){return this.locked(async()=>{const value=this.read();this.write(this.key,null);this.memory=null;this.write(this.pendingKey,null);if(value?.access_token)try{await this.request('logout?scope=local',{body:{},token:value.access_token});}catch(error){if(error.status!==401&&error.status!==403)throw error;}});}
+ }
+ return Object.freeze({configuration,SupabaseAuth});
+});
