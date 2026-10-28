@@ -12,6 +12,11 @@
   "ui.account.email": "Email",
   "ui.account.password": "Пароль",
   "ui.account.save-password": "Сохранить пароль",
+  "ui.account.change-password": "Сменить пароль",
+  "ui.account.current-password": "Текущий пароль",
+  "ui.account.new-password": "Новый пароль",
+  "ui.account.password-info": "Введите новый пароль для сетевого аккаунта.",
+  "ui.account.back": "Назад",
   "ui.account.login": "Войти",
   "ui.account.signup": "Создать аккаунт",
   "ui.account.recover": "Восстановить пароль",
@@ -31,5 +36,9 @@
   "ui.account.error.recovery-link": "Ссылка недействительна или открыта в другом браузере. Запросите новое письмо.",
   "ui.account.error.unavailable": "Сетевой сервис временно недоступен.",
   "ui.account.error.redirect": "Для подтверждения email откройте приложение на сайте, а не из HTML-файла.",
-  "ui.account.error.request": "Не удалось выполнить действие. Проверьте введённые данные и повторите попытку."
+  "ui.account.error.request": "Не удалось выполнить действие. Проверьте введённые данные и повторите попытку.",
+  "ui.account.error.same-password": "Новый пароль должен отличаться от текущего.",
+  "ui.account.error.weak-password": "Пароль не соответствует требованиям сервиса. Выберите более длинный и сложный пароль.",
+  "ui.account.error.current-password": "Неверный текущий пароль. Проверьте его и повторите попытку.",
+  "ui.account.error.reauthentication": "Для смены пароля войдите в аккаунт заново и повторите попытку."
 }

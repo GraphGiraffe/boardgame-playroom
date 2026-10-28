@@ -19,6 +19,7 @@
   async recover(email){return this.perform(()=>this.auth.recover(email.trim()));}
   async callback(){return this.perform(async()=>{const result=await this.auth.callback();if(result){this.user=result.user;this.recovery=result.recovery;}return !!result;});}
   async changePassword(password){return this.perform(async()=>{if(!this.recovery)throw Object.assign(Error('recovery-required'),{code:'recovery-required'});this.user=await this.auth.changePassword(password);this.recovery=false;});}
+  async updatePassword(currentPassword,password){return this.perform(async()=>{if(!this.user||this.user.is_anonymous||this.recovery)throw Object.assign(Error('credentials'),{code:'credentials'});if(!currentPassword)throw Object.assign(Error('current-password'),{code:'current-password'});if(currentPassword===password)throw Object.assign(Error('same-password'),{code:'same-password'});this.user=await this.auth.updatePassword(currentPassword,password);});}
   async logout(){return this.perform(async()=>{try{await this.auth.logout();}finally{this.user=null;this.recovery=false;}});}
  }
  return AccountService;

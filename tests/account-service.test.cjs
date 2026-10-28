@@ -92,3 +92,26 @@ test('cached identity is status only: no startup request, validation still uses 
  f.auth.fetch=async()=>{throw Error('network unavailable');};await assert.rejects(s.restore(),e=>e.code==='network');
  assert.equal(s.snapshot().error,'network');assert.equal(s.snapshot().id,user.id);assert(f.values.has(f.auth.key));assert(!JSON.stringify(s.snapshot()).includes('private'));
 });
+test('password recovery reports same/weak passwords explicitly and keeps recovery available for retry',async()=>{
+ for(const [providerCode,expected]of [['same_password','same-password'],['weak_password','weak-password'],['reauthentication_needed','reauthentication']]){
+  const f=fixture(()=>response({code:422,error_code:providerCode,msg:'private provider text'},422));f.auth.save(tokens(),{recovery:true});
+  const s=new Service({auth:f.auth,guestId:'local'});assert(s.snapshot().recovery);
+  await assert.rejects(s.changePassword('some-password'),e=>e.code===expected&&!e.message.includes('private provider text'));
+  assert(s.snapshot().recovery);assert.equal(JSON.parse(f.calls[0].body).current_password,undefined);
+ }
+});
+test('normal password change requires a permanent account and sends current password only to Auth',async()=>{
+ const f=fixture(url=>response(url.includes('grant_type=password')?tokens():user));f.auth.save(tokens());const s=new Service({auth:f.auth,guestId:'local'});
+ await assert.rejects(s.updatePassword('same-password','same-password'),e=>e.code==='same-password');assert.equal(f.calls.length,0);
+ await s.updatePassword('old-password','new-password');
+ const update=f.calls.find(c=>c.method==='PUT');assert.deepEqual(JSON.parse(update.body),{password:'new-password',current_password:'old-password'});assert.equal(f.calls.filter(c=>c.url.includes('grant_type=password')).length,1);
+ assert.equal(s.snapshot().kind,'account');assert(!JSON.stringify([...f.values.values()]).includes('old-password'));assert(!JSON.stringify([...f.values.values()]).includes('new-password'));
+ const local=new Service({auth:f.auth,guestId:'local'});local.user=null;await assert.rejects(local.updatePassword('a','b'),e=>e.code==='credentials');
+ f.auth.fetch=async url=>url.endsWith('/user')?response(user):response({code:400,error_code:'invalid_credentials'},400);await assert.rejects(s.updatePassword('wrong','new-password'),e=>e.code==='current-password');
+});
+test('normal password change uses the verified email and rejects a different account on reauthentication',async()=>{
+ const f=fixture(url=>response(url.includes('grant_type=password')?tokens({user:{id:'other',email:'other@example.test'}}):user));
+ f.auth.save(tokens({user:{...user,email:'stale@example.test'}}));const s=new Service({auth:f.auth,guestId:'local'});
+ await assert.rejects(s.updatePassword('old-password','new-password'),e=>e.code==='credentials');
+ const login=f.calls.find(c=>c.url.includes('grant_type=password'));assert.equal(JSON.parse(login.body).email,user.email);assert(!f.calls.some(c=>c.method==='PUT'));assert.equal(f.auth.read().user.id,user.id);
+});

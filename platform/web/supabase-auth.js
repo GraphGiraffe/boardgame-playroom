@@ -27,7 +27,7 @@
   async request(path,{body,method=body?'POST':'GET',token}={}){
    let response;try{response=await this.fetch(this.config.url+'/auth/v1/'+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{apikey:this.config.publishableKey,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});}catch(_){throw fail('network');}
    let result;try{result=await response.json();}catch(_){if(response.ok&&response.status===204)return null;throw fail('response',response.status);}
-   if(!response.ok){const code=response.status===429?'rate-limit':response.status===401||response.status===403?'credentials':response.status>=500?'unavailable':result?.code==='email_not_confirmed'?'email-not-confirmed':'request';throw fail(code,response.status);}
+   if(!response.ok){const known={same_password:'same-password',weak_password:'weak-password',email_not_confirmed:'email-not-confirmed',invalid_credentials:'credentials',reauthentication_needed:'reauthentication',reauthentication_not_valid:'reauthentication',current_password_invalid:'current-password',current_password_mismatch:'current-password',current_password_required:'current-password'};const code=known[result?.error_code||result?.code]||(response.status===429?'rate-limit':response.status===401||response.status===403?'credentials':response.status>=500?'unavailable':'request');throw fail(code,response.status);}
    return result;
   }
   async locked(fn){return this.locks?.request?this.locks.request(this.key,fn):fn();}
@@ -60,7 +60,19 @@
    const result=await this.request('token?grant_type=pkce',{body:{auth_code:code,code_verifier:pending.verifier}});
    this.write(this.pendingKey,null);const recovery=pending.kind==='recovery',user=this.save(result,{recovery});return {user,recovery};
   }
-  async changePassword(password){const session=await this.session();if(!session)throw fail('credentials');const user=await this.request('user',{method:'PUT',token:session.access_token,body:{password}});this.memory={...session,user,recovery:false};this.write(this.key,this.memory);return user;}
+  async setPassword(session,password,currentPassword){if(!session)throw fail('credentials');const user=await this.request('user',{method:'PUT',token:session.access_token,body:{password,...(currentPassword===undefined?{}:{current_password:currentPassword})}});this.memory={...session,user,recovery:false};this.write(this.key,this.memory);return user;}
+  async changePassword(password){return this.setPassword(await this.session(),password);}
+  async updatePassword(currentPassword,password){
+   const original=await this.session();if(!original)throw fail('credentials');
+   return this.locked(async()=>{
+    const session=this.read();if(session?.user?.id!==original.user.id)throw fail('credentials');
+    const user=await this.request('user',{token:session.access_token});if(user.is_anonymous||!user.email)throw fail('credentials');
+    // Verify on Auth even when the project's optional current-password check is off.
+    let fresh;try{fresh=await this.request('token?grant_type=password',{body:{email:user.email,password:currentPassword}});}catch(error){if(error.code==='credentials')throw fail('current-password',error.status);throw error;}
+    if(fresh?.user?.id!==user.id)throw fail('credentials');this.save(fresh);
+    return this.setPassword(this.read(),password,currentPassword);
+   });
+  }
   async logout(){return this.locked(async()=>{const value=this.read();this.write(this.key,null);this.memory=null;this.write(this.pendingKey,null);if(value?.access_token)try{await this.request('logout?scope=local',{body:{},token:value.access_token});}catch(error){if(error.status!==401&&error.status!==403)throw error;}});}
  }
  return Object.freeze({configuration,SupabaseAuth});
