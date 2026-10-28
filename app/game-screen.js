@@ -71,7 +71,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return iconButton('id="network-pair-button"',globalThis.PlayroomMessages.text("ui.game-screen.c58470ab336f"),'addPlayer',{disabled});
   }
   let quickActions=[];
-  function quickAccessMarkup({exclude=[]}={}){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!action.attrs.includes('data-command="settings"')&&action.name!=='palette'&&!exclude.includes(action.name)).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
+  function quickAccessMarkup({exclude=[]}={}){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${(quickActions.some(a=>a.name==='people')?quickActions:[...quickActions,{attrs:'data-friends-open',label:globalThis.PlayroomMessages.text('ui.social.friends'),name:'people'}]).filter(action=>action.name!=='settings'&&action.name!=='palette'&&!exclude.includes(action.name)).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
   function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
     // Context actions grow to the left; fullscreen and settings keep fixed right slots.
     const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:true}]:[];
@@ -124,7 +124,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const footerMarkup=footer?.outerHTML||'';footer?.remove();
-    return header+'<div class="modal-body">'+template.innerHTML+'</div>'+footerMarkup;
+    const shortcuts=template.content.querySelector('.settings-overview,.lobby-shell,[data-friends-open],[data-friends-dialog],#profile-form,[data-learning-choice]')?'':`<div class="settings-shortcuts modal-shortcuts">${iconButton('data-friends-open data-quick-shortcut',globalThis.PlayroomMessages.text('ui.social.friends'),'people')}</div>`;
+    return header+'<div class="modal-body">'+shortcuts+template.innerHTML+'</div>'+footerMarkup;
   }
   const DOM=root.PlayroomDOM||(typeof require==='function'?require('../platform/web/dom.js'):null),{patchChildren}=DOM;
   const pendingScroll=new WeakMap(), fixedLayouts=new WeakMap(), renderedTrees=new WeakMap(), handReserves=new WeakMap();

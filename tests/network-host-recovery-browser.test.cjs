@@ -61,7 +61,7 @@ async function pair(host,guest,{shareHandoff=false}={}){
     await guest.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',
       {data:{kind:'playroom-pair-token',token}})),await host.evaluate(link=>PlayroomPairing.extract(link),offer));
   }else{
-    await guest.locator('#network-join-button').click();
+    await guest.locator('#network-join-button').click();await guest.locator('[data-lobby-online=manual]').click();
     await guest.locator('#net-client-offer textarea[name=offer]').fill(offer);
     await guest.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
   }

@@ -112,12 +112,12 @@ test('cloud account: recovery explains an unchanged password and permits another
  }finally{await browser.close();await server.close();}
 });
 
-test('cloud social: two clients confirm friendship, invite, join and revoke without changing local games',{timeout:40000},async()=>{
+
+test('cloud social: account handles, separate friends and automatic lobby invitations',{timeout:40000},async()=>{
  const server=await serveBrowserFixture(process.env.PLAYROOM_SOCIAL_FIXTURE||path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}).catch(async e=>{await server.close();throw e;});
- const ids={a:'00000000-0000-4000-8000-000000000001',b:'00000000-0000-4000-8000-000000000002'},names={a:'Алиса',b:'Борис'},profiles={},friends=[],rooms=[],invites=[],requests=[],errors=[];
- const edge='00000000-0000-4000-8000-000000000010',rid='00000000-0000-4000-8000-000000000020',iid='00000000-0000-4000-8000-000000000030',secret='a'.repeat(64);
- const list=k=>({profile:profiles[k]||null,friends:friends.filter(f=>f.sender===k||f.recipient===k).map(f=>({id:f.id,userId:ids[f.sender===k?f.recipient:f.sender],nickname:names[f.sender===k?f.recipient:f.sender],accepted:f.accepted,incoming:f.recipient===k})),rooms:rooms.filter(r=>r.members.includes(k)).map(r=>({id:r.id,name:r.name,ownerId:ids.a})),invitations:invites.filter(i=>i.target==='b'&&k==='b'&&!i.used&&!i.revoked).map(i=>({id:i.id,roomName:'Тестовая',fromName:names.a}))});
- const pages={};
+ const ids={a:'00000000-0000-4000-8000-000000000001',b:'00000000-0000-4000-8000-000000000002'},names={a:'Алиса',b:'Борис'},profiles={},friends=[],rooms=[],invites=[],requests=[],errors=[],pages={};
+ const rid='00000000-0000-4000-8000-000000000020',secret='a'.repeat(64);
+ const list=k=>({profile:profiles[k]||null,friends:friends.filter(f=>f.sender===k||f.recipient===k).map(f=>{const other=f.sender===k?f.recipient:f.sender;return{id:'edge',userId:ids[other],nickname:names[other],username:profiles[other]?.username,accepted:f.accepted,incoming:f.recipient===k};}),rooms:rooms.filter(r=>r.members.includes(k)).map(r=>({id:r.id,name:r.name,ownerId:ids.a})),invitations:invites.filter(i=>i.target==='b'&&k==='b'&&!i.used&&!i.revoked).map(i=>({id:i.id,roomName:'Игра с Алисой',fromName:names.a}))});
  try{
   for(const k of ['a','b']){
    const context=await browser.newContext({viewport:{width:390,height:740}});
@@ -128,34 +128,46 @@ test('cloud social: two clients confirm friendship, invite, join and revoke with
     else{
      const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(req.headers().authorization,'Bearer access-'+k);
      if(action==='list')data=list(k);
-     else if(action==='profile'){profiles[k]={id:ids[k],nickname:d.nickname};data=profiles[k];}
-     else if(action==='request'){assert.equal(d.userId,ids.b);friends.push({id:edge,sender:k,recipient:'b',accepted:false});data={};}
+     else if(action==='profile'){
+      if(d.username&&Object.entries(profiles).some(([other,p])=>other!==k&&p.username===d.username.toLowerCase())){status=400;data={message:'social:username-taken'};}
+      else{profiles[k]={id:ids[k],nickname:d.nickname,username:d.username?.toLowerCase()||profiles[k]?.username||null};data=profiles[k];}
+     }
+     else if(action==='search')data=Object.values(profiles).filter(p=>p.username===d.username.replace(/^@/,'').toLowerCase()&&p.id!==ids[k]);
+     else if(action==='request'){assert.equal(d.username,'bob');friends.push({sender:k,recipient:'b',accepted:false});data={};}
      else if(action==='accept'){assert.equal(k,'b');friends[0].accepted=true;data={};}
-     else if(action==='create'){rooms.push({id:rid,name:d.name,members:['a']});data={id:rid};}
-     else if(action==='room'){data={id:rid,name:'Тестовая',ownerId:ids.a,members:rooms[0].members.map(m=>({id:ids[m],nickname:names[m]})),invites:k==='a'?invites.map(i=>({id:i.id,targetId:ids.b,expiresAt:new Date(Date.now()+86400000).toISOString(),used:i.used,revoked:i.revoked})):[]};}
-     else if(action==='invite'){assert.equal(k,'a');assert.equal(d.userId,ids.b);invites.push({id:iid,target:'b',used:false,revoked:false});data={id:iid,token:secret};}
-     else if(action==='join'){assert.equal(d.inviteId,iid);invites[0].used=true;rooms[0].members.push(k);data={id:rid};}
-     else if(action==='revoke'){invites.at(-1).revoked=true;data={};}
+     else if(action==='lobby'){if(!rooms.length)rooms.push({id:rid,name:d.name,members:['a']});data={id:rid};}
+     else if(action==='room')data={id:rid,name:'Игра с Алисой',ownerId:ids.a,members:rooms[0].members.map(m=>({id:ids[m],nickname:names[m]})),invites:invites.map(i=>({id:i.id,targetId:i.target?ids.b:null,expiresAt:new Date(Date.now()+86400000).toISOString(),used:i.used,revoked:i.revoked}))};
+     else if(action==='invite'){const item={id:'invite-'+invites.length,target:d.userId?'b':null,used:false,revoked:false};invites.push(item);data={id:item.id,token:secret};}
+     else if(action==='join'){invites.find(i=>i.id===d.inviteId).used=true;rooms[0].members.push(k);data={id:rid};}
+     else if(action==='revoke'){invites.find(i=>i.id===d.id).revoked=true;data={};}
      else throw Error('Unexpected RPC '+action);
     }
     await route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
    });
    const page=await context.newPage();page.setDefaultTimeout(6000);page.on('pageerror',e=>errors.push(e.message));await page.goto(server.url);pages[k]=page;
+   await page.evaluate(()=>{const original=PlayroomCloudNetwork;window.testCloudCalls=[];window.PlayroomCloudNetwork={...original,host:async id=>{testCloudCalls.push(['host',id]);},connect:async id=>{testCloudCalls.push(['connect',id]);}};});
   }
   assert.equal(requests.length,0);
   for(const k of ['a','b']){
-   const p=pages[k];await p.locator('#app [data-command=settings]').first().click();await p.locator('[data-account-open]').click();await p.locator('[name=email]').fill(k+'@example.test');await p.locator('[name=password]').fill('password123');await p.locator('.account-form [type=submit]').click();await p.locator('[data-account-mode=social]').click();await p.locator('[data-social-form=profile] [type=submit]').click();await p.locator('[data-social-form=request]').waitFor();
+   const p=pages[k];assert.equal(await p.locator('#app .topbar-tools [data-friends-open]').count(),1);assert.equal(await p.locator('#app .topbar-tools [data-command=help]').count(),0);
+   await p.locator('#app [data-command=settings]').first().click();assert.equal(await p.locator('.settings-header-actions [data-friends-open]').count(),1);assert.equal(await p.locator('.settings-quick [data-command=help]').count(),1);
+   await p.locator('[data-account-open]').click();await p.locator('[name=email]').fill(k+'@example.test');await p.locator('[name=password]').fill('password123');await p.locator('.account-form [type=submit]').click();
+   await p.locator('[data-account-mode=username]').click();await p.locator('[name=username]').fill(k==='a'?'alice':'bob');await p.locator('[data-account-form=username] [type=submit]').click();await p.locator('[data-account-mode=username]').waitFor();
+   await p.locator('.account-modal [data-friends-open]').click();await p.locator('[data-friend-search]').waitFor();assert.equal(await p.locator('[data-social-form=profile]').count(),0);
   }
   const a=pages.a,b=pages.b;
-  await a.locator('[data-social-form=request] input').fill(ids.b);await a.locator('[data-social-form=request] [type=submit]').click();await a.getByText('Борис · Запрос отправлен',{exact:true}).waitFor();
-  await b.locator('[data-social-action=refresh]').click();await b.locator('[data-social-action=accept]').click();await b.getByText('Алиса · Друг',{exact:true}).waitFor();
-  await a.locator('[data-social-action=refresh]').click();await a.getByText('Борис · Друг',{exact:true}).waitFor();
-  await a.locator('[data-social-form=create] input').fill('Тестовая');await a.locator('[data-social-form=create] [type=submit]').click();await a.locator('[data-social-target]').selectOption(ids.b);await a.locator('[data-social-action=invite]').click();
-  await a.locator('input[value="'+secret+'"]').waitFor();assert.equal(await a.evaluate(()=>JSON.stringify(PlayroomSocialUI.service.snapshot()).includes('a'.repeat(64))),false);
-  await a.screenshot({path:path.resolve(__dirname,'../../tmp_files/network-stage2/social-owner-phone.png')});
-  await b.locator('[data-social-action=refresh]').click();await b.locator('[data-social-action=join-targeted]').click();await b.locator('[data-social-action=connect-cloud]').waitFor();assert.equal(await b.locator('[data-social-action=invite]').count(),0);assert.equal(await b.locator('.social-content li').count(),2);
-  await a.locator('[data-social-target]').selectOption(ids.b);await a.locator('[data-social-action=invite]').click();await a.locator('[data-social-action=revoke]').click();await a.locator('[data-social-action=revoke]').waitFor({state:'detached'});
-  for(const p of [a,b]){assert(await p.locator('.social-content').evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert(await p.evaluate(()=>!localStorage.getItem('playroom.cloud-social')));}
+  await a.locator('[data-friend-search] input').fill('@bob');await a.locator('[data-friend-search] [type=submit]').click();await a.locator('[data-friend-action=request]').click();await a.getByText('Запрос отправлен',{exact:true}).waitFor();
+  assert(!(await a.locator('.friends-modal').innerText()).includes(ids.b));
+  await b.locator('[data-friend-action=refresh]').click();await b.locator('[data-friend-action=accept]').click();await b.getByText('Друг',{exact:true}).waitFor();
+  await a.evaluate(()=>PlayroomAppBridge.closeModal(true));await a.locator('[data-start=tictactoe]').click();await a.locator('[data-room-option=transportMode]').check();
+  assert.equal(await a.locator('.lobby-shortcuts [data-friends-open]').count(),1);await a.locator('[data-lobby-invite]').click();await a.locator('[data-lobby-online=invite]').waitFor();assert.equal(rooms.length,1);
+  await a.locator('[data-lobby-online=invite]').click();await a.getByText('Приглашение отправлено.',{exact:true}).waitFor();assert.equal(rooms.length,1);assert.equal(await a.evaluate(()=>testCloudCalls[0][0]),'host');
+  await a.locator('[data-lobby-online=guest]').click();await a.locator('input[value="'+secret+'"]').waitFor();assert(!await a.evaluate(()=>JSON.stringify(PlayroomSocialUI.service.snapshot()).includes('a'.repeat(64))));
+  for(const width of [320,390,1000]){await a.setViewportSize({width,height:740});assert(await a.locator('.social-content').evaluate(e=>e.scrollWidth<=e.clientWidth+1));}await a.setViewportSize({width:390,height:740});
+  await a.screenshot({path:path.resolve(__dirname,'../../tmp_files/network-lobby/lobby-invite-phone.png')});
+  await b.evaluate(()=>PlayroomAppBridge.closeModal(true));await b.locator('#network-join-button').click();await b.locator('[data-lobby-online=accept-invite]').waitFor();await b.locator('[data-lobby-join-code] input').fill('keep-code');await b.locator('[data-lobby-online=refresh-incoming]').click();await b.locator('[data-incoming-content][aria-busy=false]').waitFor();assert.equal(await b.locator('[data-lobby-join-code] input').inputValue(),'keep-code');await b.locator('[data-lobby-online=accept-invite]').click();await b.waitForFunction(()=>testCloudCalls.some(c=>c[0]==='connect'));assert.equal(await b.evaluate(()=>testCloudCalls.at(-1)[1]),rid);
+  await a.locator('[data-lobby-online=revoke]').last().click();await a.locator('[data-lobby-online=revoke][data-id=invite-1]').waitFor({state:'detached'});assert.equal(invites.at(-1).revoked,true);
+  for(const p of [a,b])assert(await p.locator('.social-content').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await server.close();}
 });

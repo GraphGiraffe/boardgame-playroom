@@ -18,6 +18,7 @@
    try{
     const result=await this.remote.call(action,data,{userId:s.id});
     if(!current())throw fail('account-changed');
+    if(action==='search')return result;
     if(action==='room')this.room=result;
     else {const next=action==='list'?result:await this.remote.call('list',{}, {userId:s.id});if(!current())throw fail('account-changed');this.data=next;this.room=null;}
     return result;

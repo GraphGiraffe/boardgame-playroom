@@ -42,7 +42,7 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     if(pwaHandoff){
       await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
     }else{
-      await client.locator('#network-join-button').click();
+      await client.locator('#network-join-button').click();await client.locator('[data-lobby-online=manual]').click();
       await client.locator('#net-client-offer textarea[name=offer]').fill(offerLink);
       await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
     }

@@ -1,7 +1,7 @@
 /* Account dialog and events. Provider calls and credentials belong to the adapter. */
 (function(root){
  'use strict';
- let service=null,mode='login',notice='',error='',opened=false;
+ let service=null,mode='login',notice='',error='',opened=false,continuation=null;
  const text=key=>root.PlayroomMessages.text('ui.account.'+key),H=()=>root.PlayroomGameScreen,bridge=()=>root.PlayroomAppBridge;
  function status(){const s=service?.snapshot();return !s?.configured?'unavailable':root.navigator.onLine===false?'offline':s.busy?'busy':s.error?'error':s.kind==='account'?'account':s.kind==='guest'?'guest':'local';}
  const statusIcons={unavailable:'cloud-off',offline:'cloud-off',busy:'cloud-sync',error:'cloud-alert',account:'cloud-check',guest:'cloud',local:'cloud'};
@@ -9,37 +9,39 @@
  function updateButtons(){const state=status(),label=text('title')+' · '+text('status.'+state);for(const button of document.querySelectorAll('[data-account-open]')){button.dataset.accountStatus=state;button.setAttribute('aria-label',label);button.title=label;button.innerHTML=H().icon(statusIcons[state]);}}
  function render(){
   if(!opened||!document.querySelector('.account-modal'))return;
-  const s=service.snapshot(),esc=H().esc;
+  const profile=root.PlayroomSocialUI.service.snapshot().profile;
+  const s={...service.snapshot(),busy:service.busy||(mode==='username'&&root.PlayroomSocialUI.service.busy)},esc=H().esc;
   const button=(action,label,variant='secondary')=>H().button({attrs:`type="button" data-account-mode="${action}" ${s.busy?'disabled':''}`,label:text(label),variant});
   const field=(name,type,autocomplete,label=name)=>`<label class="field"><span>${text(label)}</span><input name="${name}" type="${type}" autocomplete="${autocomplete}" required ${type==='password'?`minlength="${autocomplete==='current-password'?1:8}" maxlength="256"`:'maxlength="254"'}></label>`;
-  const accountView=s.kind==='account'&&!s.recovery&&mode!=='password-change';
+  const accountView=s.kind==='account'&&!s.recovery&&mode!=='password-change'&&mode!=='username';
   const passwordMode=mode==='password-change'||s.recovery;
   let body;
   if(!s.configured)body=`<p>${text('unavailable')}</p>`;
-  else if(accountView)body=`<p>${esc(s.email)}</p><p class="muted">${text('local-unchanged')}</p><div class="account-actions">${button('social','social')}${button('password-change','change-password')}${button('logout','logout')}</div>`;
+  else if(accountView)body=`<p>${esc(s.email)}</p>${profile?.username?`<p><strong>@${esc(profile.username)}</strong></p>`:''}<p class="muted">${text('local-unchanged')}</p><div class="account-actions">${button('username','username')}${button('password-change','change-password')}${button('logout','logout')}</div>`;
+  else if(mode==='username'&&!s.recovery&&s.kind==='account')body=`<form class="account-form" data-account-form="username"><fieldset><label class="field"><span>${text('username')}</span><input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}" required value="${esc(profile?.username||'')}"></label><p class="muted">${text('username-info')}</p>${H().button({type:'submit',label:text('save-username')})}</fieldset></form><div class="account-actions">${button('account','back')}</div>`;
   else{
    if(s.recovery)mode='password';
    body=`<p class="muted">${text(passwordMode?'password-info':'optional')}</p><form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</fieldset></form>${mode==='password'?'':`<div class="account-actions">${mode==='password-change'?button('account','back'):`${mode!=='login'?button('login','login'):''}${mode!=='signup'?button('signup','signup'):''}${mode!=='recover'?button('recover','recover'):''}`}</div>`}`;
   }
-  if(s.configured&&!accountView&&!passwordMode)body+=`<div class="account-actions">${button('social','social')}</div>`;
+
   const modal=document.querySelector('.account-modal .account-content');if(!modal)return;
-  const view=!s.configured?'unavailable':accountView?'account':'form:'+mode;
+  const view=!s.configured?'unavailable':accountView?'account':'form:'+mode+(mode==='username'?':'+(profile?.username||''):'');
   if(modal.dataset.accountView!==view){modal.innerHTML=body+'<p class="account-message" role="status" aria-live="polite"></p>';modal.dataset.accountView=view;}
   // Busy/error updates must not replace inputs, focus, autofill or the clicked button.
   const fieldset=modal.querySelector('fieldset');if(fieldset)fieldset.disabled=s.busy;
   for(const button of modal.querySelectorAll('[data-account-mode]'))button.disabled=s.busy;
-  const submit=modal.querySelector('button[type=submit]');if(submit){const label=submit.querySelector('.ui-button-label'),caption=text(s.busy?'waiting':passwordMode?'save-password':mode);if(label)label.textContent=caption;submit.setAttribute('aria-label',caption);}
+  const submit=modal.querySelector('button[type=submit]');if(submit){const label=submit.querySelector('.ui-button-label'),caption=text(s.busy?'waiting':mode==='username'?'save-username':passwordMode?'save-password':mode);if(label)label.textContent=caption;submit.setAttribute('aria-label',caption);}
   modal.setAttribute('aria-busy',String(s.busy));
   const message=modal.querySelector('.account-message');message.setAttribute('role',error?'alert':'status');message.textContent=error||notice||(s.busy?text('waiting'):'');
  }
  async function execute(action,success=''){
   error='';notice='';
-  try{const result=await action();if(success)notice=text(success);if(result?.confirmationRequired)notice=text('confirmation');}
-  catch(e){error=text('error.'+(['network','storage','rate-limit','credentials','email-not-confirmed','recovery-link','unavailable','redirect','same-password','weak-password','current-password','reauthentication'].includes(e.code)?e.code:'request'));}
+  try{const result=await action();if(success)notice=text(success);if(result?.confirmationRequired)notice=text('confirmation');if(continuation&&service.snapshot().kind==='account'&&!service.snapshot().recovery){const resume=continuation;continuation=null;opened=false;bridge().closeModal(true);resume();}}
+  catch(e){error=text('error.'+(['network','storage','rate-limit','credentials','email-not-confirmed','recovery-link','unavailable','redirect','same-password','weak-password','current-password','reauthentication','username-invalid','username-taken','setup','network'].includes(e.code)?e.code:'request'));}
   render();
  }
- function show(){
-  opened=true;mode='login';error='';notice='';
+ function show({onReady=null}={}){
+  continuation=onReady;opened=true;mode='login';error='';notice='';
   bridge().openModal(`${bridge().modalHead(text('title'))}<div class="account-content"></div>`,'account-modal');render();
   if(service.snapshot().configured&&!service.snapshot().recovery&&!service.snapshot().busy)void execute(()=>service.restore());
  }
@@ -49,6 +51,7 @@
   root.PlayroomSocialUI.init({account:service,remote:auth?new root.PlayroomSupabaseSocial({auth}):null});
   if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal'})});
   service.subscribe(()=>{updateButtons();render();});
+  root.PlayroomSocialUI.service.subscribe(render);
   root.addEventListener('online',updateButtons);root.addEventListener('offline',updateButtons);
   if(auth?.hasCallback()){
    opened=true;bridge().openModal(`${bridge().modalHead(text('title'))}<div class="account-content"></div>`,'account-modal');render();
@@ -58,7 +61,7 @@
  document.addEventListener('click',event=>{
   if(event.target.closest('[data-account-open]')){show();return;}
   const button=event.target.closest('[data-account-mode]');if(!button||service.snapshot().busy)return;
-  if(button.dataset.accountMode==='social'){opened=false;root.PlayroomSocialUI.show();return;}
+  if(button.dataset.accountMode==='username'){mode='username';notice='';error='';render();void execute(()=>root.PlayroomSocialUI.service.refresh());return;}
   if(button.dataset.accountMode==='logout'){mode='login';void execute(()=>service.logout(),'signed-out');return;}
   mode=button.dataset.accountMode;notice='';error='';render();
  });
@@ -66,6 +69,7 @@
   const form=event.target.closest('[data-account-form]');if(!form)return;event.preventDefault();
   const email=form.elements.email?.value||'',password=form.elements.password?.value||'',currentPassword=form.elements['current-password']?.value||'',action=form.dataset.accountForm;
   if(service.snapshot().busy)return;
+  if(action==='username'){void execute(async()=>{await root.PlayroomSocialUI.service.perform('profile',{nickname:bridge().profile()?.name||'',username:form.elements.username.value});mode='account';},'username-saved');return;}
   if(action==='login')void execute(()=>service.login(email,password));
   else if(action==='signup')void execute(()=>service.signup(email,password));
   else if(action==='recover')void execute(()=>service.recover(email),'recovery-sent');

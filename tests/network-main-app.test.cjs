@@ -25,7 +25,7 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   async function join(page){
    await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();
    const offer=await value(host,'#net-host-token');
-   await page.locator('#network-join-button').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+   await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
    await page.locator('#net-client-token').waitFor();
    await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
    await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(form=>form.requestSubmit());
@@ -124,7 +124,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     if(pwaHandoff){
       await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
     }else{
-      await client.locator('#network-join-button').click();
+      await client.locator('#network-join-button').click();await client.locator('[data-lobby-online=manual]').click();
       await client.locator('#net-client-offer textarea[name=offer]').fill(offerLink);
       await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
     }

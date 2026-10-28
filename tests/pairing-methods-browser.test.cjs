@@ -7,7 +7,7 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
   page.on('pageerror',e=>errors.push(e.message));
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><button id="network-pair-button">Хост</button><button id="network-join-button">Гость</button><div id="app"></div><div id="modal-root"></div></body></html>');
   for(const css of ['app/styles.css','app/lobby.css','app/design-system.css'])await page.addStyleTag({content:read(css)});
-  for(const script of ['core/messages.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
+  for(const script of ['core/messages.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/lobby-view.js','app/vendor/qrcode.js','app/qr.js','app/acoustic-pairing.js','app/pairing.js'])await page.addScriptTag({content:read(script)});
   await page.addScriptTag({content:`
     globalThis.__testState={microphone:${microphone},share:${share},standalone:${standalone},candidate:${candidate},addresses:${JSON.stringify(addresses)}};
     const original=globalThis.PlayroomAcousticPairing;
@@ -43,18 +43,19 @@ test('join on content://-like unsupported capture: QR/Text first, blocked Share/
   const browser=await chromium.launch(browserOptions),f=await fixture(browser);
   try{
     await f.page.locator('#network-join-button').click();
+    assert.deepEqual(f.errors,[]);
     assert.deepEqual(await methodState(f.page),{available:[{name:'qr',open:true},{name:'text',open:true}],
       unavailable:[{name:'share',open:false},{name:'sound',open:false}],unavailableExpanded:false,helpOpen:false});
     assert.equal(await f.page.locator('#net-client-offer').isVisible(),true);
     assert.equal(await f.page.locator('.pairing-help-popover,.modal-head .pairing-help').count(),0);
-    await f.page.locator('[data-pairing-help=qr]>summary').click();
-    assert.match(await f.page.locator('#pairing-help-qr').innerText(),/PR3.*PR2/s);
-    assert.equal(await f.page.locator('#pairing-help-text').isVisible(),false);
-    const help=await f.page.locator('#pairing-help-qr').boundingBox();assert(help.x>=0&&help.x+help.width<=390);
+    await f.page.locator('[data-pairing-help=qr]>button').click();
+    assert.match(await f.page.locator('.mini-help-popover:popover-open').innerText(),/PR3.*PR2/s);
+    assert.equal(await f.page.locator('[data-pairing-help=text] .mini-help-popover:popover-open').count(),0);
+    const help=await f.page.locator('.mini-help-popover:popover-open').boundingBox();assert(help.x>=0&&help.x+help.width<=390);
     await f.page.locator('.pairing-methods-unavailable>summary').click();
     await f.page.locator('[data-pairing-method=sound]>summary').click();
-    await f.page.locator('[data-pairing-help=sound]>summary').click();
-    assert.match(await f.page.locator('#pairing-help-sound').innerText(),/Микрофон заблокирован/);
+    await f.page.locator('[data-pairing-help=sound]>button').click();
+    assert.match(await f.page.locator('.mini-help-popover:popover-open').innerText(),/Микрофон заблокирован/);
     const modal=await f.page.locator('.modal').boundingBox();assert.ok(modal.width<400);
     if(process.env.PLAYROOM_CAPTURE_DIR)await f.page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'pairing-join-mobile.png')});
     assert.equal(f.errors.length,0,f.errors.join('\n'));

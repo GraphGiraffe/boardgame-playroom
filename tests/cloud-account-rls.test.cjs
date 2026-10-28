@@ -27,16 +27,25 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const social=fs.readFileSync(path.join(__dirname,'../server/social.sql'),'utf8');sql(social);sql(social);
   const rpc=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_social('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   rpc(a,false,'profile',{nickname:'Алиса'});rpc(b,false,'profile',{nickname:'Борис'});
+  rpc(a,false,'profile',{nickname:'Алиса',username:'Alice'});rpc(b,false,'profile',{nickname:'Борис',username:'bob'});
+  assert.equal(rpc(a,false,'list').profile.username,'alice');
+  rpc(b,false,'profile',{nickname:'Борис',username:'ALICE'},false);rpc(a,false,'profile',{nickname:'Алиса',username:'a b'},false);
+  assert.equal(rpc(b,false,'search',{username:'@ALICE'})[0].nickname,'Алиса');
+  rpc(a,false,'profile',{nickname:'Алиса',username:'alice_new'});assert.equal(rpc(b,false,'search',{username:'alice'}).length,0);
+  assert.equal(rpc(b,false,'search',{username:'alice_new'})[0].id,a);
+  assert(!JSON.stringify(rpc(b,false,'search',{username:'alice_new'})).includes('email'));
+  rpc(g,true,'search',{username:'alice_new'},false);
+  rpc(a,false,'profile',{nickname:'Основной никнейм'});assert.equal(rpc(a,false,'list').profile.username,'alice_new');
   rpc(g,true,'profile',{nickname:'Гость'},false);rpc(g,true,'create',{name:'Чужая'},false);
   for(const table of ['playroom_friendships','playroom_cloud_rooms','playroom_room_members','playroom_room_invites']){
    sql(as(a,false,`select * from public.${table};`),false);sql(as(a,false,`delete from public.${table};`),false);
   }
   sql("set role anon;select public.playroom_social('list');",false);
-  rpc(a,false,'request',{userId:b});rpc(b,false,'request',{userId:a});
+  rpc(a,false,'request',{username:'@bob'});rpc(b,false,'request',{userId:a});
   let list=rpc(a,false,'list');assert.equal(list.friends.length,1);assert.equal(list.friends[0].accepted,false);
   const edge=list.friends[0].id;
   rpc(a,false,'accept',{id:edge},false);rpc(g,true,'accept',{id:edge},false);
-  const rid=rpc(a,false,'create',{name:'Закрытая'}).id;
+  const rid=rpc(a,false,'lobby',{name:'Закрытая',localRoomId:'test-lobby'}).id;assert.equal(rpc(a,false,'lobby',{name:'Повтор',localRoomId:'test-lobby'}).id,rid);
   rpc(b,false,'room',{roomId:rid},false);rpc(g,true,'room',{roomId:rid},false);
   rpc(a,false,'invite',{roomId:rid,userId:b},false);
   rpc(b,false,'accept',{id:edge});

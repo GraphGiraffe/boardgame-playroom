@@ -12,7 +12,7 @@ test('Mage Brawl WebRTC: concurrent private plans, bot settings and public Table
   await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'bot',nickname:'Тактик'});b.renderLobby();});
   async function join(page){
    await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();const offer=await host.locator('#net-host-token').inputValue();
-   await page.locator('#network-join-button').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+   await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
    await page.locator('#net-client-token').waitFor();await host.locator('#net-host-answer textarea[name=answer]').fill(await page.locator('#net-client-token').inputValue());await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
    await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(f=>f.requestSubmit());await page.locator('.lobby-shell').waitFor();
   }

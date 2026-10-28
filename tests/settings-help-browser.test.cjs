@@ -36,14 +36,14 @@ test('modal origins: game settings rules and room close return to their caller',
   await page.locator('#app [data-command=room]').click();await page.locator('[data-command=lobby-start]').click();
   await page.locator('#app .table-shell').waitFor();
   await page.locator('#app [data-command=settings]').click();
-  assert.equal(await page.locator('.settings-header-actions [data-command=rules]').count(),1);
-  assert.equal(await page.locator('.settings-quick [data-command=rules],.settings-header-actions [data-command=room-help]').count(),0);
-  await page.locator('.settings-header-actions [data-command=rules]').click();await page.locator('.game-rules-help').waitFor();
+  assert.equal(await page.locator('.settings-header-actions [data-friends-open]').count(),1);
+  assert.equal(await page.locator('.settings-quick [data-command=rules]').count(),1);assert.equal(await page.locator('.settings-header-actions [data-command=rules]').count(),0);
+  await page.locator('.settings-quick [data-command=rules]').click();await page.locator('.game-rules-help').waitFor();
   await close();await page.locator('.settings-overview').waitFor();await close();
   assert.equal(await page.locator('#modal-root .modal').count(),0);assert(await page.locator('#app .table-shell').isVisible());
   await page.locator('#app [data-command=settings]').click();await page.locator('.settings-quick [data-command=room]').click();
   await page.locator('.room-setup-modal [data-command=settings]').click();
-  await page.locator('.settings-header-actions [data-command=room-help]').click();await close();await page.locator('.settings-overview').waitFor();await close();await page.locator('.lobby-shell').waitFor();
+  await page.locator('.settings-quick [data-command=room-help]').click();await close();await page.locator('.settings-overview').waitFor();await close();await page.locator('.lobby-shell').waitFor();
   await page.keyboard.press('Escape');assert.equal(await page.locator('#modal-root .modal').count(),0);
   assert(await page.locator('#app .table-shell').isVisible());assert.equal(await page.evaluate(()=>document.getElementById('app').inert),false);
   assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId);assert.deepEqual(errors,[]);

@@ -41,5 +41,11 @@
   "ui.account.error.weak-password": "Пароль не соответствует требованиям сервиса. Выберите более длинный и сложный пароль.",
   "ui.account.error.current-password": "Неверный текущий пароль. Проверьте его и повторите попытку.",
   "ui.account.error.reauthentication": "Для смены пароля войдите в аккаунт заново и повторите попытку.",
-  "ui.account.social": "Друзья и комнаты"
+  "ui.account.username": "Имя аккаунта",
+  "ui.account.username-info": "Уникальное имя для поиска: 3–24 символа a–z, 0–9 и _. Начинается с буквы. Можно изменить, если новое имя свободно. Никнейм меняется в основных настройках.",
+  "ui.account.save-username": "Сохранить",
+  "ui.account.username-saved": "Имя аккаунта сохранено.",
+  "ui.account.error.username-invalid": "Используйте 3–24 символа a–z, 0–9 и _. Начните с буквы.",
+  "ui.account.error.username-taken": "Это имя аккаунта уже занято. Выберите другое.",
+  "ui.account.error.setup": "Сервис аккаунтов нужно обновить: примените новую миграцию social.sql."
 }

@@ -9,3 +9,9 @@
 .social-content > button { margin: 4px; }
 .social-code { user-select: text; font-size: .85em; }
 [data-social-message]:empty { display: none; }
+.social-person { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.social-person > span { flex: 1; min-width: 0; }
+.social-content small { display: block; color: var(--muted); }
+.lobby-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 10px; }
+.lobby-shortcuts .settings-shortcuts { display: flex; gap: 8px; }
+.lobby-shortcuts > [data-lobby-invite] { flex: 1 1 auto; }

@@ -2,7 +2,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomSupabaseSocial=api;})(globalThis,function(){
  'use strict';
  const fail=(code,status=0)=>Object.assign(Error(code),{code,status});
- const reasons=['account-required','invalid','profile-required','not-found','forbidden','limit','invite-invalid','owner-leave','friend-required','host-offline','host-busy'];
+ const reasons=['account-required','invalid','profile-required','not-found','forbidden','limit','invite-invalid','owner-leave','friend-required','host-offline','host-busy','username-taken','username-invalid'];
  class SupabaseSocial{
   constructor({auth,fetch=(...args)=>globalThis.fetch(...args),rpc='playroom_social'}){if(!['playroom_social','playroom_signal'].includes(rpc))throw fail('configuration');this.auth=auth;this.fetch=fetch;this.rpc=rpc;}
   async call(action,data={}, {userId}={}){

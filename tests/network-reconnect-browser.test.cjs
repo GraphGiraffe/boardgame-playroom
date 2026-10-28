@@ -64,7 +64,7 @@ async function pair(host,client,{offerButton=false,photo=false}={}){
   const token=await host.evaluate(value=>PlayroomPairing.extract(value),offer);
   assert.match(token,/^PR[23]\./);
   if(photo)assert.ok(token.startsWith('PR3.'),'QR photo test requires the same compact PR3 used on Android');
-  await client.locator('#network-join-button').click();
+  await client.locator('#network-join-button').click();await client.locator('[data-lobby-online=manual]').click();
   if(photo){
     const qr=host.locator('#net-host-token-qr svg');await qr.waitFor({timeout:10000});
     const image=await qrPng(host,'#net-host-token-qr svg');
