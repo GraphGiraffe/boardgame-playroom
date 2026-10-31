@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/game-components.js; sha256=a8f65b06012c165cc6d89bb3061919b8c68946ee3833aa2f1e2a7bd754202dca
+// Vendored from playroom-paks/shared/components/game-components.js; sha256=8e597d40387d901f6e65ad2b3c0798ab3572c4e97873c0297e103b0b023f3066
 // Canonical scalable Web component geometry. Values, visibility and actions are external.
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameComponents=api;})(globalThis,function(){
  'use strict';
@@ -192,8 +192,9 @@ function card(value,attrs='disabled',extra=''){
 
   return `<${tag} data-size-role="card" class="shared-card ${hidden?'shared-card-back':''} ${red?'shared-red':''} ${extra}" ${tag==='button'?attrs:''} ${!hidden&&value.id?`data-entity="${H.esc(entityKey(entityRef('card',value.id)))}"`:''} aria-label="${H.esc(label)}">${H.assetArt(hidden?'card-back':'card-face',{rank,suit,hidden,crown:!!value?.crown,backUrl:hidden?source('card-back',value?.assetSet):'',...(hidden?{assetSet:value?.assetSet,backUrls:Object.fromEntries((value?.assetSet?[value.assetSet]:['standard-deck','mini-split-deck']).map(set=>[set,source('card-back',set)]))}:{})},params=>cardFace(params))}</${tag}>`;
  }
-function cardSlot({suit='',attrs='disabled',className='',label='',kind='empty'}={}){
-  return `<button data-size-role="card" class="shared-card-slot ${esc(className)} ${suit==='♥'||suit==='♦'?'shared-red':''}" ${attrs} data-card-slot="${esc(kind)}" aria-label="${esc(label)}">${suit?H.assetArt('card-face',{suit,suitOnly:true},cardFace):''}</button>`;
+function cardSlot({suit='',attrs='disabled',className='',label='',kind='empty',tag='button'}={}){
+  if(!['button','span'].includes(tag))throw Error('Invalid card slot tag');
+  return `<${tag} data-size-role="card" class="shared-card-slot ${esc(className)} ${suit==='♥'||suit==='♦'?'shared-red':''}" ${attrs} data-card-slot="${esc(kind)}" aria-label="${esc(label)}">${suit?H.assetArt('card-face',{suit,suitOnly:true},cardFace):''}</${tag}>`;
  }
 const cover=content=>H.svg(`<ellipse data-cover-shadow cx="151" cy="158" rx="112" ry="14" fill="#365e4720"/><g data-cover-art>${content}</g>`);
   const die=(value,attrs='disabled',extra='')=>'<button class="shared-die '+extra+(/\bdisabled\b/.test(attrs)?'':' is-playable')+(/aria-pressed="true"/.test(attrs)?' is-selected':'')+'" '+attrs+' aria-label="'+globalThis.PlayroomMessages.text("ui.game-components.c21f8ac4292c")+H.esc(value||globalThis.PlayroomMessages.text("ui.game-components.22c66b66eaa1"))+'">'+H.assetArt('die',{value},()=>dieArt(value))+'</button>';

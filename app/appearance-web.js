@@ -15,7 +15,7 @@
     const catalog = new root.PlayroomAppearance.ThemeCatalog({presets:resources.presets, assets:resources.assets});
     const translator = new root.PlayroomLocalization.Translator({catalogs:resources.catalogs});
     const repository = {
-      read() { const value=storage().getItem(KEY); return value===null?null:JSON.parse(value); },
+      read() { const raw=storage().getItem(KEY);if(raw===null)return null;const value=JSON.parse(raw);if(value&& !['light','dark'].includes(value.activeId)){const previous=value.presets?.find(p=>p.id===value.activeId);value.activeId=previous?.mode==='dark'?'dark':'light';}return value; },
       write(value) { storage().setItem(KEY,JSON.stringify(value)); }
     };
     const service = new root.PlayroomAppearance.AppearanceService({catalog, repository, idFactory});
@@ -28,12 +28,14 @@
       for (const [name,value] of Object.entries(theme.palette)) element.style.setProperty('--color-'+name.replaceAll('.','-'),value);
       for (const [name,slot] of Object.entries(aliases)) element.style.setProperty(name,theme.palette[slot]);
       element.style.colorScheme=theme.mode;
+      element.style.backgroundColor=theme.palette['surface.canvas'];
+      document.querySelector('meta[name="color-scheme"]')?.setAttribute('content',theme.mode);
       element.dataset.appearanceMode=theme.mode;
       element.dataset.appearancePreset=theme.id;
       element.dataset.avatarStyle=service.avatarStyle();
       for(const image of document.querySelectorAll('img[data-avatar-id]')){const src=root.PlayroomAvatars.source(image.dataset.avatarId,image.dataset.avatarStyle||service.avatarStyle());if(src)image.src=src;}
       for (const [family,variant] of Object.entries(theme.skins)) element.setAttribute('data-skin-'+family,variant);
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme.palette['surface.canvas']);
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content',element.hasAttribute('data-app-loading')?'#000000':theme.palette['surface.canvas']);
       let layoutChanged=false;
       const geometry=new Map();
       const recordGeometry=(family,params={})=>{const value=root.PlayroomAssetResolver.resolve(family,params);geometry.set(JSON.stringify([family,params.packId||null]),[value.variant,value.stacking,value.ratio]);};

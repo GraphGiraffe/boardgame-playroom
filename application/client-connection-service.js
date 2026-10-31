@@ -10,10 +10,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     accept(snapshot){
       if(this.closed||snapshot?.kind!=='snapshot'||snapshot.protocolVersion!==3||!Number.isSafeInteger(snapshot.revision))return false;
       if(this.snapshot&&(snapshot.sessionId!==this.snapshot.sessionId||snapshot.authorityEpoch!==this.epoch))throw Error(globalThis.PlayroomMessages.text("ui.session-client.c5aa2db0f54c"));
-      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||!P.sameAudience(snapshot,this.snapshot)||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
+      if(this.snapshot&&(snapshot.revision<this.snapshot.revision||(snapshot.playerControlRevision||0)<(this.snapshot.playerControlRevision||0)||(snapshot.controlRevision||0)<(this.snapshot.controlRevision||0)||!P.sameAudience(snapshot,this.snapshot)||snapshot.packVersion!==this.snapshot.packVersion||snapshot.game!==this.snapshot.game))return false;
       if((snapshot.reactionRevision!==undefined&&(!Number.isSafeInteger(snapshot.reactionRevision)||snapshot.reactionRevision<0))||(snapshot.paused!==undefined&&typeof snapshot.paused!=='boolean')||(snapshot.controlRevision!==undefined&&(!Number.isSafeInteger(snapshot.controlRevision)||snapshot.controlRevision<0)))return false;
+      if(snapshot.playerControlRevision!==undefined&&(!Number.isSafeInteger(snapshot.playerControlRevision)||snapshot.playerControlRevision<0||!Array.isArray(snapshot.playerControls)||snapshot.playerControls.length!==snapshot.state?.players?.length||snapshot.playerControls.some(v=>!v||typeof v.away!=='boolean'||typeof v.bot!=='boolean')))return false;
       const initial=!this.snapshot;
-      if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0))return false;
+      if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.playerControlRevision||0)<=(this.snapshot.playerControlRevision||0)&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0))return false;
       this.epoch=snapshot.authorityEpoch;this.snapshot=P.freeze(P.clone(snapshot));
       if(!initial&&!this.recovering){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});
@@ -30,7 +31,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const previous=this.snapshot;
       if(!snapshot||snapshot.kind!=='snapshot'||snapshot.protocolVersion!==3||!Number.isSafeInteger(snapshot.revision)||
         (previous&&((['sessionId','authorityEpoch','game','packVersion'].some(k=>snapshot[k]!==previous[k])||!P.sameAudience(snapshot,previous))||
-          snapshot.revision<previous.revision||(snapshot.controlRevision||0)<(previous.controlRevision||0))))throw Error(globalThis.PlayroomMessages.text("ui.session-client.f7a7f94750b3"));
+          snapshot.revision<previous.revision||(snapshot.playerControlRevision||0)<(previous.playerControlRevision||0)||(snapshot.controlRevision||0)<(previous.controlRevision||0))))throw Error(globalThis.PlayroomMessages.text("ui.session-client.f7a7f94750b3"));
       this.recovering=true;
       try{
         this.accept(snapshot);

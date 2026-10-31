@@ -447,3 +447,37 @@ test('event scenes use authorized current events, ordered checkpoints and inert 
  for(const viewer of [-1,0,1]){const event=session.view(viewer).events.at(-1);assert.equal(event.scene.viewer,viewer);assert.deepEqual(event.scene.interactions,[]);assert.equal(event.scene.cells[0].owner,0);}
  for(invalid of ['id','duplicate','actions'])assert.throws(()=>session.view(-1),/EVENT_SCENE/);
 });
+
+test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',()=>{
+ const script=`
+import importlib.util,json,sys,tempfile,shutil,subprocess
+from pathlib import Path
+packs_root=Path(sys.argv[2]);app_root=Path(sys.argv[1])
+ns={'__file__':str(packs_root/'shared/pack_compiler.py')}
+exec((packs_root/'shared/pack_compiler.py').read_text(),ns)
+old={'__file__':ns['__file__']};exec(subprocess.check_output(['git','-C',str(packs_root),'show','HEAD:shared/pack_compiler.py'],text=True),old)
+for path in sorted((packs_root/'packs').glob('*/manifest.json')):
+ assert old['build_pack'](path.parent)==ns['build_pack'](path.parent),path.parent.name
+md='# Цель\\n\\n**Соберите** *три* знака. \\x60X\\x60\\n\\n## Ход\\n\\n1. Выберите клетку\\n2. Подтвердите\\n\\n| Карта | Действие |\\n|---|---|\\n| X | Поставить |\\n\\n![Линия](line)\\n'
+book=ns['compile_rulebook_markdown'](md)
+assert len(book['sections'])==2
+for source in ['Нет заголовка','# X\\n\\n<script>alert(1)</script>','# X\\n\\n[bad](javascript:alert(1))','# X\\n\\n![bad](https://example.test/art.svg)','# X\\n\\n- one\\n  - nested']:
+ try:ns['compile_rulebook_markdown'](source)
+ except ValueError:pass
+ else:raise AssertionError('unsafe/unsupported Markdown accepted')
+with tempfile.TemporaryDirectory() as tmp:
+ pack=Path(tmp)/'tictactoe';shutil.copytree(packs_root/'packs/tictactoe',pack)
+ manifest=pack/'manifest.json';data=json.loads(manifest.read_text());data['sourceModules']['rulebooks']={'ru':'locales/ru/rules.md'};manifest.write_text(json.dumps(data))
+ (pack/'locales/ru/rules.md').write_text(md)
+ bridge=pack/'rules.js';bridge.write_text(bridge.read_text().replace('const specification = {definition, presentation, locales, version};','const specification = {definition, presentation, locales, version, rulebooks:source?null:root.PlayroomPackResources.rulebooks};'))
+ bundle=ns['build_pack'](pack,shared=packs_root/'shared')
+ assert 'locales/ru/rules.md' not in bundle['files']
+ print(json.dumps({'book':book,'bundle':bundle},ensure_ascii=False))
+`;
+ const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:5*1024*1024}));
+ const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
+ const manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});manager.install(manager.prepare(result.bundle));
+ manager.activate('tictactoe',result.bundle.manifest.version);assert.deepEqual(E.get('tictactoe').rulebook,result.book);
+ const html=require('../app/rulebook-view.js').render(result.book,{esc:value=>String(value??'').replaceAll('<','&lt;'),illustrate:()=>''});
+ assert.match(html,/<strong>Соберите<\/strong>/);assert.match(html,/<em>три<\/em>/);assert.match(html,/<code>X<\/code>/);assert.match(html,/<ol>/);assert.match(html,/<table/);assert.doesNotMatch(html,/<script/);
+});

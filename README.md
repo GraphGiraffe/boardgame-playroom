@@ -1,6 +1,6 @@
 # ХОД · 0.19
 
-Настольные игры в браузере: локально с ботами, передача устройства и сетевая комната WebRTC. Приложение **0.19.11** и независимая коллекция **0.8.7** включают 15 игр. [Сайт](https://graphgiraffe.github.io/playroom-hod-test/) · [релиз приложения](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.19.11) · [коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.8.7).
+Настольные игры в браузере: локально с ботами, передача устройства и сетевая комната WebRTC. Приложение **0.20.0** и независимая коллекция **0.8.8** включают 15 игр. [Сайт](https://graphgiraffe.github.io/playroom-hod-test/) · [релиз приложения](https://github.com/GraphGiraffe/boardgame-playroom/releases/tag/v0.20.0) · [коллекция](https://github.com/GraphGiraffe/boardgame-playroom-paks/releases/tag/v0.8.8).
 
 В 0.19.7 новые локальные истории хранят журнал действий; паки и сохранения находятся в IndexedDB, их объём виден в менеджере паков. Старые истории совместимы. Исправлено обучение в сетевой игре; выделение текста доступно только в полях редактирования. [Хранение данных](docs/LOCAL-STORAGE.md).
 

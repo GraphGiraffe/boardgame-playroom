@@ -4,7 +4,7 @@
   "nameKey": "themes.dark",
   "mode": "dark",
   "palette": {
-    "surface.canvas": "#18211d",
+    "surface.canvas": "#000000",
     "surface.panel": "#222f28",
     "surface.raised": "#2a3c32",
     "surface.game": "#23372b",
@@ -14,7 +14,7 @@
     "border.strong": "#91a286",
     "action.primary": "#8cbd98",
     "action.on-primary": "#14251a",
-    "interaction.available": "#99c28e",
+    "interaction.available": "#ffe169",
     "interaction.selected": "#e1b85e",
     "interaction.target": "#86b6da",
     "interaction.invalid": "#ee9a86",

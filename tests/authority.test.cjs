@@ -55,3 +55,13 @@ test('protocol 3 rejects protocol 2 commands without mutating authority',()=>{
   assert.equal(JSON.stringify(session.current),before);
  }finally{authority.dispose();}
 });
+
+test('replacement roster applies bot control immediately without changing historical players',()=>{
+ const {session,authority,a,b,pub}=make();try{
+  const original=session.current;session.setPlayerMetadata(0,{name:'Replacement bot',bot:true,botSettings:{strategy:'auto',difficulty:'hard'}});
+  assert.equal(session.current,original);assert.equal(a.snapshot().state.players[0].bot,true);assert.equal(a.snapshot().state.players[0].botSettings.difficulty,'hard');assert.equal(a.snapshot().actions.length,0);assert.equal(pub.history(0).state.players[0].bot,false);
+  authority.actBot(0,{type:'increment'});assert.equal(session.current.move,1);assert.equal(session.current.players[0].bot,true);assert.equal(session.states[0].players[0].bot,false);
+  session.setPlayerMetadata(0,{name:'Replacement human',bot:false});assert.equal(a.snapshot().state.players[0].bot,false);
+  assert(!JSON.stringify(pub.snapshot()).includes('SECRET0'));
+ }finally{authority.dispose();}
+});

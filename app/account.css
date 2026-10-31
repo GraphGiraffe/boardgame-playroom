@@ -12,3 +12,13 @@
 .account-actions button { flex: 1 1 auto; }
 .account-message:empty { display: none; }
 .account-content { overflow-wrap: anywhere; }
+
+.account-actions:has(.icon-btn),.account-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.account-actions>.icon-btn,.account-form-actions>.icon-btn{flex:0 0 auto}
+
+.account-identity{display:grid;gap:2px;margin-bottom:8px}.account-identity .muted{font-size:13px}
+.account-quick-actions{justify-content:flex-end!important;margin-top:8px!important;margin-bottom:8px;flex-wrap:nowrap}
+.account-quick-actions>[data-push-settings]{display:contents}
+.account-quick-actions .account-logout{background:var(--color-feedback-danger,#a84938);color:#fff}
+.account-quick-actions .push-enabled{color:var(--color-action-primary,#356752);background:var(--color-surface-selected,#dce8d5)}
+.account-quick-actions .push-enabled svg path{fill:currentColor}

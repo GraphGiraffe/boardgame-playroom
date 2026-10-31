@@ -32,6 +32,7 @@ declare
  pid text; signal text;
 begin
  if me is null then raise exception 'social:account-required' using errcode='42501'; end if;
+ if p_action in ('host','request') then perform public.playroom_require_online_slot(me,rid); end if;
  select * into r from public.playroom_cloud_rooms where id=rid for update;
  if not found or r.closed or not exists(select 1 from public.playroom_room_members where room_id=rid and user_id=me) then raise exception 'social:not-found'; end if;
  -- Delete expired SDP on every use of this room, not only a scheduled cleanup job.
@@ -39,6 +40,9 @@ begin
  if p_action='host' then
   if me<>r.owner_id or coalesce((auth.jwt()->>'is_anonymous')::boolean,false) then raise exception 'social:forbidden'; end if;
   if ep is null or p_data->>'localRoomId' is null or char_length(p_data->>'localRoomId') not between 1 and 128 then raise exception 'social:invalid'; end if;
+  if to_regclass('public.playroom_host_transfers') is not null then
+   if exists(select 1 from public.playroom_host_transfers where room_id=rid and state='ready' and epoch is distinct from ep) then raise exception 'social:host-busy'; end if;
+  end if;
   if r.host_until>now() and r.host_epoch<>ep then raise exception 'social:host-busy'; end if;
   if r.local_room_id is distinct from p_data->>'localRoomId' then delete from public.playroom_peer_bindings where room_id=rid; end if;
   if r.host_epoch is distinct from ep then delete from public.playroom_signals where room_id=rid; end if;
@@ -54,12 +58,32 @@ begin
  elsif p_action='poll-host' then
   if me<>r.owner_id or ep is distinct from r.host_epoch then raise exception 'social:forbidden'; end if;
   update public.playroom_cloud_rooms set host_until=now()+interval '20 seconds' where id=rid;
-  return coalesce((select jsonb_agg(jsonb_build_object('id',q.id,'userId',q.user_id,'offer',q.offer,'answer',q.answer) order by q.expires_at,q.id) from public.playroom_signals q join public.playroom_room_members m on m.room_id=q.room_id and m.user_id=q.user_id where q.room_id=rid and q.epoch=ep),'[]'::jsonb);
+  if p_data ? 'known' then
+   if jsonb_typeof(p_data->'known')<>'array' then raise exception 'social:invalid'; end if;
+   if jsonb_array_length(p_data->'known')>32 then raise exception 'social:invalid'; end if;
+  end if;
+  -- The host-owned poll can bind new identities without a separate authorize RTT.
+  insert into public.playroom_peer_bindings(room_id,user_id)
+   select rid,q.user_id from public.playroom_signals q
+    join public.playroom_room_members m on m.room_id=q.room_id and m.user_id=q.user_id
+    where q.room_id=rid and q.epoch=ep and not exists(select 1 from public.playroom_peer_bindings b where b.room_id=rid and b.user_id=q.user_id)
+   on conflict do nothing;
+  return coalesce((select jsonb_agg(jsonb_build_object('id',q.id,'userId',q.user_id,'participantId',b.participant_id,
+   'offer',case when q.id::text in(select jsonb_array_elements_text(coalesce(p_data->'known','[]'::jsonb))) then null else q.offer end,
+   'answer',case when q.id::text in(select jsonb_array_elements_text(coalesce(p_data->'known','[]'::jsonb))) then null else q.answer end)
+   order by q.expires_at,q.id) from public.playroom_signals q
+   join public.playroom_room_members m on m.room_id=q.room_id and m.user_id=q.user_id
+   join public.playroom_peer_bindings b on b.room_id=q.room_id and b.user_id=q.user_id
+   where q.room_id=rid and q.epoch=ep),'[]'::jsonb);
  end if;
  if p_action='authorize' and p_data->>'userId' is not null then
   if me<>r.owner_id or ep is distinct from r.host_epoch then raise exception 'social:forbidden'; end if;
   select b.participant_id into pid from public.playroom_peer_bindings b join public.playroom_room_members m on m.room_id=b.room_id and m.user_id=b.user_id where b.room_id=rid and b.user_id=(p_data->>'userId')::uuid;
   if pid is null then raise exception 'social:forbidden'; end if;
+  -- Reuse the existing host validation: no extra heartbeat request.
+  update public.playroom_room_members set active_until=now()+interval '2 minutes'
+   where room_id=rid and user_id=(p_data->>'userId')::uuid
+    and (active_until is null or active_until<now()+interval '1 minute');
   return jsonb_build_object('participantId',pid,'userId',p_data->>'userId');
  end if;
  select * into s from public.playroom_signals where id=sid and room_id=rid and epoch=r.host_epoch;

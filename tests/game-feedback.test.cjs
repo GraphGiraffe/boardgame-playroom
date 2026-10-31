@@ -178,3 +178,9 @@ test('finish audio is owned by the results dialog, not the final action queue',a
  feedback.accept([{id:1,kind:'finish'}],[{eventId:1,id:'victory'}],'uno',{mode:'instant'});
  await feedback.whenIdle();assert.deepEqual(heard,[]);feedback.destroy();
 });
+
+test('each card reveal resolves its own actor hand instead of inheriting the penalty receiver origin',()=>{
+ const f=new Feedback({mount:()=>null}),sender={x:10,y:20,width:30,height:40},receiver={x:10,y:500,width:30,height:40};
+ const shot={actor:0,origin:receiver,playedFrom:receiver,hands:new Map([[0,receiver],[1,sender]])};
+ f.accept([{id:1,player:1,kind:'play',reveal:{kind:'card',card:{id:4,value:'+4'}}},{id:2,player:0,kind:'draw',transfer:{player:0,count:4,from:'stock'}}],[],'uno',{snapshot:shot,defer:true});assert.equal(f.queue[0].snapshot.actor,1);assert.deepEqual(f.queue[0].snapshot.origin,sender);assert.equal(f.queue[0].snapshot.playedFrom,null);assert.equal(shot.actor,0,'original capture is not mutated');f.destroy();
+});

@@ -2,15 +2,18 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomSupabaseSocial=api;})(globalThis,function(){
  'use strict';
  const fail=(code,status=0)=>Object.assign(Error(code),{code,status});
- const reasons=['account-required','invalid','profile-required','not-found','forbidden','limit','invite-invalid','owner-leave','friend-required','host-offline','host-busy','username-taken','username-invalid'];
+ const reasons=['account-required','room-active','invalid','profile-required','not-found','forbidden','limit','invite-invalid','owner-leave','friend-required','host-offline','host-busy','username-taken','username-invalid','room-password','invite-disabled','rate-limit','setup','conflict','quota'];
  class SupabaseSocial{
-  constructor({auth,fetch=(...args)=>globalThis.fetch(...args),rpc='playroom_social'}){if(!['playroom_social','playroom_signal'].includes(rpc))throw fail('configuration');this.auth=auth;this.fetch=fetch;this.rpc=rpc;}
+  constructor({auth,fetch=(...args)=>globalThis.fetch(...args),rpc='playroom_social',batch=null}){if(!['playroom_social','playroom_signal','playroom_online','playroom_push','playroom_host_transfer','playroom_cloud_saves_rpc','playroom_account_sync'].includes(rpc))throw fail('configuration');this.auth=auth;this.fetch=fetch;this.rpc=rpc;this.batch=batch;}
   async call(action,data={}, {userId}={}){
+   if(this.batch?.supports(this.rpc,action))return this.batch.request(this.rpc,action,data,{userId});
+   this.batch?.invalidate();
    const session=await this.auth.session();if(!session)throw fail('account-required');
    if(userId&&session.user?.id!==userId)throw fail('account-changed');
    let response;try{response=await this.fetch(this.auth.config.url+'/rest/v1/rpc/'+this.rpc,{method:'POST',redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{apikey:this.auth.config.publishableKey,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({p_action:action,p_data:data})});}catch(_){throw fail('network');}
    let result;try{result=await response.json();}catch(_){throw fail('request',response.status);}
-   if(!response.ok){const reason=reasons.find(code=>result?.message==='social:'+code);throw fail(reason||(['PGRST202','42P01','42883'].includes(result?.code)?'setup':response.status===429?'rate-limit':response.status===401?'credentials':'request'),response.status);}
+   if(!response.ok){const reason=reasons.find(code=>result?.message==='social:'+code);throw Object.assign(fail(reason||(['PGRST202','PGRST203','PGRST204','42P01','42703','42883'].includes(result?.code)?'setup':response.status===429?'rate-limit':response.status===401?'credentials':'request'),response.status),{operation:action,serverCode:/^[A-Z0-9]{5,12}$/.test(result?.code||'')?result.code:null});}
+   if(result?.error&&reasons.includes(result.error))throw fail(result.error,response.status);
    return result;
   }
  }

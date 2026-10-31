@@ -91,10 +91,10 @@ test('pack manager keeps its layout and ignores stale opening responses',{timeou
   });
   const open=()=>page.locator('.pack-hub-button').click();
   const close=()=>page.locator('.pack-manager-modal [data-command=close-modal]').click();
-  const geometry=()=>page.evaluate(()=>['.storage-usage','.pack-file','.pack-list'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [r.top,r.height];}));
+  const geometry=()=>page.evaluate(()=>['.storage-usage','[data-pack-file-open]','.pack-list'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [r.top,r.height];}));
   await open();const before=await geometry();
-  await page.evaluate(()=>{window.originalCard=document.querySelector('.pack-entry');probes.measure[0].resolve({app:8000000,packs:2000000,saves:0,total:10000000});});
-  await page.waitForFunction(()=>document.querySelector('.storage-usage').textContent.includes('МиБ'));
+  await page.evaluate(()=>{window.originalCard=document.querySelector('.pack-entry');probes.measure[0].resolve({app:8000000,packs:2000000,saves:0,total:10000000,partial:true});});
+  await page.waitForFunction(()=>document.querySelector('.storage-usage').textContent.includes('МБ'));
   assert.deepEqual(await geometry(),before,'accounting must not shift controls');
   await page.evaluate(()=>probes.loads[0]());
   await page.locator('[data-pack-favorite]').first().click();
@@ -106,9 +106,9 @@ test('pack manager keeps its layout and ignores stale opening responses',{timeou
   await page.evaluate(()=>{probes.loads[1]();probes.measure[1].resolve({app:1,packs:1,saves:1,total:3});});
   await page.waitForFunction(()=>probes.measure.length===3);
   assert.equal(await page.evaluate(()=>probes.max),1,'measurement jobs are serialized');
-  assert.match(await page.locator('.storage-usage').innerText(),/МиБ/,'old opening must not publish its result');
+  assert.match(await page.locator('.storage-usage').innerText(),/МБ/,'old opening must not publish its result');
   const stable=await geometry();await page.evaluate(()=>probes.measure[2].reject());
-  await page.waitForFunction(()=>document.querySelector('.storage-usage').textContent.includes('Не удалось'));
+  await page.waitForFunction(()=>document.querySelector('.storage-usage-summary strong').title.includes('Не удалось'));
   assert.deepEqual(await geometry(),stable,'error preserves reserved geometry');
   await page.evaluate(()=>probes.loads[2]());
   assert.equal(await page.evaluate(()=>probes.measure.length),3,'catalog completion does not rescan storage');

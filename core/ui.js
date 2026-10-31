@@ -17,10 +17,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const roundTokenArt=params=>assetArt('round-token',params||{},Components.roundTokenArt);
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  const cloudOutline='<path d="M6 18H5a4 4 0 0 1-.6-8A7 7 0 0 1 18 8a5 5 0 0 1 1 10h-1"/>';
+  const cloudArch='a4 4 0 0 1-.6-8A7 7 0 0 1 18 8a5 5 0 0 1 1 10';
+  const cloudOutline='<path d="M6 18H5'+cloudArch+'h-1"/>';
+  const cloudTransferOutline='<path d="M5 18'+cloudArch+'"/>';
   const icon = (name) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" focusable="false" data-ui-icon="'+esc(name)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+({
+    bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+    'bell-off':'<path d="m3 3 18 18M6 6c-1 2 0 8-3 11h14M10 21h4M10 2a6 6 0 0 1 8 6c0 2 0 4 1 5"/>',
     cloud:cloudOutline+'<path d="M6 18h12"/>',
+    'file-export':'<path d="M17 8V6l-3-3H3v18h14v-4M12 3v5h5M22 13H10m4-4-4 4 4 4"/>',
+    'file-import':'<path d="M17 8V6l-3-3H3v18h14v-4M12 3v5h5M10 13h12m-4-4 4 4-4 4"/>',
     'cloud-check':cloudOutline+'<path d="m8 15 3 3 5-6"/>',
+    'cloud-upload':cloudTransferOutline+'<path d="M12 22V12m-4 4 4-4 4 4"/>',
+    'cloud-download':cloudTransferOutline+'<path d="M12 11v11m-3-3 3 3 3-3"/>',
+    app:'<g transform="rotate(-8 12 12)" fill="currentColor" stroke="none"><rect x="2" y="2" width="9" height="9" rx="2.5"/><rect x="13" y="2" width="9" height="9" rx="2.5"/><rect x="2" y="13" width="9" height="9" rx="2.5"/><rect x="13" y="13" width="9" height="9" rx="2.5"/></g>',
+    warning:'<path d="m12 3 10 18H2Z"/><path d="M12 9v5m0 3h.01"/>',
+    gear:'<path d="m9.5 3-.5 2-2 1-2-.5L3 9l1.5 1.5v2L3 14l2 3.5 2-.5 2 1 .5 2h4l.5-2 2-1 2 .5 2-3.5-1.5-1.5v-2L21 9l-2-3.5-2 .5-2-1-.5-2Z"/><circle cx="12" cy="12" r="3"/>',
+    sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+    moon:'<path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
+    sync:'<path d="M20 4v6h-6M4 20v-6h6M5.3 8a7 7 0 0 1 11.5-3L20 10M4 14l3.2 5A7 7 0 0 0 18.7 16"/>',
+    'host-transfer':'<path d="m3 13-1-8 4 3 3-5 3 5 4-3-1 8H3Zm1 3h6m2 1h10m-4-4 4 4-4 4"/>',
     'cloud-sync':cloudOutline+'<path d="M9 13a3 3 0 0 1 5-1l1 1m0-3v3h-3m3 4a3 3 0 0 1-5 1l-1-1m0 3v-3h3"/>',
     'cloud-off':cloudOutline+'<path d="m8 13 8 8m0-8-8 8"/>',
     'cloud-alert':cloudOutline+'<path d="M12 11v5m0 4h.01"/>',
@@ -55,11 +70,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     palette:'<path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1.4-3.4 1.5 1.5 0 0 1 1.1-2.6H18a3 3 0 0 0 3-3 9 9 0 0 0-9-9Z"/><circle cx="7.5" cy="10" r=".8" fill="currentColor"/><circle cx="10.5" cy="7" r=".8" fill="currentColor"/><circle cx="15" cy="7.5" r=".8" fill="currentColor"/>',
     settings:'<path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3" fill="currentColor"/><circle cx="16" cy="17" r="3" fill="currentColor"/>',
     play:'<path d="m9 5 10 7-10 7Z" fill="currentColor" stroke="none"/>',
+    send:'<path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/>',
     arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
     back:'<path d="M19 12H5m5-5-5 5 5 5"/>',
     next:'<path d="m9 6 6 6-6 6"/>',
     prev:'<path d="m15 6-6 6 6 6"/>',
+    'rules-contents':'<path d="M8 5h13M8 12h13M8 19h13"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/>',
     up:'<path d="m6 15 6-6 6 6"/>',
+    download:'<path d="M12 3v18m-6-6 6 6 6-6"/>',
     down:'<path d="m6 9 6 6 6-6"/>',
     close:'<path d="m6 6 12 12M6 18 18 6"/>',
     trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
@@ -71,6 +89,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'bot-medium':'<rect x="4" y="7" width="16" height="14" rx="3"/><path d="M12 3v4M2 12v5M22 12v5M9 17h6"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>',
     'bot-hard':'<rect x="4" y="7" width="16" height="14" rx="3"/><path d="M8 7 6 3M16 7l2-4M2 12v5M22 12v5m-15-5 4 1m2 0 4-1M8 17h8m-5 0v2m2-2v2"/>',
     host:'<path d="m3 6 4 4 5-6 5 6 4-4-2 13H5ZM5 16h14"/>',
+    lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
+    unlock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 7.5-2M12 14v3"/>',
+    groupChat:'<path d="M15 14H8l-5 3V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2Z"/><path d="M8 18h8l5 3V9a2 2 0 0 0-2-2"/>',
+    chat:'<path d="M20 15a3 3 0 0 1-3 3H9l-5 3V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3Z"/><path d="M8 8h8M8 12h5"/>',
+    mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/>',
+    gamepad:'<path d="M7 7h10a4 4 0 0 1 4 3l1 6a3 3 0 0 1-5 3l-3-3h-4l-3 3a3 3 0 0 1-5-3l1-6a4 4 0 0 1 4-3Z"/><path d="M5 11h6M8 8v6"/><circle cx="16" cy="10" r=".7"/><circle cx="19" cy="13" r=".7"/>',
+    wifi:'<path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r="1"/>',
+    globe:'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 6h14M5 18h14"/>',
+    search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
     people:'<circle cx="9" cy="7" r="3"/><path d="M3 20v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
     clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     pause:'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
@@ -99,6 +126,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     first:firstSymbol(),
     exit:'<path d="M10 4H3v16h7M10 12h11m-4-4 4 4-4 4"/>',
     room:'<path d="M3 21V3h13v18M7 12h.01M16 7h5v14H3"/>',
+    'eye-off':'<path d="m3 3 18 18M9.8 5.2A12 12 0 0 1 12 5c7 0 10 7 10 7a17 17 0 0 1-3.1 4.2M6.1 6.1A18 18 0 0 0 2 12s3 7 10 7a12 12 0 0 0 5.9-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     eye:'<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
   }[name] || '')+'</svg>';
   const actionAttr = (action,{allowLayoutChange=false}={}) => `data-action="${esc(JSON.stringify(action))}"${allowLayoutChange===true?' data-allow-layout-change="true"':''}`;
@@ -119,7 +147,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
   function playerOrderPosition(state,index){return (index-(Number.isInteger(state.firstPlayer)?state.firstPlayer:0)+state.players.length)%state.players.length+1;}
   function participantIcon(person={}, {network=person.network===true}={}) {
-    const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local&&!person.isHost?'hand':'player';
+    const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local&&!person.isHost&&!person.primary?'hand':'player';
     const host=network&&person.isHost;
     const glyphs=(host?icon('host'):'')+(!host||role==='grid'?icon(role==='bot'?'bot-'+(['easy','medium','hard'].includes(person.botSettings?.difficulty)?person.botSettings.difficulty:'medium'):role):'')+(person.replacement?icon('replacement'):'');
     const status=network&&!person.bot&&!person.local&&typeof person.connected==='boolean'&&(person.connected||person.hasConnected||Number.isFinite(person.joinedAt))?(person.connected?'online':'offline'):'neutral';

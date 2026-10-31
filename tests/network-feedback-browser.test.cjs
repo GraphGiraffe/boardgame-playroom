@@ -12,8 +12,10 @@ const seed=()=>new Session(Engine,'uno',{seed:23,mode:'pass',preset:'quick',unoM
 async function fixture(browser){
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
+  await page.evaluate(()=>{const values=new Map();Object.defineProperty(window,'localStorage',{value:{getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)}});});
   for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/first-turn-guide.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','application/tutorial-controller.js','platform/web/guide-preferences.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  await page.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('uno',false);PlayroomFirstTurnGuide.setEnabled('ludo',false);});
   return page;
 }
 test('network player popover keeps geometry and commits only explicit legal actions',{timeout:40000},async()=>{
@@ -24,7 +26,7 @@ test('network player popover keeps geometry and commits only explicit legal acti
     snapshot.actions=snapshot.actions.map(action=>action.type==='accuse-uno'?{...action,targetPrompt:'UNO!'}:action);
     await page.evaluate(({snapshot,definition})=>{
       window.qaAudio=[];window.qaSent=[];
-      window.PlayroomAppBridge={audio:{registerPack(){},play(ids,pack){qaAudio.push({ids,pack});},stop(){}}};
+      window.PlayroomAppBridge={profile:()=>({id:'default'}),audio:{registerPack(){},play(ids,pack){qaAudio.push({ids,pack});},stop(){}}};
       const listeners=new Set();window.qaClient={snapshot,pending:null,
         subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(action){qaSent.push(action);return {ok:true};},
         async history(){return snapshot;},close(){},emit(next){this.snapshot=next;for(const f of listeners)f(next);}};
@@ -52,11 +54,11 @@ test('projected actions stay in status, cues play once; finish shows per-player 
   const page=await fixture(browser);try{
     const s=seed(),authority=new Authority(s),a=authority.connect(0),initial=a.snapshot();
     await page.evaluate(({initial,definition})=>{
-      window.qaAudio=[];window.PlayroomAppBridge={audio:{registerPack(){},play(ids,pack){qaAudio.push({ids,pack});},stop(){}}};
+      window.qaAudio=[];window.PlayroomAppBridge={profile:()=>({id:'default'}),audio:{registerPack(){},play(ids,pack){qaAudio.push({ids,pack});},stop(){}}};
       const listeners=new Set();window.qaClient={snapshot:initial,pending:null,
         subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async history(){return {...initial,kind:'history'};},
         async send(){return {ok:true};},emit(next){this.snapshot=next;for(const f of listeners)f(next);}};
-      window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{});qaGame.render();
+      PlayroomFirstTurnGuide.setEnabled('uno',true);window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{});qaGame.render();
     },{initial,definition});
     await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
     const action=initial.actions.find(a=>a.type==='declare-uno');
@@ -110,7 +112,7 @@ test('network turn uses shared quick-play and pacing, animates a new revision on
         play(_snapshot,opts){qaAnimations.push({kind:'play',duration:opts.duration,draws:opts.draws});return Promise.resolve();},
         cancel(){qaAnimations.push({kind:'cancel'});}
       };
-      window.PlayroomAppBridge={gameOptions:()=>qaOptions,audio:{registerPack(){},play(){},stop(){}}};
+      window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>qaOptions,audio:{registerPack(){},play(){},stop(){}}};
       // This synthetic permission checks only the renderer contract: the real
       // authority below still validates the actual legal draw command.
       const card=snapshot.state.scene.players[0].hand[0];
@@ -157,7 +159,7 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
     await page.evaluate(({initial,history,definition})=>{
       window.qaFrames=[];window.qaReleases=[];window.qaSounds=[];window.qaHistory=[];window.qaCancel=0;window.qaSubmitted=[];
       window.PlayroomMotion={surface(){return this;},capture(context){return context;},play(shot,options){qaFrames.push({revision:Number(document.querySelector('.network-game').dataset.revision),type:shot.action.type,draws:options.draws});return new Promise(resolve=>qaReleases.push(resolve));},cancel(){qaCancel++;for(const done of qaReleases.splice(0))done();}};
-      window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'fast'}),audio:{registerPack(){},play(ids){qaSounds.push(...ids);},stop(){}}};
+      window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({animationSpeed:'fast'}),audio:{registerPack(){},play(ids){qaSounds.push(...ids);},stop(){}}};
       const listeners=new Set();window.qaClient={snapshot:initial,pending:null,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async send(action){qaSubmitted.push(action);return {ok:true};},async history(index){qaHistory.push(index);return history[index];},emit(next){this.snapshot=next;for(const fn of listeners)fn(next);}};
       window.qaGame=PlayroomSharedViews.mount(qaClient,definition);qaGame.render();
     },{initial,history,definition});
@@ -191,7 +193,7 @@ test('owner history freezes the reaction window, resume acknowledges the new con
   try{
     await page.evaluate(({initial,definition})=>{
       initial=structuredClone(initial);delete initial.reactionWindows;initial.reactionWindow={id:'qa-window',owner:0,revision:0,humanMs:1000,botMs:3000,fallbackMs:10000,protected:true};
-      window.qaAcks=[];window.qaCommands=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'})};
+      window.qaAcks=[];window.qaCommands=[];window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({animationSpeed:'instant'})};
       window.PlayroomNetworkLibrary={playerMetadata(_session,index){return index===0?{name:'Замена',replacement:{previousName:'Иван'}}:null;}};
       const history={...initial,kind:'history',actions:[],reactionWindow:null},listeners=new Set();
       window.qaClient={snapshot:initial,pending:null,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async history(){return history;},async presentationReady(snapshot){qaAcks.push(snapshot.controlRevision||0);return {ok:true};},
@@ -217,7 +219,7 @@ test('external modal closing restores projected legal actions without another ne
  try{
   const a=new Authority(seed()),snapshot=a.connect(0).snapshot();
   await page.evaluate(({snapshot,definition})=>{
-   window.sent=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant'})};
+   window.sent=[];window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({animationSpeed:'instant'})};
    window.client={snapshot,pending:null,subscribe(){return()=>{};},async send(a){sent.push(a);return {ok:true};}};
    document.querySelector('#modal-root').innerHTML='<div class="modal-backdrop"><section class="modal">Окно</section></div>';
    window.mount=PlayroomSharedViews.mount(client,definition);mount.render();
@@ -248,7 +250,7 @@ test('Ludo selects a pawn without committing, keeps it after a destination, and 
     await page.exposeFunction('ludoCommit',a=>{state=Engine.applyAction(state,0,a);revision++;return snapshot();});
     await page.evaluate(({definition,snapshot})=>{
       window.qaSent=[];const listeners=new Set();
-      window.PlayroomAppBridge={gameOptions:()=>({quickPlay:true,animationSpeed:'instant'})};
+      window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({quickPlay:true,animationSpeed:'instant'})};
       window.qaClient={snapshot,pending:null,subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(a){qaSent.push(a);const next=await ludoCommit(a);this.snapshot=next;for(const f of listeners)f(next);return {ok:true};},async history(){return this.snapshot;},close(){},emit(next){this.snapshot=next;for(const f of listeners)f(next);}};
       window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();
     },{definition,snapshot:snapshot()});
@@ -375,7 +377,7 @@ test('Yatzy confirms category and zero score before player or public Table submi
   const authority=new Authority(session),client=table?authority.connectTable([0,1]):authority.connect(0),initial=client.snapshot(),before=JSON.stringify(session.current);
   let sequence=0;await page.exposeFunction('scoreCommit',action=>{const receipt=client.dispatch(P.command(client.snapshot(),action,'qa-score-'+(++sequence)));return {receipt,snapshot:client.snapshot()};});
   await page.evaluate(({initial,definition,table})=>{
-   const listeners=new Set();window.qaSent=[];window.PlayroomAppBridge={gameOptions:()=>({animationSpeed:'instant',quickPlay:true})};
+   const listeners=new Set();window.qaSent=[];window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({animationSpeed:'instant',quickPlay:true})};
    window.qaClient={snapshot:initial,pending:null,subscribe(f){listeners.add(f);return()=>listeners.delete(f);},async send(action){qaSent.push(action);const {receipt,snapshot}=await scoreCommit(action);this.emit(snapshot);return receipt;},emit(snapshot){this.snapshot=snapshot;for(const f of listeners)f(snapshot);},async history(){return this.snapshot;},close(){}};
    window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:table?'table':'combined'});qaGame.render();
   },{initial,definition,table});
@@ -597,4 +599,18 @@ test('field target measurement preserves artwork throughout paused movement and 
   assert.equal(await page.locator('.art').textContent(),'new floorA');
   await page.evaluate(()=>targetFeedback.destroy());
  }finally{await page.close();await browser.close();}
+});
+
+test('empty UNO stock keeps one outer button and the same table geometry without a stock caption',{timeout:25000},async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),page=await fixture(browser);
+ try{const session=seed(),authority=new Authority(session),before=structuredClone(authority.connect(0).snapshot());before.state.scene.stockCount=1;const after=structuredClone(before);after.revision++;after.state.move=after.revision;after.state.scene.stockCount=0;after.events=[];
+  await page.evaluate(({before,definition})=>{window.listeners=new Set();window.qaClient={snapshot:before,pending:null,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn);},history:async()=>before,send:async()=>({ok:true}),presentationReady:async()=>null};window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{onExit(){}});qaGame.render();},{before,definition});const a=await page.locator('.uno-discard').boundingBox();await page.evaluate(after=>{qaClient.snapshot=after;for(const fn of listeners)fn(after);},after);await page.locator('.stock-button [data-card-slot=stock]').waitFor();const b=await page.locator('.uno-discard').boundingBox();assert(Math.abs(a.x-b.x)<1&&Math.abs(a.y-b.y)<1);assert.equal(await page.locator('.stock-button button').count(),0);assert.equal(await page.locator('.uno-center>.stock-button').count(),1);assert(!/КОЛОДА/.test(await page.locator('.uno-play-area').innerText()));await page.screenshot({path:path.join(root,'../tmp_files/online-video-review-020/empty-stock.png')});
+ }finally{await browser.close();}
+});
+
+test('opponent UNO +2 and +4 reveal from the opponent hand before the local penalty draw',{timeout:40000},async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const value of ['+2','+4']){let session,action;for(let seedValue=1;seedValue<500;seedValue++){const candidate=new Session(Engine,'uno',{seed:seedValue,mode:'pass',preset:'classic',unoMode:'auto',firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Иван'},{name:'Бот'}]});const legal=Engine.legalActions(candidate.current,1).find(a=>a.type==='play'&&candidate.current.data.hands[1].find(c=>c.id===a.card)?.value===value);if(legal){session=candidate;action=legal;break;}}assert(session,'fixture must find '+value);const authority=new Authority(session),remote=authority.connect(1),local=authority.connect(0),before=structuredClone(local.snapshot());await remote.dispatch(P.command(remote.snapshot(),action,'qa-'+value.replace('+','plus')));const after=structuredClone(local.snapshot());assert(after.events.some(e=>e.reveal&&e.player===1));const page=await fixture(browser);
+  await page.evaluate(({before,definition})=>{window.qaFlights=[];const original=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.classList.contains('action-reveal-art'))qaFlights.push(frames);return original.call(this,frames,options);};window.listeners=new Set();window.qaClient={snapshot:before,pending:null,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn);},history:async()=>before,send:async()=>({ok:true}),presentationReady:async()=>null};window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{onExit(){}});qaGame.render();},{before,definition});await page.evaluate(after=>{qaClient.snapshot=after;for(const fn of listeners)fn(after);},after);await page.waitForFunction(()=>qaFlights.length>0);const transform=await page.evaluate(()=>qaFlights[0][0].transform);assert.match(transform,/translate\([^,]+,-[\d.]+px\)/,'card must start above reveal, at the opponent');await page.screenshot({path:path.join(root,'../tmp_files/online-video-review-020/opponent-'+value.replace('+','plus')+'.png')});await page.close();}
+ }finally{await browser.close();}
 });

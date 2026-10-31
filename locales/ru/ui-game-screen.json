@@ -20,7 +20,7 @@
   "ui.game-screen.85d3cfbb11da": "действий за столом",
   "ui.game-screen.5818f0c93a9b": "Посмотреть историю",
   "ui.game-screen.0bb191eca038": "Ещё партию",
-  "ui.game-screen.a8e06ed9a3c5": "Вернуться в комнату",
+  "ui.game-screen.a8e06ed9a3c5": "В комнату",
   "ui.game-screen.70c6a395ad9d": "В меню",
   "ui.game-screen.c81b450ffa45": "в руке",
   "ui.game-screen.aac1090346a5": "Рука {p0} ({p1})",
@@ -58,5 +58,6 @@
   "ui.game-screen.c58470ab336f": "Подключить игрока или устройство",
   "ui.game-screen.exit-cards": "Сбросил карты",
   "ui.game-screen.exit-domino": "Сбросил домино",
-  "ui.game-screen.exit-finished": "Завершил игру"
+  "ui.game-screen.exit-finished": "Завершил игру",
+  "ui.game-screen.network-history": "История"
 }

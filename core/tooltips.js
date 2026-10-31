@@ -80,7 +80,7 @@
     clearPress();
     if(!current.held){if(!inside)suppressUntil=performance.now()+(policy.compatibilityClickMs??800);return;}
     suppressUntil=performance.now()+(policy.compatibilityClickMs??800);event.preventDefault();event.stopImmediatePropagation();
-    if(inside){hide();manualClick=true;try{element.click();}finally{manualClick=false;}}
+    if(inside&&!element.hasAttribute('data-tooltip-hold-only')){hide();manualClick=true;try{element.click();}finally{manualClick=false;}}
     else if(source===element&&tooltip&&!tooltip.hidden){shownBy='touch-linger';lingerTimer=setTimeout(hide,policy.tooltipLingerMs??2000);}
     else hide();
   }

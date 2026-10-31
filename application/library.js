@@ -33,13 +33,14 @@
     constructor(storage, engine, Session, packs = null, {idFactory=()=>fail('LIBRARY_ID_SOURCE_REQUIRED')}={}) {
       this.storage=storage;this.engine=engine;this.Session=Session;this.packs=packs;this.idFactory=idFactory;
     }
+    primary(participants,setup){const occupied=setup?.seats?.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);return occupied?occupied.findIndex(seat=>seat.participantId===setup.ownerId):participants.findIndex(p=>!p.bot);}
     summary(session){
       const state=session.current,scene=this.engine.project?.(state,-1)?.scene,round=scene?.round||null;
       return JSON.parse(JSON.stringify({formatVersion:1,game:session.game,packVersion:session.packVersion,
-        createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
+        roomName:session.options.lobbyConfig?.name||session.options.portableRoomName||'',createdAt:session.createdAt,updatedAt:session.updatedAt,mode:session.options.mode,preset:session.options.presetLabel,
         players:state.players.map(player=>player.name),
         firstPlayer:state.firstPlayer,presetId:state.preset,
-        participants:state.players.map((player,index)=>({nickname:player.name,avatar:player.avatar||null,bot:!!player.bot,local:true,role:'player',playerIndex:index,team:scene?.players?.find(p=>p.player===index)?.team||null})),
+        participants:state.players.map((player,index)=>({nickname:player.name,avatar:player.avatar||null,bot:!!player.bot,local:!player.bot,primary:index===this.primary(state.players,session.options.lobbyConfig),role:'player',playerIndex:index,team:scene?.players?.find(p=>p.player===index)?.team||null})),
         round,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,move:state.move,finished:state.status==='finished',
         outcome:state.status==='finished'?{winner:state.winner,winners:state.winners||[]}:null}));
     }
@@ -72,7 +73,8 @@
           const summary=indexed||this.summary(this.Session.restore(this.engine,JSON.parse(record.raw)));
           if(this.packs&&!this.packs.list().some(item=>item.id===summary.game&&item.version===summary.packVersion))
             return {id:record.id,active:record.active,missingPack:true,game:summary.game,packVersion:summary.packVersion,updatedAt:summary.updatedAt};
-          return {...summary,id:record.id,active:record.active};
+          const participants=summary.participants?.map((p,index,all)=>({...p,primary:p.primary??(index===all.findIndex(person=>!person.bot))}));
+          return {...summary,...participants?{participants}:{},id:record.id,active:record.active};
         } catch (_) {
           try {
             const saved=JSON.parse(record.raw),version=this.version(saved);
@@ -129,6 +131,10 @@
     writeAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.writeRaw(raw,id)); }
     activateAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.activateRaw(raw,id)); }
     removeAsync(id) { return this.persist(()=>this.remove(id)); }
+    importAsync(session,id,roomName='',guard=()=>{}) {
+      const raw=this.encode(session,id),saved=JSON.parse(raw);saved.librarySummary.roomName=String(roomName).slice(0,100);
+      return this.persist(()=>{guard();const store=this.storage();if(this.records().some(row=>row.id===id))fail('LIBRARY_ID_CONFLICT');store.setItem(PREFIX+id,JSON.stringify(saved));});
+    }
     newId() { return this.idFactory(); }
   }
   return Library;

@@ -10,6 +10,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const isId=value=>typeof value==='string'&&value.length>0&&value.length<=128;
   function restore(stored,sessionId,engine,Session){
       if(!stored.record)return null;
+      if(stored.record.transfer&&(stored.record.transfer.role==='outgoing'||stored.record.transfer.state!=='active'))throw Error('HOST_TRANSFER_PENDING_OR_MOVED');
       const {record}=stored,steps=(stored.steps||[]).sort((a,b)=>a.revision-b.revision);
        if(record.format!=='playroom-network-host'||record.version!==1||record.initial?.version!==1||(record.eventStorage!==undefined&&record.eventStorage!=='delta-v1')||
            (record.packDigest!=null&&!/^sha256:[0-9a-f]{64}$/.test(record.packDigest))||
@@ -49,9 +50,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         previousControl=r.controlRevision;controlKeys.add(key);
       }
       if(previousControl!==controlRevision)throw Error(globalThis.PlayroomMessages.text("ui.host-recovery.8f9ced1c2e2c"));
+      const playerControl=(globalThis.PlayroomPlayerControls||(typeof require==='function'?require('../core/player-controls.js'):null)).validate(record,record.initial.states[0].players,record.revision);
       const saved={...record.initial,updatedAt:Math.max(record.initial.updatedAt,record.updatedAt),
         states:record.eventStorage==='delta-v1'?Journal.restore(record.initial,steps,record.eventCursor):[...record.initial.states,...steps.map(step=>step.state)]};
-       return {paused:!!record.paused,controlRevision:record.controlRevision||0,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
+       return {...playerControl,hostDeviceId:record.hostDeviceId||null,paused:!!record.paused,controlRevision:record.controlRevision||0,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,
          packDigest:record.packDigest||null,
         session:Session.restore(engine,saved),
         receipts:clone([...(stored.receipts||[]),...(record.controlReceipts||[])]),sessionId,revision:record.revision};

@@ -310,7 +310,7 @@ test('ZiL+ deferred effects, shield and automatic second die obey the public com
  p=start();p.data.effects[1]={skip:true,less:true,adjust:true,shield:false};r=move(p);assert.equal(r.position.turn,2);assert.deepEqual(r.position.data.effects[1],{skip:false,less:true,adjust:true,shield:false});
  p=start(5);r=move(p);assert.equal(r.position.turn,1);assert.equal(r.position.data.phase,'roll');
  p=start(15);p.data.adjusting=true;r=model.apply(p,0,{type:'move',dieIndex:0,delta:1});assert.deepEqual(r.events.filter(e=>e.type==='snakes.moved').map(e=>e.params.roll),[2,3]);
- p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:0}));assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-1}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
+ p=start();p.data.adjusting=true;assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:0}));assert.equal(model.apply(p,0,{type:'move',dieIndex:0,delta:-1}).position.data.positions[0],0,'published ZiL+ rules explicitly allow a zero-distance adjustment');assert.throws(()=>model.apply(p,0,{type:'move',dieIndex:0,delta:-2}));assert.throws(()=>model.apply(p,1,{type:'move',dieIndex:0,delta:0}));
 });
 
 test('ZiL+ bot games terminate and replay deterministically with six players and both board sizes',()=>{

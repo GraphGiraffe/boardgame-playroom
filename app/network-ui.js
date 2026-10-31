@@ -5,7 +5,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const $=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let hostRooms=null;
   const bridge=()=>hostRooms?{...root.PlayroomAppBridge,roomService:hostRooms}:root.PlayroomAppBridge;
-  let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostGameClient=null,hostMount=null;
+  let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostPushMonitor=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const pendingAudio=new Map();
@@ -17,7 +17,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     finally{if(pendingAudio.get(button.id)===controller)pendingAudio.delete(button.id);if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy');button.innerHTML=label;}}
   }
   const pairingQrGenerations=new Map();
-  const connectedHostPeers=[];
+  const connectedHostPeers=[],cloudParticipantUsers=new Map();
+  let hostTransferBlocked=false;const hostTransferCalls=new Set();
+  const reactionRelay=new root.PlayroomQuickReactions.Relay();
+  let clientReactionUnsub=null,clientChatUnsub=null;
+  const delegatedInvites=new root.PlayroomNetworkInvitations({
+    authorize:id=>{const room=bridge().roomService.snapshot(hostRoomId);const person=participant(room,id);if(room.transportMode!=='network'||room.phase!=='lobby'||!room.allowPlayerInvites||!person?.connected)throw Error(root.PlayroomMessages.text('ui.social.error.invite-disabled'));},
+    create:async(inviter)=>{const room=bridge().room(),connection=bridge().roomService.connection(room.id),switchable=new M.SwitchableConnection(connection);let peer;try{peer=await W.createHostPeer();const admit=async()=>{if(!connection.participantId)delegatedInvites.authorize(inviter);};const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);return {peer,switchable,roomConnection:connection,serveClose,offer:peer.offer};}catch(e){peer?.close();switchable.close();throw e;}},
+    accept:async(value,answer)=>{await value.peer.acceptAnswer(answer);connectedHostPeers.push(value);},
+    dispose:value=>{value.serveClose?.();value.peer.close();value.switchable.close();}
+  });
   const resumeStore=new M.ResumeStore();
   const hostSessionStore=NetworkSessionStore?new NetworkSessionStore({describe:state=>{const scene=root.TabletopCore.project(state,-1).scene;return {firstPlayer:state.firstPlayer,presetId:state.preset,playerTeams:state.players.map((_,i)=>scene?.players?.find(p=>p.player===i)?.team||null),turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players[state.turn]?.name||null,round:scene?.round||null};}}):null;
   const clientHistoryStore=ClientHistory?new ClientHistory():null;
@@ -27,12 +36,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     boundary:value=>clientMount?.setHistoryBoundary(value),warning:error=>toast(globalThis.PlayroomMessages.text("ui.network-ui.3ce03f500e79",{p0:String(globalThis.PlayroomMessages.error(error))}))});
   let hostLockRelease=null,archiveMount=null,archiveAuthority=null;
   let hostRecovery=null,rosterQueue=Promise.resolve(),rosterError=null;
-  let reconnectStatus='',clientRecovery=null,resumeIntent=null;
+  let reconnectStatus='',clientRecovery=null,resumeIntent=null,clientAttachments=0;
+  let pendingReady=null,readyFlight=false;
   const connectionLabels={connecting:globalThis.PlayroomMessages.text("ui.network-ui.ab71afb97f2e"),connected:globalThis.PlayroomMessages.text("ui.network-ui.8edc541e8848"),recovering:globalThis.PlayroomMessages.text("ui.network-ui.69d9c8cc8080"),invite:globalThis.PlayroomMessages.text("ui.network-ui.a24e789a95b4")};
   let networkInMenu=false,presentationGeneration=0;
   const tableAvailability=new WeakMap();
   const hasActiveRoom=()=>!!(hostRoomId||clientRoom);
-  const clientConnected=()=>clientPeer?.pc?.connectionState==='connected'&&(!clientRecovery||clientRecovery.state==='connected');
+  const clientConnected=()=>!clientAttachments&&clientPeer?.pc?.connectionState==='connected'&&(!clientRecovery||clientRecovery.state==='connected');
   function parkNetworkView(){
     networkInMenu=true;presentationGeneration++;
     hostMount?.destroy?.();hostMount=null;clientMount?.destroy?.();clientMount=null;
@@ -45,15 +55,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     try{
       if(isHost||clientConnected())await client.refresh();
       if(generation!==presentationGeneration||client!==(isHost?hostGameClient:clientGameClient))return;
-      networkInMenu=false;mountNetworkView(isHost);
+      networkInMenu=false;if(client.snapshot?.state?.status==='finished'){(isHost?exitHostGame:exitClientGame)({finished:true});return;}mountNetworkView(isHost);
     }catch(error){toast(globalThis.PlayroomMessages.text("ui.network-ui.c2f62a148302",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
-  function mountNetworkView(isHost){
+  function mountNetworkView(isHost,{preserveModal=false}={}){
     if(networkInMenu)return;
     const client=isHost?hostGameClient:clientGameClient,snapshot=client?.snapshot;if(!snapshot)return;
     const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);b.rememberGame(snapshot.game);
     const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
-    b.closeModal(true);document.getElementById('app').inert=false;
+    if(!preserveModal)b.closeModal(true);document.getElementById('app').inert=preserveModal;
     const old=isHost?hostMount:clientMount;old?.destroy?.();
     const mounted=Shared.mount(client,definition,{surface:snapshot.viewer<0?'table':'combined',tableAvailable:()=>{const room=isHost?b.room():clientPresence||clientRoom;return !!room?.participants?.some(person=>person.role==='table'&&person.connected===true);},connected:isHost||clientConnected(),onExit:isHost?exitHostGame:exitClientGame,onPresented:revision=>{if(!isHost)markClientPosition('presentedRevision',revision);},onReviewed:(revision,frame)=>{if(!isHost)markClientPosition('reviewedRevision',revision,frame);}});
     if(isHost)hostMount=mounted;else clientMount=mounted;
@@ -61,23 +71,79 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
 
     const {stopHostAudio,stopClientAudio,KNOWN_IP_KEY,usableManualIp,savedIpEntries,scannedCandidates,scanGenerations,soundCandidates,soundCandidateLabel,localNetworkRank,preferredSoundCandidate,soundCandidateOptions,selectionDetails,syncSoundChoice,initialNetworkChoice,soundSettings,updateSoundOptions,updateDiscoverySummary,saveManualIp,scanSoundAddresses,pairSignal,pairToken,updatePairingToken,sendSoundToken,listenHostAnswer,sendHostSoundOnly,listenGuestSound,sendGuestSound,captureNotice,captureDisabled,audioOutput,microphoneReady,soundOutputReady,methodAvailability,pairingHelp,pairingMethod,pairingMethods,syncPairingAvailability,pairingHeader,pairingFooter,toast,pairingProgress,copy,copyText,sharePair,pairingText,pairingQr,renderPairingQR,scanControls,readPairingQR}=root.PlayroomPairingPresenter.create({get Acoustic(){return Acoustic;},set Acoustic(value){Acoustic=value;},get PWA(){return PWA;},set PWA(value){PWA=value;},get Pairing(){return Pairing;},set Pairing(value){Pairing=value;},get QR(){return QR;},set QR(value){QR=value;},get Scanner(){return Scanner;},set Scanner(value){Scanner=value;},get acceptAnswerSignal(){return acceptAnswerSignal;},get answerToken(){return answerToken;},set answerToken(value){answerToken=value;},get bridge(){return bridge;},set bridge(value){bridge=value;},get clientAudioListener(){return clientAudioListener;},set clientAudioListener(value){clientAudioListener=value;},get clientPeer(){return clientPeer;},set clientPeer(value){clientPeer=value;},get createClientAnswer(){return createClientAnswer;},get esc(){return esc;},set esc(value){esc=value;},get hostAudioListener(){return hostAudioListener;},set hostAudioListener(value){hostAudioListener=value;},get hostPeer(){return hostPeer;},set hostPeer(value){hostPeer=value;},get offerToken(){return offerToken;},set offerToken(value){offerToken=value;},get pairingQrGenerations(){return pairingQrGenerations;},set pairingQrGenerations(value){pairingQrGenerations=value;}});
-  function closeClient({preserveIntent=false}={}){
+  function closeClient({preserveIntent=false,preserveView=false,preserveRoom=false}={}){
     if(!preserveIntent)root.PlayroomCloudNetwork?.stopClient?.();
     if(preserveIntent&&clientGameClient&&clientRoom)resumeIntent={roomId:clientRoom.id,participantId:clientParticipantId,snapshot:clientGameClient.snapshot,pending:clientGameClient.pending,historyIndex:clientMount?.historyOpen?clientMount.historyIndex:null};
     else if(!preserveIntent)resumeIntent=null;
-    clientRecovery?.close();clientRecovery=null;
+    if(!preserveIntent)pendingReady=null;
+    clientRecovery?.close();clientRecovery=null;clientReactionUnsub?.();clientReactionUnsub=null;clientChatUnsub?.();clientChatUnsub=null;
     presentationGeneration++;
-    clientSetupShown=false;historySync.cancel();clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;clientMount?.destroy?.();clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;clientRoom=null;clientParticipantId=null;clientMount=null;clientWaitingForLobby=false;}
+    clientSetupShown=false;historySync.cancel();clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;if(!preserveView){clientMount?.destroy?.();clientMount=null;}else clientMount?.setConnected(false,{notice:true});clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;if(!preserveRoom){clientRoom=null;clientParticipantId=null;}if(!preserveIntent||!preserveRoom)clientWaitingForLobby=false;}
   function closePendingHostPeer(){
     stopHostAudio();hostServeClose?.();hostServeClose=null;
     hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;
     hostRoomConnection?.close?.();hostRoomConnection=null;
   }
   function closeHostPeer(){
+    delegatedInvites.close();
     hostMount?.destroy?.();hostMount=null;closePendingHostPeer();
     for(const item of connectedHostPeers.splice(0)){
       item.serveClose?.();item.peer?.close?.();item.switchable?.close?.();item.roomConnection?.close?.();
     }
+  }
+  const roomChat=new root.PlayroomRoomChat({store:()=>root.PlayroomData,resolve:chatIdentity,reactionValid:root.PlayroomQuickReactions.valid});
+  function chatIdentity(roomId,personId){
+    const room=bridge().roomService.snapshot(roomId),person=participant(room,personId),snapshot=hostGameClient?.snapshot;
+    const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
+    const playerFor=id=>{const i=occupied.findIndex(s=>s.participantId===id);return i<0?-1:occupied[i].playerIndex??i;};
+    const teamFor=id=>{const p=participant(room,id);if(p?.role!=='player')return null;const player=playerFor(id);
+      if(room.phase==='playing')return snapshot?.state.scene?.players?.find(p=>p.player===player)?.team?.id||snapshot?.state.scene?.players?.find(p=>p.player===player)?.teamId||null;
+      const seat=room.seats.findIndex(s=>s.participantId===id);return root.TabletopUI.helpers.teamFor(room.game.teamLayouts,room.rules?.preset,seat)?.id||null;};
+    const team=teamFor(personId),teamInfo=room.phase==='playing'?snapshot?.state.scene?.players?.find(p=>p.player===playerFor(personId))?.team:root.TabletopUI.helpers.teamFor(room.game.teamLayouts,room.rules?.preset,room.seats.findIndex(s=>s.participantId===personId));
+    return {person,player:playerFor(personId),team,teamColor:teamInfo?.color||null,teamColorRole:teamInfo?.colorRole||null,allies:team?room.participants.filter(p=>!p.bot&&teamFor(p.id)===team).map(p=>p.id):[],sessionId:room.phase==='playing'?snapshot?.sessionId:null,closed:room.phase==='closed'};
+  }
+  function publishChat(roomId,entry,{bubble=true}={}){
+    const cloud=root.PlayroomCloudNetwork?.roomId();
+    if(cloud&&root.PlayroomCloudNetwork.isHosting()){
+      const room=bridge().roomService.snapshot(roomId),audience=room.participants.filter(p=>!p.bot&&p.id!==entry.authorId&&roomChat.visible(entry,chatIdentity(roomId,p.id)));
+      void root.PlayroomPushUI?.notifyRoom(cloud,entry,audience.map(p=>p.id),audience.some(p=>p.id===bridge().participantId()));
+    }
+
+    const deliver=personId=>{try{const ctx=roomChat.access(roomId,personId);return roomChat.visible(entry,ctx)?{kind:'room-chat-entry',roomId,entry:roomChat.project(entry,personId),bubble}:null;}catch(_){return null;}};
+    const local=deliver(bridge().participantId());if(local)root.PlayroomRoomChatUI?.receive(local);
+    for(const item of connectedHostPeers){const event=deliver(item.roomConnection?.participantId);if(event&&item.peer.channel?.readyState==='open'){try{item.peer.channel.send(JSON.stringify(event));}catch(_){}}}
+  }
+  async function chatCommand(roomId,personId,command){
+    if(hostTransferBlocked)throw Error('HOST_TRANSFER_BUSY');
+    if(command.roomId!==roomId)throw Error('ROOM_CHAT_UNAVAILABLE');
+    if(command.type==='room-chat-seen')return roomChat.markRead(roomId,personId,command);
+    if(command.type==='room-chat-summary')return roomChat.summary(roomId,personId);
+    if(command.type==='room-chat-read')return roomChat.read(roomId,personId,command);
+    const result=await roomChat.append(roomId,personId,command);if(result.created)publishChat(roomId,result.entry);
+    return roomChat.read(roomId,personId,{scope:command.scope,after:command.after??null,known:command.known||[]});
+  }
+  function chatContext(){
+    if(!bridge())return null;
+    const room=clientRoom||bridge().room();if(!room||room.transportMode==='hotseat')return null;
+    const id=clientRoom?clientParticipantId:bridge().participantId();if(!id)return null;
+    return {roomId:room.id,participantId:id,roomName:room.name,game:room.game,connected:clientRoom?clientConnected():true,
+      call:command=>clientRoom?clientTransport.dispatch({...command,roomId:room.id}):chatCommand(room.id,id,{...command,roomId:room.id})};
+  }
+  async function relayReaction(roomId,participantId,command){
+    const room=bridge().roomService.snapshot(roomId),person=participant(room,participantId),snapshot=hostGameClient?.snapshot;
+    const access=SessionAccess.resolve(room,participantId);
+    const event=reactionRelay.accept({sessionId:snapshot?.sessionId,player:access.viewer,allowed:roomId===hostRoomId&&room.phase==='playing'&&person?.connected&&access.role==='player'&&snapshot?.state.status==='playing'},command);
+    if(event){try{const saved=await roomChat.append(roomId,participantId,{id:command.id,body:command.emoji,kind:'reaction'});if(saved.created)publishChat(roomId,saved.entry,{bubble:false});}catch(error){reactionRelay.recent.delete(command.id);reactionRelay.times.delete(access.viewer);throw error;}
+      root.PlayroomReactionUI.receive(event);for(const item of connectedHostPeers){if(item.roomConnection?.participantId&&item.peer.channel?.readyState==='open'){try{item.peer.channel.send(JSON.stringify(event));}catch(_){}}}}
+    return {ok:true};
+  }
+  function reactionContext(){
+    const room=clientRoom||bridge().room();if(room&&room.phase!=='playing'&&room.transportMode!=='hotseat'){
+      const chat=chatContext(),me=room.participants.find(p=>p.id===chat?.participantId);return chat&&me&&!me.bot?{sessionId:'lobby:'+room.id,viewer:room.seats.findIndex(s=>s.participantId===me.id),allowed:chat.connected,send:emoji=>chat.call({type:'room-chat-send',scope:'room',kind:'reaction',id:root.crypto.randomUUID(),body:emoji})}:null;
+    }
+    const client=hostGameClient||clientGameClient,snapshot=client?.snapshot;if(!snapshot||networkInMenu)return null;
+    return {sessionId:snapshot.sessionId,viewer:snapshot.viewer,allowed:!!(hostMount||clientMount)&&snapshot.viewer>=0&&snapshot.state.status==='playing'&&(!!hostGameClient||clientConnected()),
+      send:emoji=>{const command={type:'quick-reaction',sessionId:snapshot.sessionId,id:root.crypto.randomUUID(),emoji};return hostGameClient?relayReaction(hostRoomId,bridge().participantId(),command):clientTransport.dispatch(command);}};
   }
   function roomPresence(room){
     const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
@@ -107,6 +173,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!data)return;
     const available=data.participants.some(person=>person.role==='table'&&person.connected===true);
     const mounted=hostMount||clientMount;if(mounted&&tableAvailability.get(mounted)!==available){tableAvailability.set(mounted,available);mounted.render();}
+    const controls=(clientGameClient||hostGameClient)?.snapshot?.playerControls||[];
+    for(const p of data.participants){for(const panel of shell.querySelectorAll(`.player-panel[data-player-index="${p.playerIndex}"]`)){
+      const control=controls[p.playerIndex],label=control?.bot?'Временный бот':control?.away?'Отошёл':'',old=panel.querySelector('.temporary-player-control');
+      if(old?.textContent===label)continue;if(!label){old?.remove();continue;}
+      const badge=old||document.createElement('span');badge.className='temporary-player-control';badge.textContent=label;badge.setAttribute('role','status');if(!old)(panel.querySelector('.player-label')||panel).appendChild(badge);
+    }}
     const lost=clientPeer&&['disconnected','failed','closed'].includes(clientPeer.pc.connectionState);
     for(const p of data.participants){
       if(!Number.isSafeInteger(p.playerIndex)||p.playerIndex<0)continue;
@@ -140,13 +212,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!clientPeer||!clientRoom)return;
     const shell=document.querySelector('.table-shell.network-game')||document.querySelector('.room-setup-modal .lobby-shell')||document.querySelector('.network-resume-card');
     if(!shell)return;
+    if(shell.classList.contains('network-resume-card')){shell.querySelector('.network-reconnect-banner')?.remove();return;}
     const state=clientRecovery?.state||(clientConnected()?'connected':'connecting');
     let wrap=shell.querySelector('.network-reconnect-banner');
     if(!wrap){wrap=document.createElement('div');wrap.className='network-reconnect-banner';wrap.setAttribute('role','status');shell.appendChild(wrap);}
     wrap.hidden=!clientRecovery?.report().notice;if(wrap.dataset.state===state)return;wrap.dataset.state=state;
-    wrap.innerHTML='<strong>'+connectionLabels[state]+'</strong> '+(state==='connected'?'':globalThis.PlayroomMessages.text("ui.network-ui.6f988523357f"))+
-      (state==='invite'?("<button class=\"btn secondary\" id=\"network-reconnect-button\" type=\"button\">"+globalThis.PlayroomMessages.text("ui.network-ui.f260ec9b1579")+"</button>"):'')+
-      (" <button class=\"text-btn\" data-net-action=\"diagnostics\">"+globalThis.PlayroomMessages.text("ui.network-ui.493b722e3e1d")+"</button>");
+    wrap.innerHTML='<span>'+esc(state==='invite'?'Нет связи':connectionLabels[state])+'</span>'+(state==='invite'?root.PlayroomGameScreen.iconButton('data-net-action="reconnect"','Переподключиться','reset'):'');
   }
   function markClientPosition(kind,revision,frame){
     const snapshot=clientGameClient?.snapshot,roomId=clientRoom?.id,participantId=clientParticipantId;
@@ -156,16 +227,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function startRecovery(){
     clientRecovery?.close();const transport=clientTransport,peer=clientPeer;
     clientRecovery=new W.Recovery({pc:peer.pc,transport,
-      onState:report=>{clientMount?.setConnected(report.state==='connected',{notice:report.notice});if(report.state!=='connected')historySync.cancel();if(report.state==='invite')root.PlayroomCloudNetwork?.reconnect?.();showDisconnectBanner();renderPresence();ensureButtons();},
+      onState:report=>{if(report.state==='connected')void flushReady();clientMount?.setConnected(report.state==='connected',{notice:report.notice});if(report.state!=='connected')historySync.cancel();if(report.state==='invite')root.PlayroomCloudNetwork?.reconnect?.();showDisconnectBanner();renderPresence();ensureButtons();},
       reconcile:async(snapshot,{recovering})=>{
         if(transport!==clientTransport)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2175de681bca"));
         if(snapshot?.kind==='lobby'){
           if(snapshot.room?.id!==clientRoom?.id||snapshot.participantId!==clientParticipantId)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.6cdf93a1971a"));
-          const changed=snapshot.room.revision!==clientRoom.revision;clientRoom=snapshot.room;
+          if(snapshot.room.revision<clientRoom.revision)return;
+          const changed=snapshot.room.revision!==clientRoom.revision;clientRoom=snapshot.room;if(clientRoom.phase==='lobby')clientWaitingForLobby=false;
           if(clientGameClient&&clientGameClient.snapshot.state.status!=='finished')clientToLobby();
-          else if(!clientGameClient&&changed)renderClientLobby();return;
+          else if(!clientGameClient&&changed&&(!clientRoom.recovery?.rosterChange||document.querySelector('.lobby-shell')))renderClientLobby();rosterNotice(clientRoom);ensureButtons();return;
         }
         if(snapshot?.kind!=='snapshot')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.dc2965d322a1"));
+        if(clientWaitingForLobby)return;
         if(!clientGameClient)startClientGame(snapshot);
         if(!clientGameClient)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.3777bf0d6091"));
         if(recovering){clientMount?.setConnected(false,{notice:clientRecovery?.report().notice??false});await clientGameClient.reconcile(snapshot);clientMount?.syncLive();}
@@ -173,7 +246,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(recovering)void backfillClientHistory(clientGameClient.snapshot,transport,clientRoom.id,clientParticipantId);
       }});
   }
+  const rosterNotices=new Map();
+  function rosterNotice(room){
+    if(!room?.recovery?.rosterChange||room.phase!=='lobby')return;
+    const event=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['replacement-lobby','participant-kicked','roster-changed'].includes(e.type));
+    if(event&&rosterNotices.get(room.id)!==event.id){rosterNotices.set(room.id,event.id);toast('Состав игроков изменён. Подтвердите готовность в комнате.');}
+  }
   function ensureButtons(){
+    const activeRoom=clientRoom||bridge()?.room?.(),me=activeRoom?.participants.find(p=>p.id===(clientRoom?clientParticipantId:activeRoom.ownerId));
+    const attention=!!(activeRoom?.recovery?.rosterChange&&activeRoom.phase==='lobby'&&me?.role==='player'&&!me.ready&&!document.querySelector('.lobby-shell'));
+    for(const button of document.querySelectorAll('[data-command=room],[data-net-action=room]'))button.classList.toggle('room-needs-ready',attention);
+
     for(const [id,controller] of pendingAudio)if(!document.getElementById(id)){controller.abort();pendingAudio.delete(id);}
     // Close microphone immediately when the pairing dialog is dismissed.
     if(hostAudioListener&&!document.getElementById('net-host-acoustic-listen'))stopHostAudio();
@@ -183,19 +266,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const scope=document.querySelector('.filter-scope');
     if(scope&&!document.getElementById('network-join-button')){const button=document.createElement('button');button.className='btn secondary';button.id='network-join-button';button.type='button';button.textContent=globalThis.PlayroomMessages.text('ui.network-ui.25177fb5362b');scope.appendChild(button);}
 
+    const joinButton=document.getElementById('network-join-button');if(joinButton)joinButton.disabled=hasActiveRoom();
     if(hasActiveRoom()&&(networkInMenu||intro&&!document.querySelector('.table-shell'))){
       const room=clientRoom||b.room(),connected=!!hostRoomId||clientConnected(),parent=intro||document.querySelector('.hub-main');
-      if(parent){const markup=root.PlayroomGameScreen.resumeCard({state:(clientGameClient||hostGameClient)?.snapshot?.state,gameName:room?.game?.name||'',roomName:room?.name||'',network:true,connected,participants:(clientRoom?clientPresence||roomPresence(room):roomPresence(room)).participants,teamLayouts:room?.game?.teamLayouts||{},action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
+      if(parent&&room){const markup=root.PlayroomGameScreen.resumeCard({state:(clientGameClient||hostGameClient)?.snapshot?.state,gameName:room?.game?.name||'',roomName:room?.name||'',network:true,transportMode:room?.transportMode||'network',connected,participants:(clientRoom?clientPresence||roomPresence(room):roomPresence(room)).participants,teamLayouts:room?.game?.teamLayouts||{},action:connected?'id="network-return-button" data-net-action="return-game"':'id="network-reconnect-button"',leave:'data-net-action="leave-active"'});
         const old=document.querySelector('.network-resume-card'),key=(room?.id||'')+':'+(clientRoom?clientPresence?.revision||room?.revision:room?.revision)+':'+connected+':'+(room?.name||'')+':'+(clientRecovery?.state||'')+':'+((clientGameClient||hostGameClient)?.snapshot?.revision??'');if(!old||old.dataset.renderKey!==key){if(old)old.outerHTML=markup;else parent.insertAdjacentHTML('afterend',markup);const card=document.querySelector('.network-resume-card');if(card)card.dataset.renderKey=key;}
       }
     }
 
-    if(!hasActiveRoom())document.querySelector('.network-resume-card')?.remove();
+    if(!hasActiveRoom()||!activeRoom)document.querySelector('.network-resume-card')?.remove();
 
     showDisconnectBanner();renderPresence();
     const gameShell=document.querySelector('.table-shell.network-game');
     const room=b.room?.(),lobby=$('.lobby-shell');
-    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.closest('.table-shell')&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.network-ui.3a73248bdd79"));node.innerHTML=root.PlayroomGameScreen.icon('room');const full=tools.querySelector('[data-command=fullscreen]');if(full)full.remove();tools.prepend(node);}
+    const tools=document.querySelector('.topbar-tools,.table-tools');if(clientRoom&&tools&&!tools.closest('.table-shell'))for(const old of tools.querySelectorAll('[data-command=room]'))old.remove();if(clientRoom&&tools&&!tools.closest('.table-shell')&&!tools.querySelector('[data-net-action=room]')){const node=document.createElement('button');node.className='icon-btn';node.dataset.netAction='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.network-ui.3a73248bdd79"));node.innerHTML=root.PlayroomGameScreen.icon('room');const full=tools.querySelector('[data-command=fullscreen]');if(full)full.remove();tools.prepend(node);}
     if(room&&room.transportMode!=='hotseat'&&lobby){
       ensureHostSubscription(room);
       const card=lobby.querySelector('.lobby-grid .lobby-card');
@@ -203,6 +287,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
   }
   function handleHostRoomState(state){
+    delegatedInvites.prune();rosterNotice(state);
     if(hostAuthority)for(const person of roomPresence(state).participants)if(person.playerIndex>=0)
       hostAuthority.setViewerConnected?.(person.playerIndex,person.connected);
     for(const old of [...connectedHostPeers])if(old.roomConnection?.participantId&&!participant(state,old.roomConnection.participantId)){
@@ -235,13 +320,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function hostPeerServing(peer,switchable,roomConnection,roomId,admit=null){
     // Keep the original lobby capability for identity binding, even after the
     // transport switches to the host-authority game projection.
+    root.PlayroomHostTransferWire.bind(peer.channel,()=>{throw Error('HOST_TRANSFER_UNAUTHORIZED');});
     const served={
       snapshot:async()=>{await admit?.();return switchable.snapshot();},
       history:async index=>{await admit?.();if(switchable.completedHistory){if(!Number.isSafeInteger(index)||!switchable.completedHistory[index])throw Error(globalThis.PlayroomMessages.text("ui.network-ui.b50111de0c3a"));return switchable.completedHistory[index];}return switchable.history(index);},
-      subscribe:listener=>{let sequence=0,active=true;const off=switchable.subscribe(snapshot=>{if(!admit){listener(snapshot);return;}const current=++sequence;void admit().then(()=>{if(active&&current===sequence&&peer.pc.connectionState!=='closed')listener(snapshot);}).catch(()=>peer.close());});return ()=>{active=false;off?.();};},
-      presentationReady:async message=>{await admit?.();return switchable.presentationReady(message);},
+      subscribe:listener=>W.subscribeAuthorized(switchable,listener,admit,{isOpen:()=>peer.pc.connectionState!=='closed',deny:()=>peer.close()}),
+      presentationReady:async message=>{if(hostTransferBlocked)return {ok:false};await admit?.();return switchable.presentationReady(message);},
       dispatch:async command=>{
-        await admit?.();
+        if(hostTransferBlocked)return {ok:false,code:'BUSY'};
+        let done;const pending=new Promise(resolve=>done=resolve);hostTransferCalls.add(pending);
+        try{await admit?.();
+        if(command?.type==='room-leave'){
+          const id=roomConnection.participantId,room=bridge().roomService.snapshot(roomId);if(!id||id===room.ownerId)throw Error('READ_ONLY');
+          if(room.phase==='playing'){hostTransferCalls.delete(pending);if(hostGameClient?.snapshot.state.status==='finished')exitHostGame({finished:true});else await prepareRoster();}
+          bridge().roomService.kick(roomId,room.ownerId,id);return {ok:true};
+        }
+        if(command?.type==='player-control')return await playerControlCommand(roomId,roomConnection.participantId,command);
+        if(['room-chat-read','room-chat-send','room-chat-seen','room-chat-summary'].includes(command?.type))return chatCommand(roomId,roomConnection.participantId,command);
+        if(command?.type==='quick-reaction')return relayReaction(roomId,roomConnection.participantId,command);
+        if(['invitation-offer','invitation-answer'].includes(command?.type))return delegatedInvites.dispatch(roomConnection.participantId,command);
         const result=await (command?.type==='avatar'?roomConnection.dispatch(command):switchable.dispatch(command));
         if((command?.type==='resume'||command?.type==='join')&&result?.ok){
           const id=result.snapshot.participantId;
@@ -259,13 +356,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           if(peer.channel?.readyState==='open')peer.channel.send(JSON.stringify(roomPresence(room)));
         }
         return result;
+        }finally{hostTransferCalls.delete(pending);done();}
       },
       close:()=>{roomConnection.close?.();switchable.close();}
     };
     return W.serve(peer.channel,served);
   }
   async function hostInvite(){
-    if(root.PlayroomCloudNetwork?.isHosting())return root.PlayroomLobbyNetwork.showInvite();
+    if((clientRoom||bridge().room())?.transportMode==='online')return root.PlayroomLobbyNetwork.showInvite();
+    if(clientRoom)return showDelegatedInvite();
     try{
       const b=bridge(),room=b?.room?.();if(!room)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.444fcd52a3f9"));
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
@@ -279,10 +378,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const text=pairingText(offerToken,'net-host-token')+
         ("<form id=\"net-host-answer\" data-inline-actions><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.67420efb6419")+"</span><textarea name=\"answer\" rows=\"2\" placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.2c0e47580483")+"\"></textarea></label>")+
         '<button class="btn secondary pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('addPlayer')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.73f4e4b1d7ec")+"</button></form>");
-      b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.be876869eb2e",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.946071629ded"),'host','host-offer')),p1:String(network.html),p2:String(pairingMethods('host-offer',{share,sound,qr,text},offerToken)),p3:String(pairingFooter())}));
+      b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.be876869eb2e",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.946071629ded"),'host','host-offer')),p1:String(manualPermission(room)+network.html),p2:String(pairingMethods('host-offer',{share,sound,qr,text},offerToken)),p3:String(pairingFooter())}));
       syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
     }catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
+  function manualPermission(room){return `<label class="switch online-permission"><span>${root.PlayroomMessages.text('ui.social.allow-player-invites')}</span><input type="checkbox" data-manual-invite-permission ${room.allowPlayerInvites?'checked':''}></label>`;}
+  async function showDelegatedInvite(){
+    try{
+      const result=await clientTransport.dispatch({type:'invitation-offer'}),token=Pairing.fromSignal('offer',result.offer,{legacy:true});
+      bridge().openModal(bridge().modalHead(root.PlayroomMessages.text('ui.social.invite-player'))+pairingText(token,'net-delegated-token')+`<form data-delegated-answer data-inline-actions><label class="field"><span>${root.PlayroomMessages.text('ui.network-ui.67420efb6419')}</span><textarea name="answer" rows="3" required></textarea></label>${root.PlayroomGameScreen.iconButton('type="submit"',root.PlayroomMessages.text('ui.social.connect-cloud'),'addPlayer',{type:'submit'})}</form>`,'delegated-invite-modal',{onBack:()=>renderClientLobby(true)});
+    }catch(error){toast(globalThis.PlayroomMessages.error(error));}
+  }
+  document.addEventListener('change',event=>{if(event.target.matches('[data-manual-invite-permission]'))bridge().setRoomInvitationPermission(event.target.checked);});
+  document.addEventListener('submit',async event=>{const form=event.target.closest('[data-delegated-answer]');if(!form)return;event.preventDefault();const button=form.querySelector('button');button.disabled=true;try{await clientTransport.dispatch({type:'invitation-answer',answer:signalFromInput(form.elements.answer.value,'answer')});renderClientLobby(true);}catch(error){toast(globalThis.PlayroomMessages.error(error));}finally{button.disabled=false;}});
   async function acceptAnswerSignal(signal){
     if(!hostPeer)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.f7eb06f83d1f"));
     const peer=hostPeer,sw=hostSwitch,serveClose=hostServeClose,roomConnection=hostRoomConnection;
@@ -308,7 +416,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const qr=scanControls('client');
     const text=("<form id=\"net-client-offer\" data-inline-actions><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.a6c341b18bf8")+"</span><textarea name=\"offer\" rows=\"3\" required placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.f677b4d50cc8")+"\"></textarea></label>")+
       '<button class="btn pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('addPlayer')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.966012379082")+"</button></form>");
-    b.openModal(root.PlayroomGameScreen.button({attrs:'type="button" data-lobby-incoming',label:globalThis.PlayroomMessages.text('ui.social.join-invite')})+globalThis.PlayroomMessages.text("ui.network-ui.60fe530e2fca",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b"),'client','client-join')),p1:String(pairingMethods('client-join',{share,sound,qr,text})),p2:String(pairingFooter())}));
+    b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.60fe530e2fca",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.25177fb5362b"),'client','client-join')),p1:String(pairingMethods('client-join',{share,sound,qr,text})),p2:String(pairingFooter())}));
   }
   async function createClientAnswer(signal,{acoustic=false}={}){
     // A QR/share invite may arrive while a DIFFERENT local game is active.
@@ -327,8 +435,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     syncSoundChoice('client',clientPeer.answer);updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
     await attachClientPeer();
   }
-  async function attachClientPeer(expectedRoomId=null){
-    const channel=await clientPeer.waitOpen({timeout:120000});clientTransport=W.client(channel,{timeout:10000});
+  async function attachClientPeer(expectedRoomId=null,{background=false}={}){
+    const channel=await clientPeer.waitOpen({timeout:120000});root.PlayroomHostTransferUI.clientBind(channel);clientTransport=W.client(channel,{timeout:10000});
+    clientChatUnsub=clientTransport.subscribeRoomChat?.(event=>root.PlayroomRoomChatUI?.receive(event));
+    clientReactionUnsub=clientTransport.subscribeReactions?.(event=>root.PlayroomReactionUI.receive(event));
     clientPresenceUnsub=clientTransport.subscribePresence?.(status=>{clientPresence=status;renderPresence();});
     const preview=await clientTransport.snapshot();if(preview?.kind!=='room-preview')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.3c0c82b8da4e"));
     if(expectedRoomId&&preview.room.id!==expectedRoomId)throw Error('ROOM_IDENTITY_MISMATCH');
@@ -340,15 +450,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const durable=resumeStore.save(preview.room.id,resumed.snapshot.participantId,resumed.resumeToken);
         if(!durable)toast(globalThis.PlayroomMessages.text("ui.network-ui.b1100c06d8d3"));
         clientRoom=resumed.snapshot.room;clientParticipantId=resumed.snapshot.participantId;
-        bridge().closeModal(true);
+        const preserveView=background&&(networkInMenu||!!document.querySelector('#modal-root .modal:not(.room-setup-modal):not(.online-connecting-modal)'));
+        if(!preserveView)bridge().closeModal(true);
         const state=await clientTransport.snapshot();
-        if(state?.kind==='snapshot')startClientGame(state);
-        else{resumeIntent=null;attachClientLobbyListener();renderClientLobby();}
+        if(state?.kind==='snapshot'){startClientGame(state,{preserveModal:preserveView});if(clientWaitingForLobby&&!preserveView)renderClientLobby();}
+        else{resumeIntent=null;attachClientLobbyListener();if(!preserveView)renderClientLobby();}
         startRecovery();return;
       }catch(error){
         toast(globalThis.PlayroomMessages.text("ui.network-ui.087cdf36c487",{p0:String(globalThis.PlayroomMessages.error(error))}));
       }
     }
+    if(expectedRoomId)return joinRoom({elements:{nickname:{value:bridge().profile()?.name||'Игрок'}}},{throwOnError:true});
     if(preview.room.phase==='playing'){
       throw Error(globalThis.PlayroomMessages.text("ui.network-ui.a3177d285b47"));
     }
@@ -377,7 +489,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const b=bridge();try{b.packs.activate(room.game.id,room.game.version);}catch(_){}
     b.openModal(b.modalHead(globalThis.PlayroomMessages.text("ui.network-ui.d1d8782389db",{p0:String(room.name)}))+'<p class="lead"><strong>'+esc(room.game.name)+'</strong> · '+(room.hostMode==='table'?globalThis.PlayroomMessages.text("ui.network-ui.37584969dd4c"):globalThis.PlayroomMessages.text("ui.network-ui.d96a8708055e"))+("</p><section class=\"rules-mode-note\"><strong>"+globalThis.PlayroomMessages.text("ui.network-ui.4c3d5c36eabb")+"</strong>")+rulesMarkup(room)+("</section><form id=\"net-client-join\"><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.6f2f9c32cd40")+"</span><input name=\"nickname\" maxlength=\"24\" value=\"")+esc(b.profile()?.name||globalThis.PlayroomMessages.text("ui.network-ui.f54f58cf08df"))+("\" required></label><button class=\"btn\" type=\"submit\" style=\"width:100%\">"+globalThis.PlayroomMessages.text("ui.network-ui.80df8c7d3c91")+"</button></form>"));
   }
-  async function joinRoom(form){
+  async function joinRoom(form,{throwOnError=false}={}){
     try{
       const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value,avatar:b.profile()?.avatar||null});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2e76e709d3bb"));
@@ -389,13 +501,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       b.closeModal(true);
       attachClientLobbyListener();
       renderClientLobby();startRecovery();
-    }catch(error){toast(globalThis.PlayroomMessages.error(error));}
+    }catch(error){if(throwOnError)throw error;toast(globalThis.PlayroomMessages.error(error));}
   }
   function participant(room,id){return room.participants.find(p=>p.id===id);}
   function attachClientLobbyListener(){
     clientUnsub?.();clientUnsub=clientTransport.subscribe(snapshot=>{
       if(snapshot?.kind==='lobby'){
+        if(clientRoom?.id===snapshot.room.id&&snapshot.room.revision<clientRoom.revision)return;
         clientRoom=snapshot.room;clientParticipantId=snapshot.participantId;
+        if(clientRoom.phase==='lobby')queueMicrotask(()=>void flushReady());
+        if(clientRoom.recovery?.rosterChange&&clientRoom.phase!=='playing'&&clientMount){
+          clientMount.setConnected(false,{notice:false});historySync.cancel();clientHistoryUnsub?.();clientHistoryUnsub=null;
+          clientGameClient?.close({keepTransport:true});clientGameClient=null;clientWaitingForLobby=false;clientSetupShown=false;
+          rosterNotice(clientRoom);if(document.querySelector('.lobby-shell'))renderClientLobby(true);ensureButtons();return;
+        }
         if(clientGameClient?.snapshot?.state?.status==='finished'&&!clientWaitingForLobby)return;
         if(clientGameClient){
           clientSetupShown=false;
@@ -413,7 +532,34 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     clientMount?.destroy?.();clientMount=null;
     clientGameClient?.close({keepTransport:true});clientGameClient=null;
     clientWaitingForLobby=waiting;clientSetupShown=false;
+    // Disposing a mount must also replace its DOM: closing the lobby must not
+    // reveal a finished/history table whose document handlers were removed.
+    bridge().showHub();networkInMenu=false;
     attachClientLobbyListener();renderClientLobby();
+  }
+  async function removeParticipant(targetId){
+    const b=bridge(),room=b.roomService.snapshot(hostRoomId||b.room().id),cloudRoomId=root.PlayroomCloudNetwork?.roomId?.(),userId=cloudParticipantUsers.get(targetId);
+    const resolvedUser=cloudRoomId&&!userId&&!room.participants.find(p=>p.id===targetId)?.bot?(await root.PlayroomCommunityUI.service.call('room-person',{roomId:cloudRoomId,participantId:targetId})).person?.userId:userId;
+    b.roomService.kick(room.id,b.participantId(),targetId);
+    if(cloudRoomId&&resolvedUser){await root.PlayroomSocialUI.service.perform('kick',{roomId:cloudRoomId,userId:resolvedUser});cloudParticipantUsers.delete(targetId);}
+  }
+  let rosterCollection=null;
+  function prepareRoster(){
+    if(rosterCollection)return rosterCollection;
+    if(!hostAuthority||!hostStarted||bridge().room()?.phase!=='playing')return Promise.resolve();
+    rosterCollection=(async()=>{
+      const b=bridge(),roomId=hostRoomId,sessionId=hostGameClient.snapshot.sessionId,thaw=await transferFreeze();
+      try{
+        const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);if(!saved||saved.session.current.status==='finished')throw Error('MATCH_NOT_PLAYING');
+        hostRecovery=saved;rosterError=null;
+        const room=b.roomService.collectForReplacement(roomId,b.participantId(),{sessionId,revision:saved.revision});
+        await persistRecoveryRoster(room);
+        hostMount?.destroy?.();hostMount=null;hostGameClient?.close?.();hostGameClient=null;
+        hostPushMonitor?.close();hostPushMonitor=null;hostAuthority.dispose();hostAuthority=null;hostStarted=false;
+        for(const item of connectedHostPeers)if(item.roomConnection?.participantId)item.switchable.set(item.roomConnection);
+        b.restoreHostedRoom(roomId,{participantId:room.ownerId});b.returnHostedRoomToLobby(roomId);
+      }finally{thaw();}
+    })().finally(()=>{rosterCollection=null;});return rosterCollection;
   }
   function exitClientGame({finished=false}={}){
     if(finished){clientToLobby({waiting:clientRoom?.phase!=='lobby'});return;}
@@ -431,7 +577,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       hostMount?.destroy?.();hostMount=null;
       hostGameClient?.close?.();hostGameClient=null;
-      hostAuthority?.dispose?.();hostAuthority=null;
+      hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;
       hostLockRelease?.();hostLockRelease=null;
       hostStarted=false;hostRecovery=null;rosterQueue=Promise.resolve();rosterError=null;
       b.returnHostedRoomToLobby(roomId);
@@ -439,6 +585,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     parkNetworkView();
   }
+  function closeCloudRoom(){if(clientRoom){resumeStore.remove(clientRoom.id);closeClient();}else if(hostRoomId&&bridge().room()?.transportMode==='online')bridge().leaveLobby();}
   function leaveHostRoom(roomId,{preserveRoom=false}={}){
     root.PlayroomCloudNetwork?.stopHost?.();
     presentationGeneration++;
@@ -447,7 +594,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // and authority. IndexedDB journals and private recovery rights stay intact.
     hostRoomUnsub?.();hostRoomUnsub=null;
     closeHostPeer();hostGameClient?.close?.();hostGameClient=null;
-    hostAuthority?.dispose?.();hostAuthority=null;
+    hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;
     hostLockRelease?.();hostLockRelease=null;
     if(roomId){
       const service=bridge().roomService;
@@ -459,10 +606,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   let clientSetupShown=false;
   function renderClientLobby(force=false){
-    if(networkInMenu&&!force)return;
+    if(force)networkInMenu=false;
+    if(!force&&(networkInMenu||document.querySelector('#modal-root .modal:not(.room-setup-modal)')))return;
     if(clientSetupShown&&!force&&!document.querySelector('.room-setup-modal .lobby-shell'))return;
     clientSetupShown=true;
-    if(!clientRoom)return;const room=clientRoom,app=document.getElementById('app');
+    if(!clientRoom)return;checkPendingReady();const view=pendingReady?{...clientRoom,participants:clientRoom.participants.map(p=>p.id===clientParticipantId?{...p,ready:pendingReady.ready}:p)}:clientRoom;const room=clientWaitingForLobby?{...view,phase:'lobby',participants:view.participants.map(p=>({...p,ready:p.id===clientParticipantId&&pendingReady?pendingReady.ready:!!p.bot}))}:view,app=document.getElementById('app');
     app.inert=!!document.getElementById('modal-root').children.length;
     bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
     PlayroomLobbyView.notifyRulesChange(room,clientParticipantId,toast);
@@ -470,7 +618,30 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(room.phase==='starting')startClientCountdown();
   }
   function startClientCountdown(){clearInterval(clientLobbyTimer);const update=()=>{if(!clientRoom?.countdownEndsAt)return;const n=Math.max(0,Math.ceil((clientRoom.countdownEndsAt-Date.now())/1000));const node=document.getElementById('net-countdown');if(node)node.textContent=String(n);};update();clientLobbyTimer=setInterval(update,200);}
-  async function roomCommand(command){try{if(!clientConnected())throw Error(globalThis.PlayroomMessages.text("ui.network-ui.436623fc1c3a"));const result=await clientTransport.dispatch(command);if(result?.snapshot?.kind==='lobby'){if(command.type==='rename')bridge().saveNickname?.(command.nickname);clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;if(!clientGameClient)renderClientLobby();}}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function checkPendingReady(){
+    if(pendingReady?.afterMatch&&clientWaitingForLobby&&clientRoom?.phase==='playing')return;
+    if(pendingReady&&clientRoom?.phase!=='lobby'&&participant(clientRoom,clientParticipantId)?.ready===pendingReady.ready){pendingReady=null;return;}
+    if(pendingReady&&(!clientRoom||clientRoom.phase!=='lobby'||pendingReady.participantId!==clientParticipantId||pendingReady.key!==M.readyConfiguration(clientRoom,clientParticipantId,{ignoreReset:!!pendingReady.afterMatch}))){pendingReady=null;toast(root.PlayroomMessages.text('ui.network-ui.ready-changed'));}
+  }
+  async function flushReady(){
+    if(readyFlight||!pendingReady||!clientConnected()||clientRoom?.phase!=='lobby')return;checkPendingReady();if(!pendingReady)return;
+    const intent=pendingReady;readyFlight=true;
+    try{await roomCommand({type:'ready',ready:intent.ready,expectedConfiguration:M.readyConfiguration(clientRoom,clientParticipantId)},{background:true,queued:true});if(pendingReady===intent)pendingReady=null;}
+    catch{}finally{readyFlight=false;if(document.querySelector('.lobby-shell'))renderClientLobby();if(pendingReady&&pendingReady!==intent&&clientConnected())void flushReady();}
+  }
+  async function roomCommand(command,{background=false,queued=false}={}){try{
+    if(command.type==='ready'&&!queued&&(!clientConnected()||pendingReady||clientWaitingForLobby)){
+      if(!clientRoom||clientRoom.phase!=='lobby'&&!clientWaitingForLobby)return;
+      pendingReady={participantId:clientParticipantId,afterMatch:clientWaitingForLobby,key:M.readyConfiguration(clientRoom,clientParticipantId,{ignoreReset:clientWaitingForLobby}),ready:command.ready};renderClientLobby();
+      if(clientConnected())void flushReady();else toast(root.PlayroomMessages.text('ui.network-ui.ready-saved'));return;
+    }
+
+    if(!clientConnected())throw Error(globalThis.PlayroomMessages.text('ui.network-ui.436623fc1c3a'));
+    const transport=clientTransport,roomId=clientRoom?.id,result=await transport.dispatch(command);
+    if(transport!==clientTransport||clientRoom?.id!==roomId)return;
+    if(result?.snapshot?.kind==='lobby'&&result.snapshot.room.revision>=clientRoom.revision){if(command.type==='rename')bridge().saveNickname?.(command.nickname);clientRoom=result.snapshot.room;clientParticipantId=result.snapshot.participantId;if(!clientGameClient&&!background)renderClientLobby();}
+  }catch(error){toast(globalThis.PlayroomMessages.error(error));if(queued)throw error;}}
+
   async function startHostGame(room){
     if(hostStarted)return;hostStarted=true;
     const generation=++presentationGeneration;
@@ -487,11 +658,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(!id||!participant(room,id))continue;
         item.switchable.completedHistory=null;item.switchable.set(SessionAccess.connect(hostAuthority,room,id));
       }
-      const local=LocalTransport(SessionAccess.connect(hostAuthority,room,room.ownerId));hostGameClient=new SessionClient(local);await hostGameClient.refresh();
+      const local=LocalTransport(SessionAccess.connect(hostAuthority,room,room.ownerId));hostGameClient=new SessionClient(local);hostGameClient.subscribe(snapshot=>{
+        root.PlayroomCloudSavesUI?.saved('network:'+snapshot.sessionId,{finished:snapshot.state.status==='finished'});
+        if(snapshot.state.status==='finished')queueMicrotask(()=>{
+          if(hostGameClient?.snapshot?.sessionId!==snapshot.sessionId||!hostRoomId)return;
+          const latest=b.roomService.snapshot(hostRoomId),owner=participant(latest,latest.ownerId);
+          if(latest.autoStart&&owner?.role!=='player'&&latest.phase==='playing')exitHostGame({finished:true});
+        });
+      });await hostGameClient.refresh();
+      hostPushMonitor?.close();hostPushMonitor=root.PlayroomPushUI?.watchGame({authority:hostAuthority,room:()=>b.roomService.snapshot(room.id),resumed:!!room.recovery});
       if(generation===presentationGeneration)mountNetworkView(true);hostAuthority.scheduleBot({onError:error=>toast(globalThis.PlayroomMessages.error(error))});notifyPresence(room);
     }catch(error){
       hostGameClient?.close?.();hostGameClient=null;
-      hostAuthority?.dispose?.();hostAuthority=null;
+      hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;
       hostLockRelease?.();hostLockRelease=null;
       if(persisted||error.persisted){
         // This room has already been committed. Starting a new session would
@@ -520,6 +699,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   async function inspectHostArchive(sessionId){
     try{
+      const record=(await hostSessionStore.readPrivate(sessionId)).record;
+      if(record?.transfer?.role==='incoming'&&record.transfer.state!=='active'){
+        const b=bridge();b.openModal(b.modalHead('Передача хоста')+'<p>Партия сохранена. Ожидается подтверждение передачи.</p>'+root.PlayroomGameScreen.button({attrs:`type="button" data-network-continue="${esc(sessionId)}"`,label:'Продолжить передачу'}));return;
+      }
+
       const saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);
       if(!saved)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.54c1751f79a3"));
       const b=bridge(),room=saved.room,st=saved.session.current;
@@ -564,6 +748,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let pendingRelease=null,recoveredRoomId=null;
     try{
       const b=bridge(),profile=b.profile?.();
+      const record=(await hostSessionStore.readPrivate(sessionId)).record;
+      if(record?.transfer?.role==='incoming'&&record.transfer.state!=='active')await root.PlayroomHostTransferUI.recover(sessionId);
       if(hostStarted||hostAuthority||hostRoomId||b.room?.()||archiveMount)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.876623c11b49"));
       if(!profile?.id)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.7020d052b51a"));
       const item=(await hostSessionStore.list()).find(entry=>entry.sessionId===sessionId);
@@ -578,7 +764,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(await NetworkSessionStore.fingerprintPack(b.packs,saved.session.game,saved.session.packVersion)!==saved.packDigest)
         throw Error(globalThis.PlayroomMessages.text("ui.network-ui.bc91828177eb"));
       const room=saved.recovery.room;
-      if(room.ownerId!==profile.id||(!['playing','lobby','starting'].includes(room.phase))||room.id!==saved.room.id||
+      if((saved.hostDeviceId||room.ownerId)!==profile.id||(!['playing','lobby','starting'].includes(room.phase))||room.id!==saved.room.id||
           saved.session.game!==room.game.id||saved.session.packVersion!==room.game.version)
         throw Error(globalThis.PlayroomMessages.text("ui.network-ui.6b0198e81380"));
       const occupied=room.seats.filter(seat=>seat.participantId||Number.isInteger(seat.playerIndex)).sort((a,c)=>a.index-c.index);
@@ -588,11 +774,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // It is released on pagehide; the next page acquires it afresh.
       pendingRelease=await hostSessionStore.acquireHostLock(sessionId);
       // All validation precedes attaching restored identities to the live UI.
-      const collected=b.roomService.restoreRecovery(saved.recovery,{hostId:profile.id,collect:true,sessionId,revision:saved.revision});recoveredRoomId=room.id;
+      const collected=b.roomService.restoreRecovery(saved.recovery,{hostId:room.ownerId,collect:true,sessionId,revision:saved.revision});recoveredRoomId=room.id;
       hostRecovery=saved;rosterQueue=Promise.resolve();rosterError=null;
       await persistRecoveryRoster(collected);
       resumeDurability(room.id,sessionId);
-      b.restoreHostedRoom(room.id);
+      b.restoreHostedRoom(room.id,{participantId:room.ownerId});
       hostLockRelease=pendingRelease;pendingRelease=null;
       hostRoomId=room.id;hostStarted=false;hostAuthority=null;
       hostRoomUnsub?.();
@@ -603,7 +789,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(recoveredRoomId){
         hostMount?.destroy?.();hostMount=null;
         hostGameClient?.close?.();hostGameClient=null;
-        hostAuthority?.dispose?.();hostAuthority=null;hostRecovery=null;
+        hostPushMonitor?.close();hostPushMonitor=null;hostAuthority?.dispose?.();hostAuthority=null;hostRecovery=null;
         hostLockRelease?.();hostLockRelease=null;
         hostRoomId=null;hostStarted=false;
         const b=bridge();b.rollbackHostedRoom?.(recoveredRoomId);
@@ -614,9 +800,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function saveClientProjection(snapshot){
     if(!clientRoom)return;
-    historySync.save(snapshot,{roomId:clientRoom.id,participantId:clientParticipantId,roomName:clientRoom.name,participants:clientPresence?.participants||clientRoom.participants});
+    const saved=historySync.save(snapshot,{roomId:clientRoom.id,participantId:clientParticipantId,roomName:clientRoom.name,transportMode:clientRoom.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id,participants:clientPresence?.participants||clientRoom.participants});
+    saved?.then(key=>root.PlayroomCloudSavesUI?.saved('network:client:'+key,{finished:snapshot.state.status==='finished'})).catch(()=>{});
   }
-  function backfillClientHistory(initial,transport,roomId,participantId){return historySync.backfill(initial,transport,{roomId,participantId,roomName:clientRoom?.name||''});}
+  function backfillClientHistory(initial,transport,roomId,participantId){return historySync.backfill(initial,transport,{roomId,participantId,roomName:clientRoom?.name||'',transportMode:clientRoom?.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id});}
 
   async function listNetworkArchives({strict=false}={}){
     const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
@@ -663,14 +850,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(hasActiveRoom())return toast(globalThis.PlayroomMessages.text("ui.network-ui.cdf905309d36"));
     networkInMenu=false;
     if(key.startsWith('client:')){
+      const saved=await clientHistoryStore.read(key.slice(7));
+      if(saved?.transportMode==='online'){if(saved.cloudRoomId&&(!saved.accountId||saved.accountId===root.PlayroomAccountUI.service.snapshot().id))return root.PlayroomLobbyNetwork.reconnectRoom(saved.cloudRoomId);return root.PlayroomLobbyNetwork.incoming();}
       if(hostStarted||hostAuthority||bridge().room?.())return toast(globalThis.PlayroomMessages.text("ui.network-ui.32c308952660"));
       showJoin();pairingProgress(globalThis.PlayroomMessages.text("ui.network-ui.646f32cabee2"),'qr');
       return;
     }
     return continueHostArchive(key);
   }
-  function startClientGame(snapshot){
-    if(clientGameClient)return;
+  function startClientGame(snapshot,{preserveModal=!!document.querySelector('#modal-root .modal:not(.room-setup-modal):not(.online-connecting-modal)')}={}){
+    if(clientGameClient||clientWaitingForLobby)return;
     try{
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
       const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
@@ -684,9 +873,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(resumeIntent){const intent=resumeIntent;resumeIntent=null;
         if(intent.roomId===clientRoom.id&&intent.participantId===clientParticipantId&&(['sessionId','authorityEpoch','game','packVersion'].every(k=>intent.snapshot[k]===snapshot[k])&&root.PlayroomProtocol.sameAudience(intent.snapshot,snapshot))){
           if(intent.pending)clientGameClient.pending=intent.pending;
-          mountNetworkView(false);if(intent.historyIndex!==null)void clientMount?.openHistory(intent.historyIndex);
-        }else mountNetworkView(false);
-      }else mountNetworkView(false);
+          mountNetworkView(false,{preserveModal});if(intent.historyIndex!==null)void clientMount?.openHistory(intent.historyIndex);
+        }else mountNetworkView(false,{preserveModal});
+      }else mountNetworkView(false,{preserveModal});
     }catch(error){toast(globalThis.PlayroomMessages.text("ui.network-ui.232c63fe01d2",{p0:String(globalThis.PlayroomMessages.error(error))}));}
   }
   document.addEventListener('click',event=>{
@@ -700,7 +889,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.dataset.netQrCamera){document.getElementById('net-'+target.dataset.netQrCamera+'-qr-camera')?.click();return;}
     if(target.dataset.netQrGallery){document.getElementById('net-'+target.dataset.netQrGallery+'-qr-gallery')?.click();return;}
     if(target.id==='network-join-button')return root.PlayroomLobbyNetwork?root.PlayroomLobbyNetwork.incoming():showJoin();
-    if(target.id==='network-reconnect-button')return showJoin();
+    if(target.id==='network-reconnect-button'||target.dataset.netAction==='reconnect'){const cloud=root.PlayroomCloudNetwork?.roomId();return cloud?root.PlayroomLobbyNetwork.reconnectRoom(cloud):showJoin();}
     if(target.id==='network-saved-host-button')return showHostArchives();
     if(target.dataset.networkArchive)return inspectHostArchive(target.dataset.networkArchive);
     if(target.dataset.networkHistory)return openNetworkHistory(target.dataset.networkHistory);
@@ -715,12 +904,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.dataset.netShare){sharePair(target.dataset.netShare);return;}
     if(target.dataset.netCopy)return copy(target.dataset.netCopy);
     if(target.dataset.netSeat)return roomCommand({type:'claim-seat',seatId:target.dataset.netSeat});
-    if(target.dataset.netAction==='ready'){const me=participant(clientRoom,clientParticipantId);return roomCommand({type:'ready',ready:!me?.ready});}
+    if(target.dataset.netAction==='ready'){const me=participant(clientRoom,clientParticipantId);return roomCommand({type:'ready',ready:!(pendingReady?.ready??(clientWaitingForLobby?false:me?.ready))});}
     if(target.dataset.netAction==='accept-replacement')return roomCommand({type:'accept-replacement'});
     if(target.dataset.netAction==='table')return roomCommand({type:'claim-table'});
     if(target.dataset.netAction==='spectator')return roomCommand({type:'spectator'});
     if(target.dataset.netAction==='return-game'){void returnToNetwork();return;}
-    if(target.dataset.netAction==='dismiss-room'){bridge().closeModal();return;}
+    if(target.dataset.netAction==='dismiss-room'){if(!clientGameClient)networkInMenu=true;bridge().closeModal();return;}
     if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
     if(target.dataset.netAction==='collapse'){bridge().closeModal(true);return;}
     if(target.dataset.netAction==='stop-match'){
@@ -731,10 +920,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const clientId=clientRoom?.id,hostId=hostRoomId;
       bridge().confirmOperation(globalThis.PlayroomMessages.text("ui.network-ui.e12601e2b36f"),{
         isCurrent:()=>clientId?clientRoom?.id===clientId:!!hostId&&hostRoomId===hostId,
-        onConfirm:()=>{if(clientId)closeClient();else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();}
+        onConfirm:async()=>{const cloudRoomId=clientId?root.PlayroomCloudNetwork?.roomId?.():null;if(clientId){if(clientConnected()){try{await clientTransport.dispatch({type:'room-leave'});}catch(error){toast(globalThis.PlayroomMessages.error(error));}}resumeStore.remove(clientId);closeClient();}else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();if(cloudRoomId){try{await root.PlayroomSocialUI.service.perform('leave',{roomId:cloudRoomId});}catch(error){if(!['not-found','forbidden'].includes(error.code))toast(root.PlayroomSocialUI.message(error));}}}
       });return;
     }
-    if(target.dataset.netAction==='rules')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(bridge().modalHead(globalThis.PlayroomMessages.text("ui.network-ui.ee9cd4deefad",{p0:String(clientRoom.game.name)}))),p1:String(PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{},PlayroomCatalog[clientRoom.game.id]?.settings||[]))}));
+    if(target.dataset.netAction==='rules')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(root.PlayroomRulebookView.header()),p1:String(PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{},PlayroomCatalog[clientRoom.game.id]?.settings||[]))}));
     if(target.dataset.netAction==='help')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(bridge().modalHead(globalThis.PlayroomMessages.text("ui.network-ui.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(clientRoom))}));
     if(target.dataset.netAction==='settings')return bridge().showSettings({room:clientRoom,participantId:clientParticipantId,client:true});
   },true);
@@ -768,28 +957,112 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(event.target.id==='net-host-answer')acceptAnswer(event.target);
     else if(event.target.id==='net-client-offer')createAnswer(event.target);
     else if(event.target.id==='net-client-join')joinRoom(event.target);
-    else if(event.target.id==='net-client-nickname')roomCommand({type:'rename',nickname:event.target.elements.nickname.value});
+    else if(event.target.id==='net-client-nickname'&&!event.target.closest('.modal:has(.settings-overview)'))roomCommand({type:'rename',nickname:event.target.elements.nickname.value});
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
-  async function cloudHostPeer({identity,check}){
-    const b=bridge(),room=b.room();if(!room||room.transportMode!=='network'||room.ownerId!==b.participantId())throw Error('CLOUD_LOBBY_REQUIRED');
-    ensureHostSubscription(room);
+  async function cloudHostPeer({identity,check,validate=check}){
+    const b=bridge(),room=b.room();if(!room||room.transportMode!=='online'||room.ownerId!==b.participantId())throw Error('CLOUD_LOBBY_REQUIRED');
+    ensureHostSubscription(room);cloudParticipantUsers.set(identity.participantId,identity.userId);
     const connection=b.roomService.connection(room.id,{boundParticipantId:identity.participantId}),switchable=new M.SwitchableConnection(connection),peer=await W.createHostPeer();
     const serveClose=hostPeerServing(peer,switchable,connection,room.id,check),item={peer,switchable,roomConnection:connection,serveClose};
-    return {offer:peer.offer,validate:check,closed:()=>peer.pc.connectionState==='closed',async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
+    return {offer:peer.offer,validate:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open'?validate():undefined,closed:()=>['failed','closed'].includes(peer.pc.connectionState),async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
   }
-  async function cloudAttachClient(peer,expectedRoomId){
+  async function cloudAttachClient(peer,expectedRoomId,{background=false}={}){
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))throw Error('CLOUD_ROOM_ACTIVE');
-    networkInMenu=false;bridge().parkLocalSession();closeClient({preserveIntent:true});clientPeer=peer;
-    await attachClientPeer(expectedRoomId);
+    const returning=!!clientRoom&&clientRoom.id===expectedRoomId;
+    if(!background||!returning)networkInMenu=false;bridge().parkLocalSession();clientAttachments++;
+    try{closeClient({preserveIntent:true,preserveView:returning,preserveRoom:returning});clientPeer=peer;await attachClientPeer(expectedRoomId,{background});}
+    finally{clientAttachments--;ensureButtons();}
   }
-  root.PlayroomNetworkLibrary=Object.freeze({showManualJoin:showJoin,cloudHostPeer,cloudAttachClient,canCloudHost:()=>!!bridge().room()&&bridge().room().transportMode==='network'&&bridge().room().ownerId===bridge().participantId()&&!clientRoom&&!connectedHostPeers.length&&!hostPeer,setAvatar:avatar=>roomCommand({type:'avatar',avatar}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,
+  async function playerControlCommand(roomId,id,command){
+    if(hostTransferBlocked||!hostAuthority||roomId!==hostRoomId)return {ok:false,code:'BUSY'};
+    try{return await root.PlayroomPlayerControlService.dispatch({authority:hostAuthority,room:bridge().roomService.snapshot(roomId),requester:id},command);}
+    catch(error){return {ok:false,code:error.message};}
+  }
+  function playerControlContext(){
+    const client=clientGameClient||hostGameClient;if(!client||hostTransferBlocked)return null;
+    let room=clientRoom?{...clientRoom,...(clientPresence?{participants:clientPresence.participants}:{}),phase:'playing'}:bridge().roomService.snapshot(hostRoomId);
+    const occupied=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);room={...room,seats:room.seats.map(seat=>({...seat,playerIndex:seat.playerIndex??room.participants.find(p=>p.id===seat.participantId)?.playerIndex??occupied.findIndex(s=>s.id===seat.id)}))};
+    const id=clientRoom?clientParticipantId:bridge().participantId(),snapshot=client.snapshot;
+    if(!snapshot?.playerControls||!room||room.transportMode==='hotseat')return null;
+    return {room,id,snapshot,call:command=>clientRoom?clientTransport.dispatch(command):playerControlCommand(room.id,id,command)};
+  }
+  async function portableSource(key){
+    const b=bridge();
+    if(key.startsWith('client:')){const replay=await clientHistoryStore.read(key.slice(7));if(!replay)throw Error('SAVE_NOT_FOUND');return {kind:'replay',replay,roomName:replay.name,pack:b.packs.exportPack(replay.game,replay.packVersion)};}
+    let thaw,release;
+    try{
+      if(hostAuthority&&hostGameClient?.snapshot?.sessionId===key)thaw=await transferFreeze();else release=await hostSessionStore.acquireHostLock(key);
+      const raw=thaw?(await transferExport()).archive:await hostSessionStore.readPrivate(key),saved=root.PlayroomHostRecovery.restore(raw,key,root.TabletopCore,Session);
+      if(!saved)throw Error('SAVE_NOT_FOUND');return {kind:'session',session:saved.session,roomName:saved.room.name,pack:b.packs.exportPack(saved.session.game,saved.session.packVersion)};
+    }finally{thaw?.();release?.();}
+  }
+  function transferContext(){
+    if(!hostRoomId||hostTransferBlocked)return null;
+    const room=bridge().roomService.snapshot(hostRoomId);if(room.phase!=='lobby'&&(!hostAuthority||!hostStarted||room.phase!=='playing'))return null;
+    return {room,kind:room.phase==='lobby'?'lobby':'game',sessionId:hostGameClient?.snapshot?.sessionId,peers:connectedHostPeers.filter(p=>p.roomConnection?.participantId&&p.peer.channel?.readyState==='open').map(p=>({id:p.roomConnection.participantId,channel:p.peer.channel}))};
+  }
+  async function transferFreeze(){
+    if(hostTransferBlocked||!hostRoomId)throw Error('HOST_TRANSFER_BUSY');const room=bridge().roomService.snapshot(hostRoomId);if(room.phase==='lobby'&&!room.recovery){const release=bridge().roomService.freezeLobbyTransfer(hostRoomId,room.ownerId);hostTransferBlocked=true;await Promise.all([...hostTransferCalls]);return ()=>{hostTransferBlocked=false;release();};}if(!hostAuthority)throw Error('HOST_TRANSFER_UNAVAILABLE');hostTransferBlocked=true;
+    try{await Promise.all([...hostTransferCalls]);const thaw=await hostAuthority.suspendForTransfer();await root.PlayroomData.transact(()=>{});await rosterQueue;return ()=>{hostTransferBlocked=false;thaw();};}
+    catch(error){hostTransferBlocked=false;throw error;}
+  }
+  async function transferExport(){
+    if(!hostTransferBlocked)throw Error('HOST_TRANSFER_UNAVAILABLE');const lobby=bridge().roomService.snapshot(hostRoomId);if(lobby.phase==='lobby'&&!lobby.recovery)return {lobby:bridge().roomService.exportRecovery(hostRoomId,{lobby:true}),pack:bridge().packs.exportPack(lobby.game.id,lobby.game.version),chat:roomChat.records(hostRoomId)};if(!hostGameClient)throw Error('HOST_TRANSFER_UNAVAILABLE');
+    const archive=await hostSessionStore.readPrivate(hostGameClient.snapshot.sessionId),room=bridge().roomService.snapshot(hostRoomId);
+    archive.record.room=room;archive.record.recovery=bridge().roomService.exportRecovery(hostRoomId);
+    return {archive,pack:bridge().packs.exportPack(room.game.id,room.game.version),chat:roomChat.records(hostRoomId)};
+  }
+  async function transferFence(id,target,cloudRoomId){
+    if(!hostTransferBlocked)throw Error('HOST_TRANSFER_UNAVAILABLE');if(bridge().roomService.snapshot(hostRoomId).phase==='lobby'){await root.PlayroomData.transact(()=>root.PlayroomData.setItem('playroom.lobby-fence.v1.'+hostRoomId,JSON.stringify({id,target,cloudRoomId})));return;}if(!hostAuthority)throw Error('HOST_TRANSFER_UNAVAILABLE');
+    await hostSessionStore.transferState(hostGameClient.snapshot.sessionId,id,'outgoing',{target,cloudRoomId});
+    hostAuthority.dispose();hostMount?.setConnected?.(false,{notice:true});
+  }
+  async function transferPromote({sessionId,release,peers,cloudRoomId}){
+    const b=bridge(),saved=await hostSessionStore.load(sessionId,root.TabletopCore,Session);if(!saved?.recovery)throw Error('HOST_TRANSFER_INVALID');
+    root.PlayroomCloudNetwork?.stopClient();closeClient({preserveIntent:true});
+    const room=b.room()?.id===saved.room.id?b.roomService.snapshot(saved.room.id):b.roomService.restoreRecovery(saved.recovery,{hostId:saved.room.ownerId});
+    hostRecovery=saved;hostLockRelease=release;hostTransferBlocked=false;hostRoomId=room.id;hostStarted=false;rosterQueue=Promise.resolve();rosterError=null;
+    b.restoreHostedRoom(room.id,{participantId:room.ownerId});
+    hostRoomUnsub?.();hostRoomUnsub=b.roomService.subscribe(room.id,handleHostRoomState);
+    await startHostGame(room);if(!hostAuthority)throw Error('HOST_TRANSFER_START_FAILED');
+    for(const [id,peer] of peers){
+      const connection=b.roomService.connection(room.id,{boundParticipantId:id}),switchable=new M.SwitchableConnection(connection);
+      const admit=cloudRoomId?()=>root.PlayroomHostTransferUI.checkPeer(cloudRoomId,id):null;
+      const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);connectedHostPeers.push({peer,roomConnection:connection,switchable,serveClose});
+    }
+    if(cloudRoomId)await root.PlayroomCloudNetwork.host(cloudRoomId);
+    b.closeModal(true);
+  }
+  function transferValidateLobby(payload){const v=new M.RoomService({idFactory:()=>root.crypto.randomUUID(),clock:()=>Date.now(),random:()=>Math.random(),tokenFactory:()=>Array.from(root.crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('')});return v.restoreRecovery(payload.lobby.recovery,{hostId:payload.lobby.target,lobby:true});}
+  async function transferPromoteLobby({payload,peers=new Map()}){
+    const b=bridge(),lobby=payload.lobby,recovery=lobby.recovery;root.PlayroomCloudNetwork?.stopClient();closeClient({preserveIntent:true});
+    const parsed=b.packs.parse(payload.pack);if(parsed.manifest.id!==recovery.room.game.id||parsed.manifest.version!==recovery.room.game.version)throw Error('HOST_TRANSFER_PACK_MISMATCH');await b.packs.install(b.packs.prepare(parsed),{activate:true});
+    const existing=b.room();if(existing&&(existing.id!==recovery.room.id||existing.ownerId!==lobby.target||existing.phase!=='lobby'))throw Error('HOST_TRANSFER_CHANGED');const room=existing?b.roomService.snapshot(existing.id):b.roomService.restoreRecovery(recovery,{hostId:lobby.target,lobby:true});hostRoomId=room.id;hostStarted=false;hostAuthority=null;hostTransferBlocked=false;rosterQueue=Promise.resolve();rosterError=null;
+    await root.PlayroomData.transact(()=>root.PlayroomData.setItem('playroom.room-chat.v1.'+room.id,JSON.stringify(payload.chat||[])));
+    b.restoreHostedRoom(room.id,{participantId:room.ownerId});hostRoomUnsub?.();hostRoomUnsub=b.roomService.subscribe(room.id,handleHostRoomState);
+    for(const [id,peer]of peers){if(connectedHostPeers.some(p=>p.peer===peer))continue;const connection=b.roomService.connection(room.id,{boundParticipantId:id}),switchable=new M.SwitchableConnection(connection),admit=lobby.cloudRoomId?()=>root.PlayroomHostTransferUI.checkPeer(lobby.cloudRoomId,id):null;const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);connectedHostPeers.push({peer,roomConnection:connection,switchable,serveClose});}
+    if(lobby.cloudRoomId)await root.PlayroomCloudNetwork.host(lobby.cloudRoomId);b.renderLobby();
+  }
+  async function transferAttach(peer,roomId,cloudRoomId=null){
+    const b=bridge();
+    if(hostRoomId){
+      const sourceId=b.participantId(),transfer=root.PlayroomHostTransferUI.senderState();
+      if(!transfer||transfer.id!==root.PlayroomHostTransferUI.guestId(peer))throw Error('HOST_TRANSFER_UNAUTHORIZED');
+      resumeStore.save(roomId,sourceId,transfer.token);
+      leaveHostRoom(roomId);b.rollbackHostedRoom(roomId);
+    }
+    root.PlayroomCloudNetwork?.stopClient();networkInMenu=false;closeClient({preserveIntent:true});clientPeer=peer;hostTransferBlocked=false;
+    if(cloudRoomId)root.PlayroomCloudNetwork.adoptClient(cloudRoomId);await attachClientPeer(roomId);
+  }
+  root.PlayroomNetworkLibrary=Object.freeze({isClient:()=>!!clientRoom,isConnecting:()=>clientAttachments>0,exitToMenu:parkNetworkView,enterActiveRoom:returnToNetwork,cancelJoin:()=>{if(!clientRoom)closeClient();},portableSource,playerControlContext,prepareRoster,removeParticipant,transferSaveResume:token=>hostTransferBlocked&&hostRoomId&&resumeStore.save(hostRoomId,bridge().participantId(),token),transferContext,transferFreeze,transferExport,transferFence,transferPromote,transferPromoteLobby,transferValidateLobby,transferAttach,transferStore:hostSessionStore,transferClient:()=>clientRoom&&clientPeer?{room:clientGameClient?{...clientRoom,phase:'playing'}:clientRoom,id:clientParticipantId,channel:clientPeer.channel}:null,chatContext,reactionContext,inviteContext:()=>({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),cloudRoomId:root.PlayroomCloudNetwork?.roomId?.()}),showManualInvite:hostInvite,showManualJoin:showJoin,cloudHostPeer,cloudAttachClient,canCloudHost:()=>!!bridge().room()&&bridge().room().transportMode==='online'&&bridge().room().ownerId===bridge().participantId()&&!clientRoom,setAvatar:avatar=>roomCommand({type:'avatar',avatar}),renameNickname:nickname=>roomCommand({type:'rename',nickname},{background:true}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,cloudIdle:()=>Promise.all([historySync.idle,rosterQueue]),
     ruleContext:gameId=>{const current=clientRoom||bridge().room();return current?.game?.id===gameId?current.rules:null;},
-    showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
+    showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,closeCloudRoom,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({
     host:{roomId:hostRoomId,peer:!!hostPeer,connectedPeers:connectedHostPeers.length,channel:hostPeer?.channel?.readyState||null,serve:!!hostServeClose,switchCurrent:!!hostSwitch?.current,roomConnection:!!hostRoomConnection,participantId:hostRoomConnection?.participantId||null,rpc:hostPeer?.channel?.__playroomDebug||null},
-    client:{recovery:clientRecovery?.report()||null,peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
+    client:{roomPhase:clientRoom?.phase,roomRevision:clientRoom?.revision,pendingReady:pendingReady?{ready:pendingReady.ready}:null,recovery:clientRecovery?.report()||null,peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});ensureButtons();
+  document.addEventListener('click',event=>{const back=event.target.closest('.network-game .table-header [data-command=home]');if(back&&!archiveMount){event.preventDefault();event.stopImmediatePropagation();const client=hostGameClient||clientGameClient;if(client?.snapshot?.state?.status==='finished')(hostGameClient?exitHostGame:exitClientGame)({finished:true});else parkNetworkView();}},true);
   root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);

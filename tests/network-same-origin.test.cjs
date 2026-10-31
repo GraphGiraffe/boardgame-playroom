@@ -30,7 +30,7 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="'+game+'"]').click();
-    await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});const seatedGuest=!['durak','checkers'].includes(game);
+    await host.locator('[data-room-option=transportMode][value=network]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});const seatedGuest=!['durak','checkers'].includes(game);
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
     await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
@@ -75,6 +75,20 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     await client.locator('#net-client-join input[name=nickname]').fill('Гость из вкладки');
     await client.locator('#net-client-join').evaluate(f=>f.requestSubmit());
     await client.locator('.lobby-shell').waitFor();
+    if(game==='uno'){
+      assert.equal(await client.locator('#network-pair-button').count(),0);
+      await host.evaluate(()=>PlayroomAppBridge.setRoomInvitationPermission(true));await client.locator('#network-pair-button').waitFor();
+      await client.locator('#network-pair-button').click();const delegated=await value(client,'#net-delegated-token');
+      const thirdContext=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});await thirdContext.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'third-client',name:'Приглашённый',createdAt:1,updatedAt:1})));const third=await thirdContext.newPage();third.on('pageerror',e=>errors.push('third: '+e.message));await third.goto(url);
+      await third.locator('#network-join-button').click();await third.locator('[data-lobby-online=manual]').click();await third.locator('#net-client-offer textarea[name=offer]').fill(delegated);await third.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+      const answer=await value(third,'#net-client-token');await client.locator('[data-delegated-answer] textarea').fill(answer);await client.locator('[data-delegated-answer]').evaluate(f=>f.requestSubmit());
+      try{await third.locator('#net-client-join').waitFor({timeout:12000});}catch(e){throw Error(JSON.stringify(await Promise.all([host,client,third].map(p=>p.evaluate(()=>({toast:document.querySelector('#toast')?.textContent,debug:PlayroomNetworkDebug(),modal:document.querySelector('.modal')?.innerText}))))));}await third.locator('#net-client-join input[name=nickname]').fill('Приглашённый');await third.locator('#net-client-join').evaluate(f=>f.requestSubmit());await third.locator('.lobby-shell').waitFor();
+      assert.equal(await third.evaluate(()=>PlayroomNetworkLibrary.inviteContext().room.ownerId),await host.evaluate(()=>PlayroomAppBridge.participantId()));
+      await host.evaluate(()=>PlayroomAppBridge.setRoomInvitationPermission(false));await client.locator('#network-pair-button').waitFor({state:'detached'});
+      assert.equal(await third.evaluate(()=>PlayroomNetworkLibrary.inviteContext().room.participants.some(p=>p.id===PlayroomNetworkLibrary.inviteContext().participantId&&p.connected)),true);
+      if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await third.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'delegated-newcomer.png')});}
+      await thirdContext.close();
+    }
     const identity=await client.evaluate(()=>globalThis.PlayroomNetworkDebug().client.participantId);
     const hostIdentity=await host.evaluate(()=>globalThis.PlayroomAppBridge.participantId());
     assert.ok(identity&&hostIdentity);
@@ -89,6 +103,7 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     await client.locator('[data-net-action=table]').click();await client.locator('.lobby-table-slot [data-participant-id]').waitFor();
     if(seatedGuest){const free=client.locator('[data-net-seat]:not([disabled])').first();await free.click();}
     await host.locator('.lobby-person').filter({hasText:'Гость из вкладки'}).waitFor();
+    for(const page of [host,client])await page.evaluate(game=>PlayroomFirstTurnGuide.setEnabled(game,false),game);
     await host.locator('[data-command=lobby-ready]').click();
     if(seatedGuest)await client.locator('[data-net-action=ready]').click();
     await host.locator('[data-command=lobby-start]:not([disabled])').click();
@@ -107,10 +122,10 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
       await page.setViewportSize(role==='host'?{width:1000,height:780}:{width:390,height:740});
     }
     const before=Number(await host.locator('.table-shell.network-game').getAttribute('data-revision'));
-    await host.locator('.table-tools [data-command=pause]').click();await client.waitForFunction(()=>document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
+    await host.locator('.table-tools [data-command=settings]').click();await host.locator('.settings-quick [data-command=pause]').click();await client.waitForFunction(()=>document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
     const resumer=seatedGuest?client:host;
-    if(!seatedGuest)assert.equal(await client.locator('.table-tools [data-command=pause]').isEnabled(),false);
-    await resumer.locator('.table-tools [data-command=pause]').click();
+    if(!seatedGuest){await client.locator('.table-tools [data-command=settings]').click();const pause=client.locator('.settings-quick [data-command=pause]');assert.equal(await pause.count()===0||await pause.isDisabled(),true);await client.locator('.modal [data-command=close-modal]').click();}
+    await resumer.locator('.table-tools [data-command=settings]').click();await resumer.locator('.settings-quick [data-command=pause]').click();
     await host.waitForFunction(()=>!document.querySelector('.table-status').textContent.toLowerCase().includes('пауз'));
     if(game==='checkers'){await host.locator('.checker-piece.movable').first().click();await host.locator('.checker-cell.destination').first().click();}
     else if(game==='domino'||game==='durak'){const card=host.locator('.layout-hand .is-playable').first();await card.scrollIntoViewIfNeeded();const point=await card.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+8,y:r.y+16};});await host.mouse.click(point.x,point.y);if(game==='domino')await host.locator('.domino-drop-target[data-action]').first().click();}

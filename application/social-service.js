@@ -26,6 +26,7 @@
    finally{if(current()){this.busy=false;this.emit();}}
   }
   refresh(){return this.perform('list');}
+  acceptSync(data,userId){if(this.account.snapshot().id!==userId||this.account.snapshot().kind!=='account'||this.busy)return;if(!data||!Array.isArray(data.friends)||!Array.isArray(data.rooms)||!Array.isArray(data.invitations))return;this.data=data;this.emit();}
  }
  return SocialService;
 });

@@ -17,14 +17,14 @@
         if(restored){
           await rosterReady;
           if(occupied.length!==session.current.players.length||occupied.some((seat,index)=>seat.playerIndex!==index))throw Error('HOST_SEATS_CHANGED');
-          players.forEach(({botSettings,...person},index)=>session.setPlayerMetadata(index,person));
+          players.forEach((person,index)=>session.setPlayerMetadata(index,person));
         }else{
           releaseLock=await this.store.acquireHostLock(sessionId);
           const packDigest=await this.fingerprint(this.packs,room.game.id,room.game.version);
           await this.store.create({sessionId,room,session,recovery:this.recovery(room.id),packDigest});
         }
         persisted=true;
-        const authority=new this.Authority(session,{sessionId,restoredReceipts:restored?.receipts||[],paused:!!restored?.paused,controlRevision:restored?.controlRevision||0,persistence:{commit:entry=>this.store.commit(entry),recordReceipt:entry=>this.store.recordReceipt(entry),setControl:entry=>this.store.setControl(entry)}});
+        const authority=new this.Authority(session,{sessionId,restoredReceipts:restored?.receipts||[],paused:!!restored?.paused,controlRevision:restored?.controlRevision||0,playerControls:restored?.playerControls?.map((control,index)=>occupied[index]?.previousParticipant&&occupied[index].participantId!==occupied[index].previousParticipant.id?{...control,away:false,bot:false}:control),playerControlRevision:restored?.playerControlRevision||0,playerControlReceipts:restored?.playerControlReceipts||[],persistence:{commit:entry=>this.store.commit(entry),recordReceipt:entry=>this.store.recordReceipt(entry),setControl:entry=>this.store.setControl(entry),setPlayerControls:entry=>this.store.setPlayerControls(entry)}});
         return {session,sessionId,authority,releaseLock,persisted};
       }catch(error){releaseLock?.();error.persisted=persisted;throw error;}
     }

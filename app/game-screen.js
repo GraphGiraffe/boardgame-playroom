@@ -14,7 +14,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function packRow({id,version='',sizeLabel='',name,manifest={},attrs='',selectable=false,controls='',detail='',nameSuffix='',usageDescription=''}={}){
     const tag=selectable?'button':'li',cover=root.PlayroomViews?.cover(id)||icon('board');
-    return `<${tag} ${selectable?'type="button"':''} class="pack-row ${selectable?'pack-item':'pack-entry'}" data-pack-id="${esc(id)}" data-pack-version="${esc(version)}" ${attrs}><span class="pack-art" data-theme="${tileTheme(manifest)}" aria-hidden="true">${cover}</span><span class="pack-summary"><strong>${esc(name||manifest.name||id)}${nameSuffix?`<span class="pack-usage" title="${esc(usageDescription)}"> · ${esc(nameSuffix)}</span>`:''}</strong><small class="pack-version">${esc(id)} · ${esc(version)}${sizeLabel?` · ${esc(sizeLabel)}`:''}</small>${detail}</span>${controls?`<div class="pack-row-controls">${controls}</div>`:''}</${tag}>`;
+    return `<${tag} ${selectable?'type="button"':''} class="pack-row ${selectable?'pack-item':'pack-entry'}" data-pack-id="${esc(id)}" data-pack-version="${esc(version)}" ${attrs}><span class="pack-art" data-theme="${tileTheme(manifest)}" aria-hidden="true">${cover}</span><span class="pack-summary"><strong>${esc(name||manifest.name||id)}${nameSuffix?`<span class="pack-usage" title="${esc(usageDescription)}"> · ${esc(nameSuffix)}</span>`:''}</strong><small class="pack-version">${esc(id)} · ${esc(version)}${sizeLabel?` · ${esc(sizeLabel)}`:''}</small>${detail}</span>${controls?`<div class="pack-row-controls ui-action-row">${controls}</div>`:''}</${tag}>`;
   }
   function gameTitle(name,shortName='',{tag='h1'}={}){
     if(!['h1','h2'].includes(tag))throw Error('Invalid title tag');
@@ -71,25 +71,32 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return iconButton('id="network-pair-button"',globalThis.PlayroomMessages.text("ui.game-screen.c58470ab336f"),'addPlayer',{disabled});
   }
   let quickActions=[];
-  function quickAccessMarkup({exclude=[]}={}){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${(quickActions.some(a=>a.name==='people')?quickActions:[...quickActions,{attrs:'data-friends-open',label:globalThis.PlayroomMessages.text('ui.social.friends'),name:'people'}]).filter(action=>action.name!=='settings'&&action.name!=='palette'&&!exclude.includes(action.name)).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
-  function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false}={}){
+  function quickAccessMarkup({exclude=[]}={}){return `<div class="settings-shortcuts" role="group" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.69093f8d2817")}">${quickActions.filter(action=>!['settings','palette'].includes(action.name)&&!exclude.includes(action.name)).map(action=>iconButton(action.attrs+' data-quick-shortcut',action.label,action.name,action)).join('')}</div>`;}
+  function toolbar(actions,{showSettings=true,settingsAttrs='data-command="settings"',compact=false,showFriends=false}={}){
     // Context actions grow to the left; fullscreen and settings keep fixed right slots.
-    const appearance=showSettings&&root.PlayroomAppearanceUI?[{attrs:'data-appearance-picker',label:root.PlayroomAppearanceUI.text('themes.quick'),name:'palette',hidden:true}]:[];
-    const ordered=[...actions.filter(a=>a.name!=='full').map(a=>a.name==='help'?{...a,hidden:compact||a.hidden}:a),...appearance,...actions.filter(a=>a.name==='full')];
+    const friends=showFriends?[{attrs:'data-friends-open',label:globalThis.PlayroomMessages.text('ui.social.friends'),name:'people',hidden:true}]:[];
+    const ordered=[...actions.filter(a=>a.name!=='full').map(a=>a.name==='help'?{...a,hidden:compact||a.hidden}:a),...friends,...actions.filter(a=>a.name==='full')];
     if(showSettings)ordered.push({attrs:settingsAttrs,label:globalThis.PlayroomMessages.text("ui.game-screen.985b5e0f2ccf"),name:'settings'});
     quickActions=ordered;return [...ordered.filter(action=>!action.hidden&&!['full','settings'].includes(action.name)).slice(0,2),...ordered.filter(action=>!action.hidden&&['full','settings'].includes(action.name))].map(a=>iconButton(a.attrs,a.label,a.name,a)).join('');
   }
-  const modalHead=title=>`<header class="modal-head ui-dialog-head">${iconButton('data-command="close-modal"',globalThis.PlayroomMessages.text("ui.game-screen.a7a4033657e8"),'close')}<h2>${esc(title)}</h2></header>`;
-  function actionConfirmationMarkup(action,command='confirm-action'){
-    return `<h2>${esc(root.PlayroomMessages.text('ui.game-screen.action-confirmation'))}</h2><p class="lead">${esc(action.confirmation)}</p><div class="modal-foot">${UI.button({attrs:'data-command="close-modal"',label:root.PlayroomMessages.text('ui.game-screen.cancel-action'),variant:'secondary'})}${UI.button({attrs:`data-command="${esc(command)}"`,label:action.label||root.PlayroomMessages.text('ui.game-screen.confirm-action')})}</div>`;
+  const modalHead=(title,{actions='',dismissible=true}={})=>`<header class="modal-head ui-dialog-head">${dismissible?iconButton('data-command="close-modal"',globalThis.PlayroomMessages.text("ui.game-screen.a7a4033657e8"),'close'):''}<h2>${esc(title)}</h2>${actions}</header>`;
+  function confirmationCopy(message,{title,acceptLabel}={}){
+    const question=String(message).match(/^(.{1,120}?[?])/u)?.[1];
+    title=title||question||String(message).split(/[.\n]/u)[0];
+    const verb=title.match(/^(Удалить|Сбросить|Выйти|Покинуть|Закрыть|Остановить|Отправить|Получить|Синхронизировать|Заменить|Перезапустить|Пригласить|Добавить)/u)?.[1];
+    return {title,description:String(message).startsWith(title)?String(message).slice(title.length).trim():String(message),acceptLabel:acceptLabel||verb||root.PlayroomMessages.text('ui.game-screen.confirm-action'),danger:/^(Удалить|Сбросить|Выйти|Покинуть|Закрыть|Остановить|Перезапустить)/u.test(title)};
   }
-  function confirmDialog(message){
-    const document=root.document,previous=document.activeElement;
+  function actionConfirmationMarkup(action,command='confirm-action'){
+    const copy=confirmationCopy(action.confirmation,{title:action.title,acceptLabel:action.label});
+    return `<h2>${esc(copy.title)}</h2>${copy.description?`<p class="lead">${esc(copy.description)}</p>`:''}<div class="modal-foot">${UI.button({attrs:'data-command="close-modal"',label:root.PlayroomMessages.text('ui.game-screen.cancel-action'),variant:'secondary'})}${UI.button({attrs:`data-command="${esc(command)}"`,label:copy.acceptLabel,variant:copy.danger?'danger':'primary'})}</div>`;
+  }
+  function confirmDialog(message,options={}){
+    const document=root.document,previous=document.activeElement,copy=confirmationCopy(message,options);
     const dialog=document.createElement('dialog');
     dialog.className='appearance-dialog app-confirm-dialog';
     dialog.setAttribute('aria-labelledby','app-confirm-title');
-    dialog.setAttribute('aria-describedby','app-confirm-message');
-    dialog.innerHTML=`<header class="appearance-head"><h2 id="app-confirm-title">${esc(root.PlayroomMessages.text('ui.game-screen.action-confirmation'))}</h2></header><div class="appearance-body"><p id="app-confirm-message">${esc(message)}</p></div><div class="appearance-actions appearance-confirm-actions"><button type="button" class="btn secondary" data-confirm-cancel>${esc(root.PlayroomMessages.text('ui.game-screen.cancel-action'))}</button><button type="button" class="btn" data-confirm-accept>${esc(root.PlayroomMessages.text('ui.game-screen.confirm-action'))}</button></div>`;
+    if(copy.description)dialog.setAttribute('aria-describedby','app-confirm-message');
+    dialog.innerHTML=`<header class="appearance-head"><h2 id="app-confirm-title">${esc(copy.title)}</h2></header>${copy.description?`<div class="appearance-body"><p id="app-confirm-message">${esc(copy.description)}</p></div>`:''}<div class="appearance-actions appearance-confirm-actions"><button type="button" class="btn secondary" data-confirm-cancel>${esc(root.PlayroomMessages.text('ui.game-screen.cancel-action'))}</button><button type="button" class="btn ${copy.danger?'danger':''}" data-confirm-accept>${esc(copy.acceptLabel)}</button></div>`;
     document.body.append(dialog);
     return new Promise(resolve=>{
       let finished=false;
@@ -124,8 +131,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     const footerMarkup=footer?.outerHTML||'';footer?.remove();
-    const shortcuts=template.content.querySelector('.settings-overview,.lobby-shell,[data-friends-open],[data-friends-dialog],#profile-form,[data-learning-choice]')?'':`<div class="settings-shortcuts modal-shortcuts">${iconButton('data-friends-open data-quick-shortcut',globalThis.PlayroomMessages.text('ui.social.friends'),'people')}</div>`;
-    return header+'<div class="modal-body">'+shortcuts+template.innerHTML+'</div>'+footerMarkup;
+    return header+'<div class="modal-body">'+template.innerHTML+'</div>'+footerMarkup;
   }
   const DOM=root.PlayroomDOM||(typeof require==='function'?require('../platform/web/dom.js'):null),{patchChildren}=DOM;
   const pendingScroll=new WeakMap(), fixedLayouts=new WeakMap(), renderedTrees=new WeakMap(), handReserves=new WeakMap();
@@ -241,14 +247,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     return `<div class="resume-participants">${people.join('')}</div>`;
   }
-  function resumeCard({roomName='',gameName='',state=null,network=false,connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){
+  function transportInfo(mode='hotseat'){const key=['hotseat','network','online'].includes(mode)?mode:'hotseat';return {mode:key,icon:{hotseat:'gamepad',network:'wifi',online:'globe'}[key],label:root.PlayroomMessages.text('ui.community.mode-'+key)};}
+  function transportBadge(mode){const info=transportInfo(mode);return `<span class="transport-badge" data-transport-mode="${info.mode}" role="img" aria-label="${esc(info.label)}" title="${esc(info.label)}">${icon(info.icon)}</span>`;}
+  function sessionCard({tag='article',className='',attrs='',gameName='',mode='hotseat',status='',badgeTitle='',participants='',roomName='',progress='',actions='',details='',bottomAction=''}){
+    return `<${tag} class="session-card ${className}" data-card-mode="${esc(mode)}" ${attrs}><div class="session-card-heading"><span class="saved-status"><span class="pill" title="${esc(badgeTitle||transportInfo(mode).label)}">${status}${transportBadge(mode)}</span></span><h2 class="session-card-title"><strong>${esc(gameName)}</strong></h2></div><div class="session-card-actions ${className.includes('resume-banner')?'resume-actions':'saved-game-actions'}">${actions}</div>${roomName?`<strong class="session-card-room">${esc(roomName)}</strong>`:''}${participants}<div class="session-card-footer"><div class="session-card-progress"><span class="session-card-stats">${esc(progress)}</span></div>${details||bottomAction?`<div class="session-card-details">${details}</div><div class="session-card-bottom-action ui-action-row">${bottomAction}</div>`:''}</div></${tag}>`;
+  }
+  function resumeCard({roomName='',gameName='',state=null,network=false,transportMode=network?'network':'hotseat',connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){
     if(state?.status==='finished'&&(!network||!connected))return '';
-    const text=root.PlayroomMessages.text,kind=text(network?'ui.game-screen.6fa8cb59219b':'ui.game-screen.02d339ef14d5');
-    const progress=roundText(state?.scene?.round)||(state?.players?.length>1&&state?.timeline?text('progress.turn',{number:state.timeline.turn}):'');
-    roomName=network?roomName:'';
-    const game=[gameName,progress].filter(Boolean).join(' · '),room=[kind,roomName].filter(Boolean).join(' · ');
-    const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:'';
-    return `<section class="resume-banner ${network?'network-resume-card':''}"><div class="resume-summary"><div class="resume-room" title="${esc(room)}">${status}<span class="pill">${esc(kind)}</span>${roomName?' · '+esc(roomName):''}</div><div class="resume-game" title="${esc(game)}"><strong>${esc(gameName)}</strong>${progress?`<span> · ${esc(progress)}</span>`:''}</div></div><div class="resume-actions">${leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):hide?iconButton(hide,text('ui.app.hide-local-session'),'close'):''}${iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'})}</div>${participantsMarkup(state,{network,participants,teamLayouts})}</section>`;
+    const text=root.PlayroomMessages.text;
+    const progress=[roundText(state?.scene?.round),state?.timeline?.turn?text('progress.turn',{number:state.timeline.turn}):'',Number.isFinite(state?.move)?`${state.move} ${text('ui.app.677de8e411ba')}`:''].filter(Boolean).join(' · ');
+    const status=network?`<i class="connection-light ${connected?'is-connected':'is-disconnected'}" role="img" aria-label="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}" title="${esc(text(connected?'ui.resume.connected':'ui.resume.disconnected'))}"></i>`:`<span class="saved-state-icon">${icon(state?.status==='finished'?'trophy':'pause')}</span>`;
+    const actions=(leave?iconButton(leave,text('ui.game-screen.5af791bedf3a'),'exit'):hide?iconButton(hide,text('ui.app.hide-local-session'),'close'):'')+iconButton(action,connected?text('ui.game-screen.a42aee58d60a'):text('ui.game-screen.2de34a1774f6'),connected?'play':'reset',{className:'resume-primary'});
+    return sessionCard({tag:'section',className:'resume-banner '+(network?'network-resume-card':''),gameName,mode:transportMode,status,roomName,progress,actions,participants:participantsMarkup(state,{network,participants,teamLayouts})});
   }
   // The same markup is used with a trusted local Session and with the
   // projection-only SessionClient. No rule or network state is read here.
@@ -303,7 +313,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const exitText=exit?globalThis.PlayroomMessages.text('ui.game-screen.exit-'+exit.kind)+' · '+globalThis.PlayroomMessages.text(exit.round?'progress.round':'progress.turn',{number:exit.round||exit.turn}):'';
       return `<div class="score-row">${badge}${UI.avatar(player,i)}<span class="result-name">${UI.participantIcon({...player,botSettings})}<span class="result-nickname">${i===viewer?`<strong>${esc(player.name)}</strong>`:esc(player.name)}</span>${botDescription?`<small class="result-bot-settings">${esc(botDescription)}</small>`:''}</span><span class="result-stat"><span class="result-counters">${primary}</span>${extra.length?`<small title="${esc(extra.join(' · '))}">${esc(extra.join(' · '))}</small>`:''}</span>${exitText?`<small class="result-exit">${esc(exitText)}</small>`:''}</div>`;
     }).join('');
-    return `${modalHead(title)}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores" data-game="${esc(state.game)}">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text("ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
+    return `${modalHead(title,{dismissible:!network})}<div class="result-art" aria-hidden="true">✦</div><p class="lead">${esc(gameName)} · ${state.move} ${globalThis.PlayroomMessages.text("ui.game-screen.85d3cfbb11da")}</p><div class="result-scores" data-game="${esc(state.game)}">${scores}</div><div class="modal-foot"><button class="btn secondary" data-command="result-replay">${globalThis.PlayroomMessages.text(network?"ui.game-screen.network-history":"ui.game-screen.5818f0c93a9b")}</button>${network?`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.a8e06ed9a3c5")}</button>`:`<button class="btn" data-command="rematch">${globalThis.PlayroomMessages.text("ui.game-screen.0bb191eca038")}</button>`}</div>${network?'':`<button class="btn secondary result-menu" data-command="home">${icon('grid')} ${globalThis.PlayroomMessages.text("ui.game-screen.70c6a395ad9d")}</button>`}`;
   }
   function turnNotice({play=()=>{},reducedMotion=()=>false}={}){
     let previous=null,timer=null;
@@ -339,15 +349,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(scene.includes(cornerSlot)){scene=scene.replace(cornerSlot,'');beforeFooter='';}
     if(beforeFooter&&scene.includes('<!--handoff-control-->'))scene=scene.replace('<!--handoff-control-->',beforeFooter);
     else if(beforeFooter){const slot=scene.indexOf('data-game-element="actions"');if(slot>=0){const end=scene.indexOf('>',slot);scene=scene.slice(0,end+1)+beforeFooter+scene.slice(end+1);}else scene=scene.replace('<!--self-controls-->',beforeFooter);}
-    return `<main data-field-topology="${esc(state.scene?.geometry?.topology||'')}" data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title">${gameTitle(gameName,shortName||root.PlayroomCatalog?.[state.game]?.shortName)}<p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
+    return `<main data-reaction-replay="${!!(readOnly||replay||historyHTML)}" data-reaction-viewer="${!readOnly&&!replay&&!historyHTML?viewer:-1}" data-field-topology="${esc(state.scene?.geometry?.topology||'')}" data-layout-identity="${esc(JSON.stringify([layoutId,gameName,viewer,state.players.map(p=>p.id||p.name),replay]))}" class="table-shell${network?' network-game':''}"${network?` data-revision="${revision}" data-viewer="${viewer}"`:''}><header class="table-header"><div class="table-heading">${iconButton(historyHTML?'data-command="history-close"':'data-command="home"',historyHTML?(readOnly?globalThis.PlayroomMessages.text("ui.game-screen.ed9aa3c20c66"):globalThis.PlayroomMessages.text("ui.game-screen.ae29400e7f17")):globalThis.PlayroomMessages.text("ui.game-screen.1fd4bffb137b"),'back')}<div class="table-title">${gameTitle(gameName,shortName||root.PlayroomCatalog?.[state.game]?.shortName)}<p>${esc(subtitle.replace(/^За столом с ботами\s*·?\s*/,''))}</p></div></div>
       <div class="table-tools ui-toolbar">${toolbar([
         ...(primary?[{...primary,attrs:primary.attrs+' data-game-primary="true"'}]:[]),
-        {attrs:'data-command="history"',label:globalThis.PlayroomMessages.text("ui.game-screen.c9d00b5b5cd1"),name:'history',active:!!historyHTML,hidden:!!fieldToggle},
+        ...(network&&!readOnly?[{attrs:'data-room-chat-open',label:'Чат комнаты',name:'chat'}]:[]),
+        {attrs:'data-command="history"',label:globalThis.PlayroomMessages.text("ui.game-screen.c9d00b5b5cd1"),name:'history',active:!!historyHTML,hidden:!!fieldToggle||network&&!readOnly},
         ...(fieldToggle?[{attrs:'data-command="toggle-field"',label:fieldToggle.hidden?globalThis.PlayroomMessages.text("ui.game-screen.4df59b1750a8"):globalThis.PlayroomMessages.text("ui.game-screen.af36d13ed774"),name:'grid',active:fieldToggle.hidden}]:[]),
         ...(!readOnly&&state.status!=='finished'?[{attrs:'data-command="pause"',label:pause?globalThis.PlayroomMessages.text("ui.game-screen.a42aee58d60a"):globalThis.PlayroomMessages.text("ui.game-screen.65530fd463ea"),name:pause?'play':'pause',active:pause,disabled:!canPause||!!historyHTML,hidden:true}]:[]),
         {attrs:'data-command="fullscreen"',label:globalThis.PlayroomMessages.text("ui.game-screen.f42c392566b5"),name:'full'},
         {attrs:'data-command="rules"',label:globalThis.PlayroomMessages.text("ui.game-screen.7f7b0ffbbfe0"),name:'help',hidden:true}
-      ],{showSettings})}</div></header>
+      ],{showSettings,showFriends:!readOnly})}</div></header>
       <div class="table-status" aria-live="polite">${turnText?`<span class="turn-label"><i class="turn-light ${botThinking?'bot':''}"></i>${esc(turnText)}</span>`:''}<span class="status-details"><span class="turn-extra">${esc([roundText(state.scene?.round),showTurn&&state.players.length>1&&state.timeline?globalThis.PlayroomMessages.text('progress.turn',{number:state.timeline.turn}):'',turnExtra].filter(Boolean).join(' · '))}</span>${caption?`<span class="status-event" title="${esc(replay?(historyCaption||footerText||globalThis.PlayroomMessages.text("ui.game-screen.03f70ecc37a6")):footerTitle)}">${caption}</span>`:''}</span>${statusExtra}</div>
       <section class="scene ${replay?'replaying':''}" aria-label="${globalThis.PlayroomMessages.text("ui.game-screen.134df14b27b8")}" aria-busy="${!!busy}"${animationSpeed?` data-animation-speed="${esc(animationSpeed)}"`:""}>${scene}${cornerControl?`<div class="handoff-corner" data-host-control="handoff">${cornerControl}</div>`:''}</section>
       ${historyHTML}
@@ -675,5 +686,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(shell){for(const bar of shell.querySelectorAll('.table-status>.turn-label,.table-status>.status-details'))for(const prop of ['left','right','width'])bar.style.removeProperty(prop);}
 
   }
-  return Object.freeze({gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,resultSound,presentResultSound,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
+  return Object.freeze({sessionCard,transportInfo,transportBadge,gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,modalContent,updateModal,patchChildren,update,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,resultSound,presentResultSound,turnNotice,render,layoutScene,allowLayoutChange,iconButton,toolbar,modalHead});
 });

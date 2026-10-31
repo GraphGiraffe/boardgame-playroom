@@ -23,7 +23,7 @@ test('host archive keeps its original private viewer when an earlier recovery se
       await page.locator('[data-command=sessions]').click();await page.locator('[data-network-continue="viewer-gap-regression"]').click();
       await page.locator('.room-setup-modal .lobby-shell').waitFor();await page.locator('[data-kick-participant="earlier-player"]').click();
       await page.waitForFunction(async()=>{const store=new PlayroomNetworkSessionStore();try{return (await store.load('viewer-gap-regression',TabletopCore,TabletopSession)).room.seats[0].participantId===null;}finally{store.close();}});
-      await page.locator('[data-command=lobby-leave]').click();await page.locator('[data-command=sessions]').click();
+      await confirmedLeave(page,'[data-command=lobby-leave]');await page.locator('[data-command=sessions]').click();
       await page.locator('[data-network-history="viewer-gap-regression"]').click();await page.locator('.history-panel[aria-busy="false"]').waitFor();
       assert.equal(await page.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
       const entities=await page.locator('.layout-hand [data-entity]').evaluateAll(nodes=>nodes.map(node=>node.dataset.entity));
@@ -48,7 +48,9 @@ async function profile(page,name,url){
   await page.locator('#profile-form input').fill(name);
   await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
   await page.locator('.game-grid').first().waitFor();
+  await page.evaluate(()=>{for(const game of PlayroomAppBridge.packs.list())PlayroomFirstTurnGuide.setEnabled(game.id,false);});
 }
+async function confirmedLeave(page,selector){await page.locator(selector).click();await page.locator('[data-confirm-accept],[data-command=confirm-operation]').click();}
 async function pair(host,guest,{shareHandoff=false}={}){
   // The same live PR2/PR3 offer/answer flow used by the normal QR screen.
   // Browser text transport avoids requiring a camera in CI; the QR decoder
@@ -108,7 +110,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.match(await guests[0].locator('.table-title h1').innerText(),/Шашки/);
         }
         await host.locator('[data-start="uno"]').click();
-        await host.locator('[data-room-option=transportMode]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});if(mode==='network-table')await host.locator('[data-command=lobby-table]').click();
+        await host.locator('[data-room-option=transportMode][value=network]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});if(mode==='network-table')await host.locator('[data-command=lobby-table]').click();
         await host.locator('[data-room-title]').fill('Продолжение LAN-01');
         await host.locator('[data-room-title]').press('Tab');
         await host.locator('.lobby-shell').waitFor();
@@ -134,7 +136,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         for(const guest of guests)await guest.waitForFunction(rev=>Number(document.querySelector('.table-shell.network-game')?.dataset.revision)===rev,savedRevision);
         if(mode==='network-player'){
           const guest=guests[0];
-          await guest.locator('.table-tools [data-command=history]').click();
+          await guest.locator('.table-tools [data-command=settings]').click();await guest.locator('.modal [data-command=history]').click();
           await guest.locator('#replay-range').waitFor();
           // The slider appears before the initial remote frame has loaded.
           // Wait for that RPC before exercising a user drag/release.
@@ -211,7 +213,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.locator('[data-command="sessions"]').click();
         await host.locator('[data-saved-filter="network"]').click();
         assert.equal(await host.locator('.saved-game[data-network-session-id]').count(),1);
-        assert.match(await host.locator('.saved-game[data-network-session-id]').innerText(),/Сетевая · Хост/);
+        assert.equal(await host.locator('.saved-game[data-network-session-id] [data-transport-mode=network]').count(),1);assert.equal(await host.evaluate(async()=>{const store=new PlayroomNetworkSessionStore();try{return (await store.list())[0].role;}finally{store.close();}}),'host');
         // The history must remain readable even while the network room is stopped.
         await host.locator('[data-network-history]').first().click();
         await host.locator('.table-shell.network-game .history-panel').waitFor();
@@ -268,7 +270,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           await guests[0].locator('.game-grid').first().waitFor({timeout:10000});
           assert.equal(await guests[0].evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
           await guests[0].locator('[data-net-action=room]').click();
-          await guests[0].locator('[data-net-action=leave]').click();
+          await confirmedLeave(guests[0],'[data-net-action=leave]');
           await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length>=1);
         }
         // An unfinished match can also be parked and restored in the same page.
@@ -279,7 +281,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
         await host.locator('.game-grid').first().waitFor({timeout:10000});
         assert(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId));
         await host.locator('[data-command=room]').click();
-        await host.locator('[data-command=lobby-leave]').click();
+        await confirmedLeave(host,'[data-command=lobby-leave]');
         assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.roomId),null);
         await host.locator('[data-command=sessions]').click();
         await host.locator('[data-network-continue]').first().click();

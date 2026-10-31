@@ -38,8 +38,8 @@ test('durable local payloads migrate, survive failures and report their sizes',{
   assert.equal(await page.evaluate(()=>PlayroomData.getItem('playroom.paused.v1.capacity').length),6*1024*1024);
   await page.evaluate(()=>PlayroomData.transact(()=>PlayroomData.removeItem('playroom.paused.v1.capacity')));
   await page.locator('[data-command="packs"]').first().click();await page.locator('.storage-usage strong').waitFor();
-  assert.match(await page.locator('.storage-usage').innerText(),/Приложение:.*\n?.*Паки:/s);
-  assert.match(await page.locator('.pack-list .pack-version').first().innerText(),/КиБ|МиБ/);
+  assert.match(await page.locator('.storage-usage-labels>span').first().getAttribute('aria-label'),/Приложение:/);assert.equal(await page.locator('.storage-usage-summary [data-ui-icon=app]').count(),1);assert.equal(await page.locator('.storage-usage-labels [data-ui-icon=gear]').count(),1);
+  assert.match(await page.locator('.pack-list .pack-version').first().innerText(),/КБ|МБ/);
   for(const width of [390,320]){await page.setViewportSize({width,height:844});assert.equal(await page.locator('.pack-manager-modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1),true);if(process.env.PLAYROOM_STORAGE_SCREENSHOTS)await page.screenshot({path:path.join(process.env.PLAYROOM_STORAGE_SCREENSHOTS,`storage-${width}.png`)});}
   await page.locator('#modal-root [data-command="close-modal"]').first().click();
   await page.locator('[data-start="tictactoe"]').first().click();

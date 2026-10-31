@@ -210,3 +210,7 @@ test('completed and cancelled plans release scenes and callbacks but preserve id
  const done=player.play({id:'cancel-release',groups:[{duration:1000,cues:[]}]},{cancel(){}});player.cancel();await done;
  assert.equal(player.run.context,null);assert.deepEqual(player.run.ports,{});executor.dispose();
 });
+
+test('remote card reveal keeps the player who played even when a later penalty draws for the opponent',()=>{
+ for(const value of ['+2','+4']){const before={sessionId:'s',authorityEpoch:'e',revision:1,events:[]},after={...before,revision:2,events:[{id:1,kind:'play',player:1,reveal:{kind:'card',card:{id:4,value}}},{id:2,kind:'draw',player:0,transfer:{player:0,count:value==='+2'?2:4,from:'stock'}}]};assert.equal(Flow.eventAction(before,after).actor,1);assert.equal(Flow.eventAction(before,after).action.type,'play');}
+});

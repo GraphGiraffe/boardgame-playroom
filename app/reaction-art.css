@@ -1,0 +1,15 @@
+/* Approved sheet v14. Original candidates stay outside the runtime. */
+.reaction-art{display:inline-block;position:relative;width:1.5em;height:1.5em;vertical-align:middle;background:center/contain no-repeat;flex:none}
+.reaction-alt{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.reaction-art[data-reaction=hi]{background-image:url('assets/reactions/hi.webp')}
+.reaction-art[data-reaction=thanks]{background-image:url('assets/reactions/thanks.webp');background-size:96%;background-position:50% 75%}
+.reaction-art[data-reaction=nice]{background-image:url('assets/reactions/nice.webp')}
+.reaction-art[data-reaction=think]{background-image:url('assets/reactions/think.webp');background-position:2px 1px}
+.reaction-art[data-reaction=hehe]{background-image:url('assets/reactions/hehe.webp')}
+.reaction-art[data-reaction=wow]{background-image:url('assets/reactions/wow.webp')}
+.reaction-art[data-reaction=time]{background-image:url('assets/reactions/time.webp')}
+.reaction-art[data-reaction=challenge]{background-image:url('assets/reactions/challenge.webp')}
+.reaction-art[data-reaction=censor]{background-image:url('assets/reactions/censor.webp')}
+.quick-reaction-picker .reaction-art{width:40px;height:40px}
+.quick-reaction-bubble>.reaction-art,.quick-reaction-bubble>span>.reaction-art:only-child{width:44px;height:44px}
+.chat-message.chat-emoji .reaction-art{width:64px;height:64px}
