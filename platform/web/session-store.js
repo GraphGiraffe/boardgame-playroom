@@ -103,7 +103,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const request=sessions.get(sessionId);
         request.onsuccess=()=>{
           const entry=request.result;
-          if(!entry||entry.revision!==previousRevision){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.c5c51f878fc6")));return;}
+          if(!entry||entry.revision!==previousRevision||entry.transfer&&(entry.transfer.role==='outgoing'||entry.transfer.state!=='active')){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.c5c51f878fc6")));return;}
           if(entry.game!==nextState.game||entry.packVersion!==(nextState.packVersion||'0.1.0')){
             abort(Error(globalThis.PlayroomMessages.text("ui.session-store.aaed7e7ce6b1")));return;
           }
@@ -154,6 +154,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           store.put({...record,paused,controlRevision,controlReceipts:[...controls,{viewer,commandId,signature,receipt}],updatedAt:Date.now()});};
       });
     }
+    async setPlayerControls(value){
+      if(!isId(value?.sessionId)||!Number.isSafeInteger(value.previousRevision)||value.previousRevision<0||value.playerControlRevision!==value.previousRevision+1)throw Error('INVALID_PLAYER_CONTROLS');
+      await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('sessions'),request=store.get(value.sessionId);
+        request.onsuccess=()=>{const record=request.result;
+          if(!record||(record.playerControlRevision||0)!==value.previousRevision||record.transfer&&(record.transfer.role==='outgoing'||record.transfer.state!=='active')){abort(Error('PLAYER_CONTROL_CONFLICT'));return;}
+          try{const controls=(globalThis.PlayroomPlayerControls||(typeof require==='function'?require('../../core/player-controls.js'):null)).validate(value,record.initial.states[0].players,record.revision);store.put({...record,...controls,updatedAt:Date.now()});}catch(error){abort(error);}
+        };
+      });
+    }
     async saveRoster({sessionId,room,recovery,revision}){
       if(!isId(sessionId)||!isId(room?.id)||recovery?.version!==1||JSON.stringify(recovery.room)!==JSON.stringify(room)||!Array.isArray(recovery.tokens)||!Number.isSafeInteger(revision)||revision<0||room.recovery&&(room.recovery.sessionId!==sessionId||room.recovery.revision!==revision))throw Error(globalThis.PlayroomMessages.text("ui.session-store.15a7edaeb816"));
       await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
@@ -177,26 +187,50 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         for(const name of ['steps','receipts']){const request=tx.objectStore(name).index('sessionId').openCursor(sessionId);request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};}
       });
     }
-    async load(sessionId,engine,Session){
-      if(!isId(sessionId))throw Error(globalThis.PlayroomMessages.text("ui.session-store.c5542a75f1cb"));
-      const stored=await this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{
-        const values={},session=tx.objectStore('sessions').get(sessionId),steps=tx.objectStore('steps').index('sessionId').getAll(sessionId),
-          receipts=tx.objectStore('receipts').index('sessionId').getAll(sessionId);
-        session.onsuccess=()=>{values.record=session.result;};
-        steps.onsuccess=()=>{values.steps=steps.result;};
-        receipts.onsuccess=()=>{values.receipts=receipts.result;};
-        done(values);
+    async readPrivate(sessionId){
+      if(!isId(sessionId))throw Error('HOST_TRANSFER_INVALID');
+      return this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{
+        const values={},record=tx.objectStore('sessions').get(sessionId),steps=tx.objectStore('steps').index('sessionId').getAll(sessionId),receipts=tx.objectStore('receipts').index('sessionId').getAll(sessionId);
+        record.onsuccess=()=>{values.record=record.result;};steps.onsuccess=()=>{values.steps=steps.result;};receipts.onsuccess=()=>{values.receipts=receipts.result;};done(values);
       });
-      return Recovery.restore(stored,sessionId,engine,Session);
     }
+    async stageTransfer(value,engine,Session,hostDeviceId){
+      const v=clone(value),r=v.record;if(r?.transfer?.role!=='incoming'||r.transfer.state!=='prepared'||r.room.ownerId!==r.transfer.target||!isId(hostDeviceId))throw Error('HOST_TRANSFER_INVALID');
+      Recovery.restore({...v,record:{...r,transfer:undefined}},r.sessionId,engine,Session);
+      r.hostDeviceId=hostDeviceId;
+      await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('sessions'),request=store.get(r.sessionId);
+        request.onsuccess=()=>{const existing=request.result;if(existing){if(existing.transfer?.id===r.transfer.id)return;
+          if(!(existing.transfer?.role==='outgoing'||existing.transfer?.state==='prepared')||existing.revision>r.revision||existing.packDigest!==r.packDigest){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+          let remaining=2;for(const name of ['steps','receipts']){const old=tx.objectStore(name).index('sessionId').getAllKeys(r.sessionId);old.onsuccess=()=>{for(const key of old.result)tx.objectStore(name).delete(key);if(!--remaining)write();};}
+        }else write();
+          function write(){store.put(r);for(const step of v.steps)tx.objectStore('steps').add(step);for(const receipt of v.receipts)tx.objectStore('receipts').add(receipt);}
+        };
+      });return r.transfer.id;
+    }
+    async transferState(sessionId,id,state,metadata={}){
+      await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{const store=tx.objectStore('sessions'),request=store.get(sessionId);request.onsuccess=()=>{
+        const r=request.result;if(!r){abort(Error('HOST_TRANSFER_MISSING'));return;}
+        if(state==='outgoing'){
+          if(r.transfer?.role==='outgoing'&&r.transfer.id===id)return;
+          if(r.transfer?.role==='outgoing'){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+          r.transfer={id,role:'outgoing',state:'committed',...metadata};
+        }else{
+          if(r.transfer?.id!==id||r.transfer.role!=='incoming'){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
+          r.transfer.state=state;
+        }
+        store.put(r);
+      };});
+    }
+    async load(sessionId,engine,Session){return Recovery.restore(await this.readPrivate(sessionId),sessionId,engine,Session);}
 
     async list(){
       return this.transaction(['sessions'],'readonly',(tx,done)=>{
         const request=tx.objectStore('sessions').getAll();
-        request.onsuccess=()=>done(request.result.map(s=>({sessionId:s.sessionId,roomId:s.roomId,
+        request.onsuccess=()=>done(request.result.filter(s=>s.transfer?.role!=='outgoing').map(s=>({sessionId:s.sessionId,roomId:s.roomId,
           firstPlayer:s.firstPlayer,presetId:s.presetId,turnNumber:s.turnNumber,turn:s.turn,turnName:s.turnName,round:s.round||null,game:s.game,packVersion:s.packVersion,revision:s.revision,createdAt:s.createdAt,updatedAt:s.updatedAt,
-          name:s.room?.name||'',hostMode:s.room?.hostMode||'player',finished:!!s.finished,
-          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),participants:clone(s.room?.participants||[]).map(person=>{const seats=(s.room?.seats||[]).filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index),playerIndex=seats.findIndex(seat=>seat.participantId===person.id);return {...person,playerIndex,team:s.playerTeams?.[playerIndex]||null};}),role:'host'}))
+          name:s.room?.name||'',transportMode:s.room?.transportMode==='online'?'online':'network',hostMode:s.room?.hostMode||'player',finished:!!s.finished,
+          players:(s.room?.participants||[]).filter(p=>p.role==='player').map(p=>p.nickname),participants:clone(s.room?.participants||[]).map(person=>{const seats=(s.room?.seats||[]).filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index),playerIndex=seats.findIndex(seat=>seat.participantId===person.id);return {...person,playerIndex,team:s.playerTeams?.[playerIndex]||null};}),transfer:s.transfer?clone(s.transfer):null,role:'host'}))
           .sort((a,b)=>b.updatedAt-a.updatedAt));
       });
     }

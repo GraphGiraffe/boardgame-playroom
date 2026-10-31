@@ -10,7 +10,9 @@ for(const [width,height] of [[320,740],[390,740],[740,390],[1280,800]])test(`scr
   const page=await browser.newPage({viewport:{width,height},hasTouch:true}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
   await page.goto(server.url);
+  await page.waitForFunction(()=>document.querySelector('#profile-form')||document.querySelector('.game-grid'));
   if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
+  await page.locator('.game-grid').first().waitFor();
   const toggle=page.locator('[data-hub-filters-toggle]'),panels=page.locator('[data-hub-filter-panel]');
   assert.equal(await panels.count(),3);assert.equal(await page.locator('[data-hub-filter-panel]:visible').count(),0);
   assert.equal(await toggle.getAttribute('aria-label'),'Фильтры');assert.equal(await toggle.getAttribute('aria-expanded'),'false');

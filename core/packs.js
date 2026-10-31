@@ -163,6 +163,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
       });
     }
+    // Synchronous staging validation registers only the exact rules version;
+    // it never changes active UI/catalog or persists an unvalidated save.
+    validatePrepared(token,validate){
+      const entry=prepared.get(token);if(!entry||entry.owner!==this||typeof validate!=='function')throw Error('Invalid prepared validation');
+      const item=entry.compiled,m=item.bundle.manifest,existing=this._items.get(key(m.id,m.version));
+      if(existing){if(canonical(existing.bundle)!==canonical(item.bundle))throw Error('SAVE_PACK_CONFLICT');return validate();}
+      let previous,active;try{previous=this.engine.get(m.id,m.version);}catch{}try{active=this.engine.get(m.id);}catch{}
+      this.engine.registerVersion(item.rules,{replace:true});
+      try{const result=validate();if(result?.then)throw Error('Prepared validation must be synchronous');return result;}
+      finally{this.engine.unregisterVersion(m.id,m.version);if(previous)this.engine.registerVersion(previous,{replace:true});if(active?.version===m.version)this.engine.activatePack(active);}
+    }
     // Presentation-only payload: no rule execution, Session, or saved state.
     exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),...(item.rules.rulebook?{rulebook:clone(item.rules.rulebook)}:{}),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}

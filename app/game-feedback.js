@@ -50,6 +50,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let eventInitial=initialScene;
       const checkpoints=additions.some(event=>event.scene);
       for(const event of additions){
+        // A penalty/response in the same commit can have another actor. Reveal
+        // origins belong to the individual event, never to the last transfer.
+        const actor=Number.isInteger(event.player)?event.player:snapshot?.actor;
+        const eventSnapshot=event.reveal&&snapshot&&Number.isInteger(actor)&&actor!==snapshot.actor?{...snapshot,actor,origin:snapshot.hands?.get(actor)||null,playedFrom:null}:snapshot;
         const eventBoundary=checkpoints?{initial:eventInitial,final:event.scene||(event===additions.at(-1)?finalScene:eventInitial),snapshot}:boundary;
         if(event.scene)eventInitial=event.scene;
         const suppressQuestion=mode==='instant'&&event.speech&&!event.speech.result&&additions.some(reply=>reply.id>event.id&&reply.speech?.result&&reply.revision===event.revision);
@@ -61,7 +65,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           await this.motion?.play({...snapshot,action:{type:route.trigger},sequence:route,routeOnly:true},{duration:pace.duration,settle:pace.settle,context});
           if(generation!==this.generation)return;this.routePoints.set(entityKey(route.entity),route.jump||route.steps.at(-1)||route.origin);this.positionRoutes();
         }:routes.length?null:transfers.length>1&&event.transfer&&motion?context=>motion(context,{snapshot:this.active.snapshot,draws:[event.transfer],transferOnly:true}):event===motionEvent?motion:null;
-        if(animated||effect||ids.length||event.scene)this.queue.push({...event,pack,ids,timing,mode,boundary:eventBoundary,snapshot,transferIndex:transfers.indexOf(event),departures:event===motionEvent?departures:[],motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.speech&&event.reveal?.kind==='card'?timing.speech:event.reveal?timing.reveal:participantEffects.has(event.feedback?.kind)?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
+        if(animated||effect||ids.length||event.scene)this.queue.push({...event,pack,ids,timing,mode,boundary:eventBoundary,snapshot:eventSnapshot,transferIndex:transfers.indexOf(event),departures:event===motionEvent?departures:[],motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.speech&&event.reveal?.kind==='card'?timing.speech:event.reveal?timing.reveal:participantEffects.has(event.feedback?.kind)?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
       }
       if(!this.active&&!this.queue.length)this.presentationTurn=null;
       if(!this.active&&!defer)this.next();

@@ -7,7 +7,9 @@
        License texts and component scope: https://github.com/GraphGiraffe/boardgame-playroom/blob/main/LICENSING.md -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f3f0e7">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="light">
+  <script src="app/appearance-startup.js"></script>
   <meta name="description" content="Настольные игры в кармане. Устанавливайте паки игр, играйте с ботами или вместе и пересматривайте ходы.">
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.webmanifest">
@@ -15,6 +17,11 @@
   <title>ХОД — игры в хорошей компании</title>
   <link rel="stylesheet" href="app/styles.css">
   <link rel="stylesheet" href="app/saved-games.css">
+  <link rel="stylesheet" href="app/cloud-saves.css">
+  <link rel="stylesheet" href="app/account.css">
+  <link rel="stylesheet" href="app/social.css">
+  <link rel="stylesheet" href="app/quick-reactions.css">
+  <link rel="stylesheet" href="app/reaction-art.css">
   <link rel="stylesheet" href="app/pack-manager.css">
   <link rel="stylesheet" href="app/lobby.css">
   <link rel="stylesheet" href="app/shared-views.css">
@@ -49,7 +56,11 @@
   <script src="core/session.js"></script>
   <script src="core/protocol.js"></script>
   <script src="application/session-access.js"></script>
+  <script src="application/quick-reactions.js"></script>
+  <script src="application/room-chat.js"></script>
+  <script src="application/game-push-events.js"></script>
   <script src="core/command-processor.js"></script>
+  <script src="core/player-controls.js"></script>
   <script src="core/authority.js"></script>
   <script src="core/component-assets.js"></script>
   <script src="core/mini-split-deck.js"></script>
@@ -78,10 +89,43 @@
   <script src="app/library.js"></script>
   <script src="application/rooms.js"></script>
   <script src="platform/web/identity-store.js"></script>
+  <script src="app/network-config.js"></script>
+  <script src="application/account-service.js"></script>
+  <script src="platform/web/supabase-auth.js"></script>
+  <script src="application/social-service.js"></script>
+  <script src="application/community-service.js"></script>
+  <script src="application/cloud-signaling.js"></script>
+  <script src="app/cloud-network.js"></script>
+  <script src="platform/web/supabase-social.js"></script>
+  <script src="app/social-ui.js"></script>
+  <script src="app/chat-state.js"></script>
+  <script src="app/friend-card.js"></script>
+  <script src="app/friend-profile-ui.js"></script>
+  <script src="app/reaction-view.js"></script>
+  <script src="app/chat-composer.js"></script>
+  <script src="app/quick-reactions.js"></script>
+  <script src="app/chat-components.js"></script>
+  <script src="app/chat-ui.js"></script>
+  <script src="app/room-chat-ui.js"></script>
+  <script src="app/chat-activity.js"></script>
+  <script src="platform/web/chat-notification-store.js"></script>
+  <script src="app/chat-notifications.js"></script>
+  <script src="app/group-ui.js"></script>
+  <script src="platform/web/community-order-store.js"></script>
+  <script src="platform/web/community-cache-store.js"></script>
+  <script src="app/community-order-ui.js"></script>
+  <script src="app/community-ui.js"></script>
+  <script src="app/room-password.js"></script>
+  <script src="app/lobby-network.js"></script>
+  <script src="platform/web/push-device.js"></script>
+  <script src="app/push-ui.js"></script>
+  <script src="app/account-ui.js"></script>
+  <script src="application/account-sync-service.js"></script>
   <script src="app/multiplayer.js"></script>
   <script src="core/journal.js"></script>
   <script src="application/host-recovery.js"></script>
   <script src="platform/web/session-store.js"></script>
+  <script src="application/replay-codec.js"></script>
   <script src="app/network-client-history.js"></script>
   <script src="app/pairing.js"></script>
   <script src="application/pwa-update-coordinator.js"></script>
@@ -126,6 +170,17 @@
   <script src="application/history-sync-service.js"></script>
   <script src="application/host-session-service.js"></script>
   <script src="app/pairing-presenter.js"></script>
+  <script src="app/network-invitations.js"></script>
+  <script src="application/player-control-service.js"></script>
+  <script src="application/save-compression.js"></script>
+  <script src="application/save-transfer.js"></script>
+  <script src="application/host-transfer.js"></script>
+  <script src="platform/web/host-transfer-wire.js"></script>
+  <script src="app/host-transfer-ui.js"></script>
+  <script src="app/temporary-bot-ui.js"></script>
+  <script src="app/save-transfer-ui.js"></script>
+  <script src="application/cloud-save-service.js"></script>
+  <script src="app/cloud-saves-ui.js"></script>
   <script src="app/network-ui.js"></script>
   <script src="core/input.js"></script>
   <script src="core/tooltips.js"></script>

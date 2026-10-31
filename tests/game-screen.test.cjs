@@ -17,7 +17,7 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.match(Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO'}),/Второй побеждает/);
   const dialog=Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO',scoreLabel:'очки',network:true});
   assert.match(dialog,/9|4/);assert.match(dialog,/result-replay/);assert.doesNotMatch(dialog,/Ещё партию/);
-  assert.match(dialog,/Вернуться в комнату/);
+  assert.match(dialog,/>В комнату</);assert.match(dialog,/>История</);assert.doesNotMatch(dialog,/data-command="(?:home|close-modal)"/);
   assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
 });
 
@@ -76,7 +76,7 @@ test('the primary toolbar slot switches between room and results, including earl
   assert.equal((toolbar.match(/data-game-primary=/g)||[]).length,1);
   assert.match(toolbar,new RegExp('data-command="'+(historyResult?'result':'room')+'"'));
   assert.doesNotMatch(toolbar,new RegExp('data-command="'+(historyResult?'room':'result')+'"'));
-  assert(toolbar.indexOf('data-game-primary')<toolbar.indexOf('data-command="history"'));
+  assert(toolbar.indexOf('data-game-primary')<toolbar.indexOf(network?'data-room-chat-open':'data-command="history"'));
  }
  assert.match(Screen.addPlayerButton(),/Подключить игрока или устройство/);
  assert.match(Screen.addPlayerButton(),/ui-icon-button/);
@@ -134,7 +134,7 @@ test('field toggle is exclusive to an interactive network player with a Table',(
   const html=Screen.render({state:projected,viewer,network,readOnly,fieldToggle:{hidden:true}});
   assert.equal(html.includes('data-command="toggle-field"'),allowed);
   assert.equal(Screen.quickAccessMarkup().includes('data-command="toggle-field"'),allowed);
-  if(!allowed)assert.match(html,/data-command="history"/);
+  if(!allowed)assert.match(html,network&&!readOnly?/data-room-chat-open/:/data-command="history"/);
  }
 });
 
@@ -170,11 +170,12 @@ test('packs describe hand priority and physical seats without changing game iden
 });
 
 
-test('Continuation cards share two summary lines and an independent avatar row',()=>{
+test('Continuation cards share heading, player and room progress rows',()=>{
   const state={players:[{name:'Иван'},{name:'Кира',bot:true}],turn:1,status:'playing',timeline:{turn:8},scene:{round:{kind:'round',number:4}}};
-  for(const network of [false,true]){
-    const html=Screen.resumeCard({state,network,roomName:'Комната Иван',gameName:'Морской бой',leave:network?'data-net-action="leave-active"':''});
-    assert.match(html,/Морской бой · Раунд 4/);assert.doesNotMatch(html,/Ход 8/);
+  for(const transportMode of ['hotseat','network','online']){
+    const network=transportMode!=='hotseat';
+    const html=Screen.resumeCard({state,network,transportMode,roomName:'Комната Иван',gameName:'Морской бой',leave:network?'data-net-action="leave-active"':''});
+    assert.match(html,new RegExp('data-transport-mode="'+transportMode+'"'));assert.match(html,/<strong>Морской бой<\/strong>/);assert.match(html,/Раунд 4 · Ход 8/);assert.match(html,/session-card-heading.*session-card-room.*resume-participants.*session-card-progress/s);
     assert.match(html,/class="resume-person saved-current-turn"/);assert.equal((html.match(/class="avatar /g)||[]).length,2);
     assert.equal(html.includes('connection-light'),network);assert.match(html,/resume-actions.*resume-participants/s);
   }
@@ -200,9 +201,9 @@ test('duels always render a row even with a saved circular or anchored preferenc
 test('continuation avatars carry host, first-player and team badges with regular-weight progress',()=>{
  const teams=[{id:'a',label:'А',color:'#123'},{id:'b',label:'Б',color:'#456'}],state={players:[{name:'A'},{name:'B'},{name:'C'},{name:'D'}],firstPlayer:1,turn:2,preset:'teams',status:'playing',scene:{round:{number:3},players:[0,1,2,3].map(player=>({player,team:teams[player%2]}))}};
  const html=Screen.resumeCard({state,network:true,roomName:'Комната',gameName:'Игра',participants:[{playerIndex:1,isHost:true}]});
- assert.doesNotMatch(html,/resume-player-group/);assert.match(html,/первый ход/i);assert.match(html,/хост/i);assert.match(html,/<strong>Игра<\/strong><span> · Раунд 3<\/span>/);
+ assert.doesNotMatch(html,/resume-player-group/);assert.match(html,/первый ход/i);assert.match(html,/хост/i);assert.match(html,/<strong>Игра<\/strong>/);assert.match(html,/<strong class="session-card-room">Комната<\/strong>.*<span class="session-card-stats">Раунд 3<\/span>/);
  assert.deepEqual([...html.matchAll(/resume-person-name[^>]*>.*?<span[^>]*>([A-D])<\/span>/g)].map(m=>m[1]),['A','B','C','D']);
- assert.doesNotMatch(Screen.resumeCard({state,roomName:'Не показывать',gameName:'Игра'}),/Не показывать/);
+ assert.match(Screen.resumeCard({state,roomName:'Локальная комната',gameName:'Игра'}),/Локальная комната/);
 });
 
  test('recent cards retain only unfinished games or a connected finished room',()=>{

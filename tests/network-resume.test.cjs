@@ -84,3 +84,15 @@ test('local resume ticket storage keeps secrets out of profile and can be restor
   store.remove('room1');
   assert.equal(new ResumeStore(()=>storage).load('room1'),null);
 });
+
+test('cloud-bound RTC identity resumes only its own participant, never another member or duplicate',()=>{
+ const {rooms,room}=setup();
+ const first=rooms.connection(room.id,{boundParticipantId:'cloud-alice'}),alice=first.dispatch({type:'join',nickname:'Алиса',profileId:'host'});
+ assert.equal(alice.snapshot.participantId,'cloud-alice');first.dispatch({type:'claim-seat',seatId:'seat-2'});first.close();
+ const bob=rooms.connection(room.id,{boundParticipantId:'cloud-bob'});
+ assert.throws(()=>bob.dispatch({type:'resume',participantId:'cloud-alice',resumeToken:alice.resumeToken}),/ROOM_IDENTITY_MISMATCH/);
+ const second=rooms.connection(room.id,{boundParticipantId:'cloud-alice'});
+ assert.throws(()=>second.dispatch({type:'join',nickname:'Дубликат'}));
+ const resumed=second.dispatch({type:'resume',participantId:'cloud-alice',resumeToken:alice.resumeToken});
+ assert.equal(resumed.snapshot.participantId,'cloud-alice');assert.equal(rooms.snapshot(room.id).participants.length,2);assert.equal(rooms.snapshot(room.id).seats[1].participantId,'cloud-alice');assert.notEqual(resumed.resumeToken,alice.resumeToken);
+});

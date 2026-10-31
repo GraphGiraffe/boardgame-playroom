@@ -8,7 +8,8 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 #modal-root .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
 #modal-root .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:var(--ui-target);padding-bottom:12px;margin-bottom:16px}
 #modal-root .modal-head h2{flex:1;min-width:0;overflow-wrap:anywhere;margin:0;text-align:left}
-#modal-root .modal-head .icon-btn{margin-left:0;order:-1}
+#modal-root .modal-head .icon-btn{margin-left:0}
+#modal-root .modal-head [data-command="close-modal"]{order:-1}
 .shared-modal-backdrop{position:fixed;inset:0;background:#20352d66;backdrop-filter:blur(7px);padding:16px;display:flex;align-items:center;justify-content:center;z-index:50;overflow:auto}
 #modal-root .shared-modal-backdrop .modal{background:var(--paper);width:min(100%,600px);max-width:600px}
 .pairing-method-icon svg,.pairing-chevron svg{width:22px;height:22px}
@@ -270,7 +271,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 #app .table-tools{flex-wrap:nowrap}
 /* Transient notices stay above the visible viewport without moving content. */
 .app-notice,#toast.show{position:fixed;z-index:120;top:max(8px,env(safe-area-inset-top));bottom:auto;height:auto;min-height:0;left:50%;transform:translateX(-50%);width:max-content;max-width:min(480px,calc(100% - 16px));margin:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-border-subtle,#c8b17c);border-radius:14px;background:var(--color-surface-notice,#f4e8c9);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto;font-size:12px;line-height:1.4}
-.app-notice>span,#toast.show>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.app-notice>span,#toast.show>span{white-space:pre-line;flex:1;min-width:0;overflow-wrap:anywhere}
 .app-notice .icon-btn,#toast.show .icon-btn{flex:none;width:36px;min-width:36px;height:36px}
 
 .history-viewer{display:flex;align-items:center;justify-content:center;gap:8px;margin:0 0 6px;font-size:11px;color:var(--muted)}
@@ -283,13 +284,11 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 /* RC14: the header is outside the single scroll viewport for every dialog. */
 #modal-root .modal{display:flex;flex-direction:column;overflow:hidden;padding:14px;min-height:0}
 #modal-root .modal>.modal-head{position:relative;top:auto;flex:none;margin:0;padding:10px 10px 14px;background:var(--paper);z-index:2}
-#modal-root .modal>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 10px 14px;scrollbar-gutter:stable}
+#modal-root .modal>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 10px 14px;scrollbar-gutter:auto}
 #modal-root .modal-body>.lobby-shell{padding:0;min-height:0}
 .room-transport{min-height:44px!important;height:44px!important}
 .room-setup-modal .room-transport>span{display:flex;align-items:center;justify-content:center;height:36px;line-height:1.2;padding:0!important}
-.resume-actions{display:flex;align-items:center;gap:8px;flex:none}
 .resume-primary{background:var(--green);color:var(--color-action-on-primary,var(--paper))}
-.resume-banner strong{display:inline}.resume-banner .pill{margin-bottom:5px}
 #network-join-button{display:flex;margin-inline:auto}
 .scene.replaying .layout-hand .hand-card{width:52px!important;min-width:52px!important;height:76px!important}
 .scene.replaying .layout-hand .hand-track{min-height:92px;height:92px}
@@ -419,7 +418,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .app-game-layout[data-surface="player"] .layout-self{max-height:none;overflow:auto;min-height:0}
 .app-game-layout[data-surface="player"] .layout-hand .hand-card{--fan-card-width:var(--focus-hand-width,80px)!important;--fan-card-height:calc(var(--focus-hand-width,80px)*1.43)!important}
 .app-game-layout[data-surface="player"] .layout-hand .hand-track.is-fan{min-height:calc(var(--focus-hand-width,80px)*1.43 + 12px);height:auto;max-height:none}
-.app-game-layout[data-surface="player"] .player-turn-position{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:auto;border:1px solid var(--color-border,#9baa91);border-radius:50%;font-size:10px;flex:none}
+.app-game-layout[data-surface="player"] .player-turn-position{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;margin-left:auto;border:1px solid var(--color-border-subtle,#9baa91);border-radius:50%;font-size:10px;flex:none}
 .app-game-layout[data-surface="player"][data-layout-mode="phone-landscape"],.app-game-layout[data-surface="player"][data-layout-mode="desktop"]{grid-template-columns:minmax(0,2fr) minmax(190px,1fr)!important;grid-template-rows:minmax(0,1fr)!important;grid-template-areas:"participants self"!important}
 .app-game-layout[data-view-api="3"][data-surface="player"][data-has-hand="false"]{grid-template-rows:minmax(0,1fr) auto!important;grid-template-columns:minmax(0,1fr)!important;grid-template-areas:"participants" "self"!important}
 
@@ -461,10 +460,7 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 .pack-art>svg{display:block;width:100%;height:100%;max-width:100%}
 .pack-summary{min-width:0;display:block}.pack-summary strong{display:block;font-size:16px;line-height:1.2;overflow-wrap:anywhere}
 .pack-row .pack-summary small{display:block;margin:4px 0 0;font-size:12px;line-height:1.3;color:var(--color-text-secondary,#64776d);overflow-wrap:anywhere}
-.pack-row-controls{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;min-width:0}
-.pack-row .pack-display-actions{display:contents}
-.pack-row-controls button,.pack-row-controls .pack-display-actions button{min-height:44px!important;min-width:0!important;width:100%;padding:6px!important;border-radius:10px}
-.pack-row-controls>.icon-btn{grid-column:5}
+.pack-row-controls{grid-column:1/-1;min-width:0}
 .pack-row:focus-visible{outline:3px solid var(--color-interaction-available,#638658);outline-offset:2px}
 
 /* Avatar images leave the seat-coloured rim visible, including opaque uploads. */
@@ -487,13 +483,9 @@ html:has(.table-shell),body:has(.table-shell),html:has(#modal-root>.modal-backdr
 #app .table-heading{min-width:0;flex:1 1 130px}
 #app .table-tools{flex-wrap:nowrap!important;margin-left:auto}
 #app .table-header .table-title{min-width:0}
-.resume-banner{display:grid!important;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;gap:8px!important;align-items:center;padding:12px!important;font-size:14px}
-.resume-summary{min-width:0}.resume-room,.resume-game{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}
-.resume-banner .pill{display:inline;padding:0;border:0;background:none;margin:0;font-size:inherit}
-.resume-actions{grid-column:2;grid-row:1;align-self:center}
 .resume-participants{grid-column:1/-1;display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0;font-size:12px;overflow:visible}
 .resume-person{display:inline-flex;align-items:center;gap:4px;min-width:0;max-width:100%}
-.resume-person-name{min-width:0;overflow-wrap:anywhere;line-height:1.35}
+.resume-person-name{display:inline-flex;align-items:center;gap:2px;min-width:0;line-height:1.35}.resume-person-name>span:last-child{min-width:0;overflow-wrap:anywhere}.resume-person-name>.participant-role{display:inline-flex;align-items:center;flex:none}.resume-person-name>.participant-role svg{display:block}
 .resume-person .player-avatar-wrap{width:24px;height:24px;flex:none}
 .resume-person .avatar{width:24px;height:24px;min-width:24px;font-size:12px}
 .resume-person .player-medallion{width:12px;height:12px;right:-3px;top:-3px}
@@ -745,10 +737,10 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .modal:has(.settings-overview) .lobby-profile{margin:0}
 .modal:has(.settings-overview) .settings-grid{margin-block:12px}
 .modal:has(.settings-overview) .settings-grid .field{margin:0}
-@media(max-width:360px){.modal:has(.settings-overview){padding:16px}.modal:has(.settings-overview) .modal-head h2{font-size:18px;white-space:nowrap}}
+:where(:root[data-ui-compact="true"]) .modal:has(.settings-overview){padding:16px}:where(:root[data-ui-compact="true"]) .modal:has(.settings-overview) .modal-head h2{font-size:18px;white-space:nowrap}
 #modal-root .modal:has(.settings-overview)>.modal-head{overflow-y:hidden;scrollbar-gutter:auto;gap:8px}
 #modal-root .modal:has(.settings-overview)>.modal-head h2{font-size:clamp(18px,4vw,26px);white-space:nowrap}
-@media(max-width:360px){#modal-root .modal:has(.settings-overview){padding-inline:10px}}
+:where(:root[data-ui-compact="true"]) #modal-root .modal:has(.settings-overview){padding-inline:10px}
 
 /* Keep symmetric content insets while the settings body remains scrollable. */
 #modal-root .modal:has(.settings-overview)>.modal-body{scrollbar-gutter:auto;scrollbar-width:none}
@@ -764,11 +756,11 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 
 /* The scroll viewport must fit its slot even when the pieces do not. */
 #app .app-game-layout .own-hand .hand-track{width:100%;min-width:0;max-width:100%}
-.settings-overview .settings-themes{padding:0;min-width:40px;width:40px;height:40px;justify-self:end}
+.settings-overview .settings-theme-toggle{padding:0;min-width:40px;width:40px;height:40px;justify-self:end}
 /* A fixed value stays in form data, but needs no choice control. */
 .field:has(>select>option:only-child):not(:has(>select>optgroup)){display:none!important}
 
-.settings-quick .icon-btn,.settings-quick>button{flex:0 0 40px;width:40px;min-width:40px;height:40px}
+#modal-root .settings-quick .icon-btn,#modal-root .settings-quick>button{flex:0 0 44px;width:44px;min-width:44px;height:44px;border-radius:14px}
 .player-target-menu.card-choice-dialog{position:fixed;inset:0;margin:auto;transform:none;width:min(560px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);height:max-content;display:grid;grid-template-columns:repeat(auto-fit,72px);grid-auto-rows:min-content;justify-content:center;align-content:start;gap:10px;padding:16px;overflow:auto;color:var(--ink)}
 .player-target-menu.card-choice-dialog>button{width:72px;height:101px}
 .player-target-menu.card-choice-dialog::backdrop{background:#193c3266}
@@ -959,3 +951,38 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 :is(#app,#modal-root) .segmented label:has(input:checked){background:color-mix(in srgb,var(--color-surface-selected,#e0e8cb),black var(--ui-selection-shade))}
 :is(#app,#modal-root) .settings-range input[type=range]::-webkit-slider-thumb{background:color-mix(in srgb,var(--paper,#f3f0e7),black var(--ui-selection-shade))}
 :is(#app,#modal-root) .settings-range input[type=range]::-moz-range-thumb{background:color-mix(in srgb,var(--paper,#f3f0e7),black var(--ui-selection-shade))}
+
+/* Modal quick actions occupy a single wrapping row, independent of settings grid. */
+.settings-shortcuts.modal-shortcuts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;padding:4px}
+
+/* Scrollable dialog content keeps equal left/right insets, including classic desktop scrollbars. */
+#modal-root :is(.modal-body,.lobby-roster-scroll,.social-list){scrollbar-width:none;scrollbar-gutter:auto}
+#modal-root :is(.modal-body,.lobby-roster-scroll,.social-list)::-webkit-scrollbar{display:none}
+
+/* Rulebook anchors scroll inside their reading pane and preserve the game below. */
+.rulebook-toolbar{display:flex;flex:none;gap:6px;margin-left:auto}
+#modal-root .rulebook-head{gap:10px}
+#modal-root .rulebook-head h2{white-space:nowrap;font-size:clamp(18px,4.5vw,26px)}
+.rulebook-contents{margin:0 0 24px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-sm,14px)}
+.rulebook-contents h3{margin:0 0 8px;font-size:1em}
+.rulebook-contents ol{margin:0;padding-left:1.4em}
+.rulebook-contents li+li{margin-top:6px}
+.rulebook-contents a{color:var(--ink);text-decoration-thickness:1px;text-underline-offset:3px}
+.game-rules-help [tabindex="-1"]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+:where(:root[data-ui-compact="true"]) #modal-root .rulebook-head{gap:6px}:where(:root[data-ui-compact="true"]) .rulebook-toolbar{gap:4px}:where(:root[data-ui-compact="true"]) #modal-root .rulebook-head .icon-btn{width:36px;height:36px;min-width:36px;min-height:36px}
+
+:where(:root[data-ui-compact="true"]) #modal-root .modal:has(.settings-overview)>.modal-head{gap:6px}:where(:root[data-ui-compact="true"]) #modal-root .modal:has(.settings-overview)>.modal-head .icon-btn{width:32px;min-width:32px;height:32px;min-height:32px}:where(:root[data-ui-compact="true"]) #modal-root .modal:has(.settings-overview)>.modal-head h2{min-width:0;font-size:18px}
+
+/* Action rows retain any leading label; destructive actions separate from the right group. */
+.ui-action-row{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.ui-action-row>.ui-action-danger{margin-right:auto}
+:is(#app,#modal-root) .ui-action-danger{background:var(--color-feedback-error,#a84938);border-color:var(--color-feedback-error,#a84938);color:var(--color-action-on-primary,#fffdf4)}
+
+#modal-root :is(.settings-header-actions,.rulebook-toolbar) .icon-btn{border-radius:14px}
+:where(:root[data-ui-compact="true"]) #modal-root .settings-quick .icon-btn,:where(:root[data-ui-compact="true"]) #modal-root .settings-quick>button{flex-basis:32px;width:32px;min-width:32px;height:32px;min-height:32px;border-radius:50%}:where(:root[data-ui-compact="true"]) #modal-root :is(.settings-header-actions,.rulebook-toolbar) .icon-btn{border-radius:50%}
+
+/* Yellow contours stay opaque on dark boards; a keyline separates pale pieces. */
+:root[data-appearance-mode=dark] :is(.game-scene,.app-game-layout){--piece-highlight-strength:100%!important;--interaction-ring-width:3px}
+
+:root[data-appearance-mode=dark] :is(.game-scene,.app-game-layout){--piece-interaction-keyline:#102015}
+:root[data-appearance-mode=dark] :is(.is-playable,.is-selected,.solitaire-hint,.is-drop-target,.playroom-drop-hover) :is(.piece-contour,.card-outline){filter:drop-shadow(0 0 1px var(--piece-interaction-keyline))}

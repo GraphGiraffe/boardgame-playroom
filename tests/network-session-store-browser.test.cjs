@@ -6,7 +6,7 @@ const root=path.resolve(__dirname,'..');
 test('Table public commands survive IndexedDB reload with player receipts and public duplicate ACKs',{timeout:30000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
-  const context=await browser.newContext(),page=await context.newPage();await page.goto(fixture.url);
+  const context=await browser.newContext(),page=await context.newPage();await page.goto(fixture.url);await page.waitForFunction(()=>!!globalThis.PlayroomAccountUI?.service);
   const before=await page.evaluate(async()=>{
    const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'});
    const session=new TabletopSession(TabletopCore,'tictactoe',{seed:'TABLE-PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});

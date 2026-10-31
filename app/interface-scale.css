@@ -18,6 +18,9 @@
 .settings-range input[type=range]::-moz-range-thumb{width:14px;height:20px;border:1px solid var(--green,#35654f);border-radius:6px;background:var(--paper);box-shadow:0 2px 0 var(--line)}
 .settings-range-dots{position:absolute;inset:0 8px;pointer-events:none;z-index:2}
 .settings-range-dots i{position:absolute;top:50%;width:3px;height:3px;border-radius:50%;background:var(--ink);opacity:.55;transform:translate(-50%,-50%)}
+.settings-range:not(:has(.settings-range-bounds)){margin-bottom:4px}
+.settings-range:not(:has(.settings-range-bounds)) .settings-range-heading{min-height:36px}
+.settings-range:not(:has(.settings-range-bounds)) .settings-range-track,.settings-range:not(:has(.settings-range-bounds)) input[type=range]{height:28px}
 .settings-range-bounds{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;font-weight:400}
 
 /* Narrow participant columns keep identity above the cropped hand. */

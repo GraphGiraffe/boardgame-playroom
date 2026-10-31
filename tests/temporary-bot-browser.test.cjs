@@ -1,0 +1,30 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path');
+const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
+const root=path.resolve(__dirname,'..');
+test('temporary bot: real RTC personal away, host substitution, explicit return, mobile controls and durable recovery',{timeout:120000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),pages=[],errors=[];
+ try{
+  for(const name of ['Хост','Игрок']){const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:844}}),page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));await page.goto(server.url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('ludo',false));pages.push(page);}
+  const [host,guest]=pages;
+  await host.locator('[data-start=ludo]').click();await host.locator('[data-room-option=transportMode][value=network]').check();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(const id of ['seat-2','seat-3','seat-4'])b.roomService.setLocalSeat(r.id,r.ownerId,id,{kind:'empty'});b.renderLobby();});
+  await host.locator('#network-pair-button').click();const offer=await host.locator('#net-host-token').inputValue();await guest.locator('#network-join-button').click();await guest.locator('[data-lobby-online=manual]').click();await guest.locator('#net-client-offer textarea[name=offer]').fill(offer);await guest.locator('#net-client-offer').evaluate(f=>f.requestSubmit());const answer=await guest.locator('#net-client-token').inputValue();await host.locator('#net-host-answer textarea[name=answer]').fill(answer);await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());await guest.locator('#net-client-join').waitFor();await guest.locator('#net-client-join').evaluate(f=>f.requestSubmit());await guest.locator('[data-net-seat=seat-2]').click();
+  const target=await guest.evaluate(()=>PlayroomNetworkLibrary.transferClient().id);
+  await host.evaluate(id=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:id});b.renderLobby();},target);
+  await guest.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();await guest.locator('.table-shell.network-game').waitFor();
+  await guest.evaluate(()=>PlayroomNetworkLibrary.openRoom());await guest.locator('[data-room-person="'+target+'"]').click();await guest.locator('[data-player-control-action=away]').click();await guest.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.away));assert.equal(await guest.evaluate(()=>document.querySelector('.player-control-error')?.textContent||''),'');await host.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.away));
+  await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());await host.locator('[data-room-person="'+target+'"]').click();await host.screenshot({path:path.join(root,'../tmp_files/bot-replacement-020/host-controls-390.png')});await host.locator('[data-player-control-action=bot]').click();
+  await guest.waitForFunction(()=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.bot));
+  const initial=await guest.evaluate(()=>{const c=PlayroomNetworkLibrary.playerControlContext();return {revision:c.snapshot.revision,sessionId:c.snapshot.sessionId,actor:c.snapshot.viewer};});
+  await guest.waitForFunction(revision=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.revision>revision,initial.revision);
+  await guest.evaluate(()=>PlayroomNetworkLibrary.openRoom());await guest.locator('[data-room-person="'+target+'"]').click();await guest.screenshot({path:path.join(root,'../tmp_files/bot-replacement-020/return-controls-390.png')});await guest.locator('[data-player-control-action=return]').click();await guest.waitForFunction(()=>!PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls.some(p=>p.bot));
+  const final=await host.evaluate(async actor=>{const n=PlayroomNetworkLibrary,c=n.playerControlContext(),raw=await n.transferStore.readPrivate(c.snapshot.sessionId),restored=await n.transferStore.load(c.snapshot.sessionId,TabletopCore,TabletopSession);return {flags:restored.playerControls,revision:restored.playerControlRevision,human:restored.session.current.players[actor].bot,receipts:raw.record.playerControlReceipts.length};},initial.actor);
+  assert.equal(final.human,false);assert.equal(final.flags[initial.actor].bot,false);assert.equal(final.revision,3);assert.equal(final.receipts,3);assert.deepEqual(errors,[]);
+  // A closed channel changes presence only; substitution still requires a host decision.
+  await guest.evaluate(()=>PlayroomNetworkLibrary.transferClient().channel.close());await host.waitForFunction(id=>PlayroomNetworkLibrary.playerControlContext()?.room.participants.find(p=>p.id===id)?.connected===false,target);
+  assert.equal(await host.evaluate(actor=>PlayroomNetworkLibrary.playerControlContext().snapshot.playerControls[actor].bot,initial.actor),false);
+  await host.evaluate(()=>PlayroomNetworkLibrary.openRoom());await host.locator('[data-room-person="'+target+'"]').click();await host.locator('[data-player-control-action=bot]').click();await host.waitForFunction(actor=>PlayroomNetworkLibrary.playerControlContext()?.snapshot.playerControls[actor].bot,initial.actor);
+  assert.equal(await host.evaluate(actor=>PlayroomNetworkLibrary.playerControlContext().snapshot.state.players[actor].bot,initial.actor),false);
+ }finally{await browser.close();await server.close();}
+});

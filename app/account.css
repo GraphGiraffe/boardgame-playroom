@@ -1,0 +1,24 @@
+.settings-identity { display: flex; align-items: end; gap: 10px; min-width: 0; }
+.settings-identity > :is(.profile-identity-row,.lobby-profile) { flex: 1; min-width: 0; }
+.settings-identity :is(.profile-identity-row,.lobby-profile) .field input { width: 100%; min-width: 0; }
+.account-status-button { flex: 0 0 auto; }
+.account-status-button[data-account-status=account] { color: var(--accent, #356752); }
+.account-status-button[data-account-status=error] { color: var(--danger, #a34d43); }
+.account-form fieldset { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.account-form input { width: 100%; min-width: 0; }
+.account-form .field { margin: 0; gap: 6px; }
+.account-form button { margin-top: 8px; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.account-actions button { flex: 1 1 auto; }
+.account-message:empty { display: none; }
+.account-content { overflow-wrap: anywhere; }
+
+.account-actions:has(.icon-btn),.account-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.account-actions>.icon-btn,.account-form-actions>.icon-btn{flex:0 0 auto}
+
+.account-identity{display:grid;gap:2px;margin-bottom:8px}.account-identity .muted{font-size:13px}
+.account-quick-actions{justify-content:flex-end!important;margin-top:8px!important;margin-bottom:8px;flex-wrap:nowrap}
+.account-quick-actions>[data-push-settings]{display:contents}
+.account-quick-actions .account-logout{background:var(--color-feedback-danger,#a84938);color:#fff}
+.account-quick-actions .push-enabled{color:var(--color-action-primary,#356752);background:var(--color-surface-selected,#dce8d5)}
+.account-quick-actions .push-enabled svg path{fill:currentColor}

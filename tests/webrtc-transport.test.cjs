@@ -65,3 +65,29 @@ test('brief recovery stays silent, prolonged recovery notifies, successful host 
   fail=false;await monitor.check();assert.equal(monitor.report().notice,false);assert.equal(monitor.state,'connected');assert.equal(reconciles,3);
  }finally{monitor.close();}
 });
+
+
+test('authorized final snapshot reaches guest before lobby even when authorization finishes out of order',async()=>{
+ let publish;const approvals=[],delivered=[];const connection={subscribe(fn){publish=fn;return()=>{};}};
+ const off=W.subscribeAuthorized(connection,s=>delivered.push(s),()=>new Promise((resolve,reject)=>approvals.push({resolve,reject})));
+ publish({kind:'snapshot',sessionId:'match',state:{status:'finished'}});publish({kind:'lobby',room:{id:'room'}});
+ approvals[1].resolve();await new Promise(r=>setImmediate(r));assert.equal(delivered.length,0,'lobby must wait for its final game projection');
+ approvals[0].resolve();await new Promise(r=>setImmediate(r));assert.deepEqual(delivered.map(s=>s.kind),['snapshot','lobby']);off();
+});
+
+test('authorized snapshot stream still rejects revoked peers and ignores detached subscriptions',async()=>{
+ let publish,resolve,reject,denied=0;const delivered=[];const connection={subscribe(fn){publish=fn;return()=>{};}};
+ const off=W.subscribeAuthorized(connection,s=>delivered.push(s),()=>new Promise((yes,no)=>{resolve=yes;reject=no;}),{deny:()=>denied++});publish({kind:'snapshot',state:{status:'finished'}});reject(Error('forbidden'));await new Promise(r=>setImmediate(r));assert.equal(denied,1);assert.equal(delivered.length,0);off();
+ const off2=W.subscribeAuthorized(connection,s=>delivered.push(s),()=>new Promise(yes=>resolve=yes));publish({kind:'snapshot',state:{status:'finished'}});off2();resolve();await new Promise(r=>setImmediate(r));assert.equal(delivered.length,0);
+});
+
+
+test('authorized intermediate snapshots coalesce while revoked final state blocks queued lobby',async()=>{
+ let publish;const approvals=[],delivered=[];let denied=0;
+ const connection={subscribe(fn){publish=fn;return()=>{};}};
+ const off=W.subscribeAuthorized(connection,s=>delivered.push(s),()=>new Promise((resolve,reject)=>approvals.push({resolve,reject})),{deny:()=>denied++});
+ publish({kind:'snapshot',revision:1,state:{status:'playing'}});publish({kind:'snapshot',revision:2,state:{status:'playing'}});
+ approvals[0].resolve();approvals[1].resolve();await new Promise(r=>setImmediate(r));assert.deepEqual(delivered.map(s=>s.revision),[2]);
+ publish({kind:'snapshot',state:{status:'finished'}});publish({kind:'lobby'});
+ approvals[3].resolve();approvals[2].reject(Error('revoked'));await new Promise(r=>setImmediate(r));assert.equal(denied,1);assert.equal(delivered.length,1);off();
+});

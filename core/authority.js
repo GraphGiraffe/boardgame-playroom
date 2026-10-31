@@ -27,9 +27,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[]}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
       if(typeof paused!=='boolean'||!Number.isSafeInteger(controlRevision)||controlRevision<0)throw Error('Invalid restored control');
+      const controlsApi=globalThis.PlayroomPlayerControls||(typeof require==='function'?require('./player-controls.js'):null);
+      ({playerControls,playerControlRevision,playerControlReceipts}=controlsApi.validate({playerControls:playerControls??undefined,playerControlRevision,playerControlReceipts},session.current.players,session.current.move));
+      const playerReceipts=new Map(playerControlReceipts.map(row=>[row.key,row]));
       const receipts=new Map();
       if(!Array.isArray(restoredReceipts))throw Error('Invalid restored receipts');
       for(const row of restoredReceipts){
@@ -41,7 +44,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(receipts.has(key))throw Error('Duplicate restored receipt');
         receipts.set(key,{signature:row.signature,receipt:freeze(clone(row.receipt))});
       }
-      records.set(this,{session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+      records.set(this,{playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
     }
     _processor() {
       const r=records.get(this);
@@ -89,19 +92,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const reactionWindows=windows.map(window=>({...window.descriptor,suspended:window.suspended,protected:window.readyAt===null||this._now()<window.readyAt+window.descriptor.humanMs}));
       const reactionWindow=reactionWindows.find(w=>w.owner===viewer)||reactionWindows[0]||null;
       const role=binding?.role||(viewer<0?'spectator':'player');
-      const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!state.players[state.turn]?.bot?state.turn:-1):viewer;
+      const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!this._botControlled(state.turn)&&!r.playerControls[state.turn]?.away?state.turn:-1):viewer;
       const projected=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor):s.engine.project(state,viewer),previous=live?s.states.at(-2):s.states[index-1];
       const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
       const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
-      const actions=live&&!r.paused&&actor>=0&&!state.players[actor]?.bot?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
+      if(live&&safe.players&&s.playerMetadata)safe.players=safe.players.map((player,index)=>({...player,...s.playerMetadata(index)}));
+      const actions=live&&!r.paused&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
       if(projected.modelProjection){
         const projection={...projected.modelProjection,actions:authorizedCommands(projected.modelProjection.actions,actions)};
         safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
       }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return freeze(clone({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      return freeze(clone({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -115,26 +119,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(const [id,window] of r.reactions)if(!ids.has(id)){this._clearWindow(window);r.reactions.delete(id);r.reactionRevision++;}
       for(const descriptor of descriptors){
         let window=r.reactions.get(descriptor.id);
-        if(!window){window={descriptor,createdAt:this._now(),readyAt:null,suspended:r.connected.get(descriptor.owner)===false,timer:null,openTimer:null};r.reactions.set(descriptor.id,window);r.reactionRevision++;}
-        if(!r.paused&&!window.suspended&&window.readyAt===null&&window.timer===null){
-          window.timer=r.clock.setTimeout(()=>{window.timer=null;this._setReactionReady(window);},Math.max(0,window.createdAt+(state.players[descriptor.owner]?.bot?0:descriptor.fallbackMs)-this._now()));
+        if(!window){window={descriptor,createdAt:this._now(),readyAt:null,suspended:!this._botControlled(descriptor.owner)&&(r.connected.get(descriptor.owner)===false||r.playerControls[descriptor.owner]?.away),timer:null,openTimer:null};r.reactions.set(descriptor.id,window);r.reactionRevision++;}
+        if(!r.paused&&!r.stopRequested&&!window.suspended&&window.readyAt===null&&window.timer===null){
+          window.timer=r.clock.setTimeout(()=>{window.timer=null;this._setReactionReady(window);},Math.max(0,window.createdAt+(this._botControlled(descriptor.owner)?0:descriptor.fallbackMs)-this._now()));
         }
       }
       return [...r.reactions.values()];
     }
     _setReactionReady(window){
-      const r=records.get(this);if(r.disposed||r.paused||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;
+      const r=records.get(this);if(r.disposed||r.paused||r.stopRequested||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;
       this._clearWindow(window);window.readyAt=this._now();r.reactionRevision++;
-      window.openTimer=r.clock.setTimeout(()=>{window.openTimer=null;if(r.disposed||r.paused||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;r.reactionRevision++;this._publish();},window.descriptor.humanMs);
+      window.openTimer=r.clock.setTimeout(()=>{window.openTimer=null;if(r.disposed||r.paused||r.stopRequested||window.suspended||r.reactions.get(window.descriptor.id)!==window)return;r.reactionRevision++;this._publish();},window.descriptor.humanMs);
       this._publish();if(r.botOptions)this.scheduleBot(r.botOptions);
     }
     _presentationReady(binding,message){
       const r=records.get(this),window=this._syncReactionWindows().find(w=>w.descriptor.id===message?.windowId);
       if(binding.closed||r.disposed)return {ok:false,code:'CLOSED'};
+      if(r.stopRequested)return {ok:false,code:'BUSY'};
       if(!P.validatePresentationReady(message))return {ok:false,code:'BAD_COMMAND'};
       if(message.sessionId!==r.sessionId)return {ok:false,code:'WRONG_SESSION'};
       if(message.authorityEpoch!==r.authorityEpoch)return {ok:false,code:'WRONG_EPOCH'};
-      if(r.paused||window?.suspended||message.controlRevision!==r.controlRevision||!window||binding.viewer!==window.descriptor.owner||r.session.current.players[binding.viewer]?.bot||message.windowId!==window.descriptor.id||message.revision!==window.descriptor.revision)return {ok:false,code:'REACTION_IGNORED',ignored:true};
+      if(r.paused||window?.suspended||message.controlRevision!==r.controlRevision||!window||binding.viewer!==window.descriptor.owner||this._botControlled(binding.viewer)||r.playerControls[binding.viewer]?.away||message.windowId!==window.descriptor.id||message.revision!==window.descriptor.revision)return {ok:false,code:'REACTION_IGNORED',ignored:true};
       if(window.readyAt!==null)return {ok:true,duplicate:true};
       this._setReactionReady(window);
       return {ok:true};
@@ -148,8 +153,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const previous=r.connected.get(viewer)!==false;r.connected.set(viewer,connected);if(previous===connected)return;
       const windows=this._syncReactionWindows().filter(w=>w.descriptor.owner===viewer);if(!windows.length)return;
       if(r.timer!==null)r.clock.clearTimeout(r.timer);r.timer=null;
-      for(const window of windows){this._clearWindow(window);window.suspended=!connected;window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
-      this._publish();if(connected&&r.botOptions)this.scheduleBot(r.botOptions);
+      for(const window of windows){this._clearWindow(window);window.suspended=!this._botControlled(viewer)&&(!connected||r.playerControls[viewer]?.away);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
+      this._publish();if((connected||this._botControlled(viewer))&&r.botOptions)this.scheduleBot(r.botOptions);
     }
     _reactionDecision(actor,action){
       const r=records.get(this),control=r.session.engine.reactionControl?.(r.session.current,actor,action);
@@ -158,7 +163,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!control||!['challenge','advance'].includes(control.kind))return null;
       const windows=this._syncReactionWindows().filter(w=>control.kind==='advance'||control.target===undefined||w.descriptor.owner===control.target);
       for(const window of windows){
-        const delay=r.session.current.players[actor]?.bot?window.descriptor.botMs:window.descriptor.humanMs;
+        const delay=this._botControlled(actor)?window.descriptor.botMs:window.descriptor.humanMs;
         if(window.readyAt===null||this._now()<window.readyAt+delay)return control.kind==='challenge'?'REACTION_IGNORED':'REACTION_WAIT';
       }
       return null;
@@ -196,6 +201,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const actor=access.actor,key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
       if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:snapshot()}):reject('ID_CONFLICT');
       if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
+      if(!internalBot&&(this._botControlled(actor)||r.playerControls[actor]?.away))return reject('READ_ONLY');
+      if(r.controlPending)return reject('BUSY');
       if(r.stopRequested)return reject('PAUSED');
       if(r.busy||r.botBatch&&!internalBot)return reject('BUSY');
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
@@ -226,14 +233,52 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         return freeze({...receipt,snapshot:this._snapshot(binding.viewer,undefined,binding)});
       }catch(_){return reject('STORAGE_ERROR');}finally{this._idle();if(!r.paused&&r.persistence)this.scheduleBot();}
     }
-    _idle(){const r=records.get(this);r.busy=false;for(const resolve of r.idleWaiters.splice(0))resolve();}
+    _idle(){const r=records.get(this);r.busy=false;if(!r.botBatch)for(const resolve of r.idleWaiters.splice(0))resolve();}
+    _botControlled(actor){const r=records.get(this);return !!((r.session.playerMetadata?.(actor)?.bot??r.session.current.players[actor]?.bot)||r.playerControls[actor]?.bot);}
+    // Host capability only. Network adapters bind the requester before calling this.
+    async setPlayerControl(actor,changes,{requestId,expectedRevision}={}){
+      const r=records.get(this),error=code=>{throw Error(code);};
+      if(r.disposed)error('CLOSED');
+      if(!Number.isInteger(actor)||actor<0||actor>=r.playerControls.length||r.session.current.players[actor].bot||!changes||!Object.keys(changes).length||Object.keys(changes).some(k=>!['away','bot'].includes(k)||typeof changes[k]!=='boolean')||typeof requestId!=='string'||!requestId||requestId.length>128)error('BAD_COMMAND');
+      const key=actor+':'+requestId,signature=canonical({actor,changes,expectedRevision}),cached=r.playerReceipts.get(key);
+      if(cached){if(cached.signature!==signature)error('ID_CONFLICT');return freeze({...cached.receipt,duplicate:true});}
+      if(r.stopRequested||r.controlPending)error('BUSY');
+      if(expectedRevision!==r.playerControlRevision)error('STALE');
+      if(r.playerReceipts.size>=20000)error('RECEIPT_LIMIT');
+      const next={...r.playerControls[actor],...changes};
+      if(changes.bot===true&&!next.away&&r.connected.get(actor)!==false)error('PLAYER_AVAILABLE');
+      r.controlPending=true;const bots=r.botOptions;this.cancelBot();
+      try{
+        // Finish accepted moves (including a private simultaneous draft) before
+        // changing controller; queued timers and new commands are fenced above.
+        if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
+        if(r.disposed||r.stopRequested)error('BUSY');
+        const controls=clone(r.playerControls);controls[actor]=next;
+        const revision=r.playerControlRevision+1,receipt={ok:true,playerControlRevision:revision,revision:this.revision,requestId};
+        const rows=[...r.playerReceipts.values(),{key,signature,receipt}];
+        if(r.persistence)await r.persistence.setPlayerControls({sessionId:r.sessionId,previousRevision:r.playerControlRevision,playerControlRevision:revision,playerControls:controls,playerControlReceipts:rows});
+        r.playerControls=controls;r.playerControlRevision=revision;r.playerReceipts.set(key,{key,signature,receipt});
+        for(const window of [...r.reactions.values()].filter(w=>w.descriptor.owner===actor)){this._clearWindow(window);window.suspended=!this._botControlled(window.descriptor.owner)&&(r.connected.get(window.descriptor.owner)===false||controls[window.descriptor.owner]?.away);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
+        this._publish();return freeze(receipt);
+      }finally{r.controlPending=false;if(bots&&!r.disposed)this.scheduleBot(bots);}
+    }
+    async suspendForTransfer(){
+      const r=records.get(this);if(r.disposed||r.stopRequested||r.controlPending)throw Error('HOST_TRANSFER_BUSY');
+      r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
+      if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
+      if(r.disposed)throw Error('HOST_TRANSFER_CLOSED');
+      for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;}
+      let released=false;
+      return ()=>{if(released||r.disposed)return;released=true;r.stopRequested=false;if(bots)this.scheduleBot(bots);};
+    }
     stopForLobby(){
       const r=records.get(this);if(r.stopPromise)return r.stopPromise;
       if(r.disposed)return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c")));
+      if(r.controlPending)return Promise.reject(Error('BUSY'));
       r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
       r.stopPromise=(async()=>{
         try{
-          if(r.busy)await new Promise(resolve=>r.idleWaiters.push(resolve));
+          if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
           if(r.disposed)throw Error(globalThis.PlayroomMessages.text("ui.authority.b8adaa326e7c"));
           const command=P.command(this._snapshot(-1),{type:'session-pause',paused:true,expectedControlRevision:r.controlRevision},uid());
           const receipt=await this._pause({viewer:-1,host:true},command,canonical(command),`host:${command.commandId}`,code=>({ok:false,code,message:text[code]}));
@@ -245,7 +290,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     async actBotAsync(actor,action){
       const r=records.get(this);
-      if(r.disposed||r.busy||r.paused||!r.session.current.players[actor]?.bot)throw Error('Invalid bot actor');
+      if(r.disposed||r.busy||r.paused||!this._botControlled(actor))throw Error('Invalid bot actor');
       const receipt=await this._dispatch({viewer:actor,closed:false},P.command(this._snapshot(actor),action,uid()),true);
       if(!receipt.ok)throw Error(receipt.message);return r.session.current;
     }
@@ -261,10 +306,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // A failed write retains earlier committed decisions and publishes that truth.
       r.botBatch={changed:false};
       try{
-        for(const actor of window.participants.filter(i=>s.current.players[i].bot&&!window.ready.includes(i))){
+        for(const actor of window.participants.filter(i=>this._botControlled(i)&&!window.ready.includes(i))){
           for(let part=0;part<16;part++){
             const live=s.engine.decisionWindow?.(s.current);
-            if(r.disposed||r.paused||r.stopRequested||live?.id!==window.id||live.ready.includes(actor))break;
+            if(r.disposed||r.paused||r.stopRequested||r.controlPending||!this._botControlled(actor)||live?.id!==window.id||live.ready.includes(actor))break;
             const action=s.engine.botAction(s.current,actor);if(!action)break;
             await this.actBotAsync(actor,action);
             const after=s.engine.decisionWindow?.(s.current);
@@ -272,16 +317,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           }
         }
       }finally{
-        const changed=r.botBatch.changed;r.botBatch=null;
+        const changed=r.botBatch.changed;r.botBatch=null;this._idle();
         if(changed&&!r.disposed)this._publish();
       }
     }
     scheduleBot({delay=500,run,onError=()=>{}}={}){
-      this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.paused||st.status!=='playing')return;
-      const reactions=st.players.flatMap((p,i)=>{const action=p.bot&&s.engine.botReaction?.(st,i);return action?[{actor:i,action,control:s.engine.reactionControl?.(st,i,action)}]:[];});
+      this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.controlPending||r.paused||st.status!=='playing')return;
+      const reactions=st.players.flatMap((p,i)=>{const action=this._botControlled(i)&&s.engine.botReaction?.(st,i);return action?[{actor:i,action,control:s.engine.reactionControl?.(st,i,action)}]:[];});
       // An accusation waiting for protection must not occupy the timer ahead of the owner's answer.
-      const reacting=(reactions.find(r=>r.control?.kind==='answer')||reactions[0])?.actor??-1,window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>st.players[i].bot&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!st.players[actor]?.bot)return;
-      const action=s.engine.botReaction?.(st,actor)||s.engine.botAction(st,actor);if(!action)return;
+      const reacting=(reactions.find(r=>r.control?.kind==='answer')||reactions[0])?.actor??-1,window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>this._botControlled(i)&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!this._botControlled(actor))return;
+      const rosterState=s.playerMetadata?{...st,players:st.players.map((player,index)=>({...player,...s.playerMetadata(index)}))}:st;const action=s.engine.botReaction?.(rosterState,actor)||s.engine.botAction(rosterState,actor);if(!action)return;
       const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
       if(windows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;
       let wait=planning!==undefined&&actor===planning?0:Math.max(0,delay);
@@ -294,7 +339,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
       }
       if(['challenge','advance'].includes(control?.kind))for(const window of windows)wait=Math.max(wait,(window.readyAt??window.createdAt+window.descriptor.fallbackMs)+window.descriptor.botMs-this._now());
-      const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||s.current.move!==revision)return;
+      const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||r.stopRequested||r.controlPending||!this._botControlled(actor)||s.current.move!==revision)return;
         try{const current=s.engine.botReaction?.(s.current,actor)||s.engine.botAction(s.current,actor);if(!current)return;
           if(this._reactionDecision(actor,current)){this.scheduleBot({delay,run,onError});return;}
           if(r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
@@ -302,7 +347,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           }
           if(!r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
             // Drain only this simultaneous decision window, never the following round.
-            const pending=window.participants.filter(i=>st.players[i].bot&&!window.ready.includes(i));
+            const pending=window.participants.filter(i=>this._botControlled(i)&&!window.ready.includes(i));
             for(const [index,id] of pending.entries())for(let part=0;part<16;part++){
               const live=s.engine.decisionWindow?.(s.current);
               if(r.disposed||r.paused||r.stopRequested||live?.id!==window.id||live.ready.includes(id))break;
@@ -327,7 +372,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     actBot(actor,action){
       const r=records.get(this),s=r.session;
       if(r.persistence)throw Error('Durable bot actions require a committed async transition');
-      if(r.disposed||r.busy||r.paused||!s.current.players[actor]?.bot)throw Error('Invalid bot actor');
+      if(r.disposed||r.busy||r.paused||!this._botControlled(actor))throw Error('Invalid bot actor');
       const command=P.command(this._snapshot(actor),action,uid());
       const receipt=this._dispatch({viewer:actor,closed:false},command,true);
       if(!receipt.ok)throw Error(receipt.message);
