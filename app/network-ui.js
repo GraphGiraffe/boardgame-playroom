@@ -7,6 +7,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const bridge=()=>hostRooms?{...root.PlayroomAppBridge,roomService:hostRooms}:root.PlayroomAppBridge;
   let hostPeer=null,hostSwitch=null,hostServeClose=null,hostRoomConnection=null,hostRoomId=null,hostRoomUnsub=null,hostStarted=false,hostAuthority=null,hostPushMonitor=null,hostGameClient=null,hostMount=null;
   let clientPeer=null,clientTransport=null,clientUnsub=null,clientRoom=null,clientParticipantId=null,clientGameClient=null,clientMount=null,clientLobbyTimer=null,clientWaitingForLobby=false,clientPresence=null,clientPresenceUnsub=null;
+  let localHostProgress=null,localClientProgress=null;
+  function mountProgress(progress){if(!progress)return;const modal=document.querySelector('#modal-root .modal');if(!modal)return;if(!modal.querySelector('[data-connection-progress]'))modal.insertAdjacentHTML('beforeend','<div data-connection-progress role="status" aria-live="polite"></div>');progress.paint();}
   let offerToken=null,answerToken=null,hostAudioListener=null,clientAudioListener=null;
   const pendingAudio=new Map();
   async function runAudio(button,operation){
@@ -72,6 +74,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
     const {stopHostAudio,stopClientAudio,KNOWN_IP_KEY,usableManualIp,savedIpEntries,scannedCandidates,scanGenerations,soundCandidates,soundCandidateLabel,localNetworkRank,preferredSoundCandidate,soundCandidateOptions,selectionDetails,syncSoundChoice,initialNetworkChoice,soundSettings,updateSoundOptions,updateDiscoverySummary,saveManualIp,scanSoundAddresses,pairSignal,pairToken,updatePairingToken,sendSoundToken,listenHostAnswer,sendHostSoundOnly,listenGuestSound,sendGuestSound,captureNotice,captureDisabled,audioOutput,microphoneReady,soundOutputReady,methodAvailability,pairingHelp,pairingMethod,pairingMethods,syncPairingAvailability,pairingHeader,pairingFooter,toast,pairingProgress,copy,copyText,sharePair,pairingText,pairingQr,renderPairingQR,scanControls,readPairingQR}=root.PlayroomPairingPresenter.create({get Acoustic(){return Acoustic;},set Acoustic(value){Acoustic=value;},get PWA(){return PWA;},set PWA(value){PWA=value;},get Pairing(){return Pairing;},set Pairing(value){Pairing=value;},get QR(){return QR;},set QR(value){QR=value;},get Scanner(){return Scanner;},set Scanner(value){Scanner=value;},get acceptAnswerSignal(){return acceptAnswerSignal;},get answerToken(){return answerToken;},set answerToken(value){answerToken=value;},get bridge(){return bridge;},set bridge(value){bridge=value;},get clientAudioListener(){return clientAudioListener;},set clientAudioListener(value){clientAudioListener=value;},get clientPeer(){return clientPeer;},set clientPeer(value){clientPeer=value;},get createClientAnswer(){return createClientAnswer;},get esc(){return esc;},set esc(value){esc=value;},get hostAudioListener(){return hostAudioListener;},set hostAudioListener(value){hostAudioListener=value;},get hostPeer(){return hostPeer;},set hostPeer(value){hostPeer=value;},get offerToken(){return offerToken;},set offerToken(value){offerToken=value;},get pairingQrGenerations(){return pairingQrGenerations;},set pairingQrGenerations(value){pairingQrGenerations=value;}});
   function closeClient({preserveIntent=false,preserveView=false,preserveRoom=false}={}){
+    localClientProgress?.cancel();localClientProgress=null;
     if(!preserveIntent)root.PlayroomCloudNetwork?.stopClient?.();
     if(preserveIntent&&clientGameClient&&clientRoom)resumeIntent={roomId:clientRoom.id,participantId:clientParticipantId,snapshot:clientGameClient.snapshot,pending:clientGameClient.pending,historyIndex:clientMount?.historyOpen?clientMount.historyIndex:null};
     else if(!preserveIntent)resumeIntent=null;
@@ -80,6 +83,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     presentationGeneration++;
     clientSetupShown=false;historySync.cancel();clientHistoryUnsub?.();clientHistoryUnsub=null;stopClientAudio();clientPresenceUnsub?.();clientPresenceUnsub=null;clientPresence=null;if(!preserveView){clientMount?.destroy?.();clientMount=null;}else clientMount?.setConnected(false,{notice:true});clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;clientGameClient?.close?.();clientGameClient=null;clientTransport?.close?.();clientTransport=null;clientPeer?.close?.();clientPeer=null;if(!preserveRoom){clientRoom=null;clientParticipantId=null;}if(!preserveIntent||!preserveRoom)clientWaitingForLobby=false;}
   function closePendingHostPeer(){
+    localHostProgress?.cancel();localHostProgress=null;
     stopHostAudio();hostServeClose?.();hostServeClose=null;
     hostPeer?.close?.();hostPeer=null;hostSwitch?.close?.();hostSwitch=null;
     hostRoomConnection?.close?.();hostRoomConnection=null;
@@ -368,7 +372,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     try{
       const b=bridge(),room=b?.room?.();if(!room)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.444fcd52a3f9"));
       closePendingHostPeer();offerToken=null;hostRoomConnection=b.roomService.connection(room.id);hostSwitch=new M.SwitchableConnection(hostRoomConnection);
-      hostPeer=await W.createHostPeer();hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
+      localHostProgress=root.PlayroomConnectionProgress?.create({role:'host',visible:true});hostPeer=await W.createHostPeer(await localHostProgress?.options());hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
       const network=initialNetworkChoice('host',hostPeer.offer);offerToken=network.token;
       const share='<button class="btn pairing-compact-button" type="button" data-net-share="offer" '+(PWA?.canShare?.(offerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.dc120821c212")+"</button>");
       const sound='<div class="pairing-actions">'+
@@ -379,7 +383,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         ("<form id=\"net-host-answer\" data-inline-actions><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.67420efb6419")+"</span><textarea name=\"answer\" rows=\"2\" placeholder=\""+globalThis.PlayroomMessages.text("ui.network-ui.2c0e47580483")+"\"></textarea></label>")+
         '<button class="btn secondary pairing-compact-button" type="submit">'+root.PlayroomGameScreen.icon('addPlayer')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.73f4e4b1d7ec")+"</button></form>");
       b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.be876869eb2e",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.946071629ded"),'host','host-offer')),p1:String(manualPermission(room)+network.html),p2:String(pairingMethods('host-offer',{share,sound,qr,text},offerToken)),p3:String(pairingFooter())}));
-      syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
+      mountProgress(localHostProgress);syncSoundChoice('host',hostPeer.offer);updateDiscoverySummary('host',hostPeer.offer);updatePairingToken('host');void scanSoundAddresses('host',hostPeer.offer);
     }catch(error){toast(globalThis.PlayroomMessages.error(error));}
   }
   function manualPermission(room){return `<label class="switch online-permission"><span>${root.PlayroomMessages.text('ui.social.allow-player-invites')}</span><input type="checkbox" data-manual-invite-permission ${room.allowPlayerInvites?'checked':''}></label>`;}
@@ -398,8 +402,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     await peer.acceptAnswer(signal);
     if(hostPeer!==peer)return; // A repeated QR/audio reply must not attach the same peer twice.
     stopHostAudio();
+    const progress=localHostProgress;localHostProgress=null;
     connectedHostPeers.push({peer,switchable:sw,serveClose,roomConnection});
     hostPeer=null;hostSwitch=null;hostServeClose=null;hostRoomConnection=null;
+    await progress?.connected(peer,{delay:true});
     if(!networkInMenu){bridge().closeModal(true);if(bridge().room()?.phase==='lobby')bridge().renderLobby();}
   }
   function signalFromInput(value,expected){
@@ -425,7 +431,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // bots and input/replay listeners can repaint the network scene.
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))throw Error(globalThis.PlayroomMessages.text("ui.network-ui.cdf905309d36"));
     networkInMenu=false;bridge()?.parkLocalSession?.();
-    closeClient({preserveIntent:true});clientPeer=await W.createClientPeer(signal);
+    closeClient({preserveIntent:true});localClientProgress=root.PlayroomConnectionProgress?.create({visible:true});clientPeer=await W.createClientPeer(signal,await localClientProgress?.options());
     const network=initialNetworkChoice('client',clientPeer.answer);answerToken=network.token;
     const b=bridge();
     const share='<button class="btn pairing-compact-button" type="button" data-net-share="answer" '+(PWA?.canShare?.(answerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+(" "+globalThis.PlayroomMessages.text("ui.network-ui.5ddeb1179ba7")+"</button>");
@@ -433,10 +439,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const qr=pairingQr('net-client-token');
     const text=pairingText(answerToken,'net-client-token');
     b.openModal(globalThis.PlayroomMessages.text("ui.network-ui.60fe530e2fca",{p0:String(pairingHeader(globalThis.PlayroomMessages.text("ui.network-ui.a80695f66b6a"),'client','client-answer')),p1:String(network.html),p2:String(pairingMethods('client-answer',{share,sound,qr,text},answerToken))})+("<p class=\"pairing-brief-status\" role=\"status\">"+globalThis.PlayroomMessages.text("ui.network-ui.9793b6e919d1")+"</p>")+pairingFooter());
-    syncSoundChoice('client',clientPeer.answer);updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
-    await attachClientPeer();
+    mountProgress(localClientProgress);syncSoundChoice('client',clientPeer.answer);updateDiscoverySummary('client',clientPeer.answer);updatePairingToken('client');void scanSoundAddresses('client',clientPeer.answer);
+    await attachClientPeer(null,{beforeEnter:()=>localClientProgress?.connected(clientPeer,{delay:true})});
   }
-  async function attachClientPeer(expectedRoomId=null,{background=false}={}){
+  async function attachClientPeer(expectedRoomId=null,{background=false,beforeEnter}={}){
     const channel=await clientPeer.waitOpen({timeout:120000});root.PlayroomHostTransferUI.clientBind(channel);clientTransport=W.client(channel,{timeout:10000});
     clientChatUnsub=clientTransport.subscribeRoomChat?.(event=>root.PlayroomRoomChatUI?.receive(event));
     clientReactionUnsub=clientTransport.subscribeReactions?.(event=>root.PlayroomReactionUI.receive(event));
@@ -452,23 +458,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(!durable)toast(globalThis.PlayroomMessages.text("ui.network-ui.b1100c06d8d3"));
         clientRoom=resumed.snapshot.room;clientParticipantId=resumed.snapshot.participantId;
         const preserveView=background&&(networkInMenu||!!document.querySelector('#modal-root .modal:not(.room-setup-modal):not(.online-connecting-modal)'));
-        if(!preserveView)bridge().closeModal(true);
         const state=await clientTransport.snapshot();
+        await beforeEnter?.();
+        if(!preserveView)bridge().closeModal(true);
         if(state?.kind==='snapshot'){startClientGame(state,{preserveModal:preserveView});if(clientWaitingForLobby&&!preserveView)renderClientLobby();}
         else{resumeIntent=null;attachClientLobbyListener();if(!preserveView)renderClientLobby();}
         startRecovery();return;
       }catch(error){
+        if(error.code==='cancelled')throw error;
         toast(globalThis.PlayroomMessages.text("ui.network-ui.087cdf36c487",{p0:String(globalThis.PlayroomMessages.error(error))}));
       }
     }
-    if(expectedRoomId)return joinRoom({elements:{nickname:{value:bridge().profile()?.name||'Игрок'}}},{throwOnError:true});
+    if(expectedRoomId)return joinRoom({elements:{nickname:{value:bridge().profile()?.name||'Игрок'}}},{throwOnError:true,beforeEnter});
     if(preview.room.phase==='playing'){
       throw Error(globalThis.PlayroomMessages.text("ui.network-ui.a3177d285b47"));
     }
-    showPreview(preview.room);
+    showPreview(preview.room);mountProgress(localClientProgress);
   }
   async function createAnswer(form){
-    try{await createClientAnswer(signalFromInput(form.elements.offer.value,'offer'));}catch(error){toast(globalThis.PlayroomMessages.error(error));closeClient();}
+    try{await createClientAnswer(signalFromInput(form.elements.offer.value,'offer'));}catch(error){localClientProgress?.fail(error);toast(globalThis.PlayroomMessages.error(error));closeClient();}
   }
   async function handleIncomingPair(token){
     try{
@@ -490,7 +498,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const b=bridge();try{b.packs.activate(room.game.id,room.game.version);}catch(_){}
     b.openModal(b.modalHead(globalThis.PlayroomMessages.text("ui.network-ui.d1d8782389db",{p0:String(room.name)}))+'<p class="lead"><strong>'+esc(room.game.name)+'</strong> · '+(room.hostMode==='table'?globalThis.PlayroomMessages.text("ui.network-ui.37584969dd4c"):globalThis.PlayroomMessages.text("ui.network-ui.d96a8708055e"))+("</p><section class=\"rules-mode-note\"><strong>"+globalThis.PlayroomMessages.text("ui.network-ui.4c3d5c36eabb")+"</strong>")+rulesMarkup(room)+("</section><form id=\"net-client-join\"><label class=\"field\"><span>"+globalThis.PlayroomMessages.text("ui.network-ui.6f2f9c32cd40")+"</span><input name=\"nickname\" maxlength=\"24\" value=\"")+esc(b.profile()?.name||globalThis.PlayroomMessages.text("ui.network-ui.f54f58cf08df"))+("\" required></label><button class=\"btn\" type=\"submit\" style=\"width:100%\">"+globalThis.PlayroomMessages.text("ui.network-ui.80df8c7d3c91")+"</button></form>"));
   }
-  async function joinRoom(form,{throwOnError=false}={}){
+  async function joinRoom(form,{throwOnError=false,beforeEnter}={}){
     try{
       const b=bridge(),result=await clientTransport.dispatch({type:'join',nickname:form.elements.nickname.value,avatar:b.profile()?.avatar||null});
       if(!result?.ok||result.snapshot?.kind!=='lobby')throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2e76e709d3bb"));
@@ -499,6 +507,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const persisted=resumeStore.save(clientRoom.id,clientParticipantId,result.resumeToken);
         if(!persisted)toast(globalThis.PlayroomMessages.text("ui.network-ui.502de3716f20"));
       }
+      await (beforeEnter?beforeEnter():localClientProgress?.connected(clientPeer,{delay:true}));
       b.closeModal(true);
       attachClientLobbyListener();
       renderClientLobby();startRecovery();
@@ -961,18 +970,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     else if(event.target.id==='net-client-nickname'&&!event.target.closest('.modal:has(.settings-overview)'))roomCommand({type:'rename',nickname:event.target.elements.nickname.value});
   },true);
   PWA?.subscribePair?.(token=>handleIncomingPair(token));
-  async function cloudHostPeer({identity,check,validate=check}){
+  async function cloudHostPeer({identity,check,validate=check,progress,...rtcOptions}){
     const b=bridge(),room=b.room();if(!room||room.transportMode!=='online'||room.ownerId!==b.participantId())throw Error('CLOUD_LOBBY_REQUIRED');
     ensureHostSubscription(room);cloudParticipantUsers.set(identity.participantId,identity.userId);
-    const connection=b.roomService.connection(room.id,{boundParticipantId:identity.participantId}),switchable=new M.SwitchableConnection(connection),peer=await W.createHostPeer();
+    const connection=b.roomService.connection(room.id,{boundParticipantId:identity.participantId}),switchable=new M.SwitchableConnection(connection),peer=await W.createHostPeer(rtcOptions);
     const serveClose=hostPeerServing(peer,switchable,connection,room.id,check),item={peer,switchable,roomConnection:connection,serveClose};
-    return {offer:peer.offer,validate:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open'?validate():undefined,closed:()=>['failed','closed'].includes(peer.pc.connectionState),async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
+    return {offer:peer.offer,validate:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open'?validate():undefined,closed:()=>['failed','closed'].includes(peer.pc.connectionState),async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);await progress?.connected(peer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){progress?.cancel();serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
   }
-  async function cloudAttachClient(peer,expectedRoomId,{background=false}={}){
+  async function cloudAttachClient(peer,expectedRoomId,{background=false,beforeEnter}={}){
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))throw Error('CLOUD_ROOM_ACTIVE');
     const returning=!!clientRoom&&clientRoom.id===expectedRoomId;
     if(!background||!returning)networkInMenu=false;bridge().parkLocalSession();clientAttachments++;
-    try{closeClient({preserveIntent:true,preserveView:returning,preserveRoom:returning});clientPeer=peer;await attachClientPeer(expectedRoomId,{background});}
+    try{closeClient({preserveIntent:true,preserveView:returning,preserveRoom:returning});clientPeer=peer;await attachClientPeer(expectedRoomId,{background,beforeEnter});}
     finally{clientAttachments--;ensureButtons();}
   }
   async function playerControlCommand(roomId,id,command){
@@ -1056,7 +1065,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     root.PlayroomCloudNetwork?.stopClient();networkInMenu=false;closeClient({preserveIntent:true});clientPeer=peer;hostTransferBlocked=false;
     if(cloudRoomId)root.PlayroomCloudNetwork.adoptClient(cloudRoomId);await attachClientPeer(roomId);
   }
-  root.PlayroomNetworkLibrary=Object.freeze({isClient:()=>!!clientRoom,isConnecting:()=>clientAttachments>0,exitToMenu:parkNetworkView,enterActiveRoom:returnToNetwork,cancelJoin:()=>{if(!clientRoom)closeClient();},portableSource,playerControlContext,prepareRoster,removeParticipant,transferSaveResume:token=>hostTransferBlocked&&hostRoomId&&resumeStore.save(hostRoomId,bridge().participantId(),token),transferContext,transferFreeze,transferExport,transferFence,transferPromote,transferPromoteLobby,transferValidateLobby,transferAttach,transferStore:hostSessionStore,transferClient:()=>clientRoom&&clientPeer?{room:clientGameClient?{...clientRoom,phase:'playing'}:clientRoom,id:clientParticipantId,channel:clientPeer.channel}:null,chatContext,reactionContext,inviteContext:()=>({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),cloudRoomId:root.PlayroomCloudNetwork?.roomId?.()}),showManualInvite:hostInvite,showManualJoin:showJoin,cloudHostPeer,cloudAttachClient,canCloudHost:()=>!!bridge().room()&&bridge().room().transportMode==='online'&&bridge().room().ownerId===bridge().participantId()&&!clientRoom,setAvatar:avatar=>roomCommand({type:'avatar',avatar}),renameNickname:nickname=>roomCommand({type:'rename',nickname},{background:true}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,cloudIdle:()=>Promise.all([historySync.idle,rosterQueue]),
+  root.PlayroomNetworkLibrary=Object.freeze({isClient:()=>!!clientRoom,isConnecting:()=>clientAttachments>0,exitToMenu:parkNetworkView,enterActiveRoom:returnToNetwork,cancelJoin:()=>{if(!clientRoom||clientAttachments>0)closeClient();},portableSource,playerControlContext,prepareRoster,removeParticipant,transferSaveResume:token=>hostTransferBlocked&&hostRoomId&&resumeStore.save(hostRoomId,bridge().participantId(),token),transferContext,transferFreeze,transferExport,transferFence,transferPromote,transferPromoteLobby,transferValidateLobby,transferAttach,transferStore:hostSessionStore,transferClient:()=>clientRoom&&clientPeer?{room:clientGameClient?{...clientRoom,phase:'playing'}:clientRoom,id:clientParticipantId,channel:clientPeer.channel}:null,chatContext,reactionContext,inviteContext:()=>({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),cloudRoomId:root.PlayroomCloudNetwork?.roomId?.()}),showManualInvite:hostInvite,showManualJoin:showJoin,cloudHostPeer,cloudAttachClient,canCloudHost:()=>!!bridge().room()&&bridge().room().transportMode==='online'&&bridge().room().ownerId===bridge().participantId()&&!clientRoom,setAvatar:avatar=>roomCommand({type:'avatar',avatar}),renameNickname:nickname=>roomCommand({type:'rename',nickname},{background:true}),configureHostPorts({rooms}){hostRooms=rooms;},list:listNetworkArchives,playerMetadata,hasActiveRoom,cloudIdle:()=>Promise.all([historySync.idle,rosterQueue]),
     ruleContext:gameId=>{const current=clientRoom||bridge().room();return current?.game?.id===gameId?current.rules:null;},
     showSettings:(options={})=>bridge().showSettings({room:clientRoom||bridge().room(),participantId:clientRoom?clientParticipantId:bridge().participantId(),client:!!clientRoom,...options}),leaveClientRoom:closeClient,closeCloudRoom,openRoom:()=>clientRoom?renderClientLobby(true):bridge().renderLobby(),remove:removeNetworkArchive,inspect:inspectHostArchive,continue:continueSavedNetwork,history:openNetworkHistory,leaveHostRoom});
   root.PlayroomNetworkDebug=()=>({

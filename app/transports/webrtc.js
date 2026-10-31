@@ -32,13 +32,15 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
   }
   function parseDescription(value,expected){return parseSignal(value,expected).description;}
 
-  function waitIce(pc,{timeout=8000}={}){
+  function waitIce(pc,{timeout=8000,allowPartial=false}={}){
     if(pc.iceGatheringState==='complete')return Promise.resolve();
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(done,timeout,Error(globalThis.PlayroomMessages.text("ui.webrtc.31f66cf5723d")));
-      function done(error){clearTimeout(timer);pc.removeEventListener('icegatheringstatechange',change);error?reject(error):resolve();}
+      let relayTimer=null;
+      const timer=setTimeout(()=>done(allowPartial&&/a=candidate:/.test(pc.localDescription?.sdp||'')?null:Error(globalThis.PlayroomMessages.text("ui.webrtc.31f66cf5723d"))),timeout);
+      function done(error){clearTimeout(timer);clearTimeout(relayTimer);pc.removeEventListener('icecandidate',candidate);pc.removeEventListener('icegatheringstatechange',change);error?reject(error):resolve();}
       function change(){if(pc.iceGatheringState==='complete')done();}
-      pc.addEventListener('icegatheringstatechange',change);
+      function candidate(event){if(allowPartial&&!relayTimer&&(event.candidate?.type==='relay'||/ typ relay/.test(event.candidate?.candidate||'')))relayTimer=setTimeout(()=>done(),300);}
+      pc.addEventListener('icecandidate',candidate);pc.addEventListener('icegatheringstatechange',change);
     });
   }
   function waitOpen(channel,{timeout=10000}={}){
@@ -208,14 +210,32 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     const local=stats.get(pair?.localCandidateId),remote=stats.get(pair?.remoteCandidateId),type=value=>['host','srflx','prflx','relay'].includes(value)?value:'unknown';
     return pair?{local:type(local?.candidateType),remote:type(remote?.candidateType),protocol:['udp','tcp'].includes(local?.protocol)?local.protocol:'unknown'}:null;
   }
+  async function selectedMethod(pc){
+    const stats=await pc.getStats?.();let pair,local,remote;
+    if(stats){const transport=[...stats.values()].find(v=>v.type==='transport'&&v.selectedCandidatePairId);pair=stats.get(transport?.selectedCandidatePairId)||[...stats.values()].find(v=>v.type==='candidate-pair'&&v.state==='succeeded'&&(v.nominated||v.selected));local=stats.get(pair?.localCandidateId);remote=stats.get(pair?.remoteCandidateId);}
+    if(!pair){const selected=pc.sctp?.transport?.iceTransport?.getSelectedCandidatePair?.();if(selected){local=selected.local;remote=selected.remote;pair=selected;}}
+    const types=[local?.candidateType||local?.type,remote?.candidateType||remote?.type];
+    const method=types.includes('relay')?'turn':types.some(t=>['srflx','prflx'].includes(t))?'stun':types.every(t=>t==='host')?'direct':'unknown';
+    const protocol=(local?.candidateType==='relay'?local?.relayProtocol:remote?.candidateType==='relay'?remote?.relayProtocol:null)||local?.protocol;
+    return {method,...(['udp','tcp','tls'].includes(protocol)?{protocol}:{} )};
+  }
+  function observeIce(pc,onProgress){
+    if(!onProgress)return ()=>{};let closed=false,timer=null,deadline=null;const checkingMethods=new Set();
+    const emit=value=>{if(!closed)onProgress(value);},candidate=event=>{const type=event.candidate?.type||event.candidate?.candidate?.match(/ typ (host|srflx|prflx|relay)/)?.[1],key={host:'direct',srflx:'stun',prflx:'stun',relay:'turn'}[type];if(key&&!checkingMethods.has(key))emit({[key]:'available'});};
+    const probe=async()=>{if(closed)return;try{const stats=await pc.getStats?.();if(closed||!stats)return;const pending=[...stats.values()].filter(v=>v.type==='candidate-pair'&&v.state==='in-progress');const status={};for(const pair of pending){const l=stats.get(pair.localCandidateId),r=stats.get(pair.remoteCandidateId),types=[l?.candidateType,r?.candidateType],key=types.includes('relay')?'turn':types.some(t=>['srflx','prflx'].includes(t))?'stun':'direct';status[key]='checking';checkingMethods.add(key);}if(pending.length)emit({stage:'checking',...status});}catch{}};
+    const state=()=>{if(['failed','closed'].includes(pc.connectionState)||['failed','closed'].includes(pc.iceConnectionState)){if(pc.connectionState!=='closed')emit({stage:'checking',code:'ice-failed'});close();return;}if(['connected','completed'].includes(pc.iceConnectionState)||pc.connectionState==='connected'){close();return;}if(pc.iceConnectionState==='checking'){emit({stage:'checking'});if(!timer){void probe();timer=setInterval(()=>void probe(),500);}}};
+    function close(){if(closed)return;closed=true;clearInterval(timer);clearTimeout(deadline);pc.removeEventListener('icecandidate',candidate);pc.removeEventListener('iceconnectionstatechange',state);pc.removeEventListener('connectionstatechange',state);}
+    pc.addEventListener('icecandidate',candidate);pc.addEventListener('iceconnectionstatechange',state);pc.addEventListener('connectionstatechange',state);deadline=setTimeout(close,45000);emit({stage:'gathering'});return close;
+  }
   class Recovery extends RecoveryBase {
     constructor(options){const document=options.document??root.document;super({...options,link:options.pc,
       visibility:{get hidden(){return !!document?.hidden;},subscribe(listener){document?.addEventListener('visibilitychange',listener);return()=>document?.removeEventListener('visibilitychange',listener);}},
       diagnostics:()=>connectionRoute(options.pc),clock:{now:()=>Date.now(),setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id),setInterval:(fn,ms)=>setInterval(fn,ms),clearInterval:id=>clearInterval(id)}});}
   }
-  async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
+  async function createHostPeer({configuration={iceServers:[]},label='playroom',onProgress,gatherTimeout=8000,allowPartial=false}={}){
     const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true}),id=pairingId();
-    await pc.setLocalDescription(await pc.createOffer());await waitIce(pc);
+    const unobserve=observeIce(pc,onProgress);
+    try{await pc.setLocalDescription(await pc.createOffer());await waitIce(pc,{timeout:gatherTimeout,allowPartial});}catch(error){unobserve();pc.close();throw error;}
     let answerSdp=null,answerFlight=null;
     return {
       pc,channel,pairingId:id,offer:serializeDescription(pc.localDescription,{pairingId:id}),
@@ -227,17 +247,18 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
         await answerFlight;return waitOpen(channel);
       },
       waitOpen:options=>waitOpen(channel,options),
-      close(){try{channel.close();}catch(_){}try{pc.close();}catch(_){}}
+      close(){unobserve();try{channel.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
-  async function createClientPeer(signal,{configuration={iceServers:[]}}={}){
+  async function createClientPeer(signal,{configuration={iceServers:[]},onProgress,gatherTimeout=8000,allowPartial=false}={}){
     const parsed=parseSignal(signal,'offer'),PC=rtc(),pc=new PC(configuration);let channel=null;
     const waiters=new Set(),capture=event=>{channel=event.channel;};
+    const unobserve=observeIce(pc,onProgress);
     pc.addEventListener('datachannel',capture,{once:true});
     try{
       await pc.setRemoteDescription(parsed.description);
-      await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc);
-    }catch(error){pc.removeEventListener('datachannel',capture);try{pc.close();}catch(_){}throw error;}
+      await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc,{timeout:gatherTimeout,allowPartial});
+    }catch(error){unobserve();pc.removeEventListener('datachannel',capture);try{pc.close();}catch(_){}throw error;}
     function ready(options={}){
       if(channel)return waitOpen(channel,options);
       const timeout=options.timeout??10000,started=Date.now();
@@ -254,9 +275,9 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       pc,get channel(){return channel;},pairingId:parsed.pairingId,answer:serializeDescription(pc.localDescription,{pairingId:parsed.pairingId}),
       waitOpen:ready,
       async transport(options){return client(await ready(options),options);},
-      close(){for(const done of [...waiters])done(Error(globalThis.PlayroomMessages.text('ui.webrtc.bd6b75c2f0ac')));pc.removeEventListener('datachannel',capture);try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
+      close(){unobserve();for(const done of [...waiters])done(Error(globalThis.PlayroomMessages.text('ui.webrtc.bd6b75c2f0ac')));pc.removeEventListener('datachannel',capture);try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
 
-  return {Recovery,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,subscribeAuthorized,serve,client,createHostPeer,createClientPeer};
+  return {Recovery,selectedMethod,observeIce,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,subscribeAuthorized,serve,client,createHostPeer,createClientPeer};
 });

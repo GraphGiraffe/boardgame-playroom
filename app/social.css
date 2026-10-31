@@ -254,3 +254,5 @@
 .lobby-observer>.chat-person{width:100%;text-align:left;min-width:0}
 
 .friend-profile-actions.participant-profile-actions{justify-content:flex-start;gap:10px}.friend-profile-actions.participant-profile-actions>button{margin:0}
+
+.connection-method{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.5em;padding:.4em 0}.connection-method>span{min-width:0;overflow-wrap:anywhere}.connection-method>span:last-child{display:flex;justify-content:flex-end;text-align:right;align-items:center;gap:.3em}.connection-success{display:flex;align-items:center;gap:.5em;color:var(--accent)}.connection-method svg,.connection-success svg{width:1.2em;height:1.2em;flex-shrink:0}

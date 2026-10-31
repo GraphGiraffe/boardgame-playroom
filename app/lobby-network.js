@@ -92,13 +92,13 @@
   catch(error){if(ticket===incomingTicket)renderIncoming(root.PlayroomSocialUI.message(error));}
   finally{if(ticket===incomingTicket&&document.querySelector('[data-incoming-content]'))incomingTimer=setTimeout(()=>{if(document.querySelector('[data-incoming-content]'))void refreshIncoming();},5000);}
  }
- function cancelJoin(){joinGeneration++;joinFlight=null;joinKey=null;joinRetry=null;root.PlayroomNetworkLibrary.cancelJoin();}
+ function cancelJoin(){if(joinFlight)root.PlayroomCloudNetwork.stopClient();joinGeneration++;joinFlight=null;joinKey=null;joinRetry=null;root.PlayroomNetworkLibrary.cancelJoin();}
  function enterRoom(key,resolve){
   if(A().snapshot().kind!=='account'||A().snapshot().recovery){root.PlayroomAccountUI.show({onReady:()=>enterRoom(key,resolve)});return Promise.resolve(false);}
   if(joinFlight&&joinKey===key)return joinFlight;
   const back=root.PlayroomChatUI.captureReturn()||root.PlayroomRoomChatUI.captureReturn()||B().captureModalReturn();
   cancelJoin();const ticket=joinGeneration;joinKey=key;joinRetry=()=>enterRoom(key,resolve);
-  B().openModal(`${H().modalHead('Вход в комнату')}<p data-joining-message role="status">Подключение…</p><div class="modal-foot" data-joining-actions hidden>${H().button({attrs:'data-lobby-retry-join',icon:'play',label:'Войти'})}</div>`,'online-connecting-modal',{onBack:()=>{cancelJoin();back?.();}});
+  B().openModal(`${H().modalHead('Вход в комнату')}<p data-joining-message role="status">Подключение…</p><div data-connection-progress role="status" aria-live="polite"></div><div class="modal-foot" data-joining-actions hidden>${H().button({attrs:'data-lobby-retry-join',icon:'play',label:'Войти'})}</div>`,'online-connecting-modal',{onBack:()=>{cancelJoin();back?.();}});
   joinFlight=(async()=>{try{const room=await resolve();if(ticket!==joinGeneration)return false;await root.PlayroomCloudNetwork.connect(room.id);return ticket===joinGeneration;}
    catch(error){if(ticket!==joinGeneration||error.code==='cancelled')return false;const message=document.querySelector('[data-joining-message]');if(message){message.textContent=error.code==='connection-timeout'?'Соединение не установлено. Попробуйте ещё раз.':root.PlayroomSocialUI.message(error);message.setAttribute('role','alert');document.querySelector('[data-joining-actions]').hidden=false;}return false;}
    finally{if(ticket===joinGeneration){joinFlight=null;joinKey=null;}}})();return joinFlight;

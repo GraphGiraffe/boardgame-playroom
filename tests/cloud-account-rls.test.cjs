@@ -4,7 +4,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
  const bin=process.env.PLAYROOM_PG_BIN||'/usr/lib/postgresql/18/bin';
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-account-pg-')),data=path.join(dir,'data');let started=false;
  const exec=(program,args)=>{const r=spawnSync(path.join(bin,program),args,{encoding:'utf8',timeout:15000});if(r.status!==0)throw Error(program+': '+(r.stderr||r.error||r.stdout));return r.stdout;};
- const sql=(query,ok=true)=>{const r=spawnSync(path.join(bin,'psql'),['-h',dir,'-U',os.userInfo().username,'-d','postgres','-X','-tA','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8',timeout:10000});if(ok&&r.status!==0)throw Error(r.stderr);if(!ok)assert.notEqual(r.status,0);return r.stdout.trim();};
+ const sql=(query,ok=true)=>{const r=spawnSync(path.join(bin,'psql'),['-h',dir,'-U',os.userInfo().username,'-d','postgres','-X','-tA','-v','ON_ERROR_STOP=1','-f','-'],{input:query,encoding:'utf8',timeout:10000});if(ok&&r.status!==0)throw Error(r.stderr);if(!ok)assert.notEqual(r.status,0);return r.stdout.trim();};
  const as=(id,anonymous,query)=>`set role authenticated; set request.jwt.claims='${JSON.stringify({sub:id,is_anonymous:anonymous})}'; ${query}`;
  const a='00000000-0000-4000-8000-000000000001',b='00000000-0000-4000-8000-000000000002',g='00000000-0000-4000-8000-000000000003';
  try{
@@ -121,6 +121,24 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql('create role service_role;');const pushSQL=fs.readFileSync(path.join(__dirname,'../server/push.sql'),'utf8');sql(pushSQL);sql(pushSQL);
   const handoffSQL=fs.readFileSync(path.join(__dirname,'../server/host-transfer.sql'),'utf8');sql(handoffSQL);sql(handoffSQL);
   const cleanupSQL=fs.readFileSync(path.join(__dirname,'../server/room-cleanup.sql'),'utf8');sql(cleanupSQL);sql(cleanupSQL);
+  const iceSQL=fs.readFileSync(path.join(__dirname,'../server/ice.sql'),'utf8');sql(iceSQL);sql(iceSQL);
+  const traceRoom=sql(`insert into public.playroom_cloud_rooms(owner_id,name) values('${a}','ICE') returning id;`).split('\n')[0];
+  assert.equal(JSON.parse(sql(as(a,false,`select public.playroom_ice_access('${traceRoom}');`)).split('\n').at(-1)).userId,a);
+  assert.equal(sql(as(b,false,`select public.playroom_ice_access('${traceRoom}') is null;`)).split('\n').at(-1),'t');
+  sql(`set role anon;select public.playroom_ice_access('${traceRoom}');`,false);
+  const traceId='00000000-0000-4000-8000-000000000077',record=(who=a,guest=false,id=traceId)=>as(who,guest,`select public.playroom_connection_trace('${traceRoom}','${id}','online','host','connected','{"os":"android","browser":"chrome","major":130,"ip":"SECRET"}','[{"at":0,"stage":"connected","method":"turn","protocol":"udp","sdp":"SECRET","token":"SECRET"}]');`);
+  sql(record(b),false);sql(record(g,true),false);assert.equal(sql(record()).split('\n').at(-1),'t');assert.equal(sql(record()).split('\n').at(-1),'f');
+  assert(!sql(`select device::text||events::text from public.playroom_connection_traces where attempt_id='${traceId}';`).includes('SECRET'));
+  sql(as(a,false,'select * from public.playroom_connection_traces;'),false);
+  sql(as(a,false,'update public.playroom_connection_config set diagnostics_enabled=false;'),false);
+  sql('update public.playroom_connection_config set diagnostics_enabled=false;');sql(iceSQL);
+  assert.equal(sql('select diagnostics_enabled from public.playroom_connection_config;'),'f','migration must not reenable diagnostics');
+  assert.equal(sql(record(a,false,'00000000-0000-4000-8000-000000000078')).split('\n').at(-1),'f');
+  sql('update public.playroom_connection_config set diagnostics_enabled=true;');
+  sql(`update public.playroom_connection_traces set created_at=now()-interval '49 hours';`);
+  sql(record(a,false,'00000000-0000-4000-8000-000000000078'));
+  assert.equal(sql('select count(*) from public.playroom_connection_traces;'),'1');
+  sql(`update public.playroom_cloud_rooms set closed=true where id='${traceRoom}';`);
   // Private cloud saves: account isolation, CAS, deletion and a shared 10 MiB quota.
   const cloudSql=fs.readFileSync(path.join(__dirname,'../server/cloud-saves.sql'),'utf8');sql(cloudSql);sql(cloudSql);
   const saveRpc=(user,anonymous,action,data={},ok=true)=>{const result=sql(as(user,anonymous,`select public.playroom_cloud_saves_rpc('${action}','${JSON.stringify(data).replace(/'/g,"''")}'::jsonb);`),ok);return ok?JSON.parse(result.split('\n').at(-1)):null;};
@@ -148,7 +166,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   assert.equal(combined.results.find(r=>r.id==='profile').data.profile.id,a);assert.equal(combined.results.find(r=>r.id==='saves').data.limit,10485760);assert.equal(combined.results.find(r=>r.id==='write').error.code,'invalid');assert(combined.results.find(r=>r.id==='messages').data.items.every(m=>m.person.userId!==a));assert(JSON.stringify(combined).length<65536,'metadata aggregation does not include cloud file bodies');accountRequest(g,true,[{id:'x',rpc:'playroom_social',action:'list',data:{}}],false);
   const assembled=spawnSync('python3',['-c','import json;from pathlib import Path;from tooling.supabase_setup import render;print(json.dumps(render(Path.cwd())))'],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
   assert.equal(assembled.status,0,assembled.stderr);const setup=JSON.parse(assembled.stdout);sql(setup['setup-supabase.sql']);sql(setup['setup-supabase.sql']);
-  const verified=sql(setup['check-supabase.sql']).split('\n');assert.equal(verified.length,13);assert(verified.some(row=>row.startsWith('playroom_signup_name_available|')));assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC fingerprints match installed schema');
+  const verified=sql(setup['check-supabase.sql']).split('\n');assert.equal(verified.length,15);assert(verified.some(row=>row.startsWith('playroom_signup_name_available|')));assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC fingerprints match installed schema');
   const online=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_online('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   // Abandoned cloud rows retain recovery identities without exhausting live quota.
   const quotaUser='00000000-0000-4000-8000-000000000004';

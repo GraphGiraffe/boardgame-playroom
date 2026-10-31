@@ -117,3 +117,9 @@ test('incoming datachannel wait stops on ICE failure and explicit close',{timeou
  const previous=globalThis.RTCPeerConnection,{PC,instances}=fakePairingRTC();globalThis.RTCPeerConnection=PC;
  try{const peer=await W.createClientPeer(W.serializeDescription({type:'offer',sdp:'offer'}));let pending=peer.waitOpen({timeout:500});instances[0].connectionState='failed';instances[0].dispatchEvent(new Event('connectionstatechange'));await assert.rejects(pending,/закрыт/i);peer.close();const other=await W.createClientPeer(W.serializeDescription({type:'offer',sdp:'offer'}));pending=other.waitOpen({timeout:500});other.close();await assert.rejects(pending,/закрыт/i);}finally{globalThis.RTCPeerConnection=previous;}
 });
+
+
+test('ICE selected method uses selected transport pair and excludes addresses and secrets',async()=>{
+ const stats=new Map([['t',{type:'transport',selectedCandidatePairId:'turn'}],['old',{type:'candidate-pair',state:'succeeded',nominated:true,localCandidateId:'h',remoteCandidateId:'h'}],['h',{candidateType:'host',address:'SECRET'}],['turn',{type:'candidate-pair',state:'succeeded',localCandidateId:'l',remoteCandidateId:'r'}],['l',{candidateType:'relay',protocol:'udp',relayProtocol:'tls',address:'SECRET',credential:'SECRET'}],['r',{candidateType:'host',address:'SECRET'}]]);
+ const pc={getStats:async()=>stats};assert.deepEqual(await W.selectedMethod(pc),{method:'turn',protocol:'tls'});stats.delete('t');stats.delete('old');stats.get('turn').nominated=true;stats.get('l').candidateType='srflx';assert.deepEqual(await W.selectedMethod(pc),{method:'stun',protocol:'udp'});stats.get('l').candidateType='host';assert.equal((await W.selectedMethod(pc)).method,'direct');assert(!JSON.stringify(await W.selectedMethod(pc)).includes('SECRET'));assert.equal((await W.selectedMethod({})).method,'unknown');
+});

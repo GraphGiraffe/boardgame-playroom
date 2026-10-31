@@ -441,6 +441,7 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
  const cloudId='00000000-0000-4000-8000-000000000001',hostId='00000000-0000-4000-8000-000000000002',userId='00000000-0000-4000-8000-000000000003',boundId='00000000-0000-4000-8000-000000000004';
  let lease=null,slot=null,requests=0,identityReads=0,compactPolls=0;const joinTimes=[];
  await c.addInitScript(()=>{const Native=window.RTCPeerConnection;window.testCloudPeers=[];window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);window.testCloudPeers.push(this);}};});
+ for(const context of [h,c])await context.addInitScript(()=>{let api;Object.defineProperty(globalThis,'PlayroomIceConfig',{configurable:true,get:()=>api,set:value=>{api={...value,credentials:async()=>({configuration:{iceServers:[]},expiresAt:Date.now()+86400000,diagnosticsEnabled:false})};}});});
  for(const [context,uid] of [[h,hostId],[c,userId]])await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',require('./account-sync-fixture.cjs')(async route=>{
   const req=route.request();requests++;let result;
   if(req.url().includes('/auth/')){const user={id:uid,email:uid+'@example.test',is_anonymous:false};result=req.url().endsWith('/user')?user:{user,access_token:'access-'+uid,refresh_token:'refresh-'+uid,expires_in:3600};}
@@ -466,7 +467,7 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
   await profile(host,'Хост');await profile(client,'Игрок');assert.equal(requests,0);
   await host.evaluate(()=>PlayroomAccountUI.service.login('host@example.test','password123'));await client.evaluate(()=>PlayroomAccountUI.service.login('client@example.test','password123'));
   await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode][value=online]').check();
-  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
   await host.evaluate(id=>PlayroomCloudNetwork.host(id),cloudId);
   {const started=Date.now();await client.evaluate(id=>PlayroomCloudNetwork.connect(id),cloudId);joinTimes.push(Date.now()-started);}
   await client.locator('.lobby-shell').waitFor();await client.locator('[data-net-seat]:not([disabled])').first().click();

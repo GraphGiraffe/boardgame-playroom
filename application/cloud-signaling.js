@@ -53,11 +53,13 @@
   async connect(roomId,{background=false}={}){
    this.stop();const ticket=this.generation;this.mode='client';
    const slot=await this.remote('request',{roomId});
+   const preparation=this.peers.prepare?.(roomId);preparation?.catch(()=>{});
    for(let attempts=0;attempts<60&&ticket===this.generation;attempts++){
     const result=await this.remote('poll',{roomId,id:slot.id});
     if(ticket!==this.generation)throw fail('cancelled');
     if(result.epoch!==slot.epoch)throw fail('host-offline');
     if(result.offer){
+     await preparation;if(ticket!==this.generation)throw fail('cancelled');
      const peer=await this.peers.client(result.offer);
      if(ticket!==this.generation){peer.close();throw fail('cancelled');}
      this.handles.set('client',peer);

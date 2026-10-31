@@ -5,6 +5,13 @@
  const fail=message=>{throw Error(message);},token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),x=>x.toString(16).padStart(2,'0')).join('');
  const hash=async value=>'sha256:'+Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),x=>x.toString(16).padStart(2,'0')).join('');
  const cloud=async(action,data)=>{if(!data.cloudRoomId)return null;const s=account.snapshot();if(!remote||s.kind!=='account'||s.recovery)fail('HOST_TRANSFER_ACCOUNT_REQUIRED');const body={roomId:data.cloudRoomId};for(const key of ['id','target','source','digest','revision','participantId'])if(data[key]!==undefined)body[key]=data[key];return remote.call(action,body,{userId:s.id});};
+ async function rtcPeer(kind,signal,roomId){
+  const progress=root.PlayroomConnectionProgress?.create({roomId,role:'transfer'});
+  try{const options=progress?await progress.options():{configuration:await root.PlayroomCloudNetwork?.iceConfiguration(roomId)},peer=kind==='host'?await W().createHostPeer(options):await W().createClientPeer(signal,options);
+   if(progress)void peer.waitOpen({timeout:45000}).then(()=>progress.connected(peer),()=>progress.fail({code:peer.pc.connectionState==='failed'?'ice-failed':'transport-closed'})).catch(()=>{});
+   return peer;
+  }catch(error){progress?.fail(error);throw error;}
+ }
  function markup(room,id){return (room?.phase==='playing'||room?.phase==='lobby'&&!room.recovery)&&!room.hostTransferPending&&room.transportMode!=='hotseat'&&room.ownerId===id?H().iconButton('data-host-transfer-open','Передать роль хоста','host-transfer'):'';}
  function message(text,retry=false,waiting=false){B().openModal(H().modalHead('Передача хоста')+`<p role="status">${H().esc(text)}</p>${retry?H().button({attrs:'type="button" data-host-transfer-retry',label:'Продолжить передачу'}):''}${waiting?`<div class="modal-foot">${H().iconButton('data-host-transfer-cancel','Отменить','close')}</div>`:''}`,'host-transfer-modal');}
  function clientBind(channel){if(incoming?.active)incoming=null;channel.addEventListener('close',()=>{if(incoming?.channel===channel&&!incoming.committed){incoming.release?.();for(const peer of incoming.peers.values())peer.close();incoming=null;}},{once:true});return Wire().bind(channel,(method,data)=>receive(channel,method,data));}
@@ -52,7 +59,7 @@
   if(method==='offers'){
    if(!value.prepared||!Array.isArray(data.participants)||data.participants.length>32)fail('HOST_TRANSFER_INVALID');
    const result=[];
-   for(const id of data.participants){let peer=value.peers.get(id);if(!peer){peer=await W().createHostPeer();value.peers.set(id,peer);}result.push({participantId:id,offer:peer.offer});}
+   for(const id of data.participants){let peer=value.peers.get(id);if(!peer){peer=await rtcPeer('host',null,value.cloudRoomId);value.peers.set(id,peer);}result.push({participantId:id,offer:peer.offer});}
    return result;
   }
   if(method==='answer'){const peer=value.peers.get(data.participantId);if(!peer)fail('HOST_TRANSFER_INVALID');await peer.acceptAnswer(data.answer);return {ok:true};}
@@ -79,7 +86,7 @@
  }
  async function prepareGuest(data){
   let value=guests.get(data.id);if(value)return {answer:value.peer.answer};
-  const peer=await W().createClientPeer(data.offer);value={...data,peer};guests.set(data.id,value);
+  const peer=await rtcPeer('client',data.offer,data.cloudRoomId);value={...data,peer};guests.set(data.id,value);
   void peer.waitOpen({timeout:60000}).then(channel=>Wire().bind(channel,async(method,packet)=>{
    if(method!=='promote'||packet.id!==value.id||packet.roomId!==value.roomId)fail('HOST_TRANSFER_INVALID');
    if(value.promoted)return {ok:true};value.promoted=true;
@@ -114,7 +121,7 @@
     const participants=[ctx.room.ownerId,...ctx.peers.filter(p=>p.id!==target).map(p=>p.id)];
     const offers=await wire.request('offers',{id:s.id,participants});
     for(const offer of offers){
-     const data={id:s.id,roomId:ctx.room.id,offer:offer.offer};
+     const data={id:s.id,roomId:ctx.room.id,cloudRoomId:s.meta.cloudRoomId,offer:offer.offer};
      const answer=offer.participantId===ctx.room.ownerId?await prepareGuest(data):await Wire().bind(ctx.peers.find(p=>p.id===offer.participantId).channel,()=>fail('HOST_TRANSFER_UNAUTHORIZED')).request('prepare-guest',data);
      await wire.request('answer',{id:s.id,participantId:offer.participantId,answer:answer.answer});
     }

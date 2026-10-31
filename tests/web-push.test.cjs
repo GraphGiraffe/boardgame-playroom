@@ -56,3 +56,30 @@ test('game lifecycle push stays silent on its visible game including result over
  table=true;assert.equal(handled({activity:'turn'}),true,'turn stays silent on game with overlay');
  chatVisible=true;assert.equal(handled({activity:'turn'}),true,'existing room visibility still applies');
 });
+
+
+test('ICE credentials authorize before cache, deduplicate issuance and sanitize relay endpoints',async()=>{
+ const {createIceHandler}=await import('../supabase/functions/playroom-ice/handler.mjs');let allowed=true,calls=0;
+ const handler=createIceHandler({authorize:async()=>allowed?{userId:'me',diagnosticsEnabled:true}:null,issue:async()=>{calls++;await new Promise(r=>setTimeout(r,10));return {iceServers:[{urls:['turn:turn.cloudflare.com:3478?transport=udp','turn:turn.cloudflare.com:53?transport=udp','https://evil.test'],username:'temporary',credential:'temporary-secret'},{urls:'stun:stun.cloudflare.com:3478'}]};}});
+ const request=()=>new Request('https://edge.test',{method:'POST',headers:{authorization:'Bearer valid-user-token-123',origin:'https://graphgiraffe.github.io'},body:JSON.stringify({roomId:'00000000-0000-4000-8000-000000000001'})});
+ assert.equal((await handler(new Request('https://edge.test',{method:'POST'}))).status,401);assert.equal(calls,0);
+ const responses=await Promise.all([handler(request()),handler(request())]);assert.equal(calls,1);for(const response of responses){assert.equal(response.status,200);const body=await response.json();assert.equal(body.diagnosticsEnabled,true);assert.equal(body.iceServers.length,2);assert.deepEqual(body.iceServers[0].urls,['turn:turn.cloudflare.com:3478?transport=udp']);assert.equal(response.headers.get('Cache-Control'),'no-store');}
+ allowed=false;assert.equal((await handler(request())).status,403);assert.equal(calls,1,'cached relay access still requires room authorization');
+ const broken=createIceHandler({authorize:async()=>({userId:'me'}),issue:async()=>{throw Error('CF_API_SECRET');}}),response=await broken(request());assert.equal(response.status,503);assert(!JSON.stringify(await response.json()).includes('SECRET'));
+});
+
+test('ICE progress sends one sanitized batch and waits 500ms only after successful admission',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),traces=[],pauses=[];
+ const ctx={Date,crypto:{randomUUID:()=> 'attempt'},document:{querySelector:()=>null},PlayroomAccountUI:{service:{snapshot:()=>({id:'me'})}},PlayroomIceConfig:{credentials:async()=>({configuration:{iceServers:[]},diagnosticsEnabled:true}),trace:(...v)=>traces.push(v)},PlayroomWebRTCTransport:{selectedMethod:async()=>({method:'turn',protocol:'tls'})},setTimeout:fn=>{pauses.push(fn);}};vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/connection-progress.js'),'utf8'),ctx);
+ const progress=ctx.PlayroomConnectionProgress.create({roomId:'room'});await progress.options();progress.update({stage:'checking',turn:'checking'});const finish=progress.connected({pc:{}},{delay:true});await new Promise(setImmediate);assert.equal(traces.length,1);assert.equal(pauses.length,1);assert.equal(traces[0][0].p_events.at(-1).method,'turn');progress.cancel();pauses[0]();await assert.rejects(finish,e=>e.code==='cancelled');assert.equal(traces.length,1);delete ctx.crypto;const local=ctx.PlayroomConnectionProgress.create();local.fail(Error('PRIVATE'));assert.match(traces[1][0].p_attempt_id,/^[0-9a-f-]{36}$/);
+ const disabled=ctx.PlayroomConnectionProgress.create({roomId:'room'});ctx.PlayroomIceConfig.credentials=async()=>({diagnosticsEnabled:false});await disabled.options();disabled.fail(Error('SECRET'));assert.equal(traces.length,2);
+});
+
+test('ICE browser provider caches per account, falls back to STUN and keeps local pairing offline',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');let id='a',listener,calls=0,broken=false;
+ const ctx={Date,AbortSignal,navigator:{userAgent:'Chrome/130'},PlayroomNetworkConfig:{url:'https://test.invalid',publishableKey:'public'},fetch:async()=>{calls++;if(broken)throw Error('PRIVATE');return {ok:true,json:async()=>({iceServers:[{urls:'turn:turn.cloudflare.com:3478',username:'temporary',credential:'temporary'}],expiresAt:Date.now()+86400000,diagnosticsEnabled:true})};}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../platform/web/ice-config.js'),'utf8'),ctx);const api=ctx.PlayroomIceConfig;api.init({snapshot:()=>({id,kind:'account'}),subscribe:fn=>listener=fn,auth:{session:async()=>({access_token:'private-session'})}});
+ assert.equal((await api.configuration(null)).iceServers.length,0);assert.equal(calls,0);
+ const [first,second]=await Promise.all([api.credentials('room'),api.credentials('room')]);assert.equal(first,second);assert.equal(calls,1);assert.equal((await api.configuration('other-room')).iceServers.length,2);assert.equal(calls,1);
+ id='b';listener();broken=true;const fallback=await api.credentials('room');assert.equal(fallback.code,'turn-network');assert.equal(fallback.configuration.iceServers.length,1);assert.equal(fallback.configuration.iceServers[0].urls,'stun:stun.cloudflare.com:3478');assert.equal(calls,2);await api.credentials('room');assert.equal(calls,2,'brief failure cache bounds requests');
+});
