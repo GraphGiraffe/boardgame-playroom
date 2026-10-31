@@ -10,7 +10,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
  try{
   exec('initdb',['-D',data,'-A','trust','--no-locale','--encoding=UTF8']);
   exec('pg_ctl',['-D',data,'-l',path.join(dir,'postgres.log'),'-o',`-h '' -k ${dir}`,'-w','start']);started=true;
-  sql(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select (current_setting('request.jwt.claims',true)::jsonb->>'sub')::uuid$$;create function auth.jwt() returns jsonb language sql stable as $$select current_setting('request.jwt.claims',true)::jsonb$$;grant usage on schema auth to authenticated;insert into auth.users values('${a}'),('${b}'),('${g}');`);
+  sql(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,is_anonymous boolean default false,raw_user_meta_data jsonb default '{}'::jsonb);create function auth.uid() returns uuid language sql stable as $$select (current_setting('request.jwt.claims',true)::jsonb->>'sub')::uuid$$;create function auth.jwt() returns jsonb language sql stable as $$select current_setting('request.jwt.claims',true)::jsonb$$;grant usage on schema auth to authenticated;insert into auth.users values('${a}'),('${b}'),('${g}');`);
   const migration=fs.readFileSync(path.join(__dirname,'../server/supabase.sql'),'utf8');sql(migration);sql(migration);
   sql(as(a,false,`insert into public.playroom_profiles(id,nickname) values('${a}','Алиса');`));
   sql(as(b,false,`insert into public.playroom_profiles(id,nickname) values('${b}','Борис');`));
@@ -25,6 +25,16 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql('set role anon;select * from public.playroom_profiles;',false);
   // Stage 2: production RPC tested with distinct authenticated clients and a guest.
   const social=fs.readFileSync(path.join(__dirname,'../server/social.sql'),'utf8');sql(social);sql(social);
+  const registration=fs.readFileSync(path.join(__dirname,'../server/registration.sql'),'utf8');sql(registration);sql(registration);
+  const registered='00000000-0000-4000-8000-000000000091',collision='00000000-0000-4000-8000-000000000092';
+  assert.equal(sql("set role anon;select public.playroom_signup_name_available('new_signup');").split('\n').at(-1),'t');
+  sql(`insert into auth.users(id,raw_user_meta_data) values('${registered}','{"username":"New_Signup"}');`);
+  assert.equal(sql(`select username from public.playroom_profiles where id='${registered}';`),'new_signup');
+  assert.equal(sql("set role anon;select public.playroom_signup_name_available('NEW_SIGNUP');").split('\n').at(-1),'f');
+  sql(`insert into auth.users(id,raw_user_meta_data) values('${collision}','{"username":"new_signup"}');`,false);
+  assert.equal(sql(`select count(*) from auth.users where id='${collision}';`),'0');
+  sql(`insert into auth.users(id,raw_user_meta_data) values('${collision}','{"username":"bad!"}');`,false);
+
   const rpc=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_social('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   rpc(a,false,'profile',{nickname:'Алиса'});rpc(b,false,'profile',{nickname:'Борис'});
   rpc(a,false,'profile',{nickname:'Алиса',username:'Alice'});rpc(b,false,'profile',{nickname:'Борис',username:'bob'});
@@ -138,7 +148,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   assert.equal(combined.results.find(r=>r.id==='profile').data.profile.id,a);assert.equal(combined.results.find(r=>r.id==='saves').data.limit,10485760);assert.equal(combined.results.find(r=>r.id==='write').error.code,'invalid');assert(combined.results.find(r=>r.id==='messages').data.items.every(m=>m.person.userId!==a));assert(JSON.stringify(combined).length<65536,'metadata aggregation does not include cloud file bodies');accountRequest(g,true,[{id:'x',rpc:'playroom_social',action:'list',data:{}}],false);
   const assembled=spawnSync('python3',['-c','import json;from pathlib import Path;from tooling.supabase_setup import render;print(json.dumps(render(Path.cwd())))'],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
   assert.equal(assembled.status,0,assembled.stderr);const setup=JSON.parse(assembled.stdout);sql(setup['setup-supabase.sql']);sql(setup['setup-supabase.sql']);
-  const verified=sql(setup['check-supabase.sql']).split('\n');assert.equal(verified.length,12);assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC fingerprints match installed schema');
+  const verified=sql(setup['check-supabase.sql']).split('\n');assert.equal(verified.length,13);assert(verified.some(row=>row.startsWith('playroom_signup_name_available|')));assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC fingerprints match installed schema');
   const online=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_online('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   // Abandoned cloud rows retain recovery identities without exhausting live quota.
   const quotaUser='00000000-0000-4000-8000-000000000004';
@@ -409,7 +419,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql('delete from public.playroom_push_deliveries');
   sql(`delete from public.playroom_friendships where sender='${a}' and recipient='${b}' or sender='${b}' and recipient='${a}';`);
   rpc(a,false,'request',{userId:b});let activity=claim();assert.equal(activity.length,1);assert.equal(activity[0].payload.type,'dm');assert.match(activity[0].payload.body,/Заявка/);complete(activity[0],'sent');
-  const friendship=rpc(b,false,'list').friends.find(f=>f.userId===a);rpc(b,false,'accept',{id:friendship.id});activity=claim();assert.equal(activity.length,1);assert.equal(activity[0].payload.recipient,a);assert.match(activity[0].payload.body,/принята/);complete(activity[0],'sent');
+  const friendship=rpc(b,false,'list').friends.find(f=>f.userId===a);const pendingFriend=online(b,false,'unread').friends.find(f=>f.userId===a);assert.equal(pendingFriend.incoming,true);assert.equal(pendingFriend.accepted,false);assert(!online(g,false,'unread').friends.some(f=>f.id===friendship.id));online(g,true,'unread',{},false);rpc(b,false,'accept',{id:friendship.id});activity=claim();assert.equal(activity.length,1);assert.equal(activity[0].payload.recipient,a);assert.match(activity[0].payload.body,/принята/);complete(activity[0],'sent');
   sql(`update public.playroom_friendships set accepted=true where id='${friendship.id}'`);assert.equal(claim().length,0,'idempotent acceptance does not notify twice');
   const activityGroup='77777777-7777-4777-8777-777777777701';sql(`insert into public.playroom_groups(id,name) values('${activityGroup}','Push group');insert into public.playroom_group_members(group_id,user_id) values('${activityGroup}','${a}');insert into public.playroom_group_members(group_id,user_id) values('${activityGroup}','${b}');`);
   activity=claim();assert.equal(activity.length,1);assert.equal(activity[0].payload.recipient,a);assert.match(activity[0].payload.body,/присоединился/);complete(activity[0],'sent');sql(`update public.playroom_group_members set left_at=null where group_id='${activityGroup}' and user_id='${b}'`);assert.equal(claim().length,0);

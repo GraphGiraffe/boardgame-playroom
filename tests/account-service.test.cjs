@@ -47,8 +47,8 @@ test('password recovery uses PKCE; callback code is removed and new password use
  assert.equal(f.values.has(f.auth.pendingKey),false);
 });
 test('registration requiring confirmation does not fabricate a signed-in user',async()=>{
- const f=fixture(()=>response({id:user.id,email:user.email})),s=new Service({auth:f.auth,guestId:'local'});
- assert.deepEqual(await s.signup(user.email,'password123'),{confirmationRequired:true});assert.equal(s.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false);
+ const f=fixture(url=>response(url.includes('/rest/v1/')?true:{id:user.id,email:user.email})),s=new Service({auth:f.auth,guestId:'local'});
+ assert.deepEqual(await s.signup(user.email,'password123','player_name'),{confirmationRequired:true});assert.equal(s.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false);
 });
 test('cloud guests are explicit and restored, never created at local startup',async()=>{
  const f=fixture(()=>response(tokens({user:{id:'guest-1',is_anonymous:true}}))),s=new Service({auth:f.auth,guestId:'local'});
@@ -185,4 +185,24 @@ test('cloud rendezvous uses inline server identities and omits accepted signalin
   if(action==='poll-host'){known=data.known;if(data.known.length)dead=true;return [{id:'slot',...identity,...(++polls>1&&!data.known.length?{offer:'offer',answer:'answer'}:{})}];}return {};
  }});
  const tick=()=>new Promise(r=>setImmediate(r));await driver.host('room','local');await tick();resume();await tick();resume();await tick();assert.equal(authorizations,0);assert.deepEqual(known,['slot']);assert.equal(created,1,'a peer lost during a compact poll must not recreate an already answered signal');assert.equal(driver.handles.size,0);assert.equal(delays.at(-1),2000);driver.stop();await driver.running;
+});
+
+
+test('registration requires an available normalized name before sending auth signup metadata',async()=>{
+ const f=fixture(url=>response(url.includes('/rest/v1/')?true:tokens())),s=new Service({auth:f.auth,guestId:'local'});
+ await assert.rejects(s.signup(user.email,'password123','!bad'),{code:'username-invalid'});assert.equal(f.calls.length,0);
+ await s.signup(user.email,'password123',' @Player_Name ');assert.equal(f.calls.length,2);assert.deepEqual(JSON.parse(f.calls[0].body),{p_username:'player_name'});assert.deepEqual(JSON.parse(f.calls[1].body).data,{username:'player_name'});assert.equal(s.snapshot().kind,'account');
+ const taken=fixture(()=>response(false));await assert.rejects(taken.auth.signup(user.email,'password123','player_name'),{code:'username-taken'});assert.equal(taken.calls.length,1);
+});
+test('registration distinguishes email delivery limits and timeouts without automatic retries',async()=>{
+ const f=fixture(()=>response({code:'over_email_send_rate_limit'},429));await assert.rejects(f.auth.recover(user.email),{code:'email-rate-limit'});assert.equal(f.calls.length,1);
+ const timeout=fixture(()=>{throw Object.assign(Error('timed out'),{name:'TimeoutError'});});await assert.rejects(timeout.auth.login(user.email,'password123'),{code:'timeout'});assert.equal(timeout.calls.length,1);
+});
+
+test('friend notifications announce requests and outgoing acceptance once, including reload and Push hints',()=>{
+ const Tracker=require('../application/friend-notifications.js');let saved={};
+ const t=new Tracker({save:value=>saved=value}),incoming={id:'incoming',incoming:true,accepted:false},outgoing={id:'outgoing',incoming:false,accepted:false};
+ assert.deepEqual(t.update([incoming,outgoing]).map(e=>e.kind),['friend-request']);assert.deepEqual(t.update([incoming,outgoing]),[]);
+ const reloaded=new Tracker({states:saved});assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}]).map(e=>e.kind),['friend-accepted']);assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}],['friend-accepted:outgoing']),[]);
+ const first=new Tracker();assert.deepEqual(first.update([{...outgoing,accepted:true}]),[]);assert.equal(new Tracker().update([{...outgoing,accepted:true}],['friend-accepted:outgoing'])[0].kind,'friend-accepted');
 });

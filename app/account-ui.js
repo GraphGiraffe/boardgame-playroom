@@ -21,7 +21,7 @@
   else if(mode==='username'&&!s.recovery&&s.kind==='account')body=`<form class="account-form" data-account-form="username"><fieldset><label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({value:profile?.username||'',pattern:true})}</label><div class="account-form-actions">${button('account','back')}${H().iconButton('',text('save-username'),'check',{type:'submit'})}</div></fieldset></form>`;
   else{
    if(s.recovery)mode='password';
-   body=`${passwordMode?`<p class="muted">${text('password-info')}</p>`:''}<form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</fieldset></form>${mode==='password'?'':`<div class="account-actions">${mode==='password-change'?button('account','back'):`${mode!=='login'?button('login','login'):''}${mode!=='signup'?button('signup','signup'):''}${mode!=='recover'?button('recover','recover'):''}`}</div>`}`;
+   body=`${passwordMode?`<p class="muted">${text('password-info')}</p>`:''}<form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${mode==='signup'?`<label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({pattern:true})}</label>`:''}${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</fieldset></form>${mode==='password'?'':`<div class="account-actions">${mode==='password-change'?button('account','back'):`${mode!=='login'?button('login','login'):''}${mode!=='signup'?button('signup','signup'):''}${mode!=='recover'?button('recover','recover'):''}`}</div>`}`;
   }
 
   const modal=document.querySelector('.account-modal .account-content');if(!modal)return;
@@ -37,7 +37,7 @@
  async function execute(action,success=''){
   const ticket=dialogGeneration;error='';notice='';
   try{const result=await action();if(success)notice=text(success);if(result?.confirmationRequired)notice=text('confirmation');if(ticket===dialogGeneration&&opened&&document.querySelector('.account-modal')&&continuation&&service.snapshot().kind==='account'&&!service.snapshot().recovery){const resume=continuation;continuation=null;opened=false;bridge().closeModal(true);resume();}}
-  catch(e){error=text('error.'+(['network','storage','rate-limit','credentials','email-not-confirmed','recovery-link','unavailable','redirect','same-password','weak-password','current-password','reauthentication','username-invalid','username-taken','setup','network'].includes(e.code)?e.code:'request'));}
+  catch(e){error=text('error.'+(['timeout','email-rate-limit','email-sender-unavailable','network','storage','rate-limit','credentials','email-not-confirmed','recovery-link','unavailable','redirect','same-password','weak-password','current-password','reauthentication','username-invalid','username-taken','setup','network'].includes(e.code)?e.code:'request'));}
   render();
  }
  function show({onReady=null}={}){
@@ -88,7 +88,7 @@
   if(service.snapshot().busy)return;
   if(action==='username'){void execute(async()=>{await root.PlayroomSocialUI.service.perform('profile',{nickname:bridge().profile()?.name||'',username:form.elements.username.value});mode='account';},'username-saved');return;}
   if(action==='login')void execute(()=>service.login(email,password));
-  else if(action==='signup')void execute(()=>service.signup(email,password));
+  else if(action==='signup')void execute(()=>service.signup(email,password,form.elements.username?.value));
   else if(action==='recover')void execute(()=>service.recover(email),'recovery-sent');
   else if(action==='password')void execute(()=>service.changePassword(password),'password-changed');
   else if(action==='password-change')void execute(async()=>{await service.updatePassword(currentPassword,password);mode='account';},'password-changed');

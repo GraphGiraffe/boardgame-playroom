@@ -142,7 +142,11 @@ language sql stable security definer set search_path=pg_catalog,public as $$
   from public.playroom_groups g join public.playroom_group_members mem on mem.group_id=g.id and mem.user_id=auth.uid() and mem.left_at is null
   left join public.playroom_group_messages m on m.group_id=g.id and m.id>mem.history_after left join public.playroom_room_invites ri on ri.group_message_id=m.id and ri.target_id=auth.uid()
   where g.closed_at is null group by g.id,mem.read_through
- ) q),'[]'::jsonb));
+ ) q),'[]'::jsonb),'friends',coalesce((select jsonb_agg(row) from (
+  select jsonb_build_object('id',f.id,'userId',p.id,'nickname',p.nickname,'avatar',p.avatar,'username',p.username,'accepted',f.accepted,'incoming',f.recipient=auth.uid(),'requested',not f.accepted) row
+  from public.playroom_friendships f join public.playroom_profiles p on p.id=case when f.sender=auth.uid() then f.recipient else f.sender end
+  where f.sender=auth.uid() or f.recipient=auth.uid() order by f.created_at desc,f.id limit 200
+ ) friends),'[]'::jsonb));
 $$;
 revoke all on function public.playroom_unread_rpc() from public,anon,authenticated;
 

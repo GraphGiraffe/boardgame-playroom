@@ -14,7 +14,7 @@
   }
   async restore(){return this.perform(async()=>{try{this.user=await this.auth.restore();this.recovery=!!this.user&&!!this.auth.isRecovery?.();return this.snapshot();}catch(error){if([400,401,403].includes(error.status)){this.user=null;this.recovery=false;}throw error;}});}
   async login(email,password){return this.perform(async()=>{this.user=await this.auth.login(email.trim(),password);this.recovery=false;return this.snapshot();});}
-  async signup(email,password){return this.perform(async()=>{const user=await this.auth.signup(email.trim(),password);if(user)this.user=user;return {confirmationRequired:!user};});}
+  async signup(email,password,username){return this.perform(async()=>{const user=await this.auth.signup(email.trim(),password,username);if(user)this.user=user;return {confirmationRequired:!user};});}
   async ensureGuest(){return this.perform(async()=>{this.user=await this.auth.restore()||await this.auth.guest();return this.snapshot();});}
   async recover(email){return this.perform(()=>this.auth.recover(email.trim()));}
   async callback(){return this.perform(async()=>{const result=await this.auth.callback();if(result){this.user=result.user;this.recovery=result.recovery;}return !!result;});}

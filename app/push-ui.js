@@ -53,7 +53,8 @@
  }
  function visible(payload){
   if(document.hidden||!document.hasFocus()||payload.recipient!==user)return false;
-  if(/^(friend-request|friend-accepted|group-member|invite-accepted):/.test(payload.event||'')){root.PlayroomAppBridge.toast(payload.title+'\n'+payload.body);return true;}
+  if(/^(friend-request|friend-accepted):/.test(payload.event||'')){root.PlayroomChatNotifications.friendEvent(payload.event);return true;}
+  if(/^(group-member|invite-accepted):/.test(payload.event||'')){root.PlayroomAppBridge.toast(payload.title+'\n'+payload.body);return true;}
   if(payload.type==='update')return false;
   if(payload.type==='room'){
    if(root.PlayroomCloudNetwork.roomId()!==payload.id)return false;
@@ -71,6 +72,12 @@
    payload=payload||(await D().message({kind:'playroom-push-pending'}))?.payload;
    if(!payload||payload.recipient!==user)return;
    if(payload.type==='update'){root.PlayroomAppBridge.showImportantUpdate(payload);await D().message({kind:'playroom-push-consumed',event:payload.event});return;}
+   if(/^(friend-request|friend-accepted):/.test(payload.event||'')){
+    const hub=await root.PlayroomCommunityUI.service.call('hub');if(payload.recipient!==user)return;
+    const friend=hub.friends?.find(person=>person.userId===payload.id),onBack=root.PlayroomAppBridge.captureModalReturn();
+    if(friend)root.PlayroomFriendProfileUI.show(friend,{onBack});else root.PlayroomCommunityUI.show({onBack});
+    await D().message({kind:'playroom-push-consumed',event:payload.event});return;
+   }
    const target=await remote.call('target',{type:payload.type,id:payload.id},{userId:user});
    if(payload.recipient!==user)return;
    const onBack=root.PlayroomChatUI.captureReturn()||root.PlayroomRoomChatUI.captureReturn()||root.PlayroomAppBridge.captureModalReturn();

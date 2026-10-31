@@ -386,3 +386,44 @@ test('invitation badges and cached join actions expire in background without rea
  assert.equal(await page.evaluate(()=>{PlayroomChatUI.show({userId:'expiry-peer',nickname:'Друг',accepted:true});return document.querySelectorAll('[data-chat-join]').length;}),0,'cached first paint cannot expose a stale join button');
  }finally{await browser.close();await server.close();}
 });
+
+test('cloud registration requires a name, checks availability and preserves inputs after email rate limit',{timeout:25000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();let available=false,signups=0,payload;
+ try{
+  await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',route=>{
+   const request=route.request(),url=request.url();
+   if(url.includes('/playroom_signup_name_available'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(available)});
+   if(url.includes('/auth/v1/signup')){signups++;payload=request.postDataJSON();return route.fulfill({status:429,contentType:'application/json',body:JSON.stringify({code:'over_email_send_rate_limit'})});}
+   return route.fulfill({status:200,contentType:'application/json',body:'{}'});
+  });
+  await page.goto(server.url);await page.locator('#app [data-command=settings]').first().click();await page.locator('[data-account-open]').click();await page.locator('[data-account-mode=signup]').click();
+  const form=page.locator('.account-form');await form.locator('[name=email]').fill('player@example.test');await form.locator('[name=password]').fill('password123');
+  await form.locator('[type=submit]').click();assert.equal(signups,0);assert.equal(await form.locator('[name=username]').evaluate(e=>e.validity.valueMissing),true);
+  await form.locator('[name=username]').fill('Player_Name');await form.locator('[type=submit]').click();await page.getByText('Это имя аккаунта уже занято. Выберите другое.',{exact:true}).waitFor();assert.equal(signups,0);
+  available=true;await form.locator('[type=submit]').click();await page.getByText('Лимит отправки писем подтверждения исчерпан.',{exact:false}).waitFor();assert.equal(signups,1);assert.equal(payload.data.username,'player_name');assert.equal(await form.locator('[name=username]').inputValue(),'Player_Name');assert.equal(await form.locator('[name=password]').inputValue(),'password123');
+ }finally{await browser.close();await server.close();}
+});
+
+test('friend notification banners use existing unread polling and open the request profile',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage();
+ const me='00000000-0000-4000-8000-000000000001',peer='00000000-0000-4000-8000-000000000002',edge='00000000-0000-4000-8000-000000000003';let friends=[];
+ try{
+  await context.addInitScript(id=>localStorage.setItem('playroom.cloud-auth.v1:https://geurlwivdiqboylciqhl.supabase.co',JSON.stringify({access_token:'fixture-access',refresh_token:'fixture-refresh',expires_at:Date.now()+3600000,user:{id,email:'player@example.test'}})),me);
+  await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',accountSyncRoute(route=>{
+   const req=route.request(),url=req.url(),action=req.postDataJSON()?.p_action;let data={};
+   if(url.endsWith('/user'))data={id:me,email:'player@example.test'};
+   else if(action==='unread')data={chats:[],friends};
+   else if(action==='hub'||action==='list')data={friends,groups:[],rooms:[],invitations:[],profile:{id:me,nickname:'Тестовый игрок',username:'player_name'}};
+   else if(action==='inbox'||action==='group-inbox')data={cursor:'0',items:[]};
+   else if(action==='group-list')data={groups:[]};
+   return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
+  }));
+  await page.goto(server.url);await page.waitForFunction(()=>PlayroomAccountUI.service?.snapshot().kind==='account');await page.evaluate(()=>PlayroomChatNotifications.poll());
+  friends=[{id:edge,userId:peer,nickname:'Борис',username:'boris',incoming:true,requested:true,accepted:false}];await page.evaluate(()=>PlayroomChatNotifications.poll());
+  const banner=page.locator(`[data-notification-open="friend:${edge}"]`);await banner.waitFor();assert.match(await banner.textContent(),/Заявка в друзья/);await banner.click();await page.locator('[data-friend-profile]').waitFor();assert.equal(await page.locator('[data-profile-add]').getAttribute('aria-label'),'Принять заявку');
+  await page.evaluate(()=>PlayroomAppBridge.closeModal(true));await page.evaluate(()=>PlayroomChatNotifications.poll());assert.equal(await banner.count(),0);
+  friends=[{...friends[0],incoming:false}];await page.evaluate(()=>PlayroomChatNotifications.poll());friends=[{...friends[0],accepted:true,requested:false}];await page.evaluate(()=>PlayroomChatNotifications.poll());await banner.waitFor();assert.match(await banner.textContent(),/Заявка в друзья принята/);await page.evaluate(payload=>PlayroomPushUI.openPending(payload),{recipient:me,type:'dm',id:peer,event:'friend-accepted:'+edge});await page.locator('[data-friend-profile]').waitFor();assert.equal(await page.locator('[data-profile-remove]').count(),1);assert.equal(await page.locator('.private-chat-modal').count(),0);
+ }finally{await browser.close();await server.close();}
+});
