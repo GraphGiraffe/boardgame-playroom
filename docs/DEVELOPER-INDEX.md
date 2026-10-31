@@ -4,6 +4,7 @@
 
 | Вопрос | Руководство |
 |---|---|
+| Облачные сохранения и квота аккаунта | [Облачные сохранения](CLOUD-SAVES.md) |
 | Где находится код и как взаимодействуют слои | [Архитектура](DEVELOPER-ARCHITECTURE.md) |
 | Как добавить обучение и сохранить прогресс пользователя | [Обучение](TUTORIALS.md) |
 | Как назвать и использовать общую механику | [Реестр механик](MECHANICS.md) |
@@ -12,6 +13,7 @@
 | Визуальные правила, ассеты и скины | [Дизайн](UI-DESIGN-SYSTEM.md) |
 | Масштаб и дискретные слайдеры | [Настройки](INTERFACE-SCALE.md) |
 | Роли, authority, Стол, reconnect | [Сеть](DEVELOPER-MULTIPLAYER.md) |
+| Сетевой аккаунт, друзья, приватные комнаты и миграции Supabase 0.20 | [Сетевой сервис](NETWORK-SERVICE.md) |
 | Хранение, точные версии, обновление | [Данные](DEVELOPER-DATA.md) |
 | Контейнер и сборка пака | [Формат](PACK-FORMAT.md) |
 | Проверки и выпуск | [Тесты](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md), [релиз](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md) |
@@ -24,3 +26,7 @@
 Мобильные контракты 0.18.4: [размеры](SIZE-SYSTEM.md), [навигация и установка](NAVIGATION-AND-INSTALL.md), [приоритет тестовых версий](PACK-VERSION-PRIORITY.md).
 
 Иллюстрированные правила и границы модулей: [RULEBOOK-LAYOUT](RULEBOOK-LAYOUT.md).
+
+Перенос отдельных сохранений с точными паками: [SAVE-TRANSFER.md](SAVE-TRANSFER.md).
+
+Сеть 0.20: [статус четырёх этапов и SQL для Supabase](NETWORK-0.20-PREVIEW.md).

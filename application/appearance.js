@@ -119,7 +119,7 @@
           }
           const validActive = catalog.isBuiltin(saved.activeId) || seen.has(saved.activeId);
           if (!validActive) this.#warnings.push('ACTIVE_PRESET_MISSING');
-          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets,avatarStyle:['minimal','simple'].includes(saved.avatarStyle)?saved.avatarStyle:'minimal'});
+          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets,avatarStyle:'minimal'});
         }
       } catch (error) { this.#warnings.push(error.code || 'PREFERENCES_UNAVAILABLE'); }
     }
@@ -171,8 +171,8 @@
       return this.#preview;
     }
     avatarStyle(){return this.#avatarPreview||this.#state.avatarStyle||'minimal';}
-    previewAvatarStyle(style){requireValue(['minimal','simple'].includes(style),'AVATAR_STYLE_INVALID');this.#avatarPreview=style;this.#emit('avatar-preview');}
-    saveAvatarStyle(style){requireValue(['minimal','simple'].includes(style),'AVATAR_STYLE_INVALID');this.#commit({...clone(this.#state),avatarStyle:style},'avatar-saved');}
+    previewAvatarStyle(style){requireValue(style==='minimal','AVATAR_STYLE_INVALID');this.#avatarPreview=style;this.#emit('avatar-preview');}
+    saveAvatarStyle(style){requireValue(style==='minimal','AVATAR_STYLE_INVALID');this.#commit({...clone(this.#state),avatarStyle:style},'avatar-saved');}
     cancelPreview() { this.#preview = null;this.#avatarPreview=null;this.#emit('preview-cancelled'); }
     saveDraft(draft, {activate = false} = {}) {
       requireValue(!this.#catalog.isBuiltin(draft?.id), 'BUILTIN_IMMUTABLE');

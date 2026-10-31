@@ -7,11 +7,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const installHandoff=root.PlayroomInstallHandoff;
   let installPrompt=installHandoff?.prompt||null;
   if(installHandoff){installHandoff.prompt=null;delete root.PlayroomInstallHandoff;}
-  const updates=new root.PlayroomPwaUpdateCoordinator({request:worker=>new Promise((resolve,reject)=>{
-    const channel=new MessageChannel(),timer=setTimeout(()=>{channel.port1.close();reject(Error(globalThis.PlayroomMessages.text("ui.pwa.16263196d581")));},5500);
-    channel.port1.onmessage=event=>{clearTimeout(timer);channel.port1.close();resolve(event.data);};
-    worker.postMessage({kind:'playroom-activate-update'},[channel.port2]);
-  })});
+  function workerRequest(worker,kind,{timeout=5500,...options}={}){return new Promise((resolve,reject)=>{
+    const channel=new MessageChannel();let timer;
+    const clear=()=>{clearTimeout(timer);root.removeEventListener('playroom-update-progress',progress);channel.port1.close();};
+    const arm=()=>{clearTimeout(timer);timer=setTimeout(()=>{clear();reject(Error(root.PlayroomMessages.text('ui.pwa.16263196d581')));},timeout);};
+    const progress=()=>{if(kind==='playroom-download-update'&&worker===infoWorker)arm();};
+    root.addEventListener('playroom-update-progress',progress);arm();
+    channel.port1.onmessage=event=>{clear();resolve(event.data);};
+    try{worker.postMessage({kind,...options},[channel.port2]);}catch(error){clear();reject(error);}
+  });}
+  const updates=new root.PlayroomPwaUpdateCoordinator({request:worker=>workerRequest(worker,'playroom-activate-update',{manual:true})});
   const pairListeners=new Set(),pairQueue=[];
   const secure=location.protocol==='https:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);
   function validToken(token){try{Pairing.decode(token);return true;}catch(_){return false;}}
@@ -73,26 +78,48 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!installPrompt)throw Error(globalThis.PlayroomMessages.text("ui.pwa.30950cf49d2a"));
     const event=installPrompt;installPrompt=null;await event.prompt();return event.userChoice;
   }
-  let updateInfo=null,infoWorker=null;
+  let updateInfo=null,infoWorker=null,downloadJob=null;
+  function receiveUpdateState(worker,data){
+    if(worker!==infoWorker||data?.version&&updateInfo?.version&&data.version!==updateInfo.version||!data?.download)return;
+    updateInfo={...updateInfo,download:data.download};root.dispatchEvent(new CustomEvent('playroom-update-progress'));
+  }
   const announceUpdate=async worker=>{
-    if(!worker||infoWorker===worker)return;
-    infoWorker=worker;if(!updates.announce(worker))return;
-    const info=await new Promise(resolve=>{
-      const channel=new MessageChannel();
-      const finish=value=>{clearTimeout(timer);channel.port1.close();resolve(value);};
-      const timer=setTimeout(()=>finish({}),2000);
-      channel.port1.onmessage=event=>finish(event.data||{});
-      try{worker.postMessage({kind:'playroom-update-info'},[channel.port2]);}catch(_){finish({});}
-    });
+    if(!worker||infoWorker===worker)return;infoWorker=worker;downloadJob=null;if(!updates.announce(worker))return;
+    let info;try{info=await workerRequest(worker,'playroom-update-info',{timeout:2500});}catch{info={};}
     if(infoWorker!==worker)return;
-    updateInfo=info;root.dispatchEvent(new CustomEvent('playroom-update-ready'));
+    updateInfo={...info,download:info.download||{phase:info.version?'ready':'available',received:0,total:0}};
+    root.dispatchEvent(new CustomEvent('playroom-update-ready'));
   };
+  async function downloadUpdate(){
+    if(downloadJob)return downloadJob;if(!infoWorker)throw Error('UPDATE_NOT_READY');
+    const worker=infoWorker;receiveUpdateState(worker,{download:{...updateInfo.download,phase:'downloading',error:null}});
+    downloadJob=(async()=>{try{
+      const result=await workerRequest(worker,'playroom-download-update',{timeout:180000});
+      if(worker!==infoWorker)throw Object.assign(Error('UPDATE_CHANGED'),{code:'update-changed'});receiveUpdateState(worker,result);
+      if(!result?.ok)throw Error(root.PlayroomUpdateDialog.errorText(result?.download?.error));return result;
+    }catch(error){if(worker===infoWorker){receiveUpdateState(worker,{download:{...updateInfo.download,phase:'paused',error:updateInfo.download.error||{code:'network'}}});}throw error;}
+    finally{if(worker===infoWorker)downloadJob=null;}})();return downloadJob;
+  }
   const setUpdateGuard=guard=>updates.setGuard(guard),releaseUpdate=()=>updates.release();
   const checkUpdate=port=>port?.postMessage({kind:updates.reserve()?'playroom-update-idle':'playroom-update-busy'});
   for(const type of ['click','submit','keydown'])document.addEventListener(type,event=>{
     if(updates.locked){event.preventDefault();event.stopImmediatePropagation();}
   },true);
-  const activateUpdate=()=>updates.activate();
+  function reloadUpdatedDocument(){if(root.__playroomUpdateReloading)return;root.__playroomUpdateReloading=true;location.reload();}
+  async function activateUpdate(){
+    if(updateInfo?.download?.phase!=='ready')throw Error('Сначала загрузите обновление.');
+    const worker=infoWorker,result=await updates.activate();
+    // Another window may already have activated this worker, or Android may
+    // miss controllerchange. Observe its state locally; never reload early.
+    let timer=null;
+    const check=()=>{
+      if(root.__playroomUpdateReloading){clearTimeout(timer);worker.removeEventListener?.('statechange',check);return;}
+      if(worker.state==='activated'){clearTimeout(timer);worker.removeEventListener?.('statechange',check);reloadUpdatedDocument();return;}
+      if(worker.state==='redundant'){clearTimeout(timer);worker.removeEventListener?.('statechange',check);return;}
+      clearTimeout(timer);timer=setTimeout(check,500);
+    };
+    worker.addEventListener?.('statechange',check);check();return result;
+  }
   root.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;root.dispatchEvent(new Event('playroom-install-available'));});
   root.addEventListener('appinstalled',()=>{installPrompt=null;root.dispatchEvent(new Event('playroom-installed'));});
   if('serviceWorker' in navigator&&secure){
@@ -103,7 +130,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }));
       let checking=false;
       const refresh=async()=>{
-        if(checking||document.hidden||registration.waiting)return;
+        if(checking||document.hidden||updates.started||updates.locked)return;
         checking=true;
         try{await registration.update();}catch(_){}finally{checking=false;}
       };
@@ -114,10 +141,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     navigator.serviceWorker.addEventListener('message',event=>{
       if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);
       if(event.data?.kind==='playroom-update-ready')navigator.serviceWorker.getRegistration().then(registration=>announceUpdate(registration?.waiting)).catch(()=>{});
+      if(event.data?.kind==='playroom-update-progress')receiveUpdateState(event.source,event.data);
       if(event.data?.kind==='playroom-update-check')checkUpdate(event.ports?.[0]);
       if(event.data?.kind==='playroom-update-release')releaseUpdate();
     });
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{if((updates.started||updates.locked)&&!root.__playroomUpdateReloading){root.__playroomUpdateReloading=true;location.reload();}});
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{if(updates.started||updates.locked)reloadUpdatedDocument();});
   }
   if(root.launchQueue?.setConsumer)root.launchQueue.setConsumer(params=>emitPair(tokenFromUrl(params?.targetURL||'')));
   const incoming=tokenFromUrl(location.href);if(incoming){emitPair(incoming);cleanUrl();}
@@ -127,7 +155,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
     canShare,
     canInstall:()=>!!installPrompt,
-    shareToken,install,pairingUrl,tokenFromUrl,subscribePair,setUpdateGuard,activateUpdate,isUpdateLocked:()=>updates.locked,
+    shareToken,install,pairingUrl,tokenFromUrl,subscribePair,setUpdateGuard,downloadUpdate,activateUpdate,isUpdateLocked:()=>updates.locked,
     protocolUrl:Pairing.protocolUrl
   });
 })(globalThis);

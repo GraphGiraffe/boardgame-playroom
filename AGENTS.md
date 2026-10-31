@@ -29,3 +29,5 @@ Task branch → Draft PR → dev squash. Stable: dev → main merge commit, за
 Общие навыки, операционные инструменты, roadmap, Cloud/test/release инструкции — в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/PROJECT.md). Здесь остаются продуктовый код, SDK/правила/ассеты, авторские контракты и собственные проверки. Operational scripts — совместимые shims; установите соседний utils либо PLAYROOM_UTILS_ROOT. Не копировать реализацию обратно.
 
 `docs/TESTING.md` и `docs/RELEASING.md` — только переходы на canonical utils-документы для совместимости инструментов; содержимое руководств не дублировать.
+
+Important update Push is operator-only and opt-in. Never send an update announcement unless the owner explicitly instructs sending that particular important update; release/build/deploy requests are not authorization. announce-update.mjs is dry-run unless --send is explicit. Never invoke the announcement RPC as a deployment smoke test.

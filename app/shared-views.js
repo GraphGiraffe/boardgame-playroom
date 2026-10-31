@@ -66,7 +66,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         state:s.state,viewer:s.viewer,actions:current?s.actions:available(),scoreLabel:pack.catalog.scoreLabel||globalThis.PlayroomMessages.text("ui.shared-views.d7ab0767bbee"),
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
         scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?globalThis.PlayroomMessages.text("ui.shared-views.a92c2f3c7ff1"):readOnly?globalThis.PlayroomMessages.text("ui.shared-views.ef90e06de5f0"):!connected&&connectionNotice?globalThis.PlayroomMessages.text("ui.shared-views.1b183e4d703e"):finished?globalThis.PlayroomMessages.text("ui.shared-views.64f3ad19b9c6"):live.paused?globalThis.PlayroomMessages.text("ui.shared-views.65530fd463ea"):(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?globalThis.PlayroomMessages.text("ui.shared-views.2a3e6d5708df"):turn?globalThis.PlayroomMessages.text("ui.shared-views.6e352d281a89",{p0:String(turn.name)}):globalThis.PlayroomMessages.text("ui.shared-views.a353dfef7d2f"),
-        turnExtra:historyOpen?'':globalThis.PlayroomMessages.text("ui.shared-views.e954f44bf49a",{p0:String(s.state.move+1),p1:String(s.viewer<0?(s.role==='table'?globalThis.PlayroomMessages.text("ui.shared-views.1508d1c8b4c0"):globalThis.PlayroomMessages.text("ui.shared-views.9ae566816505")):s.state.scene.players.some(person=>Array.isArray(person.hand))?(s.state.openHands?globalThis.PlayroomMessages.text("ui.shared-views.3d9add839803"):globalThis.PlayroomMessages.text("ui.shared-views.a3e084db5bc0")):globalThis.PlayroomMessages.text("ui.shared-views.182bafd6e1b1"))}),
+        turnExtra:historyOpen?'':globalThis.PlayroomMessages.text("ui.shared-views.e954f44bf49a",{p0:String(s.state.move+1),p1:String(s.viewer<0?(s.role==='table'?globalThis.PlayroomMessages.text("ui.shared-views.1508d1c8b4c0"):globalThis.PlayroomMessages.text("ui.shared-views.9ae566816505")):s.state.scene.players.some(person=>Array.isArray(person.hand))?'':globalThis.PlayroomMessages.text("ui.shared-views.182bafd6e1b1"))}),
         historyHTML,historyCaption:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.03f70ecc37a6"),readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,roomAction:!readOnly?{attrs:'data-command="room"'}:null,footerText:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.efcdf40bd477"),footerTitle:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.efcdf40bd477"),
         statusExtra:client.pending&&client.deliveryError?("<button class=\"text-btn network-retry\" data-command=\"retry\">"+globalThis.PlayroomMessages.text("ui.shared-views.0c2b4e7e894e")+"</button>"):'',
         footerAction:readOnly?{command:'home',label:globalThis.PlayroomMessages.text("ui.shared-views.c7af5565fd83"),icon:'back'}:finished?{command:'rematch',label:globalThis.PlayroomMessages.text("ui.shared-views.b99497215cf0"),icon:'back'}:{command:'home',label:globalThis.PlayroomMessages.text("ui.shared-views.1fd4bffb137b"),icon:'back'}
@@ -96,8 +96,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       dialogReturnCommand=document.activeElement?.dataset?.command;
       dialogOpen=true;input.cancel();playerTargets?.cancel();app.inert=true;
       const template=document.createElement('template');template.innerHTML=content;
-      const heading=template.content.querySelector('h2'),title=heading?.textContent||globalThis.PlayroomMessages.text("ui.shared-views.0bf0fcb2ff78");if(heading?.closest('.modal-head'))heading.closest('.modal-head').remove();else heading?.remove();
-      dialogs.open(`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${GameScreen.esc(title)}">${GameScreen.modalContent(GameScreen.modalHead(title)+template.innerHTML)}</section></div>`);
+      const heading=template.content.querySelector('h2'),title=heading?.textContent||globalThis.PlayroomMessages.text("ui.shared-views.0bf0fcb2ff78");const header=heading?.closest('.modal-head')?.outerHTML||GameScreen.modalHead(title);if(heading?.closest('.modal-head'))heading.closest('.modal-head').remove();else heading?.remove();
+      dialogs.open(`<div class="shared-modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${GameScreen.esc(title)}">${GameScreen.modalContent(header+template.innerHTML)}</section></div>`);
       ownedDialog=modal.firstElementChild;
       modal.querySelector('button')?.focus();
     }
@@ -184,12 +184,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         case 'rematch':if(!readOnly&&client.snapshot?.state?.status==='finished')onExit?.({finished:true});break;
         case 'home':
           if(readOnly){onExit?.();break;}
-          if(onExit)onExit();
+          if(onExit)onExit({finished:client.snapshot?.state?.status==='finished'});
           else root.location.reload();
           break;
         case 'settings':root.PlayroomNetworkLibrary?.showSettings?.({sharedRules:true});break;
         case 'preferences':root.PlayroomAppBridge?.showSettings?.();break;
-        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules,rulebook:pack.rulebook};(document.querySelector('#modal-root .settings-overview')?root.PlayroomAppBridge.openModal:show)('<h2>'+globalThis.PlayroomMessages.text('ui.shared-views.7f7b0ffbbfe0')+'</h2>'+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
+        case 'rules':case 'card-help':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules,rulebook:pack.rulebook};(document.querySelector('#modal-root .settings-overview')?root.PlayroomAppBridge.openModal:show)(root.PlayroomRulebookView.header()+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')));break;}
         case 'fullscreen':
           if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
         case 'retry':{
@@ -213,6 +213,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     function click(event){
+      if(event.target.closest('[data-room-chat-open]'))return; // Application chat is outside the pack input contract.
       const shortcut=event.target.closest('[data-quick-shortcut][data-command]');if(shortcut){event.stopImmediatePropagation();if(shortcut.dataset.command!=='fullscreen')root.PlayroomAppBridge?.closeModal?.(true);void action(shortcut.dataset.command).catch(error=>toast(globalThis.PlayroomMessages.error(error)));return;}
       if(event.target.closest('[data-shared-rules]')){event.stopImmediatePropagation();void action('rules');return;}
       if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
@@ -287,7 +288,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(historyOpen){controller.shown=live;controller.queued=live.revision;render();return;}
       void controller.enqueue(live);
     }
-    const modalObserver=new MutationObserver(()=>{if(destroyed)return;if(modal.children.length){input.cancel();playerTargets.cancel();}else if(!dialogOpen)render();});
+    const modalObserver=new MutationObserver(()=>{
+      if(destroyed)return;
+      if(modal.children.length){input.cancel();playerTargets.cancel();}
+      else{
+        // The application may replace a shared dialog with its room/settings
+        // window. Once it closes, release the old dialog's input lock too.
+        if(dialogOpen&&ownedDialog?.parentNode!==modal){ownedDialog=null;dialogs.owner=null;dialogOpen=false;pendingAction=null;}
+        app.inert=false;render();
+      }
+    });
     modalObserver.observe(modal,{childList:true});
     const unsub=client.subscribe(subscribe);
     document.addEventListener('click',click,true);

@@ -128,7 +128,7 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 /* Optional per-bot configuration uses the same draft/accept dialog contract. */
 .bot-settings-fields{border:0;padding:0;margin:0;min-width:0}.bot-strategies{display:grid;gap:8px;margin-block:12px 20px}.bot-strategy{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:14px}.bot-strategy span{display:grid;gap:3px}.bot-strategy small{color:var(--muted);font-size:.85em}.bot-settings-footer{display:flex;gap:10px}.bot-settings-footer .btn{flex:1}.bot-strategy-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bot-settings-fields input[type=range]{width:100%}
 .public-sequence{height:100%;width:100%;display:flex;flex-direction:column;min-height:0}.public-sequence-stage{flex:1;min-height:0;position:relative}.public-sequence-stage>[data-public-frame]{height:100%;width:100%}.public-sequence-stage>[hidden]{display:none!important}.public-sequence-controls{display:flex;gap:5px;align-items:center;justify-content:center;flex:none;font-size:12px;padding:4px}.public-sequence-controls output{flex:1;text-align:center}.public-sequence-controls .scene-button{padding:4px 8px;min-height:32px}
-input[type=range].is-high-error-rate{accent-color:var(--color-feedback-danger,#b94f40);--range-color:var(--color-feedback-danger,#b94f40);--range-fill:var(--color-feedback-danger,#b94f40)}output.is-high-error-rate{color:var(--color-feedback-danger,#b94f40)}
+input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b94f40);--range-color:var(--color-feedback-error,#b94f40);--range-fill:var(--color-feedback-error,#b94f40)}output.is-high-error-rate{color:var(--color-feedback-error,#b94f40)}
 
 /* Square card hands retain the shared player-panel layout. */
 .app-game-layout .layout-hand .hand-track:has([data-card-shape="square"]){height:auto!important;min-height:0!important;padding:var(--square-hand-padding,6px)!important;flex-wrap:wrap;gap:6px;justify-content:safe center;overflow:visible}
@@ -170,3 +170,11 @@ input[type=range].is-high-error-rate{accent-color:var(--color-feedback-danger,#b
 
 #app .table-title [data-game-title]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:normal;word-break:normal;max-height:2.4em}
 #app .table-title.has-wrapped-title p{display:none}
+
+/* Quick actions follow available shell width after interface zoom. */
+:where(:root[data-ui-compact="true"]) #app :is(.topbar-tools,.table-tools)>.icon-btn{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important;border-radius:50%;padding:6px}
+:where(:root[data-ui-compact="true"]) #modal-root :is(.modal-head,.lobby-tools,.lobby-primary,.slot-edit,.lobby-game-line) .icon-btn{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important;border-radius:50%;padding:6px;flex:none}
+:where(:root[data-ui-compact="true"]) :is(#app,#modal-root) :is(.topbar-tools,.modal-head,.lobby-tools,.lobby-primary,.slot-edit,.rulebook-toolbar){gap:4px}
+:where(:root[data-ui-compact="true"]) #modal-root .room-setup-modal .lobby-seat-row:has(>.slot-edit){grid-template-columns:minmax(0,1fr) 68px}
+#modal-root .modal-head h2{min-width:0;overflow-wrap:anywhere}
+#modal-root .room-setup-modal :is(.lobby-wrap,.lobby-card,.lobby-config,.lobby-roster-scroll,.lobby-footer){min-width:0}

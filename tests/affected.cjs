@@ -1,6 +1,8 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
+  {paths:['application/host-transfer.js','platform/web/host-transfer-wire.js','app/host-transfer-ui.js','server/host-transfer.sql'],select:['network/host-transfer','case/cloud-account-rls','case/network-host-recovery-browser','case/network-session-store-browser']},
+  {paths:['app/push-ui.js','application/game-push-events.js','platform/web/push-device.js','platform/web/push-worker.js','server/push.sql','server/push/','supabase/'],select:['network/push','case/cloud-account-rls','case/pwa']},
   {paths:['platform/web/data-storage.js','platform/web/storage-usage.js'],select:['storage/local','case/recovery-warning']},
   {paths:['application/tutorial-controller.js','application/player-settings.js','platform/web/guide-preferences.js','platform/web/player-settings-store.js','app/first-turn-guide.js','app/tutorial-settings.js'],select:['case/domain-foundation','case/rc2-presentation-browser','case/settings-help-browser','case/motion-settings']},
   {paths:['core/messages.js','application/session-access.js'],select:['network/table','case/network-main-app']},

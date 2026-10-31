@@ -5,8 +5,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "a8f65b06012c165cc6d89bb3061919b8c68946ee3833aa2f1e2a7bd754202dca",
-      "renderedSha256": "a8f65b06012c165cc6d89bb3061919b8c68946ee3833aa2f1e2a7bd754202dca"
+      "sha256": "8e597d40387d901f6e65ad2b3c0798ab3572c4e97873c0297e103b0b023f3066",
+      "renderedSha256": "8e597d40387d901f6e65ad2b3c0798ab3572c4e97873c0297e103b0b023f3066"
     },
     {
       "source": "shared/components/game-components.css",
@@ -57,7 +57,10 @@
       "format": "module",
       "globalName": "PlayroomCharacterStyles",
       "sha256": "eef9fb253ba891f7f333cf133bd16fa3ff6cc6c7f461b6c8a5e32ba8fd790880",
-      "renderedSha256": "dbb8cbef16b80c6b3304ef3cdb1a38a20d55ddf69a1d694a1289fff32105ec6d"
+      "renderedSha256": "2fe534ae0ca03d7ec4cff7e5c5cff0695657b225b8e5ea131716110e4cd16871",
+      "includeSets": [
+        "minimal"
+      ]
     }
   ]
 }

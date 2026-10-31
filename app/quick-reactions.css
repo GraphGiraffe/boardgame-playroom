@@ -1,0 +1,18 @@
+.quick-reaction-picker{position:fixed;z-index:1100;display:grid;grid-template-columns:repeat(3,44px);gap:4px;padding:8px;border:1px solid var(--line);border-radius:18px;background:var(--color-surface-panel);box-shadow:0 4px 16px #0003}
+.quick-reaction-picker .icon-btn{width:44px;height:44px;min-width:44px;min-height:44px;padding:0;font-size:26px;border:0;box-shadow:none;background:transparent}
+.quick-reaction-picker .icon-btn:hover,.quick-reaction-picker .icon-btn:focus-visible{background:var(--color-surface-hover)}
+.quick-reaction-bubble{position:fixed;z-index:80;pointer-events:none;font-size:30px;line-height:1;padding:10px 14px;border-radius:18px;border:1px solid var(--color-interaction-target);background:var(--color-surface-tile-blue);box-shadow:0 3px 0 var(--color-border-subtle)}
+.quick-reaction-bubble::after{content:'';position:absolute;bottom:-5px;left:calc(50% - 4px);width:8px;height:8px;transform:rotate(45deg);background:var(--color-surface-tile-blue);border-right:1px solid var(--color-interaction-target);border-bottom:1px solid var(--color-interaction-target)}
+[data-quick-reaction]{cursor:pointer}
+.chat-message.chat-emoji p{font-size:32px;line-height:1.2}
+#modal-root .chat-modal .chat-composer>.chat-reactions{left:6px;right:auto;background:transparent;color:var(--ink);font-size:23px}
+.social-content .chat-composer [data-chat-editor]{padding-left:48px}
+.room-message-bubble{box-sizing:border-box;max-width:min(230px,calc(100vw - 24px));font-size:14px;line-height:1.35;padding:9px 12px;overflow-wrap:anywhere}
+.room-message-bubble>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}
+.quick-reaction-bubble.is-team{background:color-mix(in srgb,var(--room-team-color) 24%,var(--color-surface-panel));border-color:var(--room-team-color)}
+.quick-reaction-bubble.is-team::after{background:color-mix(in srgb,var(--room-team-color) 24%,var(--color-surface-panel));border-color:var(--room-team-color)}
+
+.avatar-message-bubble{z-index:1080}
+.quick-reaction-bubble[data-edge=top]::after{top:-5px;bottom:auto;transform:rotate(225deg)}
+
+.quick-reaction-picker{touch-action:manipulation;user-select:none;-webkit-user-select:none}

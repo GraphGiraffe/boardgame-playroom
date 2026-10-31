@@ -351,3 +351,13 @@ test('protected accusation stays visible but disabled until its deadline',()=>{
   clock.advance(1);assert(!accusation().disabled);assert(send(1,'accuse-uno',0).ok);
  }finally{authority.dispose();}
 });
+
+test('temporary bot releases its disconnected owner reaction window without changing human identity',async()=>{
+ const {clock,authority,clients,send}=onlineFixture({bots:[false,true]});
+ try{
+  send(0,'play');authority.setViewerConnected(0,false);assert(clients[0].snapshot().reactionWindows.some(w=>w.owner===0&&w.suspended));
+  await authority.setPlayerControl(0,{bot:true},{requestId:'temporary-uno',expectedRevision:0});
+  assert(clients[0].snapshot().reactionWindows.every(w=>w.owner!==0||!w.suspended));assert.equal(clients[0].snapshot().state.players[0].bot,false);
+  authority.scheduleBot({delay:10});clock.advance(20000);assert(authority.revision>1);
+ }finally{authority.dispose();}
+});

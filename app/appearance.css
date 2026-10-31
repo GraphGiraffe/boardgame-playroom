@@ -2,7 +2,6 @@
 .appearance-dialog{color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:25px;padding:16px;width:min(560px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);box-shadow:0 18px 80px #0005;overflow:hidden}
 .appearance-dialog[open]{display:flex;flex-direction:column;gap:12px}
 .appearance-dialog::backdrop{background:#13231dcc}
-.appearance-picker{width:min(360px,calc(100vw - 24px))}
 .appearance-head{display:flex;align-items:center;gap:12px;flex:none}
 .appearance-head h2{margin:0;font-size:20px;line-height:1.25;min-width:0;overflow-wrap:anywhere}
 .appearance-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:2px 3px 6px}
@@ -11,25 +10,13 @@
 .appearance-dialog .icon-btn{width:44px;height:44px;min-width:44px}
 .appearance-dialog :is(button,input,select,summary):focus-visible{outline:3px solid var(--ui-focus);outline-offset:2px}
 .appearance-dialog :is(button,input,select,summary){touch-action:manipulation}
-.appearance-hint{color:var(--muted);font-size:12px;line-height:1.5}
 .appearance-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
 .appearance-actions .btn{padding:10px 14px}
-.appearance-delete{background:var(--color-surface-notice,#f4e8c9);color:var(--ui-danger);border-color:currentColor}
 .appearance-palette-group{border:0;padding:0;margin:12px 0 18px;min-width:0}
 .appearance-palette-group legend{font-weight:700;font-size:13px;margin-bottom:7px}
-.appearance-palette-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-.appearance-color{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:6px;border:1px solid var(--line);border-radius:10px;font-size:12px;min-width:0}
-.appearance-color span{min-width:0;overflow-wrap:anywhere}
-.appearance-color input[type=color]{width:44px;min-width:44px;height:44px;border:0;background:transparent;padding:2px;cursor:pointer}
-.appearance-dialog details>summary{cursor:pointer;min-height:44px;padding:10px 0;font-weight:700}
-.appearance-status{min-height:1.4em;font-size:12px;color:var(--green);line-height:1.4}
-.appearance-status.is-error{color:var(--ui-danger)}
-.appearance-confirm{padding:10px;border:1px solid var(--ui-danger);border-radius:12px}
-.appearance-confirm p{margin:0;overflow-wrap:anywhere}
-@media(max-width:360px){.appearance-palette-grid{grid-template-columns:minmax(0,1fr)}.appearance-head h2{font-size:18px}}
+:where(:root[data-ui-compact="true"]) .appearance-palette-grid{grid-template-columns:minmax(0,1fr)}:where(:root[data-ui-compact="true"]) .appearance-head h2{font-size:18px}
 
 /* The same picker is available inside Settings when the table toolbar is full. */
-@media(max-width:360px){#app .table-tools>[data-appearance-picker]{display:none}}
 
 /* Canonical component samples, wrapping without changing game geometry. */
 .appearance-skin-row{display:flex;flex-wrap:wrap;gap:12px;padding:4px}
@@ -50,20 +37,14 @@
 
 .appearance-confirm-actions{flex-wrap:nowrap;justify-content:flex-end}.appearance-confirm-actions>.btn{flex:1;min-width:0}
 
-.appearance-avatar-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.appearance-avatar-options .avatar-option{width:100%;aspect-ratio:1;min-width:0;padding:6px}.appearance-avatar-options .avatar{width:100%;height:100%;aspect-ratio:1}.appearance-avatar-options .avatar-art{width:100%;height:100%;object-fit:contain}
 
-.appearance-head .appearance-reset{margin-left:auto;flex:none;}
 
 .appearance-dialog>.appearance-confirm-actions{flex:none;margin:0;padding:4px 3px 6px;}
 .appearance-dialog>.appearance-confirm-actions .btn{flex:1;}
 
-.appearance-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start;}
-.appearance-overview>.appearance-palette-group{margin:8px 0;}
-.appearance-overview .appearance-avatar-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
-.appearance-overview .appearance-avatar-options .avatar-option{width:100%;height:auto;max-width:80px;min-width:0;padding:4px;aspect-ratio:1;}
-.appearance-overview .appearance-avatar-options .avatar{width:100%;height:100%;}
-.appearance-overview:has(>.appearance-palette-group) .range-setting{min-width:0;}
-.appearance-overview:not(:has(>.appearance-palette-group)){grid-template-columns:minmax(0,1fr);}
 @media(max-height:450px){.appearance-dialog[open]{gap:8px;}.appearance-overview>.appearance-palette-group{margin:0;}.appearance-dialog .appearance-hint{margin:6px 0;}}
 
-.appearance-status:empty{display:none;}
+
+.settings-skins{grid-column:1/-1;min-width:0}
+.settings-skins>header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.settings-skins>header h3{font-size:15px;margin:12px 0}

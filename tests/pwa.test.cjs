@@ -191,8 +191,8 @@ test('incomplete or login-page shell never installs; verified update waits for e
   const sandbox={self,URL,Response,Uint8Array,crypto:crypto.webcrypto,fetch:async path=>new Response(path==='./app/app.js'&&failure==='corrupt'?'wrong version':body,{status:path==='./app/app.js'&&failure==='missing'?503:200,headers:{'content-type':path==='./app/app.js'&&failure==='login'?'text/html':'text/javascript'}}),caches:{open:async()=>({put:async path=>writes.push(path)})}};
   vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),sandbox);
   listeners.install({waitUntil:p=>waits=p});
-  if(failure){await assert.rejects(waits,/Incomplete/);assert.equal(writes.length,0);assert.equal(messages.length,0);}
-  else{await waits;assert(writes.includes('./app/app.js'));assert.equal(messages[0].kind,'playroom-update-ready');assert.equal(messages[0].version,require('../package.json').version);}
+  if(failure){await assert.rejects(waits);assert(!writes.includes('./app/app.js'));assert(!messages.some(m=>m.kind==='playroom-update-ready'));}
+  else{await waits;assert(writes.includes('./app/app.js'));assert.equal(messages.find(m=>m.kind==='playroom-update-ready').kind,'playroom-update-ready');assert.equal(messages.find(m=>m.kind==='playroom-update-ready').version,require('../package.json').version);}
  }
 });
 
@@ -326,13 +326,14 @@ test('PWA update checks only its application scope and ignores clients closed du
   const gone={id:'closed',url:'https://example.test/playroom-hod-test/index.html',postMessage(message,ports){if(ports)ports[0].postMessage({kind:'playroom-update-busy'});}};
   const outsiders=['https://example.test/pecsoteka/','https://example.test/ROADMAPler/','https://example.test/playroom-hod-test-other/','https://other.test/playroom-hod-test/'].map((url,i)=>({id:'other'+i,url,postMessage(){throw Error('Another application must not receive update messages');}}));
   const self={location:{href:'https://example.test/playroom-hod-test/sw.js'},addEventListener:(type,fn)=>listeners[type]=fn,clients:{matchAll:async()=>{calls++;return [...(closed&&calls===1?[gone]:[]),idle,...outsiders,...(calls>1?[{id:'new-other',url:'https://example.test/roadmapler/',postMessage(){throw Error('Unrelated new window');}}]:[])];}},skipWaiting:async()=>{skipped=true;}};
-  vm.runInNewContext(source,{self,URL,MessageChannel,setTimeout,clearTimeout});
+  const cacheId=source.match(/const CACHE='([^']+)'/)[1];const cache={match:async key=>key==='./__playroom-update-state__'?new Response(JSON.stringify({build:cacheId,phase:'ready'})):new Response('shell')};
+  vm.runInNewContext(source,{self,URL,Response,MessageChannel,setTimeout,clearTimeout,caches:{open:async()=>cache}});
   let pending;listeners.message({data:{kind:'playroom-activate-update'},ports:[{postMessage:r=>replies.push(r)}],waitUntil:p=>pending=p});await pending;
   assert.equal(replies[0]?.ok,true);assert.equal(skipped,true);assert.deepEqual(messages,['app']);
  }
 });
 
-test('PWA update isolates a waiting build, drops old caches and starts offline with saved data', {timeout:60000}, async()=>{
+for(const suppressControllerChange of [false,true])test('PWA update isolates a waiting build, drops old caches and starts offline with saved data'+(suppressControllerChange?' without controllerchange':''), {timeout:60000}, async()=>{
  const {execFileSync}=require('node:child_process'),http=require('node:http');
  const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
  const snapshots=JSON.parse(execFileSync('python3',['-c',`import build, json, base64, re
@@ -348,23 +349,27 @@ for marker in ['previous','current']:
   items=dict(build.pwa_runtime_items())
  if marker=='previous':
   items['sw.js']=re.sub(rb"const CACHE='[^']+'",b"const CACHE='playroom-pwa-v0.15.0'",items['sw.js'])
+ items['sw.js']=items['sw.js'].replace(b"{cache:'reload',...(controller?",b"{cache:'reload',headers:{'X-Playroom-Test-Download':'1'},...(controller?")
  snapshots.append({name:base64.b64encode(content).decode() for name,content in items.items()})
 print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
- let deployed=0;
+ if(suppressControllerChange)for(const snapshot of snapshots){const worker=Buffer.from(snapshot['sw.js'],'base64').toString().replace(".map(client=>client.navigate(client.url))",".map(()=>Promise.resolve())");snapshot['sw.js']=Buffer.from(worker).toString('base64');}
+ let deployed=0,holdDownloads=true,heldResponse=null,releaseHeld;const currentRequests=[],downloadRequests=[];const heldReady=new Promise(resolve=>releaseHeld=resolve);
  const server=http.createServer((req,res)=>{
   if(new URL(req.url,'http://localhost').pathname==='/playroom-hod-test/index.html'){res.writeHead(308,{location:'/playroom-hod-test/'});res.end();return;}
   if(req.url.startsWith('/ROADMAPler/')){res.writeHead(200,{'content-type':'text/html'});res.end('<title>Other application</title><script>window.messages=[];navigator.serviceWorker.addEventListener(\"message\",e=>messages.push(e.data.kind));</script>');return;}
   const name=new URL(req.url,'http://localhost').pathname.slice('/playroom-hod-test/'.length)||'index.html',data=snapshots[deployed][name];
+  if(deployed===1&&name!=='sw.js'&&req.headers['sec-fetch-dest']!=='document')currentRequests.push(name);if(deployed===1&&req.headers['x-playroom-test-download']==='1')downloadRequests.push(name);
   res.writeHead(data?200:404,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'application/octet-stream','cache-control':'no-store'});
+  if(deployed===1&&holdDownloads&&name.startsWith('app/styles.')&&data){const bytes=Buffer.from(data,'base64');res.write(bytes.subarray(0,Math.max(1,Math.floor(bytes.length/2))));heldResponse=res;releaseHeld();return;}
   res.end(data?Buffer.from(data,'base64'):'missing');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const context=await browser.newContext(),url=`http://127.0.0.1:${server.address().port}/playroom-hod-test/`;
+  const context=await browser.newContext({viewport:{width:390,height:740},reducedMotion:'reduce'}),url=`http://127.0.0.1:${server.address().port}/playroom-hod-test/`;
   await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'test',name:'Тест'})));
- let page=await context.newPage();await page.goto(url);
+ let page=await context.newPage();await page.addInitScript(suppress=>{if(suppress){const add=ServiceWorkerContainer.prototype.addEventListener;ServiceWorkerContainer.prototype.addEventListener=function(type,...args){if(type!=='controllerchange')return add.call(this,type,...args);};}},suppressControllerChange);await page.addInitScript(()=>{window.testActiveRoom=true;let network;Object.defineProperty(window,'PlayroomNetworkLibrary',{configurable:true,get:()=>network,set:value=>{network={...value,hasActiveRoom:()=>window.testActiveRoom||value.hasActiveRoom()};}});});await page.goto(url);
   await page.evaluate(()=>navigator.serviceWorker.ready);
   await page.waitForFunction(()=>navigator.serviceWorker.controller);
   const other=await context.newPage();await other.goto(new URL('/ROADMAPler/',url).href);
@@ -382,14 +387,48 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
   await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting);
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'previous');
   const newWorker=await newWorkerPromise;assert.notEqual(newWorker,originalWorker);
-  await page.waitForSelector('.updates-modal');
+  const screenshots=path.resolve(root,'../tmp_files/pwa-staged-020');fs.mkdirSync(screenshots,{recursive:true});
+  await page.locator('#pwa-update-button').waitFor();assert.equal(await page.locator('.updates-modal').count(),0,'active room suppresses automatic popup');await page.locator('#pwa-update-button').click();await page.waitForSelector('.updates-modal');const buttonStates=[];const rememberButton=async()=>buttonStates.push(await page.locator('#pwa-update-button').evaluate(e=>({phase:e.dataset.updatePhase,icon:e.querySelector('svg').dataset.uiIcon,color:getComputedStyle(e).backgroundColor})));await rememberButton();await page.screenshot({path:path.join(screenshots,'available-390.png')});
+  assert.equal(currentRequests.filter(name=>/\.(js|css)$/.test(name)&&name!=='platform/web/push-worker.js').length,0,'availability must not fetch application assets beyond the worker bootstrap: '+JSON.stringify(currentRequests));
+  assert.equal(await page.locator('[data-command=update-app]').isVisible(),false);assert.equal(await page.locator('[data-command=download-app]').innerText(),'');
+  await page.locator('[data-command=download-app]').click();await heldReady;
+  await page.waitForFunction(()=>PlayroomPWA.updateInfo.download.completed>5&&Number(document.querySelector('[data-update-progress]')?.getAttribute('aria-valuenow'))>0);
+  const meter=await page.locator('[data-update-progress]').evaluate(e=>({percent:Number(e.getAttribute('aria-valuenow')),height:getComputedStyle(e).height}));assert(meter.percent>0&&meter.percent<100,JSON.stringify(meter));assert.equal(meter.height,'6px');
+  await page.locator('.updates-modal .modal-head [data-command=close-modal]').click();await page.locator('#pwa-update-button[data-update-phase=downloading]').waitFor();assert.equal(await page.locator('.updates-modal').count(),0,'closing window keeps download running');await rememberButton();
+  await page.locator('#pwa-update-button').click();await page.locator('[data-update-progress]').waitFor();
+  await page.screenshot({path:path.join(screenshots,'downloading-390.png')});
+  await context.setOffline(true);holdDownloads=false;heldResponse.destroy();
+  await page.waitForFunction(()=>PlayroomPWA.updateInfo.download.phase==='paused');assert.match(await page.locator('[data-update-status]').innerText(),/Нет подключения|Соединение прервано/);assert.equal(await page.locator('#pwa-update-button').getAttribute('data-update-phase'),'paused');
+  await rememberButton();await page.screenshot({path:path.join(screenshots,'paused-390.png')});
+  const savedFiles=await page.evaluate(async()=>{const key=(await caches.keys()).find(key=>key.startsWith('playroom-pwa-')&&key!=='playroom-pwa-v0.15.0');return (await(await caches.open(key)).keys()).map(r=>new URL(r.url).pathname.slice('/playroom-hod-test/'.length)).filter(name=>!name.includes('__playroom-update'));});assert(savedFiles.length>5);
+  const savedCounts=new Map(savedFiles.map(name=>[name,downloadRequests.filter(p=>p===name).length]));
+  await context.setOffline(false);const cdp=await context.newCDPSession(page);await cdp.send('ServiceWorker.enable');await cdp.send('ServiceWorker.stopAllWorkers');await cdp.detach();await page.reload();await page.locator('#pwa-update-button').waitFor();if(!await page.locator('.updates-modal').count())await page.locator('#pwa-update-button').click();
+  await page.waitForFunction(()=>PlayroomPWA.updateInfo?.download.phase==='paused');assert.equal(await page.locator('[data-command=download-app]').getAttribute('aria-label'),'Продолжить загрузку');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'previous','reopening still uses the installed version');
+  const expectedIndex=require('node:crypto').createHash('sha256').update(Buffer.from(snapshots[1]['index.html'],'base64')).digest('hex');
+  const cachedIndex=await page.evaluate(async expected=>{const key=(await caches.keys()).find(key=>key.startsWith('playroom-pwa-')&&key!=='playroom-pwa-v0.15.0'),cache=await caches.open(key),r=await cache.match('./index.html');if(!r)return {key,missing:true};return {key,status:r.status,redirected:r.redirected,url:r.url,hash:[...new Uint8Array(await crypto.subtle.digest('SHA-256',await r.clone().arrayBuffer()))].map(n=>n.toString(16).padStart(2,'0')).join(''),expected};},expectedIndex);
+  fs.writeFileSync(path.join(screenshots,'cached-index-check.json'),JSON.stringify(cachedIndex,null,2));assert.equal(cachedIndex.hash,expectedIndex,'checkpoint contains the exact candidate document');
+  const afterRestartCounts=new Map(savedFiles.map(name=>[name,downloadRequests.filter(p=>p===name).length]));
+  for(const name of savedFiles.filter(name=>name!=='index.html'&&name!=='platform/web/push-worker.js'))assert.equal(afterRestartCounts.get(name),savedCounts.get(name),'restart keeps cached asset: '+name);
+  await page.locator('[data-command=download-app]').click();await page.waitForFunction(()=>PlayroomPWA.updateInfo.download.phase==='ready');
+  const delta=await page.evaluate(()=>PlayroomPWA.updateInfo.download);assert(delta.reusedFiles>5);assert(delta.total<delta.totalSize/2,JSON.stringify(delta));assert(!downloadRequests.some(name=>name.startsWith('installed-packs.')),'unchanged packs must be reused');
+  fs.writeFileSync(path.join(screenshots,'resume-request-counts.json'),JSON.stringify({download:delta,beforeRestart:Object.fromEntries(savedCounts),afterRestart:Object.fromEntries(afterRestartCounts),afterResume:Object.fromEntries(savedFiles.map(name=>[name,downloadRequests.filter(p=>p===name).length])),allRequests:currentRequests},null,2));
+  for(const name of savedFiles)assert.equal(downloadRequests.filter(p=>p===name).length,afterRestartCounts.get(name),'resume keeps verified file: '+name);
+  await rememberButton();assert.deepEqual(buttonStates.map(s=>s.phase),['available','downloading','paused','ready']);assert.equal(new Set(buttonStates.map(s=>s.icon)).size,4);assert.equal(new Set(buttonStates.map(s=>s.color)).size,4);fs.writeFileSync(path.join(screenshots,'button-states.json'),JSON.stringify(buttonStates,null,2));
+  assert.equal(await page.locator('#pwa-update-button').getAttribute('data-update-phase'),'ready');assert.equal(await page.locator('[data-update-progress]').getAttribute('aria-valuenow'),'100');
+  assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'previous','download never activates the worker');
+  await page.locator('[data-command=update-app]').click();assert.match(await page.locator('[data-update-status]').innerText(),/выйдите из комнаты/);assert.equal(await page.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting),true,'active room cannot install or reload');
+  await page.evaluate(()=>{window.testActiveRoom=false;});
+  for(const [width,height] of [[320,640],[390,740],[740,390]]){await page.setViewportSize({width,height});assert(await page.locator('.updates-modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert(await page.locator('.update-actions').evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight));await page.screenshot({path:path.join(screenshots,'ready-'+width+'.png')});}await page.setViewportSize({width:390,height:740});
   await page.locator('[data-command=update-app]').click();
   await page.waitForFunction(()=>document.querySelector('[data-update-status]')?.textContent.includes('Закройте другие окна'));
   assert.equal(await page.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting),true);
   await second.evaluate(()=>PlayroomPWA.setUpdateGuard(()=>true));
+  let loadedDocuments=0;page.on('domcontentloaded',()=>loadedDocuments++);
   await page.locator('[data-command=update-app]').click();
   await page.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')==='current');
   await second.waitForFunction(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')==='current');
+  await page.waitForTimeout(1500);assert.equal(loadedDocuments,1,'successful activation loads one document; history.pushState is not a reload');assert.equal(await page.locator('.updates-modal').count(),0,'installed update does not leave its old dialog');
   assert.deepEqual(await other.evaluate(()=>messages),[],'another application receives no update checks or notices');
   await context.setOffline(true);await page.reload();
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'current');
@@ -548,4 +587,75 @@ with tempfile.TemporaryDirectory() as d:
    except ValueError as error:assert 'commit' in str(error)
    else:raise AssertionError('Wrong release must be rejected')
 `],{cwd:root,stdio:'pipe'});
+});
+
+
+test('staged update announces metadata only, keeps verified files after HTTP failure and resumes without redownloading',{timeout:30000},async()=>{
+ const vm=require('node:vm'),crypto=require('node:crypto'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),listeners={},messages=[],files=new Map(),requests=new Map();let fail=true,quota=false,broken=false,fetches=0;
+ const body='verified shell',hash=crypto.createHash('sha256').update(body).digest('hex');
+ const cache={match:async key=>files.get(key)?.clone(),put:async(key,value)=>{if(quota)throw Object.assign(Error('full'),{name:'QuotaExceededError'});files.set(key,value.clone());}};
+ const self={registration:{active:{}},location:{href:'https://example.test/sw.js',origin:'https://example.test'},clients:{matchAll:async()=>[{url:'https://example.test/',postMessage:m=>messages.push(m)}]},addEventListener:(type,fn)=>listeners[type]=fn,skipWaiting(){throw Error('must not activate download');}};
+ const context={self,URL,Response,Uint8Array,crypto:crypto.webcrypto,caches:{open:async()=>cache},fetch:async path=>{fetches++;requests.set(path,(requests.get(path)||0)+1);if(broken&&path==='./app/app.js')return new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('partial'));queueMicrotask(()=>c.error(new TypeError('connection reset')));}}));return new Response(body,{status:fail&&path==='./app/app.js'?503:200});}};
+ vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),context);
+ let pending;listeners.install({waitUntil:p=>pending=p});await pending;assert.equal(fetches,0);assert.equal(files.size,0);assert(messages.some(m=>m.kind==='playroom-update-ready'));
+ const call=async(kind,extra={})=>{let result;listeners.message({data:{kind,...extra},ports:[{postMessage:r=>result=r}],waitUntil:p=>pending=p});await pending;return result;};
+ const first=await call('playroom-download-update');assert.equal(first.ok,false);assert.equal(first.download.error.code,'http');assert.equal(first.download.error.status,503);const saved=[...files.keys()].filter(p=>!p.includes('__playroom-update'));assert(saved.length>0);const counts=new Map(requests);
+ fail=false;const resumed=await call('playroom-download-update');assert.equal(resumed.ok,true);assert.equal(resumed.download.phase,'ready');for(const key of saved)assert.equal(requests.get(key),counts.get(key),key);
+ quota=true;const full=await call('playroom-download-update');assert.equal(full.ok,false);assert.equal(full.download.error.code,'quota');quota=false;await call('playroom-download-update');
+ broken=true;files.delete('./app/app.js');const disconnected=await call('playroom-download-update');assert.equal(disconnected.ok,false);assert.equal(disconnected.download.error.code,'network');broken=false;await call('playroom-download-update');
+ files.set('./app/app.js',new Response('corrupt'));const invalid=await call('playroom-activate-update',{manual:true});assert.equal(invalid.ok,false);assert.match(invalid.reason,/не полностью/);
+});
+
+
+test('legacy preview upgrade survives its old request timeout and preserves local data',{timeout:60000,skip:!process.env.PLAYROOM_LEGACY_PWA},async()=>{
+ const http=require('node:http'),{chromium,executablePath}=require('../scripts/codex/browser.cjs'),oldRoot=path.resolve(process.env.PLAYROOM_LEGACY_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA);let deployed=false,pendingBody,seenHeld;const held=new Promise(resolve=>seenHeld=resolve);
+ const server=http.createServer((req,res)=>{const relative=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html',base=deployed?newRoot:oldRoot,file=path.resolve(base,relative);if(!file.startsWith(base+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end();return;}const body=fs.readFileSync(file);res.writeHead(200,{'Content-Type':({'.js':'text/javascript','.css':'text/css','.html':'text/html','.webmanifest':'application/manifest+json','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm'})[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'});if(deployed&&relative.startsWith('installed-packs.')&&!pendingBody){res.write(body.subarray(0,16));pendingBody={res,body:body.subarray(16)};seenHeld();return;}res.end(body);});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const context=await browser.newContext(),page=await context.newPage();await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'legacy-update',name:'Тест',createdAt:1,updatedAt:1})));await page.goto('http://127.0.0.1:'+server.address().port+'/');await page.waitForFunction(()=>!!navigator.serviceWorker.controller);assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');await page.evaluate(()=>localStorage.setItem('legacy-update-data','keep'));
+  deployed=true;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.locator('.updates-modal [data-command=update-app]').waitFor();await page.locator('[data-command=update-app]').click();await held;
+  await page.waitForFunction(()=>document.querySelector('[data-update-status]')?.textContent.includes(PlayroomMessages.text('ui.pwa.16263196d581')));assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');pendingBody.res.end(pendingBody.body);
+  await page.waitForFunction(()=>globalThis.PlayroomAppVersion==='0.20.0-preview.14');assert.equal(await page.evaluate(()=>localStorage.getItem('legacy-update-data')),'keep');assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().id),'legacy-update');
+ }finally{await browser.close();pendingBody?.res.destroy();await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test('incremental update assembles latest complete set from active and partial intermediate versions',async()=>{
+ const vm=require('node:vm'),crypto=require('node:crypto'),listeners={},stores=new Map(),requests=[];
+ const target={'./index.html':'latest document','./stable.js':'unchanged','./middle.js':'from intermediate','./changed.js':'latest code'},names=Object.keys(target);
+ const hashes=Object.fromEntries(names.map(p=>[p,crypto.createHash('sha256').update(target[p]).digest('hex')])),sizes=Object.fromEntries(names.map(p=>[p,Buffer.byteLength(target[p])]));
+ const store=name=>{if(!stores.has(name))stores.set(name,new Map());const files=stores.get(name);return {match:async p=>files.get(p)?.clone(),put:async(p,r)=>files.set(p,r.clone())};};
+ const active='playroom-pwa-active',middle='playroom-pwa-intermediate',latest='playroom-pwa-latest';
+ await store(active).put('./stable.js',new Response(target['./stable.js']));await store(active).put('./changed.js',new Response('obsolete'));
+ await store(middle).put('./middle.js',new Response(target['./middle.js']));await store(middle).put('./obsolete.js',new Response('removed'));
+ await store(latest).put('./changed.js',new Response('corrupt candidate'));
+ let fail=true,skipped=false;
+ const source=fs.readFileSync(path.join(root,'sw.js'),'utf8').replace(/const CACHE='[^']+'/,'const CACHE='+JSON.stringify(latest)).replace(/const CORE=\[[\s\S]*?\];/,'const CORE='+JSON.stringify(names)+';').replace('const INTEGRITY=null;','const INTEGRITY='+JSON.stringify(hashes)+';').replace('const ASSET_SIZES=null;','const ASSET_SIZES='+JSON.stringify(sizes)+';');
+ const self={registration:{active:{}},location:{href:'https://example.test/sw.js'},clients:{matchAll:async()=>[]},addEventListener:(type,fn)=>listeners[type]=fn,skipWaiting:async()=>{skipped=true;}};
+ vm.runInNewContext(source,{self,URL,Response,Uint8Array,crypto:crypto.webcrypto,caches:{keys:async()=>[...stores.keys()],open:async name=>store(name)},fetch:async p=>{const key=p==='./'?'./index.html':p;requests.push(key);if(fail&&key==='./changed.js')while(!stores.get(latest).has('./index.html'))await new Promise(resolve=>setImmediate(resolve));return new Response(target[key],{status:fail&&key==='./changed.js'?503:200});}});
+ const call=async kind=>{let pending,result;listeners.message({data:{kind,manual:true},ports:[{postMessage:r=>result=r}],waitUntil:p=>pending=p});await pending;return result;};
+ const first=await call('playroom-download-update');assert.equal(first.ok,false);assert.equal(first.download.error.code,'http');assert.equal((await call('playroom-activate-update')).ok,false);assert.equal(skipped,false);
+ assert.deepEqual(requests.sort(),['./changed.js','./index.html']);assert(stores.has(active)&&stores.has(middle),'old versions stay usable before activation');
+ // Simulate worker termination: the next worker must resume from durable files.
+ vm.runInNewContext(source,{self,URL,Response,Uint8Array,crypto:crypto.webcrypto,caches:{keys:async()=>[...stores.keys()],open:async name=>store(name)},fetch:async p=>{const key=p==='./'?'./index.html':p;requests.push(key);return new Response(target[key]);}});
+ fail=false;const final=await call('playroom-download-update');assert.equal(final.ok,true);assert.equal(final.download.phase,'ready');assert.equal(final.download.reusedFiles,3);assert.equal(final.download.total,sizes['./changed.js']);assert.equal(final.download.received,sizes['./changed.js']);assert.equal(final.download.savedBytes,Object.values(sizes).reduce((a,b)=>a+b,0));
+ for(const p of names)assert.equal(await (await store(latest).match(p)).text(),target[p]);assert.equal(await store(latest).match('./obsolete.js'),undefined);
+ assert.equal(requests.filter(p=>p==='./index.html').length,1);assert.equal(await (await store(active).match('./changed.js')).text(),'obsolete');
+ stores.get(latest).set('./stable.js',new Response('corrupt after download'));assert.equal((await call('playroom-activate-update')).ok,false);assert.equal(skipped,false,'installation rechecks the entire assembled set');
+});
+
+
+test('newer waiting update replaces a partial candidate without accepting its late progress',async()=>{
+ const vm=require('node:vm'),events=new Map(),swEvents=new Map(),registrationEvents=new Map();let checks=0,oldReply;
+ class Channel{constructor(){this.port1={close(){}};this.port2={postMessage:data=>queueMicrotask(()=>this.port1.onmessage?.({data}))};}}
+ const worker=(version,hold=false)=>({postMessage(message,ports){if(message.kind==='playroom-update-info')ports[0].postMessage({version,download:{phase:'available'}});if(message.kind==='playroom-download-update'){if(hold)oldReply=ports[0];else ports[0].postMessage({ok:true,download:{phase:'ready'}});}}});
+ const old=worker('B',true),latest=worker('C'),registration={waiting:old,installing:null,addEventListener:(t,f)=>registrationEvents.set(t,f),update:async()=>{checks++;registration.waiting=latest;registration.installing={addEventListener:(t,f)=>f()};registrationEvents.get('updatefound')();}};
+ const context={location:{protocol:'https:',hostname:'example.test',href:'https://example.test/'},document:{hidden:false,addEventListener(){}},navigator:{serviceWorker:{controller:{},register:async()=>registration,addEventListener:(t,f)=>swEvents.set(t,f),getRegistration:async()=>registration}},matchMedia:()=>({matches:false}),PlayroomPairing:{extract:()=>null},MessageChannel:Channel,CustomEvent:class{constructor(type){this.type=type;}},Event,URL,Set,Promise,setTimeout,clearTimeout,setInterval(){},addEventListener:(t,f)=>events.set(t,f),removeEventListener:(t)=>events.delete(t),dispatchEvent:e=>events.get(e.type)?.(e)};
+ context.globalThis=context;
+ vm.runInNewContext(['core/messages.js','application/pwa-update-coordinator.js','app/pwa.js'].map(p=>fs.readFileSync(path.join(root,p),'utf8')).join('\n'),context);
+ const flush=async()=>{for(let i=0;i<15;i++)await Promise.resolve();};await flush();assert.equal(context.PlayroomPWA.updateInfo.version,'B');
+ const pending=context.PlayroomPWA.downloadUpdate();const rejected=assert.rejects(pending,error=>error.code==='update-changed');await flush();
+ events.get('focus')();await flush();assert.equal(checks,1);assert.equal(context.PlayroomPWA.updateInfo.version,'C');
+ swEvents.get('message')({source:old,data:{kind:'playroom-update-progress',version:'B',download:{phase:'ready'}}});assert.equal(context.PlayroomPWA.updateInfo.download.phase,'available');
+ oldReply.postMessage({ok:true,download:{phase:'ready'}});await rejected;assert.equal(context.PlayroomPWA.updateInfo.version,'C');assert.equal(context.PlayroomPWA.updateInfo.download.phase,'available');
+ await context.PlayroomPWA.downloadUpdate();assert.equal(context.PlayroomPWA.updateInfo.download.phase,'ready');
 });

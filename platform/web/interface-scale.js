@@ -27,6 +27,8 @@
     style.setProperty('--ui-interface-scale',String(applied/100));
     root.PlayroomElementSizes?.apply(doc,applied,width,height);
     doc.documentElement.dataset.interfaceScale=String(applied);
+    // Shell breakpoints use the space available after zoom, not physical CSS pixels.
+    doc.documentElement.dataset.uiCompact=String(width/(applied/100)<=360);
     root.PlayroomLayoutGuides?.refresh();
     const input=doc.getElementById('setting-scale');
     if(input){

@@ -3,7 +3,7 @@
  'use strict';let offering=null,queued=false;
  const text=key=>root.PlayroomMessages.text('ui.app.learning.'+key),guide=()=>root.PlayroomFirstTurnGuide;
  function markup(game){const H=root.PlayroomGameScreen;if(!game)return '';
-  return `<section class="settings-learning"><div class="settings-guide-row"><label class="switch"><span>${text('show')}</span><input type="checkbox" id="setting-learning-enabled" data-game="${H.esc(game)}" ${guide().settings(game).enabled?'checked':''}></label>${H.iconButton(`data-learning-list="${H.esc(game)}"`,text('list'),'rules')}${H.iconButton(`data-restart-guides="${H.esc(game)}"`,text('restart'),'reset')}</div></section>`;
+  return `<section class="settings-learning"><div class="settings-guide-row"><label class="setting-title" for="setting-learning-enabled"><span class="setting-title-text">${text('show')}</span>${root.PlayroomLobbyView.fieldHelp(text('help'),text('show'))}</label>${H.iconButton(`data-restart-guides="${H.esc(game)}"`,text('restart'),'reset',{className:'ui-action-danger'})}${H.iconButton(`data-learning-list="${H.esc(game)}"`,text('list'),'rules')}<input type="checkbox" id="setting-learning-enabled" aria-label="${H.esc(text('show'))}" data-game="${H.esc(game)}" ${guide().settings(game).enabled?'checked':''}></div></section>`;
  }
  function offer(game,isCurrent=()=>false){
   if(offering&&!queued&&!document.querySelector('.learning-intro'))offering=null;
@@ -22,7 +22,7 @@
   const learned=goal=>saved.mastered[goal.id]===(goal.revision||1),complete=goals.length>0&&goals.every(learned);
   bridge.openModal(`${bridge.modalHead(text('list'))}<ul class="learning-goals">${goals.map(goal=>`<li><input type="checkbox" disabled ${learned(goal)?'checked':''} aria-label="${H.esc(goal.text)}"><span>${H.esc(goal.text)}</span></li>`).join('')}</ul>${complete?`<p class="learning-complete" role="status">${H.icon('check')} ${text('complete')}</p>`:''}`,'learning-list');
  }
- async function restart(game){if(await root.PlayroomGameScreen.confirmDialog(text('reset-confirm'))){guide().restart(game);const box=document.querySelector('#setting-learning-enabled');if(box?.dataset.game===game)box.checked=true;}}
+ async function restart(game){if(await root.PlayroomGameScreen.confirmDialog(text('reset-confirm'),{title:'Сбросить обучение?',acceptLabel:'Сбросить'})){guide().restart(game);const box=document.querySelector('#setting-learning-enabled');if(box?.dataset.game===game)box.checked=true;}}
  document.addEventListener('click',event=>{const list=event.target.closest('[data-learning-list]');if(list){showList(list.dataset.learningList);return;}const choice=event.target.closest('[data-learning-choice]');if(choice){guide().setEnabled(choice.dataset.game,choice.dataset.learningChoice==='yes');offering=null;root.PlayroomAppBridge.closeModal();return;}
   if(offering&&event.target.closest('[data-command="close-modal"]')&&document.querySelector('.learning-intro')){guide().setEnabled(offering,true);offering=null;}
  });

@@ -13,12 +13,12 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await page.goto(server.url);await page.locator('#profile-form input').fill('Иван');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());
         await page.locator('[data-start=uno]').click();
         await page.locator('[data-room-cycle="seat-3"]').click();assert.equal(await page.locator('[data-room-bot]').count(),0,'bot is added without an intermediate name dialog');
-        await page.locator('[data-lobby-seat="seat-3"]').click();await page.locator('#room-human-form input').fill('Кира');await page.locator('#room-human-form').evaluate(f=>f.requestSubmit());assert.match(await page.locator('[data-lobby-seat="seat-3"]').innerText(),/Кира/);
+        await page.locator('.lobby-seat-row[data-room-drop="seat-3"] [data-bot-settings]').click();await page.locator('#bot-settings-form [name=nickname]').fill('Кира');await page.locator('#bot-settings-form').evaluate(f=>f.requestSubmit());assert.match(await page.locator('.lobby-seat-row[data-room-drop="seat-3"]').innerText(),/Кира/);
         assert.equal(await page.locator('[data-participant-id]').count(),3);
         await page.locator('[data-room-cycle="seat-3"]').click();assert.equal(await page.locator('[data-lobby-seat="seat-3"]').isDisabled(),true);
         await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-lobby-seat="seat-3"]').click();await page.locator('#room-human-form input').fill('Оля');await page.locator('#room-human-form').evaluate(f=>f.requestSubmit());
         assert.match(await page.locator('[data-lobby-seat="seat-3"]').innerText(),/Оля/);await page.locator('[data-room-cycle="seat-3"]').click();await page.locator('[data-room-cycle="seat-3"]').click();
-        await page.locator('[data-room-option=transportMode]').check();
+        await page.locator('[data-room-option=transportMode][value=network]').check();
         assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online[aria-label*=хост]').count(),1);assert.equal(await page.locator('.lobby-seat-row [data-participant-role=player].is-online svg').count(),1,'host crown replaces the player icon');
         assert.equal(await page.locator('.lobby-seat-row [data-participant-role=bot].is-online').count(),0);await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-room-title]').fill('Комната Иван');await page.locator('[data-room-title]').press('Tab');
         await page.locator('.lobby-shell').waitFor();
@@ -28,7 +28,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           b.roomService.join(r.id,{id:'layout-observer',nickname:'Зритель Анна'});b.renderLobby();
         });
         const lobby=page.locator('.room-setup-modal');
-        const toggle=await lobby.locator('[data-room-option=transportMode]').boundingBox();assert(toggle.width>=180);assert.equal(toggle.height,44);assert.match(await lobby.locator(".room-transport").innerText(),/Локальная\s+Сетевая/);assert.equal(await lobby.locator('.room-options option[value=network]').count(),0);
+        const toggle=await lobby.locator('.room-modes').boundingBox();assert(toggle.width>=180);assert.equal(toggle.height,48);assert.equal(await lobby.locator('.room-modes [data-ui-icon]').count(),3);assert.equal(await lobby.locator('.room-options option[value=network]').count(),0);
         assert.equal(await lobby.locator('#lobby-name-form').count(),0,'profile belongs in settings');
         assert.equal(await lobby.locator('.lobby-rules-summary,.lobby-rule-grid,.lobby-participants').count(),0,'no duplicate panels');
         assert.equal(await lobby.locator('[data-participant-id]').count(),3);
@@ -40,7 +40,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         assert((await back.boundingBox()).x<(await settings.boundingBox()).x);
         for(const button of await lobby.locator('.icon-btn').all()){
           assert(await button.getAttribute('aria-label'),'icons need accessible labels');
-          const box=await button.boundingBox();assert(box.width>=43&&box.height>=43&&box.x>=0&&box.x+box.width<=width+1,'icon target must fit');
+          const box=await button.boundingBox();assert(box.width>=(width<=360?31:43)&&box.height>=(width<=360?31:43)&&box.x>=0&&box.x+box.width<=width+1,'icon target must fit');
         }
         assert(await lobby.locator('#network-pair-button').locator('..').getAttribute('class').then(x=>x.includes('lobby-primary')));assert.equal(await lobby.getByRole('heading',{name:'Игровые места',exact:true}).count(),0);
         assert.equal(await lobby.locator('[data-command=room-rules]').locator('..').locator('[data-command=room-rules-view]').count(),1);
@@ -53,7 +53,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
           const result={sameBody:body===document.querySelector('.lobby-roster-scroll'),sameFocus:document.activeElement===title,value:title.value,selection:[title.selectionStart,title.selectionEnd],scrollStable:Math.abs(body.scrollTop-scroll)<1,headerStable:header.getBoundingClientRect().top===headTop,bodyBelowHeader:body.getBoundingClientRect().top>=header.getBoundingClientRect().bottom};
           title.value=saved;title.blur();b.roomService.setReady(r.id,'layout-player',false);b.renderLobby();body.scrollTop=0;return result;
         }),{sameBody:true,sameFocus:true,value:'Неоконченный ввод',selection:[3,7],scrollStable:true,headerStable:true,bodyBelowHeader:true});
-        const centers=await lobby.locator('.room-transport').evaluate(node=>{const box=node.getBoundingClientRect();return [...node.querySelectorAll('span')].map(span=>{const r=document.createRange();r.selectNodeContents(span);const b=r.getBoundingClientRect();return Math.abs((b.top+b.bottom-box.top-box.bottom)/2);});});assert(centers.every(delta=>delta<3),'toggle text vertically centered');
+        const centers=await lobby.locator('.room-modes').evaluate(node=>{const box=node.getBoundingClientRect();return [...node.querySelectorAll('label svg')].map(span=>{const b=span.getBoundingClientRect();return Math.abs((b.top+b.bottom-box.top-box.bottom)/2);});});assert(centers.every(delta=>delta<3),'toggle text vertically centered');
         if(width===320){
           const control=lobby.locator('[data-room-cycle]').first();await control.scrollIntoViewIfNeeded();
           const b=await control.boundingBox(),cdp=await context.newCDPSession(page),before=await lobby.locator('.lobby-roster-scroll').evaluate(n=>n.scrollTop);
@@ -66,7 +66,7 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await page.evaluate(()=>{window.dragEvents=[];for(const kind of ['pointerup','pointercancel'])document.addEventListener(kind,e=>dragEvents.push({kind,type:e.pointerType,x:e.clientX,y:e.clientY,drop:document.querySelector('.room-drop-active')?.dataset.roomDrop}),true);});
         const hostId=await page.evaluate(()=>PlayroomAppBridge.room().ownerId);
         const drag=async(from,to)=>{
-          await from.scrollIntoViewIfNeeded();const a=await from.boundingBox(),start={x:a.x+Math.min(40,a.width/2),y:a.y+a.height/2};
+          await from.scrollIntoViewIfNeeded();const a=await from.boundingBox(),name=await from.locator('.participant-name').first().boundingBox(),start={x:name?name.x+name.width/2:a.x+a.width*.65,y:a.y+a.height/2};
           const cdp=width===320?await context.newCDPSession(page):null;
           const move=async point=>{if(cdp)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point]});else await page.mouse.move(point.x,point.y);await page.waitForTimeout(25);};
           if(cdp){await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[start]});await page.waitForTimeout(300);}else{await page.mouse.move(start.x,start.y);await page.mouse.down();}
@@ -85,22 +85,21 @@ test('Unified room keeps participants unique, compact controls reachable and nic
         await lobby.locator('[data-command=room-rules]').click();
         await page.locator('[data-rules=uno]').click();await page.getByRole('button',{name:'Понятно',exact:true}).click();
         await page.locator('.room-setup-modal').waitFor();
-        await settings.click();await page.locator('.modal-head [data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или локального игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
-        await lobby.locator('[data-command=room-rules-view]').click();assert.equal(await page.locator('.modal .lobby-rule-grid').count(),1);assert(await page.locator('.modal .rules-list li').count()>0);await page.locator('.modal [data-command=close-modal]').click();
-        await settings.click();await page.locator('#lobby-nickname-form input').fill('Иван новый');await page.locator('#lobby-nickname-form').evaluate(f=>f.requestSubmit());
-        assert.equal(await page.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).participants.find(p=>p.isHost).nickname),'Иван новый');
-        assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Иван','room nickname must not overwrite profile');
+        await settings.click();await page.locator('.settings-quick [data-command=room-help]').click();assert.match(await page.locator('.modal').innerText(),/Имя бота или локального игрока меняется нажатием/);await page.locator('.modal [data-command=close-modal]').click();
+        if(await page.locator('.settings-overview').count())await page.locator('.modal [data-command=close-modal]').click();await lobby.locator('[data-command=room-rules-view]').click();assert(await page.locator('.modal .rulebook-section').count()>0);assert(await page.locator('.modal .rulebook-option').count()>0);await page.locator('.modal [data-command=close-modal]').click();
+        await settings.click();await page.locator('#lobby-nickname-form input').fill('Иван новый');await page.locator('.modal [data-command=close-modal]').click();
+        assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Иван новый','settings edit the single primary nickname');
         await page.locator('.room-setup-modal').waitFor();await lobby.locator('[data-command=lobby-ready]').click();
         await settings.click();assert.equal(await page.locator('#lobby-nickname-form input').isDisabled(),true);await page.locator('.modal [data-command=close-modal]').click();
-        await lobby.locator('[data-command=lobby-ready]').click();await lobby.locator('[data-kick-participant="layout-observer"]').click();assert.equal(await lobby.locator('[data-participant-id="layout-observer"]').count(),0);
-        await lobby.locator('[data-command=lobby-leave]').click();await page.locator('.game-grid').first().waitFor();
-        await page.locator('[data-start=uno]').click();await page.locator('[data-room-option=transportMode]').check();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-command=lobby-table]').click();
+        await lobby.locator('[data-command=lobby-ready]').click();await lobby.locator('[data-kick-participant="layout-observer"]').click();await page.locator('[data-command=confirm-operation]').click();assert.equal(await lobby.locator('[data-participant-id="layout-observer"]').count(),0);
+        await lobby.locator('[data-command=lobby-leave]').click();await page.locator('[data-confirm-accept]').click();await page.locator('.game-grid').first().waitFor();
+        await page.locator('[data-start=uno]').click();await page.locator('[data-room-option=transportMode][value=network]').check();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});await page.locator('[data-command=lobby-table]').click();
         assert.equal(await page.locator('.lobby-seat-row[data-participant-id]').count(),0);
         assert.equal(await page.locator('.lobby-table-slot [data-participant-id]').count(),1,'one participant occupies the table slot');assert.equal(await page.locator('.lobby-observer[data-participant-id]').count(),0);
         assert.equal(await page.locator('[data-command=lobby-ready]').count(),0,'table host does not claim readiness as a player');
         await page.locator('[data-lobby-seat="seat-1"]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.isHost).role),'player');
         await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('[name=firstPlayerMode]').count(),3);await page.locator('[name=firstPlayerMode][value=assigned]').check();await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().firstPlayerMode),'assigned');await page.locator('[data-first-token]').click();await page.locator('.lobby-seat-row[data-participant-id]').first().click();assert(await page.evaluate(()=>!!PlayroomAppBridge.room().firstParticipantId));
-        await page.locator('[data-room-option=transportMode]').uncheck();assert.equal(await page.locator('.lobby-public-places').count(),0);assert.equal(await page.locator('[data-room-option=hostMode],[data-room-option=firstPlayerMode],[data-room-move]').count(),0);
+        await page.locator('[data-room-option=transportMode][value=hotseat]').check();assert.equal(await page.locator('.lobby-public-places').count(),0);assert.equal(await page.locator('[data-room-option=hostMode],[data-room-option=firstPlayerMode],[data-room-move]').count(),0);
         await page.locator('[data-command=lobby-leave]').click();assert.deepEqual(errors,[]);
       }finally{await context.close();}
     });
@@ -168,8 +167,8 @@ test('solo lobbies retain visible configuration, player and launch controls',{ti
     assert(footer.y>=config.y+config.height&&footer.y+footer.height<=frame.y+frame.height,`${game} ${width}: footer inside lobby`);
     assert.equal(await page.locator('.lobby-seat-row').count(),1);
     assert.equal(await page.locator('.modal').getAttribute('data-dialog-size'),'large');assert(Math.abs(frame.height-(height-40))<1,'shared full-height lobby frame');
-    const transport=page.locator('[data-room-option=transportMode]');assert(await transport.isDisabled());assert.equal(await transport.isChecked(),false);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().transportMode),'hotseat');
-    assert(await page.locator('.room-transport').evaluate(n=>n.classList.contains('is-local-only')));
+    const transport=page.locator('[data-room-option=transportMode][value=network]');assert(await transport.isDisabled());assert.equal(await transport.isChecked(),false);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().transportMode),'hotseat');
+    assert(await page.locator('.room-modes').evaluate(n=>n.classList.contains('is-local-only')));
     if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,`solo-lobby-${game}-${width}x${height}.png`)});}
     await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();await page.evaluate(()=>PlayroomAppBridge.showHub());
    }

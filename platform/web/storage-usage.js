@@ -14,6 +14,7 @@
   try{if(root.caches)for(const name of await caches.keys())if(name.startsWith('playroom-')){const cache=await caches.open(name);for(const request of await cache.keys()){const response=await cache.match(request);if(response)app+=(await response.blob()).size;}}}catch(_){partial=true;}
   return {app,packs:local.packs,saves,total:app+local.packs+saves,partial};
  }
- function format(value){return new Intl.NumberFormat('ru',{maximumFractionDigits:1}).format(value/1024/(value>=1048576?1024:1))+(value>=1048576?' МиБ':' КиБ');}
- root.PlayroomStorageUsage={measure,format};
+ function number(value){const digits=Math.round(value*10)/10<10?1:0;return new Intl.NumberFormat('ru',{minimumFractionDigits:digits,maximumFractionDigits:digits}).format(value);}
+ function format(value){value=Math.max(0,value||0);return number(value/(value>=1048576?1048576:1024))+(value>=1048576?' МБ':' КБ');}
+ root.PlayroomStorageUsage={measure,format,number};
 })(globalThis);

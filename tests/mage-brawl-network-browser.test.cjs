@@ -6,13 +6,13 @@ test('Mage Brawl WebRTC: concurrent private plans, bot settings and public Table
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const pages=[],errors=[];
-  for(const name of ['Анна','Борис','Стол']){const ctx=await browser.newContext({viewport:{width:1000,height:780},playroomProfile:false}),p=await ctx.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));await p.goto(server.url);await p.locator('#profile-form input').fill(name);await p.locator('#profile-form').evaluate(f=>f.requestSubmit());pages.push(p);}
+  for(const name of ['Анна','Борис','Стол']){const ctx=await browser.newContext({viewport:{width:1000,height:780},playroomProfile:false}),p=await ctx.newPage();p.setDefaultTimeout(12000);p.on('pageerror',e=>errors.push(e.message));await p.goto(server.url);await p.locator('#profile-form input').fill(name);await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('mage-brawl',false));pages.push(p);}
   const [host,phone,table]=pages;
-  await host.locator('[data-start="mage-brawl"]').click();await host.locator('[data-room-option=transportMode]').check();
+  await host.locator('[data-start="mage-brawl"]').click();await host.locator('[data-room-option=transportMode][value=network]').check();
   await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'bot',nickname:'Тактик'});b.renderLobby();});
   async function join(page){
    await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();const offer=await host.locator('#net-host-token').inputValue();
-   await page.locator('#network-join-button').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
+   await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
    await page.locator('#net-client-token').waitFor();await host.locator('#net-host-answer textarea[name=answer]').fill(await page.locator('#net-client-token').inputValue());await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());
    await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(f=>f.requestSubmit());await page.locator('.lobby-shell').waitFor();
   }

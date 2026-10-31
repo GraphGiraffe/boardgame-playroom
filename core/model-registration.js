@@ -9,7 +9,7 @@
   const Localization = root.PlayroomLocalization || require('../presentation/localization.js');
   root.PlayroomLocalization = Localization;
   const Scenes = root.PlayroomSceneContract || require('../presentation/scene-contract.js');
-  function adapt(engine, {definition, presentation, locales, version, stateVersion=1}) {
+  function adapt(engine, {definition, presentation, locales, version, stateVersion=1, rulebooks=null}) {
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
@@ -70,7 +70,7 @@
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
       rules:metadata.rules.map(text),
-      ...(metadata.rulebook?{rulebook:{sections:metadata.rulebook.sections.map(section=>({
+      ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:{sections:metadata.rulebook.sections.map(section=>({
         title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
         figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
         ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,

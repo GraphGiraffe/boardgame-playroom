@@ -19,5 +19,8 @@
   "rules-help.first.random": "Случайно",
   "rules-help.first.assigned": "Назначен в комнате",
   "rules-help.order.normal": "По местам в комнате",
-  "rules-help.order.random": "Случайный порядок"
+  "rules-help.order.random": "Случайный порядок",
+  "rules-help.title": "Правила",
+  "rules-help.top": "Наверх",
+  "rules-help.contents": "Оглавление"
 }

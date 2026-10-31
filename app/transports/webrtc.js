@@ -56,6 +56,26 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     if(channel.readyState!=='open')throw Error(globalThis.PlayroomMessages.text("ui.webrtc.dd436f0099c4"));
     channel.send(JSON.stringify(message));
   }
+  function subscribeAuthorized(connection,listener,authorize,{isOpen=()=>true,deny=()=>{}}={}){
+    let sequence=0,active=true,terminal=null;
+    const fail=()=>{if(active){active=false;deny();}};
+    const off=connection.subscribe(snapshot=>{
+      if(!active)return;
+      if(!authorize){listener(snapshot);return;}
+      const current=++sequence,finished=snapshot.kind==='snapshot'&&snapshot.state?.status==='finished',before=terminal;
+      const deliver=()=>{if(active&&isOpen()&&(finished||current===sequence))listener(snapshot);};
+      try{
+        const checked=authorize();
+        if(checked?.then||before){
+          // The lobby must not overtake the final projection while access is checked.
+          const pending=Promise.all([checked,before]).then(deliver).catch(fail);
+          if(finished){terminal=pending;void pending.then(()=>{if(terminal===pending)terminal=null;});}
+        }else deliver();
+      }catch{fail();}
+    });
+    return ()=>{active=false;off?.();};
+  }
+
   function serve(channel,connection){
     if(!channel||!connection)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.581f9b800c4d"));
     let negotiated=false;
@@ -92,7 +112,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     return close;
   }
   function client(channel,{timeout=7000,handshakeTimeout=5000}={}){
-    let sequence=0,closed=false,ready=false;const pending=new Map(),listeners=new Set(),presenceListeners=new Set();let latestPresence=null;
+    let sequence=0,closed=false,ready=false;const pending=new Map(),listeners=new Set(),presenceListeners=new Set(),reactionListeners=new Set(),chatListeners=new Set();let latestPresence=null;
     const debug=channel.__playroomClientDebug={side:'client',hellos:0,ready:0,requests:0,responses:0,snapshots:0,timeouts:0,lastMethod:null,lastError:null};
     let resolveReady,rejectReady;
     const readyPromise=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
@@ -115,6 +135,8 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     const onMessage=event=>{
       let message;try{message=JSON.parse(event.data);}catch(_){return;}
       if(message?.kind==='transport-ready'){if(message.version!==2||message.error){clearTimeout(readyTimer);stopHello();rejectReady(Error('VERSION_MISMATCH'));return;}markReady();return;}
+      if(message?.kind==='room-chat-entry'&&typeof message.roomId==='string'&&message.entry&&typeof message.entry.body==='string'&&message.entry.body.length<=2000){for(const listener of chatListeners)listener(clone(message));return;}
+      if(message?.kind==='quick-reaction'&&typeof message.sessionId==='string'&&message.sessionId.length<=128&&typeof message.id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(message.id)&&Number.isInteger(message.player)&&message.player>=0&&message.player<32&&typeof message.emoji==='string'&&message.emoji.length<=8){for(const listener of reactionListeners)listener(clone(message));return;}
       if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
       // Presence is a separate public control-plane message. The host sends it
       // only on an authenticated participant's RTC channel; never a full room
@@ -164,6 +186,8 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       dispatch:command=>request('dispatch',command),
       history:index=>request('history',index),
       subscribe:listener=>{listeners.add(listener);return ()=>listeners.delete(listener);},
+      subscribeRoomChat:listener=>{chatListeners.add(listener);return ()=>chatListeners.delete(listener);},
+      subscribeReactions:listener=>{reactionListeners.add(listener);return ()=>reactionListeners.delete(listener);},
       subscribePresence:listener=>{if(typeof listener!=='function')throw Error('Listener required');presenceListeners.add(listener);
         if(latestPresence)listener(clone(latestPresence));return ()=>presenceListeners.delete(listener);},
       debug:()=>clone(debug),
@@ -171,7 +195,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
         if(closed)return;closed=true;clearTimeout(readyTimer);stopHello();
         channel.removeEventListener('message',onMessage);channel.removeEventListener('open',onOpen);channel.removeEventListener('close',onClose);
         for(const item of pending.values()){clearTimeout(item.timer);item.reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.e192912e5d23")));}
-        pending.clear();listeners.clear();presenceListeners.clear();latestPresence=null;try{channel.close();}catch(_){}
+        pending.clear();listeners.clear();presenceListeners.clear();reactionListeners.clear();chatListeners.clear();latestPresence=null;try{channel.close();}catch(_){}
       }
     });
   }
@@ -211,11 +235,11 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc);
     }catch(error){rejectChannel(error);try{pc.close();}catch(_){}throw error;}
     return {
-      pc,pairingId:parsed.pairingId,answer:serializeDescription(pc.localDescription,{pairingId:parsed.pairingId}),
+      pc,get channel(){return channel;},pairingId:parsed.pairingId,answer:serializeDescription(pc.localDescription,{pairingId:parsed.pairingId}),
       async waitOpen(options){const value=channel||await channelReady;return waitOpen(value,options);},
       async transport(options){const value=channel||await channelReady;await waitOpen(value,options);return client(value,options);},
       close(){try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
-  return {Recovery,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,serve,client,createHostPeer,createClientPeer};
+  return {Recovery,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,subscribeAuthorized,serve,client,createHostPeer,createClientPeer};
 });

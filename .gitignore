@@ -17,3 +17,7 @@ tmp_files/
 
 # Pinned developer-tools checkout, never runtime sources
 .playroom-utils/
+
+# Supabase CLI local link/cache metadata
+supabase/.temp/
+icons/badge-96.png

@@ -109,7 +109,13 @@ test('three second countdown freezes lobby and transitions to playing',()=>{
 test('room preview exposes join information without participant details',()=>{
   const {rooms,room}=createRoom('table');
   const preview=rooms.preview(room.id);
-  assert.match(preview.code,/^\d{4}$/);
+  assert.equal(preview.code,null);
+  assert.throws(()=>rooms.setOnlineCode(room.id,'host','5040'),/INVALID_ONLINE_ROOM_CODE/);
+  rooms.configure(room.id,'host',{transportMode:'online'});assert.equal(rooms.snapshot(room.id).code,null);
+  assert.throws(()=>rooms.setOnlineCode(room.id,'guest','5040'));
+  const numbered=rooms.setOnlineCode(room.id,'host','5040');assert.equal(numbered.code,'5040');assert.equal(numbered.onlineCodeAssigned,true);
+  assert.equal(rooms.setOnlineCode(room.id,'host','5040').revision,numbered.revision);
+
   assert.equal(preview.name,'Вечерняя партия');
   assert.equal(preview.game.name,'UNO');
   assert.equal(preview.hostMode,'table');
@@ -384,4 +390,86 @@ test('growing a pack keeps the old bot count and clears a removed assigned bot',
  rooms.configure(room.id,'host',{transportMode:'hotseat',firstPlayerMode:'assigned',firstParticipantId:bot});
  const solo=rooms.changeGame(room.id,'host',{game:{id:'solo',name:'Соло',version:'1.0.0'},rules:{firstPlayerMode:'assigned'},constraints:{min:1,max:1}});
  assert.equal(solo.firstParticipantId,null);assert.equal(solo.firstPlayerMode,'rules');
+});
+
+test('online is a distinct lobby mode sharing network seat and solo restrictions',()=>{
+ const {rooms,room}=createRoom();const state=rooms.configure(room.id,'host',{transportMode:'online'});assert.equal(state.transportMode,'online');
+ assert.throws(()=>rooms.setLocalSeat(room.id,'host','seat-2',{kind:'human',nickname:'Нельзя'}));
+ const peer=rooms.connection(room.id);peer.dispatch({type:'join',nickname:'Игрок'});assert.equal(rooms.snapshot(room.id).transportMode,'online');
+});
+
+
+test('delegated invitations require host permission and cancel pending peers on revocation',async()=>{
+ const Invites=require('../app/network-invitations.js'),{rooms,room}=createRoom();
+ rooms.configure(room.id,'host',{transportMode:'network'});rooms.join(room.id,{id:'guest',nickname:'Гость'});
+ assert.throws(()=>rooms.setInvitationPermission(room.id,'guest',true));
+ let disposed=0,accepted=0;
+ const manager=new Invites({authorize:id=>{const r=rooms.snapshot(room.id);assert(r.allowPlayerInvites&&r.participants.some(p=>p.id===id&&p.connected));},create:async()=>({offer:'host-offer'}),accept:async()=>{accepted++;},dispose:()=>{disposed++;}});
+ try{
+  await assert.rejects(manager.dispatch('guest',{type:'invitation-offer'}));
+  rooms.setInvitationPermission(room.id,'host',true);assert.equal((await manager.dispatch('guest',{type:'invitation-offer'})).offer,'host-offer');
+  rooms.setInvitationPermission(room.id,'host',false);manager.prune();assert.equal(disposed,1);
+  await assert.rejects(manager.dispatch('guest',{type:'invitation-answer',answer:'answer'}));assert.equal(accepted,0);
+  rooms.setInvitationPermission(room.id,'host',true);await manager.dispatch('guest',{type:'invitation-offer'});await manager.dispatch('guest',{type:'invitation-answer',answer:'answer'});assert.equal(accepted,1);assert.equal(rooms.snapshot(room.id).ownerId,'host');
+ }finally{manager.close();}
+});
+
+test('live roster collection preserves fixed slots and distinguishes a lost connection from removal',()=>{
+ const {rooms,room}=createRoom();const guest=rooms.join(room.id,{id:'guest',nickname:'Гость'});rooms.claimSeat(room.id,'guest','seat-2');rooms.setReady(room.id,'host',true);rooms.setReady(room.id,'guest',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);
+ rooms.setConnected(room.id,'guest',false);assert.equal(rooms.snapshot(room.id).seats[1].participantId,'guest');
+ rooms.collectForReplacement(room.id,'host',{sessionId:'same-match',revision:7});assert.equal(rooms.snapshot(room.id).seats[1].participantId,'guest');
+ rooms.kick(room.id,'host','guest');assert.equal(rooms.snapshot(room.id).seats[1].participantId,null);assert.equal(rooms.snapshot(room.id).seats[1].closed,false);assert.throws(()=>rooms.resume(room.id,{participantId:'guest',token:guest.resumeToken}));
+ assert.throws(()=>rooms.setLocalSeat(room.id,'host','seat-2',{kind:'closed'}),/RECOVERY_SLOT_FIXED/);assert.throws(()=>rooms.setLocalSeat(room.id,'host','seat-3',{kind:'bot'}),/RECOVERY_SLOT_FIXED/);
+ rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});assert.equal(rooms.snapshot(room.id).seats[1].playerIndex,1);rooms.setLocalSeat(room.id,'host','seat-2',{kind:'empty'});
+ rooms.join(room.id,{id:'new',nickname:'Замена'});rooms.claimSeat(room.id,'new','seat-2');assert.throws(()=>rooms.setReady(room.id,'new',true));rooms.acceptReplacement(room.id,'new');rooms.setReady(room.id,'new',true);rooms.setReady(room.id,'host',true);assert.equal(rooms.canStart(room.id),true);
+});
+
+test('replacement arrivals and bot settings retain other ready players until a real configuration change',()=>{
+ const {rooms,room}=createRoom();rooms.join(room.id,{id:'old',nickname:'Старый'});rooms.claimSeat(room.id,'old','seat-2');rooms.setReady(room.id,'old',true);rooms.setReady(room.id,'host',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);rooms.collectForReplacement(room.id,'host',{sessionId:'match',revision:5});rooms.kick(room.id,'host','old');rooms.setReady(room.id,'host',true);
+ rooms.join(room.id,{id:'new',nickname:'Новый'});rooms.claimSeat(room.id,'new','seat-2');assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,true);rooms.acceptReplacement(room.id,'new');rooms.setReady(room.id,'new',true);rooms.kick(room.id,'host','new');assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,true);
+ rooms.join(room.id,{id:'again',nickname:'Другой'});rooms.claimSeat(room.id,'again','seat-2');assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,true);rooms.kick(room.id,'host','again');rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Бот'});assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,false);rooms.setReady(room.id,'host',true);rooms.configureBot(room.id,'host','seat-2',{nickname:'Бот',botSettings:{strategy:'auto',difficulty:'hard'}});assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,true);rooms.setBotsDifficulty(room.id,'host','easy');assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,true);rooms.setLocalSeat(room.id,'host','seat-2',{kind:'empty'});assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='host').ready,false);
+});
+
+test('authenticated cloud binding recovers a disconnected reserved identity without a client token',()=>{
+ const {rooms,room}=createRoom();const first=rooms.connection(room.id,{boundParticipantId:'cloud-user'}),joined=first.dispatch({type:'join',nickname:'Гость'});first.dispatch({type:'claim-seat',seatId:'seat-2'});first.close();
+ const untrusted=rooms.connection(room.id);const random=untrusted.dispatch({type:'join',nickname:'Другой',id:'cloud-user'});assert.notEqual(random.snapshot.participantId,'cloud-user');untrusted.close();
+ const fresh=rooms.connection(room.id,{boundParticipantId:'cloud-user'}),resumed=fresh.dispatch({type:'join',nickname:'Гость'});assert.equal(resumed.resumed,true);assert.equal(resumed.snapshot.participantId,'cloud-user');assert.equal(resumed.snapshot.room.seats[1].participantId,'cloud-user');assert.notEqual(resumed.resumeToken,joined.resumeToken);assert(!JSON.stringify(resumed.snapshot).includes(resumed.resumeToken));
+ assert.throws(()=>rooms.connection(room.id,{boundParticipantId:'cloud-user'}).dispatch({type:'join',nickname:'Дубликат'}));fresh.close();
+ rooms.setReady(room.id,'host',true);rooms.setConnected(room.id,'cloud-user',true);rooms.setReady(room.id,'cloud-user',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);rooms.setConnected(room.id,'cloud-user',false);assert.equal(rooms.connection(room.id,{boundParticipantId:'cloud-user'}).dispatch({type:'join',nickname:'Гость'}).resumed,true);
+});
+
+
+test('queued readiness rejects changed configuration and countdown cancellation only clears its actor',()=>{
+ const {readyConfiguration}=require('../app/multiplayer.js'),{rooms,room}=createRoom();
+ rooms.join(room.id,{id:'guest',nickname:'Маша'});rooms.claimSeat(room.id,'guest','seat-2');
+ const key=readyConfiguration(rooms.snapshot(room.id),'guest');rooms.setReady(room.id,'host',true);
+ rooms.setConnected(room.id,'guest',false);rooms.setConnected(room.id,'guest',true);
+ rooms.setAutoStart(room.id,'host',true);assert.throws(()=>rooms.setAutoStart(room.id,'guest',false));
+ rooms.setReady(room.id,'guest',true,key);rooms.beginCountdown(room.id,'host');
+ assert.equal(rooms.snapshot(room.id).phase,'starting');assert.throws(()=>rooms.setReady(room.id,'guest',true));
+ const stopped=rooms.setReady(room.id,'guest',false);assert.equal(stopped.phase,'lobby');assert.equal(stopped.countdownEndsAt,null);assert.equal(stopped.participants.find(p=>p.id==='host').ready,true);assert.equal(stopped.participants.find(p=>p.id==='guest').ready,false);
+ rooms.updateRules(room.id,'host',{preset:'changed'});assert.throws(()=>rooms.setReady(room.id,'guest',true,key),/изменились/);assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='guest').ready,false);
+});
+
+
+test('autostart defaults on and requires a human player, ready roster and valid team rules',()=>{
+ let time=1000,n=0;const rooms=new RoomService({idFactory:()=>`auto-${++n}`,clock:()=>time,random:()=>.1,validateStart:r=>r.rules.preset==='teams'&&r.participants.filter(p=>p.role==='player').length!==4?'Нужно четыре игрока':null});
+ const room=rooms.create({name:'Авто',game:{id:'test',name:'Тест'},host:{id:'host',nickname:'Хост'},rules:{preset:'teams'},constraints:{min:2,max:4}});assert.equal(room.autoStart,true);
+ rooms.becomeSpectator(room.id,'host');rooms.setLocalSeat(room.id,'host','seat-1',{kind:'bot'});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});assert.equal(rooms.canStart(room.id),false,'spectators and bots alone cannot launch a network match');
+ rooms.join(room.id,{id:'player',nickname:'Игрок'});rooms.claimSeat(room.id,'player','seat-3');assert.equal(rooms.canStart(room.id),false);rooms.setReady(room.id,'player',true);assert.equal(rooms.canStart(room.id),false,'three players cannot start a four-player team game');
+ rooms.setLocalSeat(room.id,'host','seat-4',{kind:'bot'});rooms.setReady(room.id,'player',true);assert.equal(rooms.canStart(room.id),true);rooms.beginCountdown(room.id,'host');rooms.setConnected(room.id,'player',false);time=4000;assert.equal(rooms.tick(room.id).started,false);assert.equal(rooms.snapshot(room.id).phase,'lobby');
+});
+
+
+test('return to completed lobby is idempotent and preserves ready state and ownership',()=>{
+ const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'hotseat'});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.startHotSeat(room.id,'host');const lobby=rooms.returnToLobby(room.id,'host');const again=rooms.returnToLobby(room.id,'host');assert.deepEqual(again,lobby);assert.throws(()=>rooms.returnToLobby(room.id,'intruder'));
+});
+
+
+for(const role of ['spectator','table'])test('resume '+role+' during a match preserves role and needs its own token',()=>{
+ const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Бот'});const joined=rooms.join(room.id,{id:'observer',nickname:'Наблюдатель'});if(role==='table')rooms.claimTable(room.id,'observer');
+ rooms.setReady(room.id,'host',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);rooms.setConnected(room.id,'observer',false);
+ assert.throws(()=>rooms.resume(room.id,{participantId:'observer',token:'0'.repeat(64)}));assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='observer').connected,false);
+ const invalid=rooms.rooms.get(room.id).participants.find(p=>p.id==='observer');invalid.role='player';assert.throws(()=>rooms.resume(room.id,{participantId:'observer',token:joined.resumeToken}));invalid.role=role;
+ const resumed=rooms.resume(room.id,{participantId:'observer',token:joined.resumeToken}),observer=resumed.room.participants.find(p=>p.id==='observer');assert.equal(observer.role,role);assert.equal(observer.seatId,null);assert.equal(observer.connected,true);assert.equal(rooms.playerCount(room.id),2);
 });

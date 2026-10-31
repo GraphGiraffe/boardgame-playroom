@@ -48,11 +48,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     get current() { return this.states[this.states.length - 1]; }
     // Room membership is authority-owned. Install the replacement roster before
     // the next real move, retaining historical players and event attribution.
+    playerMetadata(index) { return clone(records.get(this).playerMetadata?.[index] || {}); }
     setPlayerMetadata(index, metadata) {
       if (!Number.isInteger(index) || index < 0 || index >= this.current.players.length || !isRecord(metadata) ||
-          !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot','avatar'].includes(key)) ||
+          !Object.keys(metadata).length || Object.keys(metadata).some(key => !['name','bot','avatar','botSettings'].includes(key)) ||
           (metadata.name !== undefined && (typeof metadata.name !== 'string' || !metadata.name.trim() || metadata.name.length > 40)) ||
           (metadata.bot !== undefined && typeof metadata.bot !== 'boolean') ||
+          (metadata.botSettings !== undefined && (!isRecord(metadata.botSettings) || Object.keys(metadata.botSettings).some(key=>!['strategy','difficulty','resolvedStrategy'].includes(key)||typeof metadata.botSettings[key]!=='string'||metadata.botSettings[key].length>64) || !['easy','medium','hard'].includes(metadata.botSettings.difficulty))) ||
           (metadata.avatar != null && (typeof metadata.avatar !== 'string' || !/^(crescent|triangle|square|circle|star|rectangle|diamond|hexagon)-(red|orange|yellow|green|blue|purple)$/.test(metadata.avatar)))) throw Error(globalThis.PlayroomMessages.text("ui.session.d1e2fa296dc9"));
       const record = records.get(this);
       record.playerMetadata ||= {};

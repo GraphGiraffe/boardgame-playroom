@@ -45,5 +45,8 @@
   "ui.lobby-view.35b60005730f": "Замена {p0}",
   "ui.lobby-view.701fca3c95ec": "{p0} слот",
   "ui.lobby-view.c5e11527dcfc": "Сменить тип места",
-  "ui.lobby-view.e34fd3c21b9b": "Исключить {p0}"
+  "ui.lobby-view.e34fd3c21b9b": "Исключить {p0}",
+  "ui.lobby-view.auto": "Авто",
+  "ui.lobby-view.auto-start": "Автозапуск",
+  "ui.lobby-view.not-ready": "Я не готов!"
 }
