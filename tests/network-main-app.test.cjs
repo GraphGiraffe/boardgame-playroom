@@ -102,10 +102,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="uno"]').click();
-    await host.locator('[data-room-option=transportMode][value=network]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
+    await host.locator('[data-room-option=transportMode][value=network]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
+    assert.equal(await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).autoStart),false);
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
-    await host.locator('.lobby-shell').waitFor();const addPlayerIcon=await host.locator('#network-pair-button').innerHTML();await host.locator('#network-pair-button').click();
+    await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
     // Every ICE candidate supplied by the browser is visible in the IP selector;
     // manual choice remains available for browsers that hide interfaces behind mDNS.
     await host.locator('[data-net-scan="host"]').waitFor();
@@ -163,13 +164,14 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);
     }else{
       await host.locator('#net-host-answer textarea[name=answer]').fill(answerLink);
-      await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+      await host.locator('#net-host-answer').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
     }
     try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
     catch(_){
       const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
       assert.fail('Host did not accept WebRTC answer: '+JSON.stringify(diag));
     }
+    assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),1,'repeated reply attaches exactly one peer');
     try{await client.locator('#net-client-join').waitFor({timeout:12000});}
     catch(_){
       const [clientDiag,hostDiag]=await Promise.all([
@@ -314,8 +316,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(await host.locator('.table-tools #network-pair-button').count(),0);
     assert.equal(await host.locator('.table-tools button').count(),4);
     await host.locator('.table-tools [data-command=settings]').click();
-    assert.equal(await host.locator('.modal #network-pair-button').innerHTML(),addPlayerIcon);
-    assert.equal(await host.locator('.modal #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    assert.equal(await host.locator('.modal #network-pair-button').count(),0,'invitations belong to the lobby, not settings');
     await host.locator('.modal [data-command=close-modal]').click();
     for(const exit of ['guest','host']){
       const primaryPositions=await Promise.all([host,client].map(async page=>{

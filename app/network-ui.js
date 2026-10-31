@@ -396,6 +396,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const peer=hostPeer,sw=hostSwitch,serveClose=hostServeClose,roomConnection=hostRoomConnection;
     if(!peer)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.a4c786915b74"));
     await peer.acceptAnswer(signal);
+    if(hostPeer!==peer)return; // A repeated QR/audio reply must not attach the same peer twice.
     stopHostAudio();
     connectedHostPeers.push({peer,switchable:sw,serveClose,roomConnection});
     hostPeer=null;hostSwitch=null;hostServeClose=null;hostRoomConnection=null;

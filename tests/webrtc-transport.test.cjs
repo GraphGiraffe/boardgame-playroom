@@ -91,3 +91,29 @@ test('authorized intermediate snapshots coalesce while revoked final state block
  publish({kind:'snapshot',state:{status:'finished'}});publish({kind:'lobby'});
  approvals[3].resolve();approvals[2].reject(Error('revoked'));await new Promise(r=>setImmediate(r));assert.equal(denied,1);assert.equal(delivered.length,1);off();
 });
+
+function fakePairingRTC(){
+ const instances=[];
+ class Channel extends EventTarget{constructor(){super();this.readyState='connecting';}close(){this.readyState='closed';this.dispatchEvent(new Event('close'));}}
+ class PC extends EventTarget{
+  constructor(){super();instances.push(this);this.iceGatheringState='complete';this.signalingState='stable';this.connectionState='new';this.remoteSets=0;}
+  createDataChannel(){return this.channel=new Channel();}async createOffer(){return {type:'offer',sdp:'offer'};}async createAnswer(){return {type:'answer',sdp:'answer'};}
+  async setLocalDescription(d){this.localDescription=d;this.signalingState=d.type==='offer'?'have-local-offer':'stable';}
+  async setRemoteDescription(d){if(d.type==='answer'&&this.signalingState==='stable')throw Error('Called in wrong state: stable');this.remoteSets++;this.remoteDescription=d;this.signalingState=d.type==='answer'?'stable':'have-remote-offer';}
+  close(){this.connectionState='closed';this.dispatchEvent(new Event('connectionstatechange'));}
+ }
+ return {PC,instances};
+}
+test('repeated answer acceptance is idempotent during and after negotiation',{timeout:1000},async()=>{
+ const previous=globalThis.RTCPeerConnection,{PC,instances}=fakePairingRTC();globalThis.RTCPeerConnection=PC;
+ try{const host=await W.createHostPeer(),answer=W.serializeDescription({type:'answer',sdp:'answer'},{pairingId:host.pairingId});const first=host.acceptAnswer(answer),second=host.acceptAnswer(answer);await new Promise(r=>setImmediate(r));instances[0].channel.readyState='open';instances[0].channel.dispatchEvent(new Event('open'));await Promise.all([first,second]);await host.acceptAnswer(answer);assert.equal(instances[0].remoteSets,1);await assert.rejects(host.acceptAnswer(W.serializeDescription({type:'answer',sdp:'different'},{pairingId:host.pairingId})),/приглашению/i);host.close();}finally{globalThis.RTCPeerConnection=previous;}
+});
+test('incoming datachannel wait has a deadline even before the channel exists',{timeout:1000},async()=>{
+ const previous=globalThis.RTCPeerConnection,{PC}=fakePairingRTC();globalThis.RTCPeerConnection=PC;
+ try{const peer=await W.createClientPeer(W.serializeDescription({type:'offer',sdp:'offer'}));await assert.rejects(peer.waitOpen({timeout:20}),/соедин|канал|подключ/i);peer.close();}finally{globalThis.RTCPeerConnection=previous;}
+});
+
+test('incoming datachannel wait stops on ICE failure and explicit close',{timeout:1000},async()=>{
+ const previous=globalThis.RTCPeerConnection,{PC,instances}=fakePairingRTC();globalThis.RTCPeerConnection=PC;
+ try{const peer=await W.createClientPeer(W.serializeDescription({type:'offer',sdp:'offer'}));let pending=peer.waitOpen({timeout:500});instances[0].connectionState='failed';instances[0].dispatchEvent(new Event('connectionstatechange'));await assert.rejects(pending,/закрыт/i);peer.close();const other=await W.createClientPeer(W.serializeDescription({type:'offer',sdp:'offer'}));pending=other.waitOpen({timeout:500});other.close();await assert.rejects(pending,/закрыт/i);}finally{globalThis.RTCPeerConnection=previous;}
+});

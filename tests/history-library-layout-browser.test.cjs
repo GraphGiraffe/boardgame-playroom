@@ -188,3 +188,24 @@ test('local and network delete dialogs share controls and delete only their chos
  await cdp.detach();
  }finally{await context.close();await browser.close();await server.close();}
  });
+
+
+test('hub fullscreen fallback preserves document scroll and modal locking on both pages',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),webkit=process.env.PLAYROOM_TEST_BROWSER==='webkit',browser=await (webkit?require('playwright-core').webkit:chromium).launch(webkit?{headless:true}:{headless:true,executablePath:executablePath(),args:['--no-sandbox']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),page=await context.newPage();page.setDefaultTimeout(5000);
+ try{
+  await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'fullscreen-test',name:'Тест',createdAt:1,updatedAt:1})));
+  await page.goto(server.url);await page.locator('.game-tile').first().waitFor();
+  await page.evaluate(()=>{window.qaSessionCount=18;PlayroomNetworkLibrary={...PlayroomNetworkLibrary,list:async()=>Array.from({length:qaSessionCount},(_,i)=>({id:'scroll-session-'+i,role:'client',game:'uno',revision:5,savedFrames:6,players:['Иван','Бот'],name:'Комната '+i,updatedAt:Date.now()-i}))};});
+  await page.evaluate(()=>Object.defineProperty(document.documentElement,'requestFullscreen',{value:undefined}));
+  const scroll=async value=>{await page.evaluate(y=>scrollTo(0,y),value);await page.waitForFunction(y=>Math.abs(scrollY-y)<3,value);};
+  const mode=async full=>{await page.locator('.topbar [data-command=settings]').click();await page.locator('.settings-header-actions [data-command=fullscreen]').click();assert.equal(await page.evaluate(()=>document.documentElement.classList.contains('fullscreen-fallback')),full);assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).overflow),'hidden');const dismiss=page.locator('#toast [data-command=dismiss-notice]');if(await dismiss.isVisible())await dismiss.click();await page.locator('.modal-head [data-command=close-modal]').click();};
+  for(const scale of [100,120]){
+   await page.evaluate(scale=>PlayroomInterfaceScale.set(scale),scale);
+   for(const command of ['home','sessions']){
+    await page.locator('.hub-page-tabs [data-command='+command+']').click();if(command==='sessions')await page.locator('[data-network-session-id]').first().waitFor();
+    await scroll(200);await mode(true);await scroll(400);assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).position),'static');assert(Math.abs(await page.locator('.hub-main .topbar').evaluate(e=>e.getBoundingClientRect().top))<1);
+    await mode(false);await scroll(250);
+   }
+  }
+ }finally{await context.close();await browser.close();await server.close();}
+});

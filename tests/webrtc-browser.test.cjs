@@ -11,10 +11,11 @@ test('two browser pages connect by manual WebRTC offer/answer and exchange RPC',
     const offer=await host.evaluate(async()=>{window.peer=await PlayroomWebRTCTransport.createHostPeer();let value=1;window.stop=PlayroomWebRTCTransport.serve(peer.channel,{snapshot:()=>({kind:'test',value}),dispatch:c=>({ok:true,value:value+=c.add}),history:i=>({index:i,value}),subscribe:()=>()=>{},close(){}});return peer.offer;});
     const answer=await client.evaluate(async offer=>{window.peer=await PlayroomWebRTCTransport.createClientPeer(offer);return peer.answer;},offer);
     await Promise.all([
-      host.evaluate(answer=>peer.acceptAnswer(answer),answer),
+      host.evaluate(answer=>Promise.all([peer.acceptAnswer(answer),peer.acceptAnswer(answer)]),answer),
       client.evaluate(async()=>{window.transport=await peer.transport({timeout:5000});})
     ]);
     await client.evaluate(()=>transport.ready());
+    await host.evaluate(answer=>peer.acceptAnswer(answer),answer);
     const clientDebug=await client.evaluate(()=>transport.debug());
     const hostDebug=await host.evaluate(()=>peer.channel.__playroomDebug);
     assert.equal(clientDebug.ready,1);assert.ok(clientDebug.hellos>=1);

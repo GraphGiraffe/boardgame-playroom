@@ -43,6 +43,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
   }
   function waitOpen(channel,{timeout=10000}={}){
     if(channel.readyState==='open')return Promise.resolve(channel);
+    if(channel.readyState==='closed')return Promise.reject(Error(globalThis.PlayroomMessages.text("ui.webrtc.bd6b75c2f0ac")));
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(done,timeout,Error(globalThis.PlayroomMessages.text("ui.webrtc.99b70a4fcf53")));
       function done(error){clearTimeout(timer);channel.removeEventListener('open',open);channel.removeEventListener('error',fail);channel.removeEventListener('close',closed);error?reject(error):resolve(channel);}
@@ -215,31 +216,47 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
   async function createHostPeer({configuration={iceServers:[]},label='playroom'}={}){
     const PC=rtc(),pc=new PC(configuration),channel=pc.createDataChannel(label,{ordered:true}),id=pairingId();
     await pc.setLocalDescription(await pc.createOffer());await waitIce(pc);
+    let answerSdp=null,answerFlight=null;
     return {
       pc,channel,pairingId:id,offer:serializeDescription(pc.localDescription,{pairingId:id}),
       async acceptAnswer(signal){
         const parsed=parseSignal(signal,'answer');
         if(parsed.pairingId&&parsed.pairingId!==id)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.a6d20424e6f2"));
-        await pc.setRemoteDescription(parsed.description);return waitOpen(channel);
+        if(answerSdp!==null&&answerSdp!==parsed.description.sdp)throw Error(globalThis.PlayroomMessages.text("ui.webrtc.a6d20424e6f2"));
+        if(!answerFlight){answerSdp=parsed.description.sdp;answerFlight=pc.setRemoteDescription(parsed.description).catch(error=>{answerFlight=null;answerSdp=null;throw error;});}
+        await answerFlight;return waitOpen(channel);
       },
       waitOpen:options=>waitOpen(channel,options),
       close(){try{channel.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
   async function createClientPeer(signal,{configuration={iceServers:[]}}={}){
-    const parsed=parseSignal(signal,'offer'),PC=rtc(),pc=new PC(configuration);let channel=null,resolveChannel,rejectChannel;
-    const channelReady=new Promise((resolve,reject)=>{resolveChannel=resolve;rejectChannel=reject;});
-    pc.addEventListener('datachannel',event=>{channel=event.channel;resolveChannel(channel);},{once:true});
+    const parsed=parseSignal(signal,'offer'),PC=rtc(),pc=new PC(configuration);let channel=null;
+    const waiters=new Set(),capture=event=>{channel=event.channel;};
+    pc.addEventListener('datachannel',capture,{once:true});
     try{
       await pc.setRemoteDescription(parsed.description);
       await pc.setLocalDescription(await pc.createAnswer());await waitIce(pc);
-    }catch(error){rejectChannel(error);try{pc.close();}catch(_){}throw error;}
+    }catch(error){pc.removeEventListener('datachannel',capture);try{pc.close();}catch(_){}throw error;}
+    function ready(options={}){
+      if(channel)return waitOpen(channel,options);
+      const timeout=options.timeout??10000,started=Date.now();
+      return new Promise((resolve,reject)=>{
+        let settled=false,opening=false;
+        const done=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);waiters.delete(done);pc.removeEventListener('datachannel',incoming);pc.removeEventListener('connectionstatechange',state);error?reject(error):resolve(value);};
+        const incoming=event=>{if(opening||settled)return;opening=true;channel=event.channel;waitOpen(channel,{...options,timeout:Math.max(0,timeout-(Date.now()-started))}).then(value=>done(null,value),done);};
+        const state=()=>{if(['failed','closed'].includes(pc.connectionState))done(Error(globalThis.PlayroomMessages.text('ui.webrtc.bd6b75c2f0ac')));};
+        const timer=setTimeout(()=>done(Error(globalThis.PlayroomMessages.text('ui.webrtc.99b70a4fcf53'))),timeout);
+        waiters.add(done);pc.addEventListener('datachannel',incoming);pc.addEventListener('connectionstatechange',state);if(channel)incoming({channel});state();
+      });
+    }
     return {
       pc,get channel(){return channel;},pairingId:parsed.pairingId,answer:serializeDescription(pc.localDescription,{pairingId:parsed.pairingId}),
-      async waitOpen(options){const value=channel||await channelReady;return waitOpen(value,options);},
-      async transport(options){const value=channel||await channelReady;await waitOpen(value,options);return client(value,options);},
-      close(){try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
+      waitOpen:ready,
+      async transport(options){return client(await ready(options),options);},
+      close(){for(const done of [...waiters])done(Error(globalThis.PlayroomMessages.text('ui.webrtc.bd6b75c2f0ac')));pc.removeEventListener('datachannel',capture);try{channel?.close();}catch(_){}try{pc.close();}catch(_){}}
     };
   }
+
   return {Recovery,SIGNAL_VERSION,serializeDescription,parseSignal,parseDescription,waitIce,waitOpen,subscribeAuthorized,serve,client,createHostPeer,createClientPeer};
 });
