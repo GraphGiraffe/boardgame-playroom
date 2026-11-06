@@ -214,3 +214,20 @@ test('completed and cancelled plans release scenes and callbacks but preserve id
 test('remote card reveal keeps the player who played even when a later penalty draws for the opponent',()=>{
  for(const value of ['+2','+4']){const before={sessionId:'s',authorityEpoch:'e',revision:1,events:[]},after={...before,revision:2,events:[{id:1,kind:'play',player:1,reveal:{kind:'card',card:{id:4,value}}},{id:2,kind:'draw',player:0,transfer:{player:0,count:value==='+2'?2:4,from:'stock'}}]};assert.equal(Flow.eventAction(before,after).actor,1);assert.equal(Flow.eventAction(before,after).action.type,'play');}
 });
+
+test('diagnostic timer port records planned actual cancelled delays without retaining timers',()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map(),events=[];let time=100,next=0;
+ const clock={now:()=>time,setTimeout:(fn,ms)=>{timers.set(++next,{fn,ms});return next;},clearTimeout:id=>timers.delete(id)},diagnostics={enabled:true,record:(kind,data)=>events.push({kind,...data})},scheduler=new Scheduler(clock,{diagnostics}),lane=scheduler.lane('feedback');let fired=0;
+ lane.schedule(()=>fired++,250);assert.equal(scheduler.metrics().scheduled,1);time=400;const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();assert.equal(fired,1);assert.equal(scheduler.metrics().scheduled,0);assert.equal(events.find(e=>e.kind==='timer.fire').late,50);
+ const token=lane.schedule(()=>fired++,500);lane.unschedule(token);assert.equal(scheduler.metrics().scheduled,0);assert.equal(timers.size,0);assert(events.some(e=>e.kind==='timer.cancel'));diagnostics.enabled=false;lane.schedule(()=>{},1);assert.equal(events.length,4);scheduler.cancel();
+});
+
+test('rebinding the same plan rate preserves its timer and running animation',async()=>{
+ const Scheduler=require('../presentation/scheduler.js'),timers=new Map(),calls=[];let id=0,now=0,finish;
+ const executor=new Scheduler({now:()=>now,setTimeout:(fn,ms)=>{timers.set(++id,{fn,ms});return id;},clearTimeout:key=>timers.delete(key)}),player=executor.track('stable-rate');
+ const animation={finished:new Promise(r=>finish=r),pause:()=>calls.push('pause'),play:()=>calls.push('play'),cancel:()=>{calls.push('cancel');finish();},playbackRate:1};
+ const pending=player.play({id:'motion',groups:[{duration:650,cues:[{id:'move',kind:'movement'}]}]},{effect:(_,context)=>{context.animation(animation);return animation.finished;}});
+ const ticket=[...timers.keys()][0];now=200;for(let i=0;i<4;i++)player.setRate(1);
+ assert.deepEqual(calls,[],'passive rebind does not pause/resume the visible effect');assert.equal([...timers.keys()][0],ticket,'the original deadline stays armed');
+ player.setRate(2);assert.deepEqual(calls,['pause','play']);assert.equal(animation.playbackRate,2);player.skip();await pending;
+});

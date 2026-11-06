@@ -11,6 +11,7 @@
   const Scenes = root.PlayroomSceneContract || require('../presentation/scene-contract.js');
   function adapt(engine, {definition, presentation, locales, version, stateVersion=1, rulebooks=null}) {
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
+    const Values = root.PlayroomModelValues || require('./model-values.js');
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
     function bindParticipants(value,players){
@@ -28,7 +29,20 @@
     }
     const text = (reference,players=[]) => translator.format(bindParticipants(reference,players));
     const metadata = presentation.metadata;
-    const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
+    function translateRulebook(document) {
+      return {sections:document.sections.map(section=>({
+        title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
+        figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
+        ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,
+          ...(block.type==='paragraph'?{text:text(block.text)}:{}),
+          ...(block.type==='list'?{ordered:!!block.ordered,items:(block.items||[]).map(text)}:{}),
+          ...(block.type==='table'?{headers:(block.headers||[]).map(text),rows:(block.rows||[]).map(row=>row.map(text))}:{})
+        }))}:{}),
+        ...(section.note?{note:text(section.note)}:{})
+      })),...(document.brief?{brief:translateRulebook(document.brief)}:{})};
+    }
+
+    const position = state => Values.snapshot({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
       timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
     function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
@@ -65,21 +79,21 @@
     }
     return {
       id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
+      checkpoint(before,next,actor,command){
+        if(next.status==='finished'||(next.events.at(-1)?.id||0)!==(before.events.at(-1)?.id||0))return true;
+        if(definition.checkpoint){const value=definition.checkpoint(before.data,next.data,actor,command);if(typeof value!=='boolean')throw Error('CHECKPOINT_INVALID');return value;}
+        // Existing portable packs already declare simultaneous decision windows.
+        // An unready participant's edit is a draft; becoming ready is the checkpoint.
+        const window=state=>definition.decisionWindow?.({playerCount:state.players.length,turn:state.turn,status:state.status,winners:state.winners||[],timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
+        const a=window(before),b=window(next);
+        return !(a&&b&&a.id===b.id&&a.participants.length>1&&a.participants.includes(actor)&&!a.ready.includes(actor)&&!b.ready.includes(actor)&&a.versions?.[actor]!==b.versions?.[actor]);
+      },
       botSettings:{strategies:(metadata.botSettings?.strategies||[]).map(p=>({id:p.id,label:text(p.label),description:text(p.description)})),defaultDifficulty:'medium'},
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
       rules:metadata.rules.map(text),
-      ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:{sections:metadata.rulebook.sections.map(section=>({
-        title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
-        figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
-        ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,
-          ...(block.type==='paragraph'?{text:text(block.text)}:{}),
-          ...(block.type==='list'?{ordered:!!block.ordered,items:(block.items||[]).map(text)}:{}),
-          ...(block.type==='table'?{headers:(block.headers||[]).map(text),rows:(block.rows||[]).map(row=>row.map(text))}:{})
-        }))}:{}),
-        ...(section.note?{note:text(section.note)}:{})
-      }))}}:{}),
+      ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:translateRulebook(metadata.rulebook)}:{}),
       create(state, options) {
         const initial = model.start({playerCount:state.players.length, preset:state.preset,
           firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
@@ -91,17 +105,17 @@
       },
       validateState(state) { model.validate(position(state)); },
       resolveAction(state,actor,action) {
-        const input=model.reactionControl(position(state),actor,action)?.command||action;
-        const command=model.availableActions(position(state),actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
-        return command?decorated(command,model.project(position(state),actor),state.players):null;
+        const current=position(state),input=model.reactionControl(current,actor,action)?.command||action;
+        const command=model.availableActions(current,actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
+        return command?decorated(command,model.project(current,actor),state.players):null;
       },
-      legal(state, actor) { const projection=model.project(position(state),actor);return model.legalActions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
-      reactions(state,actor) { const projection=model.project(position(state),actor);return model.reactions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
-      decisionWindow(state) { return model.decisionWindow(position(state)); },
-      reactionWindows(state) { return model.reactionWindows(position(state)); },
-      reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
-      botReactionDelay(state,actor) { return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
-      botReaction(state,actor) { const command=model.botReaction(position(state),actor,state.players[actor]?.botSettings);return command?decorated(command,model.project(position(state),actor),state.players):null; },
+      legal(state, actor) { const current=position(state),projection=model.project(current,actor);return model.legalActions(current,actor).map(command=>decorated(command,projection,state.players)); },
+      reactions(state,actor) { if(!definition.reactions)return [];const current=position(state),projection=model.project(current,actor);return model.reactions(current,actor).map(command=>decorated(command,projection,state.players)); },
+      decisionWindow(state) { if(!definition.decisionWindow)return null;return model.decisionWindow(position(state)); },
+      reactionWindows(state) { if(!definition.reactionWindows)return [];return model.reactionWindows(position(state)); },
+      reactionControl(state,actor,action) { if(!definition.reactionControl)return null;return model.reactionControl(position(state),actor,action); },
+      botReactionDelay(state,actor) { if(!definition.botReactionDelay)return null;return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
+      botReaction(state,actor) { if(!definition.botReaction)return null;const current=position(state),command=model.botReaction(current,actor,state.players[actor]?.botSettings);return command?decorated(command,model.project(current,actor),state.players):null; },
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.

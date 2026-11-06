@@ -1,5 +1,135 @@
 # Ordered presentation execution (local refactor)
 
+## Progressive public frames (preview.14)
+
+Owned registry renders with a `regionSink` expose the optional local
+`ui.publicFrames({key, plan, renderFrame, live})` port. `key` names a sequence
+within the view; `renderFrame(index)` returns authorized `{markup, label,
+players?, progress?, pack?, sound?}`. `live` has the same shape. There are at most
+32 historical frames. Functions are renderer ports, never SceneModel/wire data.
+Older hosts without the port retain the eager `GameComponents.publicFrames`
+fallback. The host component also supports its source-shell descriptor.
+
+The scoped registry cache owns generated records. Shell rendering builds no
+historical field: PublicSequence materializes the displayed frame on demand,
+without serializing every frame into a DOM bank. PublicSequence
+prepares one following frame and parses its detached template in an idle task
+during the current animation; at most two detached templates are retained.
+Foreground playback uses that prepared frame, or builds one frame if idle work
+has not run. Rebinding reuses completed records. Viewer, pack, surface, replay
+and skin boundaries replace the source; cancellation invalidates pending work.
+Deferred renderers retain the original asset/pack context. They must be pure
+presentation of the already authorized scene, with no rules, DOM measurement,
+dispatch or persistence. An idle error is delivered through foreground playback.
+
+The application passes source ports alongside scene fragments directly to
+GameScreen and its surface-local PublicSequence. An opaque DOM source name alone
+cannot resolve a different surface's renderer. Public frame children remain
+runtime-owned. Player panel heights are read together before any panel patch.
+
+`GameScreenController.planningUpdate` recognizes readiness changes inside one
+decision window: same audience/epoch/pack/control boundary, public plan and event
+cursor, with no new effects/cues/reactions. Its coordination turn may change.
+These updates use the latest snapshot without fetching each invisible history
+revision and without motion capture. Explicit history remains complete; a new
+window/event/plan or control boundary retains normal backfill and presentation.
+
+NetworkSessionStore starts explicit IndexedDB `commit()` after queuing all writes
+where supported. It still resolves only on transaction COMPLETE. Schema,
+revision/transfer fences, atomic state+receipt persistence and failure handling
+are unchanged. This removes an auto-commit event cycle, not durability.
+
+## RAM planning and durable checkpoints (preview.15)
+
+An active Session, installed rules and authorized view sources are held in memory.
+IndexedDB is the durable backing store, not the source of live frames or local
+selection state. Restore reads the session once. Normal turn commits read only the
+stored header to enforce revision/transfer fencing; they do not reload history.
+
+A portable definition may return a boolean from
+`checkpoint(beforeData, nextData, actor, command)`. False means an editable,
+private partial decision; it must not defer a public event or finished state.
+The adapter forces a checkpoint for those boundaries. Existing portable packs
+without this hook derive drafts from an unchanged simultaneous decisionWindow:
+the actor stays unready and its decision version changes. All other transitions
+keep the ordinary per-command checkpoint. No pack IDs enter this mechanism.
+
+With a batch-capable persistence port, CommandProcessor keeps draft steps and
+receipts in RAM and returns `draft:true`. This receipt acknowledges the live edit,
+not crash persistence. Duplicate delivery reuses it without storage I/O. The
+player's completed decision atomically commits its staged prefix, current step
+and receipts in one transaction; that ACK still waits for transaction COMPLETE.
+Failure retains the earlier RAM draft, rejects the final command and permits
+retry. Explicit pause, controller change and host transfer flush pending drafts
+before their durable control boundary. An abrupt process loss before a checkpoint
+can discard only unconfirmed edits. Local solo/hotseat follows the same checkpoint
+predicate for automatic saves; explicit save/exit may persist the current draft.
+
+Network journals store structural state deltas plus newly emitted events. Startup
+may restore old full rows and schedule compaction outside the command path,
+yielding after each four historical states. The final transaction checks the
+captured revision/transfer fence and preserves newer header metadata. Event
+reconstruction uses the full journal, including bursts longer than a historical
+state's short tail. Source pack versions and gameplay history remain unchanged.
+
+PublicSequence compares its authored template baseline before patching the live
+field, retains runtime-owned effects and prepares only small current player
+panels on local redraws. An unchanged close of an ordinary modal does not emit a
+settings-change event or redraw the field. A changed command-permission boundary
+still renders. Geometry capture remains opt-in per affected action.
+
+Evidence and measured limits: [planning performance](ux-021/PERFORMANCE-PLANNING-1106.md).
+
+## Interaction transaction (preview.13)
+
+The engine, transport and renderer share one transaction order. A local choice
+(selection, rotation or slider) changes view state only. A committed action goes
+through the current authorized command, SessionClient and authority once. The
+authority validates once and durably commits completed decisions before publishing
+their receipt; editable planning drafts use the RAM contract below. Animation
+timing never delays or substitutes the durable checkpoint.
+
+1. Capture the authorized initial geometry before changing the scene. Read the
+   required geometry together, then update DOM. Reuse viewport measurements until
+   resize/scale invalidates them; do not retain another viewer's markup.
+2. Mark pending input with `GameScreen.interactionState`. It updates only the shell
+   input marker and stage `aria-busy`; entering/leaving pending does not rebuild
+   the field. All command handlers still check current rights, pending, history,
+   pause and presentation state. Independent reactions use their own live rights.
+3. Accept the authorized snapshot. `Protocol.immutable` detaches external JSON once
+   and deeply freezes it; its private ownership registry permits in-process reuse
+   of that value and its descendants. An externally frozen object is not trusted.
+   WebRTC/MessagePort detach once at receipt; local authority snapshots are already
+   owned. This is an allocation contract, not an authorization or schema check.
+4. Queue each immutable snapshot object once in GameScreenController. A repeated
+   ACK notification can release pending input without repainting. Different
+   snapshots at the same game revision still carry pause/control/reaction changes
+   and must be processed. History retains every committed revision.
+5. Render the next authorized boundary and run its effects on the common player.
+   Current live commands may be staged while input is gated, avoiding a second
+   render solely to enable them. Old/history scenes never gain live commands.
+   The public-frame display leases its children with `DOM.manageChildren`:
+   PublicSequence owns those descendants, while the shell owns the frame bank.
+   Passive shell patches cannot remove active effects. Bind and unchanged
+   `setRate` are idempotent; advance only after all finite effects/audio finish.
+6. On settlement, release input and send presentation/learning notifications.
+   If the displayed and live snapshots are still the rendered objects, update
+   metadata only. A changed selection or a new snapshot requires rendering.
+   Destruction/cancellation guards prevent late promises from changing a new mount.
+
+Portable GameModel remembers validation only for its own immutable positions.
+Mutable, imported and otherwise untrusted positions are still detached and checked.
+The engine preserves previous data when invoking a portable reducer, which returns
+replacement data; legacy mutable reducers keep the defensive copy. Optional
+mechanics absent from a definition return their neutral result before projection.
+Roster metadata is projected once per render, rather than once per player card.
+
+Focused evidence: `authority`, `model-contract`, `game-flow`, `game-screen`,
+transport/reaction cases, Mage public-effect lifetime, and the named
+`SDK interaction audit covers every installed pack and duplicate ACK delivery`
+browser case. That matrix covers one initial action per installed pack; it does
+not claim exhaustive gameplay or phone latency coverage.
+
 `presentation/plan-player.js` owns the cursor and lifecycle of ordered groups.
 It has no DOM, game-state, storage or command dependency. A group starts its
 cues together; the next group waits for both its visible duration and all cue
@@ -304,3 +434,53 @@ Definition содержит `steps` (`id`, CSS `selector`, локализова�
 Подсказка может объявить `immediate:true` для ограниченной по времени реакции (объявление UNO): она обходит 500 мс ожидания ввода, сохраняя ограничения видимости, активности и анимаций. Остальные подсказки сохраняют обычную задержку.
 
 Пак может предоставить `botReactionDelay(projection, actor, settings, memory)` (0–60000 мс или null для стандартной задержки). Authority отсчитывает задержку от первого обнаружения эпизода; перепланирование не начинает отсчёт заново. Выбор пропуска принадлежит `botReaction`, а не таймеру UI.
+
+
+## Incremental authored regions (0.21 work in progress)
+
+Pack UI may call `ui.region(id, dependencies, build)` for an independent HTML
+region. Dependencies must include all authorized values affecting its markup:
+component descriptors, current legal attributes, selection, labels and hints.
+Portable/stateless calls return ordinary HTML. The application may supply a
+private fragment sink; neither the sink nor its owner reaches pack UI.
+
+The Web adapter parses only changed pure regions and retains authored roots
+until diff completes. Each region requires one root and no nested fragment
+placeholders. Preparation-sensitive player/hand/public-sequence/layout roots
+retain the full preparation path. A geometry-owner change retires parsed reuse.
+Currently solitaire columns use this contract; outer recipes and other packs
+still need migration. Region reuse is not evidence of whole-scene incremental
+rendering or general performance acceptance. See
+[measured scope](ux-021/FRAGMENT-PARSER-1104.md).
+
+## Component fragments (preview.16)
+
+GameScreen and PublicSequence split authored markup at existing physical
+`data-dom-key` / `data-entity` component boundaries. A render still computes
+its authorized description, but unchanged component strings reuse the authored
+baseline; DOM.patchChildren visits the changed branches and retains live nodes,
+focus, fitted geometry and runtime effects. Unchanged preparation-sensitive
+components clone their authored template rather than parse the same SVG again.
+The runtime-owned public display is excluded from automatic extraction.
+
+The tokenizer recognizes quoted attributes, comments, HTML void tags, SVG
+self-closing tags and title/textarea text. Duplicate keys, unbalanced structures,
+raw script/style content and excessive fragment counts use the native full path;
+they must never silently drop a component. Inert game-memo templates are cached
+separately. Fragments remain viewer/pack/surface scoped. Unkeyed or changed
+components can still require parsing; this is not a general reactive-rule system.
+The common header cover is also a reusable fragment.
+
+For local public-frame ports, `ui.publicFrames.supportsFragments` advertises
+`renderFrame(index, {region})` and a function-valued `live({region})`.
+`region(id, markup)` accepts one independent element and returns a template
+marker. The host carries the resulting Map outside the serializable scene/wire.
+The frame parser prepares changed regions, patches against the authored baseline,
+then transfers retained roots to the new baseline. Consumed templates are
+invalidated; preparation may retain only the current and next frame, with no
+chain of previous baselines. Never move active DOM nodes to build a template.
+
+Example pack calls are Mage's `cell-<index>` buttons and `piece-<player>` roots.
+The pack describes component boundaries; the common host owns parsing, reuse,
+patching and cancellation. Older hosts receive ordinary inline live markup;
+older packs use their existing physical keys without changing saved rule versions.

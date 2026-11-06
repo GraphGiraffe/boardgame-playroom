@@ -37,11 +37,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
   class ClientHistory {
     constructor({indexedDB=globalThis.indexedDB,name=DB}={}){this.indexedDB=indexedDB;this.name=name;this.database=null;this.opening=null;}
-    async remove(key){
+    async remove(key,{guard=()=>{}}={}){
       if(typeof key!=='string'||!key)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.b9efa6ceb037"));
-      await this.tx(['matches','frames'],'readwrite',tx=>{
-        tx.objectStore('matches').delete(key);const request=tx.objectStore('frames').index('id').openCursor(key);
-        request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};
+      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
+        guard();tx.objectStore('matches').delete(key);const request=tx.objectStore('frames').index('id').openCursor(key);
+        request.onsuccess=()=>{try{guard();}catch(error){abort(error);return;}const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};
       });
     }
     async open(){
@@ -147,6 +147,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           matches.add({eventPool:writer.events,id:key,roomId,participantId,sessionId,viewer:source.viewer,game:source.game,packVersion:source.packVersion,name:String(roomName).slice(0,100),transportMode:'network',role:'client',revision:last.revision,finished:last.state.status==='finished',createdAt:source.createdAt,updatedAt:source.updatedAt,receivedRevision:-1,...metadata(last.state),participants:roster(last.state.players,last.state),imported:true});
           for(const frame of frames)tx.objectStore('frames').add({id:key,revision:frame.revision,frame});
         };
+      });return key;
+    }
+    async replacePortable(key,value,roomName='',guard=()=>{}){
+      const source=globalThis.PlayroomSaveTransfer.cleanReplay(value),old=await this.read(key);guard();
+      if(!old||old.game!==source.game||old.packVersion!==source.packVersion||old.viewer!==source.viewer||old.createdAt!==source.createdAt)throw Object.assign(Error('SAVE_ID_CONFLICT'),{code:'SAVE_ID_CONFLICT'});
+      const epoch=old.frames.at(-1)?.authorityEpoch||'import-'+globalThis.crypto.randomUUID(),writer=ReplayCodec.writer(),frames=source.frames.map(frame=>writer.frame({...frame,sessionId:old.sessionId,authorityEpoch:epoch})),last=source.frames.at(-1);let received=-1;for(const frame of source.frames){if(frame.revision!==received+1)break;received++;}
+      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
+        const matches=tx.objectStore('matches'),check=matches.get(key);check.onsuccess=()=>{try{
+          guard();const current=check.result;if(!current||current.updatedAt!==old.updatedAt||current.revision!==old.revision){abort(Error('SAVE_CHANGED'));return;}
+          const keys=tx.objectStore('frames').index('id').getAllKeys(key);keys.onsuccess=()=>{try{guard();for(const id of keys.result)tx.objectStore('frames').delete(id);for(const frame of frames)tx.objectStore('frames').put({id:key,revision:frame.revision,frame});matches.put({...current,eventPool:writer.events,name:String(roomName).slice(0,100),revision:last.revision,finished:last.state.status==='finished',updatedAt:source.updatedAt,receivedRevision:received,presentedRevision:null,reviewedRevision:null,...metadata(last.state)});}catch(error){abort(error);}};
+        }catch(error){abort(error);}};
       });return key;
     }
     async list(){return this.tx(['matches','frames'],'readonly',(tx,done)=>{

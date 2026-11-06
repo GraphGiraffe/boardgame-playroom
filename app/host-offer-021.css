@@ -1,0 +1,13 @@
+/* Offer receipt is a passive banner. Consent is a separate explicit overlay. */
+.host-offer-banner{position:fixed;z-index:120;top:max(8px,env(safe-area-inset-top));left:50%;translate:-50% 0;width:min(560px,calc(100% - 24px));margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:0 4px 18px #172b2426;color:var(--ink)}
+.host-offer-banner>button{display:flex;align-items:center;gap:10px;width:100%;min-height:64px;padding:10px 12px;border:0;border-radius:inherit;background:transparent;box-shadow:none;color:inherit;text-align:left;font:inherit}
+.host-offer-banner svg{width:24px;height:24px;flex:none}
+.host-offer-banner>button>span:first-of-type{flex:1;min-width:0}
+.host-offer-banner strong,.host-offer-banner small{display:block;line-height:1.35;overflow-wrap:anywhere}
+.host-offer-banner strong{font-size:14px;font-weight:650}
+.host-offer-banner small{font-size:12px;color:var(--muted);margin-top:2px}
+/* Decision panels use the shared modal registry and its responsive surface tokens. */
+.host-offer-panel .host-offer-description{font-size:14px;line-height:1.45;color:var(--muted)}
+.host-offer-actions{display:flex;gap:8px}
+.host-offer-actions>button{flex:1;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:transparent;box-shadow:none;font:inherit;font-size:15px}
+.host-offer-actions>[data-host-offer-accept]{border-color:var(--green);background:var(--green);color:var(--color-action-on-primary,var(--paper))}

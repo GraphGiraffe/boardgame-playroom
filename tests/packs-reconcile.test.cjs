@@ -59,8 +59,24 @@ test('RC4 registry validates tags and count filter semantics',()=>{
 });
 test('pack staging and activation preserve the public reveal renderer',()=>{
  const sample=bundle('reveal');sample.files['view.js']="globalThis.PlayroomViews.register('demo',()=>({api:3,family:'board',elements:{field:'<div>field</div>'}}),null,{seating:'row',reveal:value=>'<b>'+value.card+'</b>'});";
- const repo=manager();repo.instance.bootstrap([sample]);assert.equal(repo.instance.views.get('demo').reveal({card:'public'}),'<b>public</b>');
+ const repo=manager();let styleWrites=0,styleText='',styleNode=null;
+ repo.instance.document={querySelector:()=>styleNode,head:{appendChild(node){styleNode=node;}},createElement:()=>({setAttribute(){},get textContent(){return styleText;},set textContent(value){styleWrites++;styleText=value;}})};
+ repo.instance.bootstrap([sample]);assert.equal(repo.instance.views.get('demo').reveal({card:'public'}),'<b>public</b>');
+ assert.equal(styleWrites,1);const css=styleText,initialView=repo.instance.views.get('demo'),initialRules=repo.instance.engine.get('demo');
+ let registrations=0,activations=0;const register=repo.instance.views.register.bind(repo.instance.views),activate=repo.instance.engine.activatePack.bind(repo.instance.engine);
+ repo.instance.views.register=(...args)=>{registrations++;return register(...args);};repo.instance.engine.activatePack=(...args)=>{activations++;return activate(...args);};
+ repo.instance.activate('demo');repo.instance.activate('demo','1.0.0');
+ assert.equal(styleWrites,1,'unchanged pack activation must not invalidate the complete stylesheet');
+ assert.equal(repo.instance.views.get('demo'),initialView,'unchanged activation preserves the live renderer identity');assert.equal(registrations,0);assert.equal(activations,0);
+ repo.instance.views.register('demo',()=>({api:3,family:'board',elements:{field:'external'}}));repo.instance.activate('demo');assert.equal(repo.instance.views.get('demo').render,initialView.render,'activation repairs an externally replaced renderer');
+ repo.instance.engine.activatePack({...initialRules,name:'External rules'});repo.instance.activate('demo');assert.equal(repo.instance.engine.get('demo'),initialRules,'activation repairs externally replaced rules');
+ const restored=repo.instance.views.get('demo');registrations=0;activations=0;repo.instance.activate('demo');assert.equal(repo.instance.views.get('demo'),restored);assert.equal(registrations,0);assert.equal(activations,0);
+ styleNode.textContent='external replacement';repo.instance.activate('demo');
+ assert.equal(styleText,css,'activation still restores changed stylesheet contents');assert.equal(styleWrites,3);
  assert.equal(repo.instance.views.get('demo').seating,'row');
+ const next=bundle('next');next.manifest.version='1.1.0';next.files['rules.js']=require('./pack-fixture.cjs').rules({id:'demo',name:'Demo next',version:'1.1.0',min:1,max:2,preset:'base'});repo.instance.install(repo.instance.prepare(next),{activate:false});
+ repo.instance.activate('demo','1.1.0');assert.equal(repo.instance.engine.get('demo').version,'1.1.0');assert.notEqual(repo.instance.views.get('demo').render,initialView.render);
+ repo.instance.activate('demo','1.0.0');assert.equal(repo.instance.engine.get('demo').version,'1.0.0');assert.equal(repo.instance.views.get('demo').render,initialView.render);assert.equal(repo.instance.views.get('demo').reveal({card:'public'}),'<b>public</b>');
  const invalid=bundle('invalid-reveal');invalid.files['view.js']=sample.files['view.js'].replace("reveal:value=>'<b>'+value.card+'</b>'","reveal:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid reveal renderer/);
  invalid.files['view.js']=sample.files['view.js'].replace("seating:'row'","seating:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid seating policy/);
 });

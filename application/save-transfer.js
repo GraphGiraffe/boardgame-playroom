@@ -6,18 +6,30 @@
  function options(value,manifest){
   const keys=new Set(['seed','mode','packVersion','preset','presetLabel','openHands','firstPlayer','firstPlayerMode','portableRoomName',...(manifest.settings||[]).map(s=>s.key)]),out={};
   for(const key of keys)if(Object.hasOwn(value,key))out[key]=clone(value[key]);
-  if(value.players)out.players=value.players.map(p=>({name:p.name,bot:!!p.bot,...(p.avatar?{avatar:p.avatar}:{}),...(p.botSettings?{botSettings:{difficulty:p.botSettings.difficulty}}:{})}));
+  if(value.players)out.players=value.players.map(p=>({name:p.name,bot:!!p.bot,...(p.avatar?{avatar:p.avatar}:{}),...(p.botSettings?{botSettings:Object.fromEntries(['difficulty','strategy','resolvedStrategy'].filter(key=>p.botSettings[key]!==undefined).map(key=>[key,p.botSettings[key]]))}:{})}));
   return out;
  }
- function sessionCopy(session,manifest,Session){const saved=session.export();saved.options=options(saved.options,manifest);saved.options.mode=saved.states[0].players.filter(p=>!p.bot).length>1?'pass':'solo';return Session.restore(session.engine,saved);}
+ function sessionPayload(session,manifest,Session){
+  const portable=options(session.options,manifest);portable.mode=session.states[0].players.filter(p=>!p.bot).length>1?'pass':'solo';
+  const saved=JSON.parse(session.serialize());
+  // A deterministic action journal stays a journal. Compare only its initial
+  // position before sanitizing options; custom/legacy starts retain snapshots.
+  if(saved.version===3){
+   const initial=new Session(session.engine,session.game,portable,{now:()=>session.createdAt}).current;
+   const withoutEvents=state=>{const {events,...position}=state;return position;};
+   if(canonical(withoutEvents(initial))===canonical(withoutEvents(session.states[0])))return {...saved,options:portable};
+  }
+  const copy=session.export();copy.options=portable;return JSON.parse(Session.restore(session.engine,copy).serialize());
+ }
+ function sessionCopy(session,manifest,Session){return Session.restore(session.engine,sessionPayload(session,manifest,Session));}
  async function createRecord({kind='session',session,replay,pack,roomName='',Session,includePack=false}){
   const bundle=JSON.parse(pack),m=bundle.manifest;if(!id(m?.id)||!version(m.version))fail('SAVE_DEPENDENCY');
-  const payload=kind==='session'?JSON.parse(sessionCopy(session,m,Session).serialize()):ReplayCodec.encode(cleanReplay(replay));
+  const payload=kind==='session'?sessionPayload(session,m,Session):ReplayCodec.encode(cleanReplay(replay));
   if(kind==='session')payload.options.portableRoomName=String(roomName).slice(0,100);
   if(payload.game!==m.id||payload.packVersion!==m.version)fail('SAVE_DEPENDENCY');
   const content={format:'playroom-save',version:kind==='replay'?2:1,kind,roomName:String(roomName).slice(0,100),dependency:{id:m.id,version:m.version,sha256:await digest(bundle)},pack:includePack?clone(bundle):null,payload};
   const file={...content,sha256:await digest(content)},text=JSON.stringify(file);if(new TextEncoder().encode(text).length>MAX_BYTES)fail('SAVE_TOO_LARGE');
-  if(kind==='replay'){
+  {
    const data=await Compression.encode(text,MAX_BYTES);
    if(data&&data.length+256<text.length){const compressed={format:'playroom-save',version:2,encoding:Compression.encoding,data};return {text:JSON.stringify({...compressed,sha256:await digest(compressed)}),checksum:file.sha256};}
   }
@@ -40,7 +52,7 @@
    if(Object.keys(value).some(k=>!['format','version','encoding','data','sha256'].includes(k)))fail('SAVE_FORMAT');
    const {sha256,...compressed}=value;if(sha256!==await digest(compressed))fail('SAVE_CHECKSUM');
    const expanded=await Compression.decode(value.data,MAX_BYTES);try{value=JSON.parse(expanded);}catch{fail('SAVE_INVALID');}
-   if(value?.format!=='playroom-save'||value.version!==2||value.encoding!==undefined)fail('SAVE_FORMAT');
+   if(value?.format!=='playroom-save'||![1,2].includes(value.version)||value.encoding!==undefined)fail('SAVE_FORMAT');
   }
   if(value?.format==='playroom-session')return {kind:'session',roomName:'',dependency:{id:value.game,version:value.packVersion||'0.1.0'},payload:value,pack:null,legacy:true};
   if(value?.format!=='playroom-save'||![1,2].includes(value.version)||!['session','replay'].includes(value.kind)||value.version===2&&(value.kind!=='replay'||value.payload?.encoding!==ReplayCodec.encoding)||Object.keys(value).some(k=>!['format','version','kind','roomName','dependency','pack','payload','sha256'].includes(k)))fail('SAVE_FORMAT');

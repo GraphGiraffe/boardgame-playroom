@@ -132,6 +132,16 @@ test('round token geometry is canonical in packs and the pinned host copy has th
 
 test('shared component and sound resources are pinned to canonical sources and resolve skins locally',()=>{
  const crypto=require('node:crypto'),packRoot=path.dirname(fs.realpathSync(path.join(root,'packs')));
+ const uno=require(path.join(packRoot,'shared/asset-packs/uno-deck/renderer.js'));
+ const oldPrintCSS=fs.readFileSync(path.join(packRoot,'shared/asset-packs/uno-deck/styles.css'),'utf8');
+ const oldBorder=Number(oldPrintCSS.match(/\.uno-art-face\{[^}]*border:(\d+)px/)[1]);
+ for(const variant of ['main','compact']){
+  const rect=uno.print({value:'8',color:'yellow'})[variant].match(/<rect\b[^>]*>/)[0],attrs=Object.fromEntries([...rect.matchAll(/([\w-]+)="([^"]*)"/g)].map(([,key,value])=>[key,value]));
+  const x=Number(attrs.x),y=Number(attrs.y),width=Number(attrs.width),height=Number(attrs.height),stroke=Number(attrs['stroke-width']);
+  assert.equal(x+stroke/2,oldBorder,'SVG white print band equals the original CSS border, rather than doubling it');
+  assert.deepEqual([x-stroke/2,y-stroke/2,x+width+stroke/2,y+height+stroke/2],[0,0,72,103],'printing retains its exact outer bounds');
+  assert.equal(Number(attrs.rx)+stroke/2,12,'original rounded outer corner is retained');
+ }
  const lock=JSON.parse(fs.readFileSync(path.join(root,'core/shared-assets.json'),'utf8'));
  for(const item of lock.entries){const source=fs.readFileSync(path.join(packRoot,item.source),'utf8'),target=fs.readFileSync(path.join(root,item.target),'utf8');assert.equal(crypto.createHash('sha256').update(source).digest('hex'),item.sha256,item.source);const body=item.target.endsWith('.json')?target:target.split('\n').slice(1).join('\n');assert.equal(crypto.createHash('sha256').update(body).digest('hex'),item.renderedSha256,item.target);}
  const canonical=require(path.join(packRoot,'shared/components/game-components.js')),host=require('../core/game-components.js'),catalog=require('../themes/assets.json');
@@ -220,4 +230,13 @@ test('round token pawn profile puts the white rim on the top only and preserves 
  assert(!side.includes('stroke='));assert.match(face,/stroke="var\(--round-token-rim/);
  assert(+side.match(/cy="([\d.]+)"/)[1]+ +side.match(/r="([\d.]+)"/)[1]<=100);
  assert.match(pawn,/>4<\/text>/);assert.throws(()=>geometry.roundTokenArt({profile:'other'}));
+});
+
+test('reviewed pack cleanup preserves local and network references and rechecks stale plans',async()=>{
+ const Cleanup=require('../application/pack-update-cleanup.js');const pinned={bundle:{manifest:{id:'pinned',version:'1',name:'Pinned'}}},unused={bundle:{manifest:{id:'bad',version:'1',name:'Bad'}}};let rows=[{id:'game',version:'1',active:false},{id:'game',version:'2',active:false},{id:'game',version:'3',active:true}],refs=new Set(['game@1','pinned@1']),removed=[];
+ const manager={quarantined:[pinned,unused],list:()=>rows,async remove(id,version,{guard}){guard();removed.push(id+'@'+version);rows=rows.filter(p=>p.id!==id||p.version!==version)},async discardQuarantine(index,{guard}){guard();removed.push(this.quarantined[index].bundle.manifest.id);this.quarantined=this.quarantined.filter((_,i)=>i!==index)}};
+ const cleanup=new Cleanup({manager,compare:(a,b)=>Number(a)-Number(b),localReferences:(id,v)=>refs.has(id+'@'+v)?['save']:[],networkArchives:async()=>[],activeRoom:()=>false});
+ const plan=await cleanup.plan();assert.equal(plan.items.length,2);assert.equal(plan.retained.length,2);assert.deepEqual(removed,[],'review does not delete');refs.add('game@2');await cleanup.removeUnused(plan);assert.deepEqual(removed,['bad']);assert.equal(rows.length,3);assert.deepEqual(manager.quarantined,[pinned]);
+ refs.delete('game@2');cleanup.networkArchives=async()=>[{game:'game',packVersion:'2'}];assert.equal((await cleanup.plan()).items.length,0);cleanup.activeRoom=()=>true;assert.equal((await cleanup.plan()).blocked,true);
+ cleanup.activeRoom=()=>false;cleanup.networkArchives=async()=>{throw Error('archive unreadable')};await assert.rejects(()=>cleanup.removeUnused(plan),/archive unreadable/);assert.equal(rows.length,3);
 });

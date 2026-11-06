@@ -122,3 +122,13 @@ test('incremental history fills holes only, persists independent cursors and rej
   assert.deepEqual(result,{before:{receivedRevision:0,missing:[1,2]},calls:[1,2],rejected:true,received:4,presented:3,reviewed:1,frames:[0,1,2,3,4]});
  }finally{await browser.close();await close();}
 });
+
+test('cloud replay replacement keeps its match ID and updates frames atomically',{timeout:30000},async()=>{
+ const {url,close}=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const page=await browser.newPage();await page.goto(url);const result=await page.evaluate(async()=>{
+  const store=new PlayroomNetworkClientHistory({name:'replace-cloud-replay'}),frame=revision=>({revision,viewer:0,game:'uno',packVersion:'0.6.7',state:{move:revision,game:'uno',packVersion:'0.6.7',players:[{name:'A'},{name:'B'}],events:[]},events:[]}),source={game:'uno',packVersion:'0.6.7',viewer:0,createdAt:1,updatedAt:2,frames:[frame(0)]};
+  const key=await store.importPortable(source,'Cloud'),next={...source,updatedAt:3,frames:[frame(0),frame(1)]};await store.replacePortable(key,next,'Cloud');const row=await store.read(key),count=(await store.list()).length;let rejected=false;try{await store.replacePortable(key,{...next,viewer:1,frames:next.frames.map(f=>({...f,viewer:1}))},'Wrong viewer');}catch{rejected=true;}
+  const unchanged=(await store.read(key)).frames.length;store.close();return {key:row.id===key,count,frames:row.frames.length,last:row.frames.at(-1).revision,rejected,unchanged};
+ });assert.deepEqual(result,{key:true,count:1,frames:2,last:1,rejected:true,unchanged:2});
+ }finally{await browser.close();await close();}
+});

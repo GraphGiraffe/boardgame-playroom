@@ -1,7 +1,16 @@
 /* One screen lifecycle for local, remote and archive clients. No DOM or rules. */
 (function(root,factory){const api=factory(root.PlayroomHistoryController||(typeof require==='function'?require('./history-controller.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameScreenController=api;})(globalThis,function(HistoryController){
  'use strict';
+ function planningUpdate(before,next){
+  const a=before?.state?.scene,b=next?.state?.scene;
+  return !!(a?.plan?.id&&a.plan.id===b?.plan?.id&&a.decisionWindow?.id&&a.decisionWindow.id===b?.decisionWindow?.id&&
+   ['sessionId','authorityEpoch','viewer','role','game','packVersion','controlRevision','playerControlRevision'].every(key=>before[key]===next[key])&&
+   before.state.status==='playing'&&next.state.status==='playing'&&!before.paused&&!next.paused&&
+   (before.events?.at(-1)?.id||0)===(next.events?.at(-1)?.id||0)&&
+   !(next.effects?.length||next.cues?.length||before.reactionWindow||next.reactionWindow||before.reactionWindows?.length||next.reactionWindows?.length));
+ }
  class GameScreenController {
+  static planningUpdate(before,next){return planningUpdate(before,next);}
   constructor({client=null,present=async()=>{},changed=()=>{},report=()=>{},visible=()=>true,clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)}}={}){
    this.client=client;this.present=present;this.changed=changed;this.report=report;this.visible=visible;this.clock=clock;this.shown=client?.snapshot||null;this.selection=null;this.viewState={};this.identity=null;this.queue=[];this.draining=false;this.intake=Promise.resolve();this.epoch=0;this.closed=false;this.queued=this.shown?.revision??-1;this.operation=null;
    this.history=new HistoryController({read:index=>this.client.history(index)});if(this.shown)this.history.receive(this.shown);
@@ -30,9 +39,13 @@
   }
   render(frame,renderer,options={}){this.history.receive(frame);return renderer(frame,this.context(frame,options));}
   sync(frame=this.client?.snapshot){this.cancel();this.shown=frame;this.queued=frame?.revision??-1;if(frame)this.history.receive(frame);this.changed(frame);}
-  enqueue(frame){if(this.closed)return Promise.resolve();this.history.receive(frame);const epoch=this.epoch;
+  enqueue(frame){if(this.closed)return Promise.resolve();if(frame===this.lastQueuedFrame)return this.intake;const previous=this.lastQueuedFrame||this.shown;this.lastQueuedFrame=frame;this.history.receive(frame);const epoch=this.epoch;
    this.intake=this.intake.then(async()=>{if(this.closed||epoch!==this.epoch||this.history.open||frame.revision<this.queued)return;
-    for(let index=this.queued+1;index<frame.revision;index++){
+    // Readiness revisions inside one decision window have no public transition.
+    // Their durable history remains available for explicit review; fetching every
+    // private intermediate projection here would block the current animation.
+    const coalesced=previous?.revision===this.queued&&planningUpdate(previous,frame);
+    for(let index=coalesced?frame.revision:this.queued+1;index<frame.revision;index++){
      const item=await this.client.history(index);if(this.closed||epoch!==this.epoch||this.history.open)return;
      if(item?.kind!=='history'||item.revision!==index||!['sessionId','authorityEpoch','viewer','role','game','packVersion'].every(key=>item[key]===frame[key]))throw Error('HISTORY_FRAME_INVALID');
      this.queue.push({...frame,...item,kind:'snapshot',actions:[],historyLength:frame.historyLength});this.queued=index;
@@ -54,7 +67,7 @@
    });return token;
   }
   cancelTransition(){const token=this.operation;if(!token)return;token.cancelled=true;if(token.timer!==null)this.clock.clearTimeout(token.timer);this.operation=null;}
-  cancel(){this.epoch++;this.queue=[];this.draining=false;this.queued=this.client?.snapshot?.revision??this.shown?.revision??-1;this.cancelTransition();}
+  cancel(){this.epoch++;this.lastQueuedFrame=null;this.queue=[];this.draining=false;this.queued=this.client?.snapshot?.revision??this.shown?.revision??-1;this.cancelTransition();}
   dispose(){this.closed=true;this.cancel();this.history.close();this.selection=null;this.viewState={};this.matchViews?.clear();}
  }
  return GameScreenController;

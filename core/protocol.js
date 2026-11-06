@@ -3,6 +3,15 @@
   const version=3, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
   const clone=x=>JSON.parse(JSON.stringify(x));
   const freeze=x=>{if(x&&typeof x==='object'&&!Object.isFrozen(x)){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
+  // Only copies made here may cross an in-process boundary without another
+  // serialization. Frozen external objects still get a detached deep copy.
+  const ownedValues=new WeakSet();
+  function immutable(value){
+    if(value===undefined)return undefined; // Optional wire replies may omit a result.
+    if(value&&typeof value==='object'&&ownedValues.has(value))return value;
+    const own=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(own);Object.freeze(value);ownedValues.add(value);}return value;};
+    return own(clone(value));
+  }
   const canonical=x=>JSON.stringify(x,(_,v)=>record(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
   const id=x=>typeof x==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(x);
   function validate(command){
@@ -19,5 +28,5 @@
   }
   function presentationReady(snapshot){return {protocolVersion:version,kind:'presentation-ready',sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,controlRevision:snapshot.controlRevision||0,revision:snapshot.reactionWindow?.revision??snapshot.revision,windowId:snapshot.reactionWindow?.id};}
   function validatePresentationReady(message){return record(message)&&Object.keys(message).every(k=>['protocolVersion','kind','sessionId','authorityEpoch','controlRevision','revision','windowId'].includes(k))&&message.protocolVersion===version&&message.kind==='presentation-ready'&&id(message.sessionId)&&id(message.authorityEpoch)&&id(message.windowId)&&Number.isSafeInteger(message.controlRevision)&&message.controlRevision>=0&&Number.isSafeInteger(message.revision)&&message.revision>=0;}
-  return {version,clone,freeze,canonical,validate,command,role,sameAudience,presentationReady,validatePresentationReady};
+  return {version,clone,freeze,immutable,canonical,validate,command,role,sameAudience,presentationReady,validatePresentationReady};
 });

@@ -59,5 +59,21 @@ test('library cards distinguish primary human and hotseat guests, including old 
  let row=library.list()[0];assert.equal(row.participants[0].primary,true);assert.equal(row.participants[1].primary,false);
  const raw=JSON.parse(data.get('playroom.session.v1'));for(const p of raw.librarySummary.participants)delete p.primary;
  data.set('playroom.session.v1',JSON.stringify(raw));row=library.list()[0];assert.equal(row.participants[0].primary,true);assert.equal(row.participants[1].primary,false);
- const UI=require('../core/ui.js');assert.match(UI.helpers.participantIcon(row.participants[0]),/data-ui-icon="player"/);assert.match(UI.helpers.participantIcon(row.participants[1]),/data-ui-icon="hand"/);
+ const UI=require('../core/ui.js');assert.match(UI.helpers.participantIcon(row.participants[0]),/data-participant-role="player"/);assert.doesNotMatch(UI.helpers.participantIcon(row.participants[0]),/<svg/);assert.match(UI.avatar(row.participants[1],1),/data-ui-icon="hand"/);
+});
+
+
+test('portable sessions retain command journals instead of expanding them to snapshots',async()=>{
+ const {session,packs}=fixture();for(let i=0;i<2&&session.current.status==='playing';i++)session.act(session.current.turn,E.legalActions(session.current)[0]);
+ const original=JSON.parse(session.serialize());assert.equal(original.version,3);const file=await T.inspect(await T.create({session,pack:packs.exportPack(session.game,session.packVersion),Session}));
+ assert.equal(file.payload.version,3);assert.deepEqual(file.payload.actions,original.actions);assert.deepEqual(Session.restore(E,file.payload).states,session.states);assert(!JSON.stringify(file.payload).includes('NEVER-EXPORT'));assert.equal(file.payload.options.lobbyConfig,undefined);
+});
+
+test('legacy snapshot sessions compress without losing any historical state',async()=>{
+ const {session,packs}=fixture(),saved=session.export();saved.states[0].data.fixturePayload='old-board-data-'.repeat(6000);const legacy=Session.restore(E,saved),source=legacy.serialize(),text=await T.create({session:legacy,pack:packs.exportPack(legacy.game,legacy.packVersion),Session});
+ assert(text.length<source.length/5,'legacy archive is actually compressed');const file=await T.inspect(text);assert.equal(file.kind,'session');assert.deepEqual(Session.restore(E,file.payload).states,legacy.states);const prepared=await T.prepare(file,{packs,Session,engine:E});assert.deepEqual(prepared.session.states,legacy.states);
+});
+
+test('collection portable action journals replay exactly after credential stripping',async()=>{
+ require('../core/model-registration.js');require('../installed-packs.js');for(const bundle of globalThis.PlayroomInstalledPacks){const id=bundle.manifest.id;require('../packs/'+id+'/rules.js');const game=E.get(id),session=new Session(E,id,{seed:17,mode:'solo',players:Array.from({length:game.min},(_,i)=>({name:'P'+i,bot:true})),lobbyConfig:{resumeToken:'MUST-NOT-EXPORT'}});for(let i=0;i<8&&session.current.status==='playing';i++){const actor=session.current.turn,action=E.botAction(session.current,actor)||E.legalActions(session.current,actor)[0];if(!action)break;session.act(actor,action);}const file=await T.inspect(await T.create({session,pack:JSON.stringify(bundle),Session}));assert.equal(file.payload.version,3,id+' stays an action log');assert.deepEqual(Session.restore(E,file.payload).states,session.states,id+' exact states');assert(!JSON.stringify(file).includes('MUST-NOT-EXPORT'));}
 });

@@ -1,0 +1,47 @@
+/* Short game, participant and place tasks use one quiet contextual composition. */
+.choice021-content,.choice021-game,.participant021-content{min-width:0}
+.choice021-art{display:flex;align-items:center;width:86px;height:80px;margin:0 0 8px}
+.choice021-art>svg{display:block;width:100%;height:100%;object-fit:contain}
+.choice021 :is(.menu-row,.choice021-remove),.participant021-action{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-width:0;min-height:52px;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font:inherit;font-size:15px;line-height:1.4;text-align:left;white-space:normal}
+.choice021 .menu-row>span,.participant021-action>span{flex:1;min-width:0}
+.choice021 .menu-row strong,.participant021-action strong{display:block;font-size:15px;font-weight:600}
+.choice021 .menu-row small,.participant021-action small{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.4;font-weight:400}
+.choice021 :is(.menu-row,.choice021-remove)>svg,.participant021-action>svg{width:21px;height:21px;flex:none}
+.choice021-state,.choice021-reason,.choice021-help{margin:0 0 12px;font-size:13px;line-height:1.45;color:var(--muted)}
+.choice021 .menu-row:disabled,.participant021-action:disabled{opacity:.6;cursor:default}
+.choice021-levels{display:flex;gap:4px;width:100%;padding:4px;border:1px solid var(--line);border-radius:12px}
+.choice021-levels>label{position:relative;display:flex;flex:1;min-width:0;margin:0}
+:is(#modal-root,[data-ui-surface-exit]) .choice021-levels input[type=radio]{position:absolute;inset:0;opacity:0;width:100%;height:100%;min-height:0;margin:0;box-shadow:none;z-index:1;cursor:pointer}
+.choice021-levels span{display:flex;align-items:center;justify-content:center;flex:1;min-width:0;min-height:44px;padding:8px 5px;border-radius:9px;font-size:13px;font-weight:600;line-height:1.3;color:var(--ink)}
+.choice021-levels input:checked+span{background:var(--color-surface-selected,var(--paper))}
+:where(:root:not([data-input-modality="touch"])) .choice021-levels input:focus-visible+span{outline:2px solid var(--ui-focus);outline-offset:2px}
+.choice021-levels label:has(input:disabled){opacity:.65}
+.choice021-advanced{margin:8px 0 12px}
+.choice021-advanced>summary{min-height:44px;align-content:center;cursor:pointer;font-size:13px;color:var(--muted)}
+.choice021 .field{display:flex;flex-direction:column;gap:6px;min-width:0;margin:0 0 12px;font-size:13px}
+.choice021 .field input{width:100%;min-width:0;min-height:44px;box-shadow:none;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);padding:10px 12px}
+.choice021 .profile-identity-row{margin:8px 0 12px;align-items:center}
+.choice021 .profile-avatar-button{width:44px;height:44px;min-width:44px;box-shadow:none}
+.choice021 .profile-avatar-button .avatar{width:40px;height:40px;min-width:40px}
+:is(#modal-root,[data-ui-surface-exit]) .choice021-primary{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;margin:10px 0 0;padding:10px 12px;border:0;border-radius:12px;background:var(--green);box-shadow:none;color:var(--color-action-on-primary,var(--paper));font:inherit;font-size:15px;font-weight:600}
+.choice021-primary svg{width:20px;height:20px;flex:none}
+.choice021 .choice021-remove{justify-content:center;min-height:44px;margin-top:10px;padding:10px 12px;border:1px solid var(--ui-danger);border-radius:12px;color:var(--ui-danger)}
+.participant021-identity{display:flex;align-items:center;gap:12px;min-height:66px;padding:4px 0 12px;border-bottom:1px solid var(--line)}
+.participant021-identity>.avatar{width:42px;height:42px;min-width:42px;border-radius:12px;font-size:18px;flex:none}
+.participant021-identity>div{flex:1;min-width:0}
+.participant021-identity strong{display:block;font-size:17px;line-height:1.3;overflow-wrap:anywhere}
+.participant021-identity small{display:block;margin-top:3px;font-size:12px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.participant021-action.ui-action-danger{color:var(--ui-danger)}
+.participant021-content [data-profile-message]{margin:10px 0 0;font-size:13px;line-height:1.4;color:var(--muted)}
+.participant021-content [data-profile-message]:empty{display:none}
+.room-v021-person[aria-busy=true] .room-v021-chevron{font-size:0;width:20px;height:20px;border:2px solid var(--line);border-right-color:var(--green);border-radius:50%;animation:participant021-loading .8s linear infinite}
+@keyframes participant021-loading{to{rotate:1turn}}
+@media(prefers-reduced-motion:reduce){.room-v021-person[aria-busy=true] .room-v021-chevron{animation:none}}
+/* Destructive navigation is a quiet signed row; the existing confirmation owns the red commit. */
+:is(#modal-root,[data-ui-surface-exit]) .participant021 .participant021-action.ui-action-danger{background:transparent;color:var(--ui-danger);border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none}
+:is(#modal-root,[data-ui-surface-exit]) .participant021 .participant021-action.ui-action-danger :is(strong,span,svg){color:inherit}
+.choice021 .menu-list{width:100%;max-width:none}
+@media(orientation:landscape) and (max-height:500px){
+ .game-card-modal.choice021 .choice021-art{display:none}
+ .game-card-modal.choice021 .choice021-modes>.menu-row{min-height:48px;padding:8px 4px}
+}

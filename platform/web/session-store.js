@@ -8,7 +8,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   root.PlayroomNetworkSessionStore=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(Journal,Recovery){
   'use strict';
-  const DB_NAME='playroom.network-host.v1',DB_VERSION=1;
+  const DB_NAME='playroom.network-host.v1',DB_VERSION=2;
   const isId=value=>typeof value==='string'&&value.length>0&&value.length<=128;
   const clone=value=>JSON.parse(JSON.stringify(value));
 
@@ -85,35 +85,48 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const timestamp=this.now();
       const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
         game:session.game,packVersion:session.packVersion,packDigest,room:clone(room),
-        eventStorage:'delta-v1',eventCursor:Journal.cursor(session.current.events),
+        eventStorage:'delta-v2',eventCursor:Journal.cursor(session.current.events),
         ...this.describe(session.current),recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,finished:session.current.status==='finished',createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
       return {sessionId,revision:0};
     }
     // A single readwrite transaction makes the state, receipt, and committed
     // revision indivisible. Resolve only on transaction COMPLETE, not on put().
-    async commit({sessionId,previousRevision,nextState,viewer,commandId,signature,receipt}){
-      if(!isId(sessionId)||!Number.isSafeInteger(previousRevision)||previousRevision<0||
-          nextState?.move!==previousRevision+1||!Number.isInteger(viewer)||viewer<0||
-          !isId(commandId)||typeof signature!=='string'||!signature||!receipt?.ok||
-          receipt.commandId!==commandId||receipt.revision!==nextState.move)
-        throw Error(globalThis.PlayroomMessages.text("ui.session-store.586724de354e"));
+    commit(entry){return this.commitBatch({entries:[entry],receipts:[]});}
+    async commitBatch({entries,receipts=[]}){
+      if(!Array.isArray(entries)||!entries.length||!Array.isArray(receipts))throw Error('COMMIT_BATCH_INVALID');
+      const first=entries[0],last=entries.at(-1),sessionId=first.sessionId;
+      for(let i=0;i<entries.length;i++){
+        const row=entries[i],{nextState,viewer,commandId,signature,receipt}=row;
+        if(!isId(sessionId)||row.sessionId!==sessionId||!Number.isSafeInteger(row.previousRevision)||row.previousRevision<0||
+          nextState?.move!==row.previousRevision+1||(i&&row.previousRevision!==entries[i-1].nextState.move)||!Number.isInteger(viewer)||viewer<0||
+          !isId(commandId)||typeof signature!=='string'||!signature||!receipt?.ok||receipt.commandId!==commandId||receipt.revision!==nextState.move||
+          (row.previousState&&row.previousState.move!==row.previousRevision))throw Error(globalThis.PlayroomMessages.text('ui.session-store.586724de354e'));
+      }
       await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
-        const sessions=tx.objectStore('sessions');
-        const request=sessions.get(sessionId);
+        const sessions=tx.objectStore('sessions'),request=sessions.get(sessionId);
         request.onsuccess=()=>{
-          const entry=request.result;
-          if(!entry||entry.revision!==previousRevision||entry.transfer&&(entry.transfer.role==='outgoing'||entry.transfer.state!=='active')){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.c5c51f878fc6")));return;}
-          if(entry.game!==nextState.game||entry.packVersion!==(nextState.packVersion||'0.1.0')){
-            abort(Error(globalThis.PlayroomMessages.text("ui.session-store.aaed7e7ce6b1")));return;
-          }
-          const step=entry.eventStorage==='delta-v1'?Journal.encode(nextState,entry.eventCursor):{state:clone(nextState)};
-          tx.objectStore('steps').add({sessionId,revision:nextState.move,...step});
-          tx.objectStore('receipts').add({sessionId,viewer,commandId,signature,receipt:clone(receipt)});
-          sessions.put({...entry,...this.describe(nextState),revision:nextState.move,finished:nextState.status==='finished',...(entry.eventStorage==='delta-v1'?{eventCursor:step.eventTail}:{}),updatedAt:Math.max(this.now(),entry.updatedAt)});
+          const entry=request.result,nextState=last.nextState;
+          if(!entry||entry.revision!==first.previousRevision||entry.transfer&&(entry.transfer.role==='outgoing'||entry.transfer.state!=='active')){abort(Error(globalThis.PlayroomMessages.text('ui.session-store.c5c51f878fc6')));return;}
+          if(entries.some(row=>entry.game!==row.nextState.game||entry.packVersion!==(row.nextState.packVersion||'0.1.0'))){abort(Error(globalThis.PlayroomMessages.text('ui.session-store.aaed7e7ce6b1')));return;}
+          try{
+            const journal=['delta-v1','delta-v2'].includes(entry.eventStorage);let cursor=entry.eventCursor,compact=false;
+            for(const row of entries){
+              const step=journal?Journal.encode(row.nextState,cursor,row.previousState||null):{state:clone(row.nextState)};
+              compact||=!!step.delta;if(journal)cursor=step.eventTail;
+              tx.objectStore('steps').add({sessionId,revision:row.nextState.move,...step});
+              tx.objectStore('receipts').add({sessionId,viewer:row.viewer,commandId:row.commandId,signature:row.signature,receipt:clone(row.receipt)});
+            }
+            for(const row of receipts){
+              if(row.sessionId!==sessionId||!Number.isInteger(row.viewer)||row.viewer<0||!isId(row.commandId)||row.receipt?.commandId!==row.commandId||row.receipt?.ok!==false||row.receipt.revision>nextState.move)throw Error('COMMIT_BATCH_INVALID');
+              tx.objectStore('receipts').add(clone(row));
+            }
+            sessions.put({...entry,...this.describe(nextState),revision:nextState.move,finished:nextState.status==='finished',...(journal?{eventCursor:cursor,...(compact?{eventStorage:'delta-v2'}:{})}:{}),updatedAt:Math.max(this.now(),entry.updatedAt)});
+            tx.commit?.();
+          }catch(error){abort(error);}
         };
       });
-      return receipt;
+      return last.receipt;
     }
     async recordReceipt({sessionId,viewer,commandId,signature,receipt}){
       if(!isId(sessionId)||!Number.isInteger(viewer)||viewer<0||!isId(commandId)||
@@ -180,11 +193,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         };
       });
     }
-    async remove(sessionId){
+    async remove(sessionId,{guard=()=>{}}={}){
       if(!isId(sessionId))throw Error(globalThis.PlayroomMessages.text("ui.session-store.7cf26f51a86a"));
-      await this.transaction(['sessions','steps','receipts'],'readwrite',tx=>{
-        tx.objectStore('sessions').delete(sessionId);
-        for(const name of ['steps','receipts']){const request=tx.objectStore(name).index('sessionId').openCursor(sessionId);request.onsuccess=()=>{const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};}
+      await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
+        guard();tx.objectStore('sessions').delete(sessionId);
+        for(const name of ['steps','receipts']){const request=tx.objectStore(name).index('sessionId').openCursor(sessionId);request.onsuccess=()=>{try{guard();}catch(error){abort(error);return;}const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};}
       });
     }
     async readPrivate(sessionId){
@@ -222,7 +235,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         store.put(r);
       };});
     }
-    async load(sessionId,engine,Session){return Recovery.restore(await this.readPrivate(sessionId),sessionId,engine,Session);}
+    async load(sessionId,engine,Session){const raw=await this.readPrivate(sessionId),saved=Recovery.restore(raw,sessionId,engine,Session);return saved?{...saved,compactNeeded:raw.record.eventStorage!=='delta-v2'||raw.steps.some(row=>!row.delta)}:saved;}
+    async compact(sessionId,session){
+      const states=session.states;if(states.length<2)return false;
+      const idle=()=>new Promise(resolve=>globalThis.requestIdleCallback?globalThis.requestIdleCallback(resolve,{timeout:200}):setTimeout(resolve,0)),rows=[],events=session.current.events;
+      let offset=0;while(offset<events.length&&events[offset].id<=Journal.cursor(states[0].events))offset++;
+      for(let i=1;i<states.length;i++){
+        if(i%4===1)await idle();
+        const start=offset,tail=Journal.cursor(states[i].events);while(offset<events.length&&events[offset].id<=tail)offset++;
+        const emitted=events.slice(start,offset),head=emitted.length?emitted:offset?[events[offset-1]]:[];
+        rows.push({sessionId,revision:states[i].move,...Journal.encode({...states[i],events:head},Journal.cursor(states[i-1].events),states[i-1])});
+      }
+      await this.transaction(['sessions','steps'],'readwrite',(tx,_,abort)=>{
+        const store=tx.objectStore('sessions'),request=store.get(sessionId);
+        request.onsuccess=()=>{
+          const record=request.result;
+          if(!record||record.game!==session.game||record.packVersion!==session.packVersion||record.revision<states.at(-1).move||record.transfer||(!record.eventStorage&&record.revision!==states.at(-1).move)){abort(Error('COMPACTION_STALE'));return;}
+          for(const row of rows)tx.objectStore('steps').put(row);
+          store.put({...record,eventStorage:'delta-v2',eventCursor:record.eventCursor??Journal.cursor(states.at(-1).events)});tx.commit?.();
+        };
+      });return true;
+    }
 
     async list(){
       return this.transaction(['sessions'],'readonly',(tx,done)=>{

@@ -74,7 +74,15 @@
     const owner = Number.isInteger(actor) ? [...(scene?.querySelectorAll('[data-player-index]') || [])].find(el => Number(el.dataset.playerIndex) === actor) : null;
     const hand = actor === viewer ? scene?.querySelector('.hand-track, .hand-cards, .hand-scroll') : owner?.querySelector('.mini-hand');
     let stockBack = scene?.querySelector('[data-motion-stock] .shared-card-back, [data-motion-stock] .piece-back, .stock-button .piece-back, .stock-button .shared-card-back')||scene?.querySelector('.mini-hand .piece-back, .mini-hand .shared-card-back');
-    if(!stockBack&&root.TabletopUI?.helpers?.back){const template=doc.createElement('template');template.innerHTML=root.TabletopUI.helpers.back();stockBack=template.content.firstElementChild;}
+    let frozenStockBack=null,stockPrepared=false;
+    const prepareStockBack=()=>{
+      if(stockPrepared)return;stockPrepared=true;
+      if(!stockBack&&root.TabletopUI?.helpers?.back){const template=doc.createElement('template');template.innerHTML=root.TabletopUI.helpers.back();stockBack=template.content.firstElementChild;}
+      frozenStockBack=stockBack?styledClone(stockBack):null;stockBack=null;
+    };
+    // Deferred captures prepare only authorized effects while the old DOM exists.
+    // Legacy callers and explicit draws keep their eager back capture.
+    if(!deferDepartures||action?.type==='draw')prepareStockBack();
     const release = playedFrom && ['x','y','width','height'].every(key => Number.isFinite(playedFrom[key])) && playedFrom.width > 0 && playedFrom.height > 0 ? clampRect({ x: playedFrom.x, y: playedFrom.y, width: playedFrom.width, height: playedFrom.height }) : null;
     const anchors=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-anchor]')){const rect=rectOf(el);if(rect)anchors.set(el.dataset.motionAnchor,rect);}
     const flips=new Map();if(scene)for(const el of scene.querySelectorAll('[data-motion-effect="flip"]'))if(el.dataset.motionTrigger===action?.type&&(!el.dataset.motionKey||String(action?.[el.dataset.motionKey])===el.dataset.motionValue))flips.set(el.dataset.motionValue,styledClone(el.querySelector('[data-motion-face]')||el));
@@ -85,17 +93,18 @@
       const player=node.matches('.mini-hand')?Number(node.closest('[data-player-index]')?.dataset.playerIndex):viewer;
       const rect=rectOf(node);if(rect){if(deferDepartures)handSources.set(player,{rect,node});else handSurfaces.set(player,{rect,clone:styledClone(node)});}
     }
-    const prepareTransfers=draws=>{
+    const prepareTransfers=(draws,{back=false}={})=>{
+      if(back||draws.some(cue=>Number.isInteger(cue.count)&&cue.count>0))prepareStockBack();
       for(const player of new Set((draws||[]).filter(cue=>cue.from==='hand').map(cue=>cue.fromPlayer))){
         const source=handSources.get(player);if(source)handSurfaces.set(player,{rect:source.rect,clone:styledClone(source.node)});
       }
       handSources.clear();
     };
     const stockControl=scene?.querySelector('.stock-button,.solitaire-stock')||query('.scene-header-actions .solitaire-stock');
-    return { prepareDepartures, prepareTransfers, handSurfaces, packId:scene?.querySelector('[data-appearance-pack]')?.dataset.appearancePack, anchors, flips, handRects:new Map([...(scene?.querySelectorAll('[data-player-index]')||[])].filter(el=>el.querySelector('.mini-hand')).map(el=>[Number(el.dataset.playerIndex),[...el.querySelector('.mini-hand').children].map(rectOf)])), handCounts:new Map([...(scene?.querySelectorAll('[data-player-index][data-hand-count]')||[])].map(el=>[Number(el.dataset.playerIndex),Number(el.dataset.handCount)])), actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: scene?.querySelector('[data-motion-layout="cards"]')?(poseOf(stockControl)||poseOf(stockBack)):(poseOf(stockBack)||poseOf(stockControl)), stockBack: stockBack ? styledClone(stockBack) : null, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    return { prepareDepartures, prepareTransfers, handSurfaces, packId:scene?.querySelector('[data-appearance-pack]')?.dataset.appearancePack, anchors, flips, handRects:new Map([...(scene?.querySelectorAll('[data-player-index]')||[])].filter(el=>el.querySelector('.mini-hand')).map(el=>[Number(el.dataset.playerIndex),[...el.querySelector('.mini-hand').children].map(rectOf)])), handCounts:new Map([...(scene?.querySelectorAll('[data-player-index][data-hand-count]')||[])].map(el=>[Number(el.dataset.playerIndex),Number(el.dataset.handCount)])), actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: scene?.querySelector('[data-motion-layout="cards"]')?(poseOf(stockControl)||poseOf(stockBack)):(poseOf(stockBack)||poseOf(stockControl)), get stockBack(){return frozenStockBack;}, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
-  function stripInteraction(el) {
-    for (const node of [el, ...el.querySelectorAll('*')]) {
+  function stripInteraction(el,nodes=null) {
+    for (const node of nodes||[el, ...el.querySelectorAll('*')]) {
       for (const attr of [...node.attributes]) if (attr.name === 'id' || attr.name.startsWith('data-') || attr.name.startsWith('on')) node.removeAttribute(attr.name);
       node.setAttribute('aria-hidden', 'true'); node.setAttribute('tabindex', '-1');
       if ('disabled' in node) node.disabled = true;
@@ -104,29 +113,32 @@
   // Freeze visual/layout properties only; avoid copying the entire CSS catalogue
   // and thousands of inherited design tokens into every node of each flight.
   const cloneStyleKeys=('display position box-sizing width height min-width min-height max-width max-height top right bottom left margin padding border border-radius background color opacity visibility overflow overflow-x overflow-y font font-size font-family font-weight line-height letter-spacing text-align text-transform white-space vertical-align align-items align-content align-self justify-content justify-items gap flex flex-direction flex-wrap flex-shrink flex-grow grid-template-columns grid-template-rows place-items box-shadow text-shadow transform transform-origin translate rotate scale perspective backface-visibility clip-path filter fill fill-opacity stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset paint-order text-anchor dominant-baseline vector-effect object-fit object-position aspect-ratio z-index').split(' ');
+  const cloneMetricKeys=new Set(['width','height','transform-origin','transform']);
   function styledClone(el) {
     const clone = el.cloneNode(true), sourceNodes = [el, ...el.querySelectorAll('*')], cloneNodes = [clone, ...clone.querySelectorAll('*')];
     // Resolve inherited visibility in the state the animation will display.
     // Explicitly hidden descendants stay hidden; a hidden wrapper must not
     // bake its temporary visibility into every child of a card back.
     const visibility=el.style.getPropertyValue('visibility'),priority=el.style.getPropertyPriority('visibility');
-    const reveal=root.getComputedStyle(el).visibility==='hidden';
-    if(reveal)el.style.setProperty('visibility','visible','important');
+    const originalStyle=root.getComputedStyle(el),metrics={};
+    const reveal=originalStyle.visibility==='hidden';
+    // Keep the original pose; only inherited visibility changes for the visual.
+    if(reveal){for(const key of cloneMetricKeys)metrics[key]=originalStyle.getPropertyValue(key);el.style.setProperty('visibility','visible','important');}
     // Freeze resolved styles so a domino retains its board orientation and
     // inherited CSS variables even when its clone leaves the game container.
     try { for (let i = 0; i < sourceNodes.length; i++) {
-      const style = root.getComputedStyle(sourceNodes[i]);
-      cloneNodes[i].style.cssText = cloneStyleKeys.map(key => `${key}:${style.getPropertyValue(key)};`).join('');
+      const style = i===0&&!reveal?originalStyle:root.getComputedStyle(sourceNodes[i]);
+      cloneNodes[i].style.cssText = cloneStyleKeys.map(key => {const value=style.getPropertyValue(key);if(i===0&&!reveal&&cloneMetricKeys.has(key))metrics[key]=value;return `${key}:${value};`;}).join('');
       cloneNodes[i].style.setProperty('animation', 'none', 'important');
       cloneNodes[i].style.setProperty('transition', 'none', 'important');
       cloneNodes[i].style.setProperty('pointer-events', 'none', 'important');
     }} finally {if(reveal){if(visibility)el.style.setProperty('visibility',visibility,priority);else el.style.removeProperty('visibility');}}
-    stripInteraction(clone);
-    const style = root.getComputedStyle(el), width = el.offsetWidth || parseFloat(style.width), height = el.offsetHeight || parseFloat(style.height);
-    const origin = style.transformOrigin.split(' ').map(Number.parseFloat), ox = origin[0] || 0, oy = origin[1] || 0;
+    stripInteraction(clone,cloneNodes);
+    const width = el.offsetWidth || parseFloat(metrics.width), height = el.offsetHeight || parseFloat(metrics.height);
+    const origin = metrics['transform-origin'].split(' ').map(Number.parseFloat), ox = origin[0] || 0, oy = origin[1] || 0;
     let minX = 0, minY = 0;
-    if (style.transform && style.transform !== 'none' && root.DOMMatrixReadOnly) {
-      const matrix = new root.DOMMatrixReadOnly(style.transform);
+    if (metrics.transform && metrics.transform !== 'none' && root.DOMMatrixReadOnly) {
+      const matrix = new root.DOMMatrixReadOnly(metrics.transform);
       const points = [[0,0],[width,0],[0,height],[width,height]].map(([x,y]) => ({ x: matrix.a * (x - ox) + matrix.c * (y - oy) + matrix.e + ox, y: matrix.b * (x - ox) + matrix.d * (y - oy) + matrix.f + oy }));
       minX = Math.min(...points.map(p => p.x)); minY = Math.min(...points.map(p => p.y));
     }

@@ -55,5 +55,13 @@
       "focus-existing",
       "auto"
     ]
-  }
+  },
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "./manifest.webmanifest",
+      "id": "/playroom"
+    }
+  ],
+  "prefer_related_applications": false
 }

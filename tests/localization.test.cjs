@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const {Translator}=require('../presentation/localization.js');
-const ru={...require('../locales/ru/common.json'),...require('../locales/ru/themes.json')};
+const ru={...require('../locales/ru/common.json'),...require('../locales/ru/themes.json'),...require('../locales/ru/ui-app.json')};
 
 test('Russian plural categories come from count, including teens and compound numbers',()=>{
   const t=new Translator({catalogs:{ru}});
@@ -12,6 +12,9 @@ test('Russian plural categories come from count, including teens and compound nu
     assert.equal(t.text('themes.saved-count',{count}).split(' ').at(-1),word);
   }
   assert.equal(t.format({key:'themes.saved',params:{name:'Вечер'}}),'Тема «Вечер» сохранена.');
+  for(const [count,word] of [[0,'действий'],[1,'действие'],[2,'действия'],[5,'действий'],[11,'действий'],[14,'действий'],[21,'действие'],[22,'действия'],[25,'действий'],[101,'действие'],[111,'действий']]) {
+    assert.equal(t.text('ui.app.action-count',{count}),count+' '+word);
+  }
 });
 
 test('fallback uses its own language for grammar, not the missing primary locale',()=>{

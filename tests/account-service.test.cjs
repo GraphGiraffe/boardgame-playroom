@@ -92,6 +92,19 @@ test('cached identity is status only: no startup request, validation still uses 
  f.auth.fetch=async()=>{throw Error('network unavailable');};await assert.rejects(s.restore(),e=>e.code==='network');
  assert.equal(s.snapshot().error,'network');assert.equal(s.snapshot().id,user.id);assert(f.values.has(f.auth.key));assert(!JSON.stringify(s.snapshot()).includes('private'));
 });
+test('ready account navigation skips repeated validation while cold restore, explicit validation and real busy operations remain guarded',async()=>{
+ let release,start,hold=false,invalid=false,providerUser=user;const f=fixture(async url=>{if(hold){start?.();await new Promise(resolve=>release=resolve);}return invalid?response({},401):response(url.endsWith('/user')?providerUser:tokens({user:providerUser}));});
+ const service=new Service({auth:f.auth,guestId:'local'});await service.login(user.email,'password123');const loggedCalls=f.calls.length;
+ await service.restore({ifNeeded:true});await service.restore({ifNeeded:true});assert.equal(f.calls.length,loggedCalls,'navigation of a server-validated login needs no user lookup');assert.equal(service.snapshot().busy,false);
+ // A fresh service knows the stored identity only as status, and must validate it.
+ const cold=new Service({auth:f.auth,guestId:'local'});hold=true;const started=new Promise(resolve=>start=resolve),first=cold.restore({ifNeeded:true});await started;assert(cold.snapshot().busy);await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy');release();hold=false;await first;await cold.restore({ifNeeded:true});assert.equal(f.calls.length,loggedCalls+1);
+ const passwordCalls=f.calls.length;hold=true;const passwordStarted=new Promise(resolve=>start=resolve),passwordChange=cold.updatePassword('current-password','new-password123');await passwordStarted;await assert.rejects(cold.updatePassword('current-password','other-password123'),e=>e.code==='busy');await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy');hold=false;release();await passwordChange;assert.equal(f.calls.length,passwordCalls+3,'one password update still validates user, reauthenticates and writes once');
+ hold=true;const leaving=cold.logout();await new Promise(resolve=>setImmediate(resolve));await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy','ready navigation cannot bypass an actual logout');release();hold=false;await leaving;assert.equal(cold.snapshot().kind,'local');
+ await cold.login(user.email,'password123');invalid=true;await assert.rejects(cold.restore(),e=>e.code==='credentials');assert.equal(cold.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false,'explicit invalid session revokes the stored identity');invalid=false;await cold.login(user.email,'password123');await cold.restore({ifNeeded:true});assert.equal(cold.snapshot().kind,'account');
+ f.auth.save(tokens({expires_in:0}));await f.auth.session();assert(f.calls.at(-1).url.includes('refresh_token'),'actual adapter still refreshes expired tokens after UI readiness');
+ providerUser={id:'replacement-account',email:'replacement@example.test',is_anonymous:false};f.auth.save(tokens({user:providerUser}));await cold.restore({ifNeeded:true});assert.equal(cold.snapshot().id,providerUser.id,'changed cached identity from another tab invalidates readiness before navigation');assert.equal(cold.snapshot().email,providerUser.email);
+});
+
 test('password recovery reports same/weak passwords explicitly and keeps recovery available for retry',async()=>{
  for(const [providerCode,expected]of [['same_password','same-password'],['weak_password','weak-password'],['reauthentication_needed','reauthentication']]){
   const f=fixture(()=>response({code:422,error_code:providerCode,msg:'private provider text'},422));f.auth.save(tokens(),{recovery:true});

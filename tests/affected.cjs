@@ -20,7 +20,7 @@ module.exports = [
   {paths:['core/messages.js','app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},
   {paths:['app/saved-games.css','app/library.js','application/library.js'],select:['core/messages.js','core/state','ui/history','ui/navigation','storage']},
   {paths:["core/messages.js","platform/web/pack-loader.js","app/shared-views.js"],select:['core/messages.js','core/screen','ui','network/resume','storage/history','input/feedback']},
-  {paths:['core/messages.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js'],select:['network','pairing','storage','ui']},
+  {paths:['application/connection-attempt.js','application/online-connection.js','application/transfer-peer.js','app/cloud-network.js','app/connection-progress.js','core/messages.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-social.js','app/network-presence.js','app/network-ui.js'],select:['network','pairing','storage','ui']},
   {paths:['core/messages.js','app/pairing.js','app/qr.js','app/qr-scanner.js'],select:['pairing/codes','network/resume']},
   {paths:['core/messages.js','app/acoustic-pairing.js'],select:['pairing/audio','pairing/codes']},
   {paths:['core/messages.js','application/pwa-update-coordinator.js','app/pwa.js','sw.js','manifest.webmanifest'],select:['pairing/pwa','network/resume']},

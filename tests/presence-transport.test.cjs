@@ -68,6 +68,22 @@ test('room conversation persists messages/reactions and filters team history and
  const delta=service.read('room','a',{after:3,known:['2']});assert.equal(delta.messages[0].body,undefined);assert.equal(delta.messages[0].read,true);
  await service.append('room','a',{id:'missed-old',body:'Пока были настройки'});await service.append('room','a',{id:'seen-new',body:'На экране игры'});
  await service.markRead('room','b',{through:5,only:true});assert.equal(service.summary('room','b').room,2,'live bubbles do not consume earlier missed messages');
+ await service.append('room','a',{id:'reply-common',body:'Ответ',replyToId:'msg-2'});assert.equal(service.read('room','s').messages.find(m=>m.id==='reply-common').reply.body,'Всем привет');
+ await assert.rejects(()=>service.append('room','a',{id:'reply-common',body:'Ответ',replyToId:'emoji-1'}));
+ await assert.rejects(()=>service.append('room','c',{id:'reply-hidden',body:'Утечка',scope:'team',replyToId:'msg-1'}));
+ await assert.rejects(()=>service.react('room','c',{scope:'team',targetId:'msg-1',emoji:'👏',enabled:true}));
+ await service.react('room','a',{targetId:'msg-2',emoji:'👏',enabled:true});await service.react('room','a',{targetId:'msg-2',emoji:'👏',enabled:true});await service.react('room','s',{targetId:'msg-2',emoji:'👏',enabled:true});
+ assert.deepEqual(service.read('room','a').messages.find(m=>m.id==='msg-2').reactions,[{emoji:'👏',count:2,mine:true}]);assert.equal(service.read('room','c').messages.find(m=>m.id==='msg-2').reactions[0].mine,false);
+ await service.react('room','a',{targetId:'msg-2',emoji:'👏',enabled:false});assert.equal(service.read('room','a').messages.find(m=>m.id==='msg-2').reactions[0].count,1);
+ assert(!JSON.stringify(service.read('room','s')).includes('authorId":"s"'),'reaction projection contains counts, not its private actor set');
+ // A bounded read must not parse the whole persisted room once per reply.
+ let sourceReads=0,resolutions=0,now=1000;const measuredStore={...store,getItem:key=>{sourceReads++;return store.getItem(key);}},bulk=new Chat({...ports,store:()=>measuredStore,clock:()=>now,resolve:(...args)=>{resolutions++;return ports.resolve(...args);}});
+ const append=async value=>{now+=61000;return bulk.append('bulk','a',value);};
+ await append({id:'private-root',body:'PRIVATE-TEAM-ONLY',scope:'team'});await append({id:'private-reply',body:'PRIVATE-TEAM-REPLY',scope:'team',replyToId:'private-root'});now+=61000;await bulk.append('bulk','b',{id:'private-root',body:'OTHER-PRIVATE-TEAM',scope:'team'});await append({id:'public-root',body:'Общий исходный текст'});
+ for(let i=0;i<100;i++)await append({id:'bulk-'+i,body:'Ответ '+i,replyToId:'public-root'});
+ sourceReads=resolutions=0;const page=bulk.read('bulk','s');assert.equal(page.messages.length,80);assert.equal(sourceReads,1,'one persisted source read per synchronous history page');assert.equal(resolutions,1,'one fresh access context per history page');assert(page.messages.every(row=>row.reply.body==='Общий исходный текст'));assert(!JSON.stringify(page).includes('PRIVATE-TEAM'),'shared lookup must not reveal another channel');assert(!JSON.stringify(page).includes('audience'));
+ sourceReads=resolutions=0;const metadata=bulk.read('bulk','s',{after:104,known:['104']});assert.equal(sourceReads,1);assert.equal(resolutions,1);assert.equal(metadata.messages[0].body,undefined);assert.equal(metadata.messages[0].reply.body,'Общий исходный текст','known receipt/reaction updates retain safe quote metadata');
+ const bluePage=bulk.read('bulk','a',{scope:'team'});assert.equal(bluePage.messages.length,2);assert.equal(bluePage.messages.find(row=>row.id==='private-reply').reply.body,'PRIVATE-TEAM-ONLY','request lookup preserves first-match reply semantics across author ID collisions');const privateReply=bulk.records('bulk').find(row=>row.id==='private-reply');teams.a='red';assert.equal(bulk.read('bulk','a',{scope:'team'}).messages.length,0,'the next read resolves membership afresh');assert.deepEqual(bulk.project(privateReply,'a','bulk').reply,{unavailable:true},'standalone live projection retains its fresh authorization fallback');teams.a='blue';
  people.b.connected=false;await assert.rejects(()=>service.append('room','b',{id:'bad',body:'Нет доступа'}));
  await assert.rejects(()=>service.append('room','a',{id:'msg-1',body:'Подмена',scope:'team'}));
 });

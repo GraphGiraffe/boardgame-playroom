@@ -1,7 +1,7 @@
 /* Coalesce independent account reads; game transport and file writes stay separate. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomAccountSyncService=api;})(globalThis,function(){
  'use strict';const fail=code=>Object.assign(Error(code),{code});
- const reads={playroom_social:new Set(['list']),playroom_online:new Set(['unread','inbox','group-inbox','hub','group-list','group-info','chat','group-read','settings','presence','discover']),playroom_cloud_saves_rpc:new Set(['list']),playroom_push:new Set(['config'])};
+ const reads={playroom_social:new Set(['list']),playroom_online:new Set(['unread','inbox','group-inbox','hub','group-list','group-info','chat','group-read','chat-search','group-search','settings','presence','discover','room-preview']),playroom_cloud_saves_rpc:new Set(['list']),playroom_push:new Set(['config'])};
  class AccountSync{
   constructor({account,remote,schedule=fn=>setTimeout(fn,0),now=()=>Date.now()}){Object.assign(this,{account,remote,schedule,now});this.pending=new Map();this.flights=new Map();this.cache=new Map();this.generation=0;this.sequence=0;this.scheduled=false;this.identity=this.key();account.subscribe(()=>{if(this.key()!==this.identity){this.identity=this.key();this.generation++;this.cache.clear();for(const request of this.pending.values())for(const p of request.waiters)p.reject(fail('account-changed'));this.pending.clear();this.flights.clear();}});}
   key(){const s=this.account.snapshot();return s.kind+':'+s.id+':'+!!s.recovery;}

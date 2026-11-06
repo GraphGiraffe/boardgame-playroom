@@ -19,6 +19,7 @@
 
   class GameModel {
     #definition;
+    #validated=new WeakSet();
     constructor(definition) {
       check(record(definition) && definition.contractVersion === 1 && identifier(definition.id) &&
         integer(definition.minPlayers, 1, 32) && integer(definition.maxPlayers, definition.minPlayers, 32) &&
@@ -29,13 +30,15 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext'].every(key=>
+        ['checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
       Object.freeze(this);
     }
+    #position(position){return position&&this.#validated.has(position)?position:snapshot(position);}
     validate(position) {
+      if(position&&this.#validated.has(position))return true;
       check(record(position) && integer(position.playerCount, this.minPlayers, this.maxPlayers) &&
         integer(position.turn, 0, position.playerCount - 1) && ['playing','finished'].includes(position.status) &&
         Array.isArray(position.winners) && new Set(position.winners).size === position.winners.length &&
@@ -43,8 +46,9 @@
         (position.status === 'finished' || position.winners.length === 0) && record(position.data) &&
         (position.revision===undefined||integer(position.revision,0,Number.MAX_SAFE_INTEGER))&&
         (position.timeline===undefined||validTimeline(position.timeline,position.revision??0,this.#definition.rounds===true)), 'POSITION_INVALID');
-      const value = snapshot(position);
+      const value = this.#position(position);
       check(this.#definition.validate(value) === true, 'POSITION_INVALID');
+      this.#validated.add(value);
       return true;
     }
     create(options) {
@@ -55,22 +59,24 @@
       check(record(created),'POSITION_INVALID');
       const initial=created.position?created:{position:created,events:[]};
       const transition={...initial,position:{...initial.position,revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.preparing?{preparing:!!this.#definition.preparing(initial.position),playStart:0}:{}),...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
-      this.validate(transition.position);
-      check(transition.position.playerCount===options.playerCount&&Array.isArray(transition.events),'POSITION_INVALID');
-      for(const value of transition.events)event(value,options.playerCount);
-      return snapshot(transition);
+      const owned=snapshot(transition);
+      this.validate(owned.position);
+      check(owned.position.playerCount===options.playerCount&&Array.isArray(owned.events),'POSITION_INVALID');
+      for(const value of owned.events)event(value,options.playerCount);
+      this.#validated.add(owned.position);
+      return owned;
     }
     score(position) {
       this.validate(position);
       if(!this.#definition.score)return null;
-      const values=this.#definition.score(snapshot(position));
+      const values=this.#definition.score(this.#position(position));
       check(Array.isArray(values)&&values.length===position.playerCount&&values.every(value=>integer(value,0,Number.MAX_SAFE_INTEGER)),'SCORE_INVALID');
       return snapshot(values);
     }
     #choices(position, actor, kind = 'actions') {
       this.validate(position);
       if (position.status !== 'playing' || !integer(actor, 0, position.playerCount - 1)) return Object.freeze([]);
-      const choices = this.#definition[kind]?.(snapshot(position), actor) || [];
+      const choices = this.#definition[kind]?.(this.#position(position), actor) || [];
       check(Array.isArray(choices) && choices.every(choice => record(choice) &&
         ['public','private'].includes(choice.visibility)), 'ACTION_INVALID');
       const signatures = choices.map(choice => command(choice.command));
@@ -90,7 +96,7 @@
       if(!this.#definition.reactionControl)return null;
       this.validate(position);
       if(position.status!=='playing'||!integer(actor,0,position.playerCount-1))return null;
-      const value=this.#definition.reactionControl?.(snapshot(position),actor,snapshot(action))??null;
+      const value=this.#definition.reactionControl?.(this.#position(position),actor,snapshot(action))??null;
       if(value===null)return null;
       check(record(value)&&['answer','challenge','advance','independent'].includes(value.kind)&&
         (value.ignore===undefined||typeof value.ignore==='boolean')&&
@@ -101,7 +107,7 @@
     }
     reactionWindows(position) {
       this.validate(position);
-      const windows=this.#definition.reactionWindows?.(snapshot(position))||[];
+      const windows=this.#definition.reactionWindows?.(this.#position(position))||[];
       check(Array.isArray(windows)&&windows.length<=position.playerCount&&new Set(windows.map(value=>value.id)).size===windows.length&&windows.every(value=>
         record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&
         integer(value.owner,0,position.playerCount-1)&&integer(value.revision,0,position.revision??0)&&
@@ -110,7 +116,7 @@
     }
     decisionWindow(position) {
       this.validate(position);
-      const value=this.#definition.decisionWindow?.(snapshot(position))??null;
+      const value=this.#definition.decisionWindow?.(this.#position(position))??null;
       if(value===null)return null;
       check(record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&Array.isArray(value.participants)&&value.participants.length>0&&new Set(value.participants).size===value.participants.length&&value.participants.every(i=>integer(i,0,position.playerCount-1))&&Array.isArray(value.ready)&&new Set(value.ready).size===value.ready.length&&value.ready.every(i=>value.participants.includes(i))&&record(value.versions)&&value.participants.every(i=>integer(value.versions[i],0,Number.MAX_SAFE_INTEGER)), 'DECISION_WINDOW_INVALID');
       return snapshot({id:value.id,participants:value.participants,ready:value.ready,versions:Object.fromEntries(value.participants.map(i=>[i,value.versions[i]]))});
@@ -126,7 +132,7 @@
     apply(position, actor, action) {
       if(this.reactionControl(position,actor,action)?.ignore)return snapshot({position,events:[]});
       const legal = this.commandFor(position, actor, action);
-      const result = this.#definition.reduce(snapshot(position), actor, legal);
+      const result = this.#definition.reduce(this.#position(position), actor, legal);
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
       check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
@@ -137,14 +143,16 @@
       if(!wasPreparing&&!preparing&&result.turnEnded&&result.position.status==='playing'){timeline.turn++;timeline.starts.push(revision);}
       if(!wasPreparing&&!preparing&&result.roundEnded&&result.position.status==='playing'&&timeline.round){timeline.round++;timeline.roundStarts.push(revision);}
       const next={...result,position:{...result.position,revision,timeline}};
-      this.validate(next.position);
-      for (const value of result.events) event(value, position.playerCount);
-      return snapshot(next);
+      const owned=snapshot(next);
+      this.validate(owned.position);
+      for (const value of owned.events) event(value, position.playerCount);
+      this.#validated.add(owned.position);
+      return owned;
     }
     project(position, viewer, events = []) {
       this.validate(position);
       if (!integer(viewer, 0, position.playerCount - 1)) viewer = -1;
-      const data = this.#definition.project(snapshot(position), viewer);
+      const data = this.#definition.project(this.#position(position), viewer);
       check(record(data), 'PROJECTION_INVALID');
       return snapshot({contractVersion:1, game:this.id, viewer, actor:viewer, audience:viewer < 0 ? 'public' : 'player',
         playerCount:position.playerCount, turn:position.turn, status:position.status,
@@ -162,8 +170,8 @@
     botAction(position, actor, settings) {
       const projection = this.project(position, actor), actions = this.legalActions(position,actor);
       if (!actions.length) return null;
-      const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
-      const context={...snapshot(this.#definition.botContext?.(snapshot(position),actor)||{}),...Difficulty.context(settings,position.rng,this.id+':'+(position.revision||0)+':'+actor)};
+      const memory=snapshot(this.#definition.observe?.(this.#position(position),actor)||{});
+      const context={...snapshot(this.#definition.botContext?.(this.#position(position),actor)||{}),...Difficulty.context(settings,position.rng,this.id+':'+(position.revision||0)+':'+actor)};
       const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??actions[Math.floor(context.random()*actions.length)];
       const preferred=actions.find(value=>command(value)===command(selected));
       check(preferred!==undefined,'BOT_ACTION_INVALID');
@@ -175,7 +183,7 @@
     botReaction(position,actor,settings) {
       const actions=this.reactions(position,actor);
       if(!actions.length||!this.#definition.botReaction)return null;
-      const memory=snapshot(this.#definition.observe?.(snapshot(position),actor)||{});
+      const memory=snapshot(this.#definition.observe?.(this.#position(position),actor)||{});
       const chosen=this.#definition.botReaction(this.project(position,actor),actor,actions,memory,settings);
       if(chosen==null)return null;
       const found=actions.find(value=>command(value)===command(chosen));
@@ -183,13 +191,13 @@
       return found;
     }
     botReactionDelay(position,actor,settings) {
-      const delay=this.#definition.botReactionDelay?.(this.project(position,actor),actor,settings,snapshot(this.#definition.observe?.(snapshot(position),actor)||{}))??null;
+      const delay=this.#definition.botReactionDelay?.(this.project(position,actor),actor,settings,snapshot(this.#definition.observe?.(this.#position(position),actor)||{}))??null;
       check(delay===null||integer(delay,0,60000),'BOT_REACTION_DELAY_INVALID');return delay;
     }
     result(position) {
       this.validate(position);
       if (position.status !== 'finished') return null;
-      const result = this.#definition.result(snapshot(position));
+      const result = this.#definition.result(this.#position(position));
       check(record(result) && canonical(result.winners) === canonical(position.winners) &&
         Array.isArray(result.places) && result.places.length === position.playerCount &&
         result.places.every(place => integer(place, 1, position.playerCount)) &&

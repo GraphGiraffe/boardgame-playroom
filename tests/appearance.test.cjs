@@ -155,3 +155,13 @@ test('avatar preferences migrate to characters and reject temporarily disabled g
  e.fail(true);assert.throws(()=>e.service.saveAvatarStyle('minimal'),/quota/);assert.equal(e.service.avatarStyle(),'minimal');
  const old=copy(e.catalog.builtin('light'));delete old.skins['character-face'];assert.equal(e.catalog.validate(old).skins['character-face'],'minimal');
 });
+
+test('built-in reading text keeps contrast on app and catalog surfaces',()=>{
+ const luminance=hex=>{const rgb=hex.slice(1).match(/../g).map(c=>parseInt(c,16)/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;};
+ for(const theme of presets)for(const background of ['surface.canvas','surface.panel','surface.raised','surface.tile-green','surface.tile-coral','surface.tile-blue','surface.tile-gold','surface.tile-violet'])for(const text of ['text.primary','text.secondary']){const a=luminance(theme.palette[text]),b=luminance(theme.palette[background]),contrast=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);assert(contrast>=4.5,theme.id+' '+text+' / '+background+': '+contrast.toFixed(3));}
+});
+
+
+test('app accent is an independent local preference with atomic persistence and backward-compatible defaults',()=>{
+ const e=environment(),original=copy(e.catalog.builtin('light'));assert.equal(e.service.snapshot().accentColor,null);e.service.setAccentColor('#387BBF');assert.equal(e.stored().accentColor,'#387bbf');assert.equal(e.service.active().id,'light');assert.deepEqual(e.catalog.builtin('light'),original);e.service.select('dark');assert.equal(e.service.snapshot().accentColor,'#387bbf');assert.equal(environment(e.stored()).service.snapshot().accentColor,'#387bbf');const state=e.service.snapshot(),stored=copy(e.stored());e.fail(true);assert.throws(()=>e.service.setAccentColor('#d75245'),/quota/);assert.equal(e.service.snapshot(),state);assert.deepEqual(e.stored(),stored);e.fail(false);assert.throws(()=>e.service.setAccentColor('red'),/ACCENT_COLOR_INVALID/);e.service.setAccentColor(null);assert.equal(e.service.snapshot().accentColor,null);assert.equal(environment({formatVersion:1,activeId:'light',presets:[]}).service.snapshot().accentColor,null);const migrated=environment({formatVersion:1,activeId:'light',presets:[],fieldColor:'#387BBF'});assert.equal(migrated.service.snapshot().accentColor,'#387bbf');migrated.service.select('dark');assert.equal(migrated.stored().accentColor,'#387bbf');assert(!Object.hasOwn(migrated.stored(),'fieldColor'));assert.equal(environment({formatVersion:1,activeId:'light',presets:[],accentColor:null,fieldColor:'#387bbf'}).service.snapshot().accentColor,null);
+});

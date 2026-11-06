@@ -15,7 +15,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(snapshot.playerControlRevision!==undefined&&(!Number.isSafeInteger(snapshot.playerControlRevision)||snapshot.playerControlRevision<0||!Array.isArray(snapshot.playerControls)||snapshot.playerControls.length!==snapshot.state?.players?.length||snapshot.playerControls.some(v=>!v||typeof v.away!=='boolean'||typeof v.bot!=='boolean')))return false;
       const initial=!this.snapshot;
       if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.playerControlRevision||0)<=(this.snapshot.playerControlRevision||0)&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0))return false;
-      this.epoch=snapshot.authorityEpoch;this.snapshot=P.freeze(P.clone(snapshot));
+      this.epoch=snapshot.authorityEpoch;this.snapshot=P.immutable(snapshot);
       if(!initial&&!this.recovering){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});
         for(const effect of snapshot.effects||[])if(effect.revision>this.lastEffectRevision)this.onEffect({type:'transfer',...effect});

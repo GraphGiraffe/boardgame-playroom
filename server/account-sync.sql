@@ -10,10 +10,13 @@ begin
   begin
    if coalesce(item->>'id','') !~ '^[a-zA-Z0-9_-]{1,64}$' or jsonb_typeof(item->'data') is distinct from 'object' then raise exception 'social:invalid'; end if;
    if item->>'rpc'='playroom_social' and item->>'action'='list' then value:=public.playroom_social('list',item->'data');
-   elsif item->>'rpc'='playroom_online' and item->>'action' in ('unread','inbox','group-inbox','hub','group-list','group-info','chat','group-read','settings','presence','discover') then value:=public.playroom_online(item->>'action',item->'data');
+   elsif item->>'rpc'='playroom_online' and item->>'action' in ('unread','inbox','group-inbox','hub','group-list','group-info','chat','group-read','chat-search','group-search','settings','presence','discover','room-preview') then value:=public.playroom_online(item->>'action',item->'data');
    elsif item->>'rpc'='playroom_cloud_saves_rpc' and item->>'action'='list' then value:=public.playroom_cloud_saves_rpc('list',item->'data');
    elsif item->>'rpc'='playroom_push' and item->>'action'='config' then value:=public.playroom_push('config',item->'data');
    else raise exception 'social:invalid'; end if;
+   if item->>'rpc'='playroom_online' and item->>'action' in ('chat-search','group-search') and value->>'error'='rate-limit' then
+    replies:=replies||jsonb_build_array(jsonb_build_object('id',item->>'id','error',jsonb_build_object('code','rate-limit')));continue;
+   end if;
    replies:=replies||jsonb_build_array(jsonb_build_object('id',item->>'id','data',value));
   exception when others then
    code:=case when sqlerrm like 'social:%' then substr(sqlerrm,8) when sqlstate in ('42P01','42703','42883') then 'setup' else 'request' end;

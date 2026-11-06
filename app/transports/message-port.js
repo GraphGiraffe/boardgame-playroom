@@ -1,5 +1,5 @@
 if(typeof require==='function'&&typeof module==='object'&&module.exports)require("../../core/messages.js");
-(function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPortTransport=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
+(function(root,factory){const api=factory(root.PlayroomProtocol||(typeof require==='function'?require('../../core/protocol.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPortTransport=api;})(typeof globalThis!=='undefined'?globalThis:this,function(P){
   'use strict';
   function serve(port,connection){
     const unsubscribe=connection.subscribe(snapshot=>port.postMessage({kind:'snapshot',snapshot}));
@@ -11,7 +11,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
   }
   function client(port,{timeout=5000}={}){
     let seq=0,closed=false;const pending=new Map(),listeners=new Set();
-    port.onmessage=event=>{const m=event.data;if(m?.kind==='snapshot'){for(const f of listeners)f(m.snapshot);return;}const p=pending.get(m?.requestId);if(!p)return;pending.delete(m.requestId);clearTimeout(p.timer);m.error?p.reject(Error(m.error)):p.resolve(m.result);};port.start();
+    port.onmessage=event=>{const m=event.data;if(m?.kind==='snapshot'){const snapshot=P.immutable(m.snapshot);for(const f of listeners)f(snapshot);return;}const p=pending.get(m?.requestId);if(!p)return;pending.delete(m.requestId);clearTimeout(p.timer);m.error?p.reject(Error(m.error)):p.resolve(P.immutable(m.result));};port.start();
     const request=(method,value)=>new Promise((resolve,reject)=>{if(closed)return reject(Error(globalThis.PlayroomMessages.text("ui.message-port.b8adaa326e7c")));const requestId=++seq,timer=setTimeout(()=>{pending.delete(requestId);reject(Error(globalThis.PlayroomMessages.text("ui.message-port.6748090ff14a")));},timeout);pending.set(requestId,{resolve,reject,timer});port.postMessage({requestId,method,value});});
     return {snapshot:()=>request('snapshot'),dispatch:c=>request('dispatch',c),history:i=>request('history',i),presentationReady:value=>request('presentationReady',value),subscribe:f=>{listeners.add(f);return ()=>listeners.delete(f);},close(){closed=true;port.close();for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error(globalThis.PlayroomMessages.text("ui.message-port.b8adaa326e7c")));}pending.clear();listeners.clear();}};
   }

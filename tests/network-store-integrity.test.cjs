@@ -2,6 +2,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js');
 const Store=require('../platform/web/session-store.js');
+const Journal=require('../core/journal.js');
+
+test('state deltas retain every position without copying unchanged public frames',()=>{
+ const initial={game:'fixture',packVersion:'1',move:0,data:{frames:Array.from({length:400},(_,i)=>({cell:i,art:'unchanged artwork'})),draft:null},events:[]},states=[initial];
+ for(let move=1;move<=8;move++)states.push({...initial,move,data:{...initial.data,draft:{card:move}}});
+ const rows=states.slice(1).map((state,i)=>Journal.encode(state,0,states[i]));assert.deepEqual(Journal.restore({states:[initial]},rows,0),states);
+ const full=states.slice(1).map(s=>Journal.encode(s,0));assert(JSON.stringify(rows).length<JSON.stringify(full).length/10);
+ const invalid=structuredClone(rows);invalid[0].delta.changes.push({path:['__proto__','polluted'],value:true});assert.throws(()=>Journal.restore({states:[initial]},invalid,0));assert.equal({}.polluted,undefined);
+ const stale=structuredClone(rows);stale[0].delta.base=9;assert.throws(()=>Journal.restore({states:[initial]},stale,0));
+});
 
 E.register({id:'lan01-integrity',name:'LAN-01 integrity',min:2,max:2,presets:[{id:'default'}],
   create(state){state.data={count:0,secret:'PRIVATE-INTEGRITY'};},

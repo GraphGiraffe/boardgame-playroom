@@ -54,6 +54,8 @@ test('protected Pages browser authenticates its initial Service Worker script th
 test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest'),'utf8'));
   assert.equal(manifest.display,'standalone');
+  assert.deepEqual(manifest.related_applications,[{platform:'webapp',url:'./manifest.webmanifest',id:manifest.id}]);
+  assert.equal(manifest.prefer_related_applications,false);
   assert.equal(manifest.start_url,'./');assert.equal(manifest.scope,'./');
   const origin='https://example.test';
   for(const deployment of ['/playroom/','/playroom-hod-test/']){
@@ -71,7 +73,7 @@ test('PWA manifest exposes share target and custom Playroom protocol',()=>{
 
 test('service worker precaches pairing/PWA shell and has offline navigation fallback',()=>{
   const source=fs.readFileSync(path.join(root,'sw.js'),'utf8');
-  for(const file of ['platform/web/interface-scale.js','app/interface-scale.css','core/messages.js','app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','application/pwa-update-coordinator.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','presentation/event-plan.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
+  for(const file of ['platform/web/interface-scale.js','app/interface-scale.css','core/messages.js','app/pairing.js','app/acoustic-pairing.js','app/vendor/ggwave.js','application/pwa-update-coordinator.js','app/pwa.js','app/qr.js','app/vendor/qrcode.js','app/vendor/LICENSE.qrcode','app/vendor/jsqr.js','app/qr-scanner.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','application/connection-attempt.js','application/online-connection.js','application/transfer-peer.js','app/network-social.js','app/network-presence.js','app/network-ui.js','platform/web/session-store.js','app/network-client-history.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','presentation/event-plan.js','app/game-feedback.js','app/game-interactions.css','core/player-target.js','core/game-flow.js','core/hand-overflow.js','manifest.webmanifest'])assert.ok(source.includes(file),file);
   assert.match(source,/request\.mode==='navigate'/);
   assert.match(source,/caches\.open\(CACHE\)\)\.match\('\.\/index\.html'\)/);
   assert.match(source,/app\/vendor\/qrcode\.js/);
@@ -103,7 +105,7 @@ test('index HTML does not contain escaped newlines between tags',()=>{
 });
 
 test('offline pairing UI provides speaker-only mode and explains blocked microphone',()=>{
-  const ui=['application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js'].map(file=>fs.readFileSync(path.join(root,file),'utf8')).join('\n');
+  const ui=['application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-social.js','app/network-presence.js','app/network-ui.js'].map(file=>fs.readFileSync(path.join(root,file),'utf8')).join('\n');
   const acoustic=fs.readFileSync(path.join(root,'app/acoustic-pairing.js'),'utf8');
   assert.match(ui,/net-host-acoustic-send/,'speaker-only invitation must be offered');
   assert.match(ui,/async function sendHostSoundOnly\(signal\)/);
@@ -179,6 +181,9 @@ test('remote catalog supports a project subpath without weakening manifest URL v
  const client=new RemoteCatalog({basePath:'/site/api/packs/',manager:{list:()=>[]},storage:{getItem:()=>null,setItem:()=>{}},fetcher:async url=>{seen.push(url);return new Response(JSON.stringify({format:'playroom-catalog',version:1,collection:'0.8.5',packs:[]}));}});
  await client.refresh();assert.deepEqual(seen,['/site/api/packs/catalog']);
  assert.throws(()=>new RemoteCatalog({basePath:'https://foreign.test/'}));
+ const previous=Object.getOwnPropertyDescriptor(globalThis,'location'),cached={format:'playroom-catalog',version:1,collection:'0.8.5',packs:[]};let local,localFetches=0;
+ try{Object.defineProperty(globalThis,'location',{configurable:true,value:{protocol:'file:'}});local=new RemoteCatalog({manager:{list:()=>[]},storage:{getItem:()=>JSON.stringify(cached),setItem:()=>assert.fail('unsupported origin cannot publish a new catalog')},fetcher:async()=>{localFetches++;return new Response(JSON.stringify(cached));}});}finally{if(previous)Object.defineProperty(globalThis,'location',previous);else delete globalThis.location;}
+ assert.deepEqual(await local.load(),cached);assert.equal(localFetches,0,'local file catalog cannot fetch an origin-relative API');assert.equal(local.availability().available,false);assert.match(local.availability().reason,/веб-версию/);assert.match(local.warning,/веб-версию/);await assert.rejects(()=>local.refresh(),error=>error.code==='catalog-origin');await assert.rejects(()=>local.install('uno'),error=>error.code==='catalog-origin');assert.equal(localFetches,0);
 });
 
 test('incomplete or login-page shell never installs; verified update waits for existing clients',async()=>{
@@ -296,6 +301,17 @@ for environment,status in [('preview','success'),('production','failure')]:
 `],{cwd:root,stdio:'pipe'});
 });
 
+test('push subscription restoration touches the native service only after notification consent',async()=>{
+ const vm=require('node:vm');let registrations=0,reads=0,prompts=0,creates=0;
+ const existing={endpoint:'https://push.example.test/existing'},registration={active:{},pushManager:{getSubscription:async()=>{reads++;return existing;},subscribe:async()=>{creates++;return existing;}}};
+ const context={location:{protocol:'https:'},isSecureContext:true,Notification:{permission:'default',requestPermission:async()=>{prompts++;context.Notification.permission='granted';return 'granted';}},PushManager:{},navigator:{serviceWorker:{getRegistration:async()=>{registrations++;return registration;}}},Uint8Array,atob};
+ vm.runInNewContext(fs.readFileSync(path.join(root,'platform/web/push-device.js'),'utf8'),context);
+ for(const permission of ['default','denied']){context.Notification.permission=permission;assert.equal(await context.PlayroomPushDevice.subscription(),null);}
+ assert.equal(registrations,0);assert.equal(reads,0);assert.equal(prompts,0,'restoring state never requests consent');
+ context.Notification.permission='granted';assert.equal(await context.PlayroomPushDevice.subscription(),existing);assert.equal(reads,1);assert.equal(registrations,1);
+ context.Notification.permission='default';assert.equal(await context.PlayroomPushDevice.subscribe('AQID'),existing);assert.equal(prompts,1);assert.equal(reads,2);assert.equal(creates,0,'explicit opt-in retains an existing subscription');
+});
+
 test('active worker rejects stale network assets and limits offline fallback and cleanup to its shell',async()=>{
  const vm=require('node:vm'),crypto=require('node:crypto'),listeners={},deleted=[];
  const expected='new stylesheet',hash=crypto.createHash('sha256').update(expected).digest('hex');
@@ -367,7 +383,8 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  let browser;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const context=await browser.newContext({viewport:{width:390,height:740},reducedMotion:'reduce'}),url=`http://127.0.0.1:${server.address().port}/playroom-hod-test/`;
+  const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),url=`http://127.0.0.1:${server.address().port}/playroom-hod-test/`;
+  const sync=require('./account-sync-fixture.cjs'),fetchCounts=await sync.installFetch(context,sync(async route=>route.fulfill({status:200,json:{}})));
   await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'test',name:'Тест'})));
  let page=await context.newPage();await page.addInitScript(suppress=>{if(suppress){const add=ServiceWorkerContainer.prototype.addEventListener;ServiceWorkerContainer.prototype.addEventListener=function(type,...args){if(type!=='controllerchange')return add.call(this,type,...args);};}},suppressControllerChange);await page.addInitScript(()=>{window.testActiveRoom=true;let network;Object.defineProperty(window,'PlayroomNetworkLibrary',{configurable:true,get:()=>network,set:value=>{network={...value,hasActiveRoom:()=>window.testActiveRoom||value.hasActiveRoom()};}});});await page.goto(url);
   await page.evaluate(()=>navigator.serviceWorker.ready);
@@ -381,16 +398,17 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
    await (await caches.open('unrelated-app')).put('./marker',new Response('keep'));
    await new Promise((resolve,reject)=>{const r=indexedDB.open('saved-game-marker',1);r.onupgradeneeded=()=>r.result.createObjectStore('games');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,t=db.transaction('games','readwrite');t.objectStore('games').put('keep',1);t.oncomplete=()=>{db.close();resolve();};};});
   });
+  assert.equal((await page.evaluate(()=>PlayroomPWA.checkForUpdate())).available,false,'manual check sees no new build before deployment');
   deployed=1;
   const newWorkerPromise=context.waitForEvent('serviceworker');
-  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  assert.equal((await page.evaluate(()=>PlayroomPWA.checkForUpdate())).available,true,'manual check awaits actual waiting-worker metadata');
   await page.waitForFunction(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting);
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'previous');
   const newWorker=await newWorkerPromise;assert.notEqual(newWorker,originalWorker);
-  const screenshots=path.resolve(root,'../tmp_files/pwa-staged-020');fs.mkdirSync(screenshots,{recursive:true});
+  const screenshots=path.resolve(process.env.PLAYROOM_CAPTURE_DIR||path.resolve(root,'../tmp_files/ux-021/reader-update-audit/update-operations'));fs.mkdirSync(screenshots,{recursive:true});
   await page.locator('#pwa-update-button').waitFor();assert.equal(await page.locator('.updates-modal').count(),0,'active room suppresses automatic popup');await page.locator('#pwa-update-button').click();await page.waitForSelector('.updates-modal');const buttonStates=[];const rememberButton=async()=>buttonStates.push(await page.locator('#pwa-update-button').evaluate(e=>({phase:e.dataset.updatePhase,icon:e.querySelector('svg').dataset.uiIcon,color:getComputedStyle(e).backgroundColor})));await rememberButton();await page.screenshot({path:path.join(screenshots,'available-390.png')});
   assert.equal(currentRequests.filter(name=>/\.(js|css)$/.test(name)&&name!=='platform/web/push-worker.js').length,0,'availability must not fetch application assets beyond the worker bootstrap: '+JSON.stringify(currentRequests));
-  assert.equal(await page.locator('[data-command=update-app]').isVisible(),false);assert.equal(await page.locator('[data-command=download-app]').innerText(),'');
+  assert.equal(await page.locator('[data-command=update-app]').isVisible(),false);assert.equal(await page.locator('[data-command=download-app]').innerText(),'Подготовить обновление');
   await page.locator('[data-command=download-app]').click();await heldReady;
   await page.waitForFunction(()=>PlayroomPWA.updateInfo.download.completed>5&&Number(document.querySelector('[data-update-progress]')?.getAttribute('aria-valuenow'))>0);
   const meter=await page.locator('[data-update-progress]').evaluate(e=>({percent:Number(e.getAttribute('aria-valuenow')),height:getComputedStyle(e).height}));assert(meter.percent>0&&meter.percent<100,JSON.stringify(meter));assert.equal(meter.height,'6px');
@@ -419,7 +437,7 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
   assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--build-check')),'previous','download never activates the worker');
   await page.locator('[data-command=update-app]').click();assert.match(await page.locator('[data-update-status]').innerText(),/выйдите из комнаты/);assert.equal(await page.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting),true,'active room cannot install or reload');
   await page.evaluate(()=>{window.testActiveRoom=false;});
-  for(const [width,height] of [[320,640],[390,740],[740,390]]){await page.setViewportSize({width,height});assert(await page.locator('.updates-modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1));assert(await page.locator('.update-actions').evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight));await page.screenshot({path:path.join(screenshots,'ready-'+width+'.png')});}await page.setViewportSize({width:390,height:740});
+  for(const [width,height] of [[390,844],[844,390]]){await page.setViewportSize({width,height});assert(await page.locator('.updates-modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.locator('[data-command=update-app]').scrollIntoViewIfNeeded();assert(await page.locator('.update-v021-actions').evaluate(e=>e.getBoundingClientRect().bottom<=innerHeight));await page.screenshot({path:path.join(screenshots,'ready-'+width+'.png')});}await page.setViewportSize({width:390,height:844});
   await page.locator('[data-command=update-app]').click();
   await page.waitForFunction(()=>document.querySelector('[data-update-status]')?.textContent.includes('Закройте другие окна'));
   assert.equal(await page.evaluate(async()=>!!(await navigator.serviceWorker.getRegistration()).waiting),true);
@@ -437,6 +455,7 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
   const keys=await page.evaluate(()=>caches.keys());
   assert.equal(keys.includes('playroom-pwa-v0.15.0'),false);assert.ok(keys.includes('unrelated-app'));
   assert.equal(keys.filter(key=>key.startsWith('playroom-pwa-')).length,1);
+  assert.equal(fetchCounts.nativeSupabaseRequests,0);fs.writeFileSync(path.join(screenshots,'operation-report.json'),JSON.stringify({fetchCounts,scope:'real local worker download, failure, resume, guarded apply, reload once, offline persistence; Chromium desktop emulation'},null,2));
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });
 
@@ -599,6 +618,7 @@ test('staged update announces metadata only, keeps verified files after HTTP fai
  vm.runInNewContext(source.replace('const INTEGRITY=null;',`const INTEGRITY=${JSON.stringify({'./app/app.js':hash})};`),context);
  let pending;listeners.install({waitUntil:p=>pending=p});await pending;assert.equal(fetches,0);assert.equal(files.size,0);assert(messages.some(m=>m.kind==='playroom-update-ready'));
  const call=async(kind,extra={})=>{let result;listeners.message({data:{kind,...extra},ports:[{postMessage:r=>result=r}],waitUntil:p=>pending=p});await pending;return result;};
+ const metadata=await call('playroom-update-info');assert.equal(metadata.cache,source.match(/const CACHE='([^']+)'/)[1],'metadata identifies the content-addressed worker build');assert.equal(fetches,0,'reading identity does not download files');assert.equal(files.size,0,'reading identity does not copy assets');
  const first=await call('playroom-download-update');assert.equal(first.ok,false);assert.equal(first.download.error.code,'http');assert.equal(first.download.error.status,503);const saved=[...files.keys()].filter(p=>!p.includes('__playroom-update'));assert(saved.length>0);const counts=new Map(requests);
  fail=false;const resumed=await call('playroom-download-update');assert.equal(resumed.ok,true);assert.equal(resumed.download.phase,'ready');for(const key of saved)assert.equal(requests.get(key),counts.get(key),key);
  quota=true;const full=await call('playroom-download-update');assert.equal(full.ok,false);assert.equal(full.download.error.code,'quota');quota=false;await call('playroom-download-update');
@@ -607,15 +627,45 @@ test('staged update announces metadata only, keeps verified files after HTTP fai
 });
 
 
+async function serveBuiltPreviewUpgrade(oldRoot,newRoot,{hold=relative=>relative.startsWith('installed-packs.')}={}){
+ const http=require('node:http'),requests=[];let deployed=false,pendingBody,seenHeld;const held=new Promise(resolve=>seenHeld=resolve);
+ const server=http.createServer((req,res)=>{
+  const relative=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html',base=deployed?newRoot:oldRoot,file=path.resolve(base,relative);requests.push({relative,deployed});
+  if(!file.startsWith(base+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end();return;}
+  const body=fs.readFileSync(file);res.writeHead(200,{'Content-Type':({'.js':'text/javascript','.css':'text/css','.html':'text/html','.webmanifest':'application/manifest+json','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm'})[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'});
+  if(deployed&&hold(relative)&&!pendingBody){res.write(body.subarray(0,16));pendingBody={res,body:body.subarray(16)};seenHeld();return;}res.end(body);
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ return {server,held,requests,url:'http://127.0.0.1:'+server.address().port+'/',get pendingBody(){return pendingBody;},set deployed(value){deployed=value;}};
+}
+
 test('legacy preview upgrade survives its old request timeout and preserves local data',{timeout:60000,skip:!process.env.PLAYROOM_LEGACY_PWA},async()=>{
- const http=require('node:http'),{chromium,executablePath}=require('../scripts/codex/browser.cjs'),oldRoot=path.resolve(process.env.PLAYROOM_LEGACY_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA);let deployed=false,pendingBody,seenHeld;const held=new Promise(resolve=>seenHeld=resolve);
- const server=http.createServer((req,res)=>{const relative=new URL(req.url,'http://localhost').pathname.slice(1)||'index.html',base=deployed?newRoot:oldRoot,file=path.resolve(base,relative);if(!file.startsWith(base+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404);res.end();return;}const body=fs.readFileSync(file);res.writeHead(200,{'Content-Type':({'.js':'text/javascript','.css':'text/css','.html':'text/html','.webmanifest':'application/manifest+json','.json':'application/json','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm'})[path.extname(file)]||'application/octet-stream','Cache-Control':'no-store'});if(deployed&&relative.startsWith('installed-packs.')&&!pendingBody){res.write(body.subarray(0,16));pendingBody={res,body:body.subarray(16)};seenHeld();return;}res.end(body);});
- await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
- try{const context=await browser.newContext(),page=await context.newPage();await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'legacy-update',name:'Тест',createdAt:1,updatedAt:1})));await page.goto('http://127.0.0.1:'+server.address().port+'/');await page.waitForFunction(()=>!!navigator.serviceWorker.controller);assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');await page.evaluate(()=>localStorage.setItem('legacy-update-data','keep'));
-  deployed=true;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.locator('.updates-modal [data-command=update-app]').waitFor();await page.locator('[data-command=update-app]').click();await held;
-  await page.waitForFunction(()=>document.querySelector('[data-update-status]')?.textContent.includes(PlayroomMessages.text('ui.pwa.16263196d581')));assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');pendingBody.res.end(pendingBody.body);
+ const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),oldRoot=path.resolve(process.env.PLAYROOM_LEGACY_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA),fixture=await serveBuiltPreviewUpgrade(oldRoot,newRoot),{server,held}=fixture;
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const context=await browser.newContext(),page=await context.newPage();await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'legacy-update',name:'Тест',createdAt:1,updatedAt:1})));await page.goto(fixture.url);await page.waitForFunction(()=>!!navigator.serviceWorker.controller);assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');await page.evaluate(()=>localStorage.setItem('legacy-update-data','keep'));
+  fixture.deployed=true;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.locator('.updates-modal [data-command=update-app]').waitFor();await page.locator('[data-command=update-app]').click();await held;
+  await page.waitForFunction(()=>document.querySelector('[data-update-status]')?.textContent.includes(PlayroomMessages.text('ui.pwa.16263196d581')));assert.equal(await page.evaluate(()=>PlayroomAppVersion),'0.20.0-preview.13');fixture.pendingBody.res.end(fixture.pendingBody.body);
   await page.waitForFunction(()=>globalThis.PlayroomAppVersion==='0.20.0-preview.14');assert.equal(await page.evaluate(()=>localStorage.getItem('legacy-update-data')),'keep');assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().id),'legacy-update');
- }finally{await browser.close();pendingBody?.res.destroy();await new Promise(resolve=>server.close(resolve));}
+ }finally{await browser.close();fixture.pendingBody?.res.destroy();await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test('same-version built PWA upgrade retries an interrupted changed asset and preserves a real saved game',{timeout:90000,skip:!process.env.PLAYROOM_OLD_PWA||!process.env.PLAYROOM_NEW_PWA},async()=>{
+ const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),oldRoot=path.resolve(process.env.PLAYROOM_OLD_PWA),newRoot=path.resolve(process.env.PLAYROOM_NEW_PWA),out=path.resolve(process.env.PLAYROOM_CAPTURE_DIR||'../tmp_files/ux-021/same-version-upgrade');fs.mkdirSync(out,{recursive:true});
+ const cacheOf=folder=>fs.readFileSync(path.join(folder,'sw.js'),'utf8').match(/const CACHE='([^']+)'/)[1],oldCache=cacheOf(oldRoot),newCache=cacheOf(newRoot),styleOf=folder=>fs.readFileSync(path.join(folder,'index.html'),'utf8').match(/app\/design-system\.[a-f0-9]+\.css/)[0],oldStyle=styleOf(oldRoot),newStyle=styleOf(newRoot),newScript=fs.readFileSync(path.join(newRoot,'index.html'),'utf8').match(/app\/app\.[a-f0-9]+\.js/)[0];assert.notEqual(oldCache,newCache);assert.notEqual(oldStyle,newStyle);
+ const fixture=await serveBuiltPreviewUpgrade(oldRoot,newRoot,{hold:relative=>relative===newScript}),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),report={oldCache,newCache,oldStyle,newStyle,checks:[],errors:[]};
+ try{
+  const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),sync=require('./account-sync-fixture.cjs'),network=await sync.installFetch(context,sync(r=>r.fulfill({status:200,json:{}}))),page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>report.errors.push(e.message));
+  await context.addInitScript(()=>{if(!localStorage.getItem('playroom.player-profile.v1'))localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'same-version-upgrade',name:'Тест',createdAt:1,updatedAt:1}));});await page.goto(fixture.url);await page.waitForFunction(()=>!!navigator.serviceWorker.controller&&globalThis.PlayroomInstalledPacks?.length===15);assert.equal(await page.locator('link[href="'+oldStyle+'"]').count(),1);
+  const saved=await page.evaluate(async()=>{const b=PlayroomAppBridge,session=new TabletopSession(TabletopCore,'tictactoe',{seed:17,mode:'pass',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'Первый'},{name:'Второй'}]});session.act(0,TabletopCore.legalActions(session.current,0)[0]);await b.saveLibrary.activateAsync(session,'upgrade-local-game');localStorage.setItem('same-version-marker','keep');return {version:PlayroomAppVersion,game:b.saveLibrary.open('upgrade-local-game').export(),profile:b.profile().id,settings:localStorage.getItem('playroom.settings.v1')};});report.version=saved.version;report.checks.push('old real build controls the loaded document and saves a committed one-move game');
+  fixture.deployed=true;assert.equal((await page.evaluate(()=>PlayroomPWA.checkForUpdate())).available,true);await page.waitForFunction(cache=>PlayroomPWA.updateInfo?.cache===cache,newCache);
+  if(!await page.locator('.updates-modal').count()){await page.locator('[data-hub-page=profile]').click();await page.locator('#hub-profile-page [data-command=show-updates]').click();}await page.locator('[data-command=download-app]').waitFor();assert.equal(fixture.requests.filter(r=>r.deployed&&r.relative===newScript).length,0,'availability does not fetch application payload');
+  await page.locator('[data-command=download-app]').click();await fixture.held;fixture.pendingBody.res.destroy();await page.waitForFunction(()=>PlayroomPWA.updateInfo?.download.phase==='paused');assert.equal(await page.locator('link[href="'+oldStyle+'"]').count(),1,'failed preparation leaves the installed document intact');assert.equal(await page.evaluate(()=>PlayroomAppVersion),saved.version);await page.screenshot({path:path.join(out,'interrupted.png'),animations:'disabled'});report.checks.push('actual HTTP stream interruption pauses preparation without activating the candidate');
+  await page.locator('[data-command=download-app]').click();await page.waitForFunction(()=>PlayroomPWA.updateInfo?.download.phase==='ready');const delta=await page.evaluate(()=>PlayroomPWA.updateInfo.download);assert(delta.reusedFiles>5);assert(delta.total<delta.totalSize/2);assert.equal(fixture.requests.filter(r=>r.deployed&&r.relative.startsWith('installed-packs.')).length,0,'unchanged packs are reused without retransmission');assert.equal(await page.locator('link[href="'+oldStyle+'"]').count(),1,'ready does not apply automatically');report.delta=delta;report.checks.push('retry reuses unchanged assets and packs; readiness is separate from activation');
+  let documents=0;page.on('domcontentloaded',()=>documents++);await Promise.all([page.waitForEvent('domcontentloaded'),page.locator('[data-command=update-app]').click()]);await page.waitForFunction(()=>!!navigator.serviceWorker.controller&&globalThis.PlayroomInstalledPacks?.length===15);assert.equal(await page.locator('link[href="'+newStyle+'"]').count(),1,'exact new build stylesheet is loaded after activation');assert.equal(documents,1);assert.equal(await page.locator('.updates-modal').count(),0);
+  const after=await page.evaluate(()=>({version:PlayroomAppVersion,game:PlayroomAppBridge.saveLibrary.open('upgrade-local-game').export(),profile:PlayroomAppBridge.profile().id,settings:localStorage.getItem('playroom.settings.v1'),marker:localStorage.getItem('same-version-marker')}));assert.deepEqual(after,{...saved,marker:'keep'});const keys=await page.evaluate(()=>caches.keys());assert(keys.includes(newCache));assert(!keys.includes(oldCache));report.checks.push('one document reload, same version, exact new assets, old shell retired; actual game/profile/settings preserved');
+  await context.setOffline(true);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge&&globalThis.PlayroomInstalledPacks?.length===15);assert.equal(await page.locator('link[href="'+newStyle+'"]').count(),1);assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.open('upgrade-local-game').export()),saved.game);assert.equal(await page.evaluate(()=>localStorage.getItem('same-version-marker')),'keep');await page.screenshot({path:path.join(out,'offline-new-build.png'),animations:'disabled'});report.checks.push('offline reload still starts all15games and opens the preserved save');assert.deepEqual(report.errors,[]);assert.equal(network.nativeSupabaseRequests,0);report.nativeSupabaseRequests=network.nativeSupabaseRequests;report.scope='real exact previous/current PWA artifacts, local HTTP/service worker/CacheStorage, interrupted asset fetch and retry; Chromium emulation, not physical installed PWA or external network';
+ }finally{await browser.close();fixture.pendingBody?.res.destroy();await new Promise(resolve=>fixture.server.close(resolve));fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));}
 });
 
 
@@ -658,4 +708,10 @@ test('newer waiting update replaces a partial candidate without accepting its la
  swEvents.get('message')({source:old,data:{kind:'playroom-update-progress',version:'B',download:{phase:'ready'}}});assert.equal(context.PlayroomPWA.updateInfo.download.phase,'available');
  oldReply.postMessage({ok:true,download:{phase:'ready'}});await rejected;assert.equal(context.PlayroomPWA.updateInfo.version,'C');assert.equal(context.PlayroomPWA.updateInfo.download.phase,'available');
  await context.PlayroomPWA.downloadUpdate();assert.equal(context.PlayroomPWA.updateInfo.download.phase,'ready');
+});
+
+test('versioned built PWA update shows installed changes and cleanup immediately after legacy restart',{timeout:90000,skip:!process.env.PLAYROOM_OLD_PWA||!process.env.PLAYROOM_NEW_PWA},async()=>{
+ const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),fixture=await serveBuiltPreviewUpgrade(path.resolve(process.env.PLAYROOM_OLD_PWA),path.resolve(process.env.PLAYROOM_NEW_PWA),{hold:()=>false}),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),page=await context.newPage();await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));await context.addInitScript(()=>{if(!localStorage.getItem('playroom.player-profile.v1'))localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'post-update-test',name:'Игрок',createdAt:1,updatedAt:1}))});await page.goto(fixture.url);await page.waitForFunction(()=>navigator.serviceWorker.controller&&globalThis.PlayroomAppBridge);const before=await page.evaluate(async()=>{localStorage.setItem('post-update-marker','keep');const session=new TabletopSession(TabletopCore,'tictactoe',{seed:17,players:[{name:'A'},{name:'B'}]});await PlayroomAppBridge.saveLibrary.activateAsync(session,'post-update-save');return JSON.stringify(session.export())});fixture.deployed=true;await page.evaluate(()=>PlayroomPWA.checkForUpdate());await page.waitForFunction(()=>!!PlayroomPWA.updateInfo);await page.evaluate(()=>PlayroomAppBridge.showImportantUpdate({title:'Обновление'}));await page.locator('[data-command=download-app]').click();await page.waitForFunction(()=>PlayroomPWA.updateInfo.download.phase==='ready');await Promise.all([page.waitForEvent('domcontentloaded'),page.locator('[data-command=update-app]').click()]);await page.locator('.post-update-modal [data-installed-changes]').waitFor();assert((await page.locator('[data-installed-changes]').innerText()).includes(JSON.parse(fs.readFileSync(path.join(root,'updates.json'),'utf8')).releases[0].changes[0]));assert(await page.locator('[data-updated-pack-cards] .post-update-pack').count()>0);await page.waitForFunction(()=>!document.querySelector('[data-cleanup-description]').textContent.includes('Проверяем'));assert.equal(await page.evaluate(()=>localStorage.getItem('post-update-marker')),'keep');assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.open('post-update-save').export())),before);await page.locator('[data-post-update-done]').click();await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.locator('.post-update-modal').count(),0);await context.setOffline(true);await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('post-update-marker')),'keep');assert.equal(await page.evaluate(()=>sessionStorage.getItem('playroom.after-update.v1')),null);
+ }finally{await browser.close();await new Promise(resolve=>fixture.server.close(resolve));}
 });

@@ -4,21 +4,39 @@
 .account-status-button { flex: 0 0 auto; }
 .account-status-button[data-account-status=account] { color: var(--accent, #356752); }
 .account-status-button[data-account-status=error] { color: var(--danger, #a34d43); }
-.account-form fieldset { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
-.account-form input { width: 100%; min-width: 0; }
-.account-form .field { margin: 0; gap: 6px; }
-.account-form button { margin-top: 8px; }
-.account-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.account-actions button { flex: 1 1 auto; }
-.account-message:empty { display: none; }
-.account-content { overflow-wrap: anywhere; }
+/* A25: one explicit mode and one primary action, with native persistent fields. */
+.account-content{display:flex;flex-direction:column;gap:14px;min-width:0;overflow-wrap:anywhere}
+.account-form fieldset{display:flex;flex-direction:column;gap:14px;border:0;padding:0;margin:0;min-width:0}
+.account-form input{width:100%;min-width:0;min-height:48px;margin:0}
+.account-form .field{display:flex;flex-direction:column;gap:6px;margin:0;min-width:0;font-size:var(--ui-type-label,.875rem)}
+.account-form .field>span:first-child{font-weight:600}
+.account-form button[type=submit]{width:100%;min-height:48px;margin:2px 0 0;font-size:.9375rem;box-shadow:none}
+.account-hint{margin:0;color:var(--muted);font-size:var(--ui-type-label,.875rem);line-height:1.5}
+.account-message{margin:0;font-size:var(--ui-type-label,.875rem);line-height:1.5}
+.account-message:empty{display:none}
+.account-message[role=alert]{color:var(--color-feedback-error)}
+.account-identity{display:grid;gap:4px;margin:0}
+.account-identity .muted{font-size:var(--ui-type-label,.875rem)}
+.account-actions.menu-list{margin:0;gap:0}
+.account-content .menu-list{width:100%;max-width:none}
+.account-mode-tabs.shared-page-tabs>button{font-size:var(--ui-type-caption,.8125rem);padding:8px 4px}
 
-.account-actions:has(.icon-btn),.account-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
-.account-actions>.icon-btn,.account-form-actions>.icon-btn{flex:0 0 auto}
+.account-field-hint{font-size:.75rem;font-weight:400;line-height:1.4;color:var(--muted)}
+.account-form fieldset>.account-field-hint{margin-top:-8px}
 
-.account-identity{display:grid;gap:2px;margin-bottom:8px}.account-identity .muted{font-size:13px}
-.account-quick-actions{justify-content:flex-end!important;margin-top:8px!important;margin-bottom:8px;flex-wrap:nowrap}
-.account-quick-actions>[data-push-settings]{display:contents}
-.account-quick-actions .account-logout{background:var(--color-feedback-danger,#a84938);color:#fff}
-.account-quick-actions .push-enabled{color:var(--color-action-primary,#356752);background:var(--color-surface-selected,#dce8d5)}
-.account-quick-actions .push-enabled svg path{fill:currentColor}
+.account-feedback-action{display:flex;flex-direction:column;gap:10px;min-width:0}
+
+/* Device notification feedback stays inside its existing row, with a stable reserved line. */
+[data-push-settings]{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;min-width:0}
+[data-push-settings]>[data-push-toggle]{grid-column:2;grid-row:1;justify-self:end;min-width:44px;min-height:44px}
+[data-push-state]{display:block;grid-column:1/-1;min-width:0;min-height:2.8em;margin:0;font-size:.75rem;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.menu-row:has(>[data-push-settings]){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center}
+.menu-row>[data-push-settings]{display:contents}
+.menu-row>[data-push-settings]>[data-push-toggle]{grid-column:2;grid-row:1}
+.menu-row>[data-push-settings]>[data-push-state]{grid-column:1/-1;grid-row:2}
+
+/* First entry presents both account choices as labelled, reachable actions. */
+.profile-entry-actions{display:grid;gap:10px;margin-top:14px}
+.profile-entry-actions>.btn{width:100%;margin:0}
+
+[data-push-retry]{grid-column:1/-1;justify-self:start}

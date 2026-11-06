@@ -6,6 +6,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
   root.PlayroomWebRTCTransport=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
+  const Protocol=root.PlayroomProtocol||(typeof require==='function'?require('../../core/protocol.js'):null);
   const SIGNAL_VERSION=1;
   const clone=value=>JSON.parse(JSON.stringify(value));
   function rtc(){
@@ -140,7 +141,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       if(message?.kind==='transport-ready'){if(message.version!==2||message.error){clearTimeout(readyTimer);stopHello();rejectReady(Error('VERSION_MISMATCH'));return;}markReady();return;}
       if(message?.kind==='room-chat-entry'&&typeof message.roomId==='string'&&message.entry&&typeof message.entry.body==='string'&&message.entry.body.length<=2000){for(const listener of chatListeners)listener(clone(message));return;}
       if(message?.kind==='quick-reaction'&&typeof message.sessionId==='string'&&message.sessionId.length<=128&&typeof message.id==='string'&&/^[a-zA-Z0-9-]{1,64}$/.test(message.id)&&Number.isInteger(message.player)&&message.player>=0&&message.player<32&&typeof message.emoji==='string'&&message.emoji.length<=8){for(const listener of reactionListeners)listener(clone(message));return;}
-      if(message?.kind==='snapshot'){debug.snapshots++;for(const listener of listeners)listener(clone(message.snapshot));return;}
+      if(message?.kind==='snapshot'){debug.snapshots++;const snapshot=Protocol.immutable(message.snapshot);for(const listener of listeners)listener(snapshot);return;}
       // Presence is a separate public control-plane message. The host sends it
       // only on an authenticated participant's RTC channel; never a full room
       // snapshot, authoritative game data, or private resume credentials.
@@ -159,7 +160,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       if(message?.kind!=='response')return;
       const item=pending.get(message.requestId);if(!item)return;
       debug.responses++;pending.delete(message.requestId);clearTimeout(item.timer);
-      message.error?item.reject(Error(message.error)):item.resolve(clone(message.result));
+      message.error?item.reject(Error(message.error)):item.resolve(Protocol.immutable(message.result));
     };
     const onOpen=()=>sendHello();
     const onClose=()=>{

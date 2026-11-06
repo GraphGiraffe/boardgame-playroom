@@ -15,6 +15,17 @@ function setup(storage={}){
   return {session,authority,a,b,pub,commits,receipts};
 }
 const cmd=(connection,id='move-1')=>P.command(connection.snapshot(),{type:'tick'},id);
+test('draft commands stay in RAM until a complete player turn and batch retries stay atomic',async()=>{
+ E.register({id:'checkpoint-fixture',name:'Checkpoint',min:2,max:2,presets:[{id:'basic'}],create(s){s.data={counter:0};},legal(){return [{type:'tick'}];},apply(s){s.data.counter++;if(s.data.counter%2===0)s.turn=1-s.turn;},checkpoint:(_before,next)=>next.data.counter%2===0});
+ const session=new Session(E,'checkpoint-fixture',{players:[{name:'A'},{name:'B'}]}),batches=[];let fail=false;
+ const authority=new Authority(session,{sessionId:'checkpoint',persistence:{commit(){throw Error('single commit is not expected');},async commitBatch(value){if(fail)throw Error('disk');batches.push(value);},async recordReceipt(){throw Error('draft receipts stay in RAM');},async setControl(){}}}),connection=authority.connect(0);
+ try{
+  const draft=P.command(connection.snapshot(),{type:'tick'},'draft');assert.equal((await connection.dispatch(draft)).ok,true);assert.equal(session.current.move,1);assert.equal(batches.length,0);assert.equal((await connection.dispatch(draft)).duplicate,true);assert.equal(batches.length,0);
+  fail=true;assert.equal((await connection.dispatch(P.command(connection.snapshot(),{type:'tick'},'finish-fail'))).code,'STORAGE_ERROR');assert.equal(session.current.move,1);assert.equal(batches.length,0);
+  fail=false;assert.equal((await connection.dispatch(P.command(connection.snapshot(),{type:'tick'},'finish'))).ok,true);assert.equal(session.current.move,2);assert.deepEqual(batches[0].entries.map(row=>[row.previousRevision,row.nextState.move]),[[0,1],[1,2]]);
+  const next=authority.connect(1);await next.dispatch(P.command(next.snapshot(),{type:'tick'},'draft-next'));assert.equal(batches.length,1);await next.dispatch(P.command(next.snapshot(),{type:'session-pause',paused:true,expectedControlRevision:0},'pause'));assert.equal(batches.length,2,'explicit pause preserves pending work');assert.equal(batches[1].entries.length,1);
+ }finally{authority.dispose();}
+});
 test('a prepared Session transition is inert until committed and cannot be committed twice',()=>{
   const session=new Session(E,'durable-fixture',{players:[{name:'A'},{name:'B'}]});
   const original=session.serialize();const next=session.prepare(0,{type:'tick'});

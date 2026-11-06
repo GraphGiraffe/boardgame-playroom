@@ -11,7 +11,7 @@ const sharedKit = path.join(path.dirname(fs.realpathSync(path.join(root, 'packs'
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
 const loadedGames=[...games,'ludo','pexeso','battleship','yatzy','oldmaid','gofish','klondike','spider','mage-brawl'];
 const sandbox = vm.createContext({ console });
-for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...loadedGames.map(g => `packs/${g}/rules.js`), 'core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...loadedGames.map(g => `packs/${g}/view.js`)]) {
+for (const file of ['core/messages.js','core/random.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/localization.js','presentation/scene-contract.js','core/model-registration.js','core/engine.js', 'shared/domain/standard-deck.js', ...loadedGames.map(g => `packs/${g}/rules.js`), 'core/vector-art.js','core/component-assets.js','core/mini-split-deck.js','core/game-components.js','core/token-layout.js','core/ui.js', 'app/views.js', 'shared/view-kit.js', ...loadedGames.map(g => `packs/${g}/view.js`)]) {
   const match=file.match(/^packs\/([^/]+)\/(rules|view)\.js$/);
   if(match){
     const base=path.join(root,'packs',match[1]),manifest=JSON.parse(fs.readFileSync(path.join(base,'manifest.json'),'utf8'));
@@ -41,6 +41,17 @@ const render = (state, viewer = state.turn, selected = null, actions = E.legalAc
 const decode = value => value.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 const actionsIn = html => [...html.matchAll(/data-action="([^"]+)"/g)].map(m => JSON.parse(decode(m[1])));
 const signature = action => JSON.stringify(Object.fromEntries(Object.entries(action).filter(([key]) => key !== 'label').sort(([a], [b]) => a.localeCompare(b))));
+
+test('public frame ports prepare one authorized frame at a time and reuse its scoped cache',()=>{
+ const registry=sandbox.TabletopUI.createRegistry(),owner={},calls=[],plan={id:'round:1',initial:0,final:3,groups:Array.from({length:3},(_,scene)=>({scene,duration:250,cues:[]}))};
+ let live='latest';
+ registry.register('uno',(_state,viewer,_actions,ui)=>({api:3,family:'cards',elements:{field:ui.publicFrames({key:'field',plan,renderFrame:index=>{calls.push([viewer,index]);return {markup:'<b>frame '+index+'</b>',label:'Frame '+index};},live:{markup:live,label:'Live'}})}}));
+ const state=E.project(make('uno'),0),first=new Map(),html=registry.render(state,0,[],{renderOwner:owner,regionSink:first});
+ assert.deepEqual(calls,[],'rendering the shell must not build the whole round');assert.match(html,/data-public-frame-source/);assert.doesNotMatch(html,/data-public-frame-bank|frame 1|frame 2/);
+ const source=first.publicFrames.get('scene:field');source.read(0);assert.equal(source.read(1).markup,'<b>frame 1</b>');source.read(1);assert.equal(calls.length,2);assert.throws(()=>source.read(4),/PUBLIC_FRAME_INVALID/);
+ live='changed';const second=new Map();registry.render(state,0,[],{renderOwner:owner,regionSink:second});assert.equal(second.publicFrames.get('scene:field'),source);assert.equal(calls.length,2);assert.equal(source.read(3).markup,'changed');
+ const other=new Map();registry.render({...state,scene:{...state.scene,viewer:1}},1,[],{renderOwner:owner,regionSink:other});assert.notEqual(other.publicFrames.get('scene:field'),source);other.publicFrames.get('scene:field').read(0);assert.deepEqual(calls.at(-1),[1,0],'another viewer never reuses the previous frame source');
+});
 
 test('standalone UI shares source and target policies without browser or game dependencies', () => {
   const UI = require('../core/ui.js'), H = UI.helpers;
@@ -85,6 +96,14 @@ test('standalone UI shares source and target policies without browser or game de
     [{connected:false,joinedAt:1,isHost:true},true,'player','offline'],
     [{role:'spectator',connected:true},true,'eye','online'],[{role:'table',isHost:true,connected:true},true,'grid','online']
   ]) {const html=H.participantIcon(person,{network});assert.match(html,new RegExp('data-participant-role="'+role+'"'));assert.match(html,new RegExp('data-connection="'+status+'"'));}
+  for(const difficulty of ['easy','medium','hard']){const avatar=H.avatar({name:'Бот',bot:true,botSettings:{difficulty}});assert.match(avatar,new RegExp('data-ui-icon="bot-'+difficulty+'"'));assert.doesNotMatch(avatar,/>Б</);}
+  assert.match(H.avatar({name:'Сосед',local:true,primary:false}),/is-hotseat-avatar.*data-ui-icon="hand"/);
+  assert.doesNotMatch(H.avatar({name:'Я',local:true,primary:true}),/is-hotseat-avatar|data-ui-icon="hand"/);
+  assert.match(H.avatar({name:'Хост',isHost:true}),/is-host-avatar/);
+  assert.doesNotMatch(H.avatar({name:'Хост',isHost:true}),/avatar-host-crown|data-ui-icon="host"/);
+  assert.match(H.icon('host'),/data-ui-icon="host"/);
+  assert.doesNotMatch(H.avatar({name:'Игрок'}),/is-host-avatar/);
+  assert.doesNotMatch(H.participantIcon({bot:true}),/data-ui-icon="bot-/);
   const both=H.playerPanel({players:[{name:'A <&',score:9}],turn:0},0,0,{counters:[{kind:'wins',value:3},{kind:'points',value:9,label:'Очки <&'}]});
   assert.match(both,/data-score-kind="points"[^>]*aria-label="Очки &lt;&amp;: 9"/);
   assert.match(both,/is-wins[^>]*data-score-kind="wins"/);assert(both.indexOf('data-score-kind="points"')<both.indexOf('data-score-kind="wins"'));
@@ -92,7 +111,7 @@ test('standalone UI shares source and target policies without browser or game de
   for(const counters of [[{kind:'points',value:-1}],[{kind:'wins',value:1.5}],[{kind:'unknown',value:2}],[{kind:'wins',value:2,label:3}],[{kind:'points',value:0},{kind:'points',value:1}]])assert.throws(()=>UI.composeScene({api:3,family:'cards',elements:{field:'x'},playerContent:[{counters}]}));
 
   const pieces=H.playerPanel({players:[{name:'A',score:0}],turn:0},0,0,{counters:[{kind:'wins',value:0},{kind:'pieces',value:12,label:'Светлые шашки'}]});
-  assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*><svg class="round-token-art medallion-art"/);
+  assert.match(pieces,/is-pieces[^>]*aria-label="Светлые шашки: 12"[^>]*><svg\b[^>]*\bclass="round-token-art medallion-art"/);
   assert.doesNotMatch(pieces,/>12 шашек</);
   const empty=H.playerPanel({players:[{name:'A'},{name:'B'}],turn:1},1,0,{handCount:0});
   assert.match(empty,/piece-count is-hand[^>]*data-piece-count="0"/);assert.match(empty,/class="mini-hand [^"]*"[^>]*><\/div>/);
@@ -304,7 +323,7 @@ test('all source packs provide only API 3 elements with application-owned placem
     for(const turn of state.players.keys())for(const viewer of [-1,...state.players.keys()]){
       state.turn=turn;
       if(game==='durak')Object.assign(state.data,{attacker:turn,boutOrigin:turn,attackCursor:turn,defender:(turn+1)%state.players.length});
-      const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)" data-player-index="(\d+)"([^>]*)>/g)];
+      const html=render(state,viewer,null,[]),panels=[...html.matchAll(/<article class="player-panel ([^"]*)"(?: data-dom-key="[^"]*")? data-player-index="(\d+)"([^>]*)>/g)];
       assert.equal(panels.length,state.players.length+panels.filter(panel=>panel[3].includes('data-seat-copy="true"')).length,game);
       assert.doesNotMatch(html,/turn-badge|>Ходит</,game);
       for(const [,classes,index,attrs]of panels){
@@ -360,7 +379,7 @@ test('scene reserves optional actions and validates generic motion route descrip
   assert.throws(()=>UI.composeScene({...descriptor,motionSequence:{trigger:'roll'}}));
   const art=UI.art({main:'<i>Face</i>',width:48,height:84,rotation:270});
   assert.match(art,/viewBox="0 0 84 48"/);assert.match(art,/translate\(0 48\) rotate\(-90\)/);
-  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="player".*data-ui-icon="replacement"/);
+  assert.match(UI.participantIcon({isHost:true,local:true,replacement:{}}),/data-ui-icon="replacement"/);
   assert.doesNotMatch(UI.participantIcon({isHost:true,local:true}),/data-ui-icon="host"/);
 });
 
@@ -456,4 +475,181 @@ test('field rendering selects an authorized scene independently of controls and 
  const html=registry.render(state,0,[],{fieldScene:initial});
  assert.match(html,/before/);assert(!html.includes('after'));assert.match(html,/current hand/);assert.match(html,/current controls/);
  assert.equal(state.scene,final);assert.throws(()=>registry.renderField(state,-1,{audience:'public',art:'wrong'}),/audience/);
+});
+
+
+test('scene regions reuse only explicit inputs within their private surface owner',()=>{
+ const registry=sandbox.TabletopUI.createRegistry(),owner={privateSession:'must not reach a pack'},other={};let builds=0;
+ registry.register('regions',(state,viewer,actions,ui)=>{
+  assert.equal(ui.renderOwner,undefined,'authority owner is never exposed to pack UI');assert.equal(ui.regionSink,undefined,'host fragment sink is never exposed to pack UI');
+  const build=()=>{builds++;return `<p>${state.scene.value}</p>`;};
+  return {api:3,family:'board',elements:{field:ui.region?ui.region('value',[state.scene.value],build):build()}};
+ });
+ const state=value=>({game:'regions',packVersion:'1',scene:{value,audience:'player'}});
+ registry.render(state('A'),0,[],{renderOwner:owner});assert.equal(builds,1);
+ registry.render(state('A'),0,[],{renderOwner:owner});assert.equal(builds,1);
+ registry.render(state('B'),0,[],{renderOwner:owner});assert.equal(builds,2);
+ registry.render(state('B'),0,[],{renderOwner:other});assert.equal(builds,3);
+ registry.render(state('B'),1,[],{renderOwner:owner});assert.equal(builds,4,'viewer change invalidates regions');
+ registry.render(state('B'),1,[],{renderOwner:owner,replay:true});assert.equal(builds,5,'replay cannot reuse live controls');
+ registry.renderField(state('B'),1,state('B').scene,{renderOwner:owner});assert.equal(builds,6,'inert fields have a separate lane');
+ registry.render(state('B'),1,[],{renderOwner:owner,replay:true});assert.equal(builds,6,'field lane does not evict the main lane');
+ registry.render(state('B'),1,[],{});registry.render(state('B'),1,[],{});assert.equal(builds,8,'unowned portable rendering retains the stateless contract');
+ registry.render({...state('B'),packVersion:'2'},1,[],{renderOwner:owner,replay:true});assert.equal(builds,9,'pack version invalidates regions');
+ registry.render({...state('B'),packVersion:'2',scene:{value:'B',audience:'public'}},1,[],{renderOwner:owner,replay:true});assert.equal(builds,10,'audience invalidates regions');
+ const resolver=sandbox.PlayroomAssetResolver;try{sandbox.PlayroomAssetResolver={};registry.render({...state('B'),packVersion:'2',scene:{value:'B',audience:'public'}},1,[],{renderOwner:owner,replay:true});assert.equal(builds,11,'new appearance resolver invalidates artwork');}finally{sandbox.PlayroomAssetResolver=resolver;}
+ const sink=new Map(),html=registry.render(state('C'),0,[],{renderOwner:other,regionSink:sink});assert.equal(sink.get('scene:value'),'<p>C</p>');assert(html.includes('<template data-scene-fragment="scene:value"></template>'));assert(!html.includes('<p>C</p>'));
+ const stateless=new Map(),portable=registry.render(state('C'),0,[],{regionSink:stateless});assert.equal(stateless.size,0);assert(portable.includes('<p>C</p>'),'a portable render never depends on a host fragment sink');
+
+
+});
+
+test('solitaire region rendering preserves legal markup while skipping untouched column art',()=>{
+ const original=sandbox.PlayroomShared;let cards=0;
+ sandbox.PlayroomShared={...original,renderCard:descriptor=>{cards++;return original.renderCard(descriptor);}};
+ try{for(const game of ['spider','klondike']){
+  let state=make(game,'classic',1,17);const owner={};
+  const draw=(options={})=>{const projected=E.project(state,0),actions=E.legalActions(state,0);return V.render(projected,0,actions,options);};
+  cards=0;const first=draw({renderOwner:owner});assert(cards>0,game+' initial columns render');
+  cards=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(cards,0,game+' identical columns do not build SVG again');
+  const legal=E.legalActions(state,0),move=legal.find(a=>a.type==='move'&&a.source==='tableau');assert(move,game+' fixture has a real tableau move');state=E.applyAction(state,0,move);
+  cards=0;const changed=draw({renderOwner:owner}),rebuilt=cards,total=E.project(state,0).scene.tableau.reduce((n,col)=>n+col.length,0);
+  assert(rebuilt>0&&rebuilt<total,game+' a real move rebuilds affected columns, not all cards');
+  assert.equal(changed,draw(),game+' cached output retains exact current legal markup');
+  for(const options of [{selected:E.project(state,0).scene.tableau.flat().find(c=>!c.hidden)?.id},{viewState:{hint:state.move+':0'}}]){
+   const cached=draw({...options,renderOwner:owner});assert.equal(cached,draw(options),game+' selection/hint invalidates exact affected dependencies');
+  }
+  for(const type of ['undo','draw']){const action=E.legalActions(state,0).find(a=>a.type===type);assert(action,game+' '+type+' fixture action exists');state=E.applyAction(state,0,action);assert.equal(draw({renderOwner:owner}),draw(),game+' '+type+' replaces every changed card/command');}
+
+ }}finally{sandbox.PlayroomShared=original;}
+});
+
+test('checkers regions retain untouched art and exact legal markup across selection moves and audiences',()=>{
+ const original=V.helpers.assetArt;let painted=0;
+ V.helpers.assetArt=function(family,...args){if(family==='checker')painted++;return original.call(this,family,...args);};
+ try{
+  let state=make('checkers');const owner={};
+  const draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  const first=draw({renderOwner:owner});assert(painted>0,'the counter observes real checker artwork');
+  painted=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(painted,0,'an unchanged board does not repaint every checker');
+  const move=E.legalActions(state,0)[0];assert(move);
+  painted=0;const selected=draw({renderOwner:owner,selected:move.from}),selectionPaints=painted;
+  assert(selectionPaints>0&&selectionPaints<E.project(state,0).scene.pieces.length,'selection repaints only changed checker cells');
+  assert.equal(selected,draw({selected:move.from}),'selection retains exact legal source/target attributes');
+  state=E.applyAction(state,0,move);painted=0;
+  const moved=draw({renderOwner:owner}),movePaints=painted;
+  assert(movePaints>0&&movePaints<E.project(state,0).scene.pieces.length,'a normal move does not repaint the whole board');assert.equal(moved,draw());
+  for(const options of [{viewer:1},{viewer:-1,surface:'table'},{viewer:0,actions:[]}])assert.equal(draw({...options,renderOwner:owner}),draw(options),'viewer/public permissions never reuse stale input');
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert.equal(sink.size,64,'each physical cell has its own independent region');
+ }finally{V.helpers.assetArt=original;}
+});
+
+test('Ludo regions retain stationary pawns and dice while preserving every legal selection and move',()=>{
+ const shared=sandbox.PlayroomShared,art=V.helpers.assetArt;let pawns=0,dice=0;
+ sandbox.PlayroomShared={...shared,roundTokenArt:params=>{if(params.profile==='pawn')pawns++;return shared.roundTokenArt(params);}};
+ V.helpers.assetArt=function(family,...args){if(family==='die')dice++;return art.call(this,family,...args);};
+ try{
+  let state=E.createGame('ludo',{seed:17,diceCount:2,players:Array.from({length:4},(_,i)=>({name:'Игрок '+i}))});state.turn=0;Object.assign(state.data,{phase:'move',dice:[2,3],used:[false,false]});state.data.pawns[0]=[7,9,-1,-1];assert(E.validateState(state));
+  const owner={},draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  const first=draw({renderOwner:owner});assert.equal(pawns,16);assert.equal(dice,2);
+  pawns=0;dice=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(pawns,0,'an unchanged field does not reconstruct stationary pawn art');assert.equal(dice,0,'unchanged dice do not reconstruct artwork');
+  for(const pawn of ['0:0','0:1']){pawns=0;const ui={viewState:{pawn}},cached=draw({...ui,renderOwner:owner}),painted=pawns;assert(painted>0&&painted<16,'selection repaints only affected pawns');assert.equal(cached,draw(ui),'friendly occupied destinations retain exact source and target commands');}
+  const move=E.legalActions(state,0).find(a=>a.type==='move'&&a.owner===0&&a.pawn===0&&a.dieIndex===0);assert(move);state=E.applyAction(state,0,move);
+  pawns=0;const moved=draw({renderOwner:owner}),painted=pawns;assert(painted>0&&painted<16,'a move repaints affected stack members rather than every pawn');assert.equal(moved,draw());
+  for(const options of [{viewer:1},{viewer:-1,surface:'table'},{actions:[]}])assert.equal(draw({...options,renderOwner:owner}),draw(options),'audience and permissions never reuse stale actions');
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert.equal(sink.size,99,'bases, cells, centre, pawns and dice own independent bounded regions');
+ }finally{sandbox.PlayroomShared=shared;V.helpers.assetArt=art;}
+});
+
+
+test('UNO regions preserve unchanged card artwork and exact choices across selection and play',()=>{
+ const original=V.helpers.assetArt;let painted=0;
+ V.helpers.assetArt=function(family,...args){if(family==='card-face')painted++;return original.call(this,family,...args);};
+ try{
+  let state=make('uno');const owner={};
+  const draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  const first=draw({renderOwner:owner});assert(painted>=8,'counter observes own hand and discard artwork');
+  painted=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(painted,0,'unchanged hand and discard do not reconstruct card faces');
+  const playable=E.legalActions(state,0).find(a=>a.type==='play');assert(playable,'seed has a playable card');
+  painted=0;const selected=draw({renderOwner:owner,selected:playable.card}),selectionPaints=painted;
+  assert(selectionPaints>0&&selectionPaints<state.data.hands[0].length,'selection rebuilds affected hand card only');assert.equal(selected,draw({selected:playable.card}));
+  for(const options of [{selected:playable.card,quickPlay:true},{actions:[]},{viewer:1},{viewer:-1,surface:'table'},{surface:'player'}])assert.equal(draw({...options,renderOwner:owner}),draw(options),'audience, surface and permissions retain exact markup');
+  draw({renderOwner:owner});state=E.applyAction(state,0,playable);painted=0;const moved=draw({renderOwner:owner});assert(painted>0&&painted<state.data.hands[0].length,'playing a card does not reconstruct unaffected own card faces');assert.equal(moved,draw());
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert(sink.size>state.data.hands[0].length,'hand and field have independent regions');
+ }finally{V.helpers.assetArt=original;}
+});
+
+
+test('Domino regions retain tile artwork through selection and both chain ends without stale permissions',()=>{
+ const art=V.helpers.assetArt;let painted=0;V.helpers.assetArt=function(family,...args){if(family==='domino')painted++;return art.call(this,family,...args);};
+ try{
+  let state=make('domino');const tiles=new Map([...state.data.hands.flat(),...state.data.stock].map(c=>[c.id,c])),take=id=>{const c=tiles.get(id);assert(c);tiles.delete(id);return c;};state.data.chain=[take('d11')];state.data.hands=[['d12','d13','d14','d15','d16','d01','d00'].map(take),['d22','d23','d24','d25','d26','d02','d03'].map(take)];state.data.stock=[...tiles.values()];state.data.passes=0;state.data.openingTileId='d11';state.turn=0;assert(E.validateState(state));
+  const owner={},draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  const first=draw({renderOwner:owner});assert.equal(painted,8);painted=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(painted,0,'unchanged hand and chain never reconstruct tile artwork');
+  const selected=draw({renderOwner:owner,selected:'d12'});assert.equal(selected,draw({selected:'d12'}));
+  for(const options of [{actions:[],selected:'d12'},{viewer:1},{viewer:-1,surface:'table'},{surface:'player'}])assert.equal(draw({...options,renderOwner:owner}),draw(options));
+  draw({renderOwner:owner});for(const [actor,id,side] of [[0,'d12','right'],[1,'d23','right'],[0,'d13','left']]){const action=E.legalActions(state,actor).find(a=>a.card===id&&a.side===side);assert(action);state=E.applyAction(state,actor,action);painted=0;const html=draw({renderOwner:owner}),count=painted;assert(count<=1,'only the newly public or reoriented tile rebuilds its face');assert.equal(html,draw());}
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert.equal(sink.size,state.data.hands[0].length+state.data.chain.length+2);
+  state=make('domino');state.turn=0;const openingOwner={},action=E.legalActions(state,0).find(a=>a.type==='play');assert(action);draw({renderOwner:openingOwner});painted=0;draw({renderOwner:openingOwner});assert.equal(painted,0);assert.equal(draw({renderOwner:openingOwner,selected:action.card}),draw({selected:action.card}));
+ }finally{V.helpers.assetArt=art;}
+});
+
+test('Yatzy dice regions preserve unchanged artwork and current hold permissions',()=>{
+ const art=V.helpers.assetArt;let painted=0;
+ V.helpers.assetArt=function(family,...args){if(family==='die')painted++;return art.call(this,family,...args);};
+ try{
+  let state=make('yatzy');const owner={},draw=({viewer=state.turn,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  draw({renderOwner:owner});assert.equal(painted,5);painted=0;draw({renderOwner:owner});assert.equal(painted,0,'unchanged dice are not rebuilt');
+  state=E.applyAction(state,state.turn,E.legalActions(state,state.turn).find(a=>a.type==='roll'));
+  assert.equal(draw({renderOwner:owner}),draw());
+  const priorRows=new Map();draw({renderOwner:owner,regionSink:priorRows});
+  const hold=E.legalActions(state,state.turn).find(a=>a.type==='hold');assert(hold);
+  state=E.applyAction(state,state.turn,hold);painted=0;const held=draw({renderOwner:owner});assert.equal(painted,1,'hold rebuilds only the changed die');assert.equal(held,draw());
+  const heldRows=new Map();draw({renderOwner:owner,regionSink:heldRows});for(const [id,html]of priorRows)if(!id.startsWith('scene:die-'))assert.equal(heldRows.get(id),html,'hold leaves score rows and totals unchanged');
+  for(const options of [{actions:[]},{viewer:1},{viewer:-1,surface:'table'},{surface:'player'},{viewState:{scorePlayer:1}}])assert.equal(draw({...options,renderOwner:owner}),draw(options));
+  draw({renderOwner:owner});const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert.equal(sink.size,E.project(state,state.turn).scene.rows.length+9);
+  const score=E.legalActions(state,state.turn).find(a=>a.type==='score');assert(score);state=E.applyAction(state,state.turn,score);assert.equal(draw({renderOwner:owner}),draw(),'scoring changes the selected player, category, totals and permissions together');
+ }finally{V.helpers.assetArt=art;}
+});
+
+test('Pexeso regions rebuild affected slots without retaining hidden identities or stale flip actions',()=>{
+ const art=V.helpers.assetArt;let painted=0;V.helpers.assetArt=function(family,...args){if(['card-back','card-face','character-face'].includes(family))painted++;return art.call(this,family,...args);};
+ try{for(const deck of ['cartoon','52']){
+  let state=E.createGame('pexeso',{preset:'easy',deck,seed:17,players:[{name:'A'},{name:'B'}]});const owner={};
+  const draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  const first=draw({renderOwner:owner});painted=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(painted,0,'unchanged board does not reconstruct card faces or backs');
+  const unseen=clone(state);[unseen.data.board[0],unseen.data.board[1]]=[unseen.data.board[1],unseen.data.board[0]];assert(E.validateState(unseen));assert.equal(V.render(E.project(unseen,0),0,E.legalActions(unseen,0),{renderOwner:owner}),first,'unrevealed permutation cannot change public markup');assert.equal(painted,0);
+  state=E.applyAction(state,0,{type:'flip',index:0});painted=0;const opened=draw({renderOwner:owner});assert.equal(painted,1,'one flip rebuilds one slot');assert.equal(opened,draw());
+  const pair=c=>c.character||c.shape+'-'+c.color+(c.rank??'')+(c.rank?(['♥','♦'].includes(c.suit)?'red':'black'):'');
+  const second=state.data.board.findIndex(c=>pair(c)!==pair(state.data.board[0]));assert(second>=0);state=E.applyAction(state,0,{type:'flip',index:second});
+  for(const options of [{viewer:1,presentationTurn:0},{viewer:1},{viewer:-1,surface:'table'},{actions:[]},{surface:'player'}])assert.equal(draw({...options,renderOwner:owner}),draw(options),'closing animation and permissions match the authorized projection');
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert.equal(sink.size,state.data.board.length);assert([...sink.keys()].every(id=>/^scene:slot-\d+$/.test(id)),'regions identify public positions only');
+  state=E.applyAction(state,1,{type:'flip',index:0});assert.equal(draw({viewer:1,renderOwner:owner}),draw({viewer:1}));
+  state=E.createGame('pexeso',{preset:'easy',deck,seed:17,players:[{name:'A'},{name:'B'}]});const mate=state.data.board.findIndex((c,i)=>i>0&&pair(c)===pair(state.data.board[0]));assert(mate>0);for(const index of [0,mate])state=E.applyAction(state,0,{type:'flip',index});assert.equal(state.data.matched.length,2);assert.equal(draw({renderOwner:owner}),draw(),'matched pair and score remain current');
+ }}finally{V.helpers.assetArt=art;}
+});
+
+test('Go Fish and Old Maid regions preserve authorized cards and public counters without caching hidden identities',()=>{
+ const art=V.helpers.assetArt;let faces=0;V.helpers.assetArt=function(family,...args){if(family==='card-face')faces++;return art.call(this,family,...args);};
+ try{for(const game of ['gofish','oldmaid']){
+  let state=make(game);const owner={},draw=({viewer=0,actions=E.legalActions(state,viewer),...ui}={})=>V.render(E.project(state,viewer),viewer,actions,ui);
+  faces=0;const first=draw({renderOwner:owner});assert(faces>0,game+' observes actual card artwork');faces=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(faces,0,game+' does not rebuild unchanged authorized faces');
+  const selected=E.project(state,0).scene.players[0].hand[0]?.id;assert.equal(draw({renderOwner:owner,selected}),draw({selected}));
+  for(let step=0;step<3;step++){const action=E.botAction(state,state.turn);assert(action);state=E.applyAction(state,state.turn,action);assert.equal(draw({renderOwner:owner}),draw(),game+' renders current cards, books or discard after a real command');}
+  for(const options of [{actions:[]},{viewer:1},{viewer:-1,surface:'table'},{surface:'player'}])assert.equal(draw({...options,renderOwner:owner}),draw(options),'viewer and surface changes preserve exact permissions');
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert(sink.size>0);
+  const hiddenIds=state.data.hands[1].map(c=>c.id);assert(hiddenIds.every(id=>!sink.has('scene:card-'+id)),'hidden opponent cards have no cached physical regions');
+ }}finally{V.helpers.assetArt=art;}
+});
+
+test('Durak regions preserve card faces and trump while updating legal table placements',()=>{
+ const art=V.helpers.assetArt;let faces=0;V.helpers.assetArt=function(family,...args){if(family==='card-face')faces++;return art.call(this,family,...args);};
+ try{
+  let state=make('durak');const viewer=state.turn,owner={},draw=({viewer:v=viewer,actions=E.legalActions(state,v),...ui}={})=>V.render(E.project(state,v),v,actions,ui);
+  faces=0;const first=draw({renderOwner:owner});assert(faces>0);faces=0;assert.equal(draw({renderOwner:owner}),first);assert.equal(faces,0,'unchanged hand, field and trump do not reconstruct faces');
+  const playable=E.legalActions(state,viewer).find(a=>a.card&&a.type!=='exchange');assert(playable);faces=0;const selected=draw({renderOwner:owner,selected:playable.card});assert(faces<=1,'selecting a card only redraws that source');assert.equal(selected,draw({selected:playable.card}));
+  for(let i=0;i<3;i++){const action=E.botAction(state,state.turn);assert(action);state=E.applyAction(state,state.turn,action);assert.equal(draw({renderOwner:owner}),draw(),'attack, defence and changing controls preserve exact rule choices');}
+  for(const options of [{actions:[]},{viewer:(viewer+1)%2},{viewer:-1,surface:'table'},{surface:'player'}])assert.equal(draw({...options,renderOwner:owner}),draw(options));
+  const sink=new Map();draw({renderOwner:owner,regionSink:sink});assert(sink.has('scene:trump-token'));assert(sink.has('scene:stock-back'));
+ }finally{V.helpers.assetArt=art;}
 });

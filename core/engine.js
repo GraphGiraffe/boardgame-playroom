@@ -36,9 +36,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
   // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
-  function projectedEvents(state,viewer) {
+  function projectedEvents(state,viewer,afterEventId=null) {
     const pack=forState(state);
     return state.events.flatMap(raw=>{
+      if(afterEventId!==null&&!(raw.id>afterEventId))return [];
       if(raw.visibility){
         const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
         return Events.project([raw],viewer,state.players.length).map(value=>pack.presentEvent(value,state.players));
@@ -57,7 +58,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const priorities={skip:90,discard:70,reverse:75,pass:60,take:55,draw:40};
     const sounds={'penalty':85,'uno.call':80,'attack.capture':75,'success.special':65,'success.yatzy':65,'success':60,'mismatch':50};
     const actions=new Map(),explicit=[],authored=new Set();
-    for(const e of projectedEvents(state,viewer).filter(e=>e.id>afterEventId)){
+    for(const e of projectedEvents(state,viewer,afterEventId)){
       const id=e.kind==='finish'
         ? state.winner==null?'draw-game':viewer<0||viewer>=state.players.length?'notify':(state.winners||[state.winner]).includes(viewer)?'victory':'defeat'
         : e.sound===null?null:e.sound?.id||semantic[e.feedback?.kind]||fallback[e.kind];
@@ -222,15 +223,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const legal=pack.resolveAction?(activePlayer(state,actor)?pack.resolveAction(state,actor,action):null):
       legalActions(state, actor).find(candidate => Object.keys(candidate).filter(k => !['label', 'notify', 'confirmation', 'targetPrompt', 'targetKind'].includes(k)).every(k => (k === 'episode' && action[k] === undefined) || JSON.stringify(candidate[k]) === JSON.stringify(action[k])));
     if (!legal) throw Error(globalThis.PlayroomMessages.text("ui.engine.a5bdf3185a7d"));
-    const next = clone(state);
+    // Canonical facts are immutable snapshots, not mutable game positions.
+    // Preserve them across moves instead of cloning the growing journal.
+    // Legacy unstructured events keep their detached mutable copy.
+    const Values = root.PlayroomModelValues || require('./model-values.js');
+    // A portable model reads an immutable position and replaces data atomically.
+    // Cloning its old data here would be discarded immediately by the adapter.
+    const next = pack.modelContractVersion===1&&pack.model
+      ? {...clone({...state,data:null,events:[]}),data:state.data}
+      : clone({...state,events:[]});
+    next.events = state.events.map(value=>value.visibility?Values.snapshot(value):clone(value));
     next.move++;
     forState(next).apply(next, actor, legal);
     return next;
   }
   function project(state, viewer) {
-    const out = {...clone(state),data:{}}, pack = forState(state);
+    // Private data and events are projected below. Do not copy their complete
+    // authority payload only to discard it, and never copy the private RNG.
+    const {data,events,rng,...header}=state;
+    const out = {...clone(header),data:{}}, pack = forState(state);
     if (!Number.isInteger(viewer) || viewer < 0 || viewer >= state.players.length) viewer = -1;
-    delete out.rng;
     out.events = projectedEvents(state,viewer);
     if (pack.project) pack.project(out, viewer, state);
     return out;
@@ -289,7 +301,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

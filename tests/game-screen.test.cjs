@@ -2,6 +2,21 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Screen=require('../app/game-screen.js');
 const projected={game:'uno',turn:1,move:5,players:[{name:'Первый',bot:false,score:9},{name:'Второй',bot:false,score:4}],data:{hands:[[{hidden:true}],[{hidden:true}]]}};
+test('title fitting preserves the full title and user font while hiding a redundant mode after wrapping',()=>{
+ for(const frame of [false,true])for(const fontSize of [20,40]){
+  let inlineSize='14px',wrapped=false;
+  const table={classList:{toggle:(_name,value)=>{wrapped=value;}}};
+  const node={dataset:{fullTitle:'Стихийная потасовка',shortTitle:'Потасовка'},textContent:'Потасовка',
+   style:{removeProperty:()=>{inlineSize='';},set fontSize(value){inlineSize=value;}},
+   ownerDocument:{defaultView:{getComputedStyle:()=>({fontSize:String(fontSize),lineHeight:String(fontSize*1.2)})}},
+   closest:selector=>selector==='.game-frame-title'?(frame?{}:null):selector==='.table-title'?table:null,
+   scrollWidth:300,clientWidth:120,scrollHeight:fontSize*2.4};
+  Screen.fitGameTitles({querySelectorAll:()=>[node]});
+  assert.equal(node.textContent,node.dataset.fullTitle,'a narrow title does not become an abbreviation');
+  assert.equal(inlineSize,'','the user font is not replaced by a smaller inline pixel size');
+  if(!frame)assert.equal(wrapped,true,'two title lines replace the optional mode subtitle');
+ }
+});
 test('player targeting is exposed only for allowed actions',()=>{
   const safe=Screen.playersMarkup(projected,0,[],{scoreLabel:'очки'});
   assert.ok(!safe.includes('data-player-target'));
@@ -17,8 +32,9 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.match(Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO'}),/Второй побеждает/);
   const dialog=Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO',scoreLabel:'очки',network:true});
   assert.match(dialog,/9|4/);assert.match(dialog,/result-replay/);assert.doesNotMatch(dialog,/Ещё партию/);
-  assert.match(dialog,/>В комнату</);assert.match(dialog,/>История</);assert.doesNotMatch(dialog,/data-command="(?:home|close-modal)"/);
+  assert.match(dialog,/>В лобби</);assert.match(dialog,/>История</);assert.doesNotMatch(dialog,/data-command="(?:home|close-modal)"/);
   assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
+  const publicResult=Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO',network:true,returnAction:{command:'home',label:'К играм'}});assert.match(publicResult,/data-command="home"/);assert.doesNotMatch(publicResult,/data-command="rematch"/,'public read-only result does not offer an unauthorized lobby action');assert.equal(Screen.classifySurface('result-modal'),'screen');
 });
 
 test('team results place the shared team disc behind each medal while solo results stay unchanged',()=>{
@@ -69,14 +85,17 @@ test('local and network deletion share confirmation layout and preserve target r
 });
 
 
-test('the primary toolbar slot switches between room and results, including earlier replay frames',()=>{
+test('the game menu retains room and results across replay frames without cluttering the header',()=>{
  for(const network of [false,true])for(const historyResult of [false,true]){
   const html=Screen.render({state:{...projected,status:'playing'},viewer:0,network,historyResult,roomAction:{attrs:'data-command="room"'},historyHTML:historyResult?'<section class="history-panel"></section>':''});
-  const toolbar=html.split('class="table-tools ui-toolbar">')[1].split('</div></header>')[0];
-  assert.equal((toolbar.match(/data-game-primary=/g)||[]).length,1);
-  assert.match(toolbar,new RegExp('data-command="'+(historyResult?'result':'room')+'"'));
-  assert.doesNotMatch(toolbar,new RegExp('data-command="'+(historyResult?'room':'result')+'"'));
-  assert(toolbar.indexOf('data-game-primary')<toolbar.indexOf(network?'data-room-chat-open':'data-command="history"'));
+  const toolbar=html.split('class="game-frame-tools">')[1].split('</div></header>')[0];
+  assert.doesNotMatch(toolbar,/data-game-primary/);
+  assert.match(toolbar,/data-game-menu/);
+  const primary=Screen.gameMenuActions().filter(a=>a.attrs.includes('data-game-primary'));
+  assert.equal(primary.length,1);
+  assert(primary[0].attrs.includes('data-command="'+(historyResult?'result':'room')+'"'));
+  assert(Screen.gameMenuActions().some(a=>a.name==='room'));
+  assert(Screen.gameMenuActions().some(a=>a.attrs.includes('data-command="history"')));
  }
  assert.match(Screen.addPlayerButton(),/Подключить игрока или устройство/);
  assert.match(Screen.addPlayerButton(),/ui-icon-button/);
@@ -134,7 +153,7 @@ test('field toggle is exclusive to an interactive network player with a Table',(
   const html=Screen.render({state:projected,viewer,network,readOnly,fieldToggle:{hidden:true}});
   assert.equal(html.includes('data-command="toggle-field"'),allowed);
   assert.equal(Screen.quickAccessMarkup().includes('data-command="toggle-field"'),allowed);
-  if(!allowed)assert.match(html,network&&!readOnly?/data-room-chat-open/:/data-command="history"/);
+  if(!allowed){if(network&&!readOnly)assert.match(html,/data-room-chat-open/);else assert(Screen.gameMenuActions().some(a=>a.attrs.includes('data-command="history"')));}
  }
 });
 
@@ -180,6 +199,9 @@ test('Continuation cards share heading, player and room progress rows',()=>{
     assert.equal(html.includes('connection-light'),network);assert.match(html,/resume-actions.*resume-participants/s);
   }
   assert.match(Screen.resumeCard({state,network:true,connected:false}),/is-disconnected/);
+  for(const [move,label] of [[0,'0 действий'],[1,'1 действие'],[2,'2 действия'],[5,'5 действий'],[11,'11 действий'],[21,'21 действие'],[22,'22 действия'],[25,'25 действий']]) {
+    assert(Screen.resumeCard({state:{...state,move},gameName:'Игра'}).includes(label),'continuation card shows '+label);
+  }
 });
 
 test('Toolbar keeps two context actions plus fixed fullscreen and settings slots',()=>{
@@ -189,13 +211,16 @@ test('Toolbar keeps two context actions plus fixed fullscreen and settings slots
   assert.match(html,/data-command="full"/);
   assert.doesNotMatch(html,/data-command="pause"/);
   assert.match(Screen.quickAccessMarkup(),/data-command="pause"/);
+  const frame=Screen.toolbar(actions,{gameMenu:{network:true}});
+  assert.doesNotMatch(frame,/data-game-quick="history"/);assert(Screen.gameMenuActions().some(action=>action.attrs.includes('data-command="history"')),'History remains in the game menu');assert.match(frame,/data-game-quick="fullscreen"/);assert.match(frame,/data-game-menu/);
+  assert.doesNotMatch(frame,/data-command="pause"|data-command="help"/,'rare actions stay in the menu');
 });
 
-test('duels always render a row even with a saved circular or anchored preference',()=>{
+test('duels preserve declared base anchors unless row seating is explicitly selected',()=>{
  const UI=require('../core/ui.js'),state={players:[{name:'A'},{name:'B'}],turn:0,data:{}};
  for(const seating of ['circle','anchors','row']){
   const html=UI.composeScene({api:3,family:'board',layout:{seats:['north-west','south-east'],duplicateSelf:true},elements:{field:'<div>field</div>'}},{state,viewer:0,seating});
-  assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);
+  if(seating==='row'){assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);}else{assert.match(html,/data-seating="circle"/);assert.match(html,/data-seat-copy/);}
  }
 });
 test('continuation avatars carry host, first-player and team badges with regular-weight progress',()=>{
@@ -243,4 +268,86 @@ test('all packs use one result sound on first presentation, with neutral interme
   assert.equal(Screen.resultSound({...state,winner:null},0),'draw-game');
   assert.equal(Screen.resultSound({...state,winners:[0,1]},1),'victory');
  }
+});
+
+test('shared landscape allocation stays stable across player counts and balances side zones',()=>{
+ for(const [width,height]of [[844,390],[932,430],[1024,600]]){
+  const zones=Screen.landscapeZones(width,height,1);
+  assert.equal(zones.self,zones.opponents,'side zones are equal');
+  for(const count of [2,3,7]){const other=Screen.landscapeZones(width,height,count);assert.equal(other.field,zones.field);assert.equal(other.self,zones.self);assert.equal(other.opponents,zones.opponents);}
+  assert(zones.field<=height-12,'field fits the usable height');
+  assert(Math.abs(zones.opponents+zones.field+zones.self+24-width)<=3,'all zones share one viewport budget');
+ }
+ const dense=Screen.landscapeZones(844,390,7);
+ assert.equal(dense.columns,1,'narrow side zones preserve two identity rows beside the avatar');
+ assert.equal(Screen.landscapeZones(1200,390,7).columns,2,'wide side zones fit two complete cards');
+ assert.equal(dense.self,dense.opponents);
+});
+
+// Header markup carries its canonical glyph so the prepaint policy can be idempotent.
+test('surface header markup defers fullscreen until its type and keeps canonical icon Back controls',()=>{
+ const html=Screen.modalHead('Настройки',{symbol:'settings'});
+ assert.match(html,/data-surface-symbol="settings"/);
+ assert.match(Screen.modalHead(''),/<h2><\/h2>/,'empty header slot remains replaceable by the native chat identity');
+ assert(html.indexOf('data-surface-symbol')<html.indexOf('<h2'));
+ assert.doesNotMatch(html,/data-surface-fullscreen/,'untyped header must not preadd fullscreen');
+ assert.match(html,/data-command="close-modal"/);
+});
+
+
+test('geometry identity follows the authorized session pack and audience rather than names or turn data',()=>{
+ const identity=options=>Screen.render({layoutId:'session-a',gameName:'UNO',state:{...projected,packVersion:'0.6.8-preview.3'},viewer:0,scene:'<div class="app-game-layout" data-surface="combined"></div>',...options}).match(/data-geometry-identity="([^"]+)"/)[1];
+ const initial=identity({});assert.equal(identity({state:{...projected,packVersion:'0.6.8-preview.3',move:6,players:projected.players.map(p=>({...p,name:'Changed',score:20}))}}),initial);
+ for(const options of [{viewer:-1},{viewer:1},{readOnly:true},{replay:true},{historyHTML:'<div>history</div>'},{layoutId:'session-b'},{state:{...projected,packVersion:'0.6.9'}}])assert.notEqual(identity(options),initial,'different authority audience never reuses authored private geometry');
+});
+
+test('diagnostic recorder is bounded, keeps timings and exports game data only on request',async()=>{
+ const {Recorder,LIMIT}=require('../app/diagnostics.js'),r=new Recorder();let saves=0;r.configure({save:()=>{saves++;return {format:'fixture-save'};}});
+ r.record('off',{duration:1});assert.equal(r.count,0);assert.equal(r.begin(),null);r.enabled=true;
+ for(let i=0;i<LIMIT+7;i++)r.record('sample',{revision:i,duration:2,token:'private-token',url:'private-url',email:'private-email'});
+ assert.equal(saves,0,'no game serialization while collecting');const report=await r.report();assert.equal(saves,1);assert.equal(report.events.length,LIMIT);assert(report.dropped>=7);assert.equal(report.game.status,'included');assert(report.events.every(e=>!('token'in e)&&!('url'in e)&&!('email'in e)));assert(!JSON.stringify(report.events).includes('private-'));
+ assert.equal(await r.measure('async',async()=>42),42);await assert.rejects(r.measure('failure',async()=>{throw Error('secret failure');}));assert(!JSON.stringify((await r.report()).events).includes('secret failure'));r.stop();const count=r.written;r.record('after-stop');assert.equal(r.written,count);
+});
+
+test('zone alignment contains oversized content and supports edge alignment',()=>{
+ assert.deepEqual(Screen.alignInZone({x:10,y:20,width:100,height:80},{width:30,height:20},{inline:'end',block:'start',inset:4}),{x:76,y:24,width:30,height:20});
+ assert.deepEqual(Screen.alignInZone({x:0,y:0,width:100,height:80},{width:200,height:200}),{x:0,y:0,width:100,height:80});
+});
+
+test('fullscreen keeps the established player width and gives remaining width to the opponent zone',()=>{
+ const before=Screen.landscapeZones(797,339,7),after=Screen.landscapeZones(832,384,7,true,before.self);
+ assert.equal(after.self,before.self);assert.equal(after.field,384-12);assert(after.opponents<after.self);
+});
+
+test('screen layout selects one declared profile independently of player count',()=>{
+ const cases=[[{},'standard'],[{seatAnchors:'true'},'bases'],[{soloField:'true'},'field-only'],[{surface:'player'},'player-only']];
+ for(const [options,expected] of cases)for(const playerCount of [1,2,4,8])assert.equal(Screen.screenLayout({...options,playerCount}),expected);
+});
+
+test('pack overrides declare only the affected zones and reject unknown policies',()=>{
+ const UI=require('../core/ui.js'),state={...projected,players:projected.players};
+ const scene={api:3,family:'board',elements:{field:'<div>field</div>'}};
+ const html=UI.composeScene({...scene,layout:{overrides:{opponentsAlign:'end',playerIndicators:'below-avatar',mirrorIndicators:true}}},{state,viewer:0});
+ assert.match(html,/data-opponents-align="end"/);assert.match(html,/data-player-indicators="below-avatar"/);assert.doesNotMatch(html,/data-field-columns/);
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{gameName:'battleship'}}},{state}),/layout overrides/);
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{fieldColumns:17}}},{state}),/layout overrides/);
+});
+
+
+test('one immutable snapshot is presented once across duplicate snapshot and ACK delivery',async()=>{
+ const Controller=require('../application/game-screen-controller.js'),shown=[];
+ const frame=revision=>Object.freeze({kind:'snapshot',sessionId:'dedup',authorityEpoch:'epoch',game:'cards',packVersion:'1',role:'player',viewer:0,revision,historyLength:revision+1,state:{turn:0}});
+ const client={snapshot:frame(0),history:async revision=>({...frame(revision),kind:'history'})},controller=new Controller({client,present:async(before,next,{show})=>{show();shown.push(next);}});
+ const next=frame(1);client.snapshot=next;await Promise.all([controller.enqueue(next),controller.enqueue(next),controller.enqueue(next)]);await new Promise(setImmediate);assert.deepEqual(shown,[next]);
+ const control=Object.freeze({...next,controlRevision:1});client.snapshot=control;await controller.enqueue(control);await new Promise(setImmediate);assert.equal(shown.at(-1),control,'a new control snapshot at the same game revision is still delivered');
+});
+
+test('planning readiness does not backfill invisible revisions during public playback',async()=>{
+ const Controller=require('../application/game-screen-controller.js'),shown=[],reads=[];
+ const frame=(revision,event=1,window='round:2')=>({sessionId:'same',authorityEpoch:'same',game:'fixture',packVersion:'1',viewer:0,role:'player',revision,historyLength:revision+1,events:[{id:event}],state:{status:'playing',turn:0,scene:{plan:{id:'public:round:1'},decisionWindow:{id:window}}}});
+ const client={snapshot:frame(0),history:async revision=>{reads.push(revision);return {...frame(revision),kind:'history'};}},controller=new Controller({client,present:async(_before,next,{show})=>{show();shown.push(next.revision);}});
+ client.snapshot=frame(8);await controller.enqueue(client.snapshot);await new Promise(setImmediate);assert.deepEqual(reads,[]);assert.deepEqual(shown,[8]);assert.equal(controller.history.count,8,'all committed revisions remain reviewable');
+ client.snapshot=frame(11,2);await controller.enqueue(client.snapshot);await new Promise(setImmediate);assert.deepEqual(reads,[9,10],'a new public event still backfills its boundaries');
+ assert.equal(Controller.planningUpdate(frame(0),frame(8,1,'another-window')),false);assert.equal(Controller.planningUpdate(frame(0),{...frame(8),paused:true}),false);assert.equal(Controller.planningUpdate(frame(0),{...frame(8),viewer:1}),false);
+ assert.equal(Controller.planningUpdate(frame(0),{...frame(8),state:{...frame(8).state,turn:1}}),true,'the coordination turn may change inside a simultaneous decision window');
 });

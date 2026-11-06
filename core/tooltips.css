@@ -1,2 +1,6 @@
 .playroom-tooltip{position:fixed;z-index:120;max-width:min(var(--size-length-320_0,320px),calc(100vw - var(--size-length-24_0,24px)));max-height:calc(100dvh - var(--size-length-24_0,24px));width:max-content;box-sizing:border-box;overflow:hidden;overflow-wrap:anywhere;padding:var(--size-space-11_0,12px) var(--size-space-14_0,12px);border:var(--size-border-1_0,1px) solid #526b51;border-radius:var(--size-radius-13_0,12px);background:#2d493bee;color:#fffdf1;box-shadow:0 7px 22px #20352d24;font:500 var(--size-type-12_0,12px)/1.55 system-ui,sans-serif;pointer-events:none;white-space:normal;}
 .playroom-tooltip[hidden]{display:none;}
+
+.playroom-tooltip-title{display:block;font-weight:700;margin-bottom:4px}
+.playroom-tooltip-art{display:grid;place-items:center;margin:8px auto 0;max-width:160px;padding:4px;border-radius:8px;background:var(--paper,#f2efdf)}
+.playroom-tooltip-art>svg{display:block;max-width:100%;max-height:160px;margin:0}

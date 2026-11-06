@@ -53,6 +53,9 @@ test('game lifecycle push stays silent on its visible game including result over
  focused=false;assert.equal(handled({activity:'game-started'}),false,'unfocused still notifies');focused=true;
  table=false;assert.equal(handled({activity:'game-finished'}),false,'hub or replay still notifies');
  assert.equal(handled({activity:'turn'}),false,'turn still notifies away from game');
+ let notices=0;context.PlayroomAppBridge={toast:()=>notices++};context.PlayroomHostTransferUI={hasIncoming:id=>id==='known',senderState:()=>({id:'outgoing'}),focusIncoming:()=>assert.fail('foreground receipt must not steal focus')};
+ for(const transferId of ['known','outgoing','fallback'])assert.equal(handled({activity:'host-transfer-offer',transferId}),true,'current room host event handled in-app');assert.equal(notices,1,'only missing RTC state gets a banner');
+ assert.equal(handled({activity:'host-transfer-offer',transferId:'known',id:'other-room'}),false);hidden=true;assert.equal(handled({activity:'host-transfer-offer',transferId:'known'}),false);hidden=false;
  table=true;assert.equal(handled({activity:'turn'}),true,'turn stays silent on game with overlay');
  chatVisible=true;assert.equal(handled({activity:'turn'}),true,'existing room visibility still applies');
 });
@@ -70,7 +73,7 @@ test('ICE credentials authorize before cache, deduplicate issuance and sanitize 
 
 test('ICE progress sends one sanitized batch and waits 500ms only after successful admission',async()=>{
  const vm=require('node:vm'),fs=require('node:fs'),traces=[],pauses=[];
- const ctx={Date,crypto:{randomUUID:()=> 'attempt'},document:{querySelector:()=>null},PlayroomAccountUI:{service:{snapshot:()=>({id:'me'})}},PlayroomIceConfig:{credentials:async()=>({configuration:{iceServers:[]},diagnosticsEnabled:true}),trace:(...v)=>traces.push(v)},PlayroomWebRTCTransport:{selectedMethod:async()=>({method:'turn',protocol:'tls'})},setTimeout:fn=>{pauses.push(fn);}};vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/connection-progress.js'),'utf8'),ctx);
+ const ctx={Date,crypto:{randomUUID:()=> 'attempt'},document:{querySelector:()=>null},PlayroomAccountUI:{service:{snapshot:()=>({id:'me'})}},PlayroomIceConfig:{credentials:async()=>({configuration:{iceServers:[]},diagnosticsEnabled:true}),trace:(...v)=>traces.push(v)},PlayroomWebRTCTransport:{selectedMethod:async()=>({method:'turn',protocol:'tls'})},setTimeout:fn=>{pauses.push(fn);}};vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../application/connection-attempt.js'),'utf8'),ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/connection-progress.js'),'utf8'),ctx);
  const progress=ctx.PlayroomConnectionProgress.create({roomId:'room'});await progress.options();progress.update({stage:'checking',turn:'checking'});const finish=progress.connected({pc:{}},{delay:true});await new Promise(setImmediate);assert.equal(traces.length,1);assert.equal(pauses.length,1);assert.equal(traces[0][0].p_events.at(-1).method,'turn');progress.cancel();pauses[0]();await assert.rejects(finish,e=>e.code==='cancelled');assert.equal(traces.length,1);delete ctx.crypto;const local=ctx.PlayroomConnectionProgress.create();local.fail(Error('PRIVATE'));assert.match(traces[1][0].p_attempt_id,/^[0-9a-f-]{36}$/);
  const disabled=ctx.PlayroomConnectionProgress.create({roomId:'room'});ctx.PlayroomIceConfig.credentials=async()=>({diagnosticsEnabled:false});await disabled.options();disabled.fail(Error('SECRET'));assert.equal(traces.length,2);
 });
@@ -82,4 +85,22 @@ test('ICE browser provider caches per account, falls back to STUN and keeps loca
  assert.equal((await api.configuration(null)).iceServers.length,0);assert.equal(calls,0);
  const [first,second]=await Promise.all([api.credentials('room'),api.credentials('room')]);assert.equal(first,second);assert.equal(calls,1);assert.equal((await api.configuration('other-room')).iceServers.length,2);assert.equal(calls,1);
  id='b';listener();broken=true;const fallback=await api.credentials('room');assert.equal(fallback.code,'turn-network');assert.equal(fallback.configuration.iceServers.length,1);assert.equal(fallback.configuration.iceServers[0].urls,'stun:stun.cloudflare.com:3478');assert.equal(calls,2);await api.credentials('room');assert.equal(calls,2,'brief failure cache bounds requests');
+});
+
+test('ICE attempt lifecycle is independent of DOM and bounds terminal diagnostics',async()=>{
+ const {create}=require('../application/connection-attempt.js');let traces=0,credentials=0,last;const records=[];
+ const attempt=create({now:()=>100,idFactory:()=> 'attempt',credentials:async()=>{credentials++;},trace:value=>{traces++;records.push(value);},selectedMethod:async()=>({method:'direct'}),sleep:async()=>{},onChange:value=>{last=value;}});
+ await attempt.options();assert.equal(credentials,0,'manual pairing must not request cloud access');
+ for(let i=0;i<100;i++)attempt.update({stage:'checking',direct:i%2?'checking':'available'});
+ await attempt.connected({pc:{}});assert.equal(last.stage,'connected');assert.equal(last.direct,'selected');
+ attempt.fail(Error('private'));attempt.update({stage:'failed'});assert.equal(traces,1);assert.equal(last.stage,'connected');assert(records[0].p_events.length<=48);
+});
+
+test('semantic UI audio has distinct cues, consented preferences and bounded deduplication',()=>{
+ const {create,sounds}=require('../app/ui-feedback.js'),played=[],registered=[];let now=0,user='a',visible=true;
+ const port={uiEnabled:true,busy:false,registerPack:(id,map)=>registered.push([id,map]),play:(ids,pack)=>played.push([ids[0],pack])},feedback=create({audio:()=>port,visible:()=>visible,identity:()=>user,now:()=>now});
+ const Audio=require('../core/audio.js');assert.doesNotThrow(()=>new Audio().registerPack('app-feedback',sounds));assert(Object.keys(sounds).length>=10);assert.notDeepEqual(sounds.message.notes,sounds.invitation.notes);
+ assert(feedback.emit('message',{id:'m1'}));assert.equal(feedback.emit('message',{id:'m1'}),false);now=300;port.uiEnabled=false;assert.equal(feedback.emit('invitation',{id:'invite'}),false);port.uiEnabled=true;assert.equal(feedback.emit('invitation',{id:'invite'}),false,'muted events do not play retroactively');
+ assert(feedback.emit('friend.request',{id:'edge'}));now=600;port.busy=true;assert.equal(feedback.emit('handoff.offer',{id:'offer'}),false);port.busy=false;visible=false;assert.equal(feedback.emit('message',{id:'background'}),false);visible=true;assert.equal(feedback.emit('message',{id:'background'}),false);now=900;assert.equal(feedback.emit('error',{quiet:true}),false);assert(feedback.emit('connection.success',{id:'join'}));
+ user='b';assert(feedback.emit('message',{id:'m1'}),'dedupe is account scoped');assert.equal(registered.length,1);assert.deepEqual(played.map(([id])=>id),['message','friend.request','connection.success','message']);now=1200;assert(feedback.emit('game.start',{id:'session'}));assert.equal(feedback.emit('game.start',{id:'session'}),false,'duplicate start ACK stays silent');assert.notDeepEqual(sounds['game.start'].notes,sounds['connection.success'].notes);
 });

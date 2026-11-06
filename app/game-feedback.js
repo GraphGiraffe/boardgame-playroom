@@ -7,8 +7,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const Plans=root.PlayroomEventPlan||(typeof require==='function'?require('../presentation/event-plan.js'):null);
   const participantEffects=new Set(['skip','damage','capture','sunk','penalty']);
   class GameFeedback {
-    constructor({motion=root.PlayroomMotion,mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},clock=Scheduler.clock,executor=new Scheduler(clock),duration=700,fieldChanged=null}={}){
-      this.fieldChanged=fieldChanged;this.motion=motion;this.mount=mount;this.play=play;this.player=executor.track('feedback');this.planId=0;this.duration=duration;this.cursor=0;this.notice=null;this.queue=[];this.active=null;this.waiters=[];this.generation=0;this.layer=null;this.bubble=null;this.bubbleEvent=null;
+    constructor({motion=root.PlayroomMotion,mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},prepareAudio=null,clock=Scheduler.clock,executor=new Scheduler(clock),duration=700,fieldChanged=null}={}){
+      this.fieldChanged=fieldChanged;this.motion=motion;this.mount=mount;this.play=play;this.prepareAudio=prepareAudio;this.player=executor.track('feedback');this.planId=0;this.duration=duration;this.cursor=0;this.notice=null;this.queue=[];this.active=null;this.waiters=[];this.generation=0;this.layer=null;this.bubble=null;this.bubbleEvent=null;
       this.revealer=root.PlayroomActionReveal?new root.PlayroomActionReveal({mount}):null;
       this.reposition=()=>{for(const entry of this.departureNodes?.values()||[]){entry.animation?.cancel();entry.layer.remove();entry.played=true;}this.motion?.releaseStage?.();if(this.stagedBoundary){this.movedBoundaries??=new WeakSet();this.movedBoundaries.add(this.stagedBoundary);}this.position();};root.addEventListener?.('resize',this.reposition);root.document?.addEventListener('scroll',this.reposition,true);
     }
@@ -24,7 +24,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const timing=times[mode]||times.normal;
       if(!this.queue.length&&!this.active)this.initialScene=initialScene;this.finalScene=finalScene;
       snapshot?.prepareDepartures?.(finalScene);
-      snapshot?.prepareTransfers?.(additions.flatMap(event=>event.transfer?[event.transfer]:[]));
+      snapshot?.prepareTransfers?.(additions.flatMap(event=>event.transfer?[event.transfer]:[]),{back:additions.some(event=>event.speech&&event.reveal?.kind==='card')});
       const boundary={initial:initialScene,final:finalScene,snapshot};
       // Only authorized public board objects can outlive their committed removal.
       const boardZones=new Set(initialScene?.zones?.filter(zone=>zone.kind==='board').map(zone=>zone.id));
@@ -75,10 +75,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const batch=[...this.queue];
       if(!batch.length){this.settled();return;}
       const generation=this.generation;
+      // Own the queue while the first group waits for native audio readiness.
+      this.active=batch[0];
       const plan=Plans.compile({id:'feedback:'+ ++this.planId,items:batch,initial:this.initialScene,final:this.finalScene});
-      this.player.play(plan,{
+      const diagnosticStart=root.PlayroomDiagnostics?.begin()??null;
+      const played=this.player.play(plan,{
         initial:index=>{this.presentedScene=plan.scenes[index];this.paintMetrics();},
-        group:(_,group)=>{this.presentedScene=plan.scenes[group.scene];this.paintMetrics();},
+        group:(_,group,context)=>{const paint=()=>{if(generation===this.generation){this.presentedScene=plan.scenes[group.scene];this.paintMetrics();}};if(this.prepareAudio&&group.cues.some(cue=>cue.stage==='prepare'&&batch[cue.index]?.ids?.length))return Promise.resolve(this.prepareAudio(context)).then(paint);paint();},
         effect:(cue,context)=>this.presentCue({kind:cue.stage,item:batch[cue.index],last:cue.index===batch.length-1},generation,context),
         cancel:()=>{if(generation===this.generation)this.clear();},
         final:(index,status)=>{
@@ -89,6 +92,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           else this.settled();
         }
       });
+      if(diagnosticStart!==null)Promise.resolve(played).then(result=>root.PlayroomDiagnostics?.end('presentation',diagnosticStart,{status:result?.status||'complete',items:batch.length,queued:this.queue.length,requestedMs:batch.reduce((total,item)=>total+(item.duration||0),0)}),()=>root.PlayroomDiagnostics?.end('presentation',diagnosticStart,{status:'failed'}));
     }
     async presentCue({kind,item,last},generation,context){
       const valid=()=>generation===this.generation;

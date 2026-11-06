@@ -38,14 +38,14 @@
 .session-card-bottom-action:has(button){display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .save-transfer-modal .modal-foot{display:flex;gap:12px}.save-transfer-modal [data-save-error]:empty{display:none}
 
-#app .saved-filter-bar{margin:0;gap:8px;align-items:center;flex-wrap:wrap}
+#app .saved-filter-bar{display:flex;margin:0 0 12px;gap:8px;align-items:center;flex-wrap:wrap}
+#app .saved-filter-bar>.filter{min-height:44px;width:auto;padding:8px 12px;gap:6px}
 .saved-clear-options{display:flex;gap:12px;padding:10px 0}.saved-clear-options .btn{flex:1;min-width:0;justify-content:center}
 
 /* Short scope labels keep both destructive choices readable on narrow phones. */
-#modal-root .saved-clear-modal{padding:12px}
-#modal-root .saved-clear-modal>.modal-head{padding:6px 4px 10px;gap:10px}
-#modal-root .saved-clear-modal>.modal-body{padding:4px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal{padding:12px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal>.modal-body{padding:4px}
 .saved-clear-options{gap:8px;padding:6px 0}
-#modal-root .saved-clear-options .btn{padding:10px 8px;gap:6px;font-size:14px;white-space:nowrap}
-#modal-root .saved-clear-options .btn svg{width:20px;height:20px;flex:none}
-:where(:root[data-ui-compact="true"]) #modal-root .saved-clear-modal .modal-head h2{font-size:20px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-options .btn{padding:10px 8px;gap:6px;font-size:14px;white-space:nowrap}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-options .btn svg{width:20px;height:20px;flex:none}
+:where(:root[data-ui-compact="true"]) :is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal .modal-head h2{font-size:20px}

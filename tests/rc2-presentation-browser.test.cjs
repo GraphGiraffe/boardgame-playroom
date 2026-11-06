@@ -2,12 +2,19 @@
 const {selectChoice,readChoice}=require('./browser-origin.cjs');
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
-const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/rc2-presentation');
-async function fixture(run,{settings={sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false},learningPrompted=true}={}){
+const root=path.resolve(__dirname,'..'),shots=process.env.PLAYROOM_TUTORIAL_CAPTURE_DIR?path.resolve(process.env.PLAYROOM_TUTORIAL_CAPTURE_DIR):path.join(root,'tmp_files/rc2-presentation');
+async function fixture(run,{settings={sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false},learningPrompted=true,safeSupabase=false}={}){
  const server=await serveBrowserFixture(root),webkit=process.env.PLAYROOM_TEST_BROWSER==='webkit',browser=await (webkit?require('playwright-core').webkit:chromium).launch(webkit?{headless:true}:{headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
- const page=await browser.newPage({viewport:{width:1098,height:1238}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=await browser.newPage({viewport:{width:1098,height:1238}}),errors=[];page.on('pageerror',e=>errors.push(e.message));let provider=null;if(safeSupabase||process.env.PLAYROOM_TUTORIAL_REPORT){const sync=require('./account-sync-fixture.cjs');provider=await sync.installFetch(page.context(),sync(async route=>route.fulfill({status:200,json:{profile:null,friends:[],groups:[],entries:[],rooms:[],invitations:[],messages:[]}})));}
  await page.addInitScript(({settings,learningPrompted})=>{if(learningPrompted&&!localStorage.getItem('playroom.learning.v1.rc2'))localStorage.setItem('playroom.learning.v1.rc2',JSON.stringify(Object.fromEntries(['uno','durak','gofish','oldmaid','domino','ludo','snakes','battleship','checkers','tictactoe','pexeso','yatzy','klondike','spider','mage-brawl'].map(id=>[id,{enabled:true,prompted:true,mastered:{}}]))));localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rc2',name:'Иван',createdAt:1,updatedAt:1}));if(settings&&!localStorage.getItem('playroom.settings.v1'))localStorage.setItem('playroom.settings.v1',JSON.stringify(settings));},{settings,learningPrompted});
- try{await page.goto(process.env.PLAYROOM_TEST_ARTIFACT||server.url);await page.locator('.game-tile').first().waitFor({timeout:10000}).catch(error=>{throw Error(errors.join('\n')||error.message);});fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await browser.close();await server.close();}
+ let artifactProof=null,completed=false;try{
+ const requestedArtifact=process.env.PLAYROOM_TEST_ARTIFACT;
+ if(requestedArtifact&&!/^https?:/i.test(requestedArtifact)){
+  const artifact=requestedArtifact.startsWith('file:')?require('node:url').fileURLToPath(requestedArtifact):path.resolve(requestedArtifact),body=fs.readFileSync(artifact),hash=value=>require('node:crypto').createHash('sha256').update(value).digest('hex');
+  await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(server.url);assert.equal(hash(await response.body()),hash(body),'actual compiled tutorial document');artifactProof={path:artifact,sha256:hash(body)};
+ }else await page.goto(requestedArtifact||server.url);await page.locator('.game-tile').first().waitFor({timeout:10000}).catch(error=>{throw Error(errors.join('\n')||error.message);});fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);if(provider)assert.equal(provider.nativeSupabaseRequests,0);completed=true;}finally{
+  if(process.env.PLAYROOM_TUTORIAL_REPORT){const out=process.env.PLAYROOM_TUTORIAL_REPORT_DIR?path.resolve(process.env.PLAYROOM_TUTORIAL_REPORT_DIR):path.resolve(root,'../tmp_files/ux-021/functional-1104/tutorials');fs.mkdirSync(out,{recursive:true});const games=await page.evaluate(ids=>Object.fromEntries(ids.map(game=>{const definition=PlayroomViews.get(game)?.tutorial,goals=definition?.goals||[],saved=PlayroomFirstTurnGuide.settings(game);return [game,{goals,saved,remaining:goals.filter(goal=>saved.mastered[goal.id]!==goal.revision).map(goal=>goal.id)}];})),(process.env.PLAYROOM_TUTORIAL_GAMES||'').split(',').filter(Boolean)).catch(()=>null);fs.writeFileSync(path.join(out,process.env.PLAYROOM_TUTORIAL_REPORT+'.json'),JSON.stringify({completed,artifactProof,browserType:browser.browserType().name(),browserVersion:browser.version(),errors,nativeSupabaseRequests:provider?.nativeSupabaseRequests,games},null,2));}
+  await browser.close();await server.close();}
 }
 async function scene(page,game,options={}){
  await page.evaluate(({game,options})=>{
@@ -166,17 +173,32 @@ test('RC2 board stays still while marks animate and Pexeso scales into available
  await page.setViewportSize({width:1098,height:1238});await scene(page,'pexeso',{deck:'32'});assert(await page.locator('.pexeso-slot').first().evaluate(el=>el.getBoundingClientRect().width>70));await page.screenshot({path:path.join(shots,'dark-pexeso.png')});
 }));
 test('RC2 hub drops work in both directions and settings groups adapt',{timeout:45000},async()=>fixture(async page=>{
- await page.locator('[data-edit-toggle]').click();
+ await page.setViewportSize({width:1440,height:900});
+ await page.locator('[data-edit-toggle]').click();assert.equal(await page.locator('.hub-edit-section [data-edit-step]').count(),0,'catalog editing has no up/down buttons');
+ const editId=await page.locator('[data-edit-drop="normal"] .game-tile').first().getAttribute('data-game');
+ await page.locator(`[data-catalog-visibility="${editId}"]`).click();assert.equal(await page.locator(`[data-edit-drop="hidden"] [data-game="${editId}"]`).count(),1);await page.locator(`[data-catalog-visibility="${editId}"]`).click();
+ await page.locator(`[data-game="${editId}"] [data-favorite]`).click();assert.equal(await page.locator(`[data-edit-drop="favorites"] [data-game="${editId}"]`).count(),1);await page.locator(`[data-game="${editId}"] [data-favorite]`).click();
+
+
  const cards=page.locator('[data-edit-drop="normal"] .game-tile');const before=await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game));
- async function drop(source,target,after){const box=await target.boundingBox(),horizontal=box.width>box.height*1.5;await source.dragTo(target,{targetPosition:{x:box.width*(horizontal?.5:after?.8:.2),y:box.height*(horizontal?(after?.8:.2):.5)}});}
+ async function drop(source,target,after){await page.evaluate(()=>Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{}))));const box=await target.boundingBox(),horizontal=box.width>box.height*1.5;await source.dragTo(target,{targetPosition:{x:box.width*(horizontal?.5:after?.8:.2),y:box.height*(horizontal?(after?.8:.2):.5)}});}
  await drop(page.locator(`[data-edit-drop="normal"] [data-game="${before[0]}"]`),page.locator(`[data-edit-drop="normal"] [data-game="${before[2]}"]`),true);
  let order=await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game));assert.equal(order[2],before[0]);
  await drop(page.locator(`[data-edit-drop="normal"] [data-game="${before[0]}"]`),page.locator(`[data-edit-drop="normal"] [data-game="${before[1]}"]`),false);
  assert.deepEqual(await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),before);
- await page.reload();await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomAppearanceUI.runtime.service.select('dark'));await page.locator('[data-start="uno"]').first().click();await page.locator('.modal [data-command="settings"]').click();
- await page.setViewportSize({width:1098,height:1238});let positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(Math.abs(positions[1].y-positions[0].y)<8);
- await page.screenshot({path:path.join(shots,'dark-settings.png')});await page.setViewportSize({width:390,height:740});positions=await page.locator('.settings-overview').evaluate(el=>[...el.children].map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));assert(Math.abs(positions[1].y-positions[0].y)<8);
-}));
+ await page.setViewportSize({width:390,height:740});await page.locator('[data-catalog-mode=list]').click();
+ const touchBefore=await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game));
+ const touchSource=page.locator(`[data-edit-drop="normal"] [data-game="${touchBefore[0]}"]`),touchTarget=page.locator(`[data-edit-drop="normal"] [data-game="${touchBefore[1]}"]`);
+ await touchSource.scrollIntoViewIfNeeded();let touchBox=await touchSource.boundingBox(),targetBox=await touchTarget.boundingBox();
+ const pointer=(box,id)=>({pointerId:id,pointerType:'touch',isPrimary:true,button:0,buttons:1,clientX:box.x+box.width/2,clientY:box.y+box.height/2});
+ await touchSource.dispatchEvent('pointerdown',pointer(touchBox,91));await page.locator('.catalog-order-ghost').waitFor();await page.screenshot({path:path.join(shots,(process.env.PLAYROOM_TEST_BROWSER||'chromium')+'-catalog-touch-ghost.png')});
+ assert(await page.locator('.catalog-order-ghost').evaluate(el=>el.inert&&el.getAttribute('aria-hidden')==='true'&&!el.hasAttribute('data-game')&&el.querySelectorAll('[data-game],[data-command],[data-favorite]').length===0));
+ const dropPoint={...pointer(targetBox,91),clientY:targetBox.y+targetBox.height*.8};await page.dispatchEvent('body','pointermove',dropPoint);await page.dispatchEvent('body','pointerup',dropPoint);await page.locator('.catalog-order-ghost').waitFor({state:'detached'});
+ assert.equal((await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game)))[1],touchBefore[0],'controlled touch drop uses the same persisted ordering');
+ const cancelled=await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game));const cancelSource=cards.first();touchBox=await cancelSource.boundingBox();await cancelSource.dispatchEvent('pointerdown',pointer(touchBox,92));await page.locator('.catalog-order-ghost').waitFor();await page.dispatchEvent('body','pointercancel',pointer(touchBox,92));await page.locator('.catalog-order-ghost').waitFor({state:'detached'});assert.deepEqual(await cards.evaluateAll(nodes=>nodes.map(n=>n.dataset.game)),cancelled);
+ await page.reload();await page.locator('.game-tile').first().waitFor();await page.locator('[data-hub-page=profile]').click();await page.locator('#hub-profile-page [data-command=settings]').click();
+ for(const viewport of [{width:1098,height:1238},{width:390,height:740}]){await page.setViewportSize(viewport);assert.equal(await page.locator('[data-settings-tab]').count(),3);await page.locator('[data-settings-tab=behavior]').click();assert(await page.locator('#settings-panel-behavior').isVisible());await page.screenshot({path:path.join(shots,`catalog-edit-settings-${viewport.width}.png`)});}
+},{safeSupabase:true}));
 test('RC2 Pexeso opens and closes with two continuous opaque sides and no layout changes',{timeout:30000},async()=>fixture(async page=>{
  await scene(page,'pexeso',{deck:'52'});
  const observations=await page.evaluate(async()=>{
@@ -219,7 +241,7 @@ test('RC3 hub uses two columns down to 320px and an accessible icon-only edit co
   for(const width of [320,390,520,1090]){
    await page.setViewportSize({width,height:900});
    const layout=await page.evaluate(()=>{const grid=document.querySelector('.game-grid'),cards=[...grid.querySelectorAll('.game-tile')],button=document.querySelector('[data-edit-toggle]');return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,sameRow:Math.abs(cards[0].getBoundingClientRect().top-cards[1].getBoundingClientRect().top)<1,overflow:document.documentElement.scrollWidth>innerWidth+1,text:button.textContent.trim(),label:button.getAttribute('aria-label')};});
-   if(width<=520){assert.equal(layout.columns,2);assert(layout.sameRow);assert(await page.locator('.game-tile').evaluateAll(cards=>cards.every(card=>card.getBoundingClientRect().height/card.getBoundingClientRect().width<1.3)),'cards should be nearly square');const overflow=await page.locator('.game-tile').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+1).map(card=>({id:card.dataset.game,h:card.clientHeight,scroll:card.scrollHeight,parts:[...card.children].map(n=>({class:n.className,h:n.getBoundingClientRect().height}))})));assert.deepEqual(overflow,[],'card content must fit at '+width);}assert(!layout.overflow);assert.equal(layout.text,'');assert(layout.label);const buttons=await page.locator('.hub-intro-actions .btn').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert.equal(buttons.length,1);assert.equal(await page.locator('.filter-scope #network-join-button').count(),1);
+   if(width<=520){assert.equal(layout.columns,2);assert(layout.sameRow);assert(await page.locator('.game-tile').evaluateAll(cards=>cards.every(card=>card.getBoundingClientRect().height/card.getBoundingClientRect().width<1.3)),'cards should be nearly square');const overflow=await page.locator('.game-tile').evaluateAll(cards=>cards.filter(card=>card.scrollHeight>card.clientHeight+1).map(card=>({id:card.dataset.game,h:card.clientHeight,scroll:card.scrollHeight,parts:[...card.children].map(n=>({class:n.className,h:n.getBoundingClientRect().height}))})));assert.deepEqual(overflow,[],'card content must fit at '+width);}assert(!layout.overflow);assert.equal(layout.text,'');assert(layout.label);const buttons=await page.locator('.hub-intro-actions .btn').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));assert.equal(buttons.length,1);assert.equal(await page.locator('[data-catalog-room-action] #network-join-button').count(),1);
    if(width===390)await page.screenshot({path:path.join(shots,`rc3-hub-${theme}.png`),fullPage:true});
   }
  }
@@ -500,11 +522,23 @@ test('RC10 full names, adaptive hands and portrait own-seat identity', {timeout:
 
 test('Durak stock and played cards share size with readable pairs in the reserved field',{timeout:45000},async()=>fixture(async page=>{
  for(const [width,height]of [[320,640],[390,844],[640,320],[844,390],[768,1024],[1024,768],[1920,1080]]){
-  await page.setViewportSize({width,height});await scene(page,'durak',{players:Array.from({length:6},(_,i)=>({name:['Иван','Кира','Мика','Лев','Сэм','Рэй'][i]}))});
-  await page.evaluate(()=>{const state=structuredClone(TabletopCore.project(rcSession.current,0)),cards=state.data.hands[0];state.data.table=Array.from({length:6},(_,i)=>({attack:cards[i%cards.length],defense:cards[(i+1)%cards.length]}));PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'Дурак',state,viewer:0,actions:[],scene:PlayroomViews.render(state,0,[],{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
+  await page.setViewportSize({width,height});await scene(page,'durak',{deck:'52',players:Array.from({length:6},(_,i)=>({name:['Иван','Кира','Мика','Лев','Сэм','Рэй'][i]}))});
+  await page.evaluate(()=>{
+   const raw=structuredClone(rcSession.current),d=raw.data,all=[...d.hands.flat(),...d.drawPile],suits=['♥','♦','♣','♠'];
+   const layout=base=>[[base,suits[0],base+1],[base,suits[1],base+1],[base+1,suits[2],base+2],[base+1,suits[3],base+2],[base+2,suits[0],base+3],[base+2,suits[1],base+3]].map(([rank,suit,defence])=>({attack:all.find(c=>c.rank===rank&&c.suit===suit),defense:all.find(c=>c.rank===defence&&c.suit===suit)}));
+   const pairs=[2,6,10].map(layout).find(pairs=>pairs.every(p=>p.attack&&p.defense&&p.attack.id!==d.trump.id&&p.defense.id!==d.trump.id));if(!pairs)throw Error('six-pair fixture unavailable');
+   const used=new Set(pairs.flatMap(p=>[p.attack.id,p.defense.id])),rest=all.filter(c=>!used.has(c.id)&&c.id!==d.trump.id);d.hands=Array.from({length:6},()=>rest.splice(0,4));d.drawPile=[d.trump,...rest];Object.assign(d,{table:pairs,attacker:0,defender:1,attackCursor:0,boutOrigin:0,passes:0,attackLimit:6,composing:false,taking:false});raw.turn=0;
+   if(!TabletopCore.validateState(raw))throw Error('six-pair fixture invalid');const state=TabletopCore.project(raw,0);if(state.scene.table.length!==6)throw Error('six pairs missing from authorized scene');
+   window.durakSixRender=()=>{PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'Дурак',state,viewer:0,actions:[],scene:PlayroomViews.render(state,0,[],{seating:'anchors'}),turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));};durakSixRender();
+  });
   await page.waitForTimeout(50);
   const geometry=await page.evaluate(()=>{const cards=[...document.querySelectorAll('.layout-field .playing-card,.layout-field .shared-card-back')];const pairs=[...document.querySelectorAll('.durak-pair')].map(e=>e.getBoundingClientRect()),stock=document.querySelector('.field-group-stock').getBoundingClientRect();return {sizes:cards.map(e=>[e.offsetWidth,e.offsetHeight]),columns:new Set(pairs.map(r=>Math.round(r.x))).size,clear:pairs.every(r=>Math.min(r.right,stock.right)-Math.max(r.left,stock.left)<=1||Math.min(r.bottom,stock.bottom)-Math.max(r.top,stock.top)<=1)};});
   assert(geometry.sizes.every(s=>s[0]===geometry.sizes[0][0]&&s[1]===geometry.sizes[0][1]),JSON.stringify(geometry));assert(geometry.columns>=2,JSON.stringify(geometry));assert(geometry.clear,JSON.stringify(geometry));
+  if(height>=width){const rows=await page.locator('.layout-participants .player-panel').evaluateAll(nodes=>new Set(nodes.map(node=>Math.round(node.getBoundingClientRect().top))).size);assert(rows<=2,'portrait seating stays within two rows');}
+  const scrollport=page.locator('.game-field-groups'),bounds=await scrollport.evaluate(el=>{const a=el.getBoundingClientRect(),b=el.closest('.layout-field').getBoundingClientRect();return {fits:a.left>=b.left-2&&a.right<=b.right+2&&a.top>=b.top-2&&a.bottom<=b.bottom+2,overflow:el.scrollHeight>el.clientHeight+1};});assert(bounds.fits,'the table scrollport must stay inside the reserved field');
+  if(bounds.overflow){await scrollport.hover();await page.mouse.wheel(0,10000);await page.waitForFunction(()=>{const el=document.querySelector('.game-field-groups');return el.scrollTop+el.clientHeight>=el.scrollHeight-1;});}
+  await page.waitForFunction(()=>{const el=document.querySelector('.game-field-groups'),a=el.querySelector('.durak-pair:last-child .defense-card [data-entity]').getBoundingClientRect(),b=el.getBoundingClientRect();return a.left>=b.left-2&&a.right<=b.right+2&&a.top>=b.top-2&&a.bottom<=b.bottom+2;},null,{timeout:5000}).catch(async error=>{await page.screenshot({path:path.join(shots,'durak-scroll-failure.png')});const detail=await scrollport.evaluate(el=>({scrollTop:el.scrollTop,clientHeight:el.clientHeight,scrollHeight:el.scrollHeight,port:el.getBoundingClientRect().toJSON(),last:el.querySelector('.durak-pair:last-child .defense-card [data-entity]').getBoundingClientRect().toJSON(),overflow:getComputedStyle(el).overflow}));throw Error(error.message+' '+JSON.stringify({width,height,detail}));});
+  const retainedScroll=await scrollport.evaluate(el=>{window.durakScrollOwner=el;return el.scrollTop;});await page.evaluate(()=>durakSixRender());assert(await scrollport.evaluate(el=>el===durakScrollOwner));const afterScroll=await scrollport.evaluate(el=>el.scrollTop);assert(Math.abs(afterScroll-retainedScroll)<=1,'scene refresh preserves the table scroll '+JSON.stringify({width,height,before:retainedScroll,after:afterScroll}));
   await page.screenshot({path:path.join(shots,`rc10-durak-six-pairs-${width}x${height}.png`)});
  }
 }));
@@ -580,8 +614,8 @@ test('RC12 fresh defaults, compact room entry and symmetric landscape status',{t
  await page.locator('.modal [data-command="close-modal"]').click();
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768],[1366,768]]){
   await page.setViewportSize({width,height});await page.evaluate(()=>PlayroomAppBridge.showHub());
-  const join=page.locator('.filter-scope #network-join-button');await join.waitFor();
-  const row=await join.evaluate(b=>{const r=b.getBoundingClientRect(),f=document.querySelector('[data-filter="all"]').getBoundingClientRect();return {center:r.y+r.height/2-f.y-f.height/2,right:r.right,overflow:document.documentElement.scrollWidth-innerWidth};});
+  const join=page.locator('[data-catalog-room-action] #network-join-button');await join.waitFor();
+  const row=await join.evaluate(b=>{const r=b.getBoundingClientRect(),f=document.querySelector('.catalog-view-controls').getBoundingClientRect();return {center:r.y+r.height/2-f.y-f.height/2,right:r.right,overflow:document.documentElement.scrollWidth-innerWidth};});
   assert(Math.abs(row.center)<1&&row.right<=width&&row.overflow<=1,JSON.stringify(row));
   await page.screenshot({path:path.join(dir,`hub-${width}x${height}.png`)});
   await join.click();await page.locator('#modal-root .modal').waitFor();await page.keyboard.press('Escape');
@@ -1207,17 +1241,20 @@ test('first-turn guides cover every pack and stay non-interactive above the scen
 test('first-turn guide follows real Old Maid choices and both Mage planning steps',{timeout:45000},async()=>fixture(async page=>{
  const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
  const start=async game=>{
-  await page.locator(`[data-start="${game}"]`).first().click();
+  await page.locator(`[data-start="${game}"]`).first().click();await page.locator('[data-game-mode=hotseat]').click();
   await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
   await page.locator('[data-command="lobby-start"]').click();
  };
  await start('oldmaid');await caption.filter({hasText:'соперника'}).waitFor();
+ await page.evaluate(()=>{window.retainedHand=[...document.querySelectorAll('.own-hand [data-entity]')].map(node=>({id:node.dataset.entity,node,art:node.querySelector('svg')}));window.retainedHandScope=document.querySelector('.table-shell')?.dataset.geometryIdentity;});
  const targets=page.locator('[data-player-target]');await targets.last().click();
  await page.locator('dialog[open] .first-turn-guide:not([hidden]) .guide-caption').waitFor();
  assert.match(await caption.innerText(),/любую карту/);
  await page.screenshot({path:path.join(shots,'guide-oldmaid-choice.png')});
  await page.locator('.card-choice-dialog [data-card-index]').last().click();
  await page.waitForFunction(()=>!document.querySelector('.first-turn-guide:not([hidden])'));
+ await page.locator('.table-shell>.scene[aria-busy="false"]').waitFor();
+ const retained=await page.evaluate(()=>{const current=[...document.querySelectorAll('.own-hand [data-entity]')],kept=retainedHand.flatMap(old=>{const node=current.find(node=>node.dataset.entity===old.id);return node?[{node:node===old.node,art:node.querySelector('svg')===old.art}]:[]});return {before:retainedHand.length,kept,sameScope:retainedHandScope===document.querySelector('.table-shell')?.dataset.geometryIdentity};});assert(retained.kept.length>0&&retained.kept.every(item=>item.node&&item.art),JSON.stringify(retained));
  await page.evaluate(()=>PlayroomAppBridge.showHub());
  await start('mage-brawl');await caption.filter({hasText:'тип действия'}).waitFor();
  assert.match(await caption.innerText(),/атака/,'default movement is already selected');
@@ -1234,10 +1271,51 @@ test('first-turn guide follows real Old Maid choices and both Mage planning step
  await caption.filter({hasText:'галочкой'}).waitFor();
  await page.locator('.mage-ready').click();
  await caption.filter({hasText:'карту стихии'}).waitFor();
+ await page.locator('.mage-reset-plan').click();
+ await page.waitForFunction(()=>!PlayroomAppBridge.saveLibrary.current().session.current.data.drafts?.[0],null,{timeout:5000});
+ assert.equal(await page.evaluate(()=>!!PlayroomAppBridge.saveLibrary.current().session.current.data.drafts?.[0]),false,'native undo removes the committed first draft');
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.edit),1);
+ await page.locator('.mage-card:not([disabled])').last().click();await page.locator('.mage-ready').click();
  await page.locator('.mage-card:not([disabled])').first().click();
- await caption.filter({hasText:'отменить'}).waitFor();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.edit),1,'completed undo is not suggested again');
  await page.locator('.mage-ready').click();
  await page.waitForFunction(()=>!document.querySelector('.first-turn-guide:not([hidden])'));
+ // Rare phases use validated saved positions, then the same actual app/input/commit path.
+ const resumeRare=async kind=>{
+  await page.evaluate(async kind=>{
+   PlayroomAppBridge.showHub();const E=TabletopCore,saved=new TabletopSession(E,'mage-brawl',{seed:17,mode:'solo',actionsPerTurn:'1',players:[{name:'Иван'},{name:'Тео'},{name:'Сэм'}]}).export(),state=saved.states[0],d=state.data;
+   if(kind==='ultimate')d.players[0].ultimate=1;
+   else{
+    const victim=kind==='base'?0:1,positions=victim===0?[[2,2],[2,1],[2,3]]:[[2,1],[2,2],[2,3]];
+    d.board=Array(d.size*d.size).fill('ground');for(const q of d.startingBases)d.board[q[0]*d.size+q[1]]='base';
+    const pool=[...d.deck,...d.discard,...d.players.flatMap(p=>p.hand)];d.discard=[];
+    d.players.forEach((p,i)=>{const elements=i===victim?['water','fire','air']:['earth'];Object.assign(p,{pos:positions[i],health:3,lives:2,ultimate:0,hand:elements.map(element=>{const index=pool.findIndex(c=>c.element===element);if(index<0)throw Error('Missing physical fixture card');return pool.splice(index,1)[0];})});});d.deck=pool;
+   }
+   E.validateState(state);const session=TabletopSession.restore(E,saved);
+   if(kind!=='ultimate'){
+    for(let actor=0;actor<3;actor++){const victim=kind==='base'?0:1,action=E.legalActions(session.current,actor).find(a=>a.type==='plan'&&a.action==='attack'&&a.element===(actor===victim?'water':'earth')&&a.direction===(actor===victim?0:actor===2?3:1));if(!action)throw Error('Missing legal fixture attack');session.act(actor,action);}
+    if(session.current.data.phase!=='loot')throw Error('Legal attacks must produce loot');
+    if(kind==='base')while(session.current.data.phase==='loot')session.act(session.current.turn,E.legalActions(session.current,session.current.turn)[0]);
+    if(kind==='base'&&(session.current.data.phase!=='respawn'||session.current.turn!==0))throw Error('Fixture must require own base choice');
+    if(kind==='loot')while(session.current.data.phase==='loot'&&session.current.turn!==0)session.act(session.current.turn,E.legalActions(session.current,session.current.turn)[0]);
+    if(kind==='loot'&&(session.current.data.phase!=='loot'||session.current.turn!==0))throw Error('Fixture must grant own loot choice');
+   }
+   const id='mage-tutorial-tail-'+kind;await PlayroomAppBridge.saveLibrary.activateAsync(session,id);PlayroomAppBridge.showSessions();
+  },kind);
+  await page.locator(`.saved-game[data-session-id="mage-tutorial-tail-${kind}"][data-saved-actions-toggle]`).click();await page.locator(`[data-resume-id="mage-tutorial-tail-${kind}"]`).first().click();await page.locator('.mage-grid:visible').first().waitFor();
+ };
+ await resumeRare('ultimate');await page.locator('[data-view-key="mageAction"][data-view-value="ultimate"]').click();await page.locator('.mage-card:not([disabled])').first().click();await page.locator('.mage-ready').click();
+ assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.window.plans[0].action),'ultimate','actual legal ultimate plan is committed');
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.ultimate),2);
+ await resumeRare('loot');const lootBefore=await page.evaluate(()=>{const s=PlayroomAppBridge.saveLibrary.current().session.current;return {move:s.move,hand:s.data.players[0].hand.length};});
+ await page.locator('.mage-loot-hand [data-player-target]').click();await page.locator('.card-choice-dialog [data-card-index]').first().click();
+ await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move>move,lootBefore.move);
+ assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.players[0].hand.length),lootBefore.hand+1,'actual private reward enters own hand');
+ for(const goal of ['loot-player','loot-card'])assert.equal(await page.evaluate(goal=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered[goal],goal),1);
+ await resumeRare('base');const baseBefore=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move);await page.locator('.mage-cell[data-action]').first().click();
+ await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move>move,baseBefore);assert(await page.evaluate(()=>!!PlayroomAppBridge.saveLibrary.current().session.current.data.players[0].pos));
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.base),1);
+ const remaining=await page.evaluate(()=>PlayroomViews.get('mage-brawl').tutorial.goals.filter(g=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered[g.id]!==g.revision).map(g=>g.id));assert.deepEqual(remaining,[],'all thirteen Mage goals have actual input receipts across these sessions');
 },{settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false}}));
 
 test('first-turn guide preferences persist per pack and resize does not move the field',{timeout:30000},async()=>fixture(async page=>{
@@ -1318,17 +1396,17 @@ test('Mage history owns round playback, pause/resume and return to live',{timeou
 }));
 
 
-test('bot difficulty slider, individual settings, lobby bulk buttons and in-game lock',{timeout:45000},async()=>fixture(async page=>{
- await page.setViewportSize({width:390,height:844});await page.locator('[data-start="pexeso"]').click();
- assert.equal(await page.locator('[data-bots-difficulty]').count(),3);assert.equal(await page.locator('[data-bots-difficulty=medium]').getAttribute('aria-pressed'),'true');
+test('bot difficulty choices, individual settings, roster labels and in-game lock',{timeout:45000},async()=>fixture(async page=>{
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-start="pexeso"]').click();await page.locator('[data-game-mode=hotseat]').click();
+ assert.equal(await page.locator('[data-bots-difficulty]').count(),0,'the lobby has no persistent difficulty toolbar');
  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'bot',nickname:'Третий'});b.renderLobby();});
- await page.locator('[data-bot-settings]').first().click();assert.equal(await page.locator('[name=difficulty]').inputValue(),'1');assert.equal(await page.locator('[name=errorRate]').count(),0);assert.equal(await page.locator('[name=strategy]').count(),0);
- await page.locator('[name=difficulty]').fill('2');await page.locator('[form=bot-settings-form]').click();
+ await page.locator('[data-bot-settings]').first().click();assert.equal(await page.locator('[name=difficulty]').inputValue(),'1');assert.equal(await page.locator('[name=botLevel][value="1"]').isChecked(),true);assert.equal(await page.locator('[name=errorRate]').count(),0);assert.equal(await page.locator('[name=strategy]').count(),0);
+ await page.locator('[name=botLevel][value="2"]').check();await page.locator('[form=bot-settings-form]').click();
  assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.botSettings?.difficulty||'medium')),['hard','medium']);
- await page.locator('[data-bots-difficulty=easy]').click();assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.botSettings.difficulty)),['easy','easy']);
+ const bots=await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.id));for(const id of bots){await page.locator(`[data-participant-id="${id}"] [data-bot-settings]`).click();await page.locator('[name=botLevel][value="0"]').check();await page.locator('[form=bot-settings-form]').click();}assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>p.bot).map(p=>p.botSettings.difficulty)),['easy','easy']);
  await page.screenshot({path:path.join(shots,'bot-difficulty-lobby.png')});
- await page.locator('[data-bot-settings]').first().click();await page.screenshot({path:path.join(shots,'bot-difficulty-settings.png')});await page.locator('.bot-settings-footer [data-command=close-modal]').click();
- await page.locator('[data-command=lobby-start]').click();assert.equal(await page.locator('.participant-role[data-participant-role=bot]').count(),2);
+ await page.locator('[data-bot-settings]').first().click();await page.screenshot({path:path.join(shots,'bot-difficulty-settings.png')});await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();
+ await page.locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();assert.equal(await page.locator('.participant-role[data-participant-role=bot]').count(),2);
  const hidden=await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();return PlayroomLobbyView.render({room:r,participantId:r.ownerId,isHost:true}).includes('data-bots-difficulty');});assert.equal(hidden,false);
  assert.equal(await page.locator('.participant-role[data-bot-difficulty=easy]').count(),2);
  const icons=await page.evaluate(()=>['easy','medium','hard'].map(difficulty=>{
@@ -1340,24 +1418,42 @@ test('bot difficulty slider, individual settings, lobby bulk buttons and in-game
  }));
  assert.deepEqual(icons.map(row=>row.slice(0,3)),['easy','medium','hard'].map(level=>[level,level,true]));assert.equal(new Set(icons.map(row=>row[3])).size,3);
 
-}));
+await page.locator('[data-game-menu]').click();await page.locator('[data-game-menu-action][data-command=room]').click();await page.locator('[data-bot-settings]').first().click();assert.equal(await page.locator('[name=botLevel]').first().isDisabled(),true);assert.equal(await page.locator('[form=bot-settings-form]').count(),0);assert.match(await page.locator('.choice021-reason').innerText(),/до начала партии/);
+ },{safeSupabase:true,settings:{sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false,tutorialsEnabled:false}}));
 
 
 test('learning reset is confirmed, enables learning and resets only the current pack',async()=>fixture(async page=>{
- await page.setViewportSize({width:390,height:844});
- await page.locator('[data-start="tictactoe"]').click();await page.locator('[data-command=lobby-start]').click();
+ page.setDefaultTimeout(7000);await page.setViewportSize({width:390,height:844});
+ const active=()=>page.locator('#modal-root>[data-surface-state=active]');
+ await page.locator('[data-start="tictactoe"]').click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();
+ await page.evaluate(()=>PlayroomTutorialSettings.offer('tictactoe',()=>true));await active().locator('.learning-intro').waitFor();
+ await page.evaluate(()=>PlayroomAppBridge.showSettings({inGame:true,category:'behavior'}));await active().locator('[data-settings-screen]').waitFor();await page.keyboard.press('Escape');
+ const childEscapePrompted=await page.evaluate(()=>PlayroomFirstTurnGuide.settings('tictactoe').prompted);
+ await active().locator('.learning-intro').waitFor();await active().locator('.modal-head [data-command=close-modal]').click();
  await page.evaluate(()=>{const G=PlayroomFirstTurnGuide;G.setEnabled('tictactoe',false);G.setEnabled('oldmaid',false);});
- await page.locator('.table-shell [data-command=settings]').click();
- const box=page.locator('#setting-learning-enabled');assert.equal(await box.isChecked(),false);
- await page.locator('[data-restart-guides]').click();await page.locator('[data-confirm-cancel]').click();assert.equal(await box.isChecked(),false);
- await page.locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();assert.equal(await box.isChecked(),true);
+ await page.locator('[data-game-menu]').click();await active().locator('[data-command=settings]').click();await active().locator('[data-settings-tab=behavior]').click();
+ const box=()=>active().locator('#setting-learning-enabled');assert.equal(await box().isChecked(),false);
+ await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-cancel]').click();assert.equal(await box().isChecked(),false);
+ await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();assert.equal(await box().isChecked(),true);
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('oldmaid').enabled),false);
+ await page.evaluate(()=>{window.learningScreen=PlayroomGameScreen;PlayroomGameScreen={...learningScreen,confirmDialog:async(...args)=>{const result=await learningScreen.confirmDialog(...args),hold=window.learningResetHold;if(hold){hold.decided=true;await hold.promise;}return result;}};});
+ const beginHeld=async()=>{await box().uncheck();await page.evaluate(()=>{window.learningOrigin=document.querySelector('#modal-root>[data-surface-state=active] #setting-learning-enabled');let release;const promise=new Promise(resolve=>{release=resolve;});window.learningResetHold={promise,release,decided:false};});await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();await page.waitForFunction(()=>window.learningResetHold.decided);};
+ await beginHeld();await page.evaluate(()=>PlayroomAppBridge.showSettings({inGame:true,category:'behavior'}));
+ assert.equal(await box().evaluate(e=>e===window.learningOrigin),false,'replacement settings have a new native input');
+ await page.evaluate(()=>{window.learningResetHold.release();window.learningResetHold=null;});await page.evaluate(()=>new Promise(requestAnimationFrame));
+ const replacement=await page.evaluate(()=>({checked:document.querySelector('#modal-root>[data-surface-state=active] #setting-learning-enabled').checked,enabled:PlayroomFirstTurnGuide.settings('tictactoe').enabled}));
+ await beginHeld();await page.evaluate(()=>{const B=PlayroomAppBridge,back=B.captureModalReturn();B.openModal(B.modalHead('Другой экран')+'<p>Сброс ещё ожидает завершения.</p>','learning-test-child',{onBack:back});});
+ await page.evaluate(()=>{window.learningResetHold.release();window.learningResetHold=null;});await page.evaluate(()=>new Promise(requestAnimationFrame));
+ const suspended=await page.evaluate(()=>({checked:window.learningOrigin.checked,enabled:PlayroomFirstTurnGuide.settings('tictactoe').enabled,child:!!document.querySelector('#modal-root>[data-surface-state=active] .learning-test-child')}));
+ await active().locator('.modal-head [data-command=close-modal]').click();assert.equal(await box().evaluate(e=>e===window.learningOrigin),true,'Back retains the original native settings input');
+ await page.evaluate(()=>{PlayroomGameScreen=window.learningScreen;});
+ assert.deepEqual({childEscapePrompted,replacement,suspended},{childEscapePrompted:false,replacement:{checked:false,enabled:false},suspended:{checked:false,enabled:false,child:true}},'child dismissal and late accepted resets preserve their original surface owner');
  assert.equal(await page.locator('#sound-preview').count(),0);await page.screenshot({path:path.join(shots,'learning-settings-390.png')});
-}));
+},{safeSupabase:true,learningPrompted:false,settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false,tutorialsEnabled:false}}));
 
 test('Battleship guide follows alternate setup choices and waits 500ms after input',{timeout:30000},async()=>fixture(async page=>{
  page.setDefaultTimeout(5000);await page.setViewportSize({width:390,height:844});
- await page.locator('[data-start=battleship]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();
+ await page.locator('[data-start=battleship]').click();await page.locator('[data-game-mode=hotseat]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();
  const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await caption.waitFor();
  await page.locator('.battle-panel [data-select="new:3"]').click();
  assert.equal(await caption.count(),0,'hide immediately while user acts');
@@ -1379,6 +1475,11 @@ test('Battleship guide follows alternate setup choices and waits 500ms after inp
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.enemy),2);
  await page.locator('[data-view-preference="followOpponent"]').click();
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.follow),1);
+ const beforeFire=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move);
+ await page.locator('.battle-grid [data-action*="fire"]').first().click();
+ await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move>move,beforeFire);
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('battleship').mastered.fire),1,'native legal shot commits the fire goal');
+ assert.deepEqual(await page.evaluate(()=>PlayroomViews.get('battleship').tutorial.goals.filter(g=>PlayroomFirstTurnGuide.settings('battleship').mastered[g.id]!==g.revision).map(g=>g.id)),[]);
 
 }));
 
@@ -1419,7 +1520,103 @@ test('semantic guides preserve rare goals across turns and classify commands bef
  assert(result.base.includes('base'));assert(result.loot.includes('loot-card'));assert(result.ultimate.includes('ultimate'));assert.deepEqual(result.restart,[]);
 }));
 
-test('hint and card help clicks teach separate persistent goals',async()=>fixture(async page=>{
+test('hint and card help clicks teach separate persistent goals',{timeout:150000},async()=>fixture(async page=>{
+ if(process.env.PLAYROOM_MARKUP_COUNTERS){
+  page.setDefaultTimeout(8000);await page.setViewportSize({width:390,height:844});const out=path.resolve(root,'../tmp_files/ux-021/targeted-render-1103/markup'),engine=page.context().browser().browserType().name(),report={browserType:engine,browserVersion:page.context().browser().version(),steps:[]};fs.mkdirSync(out,{recursive:true});
+  await page.evaluate(()=>{
+   const counts=window.markupCounts={render:0,project:0,directRenderProject:0,register:0,export:0,style:0},render=PlayroomViews.render,project=TabletopCore.project,register=PlayroomViews.register,exportSession=TabletopSession.prototype.export;
+   PlayroomViews.render=function(...args){counts.render++;return render.apply(this,args);};PlayroomViews.register=function(...args){counts.register++;return register.apply(this,args);};TabletopSession.prototype.export=function(...args){counts.export++;return exportSession.apply(this,args);};
+   TabletopCore.project=function(...args){counts.project++;const stack=Error().stack;if(stack.includes('renderTable')&&!stack.includes('localFrame')&&!stack.includes('activeActions')&&!stack.includes('snapshot'))counts.directRenderProject++;return project.apply(this,args);};
+   window.markupStyleObserver=new MutationObserver(rows=>{counts.style+=rows.filter(row=>row.target.closest?.('style[data-playroom-pack]')||[...row.addedNodes,...row.removedNodes].some(n=>n.matches?.('style[data-playroom-pack]'))).length;});markupStyleObserver.observe(document.head,{subtree:true,childList:true,characterData:true});
+  });
+  const counts=()=>page.evaluate(()=>({...markupCounts})),delta=(a,b)=>Object.fromEntries(Object.keys(b).map(key=>[key,b[key]-a[key]])),ready=()=>page.waitForFunction(()=>!!document.querySelector('.table-shell')&&!document.querySelector('.scene[aria-busy=true],.playroom-motion-layer'));
+  const start=async game=>{await page.evaluate(async game=>{PlayroomAppBridge.showHub();PlayroomFirstTurnGuide.setEnabled(game,false);const s=new TabletopSession(TabletopCore,game,{seed:17,mode:'pass',openHands:true,firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:TabletopCore.get(game).min},(_,i)=>({name:'Игрок '+i}))});await PlayroomAppBridge.saveLibrary.activateAsync(s,'markup-'+game);PlayroomAppBridge.showSessions();},game);await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-session-id=markup-'+game+'][data-saved-actions-toggle]').click();await page.locator('[data-resume-id=markup-'+game+']').click();await ready();};
+  try{
+   const seedBefore=await counts();await start('spider');const seed=delta(seedBefore,await counts());report.seed=seed;
+   let card=null;for(let i=0;i<4&&!card;i++){card=await page.evaluate(()=>{const state=PlayroomAppBridge.saveLibrary.current().session.current,actions=TabletopCore.legalActions(state,0);return [...document.querySelectorAll('.solitaire-column>.solitaire-card-position:last-child [data-drag-piece]')].find(n=>actions.filter(a=>a.type==='move'&&a.card===n.dataset.dragPiece).length>1)?.dataset.dragPiece;});if(!card){await page.locator('.solitaire-draw-control').click();await ready();}}
+   assert(card,'a real exposed source with multiple destinations exists');const source=()=>page.locator('[data-drag-piece='+JSON.stringify(card)+']');await source().focus();await source().press('Enter');assert.equal(await source().getAttribute('aria-pressed'),'true');
+   const press=async()=>{await source().hover({position:{x:(await source().boundingBox()).width/2,y:8}});const b=await source().boundingBox();await page.mouse.down();await page.mouse.move(b.x+b.width/2+16,b.y+8,{steps:3});await page.locator('html.playroom-dragging').waitFor();},release=async()=>{await page.mouse.move(1,1);await page.mouse.up();await ready();};
+   await source().evaluate(n=>window.markupSource=n);let before=await counts();await press();const repeated=delta(before,await counts());repeated.sameNode=await source().evaluate(n=>n===markupSource);report.steps.push({kind:'same-selected-drag-start',...repeated});await release();assert.equal(await source().getAttribute('aria-pressed'),'false','cancelled real drag clears selection');
+   await source().focus();await source().press('Enter');before=await counts();await source().press('Enter');const deselect=delta(before,await counts());deselect.pressed=await source().getAttribute('aria-pressed');report.steps.push({kind:'same-card-tap-deselect',...deselect});
+   await source().press('Enter');await page.locator('[data-view-key=hint]').click();before=await counts();await press();const clearHint=delta(before,await counts());clearHint.hint=await page.locator('.solitaire-hint-popup').count();report.steps.push({kind:'same-selection-clears-hint',...clearHint});await release();
+   await start('mage-brawl');const action=()=>page.locator('[data-view-key=mageAction][data-view-value=attack]');await action().click();before=await counts();await action().click();const repeatChoice=delta(before,await counts());report.steps.push({kind:'repeat-view-key',...repeatChoice,pressed:await action().getAttribute('aria-pressed')});
+   await page.screenshot({path:path.join(out,'repeat-controls-'+engine+'.png')});
+   assert.equal(repeated.render,0,'unchanged selected source must not recompute full scene');assert(repeated.sameNode!==false);assert.equal(repeatChoice.render,0,'same authored view-key must not recompute full scene');assert(deselect.render>0&&deselect.pressed==='false','real same-card deselection remains meaningful');assert(clearHint.render>0&&clearHint.hint===0,'clearViewHints remains meaningful');assert.equal(repeated.style+repeatChoice.style,0,'repeat inputs do not invalidate pack styles');assert.equal(seed.directRenderProject,0,'current same-viewer projection seeds feedback without a second projection');
+  }finally{fs.writeFileSync(path.join(out,'counters-'+engine+'.json'),JSON.stringify(report,null,2));}
+  return;
+ }
+ if(process.env.PLAYROOM_SOLITAIRE_TUTORIALS){
+  page.setDefaultTimeout(8000);await page.setViewportSize({width:390,height:844});
+  const engine=process.env.PLAYROOM_TEST_BROWSER||'chromium',out=path.resolve(root,'../tmp_files/ux-021/current-game-checks-1103/solitaire-tutorials'),report=[];fs.mkdirSync(out,{recursive:true});
+  const active=()=>page.locator('#modal-root>[data-surface-state=active]'),progress=game=>page.evaluate(g=>PlayroomFirstTurnGuide.settings(g),game);
+  const settings=async()=>{await page.evaluate(()=>PlayroomAppBridge.showSettings({inGame:true,category:'behavior'}));await active().locator('#setting-learning-enabled').waitFor();};
+  const close=async()=>{await active().locator('.modal-head [data-command=close-modal]').click();};
+  const ready=async()=>{await page.locator('.solitaire-board').waitFor();await page.waitForFunction(()=>!document.querySelector('.scene[aria-busy=true],.playroom-motion-layer'));};
+  const state=()=>page.evaluate(()=>{const s=PlayroomAppBridge.saveLibrary.current().session.current;return {move:s.move,data:s.data,actions:TabletopCore.legalActions(s,0)};});
+  const act=async action=>{
+   const before=await state();
+   if(action.type==='move'){
+    const source=await page.evaluate(card=>{for(const old of document.querySelectorAll('[data-guide-source]'))old.removeAttribute('data-guide-source');const n=[...document.querySelectorAll('[data-drag-piece]')].find(n=>n.dataset.dragPiece===String(card));if(!n)return false;n.setAttribute('data-guide-source','');return true;},action.card);assert(source,'legal source exists '+JSON.stringify(action));await page.locator('[data-guide-source]').focus();await page.locator('[data-guide-source]').press('Enter');
+    if((await state()).move!==before.move){const committed=await page.evaluate(()=>JSON.parse(PlayroomAppBridge.saveLibrary.current().session.serialize()).actions.at(-1).command);assert(Object.entries(action).every(([k,v])=>k==='label'||committed[k]===v),'single-tap committed requested legal move '+JSON.stringify(committed));await ready();return 'source-tap';}
+   }
+   const found=await page.evaluate(action=>{for(const n of document.querySelectorAll('[data-guide-command]'))n.removeAttribute('data-guide-command');const n=[...document.querySelectorAll('#app [data-action],#app [data-double-action]')].find(n=>{const a=JSON.parse(action.type==='collect'?n.dataset.doubleAction||'null':n.dataset.action||'null');return a&&Object.entries(action).every(([k,v])=>k==='label'||a[k]===v);});if(!n)return false;n.setAttribute('data-guide-command','');return true;},action);assert(found,'legal command exposed in actual input '+JSON.stringify({action,dom:await page.locator('#app [data-action]').evaluateAll(nodes=>nodes.map(n=>n.dataset.action))}));
+   if(action.type==='collect')await page.locator('[data-guide-command]').dblclick();else await page.locator('[data-guide-command]').click();await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move!==move,before.move);await ready();
+  };
+  try{
+  if(process.env.PLAYROOM_SOLITAIRE_OLD_PACK){
+   const old=JSON.parse(fs.readFileSync(process.env.PLAYROOM_SOLITAIRE_OLD_PACK,'utf8')),version=await page.evaluate(()=>TabletopCore.get('klondike').version);
+   assert.notEqual(version,old.manifest.version);
+   const saved=await page.evaluate(async old=>{await PlayroomPacks.install(PlayroomPacks.prepare(old));const s=new TabletopSession(TabletopCore,'klondike',{packVersion:old.manifest.version,seed:17,mode:'solo',players:[{name:'Иван'}]});await PlayroomAppBridge.saveLibrary.activateAsync(s,'guide-v2-compat');return s.serialize();},old);
+   fs.writeFileSync(path.join(out,'old-v2-save-'+engine+'.json'),saved);await page.reload();await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge);
+   const cache=await page.evaluate(oldVersion=>({versions:PlayroomPacks.list().filter(x=>x.id==='klondike').map(x=>x.version),active:TabletopCore.get('klondike').version,saved:PlayroomAppBridge.saveLibrary.current().session.packVersion,exported:JSON.parse(PlayroomPacks.exportPack('klondike',oldVersion))}),old.manifest.version);
+   assert(cache.versions.includes(version)&&cache.versions.includes(old.manifest.version));assert.equal(cache.active,version);assert.equal(cache.saved,old.manifest.version);assert.deepEqual(cache.exported,old,'old IDB bundle stays byte-equivalent as parsed pack after new builtin bootstrap');
+   await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-session-id=guide-v2-compat][data-saved-actions-toggle]').click();await page.locator('[data-resume-id=guide-v2-compat]').click();await ready();assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.packVersion),old.manifest.version,'old save opens exact v2');
+   report.push({probe:'v2-IDB-to-v3-builtin',versions:cache.versions,active:cache.active,saved:cache.saved,oldBundlePreserved:true,oldSaveOpened:true});await page.evaluate(version=>{PlayroomAppBridge.showHub();PlayroomPacks.activate('klondike',version);},version);
+  }
+  if(process.env.PLAYROOM_SOLITAIRE_RESET_PROBE){
+   const detail={game:'klondike',probe:'hint-quiet-recycle-reset'};report.push(detail);
+   await page.evaluate(async()=>{
+    const proto=PlayroomTutorialController.prototype,update=proto.update,nodes=new WeakMap();let nodeId=0;window.qaTutorialUpdates=[];proto.update=function(context,definition){const result=update.call(this,context,definition),board=document.querySelector('.solitaire-board'),r=board?.getBoundingClientRect();if(board&&!nodes.has(board))nodes.set(board,++nodeId);qaTutorialUpdates.push({game:context.state.game,move:context.state.move,status:context.state.status,active:context.active,busy:context.busy,viewer:context.viewer,actions:context.actions.length,board:board?{id:nodes.get(board),x:r.x,y:r.y,w:r.width,h:r.height}:null,progress:result?{started:result.progress.started,done:result.progress.done,seen:[...result.progress.seen]}:null});return result;};
+    const s=new TabletopSession(TabletopCore,'klondike',{seed:17,mode:'solo',players:[{name:'Иван'}],draw:'1',autoFlip:'manual',autoCollect:'button',undo:'history',maxPasses:'0'});while(s.current.data.stock.length)s.act(0,TabletopCore.legalActions(s.current,0).find(a=>a.type==='draw'));await PlayroomAppBridge.saveLibrary.activateAsync(s,'guide-reset-probe');PlayroomAppBridge.showSessions();
+   });await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-session-id=guide-reset-probe][data-saved-actions-toggle]').click();await page.locator('[data-resume-id=guide-reset-probe]').click();await ready();
+   await page.locator('[data-view-key=hint]').click();assert.equal((await progress('klondike')).mastered.hint,1);await page.keyboard.press('Escape');
+   await act((await state()).actions.find(a=>a.type==='recycle'));detail.afterRecycle=await page.evaluate(()=>qaTutorialUpdates.slice(-5));
+   await settings();await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();assert.deepEqual((await progress('klondike')).mastered,{});await close();
+   await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor({timeout:1800}).catch(()=>{});
+   detail.beforeHint=await page.evaluate(()=>({hidden:document.hidden,focused:document.hasFocus(),modals:[...document.querySelectorAll('#modal-root>[data-surface-state]')].map(n=>({state:n.dataset.surfaceState,text:n.innerText.slice(0,120)})),updates:qaTutorialUpdates,settings:PlayroomFirstTurnGuide.settings('klondike'),options:PlayroomAppBridge.gameOptions(),pointer:document.querySelector('.first-turn-guide')?.hidden}));
+   const busy=detail.beforeHint.updates.find(x=>x.move===25&&x.busy),idle=detail.beforeHint.updates.find(x=>x.move===25&&!x.busy);assert(busy&&idle,'actual tutorial readiness follows quiet completion');assert.deepEqual(idle.board,busy.board,'readiness update retains board DOM and geometry');await page.locator('[data-view-key=hint]').click();detail.afterHint=await progress('klondike');await page.screenshot({path:path.join(out,'reset-probe-'+engine+'.png')});assert.equal(detail.afterHint.mastered.hint,1,'reset must allow a fresh actual hint input');
+   await page.keyboard.press('Escape');await page.evaluate(()=>{const proto=PlayroomGameFeedback.prototype,original=proto.whenIdle;proto.whenIdle=function(...args){const result=original.apply(this,args);if(!window.qaHoldQuiet)return result;qaHoldQuiet=false;return Promise.resolve(result).then(()=>new Promise(resolve=>window.qaReleaseQuiet=resolve));};});
+   const hold=async()=>{await page.evaluate(()=>{window.qaReleaseQuiet=null;window.qaHoldQuiet=true;});await act((await state()).actions.find(a=>a.type==='undo'));await page.waitForFunction(()=>!!window.qaReleaseQuiet);};
+   await hold();await act((await state()).actions.find(a=>a.type==='undo'));await page.waitForFunction(()=>qaTutorialUpdates.at(-1)?.busy===false);const updatesBefore=await page.evaluate(()=>qaTutorialUpdates.length);await page.evaluate(async()=>{qaReleaseQuiet();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});assert.equal(await page.evaluate(()=>qaTutorialUpdates.length),updatesBefore,'older quiet completion does not refresh a newer revision');detail.lateRevisionGuard=true;
+   await hold();await page.evaluate(()=>PlayroomAppBridge.showHub());const hubUpdates=await page.evaluate(()=>qaTutorialUpdates.length);await page.evaluate(async()=>{qaReleaseQuiet();await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});assert.equal(await page.evaluate(()=>qaTutorialUpdates.length),hubUpdates,'late quiet completion does not revive a navigated game tutorial');assert(await page.locator('.game-grid').isVisible());detail.lateNavigationGuard=true;
+   return;
+  }
+  const selected=process.env.PLAYROOM_SOLITAIRE_GAME?[process.env.PLAYROOM_SOLITAIRE_GAME]:['klondike','spider'];assert(selected.every(game=>['klondike','spider'].includes(game)));for(const game of selected){
+   const entry={game,seed:17,steps:[]};report.push(entry);await page.evaluate(async game=>{PlayroomAppBridge.showHub();const s=new TabletopSession(TabletopCore,game,{seed:17,mode:'solo',players:[{name:'Иван'}],draw:'1',maxPasses:'0',autoFlip:'manual',autoCollect:'button',undo:'history',emptyDeal:'allow'});await PlayroomAppBridge.saveLibrary.activateAsync(s,'guide-'+game);PlayroomAppBridge.showSessions();},game);
+   await page.locator('[data-hub-page=sessions]').click();await page.locator('.saved-game[data-session-id=guide-'+game+'][data-saved-actions-toggle]').click();await page.locator('[data-resume-id=guide-'+game+']').first().click();await ready();
+   await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();entry.initialCaption=await page.locator('.first-turn-guide:not([hidden]) .guide-caption').innerText();assert.equal(await page.locator('.first-turn-guide:not([hidden])').evaluate(n=>getComputedStyle(n).pointerEvents),'none');
+   const goals=await page.evaluate(g=>PlayroomViews.get(g).tutorial.goals.map(x=>({id:x.id,revision:x.revision||1})),game);entry.goals=goals;assert.equal(Object.keys((await progress(game)).mastered).length,0,'no test-forced mastery');
+   await page.locator('[data-view-key=hint]').click();assert.equal((await progress(game)).mastered.hint,1);await page.keyboard.press('Escape');
+   await settings();await active().locator('[data-learning-list]').click();assert.equal(await active().locator('.learning-goals input:checked').count(),1);await close();await close();
+   const partial=(await progress(game)).mastered;await page.reload();await ready();assert.deepEqual((await progress(game)).mastered,partial,'partial progress persists on reopen/reload');entry.partial=partial;
+   await settings();await active().locator('#setting-learning-enabled').uncheck();await close();const stopped=await progress(game),first=(await state()).actions.find(a=>a.type==='draw');assert(first);await act(first);assert.deepEqual((await progress(game)).mastered,stopped.mastered,'disabled learning never learns legal input');entry.steps.push({action:first,disabled:true,mastered:(await progress(game)).mastered});
+   await settings();await active().locator('#setting-learning-enabled').check();await close();
+   for(let i=0;i<100;i++){
+    const saved=await progress(game);if(goals.every(g=>saved.mastered[g.id]===g.revision))break;
+    const s=await state(),missing=id=>goals.some(g=>g.id===id)&&!saved.mastered[id],moves=s.actions.filter(a=>a.type==='move'),exposing=moves.find(a=>a.source==='tableau'&&a.index>0&&!s.data.tableau[a.from][a.index-1].open);
+    const action=(missing('flip')&&s.actions.find(a=>a.type==='flip'))||(missing('collect')&&s.actions.find(a=>a.type==='collect'))||((missing('target')||missing('card')||missing('flip'))&&(exposing||moves.find(a=>a.source!=='foundation'))) || (missing('undo')&&s.actions.find(a=>a.type==='undo')) || s.actions.find(a=>a.type==='recycle') || s.actions.find(a=>a.type==='draw');
+    if(action?.type==='collect')entry.collectSelector=await page.evaluate(()=>{const step=PlayroomViews.get('klondike').tutorial({state:TabletopCore.project(PlayroomAppBridge.saveLibrary.current().session.current,0)}).steps.find(s=>s.id==='collect');const anchor=document.querySelector(step.selector),r=anchor?.getBoundingClientRect(),hit=r&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {selector:step.selector,matches:document.querySelectorAll(step.selector).length,doubleTargets:document.querySelectorAll('[data-double-action]').length,freeField:!!hit&&anchor.contains(hit)&&!hit.closest('button,a,input,select,textarea,[data-select],[data-drag-stack-member],[data-view-key]')};});if(action?.type==='collect')assert(entry.collectSelector.matches>0&&entry.collectSelector.freeField,'legal collect tutorial must anchor to actual free field '+JSON.stringify(entry.collectSelector));
+    assert(action,'remaining tutorial goals reachable from legal state '+JSON.stringify({game,mastered:saved.mastered,actions:s.actions}));await act(action);const after=await progress(game);entry.steps.push({action,mastered:after.mastered});
+   }
+   const completed=await progress(game);entry.completed=completed;assert(goals.every(g=>completed.mastered[g.id]===g.revision),'all declared goals learned through real controls '+JSON.stringify({game,mastered:completed.mastered}));
+   await settings();await active().locator('[data-learning-list]').click();assert.equal(await active().locator('.learning-goals input:checked:disabled').count(),goals.length);assert(await active().locator('.learning-complete').isVisible());await page.screenshot({path:path.join(out,game+'-completed-'+engine+'.png')});await close();await close();await settings();await active().locator('[data-learning-list]').click();assert.equal(await active().locator('.learning-goals input:checked:disabled').count(),goals.length,'completed list survives close/reopen');await close();
+   const other=game==='klondike'?'spider':'klondike',otherBefore=await progress(other);await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-cancel]').click();assert.deepEqual((await progress(game)).mastered,completed.mastered,'reset Cancel keeps progress');
+   await active().locator('[data-restart-guides]').click();await page.locator('[data-confirm-accept]').click();assert.deepEqual((await progress(game)).mastered,{});assert.equal((await progress(game)).enabled,true);assert((await progress(game)).epoch>completed.epoch);assert.deepEqual(await progress(other),otherBefore,'reset is scoped to this game');entry.reset=await progress(game);await close();await page.locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+   await page.locator('[data-view-key=hint]').click();assert.equal((await progress(game)).mastered.hint,1,'new run learns real input after reset');await page.keyboard.press('Escape');await page.reload();await ready();assert.deepEqual((await progress(game)).mastered,{hint:1},'reset run survives app reopen');entry.reopened=await progress(game);await page.evaluate(()=>PlayroomAppBridge.showHub());
+  }}finally{fs.writeFileSync(path.join(out,(process.env.PLAYROOM_SOLITAIRE_RESET_PROBE?'reset-probe':process.env.PLAYROOM_SOLITAIRE_GAME||'tutorials')+'-'+engine+'.json'),JSON.stringify({report},null,2));}
+  return;
+ }
+
  for(const game of ['klondike','spider','uno','mage-brawl']){
   const hint=['klondike','spider'].includes(game),goal=hint?'hint':'help';
   await page.locator(`[data-start="${game}"]`).first().click();
@@ -1433,10 +1630,10 @@ test('hint and card help clicks teach separate persistent goals',async()=>fixtur
   assert.equal(await page.locator('.learning-goals li').filter({hasText:hint?'кнопку подсказки':'Откройте справку'}).locator('input:checked:disabled').count(),1);
   await page.evaluate(()=>{PlayroomAppBridge.closeModal(true);PlayroomAppBridge.showHub();});
  }
-}));
+},{safeSupabase:!!(process.env.PLAYROOM_SOLITAIRE_TUTORIALS||process.env.PLAYROOM_MARKUP_COUNTERS),settings:(process.env.PLAYROOM_SOLITAIRE_TUTORIALS||process.env.PLAYROOM_MARKUP_COUNTERS)?{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false,tutorialsEnabled:true}:{sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false}}));
 
 test('Go Fish tutorial selects a card before any opponent and accepts changing that card',async()=>fixture(async page=>{
- await page.locator('[data-start="gofish"]').first().click();
+ await page.locator('[data-start="gofish"]').first().click();await page.locator('[data-game-mode=hotseat]').click();
  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});
  await page.locator('[data-command="lobby-start"]').click();
  const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
@@ -1446,8 +1643,11 @@ test('Go Fish tutorial selects a card before any opponent and accepts changing t
  await page.locator('.own-hand .hand-card.is-playable').last().click();
  await caption.filter({hasText:'соперника'}).waitFor();
  await page.screenshot({path:path.join(shots,'guide-gofish-card-before-opponent.png')});
+ await page.evaluate(()=>{window.retainedHand=[...document.querySelectorAll('.own-hand [data-entity]')].map(node=>({id:node.dataset.entity,node,art:node.querySelector('svg')}));window.retainedHandScope=document.querySelector('.table-shell')?.dataset.geometryIdentity;});
  await page.locator('[data-player-target]').first().click();
- await page.locator('#app [data-command="settings"]').click();await page.locator('[data-learning-list="gofish"]').click();
+ await page.locator('.table-shell>.scene[aria-busy="false"]').waitFor();
+ const retained=await page.evaluate(()=>{const current=[...document.querySelectorAll('.own-hand [data-entity]')],kept=retainedHand.flatMap(old=>{const node=current.find(node=>node.dataset.entity===old.id);return node?[{node:node===old.node,art:node.querySelector('svg')===old.art}]:[]});return {before:retainedHand.length,kept,sameScope:retainedHandScope===document.querySelector('.table-shell')?.dataset.geometryIdentity};});assert(retained.kept.length>0&&retained.kept.every(item=>item.node&&item.art),JSON.stringify(retained));
+ await page.locator('[data-game-menu]').click();await page.locator('#modal-root>[data-surface-state=active] [data-command=settings]').click();await page.locator('#modal-root>[data-surface-state=active] [data-settings-tab=behavior]').click();await page.locator('[data-learning-list="gofish"]').click();
  assert.equal(await page.locator('.learning-goals input').count(),2);
  assert.equal(await page.locator('.learning-goals input:checked').count(),2);
  assert.match(await page.locator('.learning-complete').innerText(),/Все действия освоены/);
@@ -1500,15 +1700,121 @@ test('UNO real projected declaration is guided during feedback and learned on cl
   TabletopCore.validateState(s);rcRender();
   const ctx={owner:rcSession,viewer:0,active:true,busy:true,state:TabletopCore.project(s,0),actions:TabletopCore.legalActions(s,0),ui:{}};
   PlayroomFirstTurnGuide.update(ctx);
-  document.querySelector('.uno-call').addEventListener('click',event=>{
+  window.unoProbe={goals:PlayroomViews.get('uno')?.tutorial?.goals,initialTutorial:!!PlayroomViews.get('uno')?.tutorial,initialDeclared:ctx.state.scene.declared[0]};window.unoProbeNode=document.querySelector('.uno-call');
+  unoProbeNode.addEventListener('click',event=>{
+   unoProbe.clicked=true;unoProbe.trusted=event.isTrusted;
    event.preventDefault();event.stopImmediatePropagation();
    const action=JSON.parse(event.currentTarget.dataset.action),token=PlayroomFirstTurnGuide.capture(rcSession,0);
-   rcStateOverride=TabletopCore.applyAction(rcStateOverride,0,action);
+   unoProbe.token=!!token;unoProbe.progressBefore=token?{...token.progress,seen:[...token.progress.seen]}:null;
+   rcStateOverride=TabletopCore.applyAction(rcStateOverride,0,action);unoProbe.domainDeclared=TabletopCore.project(rcStateOverride,0).scene.declared[0];
    PlayroomFirstTurnGuide.committed(rcSession,0,action,token);
   });
  });
  await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Объявите'}).waitFor({timeout:400});
+ await page.evaluate(()=>{unoProbe.listenerNodeStillCurrent=unoProbeNode===document.querySelector('.uno-call');unoProbe.beforeClickTutorial=!!PlayroomViews.get('uno')?.tutorial;});
  await page.locator('.uno-call').click();
+ console.log('UNO tutorial probe',JSON.stringify(await page.evaluate(()=>({...unoProbe,afterTutorial:!!PlayroomViews.get('uno')?.tutorial,learned:PlayroomFirstTurnGuide.settings('uno').mastered}))));
  assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1);
- await page.reload();assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1);
+ await page.reload();await page.locator('.game-tile').first().waitFor();
+ await page.locator('[data-start=uno]').first().click();await page.locator('[data-game-mode=hotseat]').click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+ await page.locator('[data-command=lobby-start]').click();
+ assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('uno').mastered['declare-uno']),1,'native declaration learning survives real app reopen for primary profile/viewer');
 }));
+
+
+const solitaireLearningCase=defaults=>async()=>fixture(async page=>{
+ page.setDefaultTimeout(7000);await page.setViewportSize({width:390,height:844});
+ const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');
+ const mastered=game=>page.evaluate(game=>PlayroomFirstTurnGuide.settings(game).mastered,game);
+ const showGoal=async(game,id)=>{const text=await page.evaluate(({game,id})=>PlayroomViews.get(game).tutorial.goals.find(goal=>goal.id===id).text,{game,id});try{await caption.filter({hasText:text}).waitFor();}catch(error){const debug=await page.evaluate(()=>({caption:document.querySelector('.first-turn-guide')?.textContent,hidden:document.querySelector('.first-turn-guide')?.hidden,modal:document.querySelector('#modal-root')?.innerText,selected:[...document.querySelectorAll('.solitaire-card[aria-pressed=true]')].map(n=>n.dataset.select),targets:[...document.querySelectorAll('[data-drop-piece][data-action]')].slice(0,12).map(n=>{const r=n.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {piece:n.dataset.dropPiece,tag:n.tagName,box:{x:r.x,y:r.y,width:r.width,height:r.height},hit:hit?.tagName,hitClass:hit?.getAttribute('class'),hidden:!!n.closest('[hidden],[inert]')};})}));fs.writeFileSync(path.join(shots,game+'-'+id+'-failure.json'),JSON.stringify(debug,null,2));await page.screenshot({path:path.join(shots,game+'-'+id+'-failure.png')});throw error;}};
+ const move=()=>page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move);
+ const commit=async control=>{const before=await move();await control.click();await page.waitForFunction(before=>PlayroomAppBridge.saveLibrary.current().session.current.move===before+1,before);await page.locator('.scene[aria-busy=false]').waitFor();};
+ const resume=async game=>{
+  await page.evaluate(async ({game,defaults})=>{
+   const b=PlayroomAppBridge,E=TabletopCore;b.showHub();
+   const saved=new TabletopSession(E,game,{seed:17,mode:'solo',...(!defaults?{undo:'history',autoFlip:'manual',autoCollect:'button'}:{}),players:[{name:'Иван'}]}).export(),state=saved.states[0];
+   if(game==='klondike'){
+    const d=state.data,pool=[...d.tableau.flat(),...d.stock];
+    const take=(rank,suit,open)=>{const index=pool.findIndex(card=>card.rank===rank&&card.suit===suit);if(index<0)throw Error('Missing physical fixture card');return {...pool.splice(index,1)[0],open};};
+    d.tableau=[[take(7,'♣',false),take(6,'♥',true)],[take(7,'♠',true)],[take(14,'♥',true)],[],[],[],[]];d.stock=pool.map(card=>({...card,open:false}));
+   }
+   E.validateState(state);const session=TabletopSession.restore(E,saved);if(!E.legalActions(session.current,0).some(a=>a.type==='move'&&a.source==='tableau'))throw Error('Fixture needs a legal tableau move');
+   await b.saveLibrary.activateAsync(session,'learning-all-'+game);b.showSessions();
+  },{game,defaults});
+  await page.locator('.saved-game[data-session-id="learning-all-'+game+'"][data-saved-actions-toggle]').click();await page.locator('[data-resume-id="learning-all-'+game+'"]').first().click();await page.locator('.solitaire-board').waitFor();
+ };
+ const selectAndMove=async game=>{
+  await showGoal(game,'card');
+  const action=await page.evaluate(game=>{const s=PlayroomAppBridge.saveLibrary.current().session.current;return TabletopCore.legalActions(s,0).find(a=>a.type==='move'&&a.source==='tableau'&&(game!=='klondike'||a.from===0&&a.to===1));},game);assert(action);
+  const source=page.locator('.solitaire-card[data-select='+JSON.stringify(action.card)+']');await source.focus();await page.keyboard.press('Enter');assert.equal((await mastered(game)).card,1);
+  const destination=page.locator('[data-drop-piece='+JSON.stringify(action.card)+'][data-action]').first(),targetBox=await destination.boundingBox(),viewport=page.viewportSize();
+  if(targetBox.x<0||targetBox.x+targetBox.width>viewport.width){const before=await page.locator('.solitaire-scroll').evaluate(n=>n.scrollLeft),beforeMove=await move();await page.locator('.first-turn-guide.is-scroll-cue:not([hidden]) .guide-caption').waitFor();await showGoal(game,'target');assert.equal(await page.locator('.solitaire-scroll').evaluate(n=>n.scrollLeft),before,'scroll cue never moves the field');assert.equal(await move(),beforeMove);assert.equal((await mastered(game)).target,undefined);await page.screenshot({path:path.join(shots,game+'-scroll-cue.png')});const box=await page.locator('.solitaire-scroll').boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.wheel(targetBox.x<0?targetBox.x-16:targetBox.x+targetBox.width-viewport.width+16,0);}
+  await showGoal(game,'target');await commit(destination);assert.equal((await mastered(game)).target,1);
+ };
+ const listComplete=async(game,count)=>{
+  await page.locator('[data-game-menu]').click();await page.locator('.game-menu-panel [data-command=settings]').click();await page.locator('[data-settings-tab=behavior]').click();await page.locator('[data-learning-list='+game+']').click();
+  assert.equal(await page.locator('.learning-goals input:checked:disabled').count(),count);
+  if(defaults&&game==='klondike'){assert.equal(await page.locator('.learning-goals input:not(:checked)').count(),1);assert.equal(await page.locator('.learning-complete').count(),0,'automatic flip is not falsely marked as manually learned');}
+  else {assert.equal(await page.locator('.learning-goals input:not(:checked)').count(),0);assert.match(await page.locator('.learning-complete').innerText(),/Все действия освоены/);}
+  await page.screenshot({path:path.join(shots,game+'-all-learning.png')});await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();assert.equal(await page.locator('[data-settings-screen]').count(),1,'one Back restores settings');await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();
+ };
+ await resume('spider');assert.deepEqual(await mastered('spider'),{});await selectAndMove('spider');
+ if(defaults){
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.config.undo),'last');
+  await commit(page.locator(`[data-action*='"type":"undo"']:visible`).first());
+  assert.equal(await page.locator(`[data-action*='"type":"undo"']:visible`).count(),0,'last undo cannot repeat');
+ }
+ await showGoal('spider','deal');await commit(page.locator('.solitaire-draw-control'));
+ if(defaults)assert.equal(await page.locator(`[data-action*='"type":"undo"']:visible`).count(),0,'default Spider deal is an undo barrier');
+ else {await showGoal('spider','undo');await commit(page.locator(`[data-action*='"type":"undo"']:visible`).first());}
+ await showGoal('spider','hint');const spiderMove=await move();await page.locator('[data-view-key=hint]').click();assert.equal(await move(),spiderMove,'hint is local UI, not a game command');
+ assert.deepEqual(Object.keys(await mastered('spider')).sort(),['card','deal','hint','target','undo']);await listComplete('spider',5);
+ await resume('klondike');assert.deepEqual(await mastered('klondike'),{});await selectAndMove('klondike');
+ await showGoal('klondike','stock');await commit(page.locator('.solitaire-stock[data-action]'));
+ if(defaults){
+  const state=await page.evaluate(()=>{const s=PlayroomAppBridge.saveLibrary.current().session.current;return {config:s.data.config,open:s.data.tableau[0].at(-1).open,flip:TabletopCore.legalActions(s,0).some(a=>a.type==='flip'),waste:s.data.waste.length};});
+  assert.equal(state.config.undo,'last');assert.equal(state.config.autoFlip,true);assert.equal(state.config.draw,3);assert.equal(state.open,true);assert.equal(state.flip,false);assert.equal(state.waste,3);assert.equal((await mastered('klondike')).flip,undefined);
+ }else {await showGoal('klondike','flip');await commit(page.locator(`[data-action*='"type":"flip"']:visible`).first());}
+ await showGoal('klondike','collect');const beforeCollect=await move(),box=await page.locator('.solitaire-board').boundingBox();await page.mouse.dblclick(box.x+box.width/2,box.y+box.height-12);await page.waitForFunction(before=>PlayroomAppBridge.saveLibrary.current().session.current.move===before+1,beforeCollect);assert.equal((await mastered('klondike')).collect,1);
+ await showGoal('klondike','undo');await commit(page.locator(`[data-action*='"type":"undo"']:visible`).first());
+ await showGoal('klondike','hint');await page.locator('[data-view-key=hint]').click();assert.equal((await mastered('klondike')).hint,1);
+ for(let i=0;i<20;i++){const count=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.stock.length);if(!count)break;await commit(page.locator('.solitaire-stock[data-action]'));}
+ assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.stock.length),0);
+ await showGoal('klondike','recycle');await commit(page.locator('.solitaire-stock[data-action]'));
+ assert.deepEqual(Object.keys(await mastered('klondike')).sort(),['card','collect',...(!defaults?['flip']:[]),'hint','recycle','stock','target','undo']);await listComplete('klondike',defaults?7:8);
+ await page.reload();await page.locator('.solitaire-board').waitFor();
+ for(const game of ['spider','klondike']){const saved=await mastered(game),goals=await page.evaluate(game=>PlayroomViews.get(game).tutorial.goals,game);assert(goals.filter(goal=>!defaults||game!=='klondike'||goal.id!=='flip').every(goal=>saved[goal.id]===goal.revision),game+' mastery revisions persist after reload');if(defaults&&game==='klondike')assert.equal(saved.flip,undefined);}
+ assert.equal(await page.locator('.first-turn-guide:not([hidden])').count(),0,'completed learning does not resume as a new tutorial');
+},{settings:{sound:false,animationSpeed:'instant',quickPlay:false,autoPass:false},safeSupabase:true});
+
+test('solitaire learning masters every goal through real input and validated saved positions',{timeout:120000},solitaireLearningCase(false));
+test('default solitaire rules preserve actionable guides and single-step undo',{timeout:120000},solitaireLearningCase(true));
+
+
+test('first-turn guidance explains clipped scroll targets without moving the field or learning the action',{timeout:60000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(5000);await page.setViewportSize({width:390,height:844});await scene(page,'tictactoe');
+ const rows=[];
+ for(const scenario of [{direction:'right'},{direction:'left'},{direction:'down'},{direction:'up'},{direction:'left',rtl:true},{direction:'right',rtl:true}]){
+  const initial=await page.evaluate(({direction,rtl})=>{
+   PlayroomFirstTurnGuide.stop();document.querySelector('#scroll-guide-fixture')?.remove();document.querySelector('#scroll-guide-alternative')?.remove();
+   const host=document.createElement('div');host.id='scroll-guide-fixture';host.style.cssText='position:fixed;left:40px;top:120px;width:200px;height:160px;overflow:auto;z-index:100;direction:'+(rtl?'rtl':'ltr');
+   const content=document.createElement('div');content.style.cssText='position:relative;width:600px;height:600px';
+   const target=document.createElement('button');target.id='scroll-guide-target';target.textContent='Target';target.style.cssText='position:absolute;left:'+(['down','up'].includes(direction)?40:direction==='right'?500:0)+'px;top:'+(['left','right'].includes(direction)?40:direction==='down'?500:0)+'px;width:60px;height:44px';content.append(target);host.append(content);document.querySelector('#app').append(host);
+   const alternative=document.createElement('button');alternative.id='scroll-guide-alternative';alternative.textContent='Alternative';alternative.style.cssText='position:fixed;left:40px;top:340px;width:100px;height:40px;z-index:100';document.querySelector('#app').append(alternative);
+   host.scrollLeft=rtl?(direction==='right'?-(host.scrollWidth-host.clientWidth):0):direction==='left'?host.scrollWidth-host.clientWidth:0;host.scrollTop=direction==='up'?host.scrollHeight-host.clientHeight:0;
+   const tutorial=()=>({steps:[{id:'scrollTarget',selector:'#scroll-guide-target',actions:['move'],text:'Choose the target.'},{id:'alternative',selector:'#scroll-guide-alternative',actions:['draw'],text:'Alternative action.'}]});tutorial.goals=[{id:'scrollTarget',revision:1,text:'Choose the target.'}];PlayroomViews.registerTutorial('tictactoe',tutorial);
+   window.scrollGuideOwner={};PlayroomFirstTurnGuide.update({owner:scrollGuideOwner,state:TabletopCore.project(rcSession.current,0),viewer:0,actions:TabletopCore.legalActions(rcSession.current,0),active:true,busy:false});return {left:host.scrollLeft,top:host.scrollTop};
+  },scenario);
+  const cue=page.locator('.first-turn-guide.is-scroll-cue:not([hidden])');await cue.locator('.guide-caption').waitFor();assert.equal(await cue.getAttribute('data-scroll-direction'),scenario.direction);
+  assert.match(await cue.locator('.guide-caption').innerText(),/Прокрутите/);assert.match(await cue.locator('.guide-caption').innerText(),/Choose the target/);
+  const bounds=await cue.locator('.guide-scroll-direction').boundingBox(),port=await page.locator('#scroll-guide-fixture').boundingBox();assert(bounds&&bounds.x>=port.x&&bounds.y>=port.y&&bounds.x+bounds.width<=port.x+port.width&&bounds.y+bounds.height<=port.y+port.height,'scroll cue stays inside its visible scrollport '+JSON.stringify({scenario,bounds,port}));
+  const before=await page.evaluate(()=>({left:document.querySelector('#scroll-guide-fixture').scrollLeft,top:document.querySelector('#scroll-guide-fixture').scrollTop,mastered:PlayroomFirstTurnGuide.settings('tictactoe').mastered,pointer:getComputedStyle(document.querySelector('.first-turn-guide')).pointerEvents}));assert.deepEqual({left:before.left,top:before.top},initial,'guidance must not scroll automatically');assert.equal(before.mastered.scrollTarget,undefined);assert.equal(before.pointer,'none');
+  await page.mouse.move(140,200);await page.mouse.wheel(scenario.direction==='left'?-600:scenario.direction==='right'?600:0,scenario.direction==='up'?-600:scenario.direction==='down'?600:0);
+  await page.locator('.first-turn-guide.is-tapping:not(.is-scroll-cue):not([hidden]) .guide-caption').filter({hasText:'Choose the target.'}).waitFor();
+  await page.waitForFunction(()=>{const a=document.querySelector('.first-turn-guide').getBoundingClientRect(),b=document.querySelector('#scroll-guide-target').getBoundingClientRect();return Math.abs(a.x-b.x-b.width/2)<1&&Math.abs(a.y-b.y-b.height/2)<1;});assert.equal(await page.evaluate(()=>PlayroomFirstTurnGuide.settings('tictactoe').mastered.scrollTarget),undefined,'scrolling alone does not learn a game command');rows.push({...scenario,bounds});
+ }
+ await page.evaluate(()=>{const host=document.querySelector('#scroll-guide-fixture');host.style.overflow='hidden';host.style.direction='ltr';host.scrollLeft=0;host.scrollTop=0;document.querySelector('#scroll-guide-target').style.left='500px';const state=TabletopCore.project(rcSession.current,0);PlayroomFirstTurnGuide.update({owner:scrollGuideOwner,state,viewer:0,actions:TabletopCore.legalActions(rcSession.current,0),active:true,busy:false});dispatchEvent(new Event('resize'));});
+ await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Alternative action.'}).waitFor();assert.equal(await page.locator('.first-turn-guide.is-scroll-cue:not([hidden])').count(),0,'non-scrollable clipping must not advertise an impossible scroll');
+ fs.writeFileSync(path.join(shots,'scroll-cue-directions.json'),JSON.stringify(rows,null,2));
+},{safeSupabase:true}));

@@ -120,8 +120,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!item){const error=Error(globalThis.PlayroomMessages.text("ui.packs.743b49f00699",{p0:String(id),p1:String(version?globalThis.PlayroomMessages.text("ui.packs.12aee5af7b3e",{p0:String(version)}):'')}));Object.assign(error,{code:'PACK_VERSION_MISSING',game:id,packVersion:version});throw error;}return item;
     }
     _serialized(items=this._items,active=this._active,removed=this._removed){const text=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[...items.values()].map(item=>item.bundle),active:Object.fromEntries(active),removed:[...removed],quarantined:this.quarantined||[],rawBackups:this.rawBackups||[]});return text;}
-    _persist(text,apply){
-      if(this.storage.commit){const before=this.storage.get();return this.storage.commit(text).then(async()=>{try{return apply();}catch(error){await this.storage.commit(before);throw error;}});}
+    _persist(text,apply,guard=()=>{}){
+      guard();
+      if(this.storage.commit){const before=this.storage.get();return this.storage.commit(text,{guard}).then(async()=>{try{return apply();}catch(error){await this.storage.commit(before);throw error;}});}
       this.storage.set(text);return apply();
     }
     _style(id,css){
@@ -129,7 +130,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let node=this._styles.get(id)||this.document.querySelector?.(`style[data-playroom-pack="${id}"]`);
       if(css===null){node?.remove();this._styles.delete(id);return;}
       if(!node){node=this.document.createElement('style');node.setAttribute('data-playroom-pack',id);node.textContent=css;(this.document.head||this.document.documentElement).appendChild(node);}
-      else node.textContent=css;
+      else if(node.textContent!==css)node.textContent=css;
       this._styles.set(id,node);
     }
     _apply(item){
@@ -138,7 +139,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}
       const previousView=this.views.get(m.id),hadCatalog=Object.hasOwn(this.catalog,m.id),previousCatalog=this.catalog[m.id];
       const oldStyle=this._styles.get(m.id)||this.document?.querySelector?.(`style[data-playroom-pack="${m.id}"]`),previousCSS=oldStyle?.textContent??null;
-      try{this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{illustrations:item.view.illustrations,surfaces:item.view.surfaces,reveal:item.view.reveal,seating:item.view.seating});if(item.view.tutorial)this.views.registerTutorial?.(m.id,item.view.tutorial);this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
+      // A render may ensure its exact pack repeatedly. Keep live registrations
+      // stable, but repair registry/version replacements rather than trusting a flag.
+      const sameRules=previousRules&&previousVersion===previousRules&&Object.entries(item.rules).every(([name,value])=>previousRules[name]===value);
+      const sameView=previousView&&['render','cover','illustrations','reveal','seating','tutorial'].every(name=>previousView[name]===item.view[name])&&Object.keys(previousView.surfaces||{}).length===Object.keys(item.view.surfaces).length&&Object.entries(item.view.surfaces).every(([name,render])=>previousView.surfaces?.[name]===render);
+      const alreadyActive=this._active.get(m.id)===m.version&&sameRules&&sameView&&previousCatalog===item.catalog;
+      try{if(!alreadyActive){this.engine.activatePack(item.rules);this.views.register(m.id,item.view.render,item.view.cover,{illustrations:item.view.illustrations,surfaces:item.view.surfaces,reveal:item.view.reveal,seating:item.view.seating});if(item.view.tutorial)this.views.registerTutorial?.(m.id,item.view.tutorial);}this.catalog[m.id]=item.catalog;this._style(m.id,item.styles);}
       catch(error){
         this.engine.unregisterVersion(m.id,m.version);
         if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});
@@ -177,7 +183,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // Presentation-only payload: no rule execution, Session, or saved state.
     exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),...(item.rules.rulebook?{rulebook:clone(item.rules.rulebook)}:{}),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}
-    remove(id,version){
+    remove(id,version,{guard=()=>{}}={}){
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);
       const remaining=[...items.values()].filter(item=>item.bundle.manifest.id===id).sort((a,b)=>compare(b.bundle.manifest.version,a.bundle.manifest.version));
       if(active.get(id)===m.version){if(remaining.length)active.set(id,remaining[0].bundle.manifest.version);else active.delete(id);}
@@ -189,13 +195,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }catch(error){try{this.storage.set(before);}catch(_){}throw error;}
       this._items=items;this._active=active;this._removed=removed;this._bundled.delete(k);this.engine.unregisterVersion(id,m.version);
       return result;
-      });
+      },guard);
     }
-    discardQuarantine(index=null){
+    discardQuarantine(index=null,{guard=()=>{}}={}){
       const previous=this.quarantined;
       this.quarantined=index===null?[]:this.quarantined.filter((_,i)=>i!==index);
       const text=this._serialized(),next=this.quarantined;this.quarantined=previous;
-      return this._persist(text,()=>{this.quarantined=next;});
+      return this._persist(text,()=>{this.quarantined=next;},guard);
     }
     bootstrap(bundles=[],options={}){
       if(!Array.isArray(bundles))throw Error(globalThis.PlayroomMessages.text("ui.packs.d0c2c91da454"));

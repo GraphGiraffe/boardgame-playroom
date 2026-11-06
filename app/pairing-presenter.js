@@ -1,45 +1,25 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 /* Pairing Web presenter; connection ownership and operations are injected ports. */
 (function(root){'use strict';root.PlayroomPairingPresenter={create(ports){
-  // Keep selection inside the app instead of opening the Android select sheet.
+  // Address/sound choices use the same retained surface stack as the pairing screen.
   function chooseNetworkOption(event){
     const select=event.target.closest?.('.pairing-network-choice select,.pairing-sound-settings select');
-    if(!select||select.disabled)return;
+    if(!select||select.matches(':disabled')||select.closest('[inert],[hidden]'))return;
     if(event.type==='keydown'&&!['Enter',' ','ArrowDown','ArrowUp'].includes(event.key))return;
-    event.preventDefault();
-    if(document.querySelector('.pairing-choice-dialog'))return;
-    const dialog=document.createElement('dialog');
-    dialog.className='appearance-dialog pairing-choice-dialog';
-    const title=select.getAttribute('aria-label')||select.closest('label')?.querySelector('span')?.textContent||'';
-    dialog.innerHTML='<header class="appearance-head"><button class="icon-btn" type="button" aria-label="'+ports.esc(root.PlayroomMessages.text('ui.game-screen.a7a4033657e8'))+'">'+root.PlayroomGameScreen.icon('close')+'</button><h2>'+ports.esc(title)+'</h2></header><div class="appearance-body pairing-choice-list" role="group" aria-label="'+ports.esc(title)+'">'+[...select.options].map((option,index)=>'<div class="pairing-choice-row"><button type="button" class="pairing-choice-option" data-choice="'+index+'" aria-pressed="'+option.selected+'" '+(option.disabled?'disabled':'')+'><span class="'+(option.dataset.savedAddress?'pairing-saved-label':'')+'">'+ports.esc(option.textContent)+'</span></button>'+(option.dataset.savedAddress?'<button type="button" class="icon-btn" data-delete-address="'+ports.esc(option.dataset.savedAddress)+'" aria-label="'+ports.esc(root.PlayroomMessages.text('ui.pairing-presenter.delete-address')+' '+option.dataset.savedAddress)+'">'+root.PlayroomGameScreen.icon('trash')+'</button>':'')+'</div>').join('')+'</div>';
-    const close=()=>{dialog.close();dialog.remove();if(select.isConnected)select.focus({preventScroll:true});};
-    dialog.querySelector('.appearance-head .icon-btn').onclick=close;
-    dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
-    dialog.addEventListener('keydown',event=>event.stopPropagation());
-    dialog.addEventListener('click',event=>{
-      const remove=event.target.closest('[data-delete-address]');
-      if(remove){
-        const address=remove.dataset.deleteAddress,selectedAddress=select.selectedOptions[0]?.dataset.address;
-        try{localStorage.setItem(KNOWN_IP_KEY,JSON.stringify(savedIpEntries().map(item=>item.address).filter(ip=>ip!==address)));}
-        catch(_){toast(root.PlayroomMessages.text('ui.pairing-presenter.a76775137e52'));return;}
-        const role=select.closest('[data-pairing-network]').dataset.pairingNetwork,signal=pairSignal(role);
-        select.value='all';select.dataset.userChoice='true';
-        updateSoundOptions(role,signal,scannedCandidates[role]);
-        if(selectedAddress&&selectedAddress!==address){
-          const remaining=[...select.options].find(option=>option.dataset.address===selectedAddress);
-          if(remaining)select.value=remaining.value;
-        }
-        close();select.dispatchEvent(new Event('change',{bubbles:true}));
-        chooseNetworkOption({target:select,type:'click',preventDefault(){}});
-        return;
-      }
-      const option=event.target.closest('[data-choice]');if(!option)return;
-      select.selectedIndex=Number(option.dataset.choice);
-      close();select.dispatchEvent(new Event('change',{bubbles:true}));
-    });
-    document.body.append(dialog);dialog.showModal();
+    event.preventDefault();if(event.type==='mousedown')return;
+    return root.PlayroomGameScreen.openSelectChoice(select,{owner:'pairing-choice',optionLabelClass:option=>option.node.dataset.savedAddress?'pairing-saved-label':'',optionAction:option=>{
+      const address=option.node.dataset.savedAddress;return address?`<button type="button" class="icon-btn" data-delete-address="${ports.esc(address)}" aria-label="${ports.esc(root.PlayroomMessages.text('ui.pairing-presenter.delete-address')+' '+address)}">${root.PlayroomGameScreen.icon('trash')}</button>`:'';
+    },onAction:(event,{close,reopen})=>{
+      const remove=event.target.closest('[data-delete-address]');if(!remove)return false;
+      const address=remove.dataset.deleteAddress,selectedAddress=select.selectedOptions[0]?.dataset.address;
+      try{localStorage.setItem(KNOWN_IP_KEY,JSON.stringify(savedIpEntries().map(item=>item.address).filter(ip=>ip!==address)));}catch(_){toast(root.PlayroomMessages.text('ui.pairing-presenter.a76775137e52'));return true;}
+      const role=select.closest('[data-pairing-network]').dataset.pairingNetwork,signal=pairSignal(role);
+      select.value='all';select.dataset.userChoice='true';updateSoundOptions(role,signal,scannedCandidates[role]);
+      if(selectedAddress&&selectedAddress!==address){const remaining=[...select.options].find(option=>option.dataset.address===selectedAddress);if(remaining)select.value=remaining.value;}
+      close();select.dispatchEvent(new Event('change',{bubbles:true}));reopen();return true;
+    }});
   }
-  for(const name of ['pointerdown','click','keydown'])document.addEventListener(name,chooseNetworkOption);
+  for(const name of ['mousedown','click','keydown'])document.addEventListener(name,chooseNetworkOption);
   const stopHostAudio=()=>{ports.hostAudioListener?.stop();ports.hostAudioListener=null;};
   const stopClientAudio=()=>{ports.clientAudioListener?.stop();ports.clientAudioListener=null;};
   const KNOWN_IP_KEY='playroom.acoustic-known-addresses.v1';
@@ -252,11 +232,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   async function listenHostAnswer(signal){
     if(!ports.hostPeer)throw Error(globalThis.PlayroomMessages.text("ui.pairing-presenter.716c37cfc525"));
     stopHostAudio();
-    ports.hostAudioListener=await ports.Acoustic.listen(packet=>{
-      if(packet.kind!=='answer')return;
+    const revision=ports.pairingRevision?.(),listener=await ports.Acoustic.listen(packet=>{
+      if(packet.kind!=='answer'||ports.isPairingCurrent&&!ports.isPairingCurrent('sound')||revision!==ports.pairingRevision?.())return;
       stopHostAudio();
       ports.acceptAnswerSignal(ports.Pairing.decode(ports.Pairing.COMPACT_PREFIX+packet.message).signal).catch(error=>toast(globalThis.PlayroomMessages.error(error)));
     },{signal});
+    if(ports.isPairingCurrent&&!ports.isPairingCurrent('sound')||revision!==ports.pairingRevision?.()){listener.stop();return;}ports.hostAudioListener=listener;
     pairingProgress(globalThis.PlayroomMessages.text("ui.pairing-presenter.820deacf021a"));
   }
   async function sendHostSoundOnly(signal){
@@ -267,11 +248,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   async function listenGuestSound(signal){
     stopClientAudio();
-    ports.clientAudioListener=await ports.Acoustic.listen(packet=>{
-      if(packet.kind!=='offer')return;
+    const revision=ports.pairingRevision?.(),listener=await ports.Acoustic.listen(packet=>{
+      if(packet.kind!=='offer'||ports.isPairingCurrent&&!ports.isPairingCurrent('sound')||revision!==ports.pairingRevision?.())return;
       stopClientAudio();
       ports.createClientAnswer(ports.Pairing.decode(ports.Pairing.COMPACT_PREFIX+packet.message).signal,{acoustic:true}).catch(error=>toast(globalThis.PlayroomMessages.error(error)));
     },{signal});
+    if(ports.isPairingCurrent&&!ports.isPairingCurrent('sound')||revision!==ports.pairingRevision?.()){listener.stop();return;}ports.clientAudioListener=listener;
     pairingProgress(globalThis.PlayroomMessages.text("ui.pairing-presenter.0c4543b39d4e"));
   }
   async function sendGuestSound(signal){
@@ -372,7 +354,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const pairingFooter=()=>("<p class=\"pairing-origin-note\">"+globalThis.PlayroomMessages.text("ui.pairing-presenter.0b007f9ec666")+"</p>");
   function toast(text){ports.bridge()?.toast?.(text);}
   function pairingProgress(text,method='sound'){
-    const body=document.querySelector('[data-pairing-method="'+method+'"] .pairing-method-body')||document.querySelector('.pairing-network-choice')||document.querySelector('.pairing-methods');
+    const body=document.querySelector('[data-nearby-pane]:not([hidden])[data-pairing-method="'+method+'"] .pairing-method-body')||document.querySelector('[data-pairing-method="'+method+'"] .pairing-method-body')||document.querySelector('.pairing-network-choice')||document.querySelector('.pairing-methods');
     if(!body)return;
     let line=body.querySelector('.pairing-progress');
     if(!line){line=document.createElement('p');line.className='pairing-progress pairing-brief-status';line.setAttribute('role','status');body.appendChild(line);}
@@ -430,11 +412,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       '</div>';
   }
   async function readPairingQR(file,role){
-    const status=document.getElementById('net-'+role+'-qr-status');
+    const status=document.getElementById('net-'+role+'-qr-status'),screen=status?.closest('[data-nearby-screen]'),revision=screen?.dataset.nearbyRevision;
     if(status)status.textContent=globalThis.PlayroomMessages.text("ui.pairing-presenter.275fc90b2d81");
     try{
       if(!ports.Scanner?.scan)throw Error(globalThis.PlayroomMessages.text("ui.pairing-presenter.391aac9d0c94"));
       const scanned=await ports.Scanner.scan(file);
+      if(!status?.isConnected||screen&&revision!==screen.dataset.nearbyRevision||ports.isPairingCurrent&&!ports.isPairingCurrent('qr'))return;
       const expected=role==='host'?'answer':'offer';
       if(scanned.kind!==expected)throw Error(role==='host'?
         globalThis.PlayroomMessages.text("ui.pairing-presenter.c4c6936436d3"):globalThis.PlayroomMessages.text("ui.pairing-presenter.381fefa67a8e"));
@@ -442,6 +425,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(role==='host')await ports.acceptAnswerSignal(scanned.signal);
       else await ports.createClientAnswer(scanned.signal);
     }catch(error){
+      if(!status?.isConnected||screen&&revision!==screen.dataset.nearbyRevision||ports.isPairingCurrent&&!ports.isPairingCurrent('qr'))return;
       if(status)status.textContent=error?.message||String(error);
       toast('QR: '+(error?.message||String(error)));
     }

@@ -11,15 +11,17 @@
   <meta name="color-scheme" content="light">
   <script src="app/appearance-startup.js"></script>
   <meta name="description" content="Настольные игры в кармане. Устанавливайте паки игр, играйте с ботами или вместе и пересматривайте ходы.">
-  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/playroom.svg" type="image/svg+xml">
   <title>ХОД — игры в хорошей компании</title>
   <link rel="stylesheet" href="app/styles.css">
   <link rel="stylesheet" href="app/saved-games.css">
+  <link rel="stylesheet" href="app/saved-021.css">
   <link rel="stylesheet" href="app/cloud-saves.css">
   <link rel="stylesheet" href="app/account.css">
   <link rel="stylesheet" href="app/social.css">
+  <link rel="stylesheet" href="app/group-021.css">
   <link rel="stylesheet" href="app/quick-reactions.css">
   <link rel="stylesheet" href="app/reaction-art.css">
   <link rel="stylesheet" href="app/pack-manager.css">
@@ -35,7 +37,25 @@
   <link rel="stylesheet" href="core/tooltips.css">
   <link rel="stylesheet" href="app/appearance.css">
   <link rel="stylesheet" href="app/interface-scale.css">
+  <link rel="stylesheet" href="app/mobile-surfaces.css">
+  <link rel="stylesheet" href="app/conversation-021.css">
+  <link rel="stylesheet" href="app/nearby-021.css">
+  <link rel="stylesheet" href="app/lobby-021.css">
+  <link rel="stylesheet" href="app/context-choices-021.css">
+  <link rel="stylesheet" href="app/room-context-021.css">
+  <link rel="stylesheet" href="app/invite-021.css">
+  <link rel="stylesheet" href="app/packs-021.css">
+  <link rel="stylesheet" href="app/connection-021.css">
+  <link rel="stylesheet" href="app/room-rules-021.css">
+  <link rel="stylesheet" href="app/game-menu-021.css">
+  <link rel="stylesheet" href="app/game-frame-021.css">
+  <link rel="stylesheet" href="app/host-offer-021.css">
+  <link rel="stylesheet" href="app/status-meter.css">
+  <link rel="stylesheet" href="app/settings-021.css">
   <link rel="stylesheet" href="app/element-sizes.css">
+  <link rel="stylesheet" href="app/hub-shell-021.css">
+  <link rel="stylesheet" href="app/catalog-filters-021.css">
+  <link rel="stylesheet" href="app/result-021.css">
 </head>
 <body>
   <div id="app"></div>
@@ -62,6 +82,7 @@
   <script src="core/command-processor.js"></script>
   <script src="core/player-controls.js"></script>
   <script src="core/authority.js"></script>
+  <script src="core/vector-art.js"></script>
   <script src="core/component-assets.js"></script>
   <script src="core/mini-split-deck.js"></script>
 <script src="core/game-components.js"></script>
@@ -84,6 +105,7 @@
   <script src="app/remote-catalog.js"></script>
   <script src="platform/web/storage-usage.js"></script>
   <script src="platform/web/data-storage.js"></script>
+  <script src="app/status-meter.js"></script>
   <script src="app/pack-manager.js"></script>
   <script src="application/library.js"></script>
   <script src="app/library.js"></script>
@@ -97,7 +119,9 @@
   <script src="application/community-service.js"></script>
   <script src="application/cloud-signaling.js"></script>
   <script src="platform/web/ice-config.js"></script>
+  <script src="application/connection-attempt.js"></script>
   <script src="app/connection-progress.js"></script>
+  <script src="application/online-connection.js"></script>
   <script src="app/cloud-network.js"></script>
   <script src="platform/web/supabase-social.js"></script>
   <script src="app/social-ui.js"></script>
@@ -108,10 +132,14 @@
   <script src="app/chat-composer.js"></script>
   <script src="app/quick-reactions.js"></script>
   <script src="app/chat-components.js"></script>
+  <script src="app/conversation-search-ui.js"></script>
   <script src="app/chat-ui.js"></script>
+  <script src="app/game-chat-panel.js"></script>
+<script src="app/game-menu.js"></script>
   <script src="app/room-chat-ui.js"></script>
   <script src="app/chat-activity.js"></script>
   <script src="platform/web/chat-notification-store.js"></script>
+  <script src="app/ui-feedback.js"></script>
   <script src="app/chat-notifications.js"></script>
   <script src="app/group-ui.js"></script>
   <script src="platform/web/community-order-store.js"></script>
@@ -179,11 +207,15 @@
   <script src="application/save-transfer.js"></script>
   <script src="application/host-transfer.js"></script>
   <script src="platform/web/host-transfer-wire.js"></script>
+  <script src="application/transfer-peer.js"></script>
   <script src="app/host-transfer-ui.js"></script>
   <script src="app/temporary-bot-ui.js"></script>
   <script src="app/save-transfer-ui.js"></script>
   <script src="application/cloud-save-service.js"></script>
   <script src="app/cloud-saves-ui.js"></script>
+  <script src="app/network-social.js"></script>
+  <script src="app/network-presence.js"></script>
+  <script src="app/nearby-view.js"></script>
   <script src="app/network-ui.js"></script>
   <script src="core/input.js"></script>
   <script src="core/tooltips.js"></script>
@@ -192,8 +224,9 @@
   <script src="app/upgrade-ui.js"></script>
   <script src="app/hub-presenter.js"></script>
   <script src="app/avatar-picker.js"></script>
-  <script src="app/update-dialog.js"></script>
+<script src="app/update-dialog.js"></script>
   <script src="app/hub-action.js"></script>
+  <script src="app/diagnostics.js"></script>
   <script src="app/app.js"></script>
 </body>
 </html>

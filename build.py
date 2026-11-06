@@ -48,7 +48,7 @@ def read_source_pack(manifest_path):
 _registry = json.loads((ROOT / "core/tags.json").read_text(encoding="utf-8"))
 (ROOT / "core/tag-registry.js").write_text("// Generated from core/tags.json by build.py.\nglobalThis.PlayroomTagRegistry = " + json.dumps(_registry, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
 _app_version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
-(ROOT / "app/version.js").write_text("// Generated from package.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\n", encoding="utf-8")
+(ROOT / "app/version.js").write_text("// Generated from package.json and updates.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\nglobalThis.PlayroomAppReleases = " + json.dumps([r for r in json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))["releases"] if r["version"] == _app_version], ensure_ascii=False) + ";\n", encoding="utf-8")
 ASSET_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 ATTR = re.compile(r"([\w-]+)\s*=\s*(['\"])(.*?)\2", re.DOTALL)
 
@@ -302,6 +302,12 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
     originals = dict(items)
     items = [(name, document.encode("utf-8") if name == "index.html" else content) for name, content in items]
     worker = originals["sw.js"].decode("utf-8")
+    # Ship bundled pack notes with the waiting worker, before activation and
+    # independently of the remote catalog's availability.
+    info = {"version": _app_version, **json.loads((ROOT / "updates.json").read_text(encoding="utf-8")),
+            "packs": [{key: bundle["manifest"][key] for key in ("id", "version", "name", "releases") if key in bundle["manifest"]}
+                      for bundle in ([] if remote_catalog else packs)]}
+    worker = re.sub(r"^const UPDATE_INFO=.*?;$", lambda _: "const UPDATE_INFO=" + json.dumps(info, ensure_ascii=False, separators=(",", ":")) + ";", worker, count=1, flags=re.M)
     worker = re.sub(r"const CACHE='[^']+';", "const CACHE='playroom-pwa-v" + _app_version + "';", worker, count=1)
     for name, alias in aliases.items():
         worker = worker.replace("'./" + name + "'", "'./" + alias + "'")

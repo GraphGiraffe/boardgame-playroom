@@ -50,6 +50,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const r=records.get(this);
       return r.processor ||= new Processor({
         persistence:r.persistence,
+        checkpoint:(before,next,actor,command)=>r.session.engine.checkpoint?.(before,next,actor,command)??true,
         begin:()=>{r.busy=true;},end:()=>this._idle(),
         commit:next=>r.session.commitPrepared(next),
         remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
@@ -105,7 +106,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
       }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return freeze(clone({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows}));
+      return P.immutable({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows});
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -133,8 +134,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       this._publish();if(r.botOptions)this.scheduleBot(r.botOptions);
     }
     _presentationReady(binding,message){
-      const r=records.get(this),window=this._syncReactionWindows().find(w=>w.descriptor.id===message?.windowId);
+      const r=records.get(this);
       if(binding.closed||r.disposed)return {ok:false,code:'CLOSED'};
+      const window=this._syncReactionWindows().find(w=>w.descriptor.id===message?.windowId);
       if(r.stopRequested)return {ok:false,code:'BUSY'};
       if(!P.validatePresentationReady(message))return {ok:false,code:'BAD_COMMAND'};
       if(message.sessionId!==r.sessionId)return {ok:false,code:'WRONG_SESSION'};
@@ -223,6 +225,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(command.expectedRevision!==this.revision||command.action.expectedControlRevision!==r.controlRevision)return reject('STALE');
       r.busy=true;
       try{
+        await r.processor?.flush();
         const controlRevision=r.controlRevision+(r.paused===command.action.paused?0:1);
         const receipt={ok:true,code:'OK',control:true,commandId:command.commandId,revision:this.revision,controlRevision,...(binding.host?{host:true}:{})};
         if(r.persistence)await r.persistence.setControl({sessionId:r.sessionId,previousControlRevision:r.controlRevision,paused:command.action.paused,controlRevision,viewer:binding.viewer,commandId:command.commandId,signature,receipt});
@@ -253,6 +256,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         // changing controller; queued timers and new commands are fenced above.
         if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
         if(r.disposed||r.stopRequested)error('BUSY');
+        await r.processor?.flush();
         const controls=clone(r.playerControls);controls[actor]=next;
         const revision=r.playerControlRevision+1,receipt={ok:true,playerControlRevision:revision,revision:this.revision,requestId};
         const rows=[...r.playerReceipts.values(),{key,signature,receipt}];
@@ -267,6 +271,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       r.stopRequested=true;const bots=r.botOptions;this.cancelBot();
       if(r.busy||r.botBatch)await new Promise(resolve=>r.idleWaiters.push(resolve));
       if(r.disposed)throw Error('HOST_TRANSFER_CLOSED');
+      try{await r.processor?.flush();}catch(error){r.stopRequested=false;if(bots)this.scheduleBot(bots);throw error;}
       for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;}
       let released=false;
       return ()=>{if(released||r.disposed)return;released=true;r.stopRequested=false;if(bots)this.scheduleBot(bots);};

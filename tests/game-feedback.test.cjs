@@ -184,3 +184,25 @@ test('each card reveal resolves its own actor hand instead of inheriting the pen
  const shot={actor:0,origin:receiver,playedFrom:receiver,hands:new Map([[0,receiver],[1,sender]])};
  f.accept([{id:1,player:1,kind:'play',reveal:{kind:'card',card:{id:4,value:'+4'}}},{id:2,player:0,kind:'draw',transfer:{player:0,count:4,from:'stock'}}],[],'uno',{snapshot:shot,defer:true});assert.equal(f.queue[0].snapshot.actor,1);assert.deepEqual(f.queue[0].snapshot.origin,sender);assert.equal(f.queue[0].snapshot.playedFrom,null);assert.equal(shot.actor,0,'original capture is not mutated');f.destroy();
 });
+
+test('audio readiness gates the simultaneous presentation group and cancellation drops waiting cues',async()=>{
+ for(const cancelled of [false,true]){
+  let release;const stages=[],feedback=new Feedback({prepareAudio:()=>new Promise(resolve=>release=resolve),mount:()=>null});
+  feedback.presentCue=({kind})=>{stages.push(kind);};
+  feedback.accept([{id:1,text:'Ход'}],[{eventId:1,id:'move'}],'uno',{mode:'instant'});
+  await flush();assert.deepEqual(stages,[],'no visual/sound effects start while first audio unlock is pending');
+  if(cancelled)feedback.clear();release(true);await flush();
+  if(cancelled)assert.deepEqual(stages,[],'an obsolete presentation cannot resume after unlock');
+  else assert.deepEqual(stages,['prepare','enter','sound','leave']);
+  feedback.destroy();
+ }
+});
+
+
+test('deferred stock artwork is requested from authorized transfers or spoken card reveals',()=>{
+ for(const [event,back,transfers] of [[{speech:{speaker:1,text:'Карта'},reveal:{kind:'card',card:{id:'public-card'}}},true,0],[{transfer:{from:'stock',player:0,count:2}},false,1],[{speech:{speaker:1,text:'Ответ'}},false,0],[{reveal:{kind:'card',card:{id:'public-card'}}},false,0]]){
+  const prepared=[],f=new Feedback({mount:()=>null});
+  f.accept([{id:1,...event}],[],'any',{snapshot:{prepareTransfers:(draws,options)=>prepared.push({draws,options})},defer:true});
+  assert.equal(prepared.length,1);assert.equal(prepared[0].draws.length,transfers);assert.equal(prepared[0].options.back,back);f.destroy();
+ }
+});

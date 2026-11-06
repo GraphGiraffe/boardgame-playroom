@@ -107,7 +107,7 @@
 .hand-track.is-fan .hand-fan-row>.hand-card:is(.is-selected,:focus-visible,.is-hand-preview) ~ .hand-card:not(.is-selected):not(:focus-visible):not(.is-hand-preview){transform:translateX(var(--fan-reveal-space,calc(var(--fan-card-width) - var(--fan-peek))));}
 
 .participant-role{display:inline-flex;align-items:center;gap:var(--size-space-2_0,2px);flex:none;color:inherit;vertical-align:middle;}
-.participant-role svg{display:block;width:var(--size-length-14_0,12px);height:var(--size-length-14_0,12px);flex:none;}
+.participant-role svg{display:block;width:calc(var(--size-length-14_0,12px) * var(--role-ink-width,24)/24);height:calc(var(--size-length-14_0,12px) * var(--role-ink-height,24)/24);flex:none;}
 .number-mark{display:block;width:78%;height:78%;aspect-ratio:1;flex:none;overflow:visible;}
 .participant-role.is-online{color:var(--green,#35654f);}
 .participant-role.is-offline{color:var(--coral,#d77b62);}

@@ -44,6 +44,18 @@ test('commands have exact value identity and immutable transitions reject stale 
   assert.deepEqual(model.legalActions(position,-1),[]);
 });
 
+test('immutable event projections reuse prior facts without mixing viewers or trusting mutable inputs',()=>{
+ const Events=require('../core/events.js');
+ const draft={type:'cards.drawn',actor:0,params:{card:'secret-spades'},visibility:{kind:'players',players:[0]},publicEvent:{type:'cards.received',actor:0,params:{count:1},visibility:{kind:'public'}}};
+ const journal=Events.append([], [draft],2,1),owner=Events.project(journal,0,2),other=Events.project(journal,1,2);
+ assert.equal(Events.project(journal,0,2)[0],owner[0]);
+ assert.equal(Events.project(Events.append(journal,[draft],2,2),0,2)[0],owner[0]);
+ assert.equal(owner[0].params.card,'secret-spades');assert.equal(other[0].params.card,undefined);assert.notEqual(owner[0],other[0]);
+ assert(Object.isFrozen(owner)&&Object.isFrozen(owner[0].params));
+ draft.params.card='changed';assert.equal(Events.project([draft],0,2)[0].params.card,'changed');draft.params.card='again';assert.equal(Events.project([draft],0,2)[0].params.card,'again');
+ assert.throws(()=>Events.project(journal,0,0));
+});
+
 test('visibility is resolved before events reach presentation and invalid viewers receive only public data',()=>{
   const secret={type:'cards.drawn',actor:0,params:{card:'secret-spades'},visibility:{kind:'players',players:[0]},
     publicEvent:{type:'cards.received',actor:0,params:{count:1},visibility:{kind:'public'}}};
@@ -449,15 +461,21 @@ test('event scenes use authorized current events, ordered checkpoints and inert 
 });
 
 test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',()=>{
+ // Compare complete bundles against the independently prepared app companion.
+ // Git HEAD can predate unrelated compiler/asset work in the same checkout.
+ const prepared={};vm.runInNewContext(fs.readFileSync(path.join(root,'installed-packs.js'),'utf8'),prepared);
  const script=`
-import importlib.util,json,sys,tempfile,shutil,subprocess
+import json,sys,tempfile,shutil
 from pathlib import Path
 packs_root=Path(sys.argv[2]);app_root=Path(sys.argv[1])
 ns={'__file__':str(packs_root/'shared/pack_compiler.py')}
 exec((packs_root/'shared/pack_compiler.py').read_text(),ns)
-old={'__file__':ns['__file__']};exec(subprocess.check_output(['git','-C',str(packs_root),'show','HEAD:shared/pack_compiler.py'],text=True),old)
-for path in sorted((packs_root/'packs').glob('*/manifest.json')):
- assert old['build_pack'](path.parent)==ns['build_pack'](path.parent),path.parent.name
+prepared={bundle['manifest']['id']:bundle for bundle in json.load(sys.stdin)}
+paths=sorted((packs_root/'packs').glob('*/manifest.json'))
+assert set(prepared)=={json.loads(path.read_text())['id'] for path in paths},'prepared companion catalog differs from source'
+for path in paths:
+ actual=ns['build_pack'](path.parent)
+ assert actual==prepared[actual['manifest']['id']],path.parent.name+' differs from prepared companion'
 md='# Цель\\n\\n**Соберите** *три* знака. \\x60X\\x60\\n\\n## Ход\\n\\n1. Выберите клетку\\n2. Подтвердите\\n\\n| Карта | Действие |\\n|---|---|\\n| X | Поставить |\\n\\n![Линия](line)\\n'
 book=ns['compile_rulebook_markdown'](md)
 assert len(book['sections'])==2
@@ -474,10 +492,47 @@ with tempfile.TemporaryDirectory() as tmp:
  assert 'locales/ru/rules.md' not in bundle['files']
  print(json.dumps({'book':book,'bundle':bundle},ensure_ascii=False))
 `;
- const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:5*1024*1024}));
+ const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{input:JSON.stringify(prepared.PlayroomInstalledPacks),encoding:'utf8',maxBuffer:5*1024*1024}));
  const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
  const manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});manager.install(manager.prepare(result.bundle));
  manager.activate('tictactoe',result.bundle.manifest.version);assert.deepEqual(E.get('tictactoe').rulebook,result.book);
  const html=require('../app/rulebook-view.js').render(result.book,{esc:value=>String(value??'').replaceAll('<','&lt;'),illustrate:()=>''});
  assert.match(html,/<strong>Соберите<\/strong>/);assert.match(html,/<em>три<\/em>/);assert.match(html,/<code>X<\/code>/);assert.match(html,/<ol>/);assert.match(html,/<table/);assert.doesNotMatch(html,/<script/);
+});
+
+
+test('immutable snapshots reuse only their own validated frozen values',()=>{
+  const values=require('../core/model-values.js');
+  const source={nested:{cards:[{id:'card-1'}]}};
+  const first=values.snapshot(source);
+  assert.notEqual(first,source);assert.notEqual(first.nested,source.nested);
+  assert.equal(values.snapshot(first),first);
+  const nested=values.snapshot(first.nested);
+  assert.notEqual(nested,first.nested);assert.equal(values.snapshot(nested),nested);
+  assert.throws(()=>{first.nested.cards[0].id='changed';},TypeError);
+  source.nested.cards[0].id='changed';assert.equal(first.nested.cards[0].id,'card-1');
+  const mutable=values.copy(first);mutable.nested.cards.push({id:'card-2'});
+  assert.equal(first.nested.cards.length,1);
+  const shallow=Object.freeze({nested:{value:1}}),second=values.snapshot(shallow);
+  shallow.nested.value=2;assert.equal(second.nested.value,1);assert.notEqual(second,shallow);
+  const external=values.freeze({nested:{value:1}});assert.notEqual(values.snapshot(external),external);
+  const cyclic={};cyclic.self=cyclic;Object.freeze(cyclic);
+  assert.throws(()=>values.snapshot(cyclic),error=>error.code==='JSON_INVALID');
+  assert.throws(()=>values.snapshot(Object.freeze({bad:undefined})),error=>error.code==='JSON_INVALID');
+  assert.equal(values.snapshot(null),null);assert.equal(values.snapshot(3),3);
+});
+
+test('unimplemented optional mechanics do not traverse the complete game position',()=>{
+  const E=require('../core/engine.js');require('../packs/tictactoe/rules.js');
+  const adapted=globalThis.PlayroomModelRegistration.adapt(E,{definition,presentation,locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'});
+  const state=E.createGame('tictactoe',{seed:17,players:[{name:'A'},{name:'B'}]});let reads=0;const data=state.data;Object.defineProperty(state,'data',{get(){reads++;return data;}});
+  for(let i=0;i<40;i++){
+    assert.deepEqual(adapted.reactions(state,0),[]);assert.deepEqual(adapted.reactionWindows(state),[]);assert.equal(adapted.reactionControl(state,0,{type:'place',cell:0}),null);assert.equal(adapted.botReaction(state,0),null);assert.equal(adapted.botReactionDelay(state,0),null);assert.equal(adapted.decisionWindow(state),null);
+  }
+  assert.equal(reads,0,'absent hooks must return their default without cloning the position');
+});
+
+test('model validation reuses validated immutable positions but rechecks mutable or changed inputs',()=>{
+ let calls=0;const counted=new GameModel({...definition,validate(position){calls++;return definition.validate(position);}}),position=counted.create({playerCount:2,firstPlayer:0,preset:'classic'});calls=0;counted.validate(position);const once=calls;counted.validate(position);counted.validate(position);assert.equal(calls,once,'one immutable position is validated once');
+ const mutable=JSON.parse(JSON.stringify(position));counted.validate(mutable);const checked=calls;counted.validate(mutable);assert(calls>checked,'mutable callers are detached and rechecked');mutable.data.board[0]=0;mutable.data.board[1]=0;assert.throws(()=>counted.validate(mutable));
 });

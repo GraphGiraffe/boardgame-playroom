@@ -31,7 +31,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'cloud-download':cloudTransferOutline+'<path d="M12 11v11m-3-3 3 3 3-3"/>',
     app:'<g transform="rotate(-8 12 12)" fill="currentColor" stroke="none"><rect x="2" y="2" width="9" height="9" rx="2.5"/><rect x="13" y="2" width="9" height="9" rx="2.5"/><rect x="2" y="13" width="9" height="9" rx="2.5"/><rect x="13" y="13" width="9" height="9" rx="2.5"/></g>',
     warning:'<path d="m12 3 10 18H2Z"/><path d="M12 9v5m0 3h.01"/>',
-    gear:'<path d="m9.5 3-.5 2-2 1-2-.5L3 9l1.5 1.5v2L3 14l2 3.5 2-.5 2 1 .5 2h4l.5-2 2-1 2 .5 2-3.5-1.5-1.5v-2L21 9l-2-3.5-2 .5-2-1-.5-2Z"/><circle cx="12" cy="12" r="3"/>',
+    gear:'<path d="M9.47 5.05 L9.98 2.51 L14.02 2.51 L14.53 5.05 L16.76 6.33 L19.21 5.51 L21.23 9.00 L19.29 10.72 L19.29 13.28 L21.23 15.00 L19.21 18.49 L16.76 17.67 L14.53 18.95 L14.02 21.49 L9.98 21.49 L9.47 18.95 L7.24 17.67 L4.79 18.49 L2.77 15.00 L4.71 13.28 L4.71 10.72 L2.77 9.00 L4.79 5.51 L7.24 6.33Z"/><circle cx="12" cy="12" r="3.2"/>',
     sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
     moon:'<path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"/>',
     sync:'<path d="M20 4v6h-6M4 20v-6h6M5.3 8a7 7 0 0 1 11.5-3L20 10M4 14l3.2 5A7 7 0 0 0 18.7 16"/>',
@@ -62,6 +62,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     takeCards:'<path d="m8 7-2-4 6 2 6-2-2 4M8 8h8M8 10c-3 3-5 6-5 9 0 2 3 2 9 2s9 0 9-2c0-3-2-6-5-9Z"/>',
     grid:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
     undo:'<path d="M9 5 4 10l5 5M4 10h9a6 6 0 0 1 0 12"/>',
+    refresh:'<path d="M3 12a9 9 0 0 1 15.4-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.4 6.4L3 16M3 21v-5h5"/>',
     hint:'<path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 1-1 2-1 3H9c0-1 0-2-1-3Z"/>',
     history:'<path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2"/>',
     help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 17h.01"/>',
@@ -71,6 +72,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     settings:'<path d="M4 7h16M4 17h16"/><circle cx="8" cy="7" r="3" fill="currentColor"/><circle cx="16" cy="17" r="3" fill="currentColor"/>',
     play:'<path d="m9 5 10 7-10 7Z" fill="currentColor" stroke="none"/>',
     send:'<path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/>',
+    reaction:'<circle cx="12" cy="12" r="9"/><path d="M8 14a4 4 0 0 0 8 0"/><path d="M8 9h.01M16 9h.01" stroke-width="3"/>',
     arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',
     back:'<path d="M19 12H5m5-5-5 5 5 5"/>',
     next:'<path d="m9 6 6 6-6 6"/>',
@@ -146,21 +148,28 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const start=own?order.indexOf(viewer)+1:0;return Array.from({length:own?count-1:count},(_,i)=>order[(start+i)%count]);
   }
   function playerOrderPosition(state,index){return (index-(Number.isInteger(state.firstPlayer)?state.firstPlayer:0)+state.players.length)%state.players.length+1;}
-  function participantIcon(person={}, {network=person.network===true}={}) {
+  // Tight paint bounds include the 2px round stroke; preserve the original glyph scale.
+  const participantGlyphBounds={"player":[4,3,16,19],"bot-easy":[1,2,22,20],"bot-medium":[1,2,22,20],"bot-hard":[1,2,22,20],"host":[2,3,20,17],"hand":[1.37868,1,19.62132,22],"grid":[2,2,20,20],"eye":[1,4,22,16],"replacement":[3,2,18,20]};
+  function participantGlyph(name){const b=participantGlyphBounds[name];return b?icon(name).replace('viewBox="0 0 24 24"',`viewBox="${b.join(' ')}" style="--role-ink-width:${b[2]};--role-ink-height:${b[3]}"`):icon(name);}
+  function participantIcon(person={}, {network=person.network===true,avatar=false}={}) {
     const role=person.role==='table'?'grid':person.role==='spectator'?'eye':person.bot?'bot':person.local&&!person.isHost&&!person.primary?'hand':'player';
     const host=network&&person.isHost;
-    const glyphs=(host?icon('host'):'')+(!host||role==='grid'?icon(role==='bot'?'bot-'+(['easy','medium','hard'].includes(person.botSettings?.difficulty)?person.botSettings.difficulty:'medium'):role):'')+(person.replacement?icon('replacement'):'');
+    const glyphs=(avatar&&['bot','hand'].includes(role)?participantGlyph(role==='bot'?'bot-'+(['easy','medium','hard'].includes(person.botSettings?.difficulty)?person.botSettings.difficulty:'medium'):'hand'):['grid','eye'].includes(role)?participantGlyph(role):'')+(person.replacement?participantGlyph('replacement'):'');
     const status=network&&!person.bot&&!person.local&&typeof person.connected==='boolean'&&(person.connected||person.hasConnected||Number.isFinite(person.joinedAt))?(person.connected?'online':'offline'):'neutral';
     const label=globalThis.PlayroomMessages.text("ui.ui.be876869eb2e",{p0:String(({grid:globalThis.PlayroomMessages.text("ui.ui.da639244db1d"),eye:globalThis.PlayroomMessages.text("ui.ui.9ae566816505"),bot:globalThis.PlayroomMessages.text('ui.ui.aa691043b447')+' · '+globalThis.PlayroomMessages.text('ui.bot-settings.'+(person.botSettings?.difficulty||'medium')),hand:'Hotseat',player:network?globalThis.PlayroomMessages.text("ui.ui.c0562fc31385"):globalThis.PlayroomMessages.text("ui.ui.f54f58cf08df")})[role]),p1:String(host?globalThis.PlayroomMessages.text("ui.ui.32c4ccc5277d"):''),p2:String(status==='online'?globalThis.PlayroomMessages.text("ui.ui.b74f9d035c25"):status==='offline'?globalThis.PlayroomMessages.text("ui.ui.1a19fe2fb654"):''),p3:String(person.replacement?globalThis.PlayroomMessages.text("ui.ui.389e565be3fa"):'')});
     const replacement=person.replacement?globalThis.PlayroomMessages.text("ui.ui.f4420ff3ee50",{p0:String(person.replacement.previousName?' '+person.replacement.previousName:''),p1:String(person.replacement.accepted===false?globalThis.PlayroomMessages.text("ui.ui.b8f9ffc5334a"):'')}):'';
-    return `<span class="participant-role is-${status}" data-participant-role="${role}"${role==='bot'?` data-bot-difficulty="${['easy','medium','hard'].includes(person.botSettings?.difficulty)?person.botSettings.difficulty:'medium'}"`:''} data-connection="${status}" role="${replacement?'button':'img'}" aria-label="${esc(replacement?`${label} · ${replacement}`:label)}" title="${esc(replacement||label)}"${replacement?` tabindex="0" data-tooltip="${esc(replacement)}" data-player-replacement="true"`:''}>${glyphs}</span>`;
+    return `<span class="participant-role is-${status}${avatar?' is-avatar-role':''}" data-role-placement="${avatar?'avatar':'name'}" data-participant-role="${role}"${role==='bot'?` data-bot-difficulty="${['easy','medium','hard'].includes(person.botSettings?.difficulty)?person.botSettings.difficulty:'medium'}"`:''} data-connection="${status}" role="${replacement?'button':'img'}" aria-label="${esc(replacement?`${label} · ${replacement}`:label)}" title="${esc(replacement||label)}"${replacement?` tabindex="0" data-tooltip="${esc(replacement)}" data-player-replacement="true"`:''}>${glyphs}</span>`;
   }
   function viewPreferences(game,viewer,key,value){const storageKey='playroom.view-preferences.v1:'+game+':'+viewer;try{const data=JSON.parse(globalThis.localStorage.getItem(storageKey)||'{}');if(key&&/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(key)&&typeof value==='string'&&value.length<=80){data[key]=value;globalThis.localStorage.setItem(storageKey,JSON.stringify(data));}return data&&typeof data==='object'?data:{};}catch(_){return {};}}
   function validIndicators(items){return Array.isArray(items)&&items.length<=8&&items.every(x=>x&&['ship','cards','pieces','dice'].includes(x.icon)&&Number.isSafeInteger(x.value)&&x.value>=0&&typeof x.label==='string'&&(x.size===undefined||Number.isInteger(x.size)&&x.size>=1&&x.size<=8)&&(x.dragPiece===undefined||typeof x.dragPiece==='string'&&x.dragPiece.length<=40)&&(x.complete===undefined||typeof x.complete==='boolean')&&(x.selected===undefined||typeof x.selected==='boolean')&&(x.vertical===undefined||typeof x.vertical==='boolean'));}
   function indicators(items=[]){if(!validIndicators(items))throw Error('Invalid player indicators');return `<span class="player-indicators">${items.map(x=>`<span class="player-indicator${x.icon==='ship'&&x.size?' fleet-indicator':''}${x.icon==='ship'&&x.value===0?' is-empty':''}${x.complete?' is-complete':''}${x.selected?' is-selected':''}"${x.dragPiece?` data-select="${esc(x.dragPiece)}" data-drag-piece="${esc(x.dragPiece)}" data-drag-shape="${x.size}:${x.vertical?'v':'h'}"${x.icon==='ship'&&x.size?` data-drag-segment="${Math.floor(x.size/2)}"`:''} role="button" tabindex="0"`:''} aria-label="${esc(x.label)}: ${x.value}" title="${esc(x.label)}: ${x.value}">${x.icon==='ship'&&x.size?shipSilhouette(x.size):icon(x.icon)}${x.size&&x.icon!=='ship'?`<span class="indicator-size" aria-hidden="true">${'▪'.repeat(x.size)}</span>`:''}<b>${x.value}</b></span>`).join('')}</span>`;}
   const playerPalette=['#348653','#d75245','#387bbf','#d9b136','#9055b5','#e68532','#42b7d6','#d66b8f','#6371a0','#a76a45','#6d8f77','#8a6a58'];
   const playerColor=index=>'var(--color-seat-'+index+','+(playerPalette[index]||'hsl('+Math.round(index*137.508%360)+' 46% 50%)')+')';
-  function avatar(person,index=0,{color=null,hidden=false}={}){const name=person.name||person.nickname||'';return `<span class="avatar p${index}" style="background:${color?esc(color):`color-mix(in srgb,${playerColor(index)} 65%,var(--color-surface-panel,#f4f2e8))`};color:var(--color-text-primary,#172b24)" ${hidden?'aria-hidden="true"':`role="img" aria-label="${esc(name)}" title="${esc(name)}"`}>${globalThis.PlayroomAvatars?.content(person.avatar,name)??esc(Array.from(name)[0]||'')}</span>`;}
+  function avatar(person,index=0,{color=null,hidden=false}={}){
+    const name=person.name||person.nickname||'',hotseat=!person.bot&&person.local&&!person.isHost&&!person.primary,symbolic=person.bot||hotseat,face=symbolic?participantIcon(person,{avatar:true}):(globalThis.PlayroomAvatars?.content(person.avatar,name)??esc(Array.from(name)[0]||''))+participantIcon(person,{avatar:true});
+    const label=name+(person.isHost?' · '+globalThis.PlayroomMessages.text('ui.ui.32c4ccc5277d'):'');
+    return `<span class="avatar p${index}${symbolic?' is-symbol-avatar':''}${person.bot?' is-bot-avatar':''}${hotseat?' is-hotseat-avatar':''}${person.isHost?' is-host-avatar':''}" style="background:${color?esc(color):`color-mix(in srgb,${playerColor(index)} 65%,var(--color-surface-panel,#f4f2e8))`};color:var(--color-text-primary,#172b24)" ${hidden?'aria-hidden="true"':`role="img" aria-label="${esc(label)}" title="${esc(label)}"`}>${face}</span>`;
+  }
   function validCounters(counters) {
     return Array.isArray(counters)&&counters.length<=4&&counters.every(c=>GameComponents.validMetric(c,{localized:true}))&&new Set(counters.map(c=>c.id||c.kind)).size===counters.length;
   }
@@ -197,17 +206,17 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const orderPosition=Number.isInteger(content.orderPosition)&&content.orderPosition>=1&&content.orderPosition<=8?content.orderPosition:playerOrderPosition(state,index);
     const person=state.players[index],own=index===viewer,target=!own&&actions.some(a=>a.target===index&&a.targetKind==='player');
     const renderBadge=b=>GameComponents.pieceTypes.badge.status(b,{icon});
-    const avatarBadges=(content.badges||[]).filter(b=>b?.position==='avatar-bottom').map(renderBadge).join('');
-    const badges=(content.badges||[]).filter(b=>b?.position!=='avatar-bottom').map(renderBadge).join('');
+    const avatarBadges=(content.badges||[]).filter(b=>['avatar-bottom','avatar-center'].includes(b?.position)).map(renderBadge).join('');
+    const badges=(content.badges||[]).filter(b=>!['avatar-bottom','avatar-center'].includes(b?.position)).map(renderBadge).join('');
     const counters=content.counters??[{kind:content.scoreKind||'points',value:Number.isSafeInteger(person.score)&&person.score>=0?person.score:0,label:content.scoreLabel||globalThis.PlayroomMessages.text("ui.ui.d7ab0767bbee")}];
     if(!validCounters(counters))throw Error('Invalid player counters');
     const headingCounter=content.headingCounter===undefined?null:counters.find(c=>c.id===content.headingCounter);
     const headingCounters=counters.filter(c=>content.headingCounters?.includes(c.id));
     const heading=headingCounter?(headingCounter.value>0?`<span class="player-heading-counter">${scoreBadge(headingCounter)}</span>`:''):content.orderPosition===false?'':`<span class="player-turn-position" aria-label="${globalThis.PlayroomMessages.text('ui.ui.ec2c9f35dee9')}${orderPosition}">${orderPosition}</span>`;
     const color=/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(content.color||'')?content.color:'';
-    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''} ${content.inactive?'is-inactive':''} ${content.ready?'is-ready':''}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
+    return `<article class="player-panel ${own?'self-player':'opponent-hand'} ${state.turn===index?'is-turn':''} ${content.open?'is-open-hand':''} ${content.inactive?'is-inactive':''} ${content.ready?'is-ready':''}" data-dom-key="player-panel-${index}" data-player-index="${index}"${state.turn===index?' aria-current="true"':''} ${target?`data-player-panel-target="${index}"`:""}${content.handCount!==undefined?` data-hand-count="${content.handCount}" style="--mini-hand-count:${Math.max(1,content.handCount)}"`:''}>
       <${target?'button':'div'} class="player-info player-token" ${target?`type="button" data-player-target="${index}" aria-haspopup="menu" aria-expanded="false" aria-label="${esc(globalThis.PlayroomMessages.text("ui.ui.ccc8d5ca0326",{name:person.name}))}"`:''}>
-      <span class="player-avatar-wrap"${Number.isInteger(content.decisionPlayer)?` data-decision-player="${content.decisionPlayer}" role="button" tabindex="0" aria-label="${esc(person.name)}"`:""}>${avatar(person,index,{color,hidden:true})}${playerMedallion({first:content.showFirstPlayer!==false&&state.firstPlayer===index,team:content.team})}<span data-finish-award>${playerMedallion({place:state.scene?.players?.find(p=>p.player===index)?.finishPlace||null,last:state.result?.lastPlayers?.includes(index)||false})}</span>${avatarBadges}</span><span class="player-details"><span class="player-heading">${participantIcon(person)}<strong>${esc(person.name)}${own&&content.showSelfLabel!==false?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):""}</strong>${heading}${headingCounters.length?`<span class="player-heading-counters">${headingCounters.map(scoreBadge).join('')}</span>`:''}</span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${counters.filter(c=>c!==headingCounter&&!headingCounters.includes(c)).sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
+      <span class="player-avatar-wrap"${Number.isInteger(content.decisionPlayer)?` data-decision-player="${content.decisionPlayer}" role="button" tabindex="0" aria-label="${esc(person.name)}"`:""}>${avatar(person,index,{color})}${playerMedallion({first:content.showFirstPlayer!==false&&state.firstPlayer===index,team:content.team})}<span data-finish-award>${playerMedallion({place:state.scene?.players?.find(p=>p.player===index)?.finishPlace||null,last:state.result?.lastPlayers?.includes(index)||false})}</span>${avatarBadges}</span><span class="player-details"><span class="player-heading"><strong>${esc(person.name)}${own&&content.showSelfLabel!==false?globalThis.PlayroomMessages.text("ui.ui.13292d3eac84"):""}</strong>${heading}${headingCounters.length?`<span class="player-heading-counters">${headingCounters.map(scoreBadge).join('')}</span>`:''}</span><span class="player-data"><span class="player-scores">${content.handCount!==undefined?countBadge(content.handCount,globalThis.PlayroomMessages.text("ui.ui.aac1090346a5",{p0:String(person.name),p1:String(content.countLabel||globalThis.PlayroomMessages.text("ui.ui.c81b450ffa45"))}),{hand:true}):''}${counters.filter(c=>c!==headingCounter&&!headingCounters.includes(c)).sort((a,b)=>(a.kind==='wins')-(b.kind==='wins')).map(scoreBadge).join('')}</span>${indicators(content.indicators)}${content.colorLabel?`<span class="player-side">${esc(content.colorLabel)}</span>`:''}${badges?`<span class="player-badges">${badges}</span>`:''}</span></span></${target?'button':'div'}>
       ${own?'<!--self-controls-->':''}${!own&&content.showHand!==false&&content.handCount!==undefined?`<div class="player-hand">${content.handCount!==undefined?`<div class="mini-hand ${content.open?'is-open':''}" tabindex="${content.open?'0':'-1'}" aria-label="${globalThis.PlayroomMessages.text("ui.ui.e7e0d10b26d3")}${esc(person.name)}">${content.handHTML||''}</div>`:''}</div>`:''}${content.handoffSlot?'<!--handoff-control-->':''}</article>`;
   }
   function hand(content, count, hint=globalThis.PlayroomMessages.text("ui.ui.473a2525ab0a"), extraControlHTML='', options={}) {
@@ -253,7 +262,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   function cardAttrs(card, actions, selected) {
     return source(card.id, actions, selected, {mode: 'immediate'});
   }
-  const svg = content => `<svg viewBox="0 0 300 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${content}</svg>`;
+  const svg = content => GameComponents.vector.viewport({width:300,height:180,content,attrs:'aria-hidden="true"'});
   const actionGroups=({start='',primary='',end='',exclusive=false})=>`<div class="game-action-bar"${exclusive?' data-exclusive="true"':''}><div data-action-position="start"${exclusive?' inert aria-hidden="true"':''}>${start}</div><div class="scene-actions" data-action-position="primary">${primary}</div><div data-action-position="end"${exclusive?' inert aria-hidden="true"':''}>${end}</div></div>`;
   function translator(catalogs) {
     const Localization = globalThis.PlayroomLocalization;
@@ -285,7 +294,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if(value.fieldGroups===undefined)return value.elements.field;
     const groups=value.fieldGroups;
     if(!groups||Array.isArray(groups)||typeof groups!=='object'||Object.keys(groups).some(k=>!['stock','play'].includes(k))||Object.values(groups).some(html=>typeof html!=='string')||!groups.play)throw Error('Invalid field groups');
-    return `<div class="game-field-groups">${['stock','play'].filter(k=>groups[k]).map(k=>`<section class="field-group field-group-${k}" data-field-group="${k}">${groups[k]}</section>`).join('')}</div>`;
+    return `<div class="game-field-groups" data-scene-scroll>${['stock','play'].filter(k=>groups[k]).map(k=>`<section class="field-group field-group-${k}" data-field-group="${k}">${groups[k]}</section>`).join('')}</div>`;
   }
 
   function composeSceneValue(value,{surface='combined',state=null,viewer=-1,actions=[],selection=null,seating='auto',seatingPolicy=null,presentationTurn=null,presentationField=false}={}) {
@@ -302,9 +311,12 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if(value.hidePlayers!==undefined&&(typeof value.hidePlayers!=='boolean'||value.hidePlayers&&state?.players?.length!==1))throw Error('Invalid solo layout');
     const layout=value.layout||{};
     const seatNames=['north','north-west','north-east','west','east','south-west','south-east','south'];
-    if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf','wideHand'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.wideHand!==undefined&&typeof layout.wideHand!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
+    if(!layout||typeof layout!=='object'||Array.isArray(layout)||Object.keys(layout).some(key=>!['focus','seats','duplicateSelf','wideHand','overrides'].includes(key))||layout.focus!==undefined&&!['hands','field','balanced'].includes(layout.focus)||layout.duplicateSelf!==undefined&&typeof layout.duplicateSelf!=='boolean'||layout.wideHand!==undefined&&typeof layout.wideHand!=='boolean'||layout.seats!==undefined&&(!Array.isArray(layout.seats)||layout.seats.length!==state?.players?.length||!layout.seats.every(seat=>seatNames.includes(seat))))throw Error('Invalid layout policy');
+    const overrides=layout.overrides||{};
+    if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||Object.keys(overrides).some(key=>!['fieldColumns','opponentsAlign','playerIndicators','mirrorIndicators'].includes(key))||overrides.fieldColumns!==undefined&&overrides.fieldColumns!==3||overrides.opponentsAlign!==undefined&&!['start','end'].includes(overrides.opponentsAlign)||overrides.playerIndicators!==undefined&&overrides.playerIndicators!=='below-avatar'||overrides.mirrorIndicators!==undefined&&typeof overrides.mirrorIndicators!=='boolean')throw Error('Invalid layout overrides');
+    const overrideAttrs=(overrides.fieldColumns?' data-field-columns="3"':'')+(overrides.opponentsAlign?' data-opponents-align="'+overrides.opponentsAlign+'"':'')+(overrides.playerIndicators?' data-player-indicators="'+overrides.playerIndicators+'"':'')+(overrides.mirrorIndicators?' data-mirror-indicators="true"':'');
     const focus=layout.focus||(value.family==='board'?'field':'balanced');
-    const strategy=layout.seats&&(state?.players?.length||0)>2&&(seatingPolicy||seating)!=='row'?'anchors':'row';
+    const strategy=layout.seats&&(state?.players?.length||0)>=2&&(seatingPolicy||seating)!=='row'?'anchors':'row';
     const anchored=strategy==='anchors',circular=strategy!=='row'&&surface!=='player'&&(state?.players?.length||0)>=2;
     const opponentHands=(value.playerContent||[]).some((p,i)=>i!==viewer&&(Number.isInteger(p.handCount)?p.handCount>0:!!p.handHTML));
     const className=typeof value.className==='string'?value.className:'';
@@ -317,7 +329,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
       if(missing.length)e.actions=(e.actions||'')+actionBar(missing);
     }
     if(value.actionReserve&&(surface!=='table'||state?.scene?.audience==='public')&&!e.actions)e.actions='<div class="scene-actions"></div>';
-    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.showFirstPlayer!==undefined&&typeof p.showFirstPlayer!=='boolean')||(p.showSelfLabel!==undefined&&typeof p.showSelfLabel!=='boolean')||(p.orderPosition!==undefined&&p.orderPosition!==false&&(!Number.isInteger(p.orderPosition)||p.orderPosition<1||p.orderPosition>8))||(p.headingCounters!==undefined&&(!Array.isArray(p.headingCounters)||p.headingCounters.some(id=>typeof id!=='string'||!p.counters?.some(c=>c.id===id))))||(p.headingCounter!==undefined&&(typeof p.headingCounter!=='string'||!p.counters?.some(c=>c.id===p.headingCounter)))||(p.team!==undefined&&p.team!==null&&(!p.team||typeof p.team.label!=='string'||(typeof p.team.color!=='string'&&typeof p.team.colorRole!=='string')))||(p.indicators!==undefined&&!validIndicators(p.indicators))||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(b.color))||(b.position!==undefined&&b.position!=='avatar-bottom')||(b.icon!==undefined&& !['sword','shield','takeCards','adjustDie','lessDie','skipTurn','secondDie','extraTurn'].includes(b.icon)))))))))throw Error('Invalid player content');
+    if(content!==undefined&&(!Array.isArray(content)||(state?.players&&content.length!==state.players.length)||content.some(p=>!p||typeof p!=='object'||Array.isArray(p)||['scoreLabel','countLabel','color','colorLabel'].some(k=>p[k]!==undefined&&typeof p[k]!=='string')||(p.showFirstPlayer!==undefined&&typeof p.showFirstPlayer!=='boolean')||(p.showSelfLabel!==undefined&&typeof p.showSelfLabel!=='boolean')||(p.orderPosition!==undefined&&p.orderPosition!==false&&(!Number.isInteger(p.orderPosition)||p.orderPosition<1||p.orderPosition>8))||(p.headingCounters!==undefined&&(!Array.isArray(p.headingCounters)||p.headingCounters.some(id=>typeof id!=='string'||!p.counters?.some(c=>c.id===id))))||(p.headingCounter!==undefined&&(typeof p.headingCounter!=='string'||!p.counters?.some(c=>c.id===p.headingCounter)))||(p.team!==undefined&&p.team!==null&&(!p.team||typeof p.team.label!=='string'||(typeof p.team.color!=='string'&&typeof p.team.colorRole!=='string')))||(p.indicators!==undefined&&!validIndicators(p.indicators))||(p.counters!==undefined&&!validCounters(p.counters))||(p.open!==undefined&&typeof p.open!=='boolean')||(p.handHTML!==undefined&&typeof p.handHTML!=='string')||(p.handCount!==undefined&&(!Number.isSafeInteger(p.handCount)||p.handCount<0))||(p.badges!==undefined&&(!Array.isArray(p.badges)||p.badges.some(b=>typeof b!=='string'&&(!b||typeof b.label!=='string'||(b.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(b.color))||(b.position!==undefined&&!['avatar-bottom','avatar-center'].includes(b.position))||(b.value!==undefined&&(!Number.isSafeInteger(b.value)||b.value<1))||(b.icon!==undefined&& !['sword','shield','takeCards','adjustDie','lessDie','skipTurn','secondDie','extraTurn','host'].includes(b.icon)))))))))throw Error('Invalid player content');
     e.field=fieldContent(value);
     const unified=!!state?.players;
     let self='';
@@ -338,7 +350,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     }
     if(unified&&viewer>=0&&surface!=='table'&&layout.duplicateSelf)self+='<div class="handoff-corner"><!--handoff-control--></div>';
     const slots=elementNames.filter(name=>e[name]&&!(self&&['actions','hand'].includes(name))&&!(surface==='table'&&(name==='hand'||name==='actions'&&state?.scene?.audience!=='public'))).map(name=>`<section class="game-layout-slot layout-${name}" data-game-element="${name}"${zoneAttribute(name)}${name==='field'&&value.fieldAspect?` style="--field-aspect:${value.fieldAspect}"`:''}>${name==='field'?`<div class="game-field-content"${value.fieldDropZone?' data-drop-zone':''}${presentationField?' inert data-presentation-field="true"':''}>${e[name]}</div>`:e[name]}</section>`).join('');
-    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="3" data-field-topology="${esc(state?.scene?.geometry?.topology||'')}"${value.showTurn===false?' data-show-turn="false"':''} data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}"${Number.isInteger(presentationTurn)?` data-presentation-turn="${presentationTurn}"`:""} data-layout-focus="${focus}" data-wide-hand="${value.layout?.wideHand===true}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
+    return `<div class="game-scene app-game-layout ${esc(className)}" data-view-api="3"${overrideAttrs} data-field-topology="${esc(state?.scene?.geometry?.topology||'')}"${value.showTurn===false?' data-show-turn="false"':''} data-appearance-pack="${esc(state?.game||'')}"${Array.isArray(value.skinFamilies)?` data-skin-families="${esc(JSON.stringify(value.skinFamilies))}"`:''}${value.hidePlayers?' data-solo-field="true"':''}${value.actionPlacement?' data-action-placement="'+value.actionPlacement+'"':''} data-player-count="${state?.players?.length||0}" data-turn-player="${state?.turn??-1}"${Number.isInteger(presentationTurn)?` data-presentation-turn="${presentationTurn}"`:""} data-layout-focus="${focus}" data-wide-hand="${value.layout?.wideHand===true}" data-seating="${circular?'circle':'row'}" data-seat-anchors-available="true" data-seat-style="${anchored?'anchors':'edge'}" data-opponent-hands="${!!opponentHands}"${anchored?' data-seat-anchors="true"':''} data-has-hand="${!!e.hand&&(content?.[viewer]?.handCount===undefined||content[viewer].handCount>0)}"${unified?' data-player-layout="unified"':''}${value.actionReserve?' data-action-reserve="true"':''}${motionSequence(value.motionSequence)} data-field-sizing="${value.fieldSizing||'fit'}" data-layout-family="${value.family}" data-surface="${esc(surface)}">${slots}${self}</div>`;
   }
 
   function composeScene(value,context={}) {
@@ -348,7 +360,55 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   }
 
   function createRegistry() {
-    const packs = new Map();
+    const packs = new Map(),regionOwners=new WeakMap();
+    function withRegions(state,viewer,ui,lane,render,run){
+      const {renderOwner:owner,regionSink,...safeUI}=ui;
+      if(!owner||!['object','function'].includes(typeof owner))return run(safeUI);
+      let lanes=regionOwners.get(owner);if(!lanes){lanes=new Map();regionOwners.set(owner,lanes);}
+      const scope=[state.game,state.packVersion,viewer,state.scene?.audience,ui.surface||'combined',!!ui.replay,!!ui.hotseat,render,globalThis.PlayroomAssetResolver,globalThis.document?.documentElement.dataset.assetGeometry,globalThis.document?.documentElement.dataset.appearanceMode];
+      let entry=lanes.get(lane);
+      if(!entry||entry.scope.some((value,i)=>value!==scope[i])){entry={scope,regions:new Map()};lanes.set(lane,entry);}
+      const emit=(id,markup)=>{
+        if(!regionSink)return markup;
+        const key=lane+':'+id;regionSink.set(key,markup);
+        return `<template data-scene-fragment="${esc(key)}"></template>`;
+      };
+      const used=new Set(),region=(id,dependencies,build)=>{
+        if(typeof id!=='string'||!id||id.length>80||typeof build!=='function')throw Error('Invalid scene region');
+        const signature=JSON.stringify(dependencies);if(signature===undefined)throw Error('Invalid scene region dependencies');
+        used.add(id);const previous=entry.regions.get(id);if(previous?.signature===signature)return emit(id,previous.markup);
+        const markup=build();if(typeof markup!=='string')throw Error('Invalid scene region markup');
+        if(entry.regions.has(id)||entry.regions.size<128)entry.regions.set(id,{signature,markup});return emit(id,markup);
+      };
+      // Frame renderers are local presentation ports, never serialized scene data.
+      // Their lifetime has the same viewer/pack/skin boundary as cached regions.
+      const frameKeys=new Set(),publicFrames=regionSink?options=>{
+        const {key,plan,renderFrame,live,...labels}=options;
+        if(typeof key!=='string'||!key||key.length>80||typeof renderFrame!=='function'||!plan||!Array.isArray(plan.groups)||plan.groups.length>32||plan.initial!==0||plan.final!==plan.groups.length)throw Error('PUBLIC_PLAN_INVALID');
+        frameKeys.add(key);entry.frames||=new Map();let source=entry.frames.get(key);
+        if(!source||source.id!==plan.id){
+          const records=new Map();source={id:plan.id,count:plan.final+1,read(index){
+            if(!Number.isInteger(index)||index<0||index>=this.count)throw Error('PUBLIC_FRAME_INVALID');
+            if(index===this.count-1)return this.live;
+            if(!records.has(index)){
+              const record=this.render(index);
+              if(!record||typeof record.markup!=='string'||typeof record.label!=='string')throw Error('PUBLIC_FRAMES_INVALID');
+              records.set(index,record);
+            }
+            return records.get(index);
+          }};entry.frames.set(key,source);
+        }
+        const frame=(build)=>{const fragments=new Map(),region=(id,markup)=>{if(typeof id!=='string'||!id||id.length>80||typeof markup!=='string'||fragments.has(id)||fragments.size>=256)throw Error('Invalid frame fragment');fragments.set(id,markup);return `<template data-scene-fragment="${esc(id)}"></template>`;};const record=build({region});return {...record,fragments};};
+        source.render=index=>{const previous=renderingPack;try{renderingPack=state.game;return frame(context=>renderFrame(index,context));}finally{renderingPack=previous;}};source.live=typeof live==='function'?frame(live):live;
+        const id=lane+':'+key;(regionSink.publicFrames||=new Map()).set(id,source);
+        return GameComponents.publicFrames({...labels,plan,source:{id,initial:{markup:'',label:source.live.label}}});
+      }:undefined;
+      if(publicFrames)publicFrames.supportsFragments=true;
+      const result=run({...safeUI,region,...(publicFrames?{publicFrames}:{})});
+      for(const id of entry.regions.keys())if(!used.has(id))entry.regions.delete(id);
+      for(const id of entry.frames?.keys()||[])if(!frameKeys.has(id))entry.frames.delete(id);
+      return result;
+    }
     return {
       register(id,render,cover,options={}) {
         if(typeof render!=='function'||(cover!=null&&typeof cover!=='function'))throw Error('Invalid game view');
@@ -373,7 +433,8 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
         const previousPack=renderingPack;
         try {
           renderingPack=state.game;
-          const value=render({...semantic,scene:{...scene,interactions:[]}},viewer,[],{...ui,fieldScene:null,selected:null,viewState:{},replay:true});
+          const fieldState={...semantic,scene:{...scene,interactions:[]}},fieldUI={...ui,fieldScene:null,selected:null,viewState:{},replay:true};
+          const value=withRegions(fieldState,viewer,fieldUI,'field',render,context=>render(fieldState,viewer,[],context));
           return fieldContent(value);
         }finally{renderingPack=previousPack;}
       },
@@ -384,7 +445,8 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
           if(ui.displayScene.audience!==state.scene?.audience||ui.displayScene.viewer!==state.scene?.viewer)throw Error('Scene audience mismatch');
           state={...state,scene:{...ui.displayScene,interactions:[]}};actions=[];
         }
-        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;const value=render(state,viewer,allowedActions,ui);const recipe=ui.fieldScene?{...value,fieldGroups:undefined,elements:{...value.elements,field:this.renderField(state,viewer,ui.fieldScene,ui)}}:value;return composeScene(recipe,{surface,state,viewer,presentationField:!!ui.fieldScene,actions:allowedActions,selection:ui.selected,presentationTurn:ui.presentationTurn,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
+        const previousPack=renderingPack;try { renderingPack=state.game; const item=packs.get(state.game),surface=ui.surface||'combined',render=surface==='combined'?item?.render:item?.surfaces[surface]; if(!render)return ("<p class=\"scene-hint\">"+globalThis.PlayroomMessages.text("ui.ui.31b2f9c7d8e5")+"</p>");const allowedActions=surface==='table'?tableCommands(state,actions):actions;const value=withRegions(state,viewer,ui,'scene',render,context=>{const value=render(state,viewer,allowedActions,context),aux=value?.elements?.auxiliary;
+          return context.region&&value?.api===3&&typeof aux==='string'&&aux&&!aux.includes('data-scene-fragment')?{...value,elements:{...value.elements,auxiliary:context.region('__sdk_auxiliary',[aux],()=>'<div style="display:contents">'+aux+'</div>')}}:value;});const recipe=ui.fieldScene?{...value,fieldGroups:undefined,elements:{...value.elements,field:this.renderField(state,viewer,ui.fieldScene,ui)}}:value;return composeScene(recipe,{surface,state,viewer,presentationField:!!ui.fieldScene,actions:allowedActions,selection:ui.selected,presentationTurn:ui.presentationTurn,seatingPolicy:item.seating,seating:ui.seating||globalThis.PlayroomAppBridge?.gameOptions?.(state.game).seating||'auto'}); }
         catch (_) { return ("<p class=\"scene-hint\" role=\"alert\">"+globalThis.PlayroomMessages.text("ui.ui.a3179ce31aab")+"</p>"); } finally {renderingPack=previousPack;}
       },
       cover(id){

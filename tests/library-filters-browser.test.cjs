@@ -2,40 +2,49 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
+const {installFetch}=require('./account-sync-fixture.cjs');
 const root=path.resolve(__dirname,'..');
-for(const [width,height] of [[320,740],[390,740],[740,390],[1280,800]])test(`screen:${width>=1000?'desktop':width>height?'phone:landscape':'phone:portrait'} library filters ${width}×${height}: disclosure preserves selection`,{timeout:30000},async()=>{
- const server=await serveBrowserFixture(root);let browser;
+for(const [width,height] of [[320,740],[390,740],[740,390],[1280,800]])test(`screen:${width>=1000?'desktop':width>height?'phone:landscape':'phone:portrait'} library filters ${width}×${height}: owned panel applies drafts and cancels without changing results`,{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root);let browser,context;
  try{
   browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const page=await browser.newPage({viewport:{width,height},hasTouch:true}),errors=[];
+  context=await browser.newContext({viewport:{width,height},hasTouch:true,reducedMotion:'reduce'});
+  await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'filter-test',name:'Тест'})));
+  const net=await installFetch(context,async route=>route.fulfill({json:{}})),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
-  await page.goto(server.url);
-  await page.waitForFunction(()=>document.querySelector('#profile-form')||document.querySelector('.game-grid'));
-  if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
-  await page.locator('.game-grid').first().waitFor();
-  const toggle=page.locator('[data-hub-filters-toggle]'),panels=page.locator('[data-hub-filter-panel]');
-  assert.equal(await panels.count(),3);assert.equal(await page.locator('[data-hub-filter-panel]:visible').count(),0);
+  await page.goto(server.url);await page.locator('.game-grid').first().waitFor();
+  const toggle=page.locator('[data-hub-filters-toggle]'),panel=page.locator('#modal-root>[data-surface-state=active] .catalog-filter-modal');
+  const ids=()=>page.locator('#hub-games-page .catalog-card').evaluateAll(items=>items.map(e=>e.dataset.game));
+  const before=await ids();assert(before.length>0);
+  assert.equal(await panel.count(),0);assert.equal(await page.locator('[data-filter],.filter-scope,[data-hub-filter-panel]').count(),0);
   assert.equal(await toggle.getAttribute('aria-label'),'Фильтры');assert.equal(await toggle.getAttribute('aria-expanded'),'false');
-  assert.equal(await toggle.locator('[data-ui-icon=filter]').count(),1);
-  assert.deepEqual(await page.locator('.filter-scope>.filter').evaluateAll(items=>items.map(e=>e.dataset.filter||'filters')),['all','favorites','filters']);
-  async function fits(){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow');
-   assert(await toggle.evaluate(e=>{const a=e.getBoundingClientRect(),b=e.parentElement.firstElementChild.getBoundingClientRect();return Math.abs(a.top-b.top)<1&&a.width>=44&&a.height>=44;}),'scope controls stay on one row with touch-sized filters');}
-  await fits();
-  const captures=process.env.PLAYROOM_CAPTURE_DIR;
-  if(captures){fs.mkdirSync(captures,{recursive:true});await page.screenshot({path:path.join(captures,`library-closed-${width}.png`)});}
-  await toggle.focus();await page.keyboard.press('Enter');
-  assert.equal(await toggle.getAttribute('aria-expanded'),'true');assert.equal(await page.locator('[data-hub-filter-panel]:visible').count(),3);
-  assert(await toggle.evaluate(e=>document.activeElement===e),'opening retains keyboard focus');await fits();
-  if(captures)await page.screenshot({path:path.join(captures,`library-open-${width}.png`)});
-  await page.locator('[data-tag-kind=type][data-tag=cards]').click();const count=await page.locator('.game-tile').count();assert(count>0&&count<12);
-  assert.equal(await toggle.getAttribute('aria-expanded'),'true','selection rerender retains disclosure');
-  await toggle.focus();await page.keyboard.press('Space');
-  assert.equal(await toggle.getAttribute('aria-expanded'),'false');assert.equal(await page.locator('[data-hub-filter-panel]:visible').count(),0);
-  assert.equal(await page.locator('.game-tile').count(),count,'collapsing preserves results');
-  await page.locator('[data-filter=favorites]').click();await page.locator('[data-filter=all]').click();
-  assert.equal(await page.locator('.game-tile').count(),count);assert.equal(await toggle.getAttribute('aria-expanded'),'false');
-  await toggle.click();assert.equal(await page.locator('[data-tag-kind=type][data-tag=cards]').getAttribute('aria-pressed'),'true');
-  await page.reload();assert.equal(await toggle.getAttribute('aria-expanded'),'false','new page defaults to collapsed');
-  assert.equal(await page.locator('[data-hub-filter-panel]:visible').count(),0);assert.deepEqual(errors,[]);
- }finally{await browser?.close();await server.close();}
+  assert.equal(await toggle.locator('[data-ui-icon=filter]').count(),1);assert.equal((await toggle.innerText()).trim(),'','only the filter icon is visible');
+  assert(await toggle.evaluate(e=>{const r=e.getBoundingClientRect(),v=document.querySelector('.catalog-view-controls').getBoundingClientRect();return r.width>=44&&r.height>=44&&Math.abs(r.y+r.height/2-v.y-v.height/2)<1;}),'filter sits beside the view control with a touch-sized target');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no root horizontal overflow');
+  const captures=process.env.PLAYROOM_CAPTURE_DIR;if(captures)fs.mkdirSync(captures,{recursive:true});
+  await toggle.focus();await page.keyboard.press('Enter');await panel.waitFor();
+  assert.equal(await toggle.getAttribute('aria-expanded'),'true');assert.equal(await panel.locator('fieldset').count(),3);
+  assert(await panel.evaluate(e=>e.contains(document.activeElement)),'keyboard focus enters the owned panel');
+  assert.equal(await panel.locator('select').count(),0,'filters use app-owned choices');
+  const cards=panel.locator('[data-catalog-filter-kind=type][data-catalog-filter-value=cards]');await cards.click();
+  assert.equal(await cards.getAttribute('aria-pressed'),'true');assert.deepEqual(await ids(),before,'draft selection does not mutate the catalog');
+  const apply=panel.locator('[data-catalog-filter-apply]'),count=Number((await apply.innerText()).split('·').pop().trim());assert(count>0&&count<before.length);
+  if(captures)await page.screenshot({path:path.join(captures,`library-draft-${width}.png`)});
+  await apply.click();assert.equal(await panel.count(),0);const filtered=await ids();assert.equal(filtered.length,count);
+  assert.equal(await toggle.getAttribute('aria-expanded'),'false');assert.match(await toggle.getAttribute('aria-label'),/выбрано 1/);
+  assert.equal(await toggle.locator('.catalog-filter-count').innerText(),'1');
+  await page.locator('[data-hub-page=sessions]').click();await page.locator('[data-hub-page=games]').click();assert.deepEqual(await ids(),filtered,'root navigation retains applied filters');
+  await toggle.focus();await page.keyboard.press('Space');await panel.waitFor();
+  assert.equal(await cards.getAttribute('aria-pressed'),'true','reopening restores the applied choice');
+  await panel.locator('[data-catalog-filter-reset]').click();assert.equal(await cards.getAttribute('aria-pressed'),'false');
+  assert.equal(Number((await apply.innerText()).split('·').pop().trim()),before.length);assert.deepEqual(await ids(),filtered,'reset remains a draft until applied');
+  await panel.locator('[data-command=close-modal]').click();assert.equal(await panel.count(),0);assert.deepEqual(await ids(),filtered,'Back discards reset draft');
+  assert(await toggle.evaluate(e=>e===document.activeElement),'Back restores source keyboard focus');
+  await toggle.click();await panel.waitFor();assert.equal(await cards.getAttribute('aria-pressed'),'true');
+  await panel.locator('[data-catalog-filter-reset]').click();await apply.click();assert.deepEqual(await ids(),before,'applying reset restores the full catalog');
+  assert.equal(await toggle.getAttribute('aria-label'),'Фильтры');assert.equal(await toggle.locator('.catalog-filter-count').count(),0);
+  if(captures)await page.screenshot({path:path.join(captures,`library-reset-${width}.png`)});
+  await page.reload();await page.locator('.game-grid').first().waitFor();assert.equal(await panel.count(),0);assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+  assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+ }finally{await context?.close();await browser?.close();await server.close();}
 });

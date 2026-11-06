@@ -66,10 +66,41 @@ test('host rule change clears readiness and emits visible notification',()=>{
   const {rooms,room}=createRoom();
   rooms.join(room.id,{id:'guest',nickname:'Маша'});rooms.claimSeat(room.id,'guest','seat-2');
   rooms.setReady(room.id,'host',true);rooms.setReady(room.id,'guest',true);
-  const changed=rooms.updateRules(room.id,'host',{preset:'fast',presetLabel:'Быстрая'});
+  const before=rooms.snapshot(room.id),events=[];const unsubscribe=rooms.subscribe(room.id,snapshot=>events.push(snapshot));
+  const changed=rooms.updateRules(room.id,'host',{preset:'fast',presetLabel:'Быстрая',firstPlayerMode:'assigned',seatOrder:'random'});unsubscribe();
+  assert.equal(changed.firstPlayerMode,'assigned');assert.equal(changed.seatOrder,'random');
+  assert.equal(changed.lobbyRevision,before.lobbyRevision+1);assert.equal(changed.revision,before.revision+1);
+  assert.equal(events.length,1);assert.deepEqual(events[0],changed);
   assert.equal(changed.participants.filter(p=>p.role==='player').every(p=>!p.ready),true);
   assert.equal(changed.rulesRevision,2);
   assert.equal(changed.events.at(-1).type,'rules-changed');
+  for(const invalid of [{firstPlayerMode:'invalid',seatOrder:'normal'},{firstPlayerMode:'random',seatOrder:'invalid'}]){
+    assert.throws(()=>rooms.updateRules(room.id,'host',{preset:'bad',...invalid}));
+    assert.deepEqual(rooms.snapshot(room.id),changed,'invalid order leaves rules, readiness, revisions and events unchanged');
+    assert.throws(()=>rooms.configure(room.id,'host',invalid));
+    assert.deepEqual(rooms.snapshot(room.id),changed,'configure shares validation before changing either order field');
+  }
+  assert.throws(()=>rooms.updateRules(room.id,'guest',{preset:'unauthorized',firstPlayerMode:'random'}));assert.deepEqual(rooms.snapshot(room.id),changed);
+  const legacy=rooms.updateRules(room.id,'host',{preset:'classic'});assert.equal(legacy.firstPlayerMode,'assigned');assert.equal(legacy.seatOrder,'random','callers without order fields preserve current ordering');
+});
+
+test('rule settings validate canonical pack choices before mutating readiness and preserve future team presets',()=>{
+ const {validateRuleSettings}=require('../application/rooms.js'),uno=require('../packs/uno/manifest.json'),ludo=require('../packs/ludo/manifest.json');
+ const schema=manifest=>({...manifest,presets:manifest.presetSetting.options.map(option=>({id:option.value}))});
+ assert.equal(validateRuleSettings({preset:'classic',options:{unoMode:'manual',endMode:'winner'}},schema(uno)),null);
+ assert.equal(validateRuleSettings({preset:'teams',options:{diceCount:'3',maxRounds:'0'}},schema(ludo)),null,'schema acceptance does not depend on current player count');
+ for(const [rules,manifest,field] of [[{preset:'missing'},uno,'preset'],[{preset:'classic',options:{unoMode:'broken'}},uno,'unoMode'],[{preset:'classic',options:{unknown:'x'}},uno,'unknown'],[{preset:'classic',options:[]},uno,'options'],[{preset:'classic',options:{diceCount:'99'}},ludo,'diceCount'],[{preset:'classic',openHands:true},ludo,'openHands']]){
+  assert.throws(()=>validateRuleSettings(rules,schema(manifest)),error=>error.code==='ROOM_RULES_INVALID'&&error.field===field);
+ }
+ for(const value of [NaN,Infinity,-Infinity])assert.throws(()=>validateRuleSettings({options:{numeric:value}},{settings:[{key:'numeric',options:[{value:String(value)}]}]}),error=>error.code==='ROOM_RULES_INVALID'&&error.field==='numeric','non-finite numbers cannot match a string ID accidentally');
+ let sequence=0;const rooms=new RoomService({idFactory:()=>`validated-${++sequence}`,clock:()=>1000,random:()=>.1,validateRules:room=>validateRuleSettings(room.rules,schema(uno))});
+ const room=rooms.create({name:'Правила',game:{id:'uno',name:'UNO'},host:{id:'host',nickname:'Хост'},rules:{preset:'classic',options:{unoMode:'manual',endMode:'winner'}},constraints:{min:2,max:4}});
+ rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});rooms.setReady(room.id,'host',true);const before=rooms.snapshot(room.id),events=[];rooms.subscribe(room.id,event=>events.push(event));
+ assert.throws(()=>rooms.updateRules(room.id,'host',{...before.rules,options:{unoMode:'invalid'}}),error=>error.code==='ROOM_RULES_INVALID');assert.deepEqual(rooms.snapshot(room.id),before);assert.deepEqual(events,[]);
+ const accepted=rooms.updateRules(room.id,'host',{...before.rules,options:{unoMode:'auto',endMode:'last'}});assert.equal(events.length,1);assert.equal(accepted.revision,before.revision+1);assert.equal(accepted.participants.find(person=>person.id==='host').ready,false);
+ rooms.setReady(room.id,'host',true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.clock=()=>3000;rooms.tick(room.id);
+ const recovered=new RoomService({idFactory:()=>`recovered-${++sequence}`,clock:()=>3000,random:()=>.1,validateRules:rooms.validateRules});recovered.restoreRecovery(rooms.exportRecovery(room.id),{hostId:'host',collect:true,sessionId:'a08-recovery-fixture',revision:0});const recovery=recovered.snapshot(room.id);
+ assert.throws(()=>recovered.updateRules(room.id,'host',{...recovery.rules,preset:'quick'}));assert.deepEqual(recovered.snapshot(room.id),recovery,'recovery retains fixed rules without reaching a new commit');
 });
 
 test('only host can kick and kicked player releases seat',()=>{
@@ -405,13 +436,30 @@ test('delegated invitations require host permission and cancel pending peers on 
  assert.throws(()=>rooms.setInvitationPermission(room.id,'guest',true));
  let disposed=0,accepted=0;
  const manager=new Invites({authorize:id=>{const r=rooms.snapshot(room.id);assert(r.allowPlayerInvites&&r.participants.some(p=>p.id===id&&p.connected));},create:async()=>({offer:'host-offer'}),accept:async()=>{accepted++;},dispose:()=>{disposed++;}});
+ const updates=[],off=rooms.subscribe(room.id,state=>{updates.push(state);manager.prune();});
  try{
   await assert.rejects(manager.dispatch('guest',{type:'invitation-offer'}));
-  rooms.setInvitationPermission(room.id,'host',true);assert.equal((await manager.dispatch('guest',{type:'invitation-offer'})).offer,'host-offer');
-  rooms.setInvitationPermission(room.id,'host',false);manager.prune();assert.equal(disposed,1);
+  const before=rooms.snapshot(room.id),enabled=rooms.setInvitationPermission(room.id,'host',true);
+  assert.equal(updates.length,1,'permission mutation must notify room subscribers');
+  assert.equal(enabled.revision,before.revision+1);assert.equal(enabled.eventSequence,before.eventSequence+1);
+  assert.deepEqual(updates[0],enabled);
+  assert.deepEqual(enabled.events.at(-1),{id:enabled.eventSequence,type:'invitation-permission',text:'',at:enabled.updatedAt,allowPlayerInvites:true});
+  assert.deepEqual(rooms.setInvitationPermission(room.id,'host',true),enabled);assert.equal(updates.length,1,'no-op must not notify or mutate');
+  assert.equal((await manager.dispatch('guest',{type:'invitation-offer'})).offer,'host-offer');
+  const revoked=rooms.setInvitationPermission(room.id,'host',false);assert.equal(disposed,1,'revocation subscriber prunes pending offer immediately');
+  assert.equal(updates.length,2);assert.deepEqual(updates[1],revoked);assert.equal(revoked.events.at(-1).allowPlayerInvites,false);
   await assert.rejects(manager.dispatch('guest',{type:'invitation-answer',answer:'answer'}));assert.equal(accepted,0);
   rooms.setInvitationPermission(room.id,'host',true);await manager.dispatch('guest',{type:'invitation-offer'});await manager.dispatch('guest',{type:'invitation-answer',answer:'answer'});assert.equal(accepted,1);assert.equal(rooms.snapshot(room.id).ownerId,'host');
- }finally{manager.close();}
+  let nested=false;const offNested=rooms.subscribe(room.id,state=>{if(state.allowPlayerInvites&&!nested){nested=true;rooms.setInvitationPermission(room.id,'host',false);}});
+  try{
+   rooms.setInvitationPermission(room.id,'host',false);const prior=rooms.snapshot(room.id);updates.length=0;
+   const result=rooms.setInvitationPermission(room.id,'host',true);
+   assert.equal(nested,true);assert.deepEqual(updates.map(state=>state.allowPlayerInvites),[true,false]);
+   assert.equal(result.revision,prior.revision+2);assert.equal(result.eventSequence,prior.eventSequence+2);
+   assert.equal(result.allowPlayerInvites,false);assert.deepEqual(result,rooms.snapshot(room.id),'outer return must retain reentrant subscriber mutation');
+   assert.equal(result.ownerId,'host');assert.deepEqual(result.rules,prior.rules);assert.deepEqual(result.participants,prior.participants);
+  }finally{offNested();}
+ }finally{off();manager.close();}
 });
 
 test('live roster collection preserves fixed slots and distinguishes a lost connection from removal',()=>{
@@ -472,4 +520,12 @@ for(const role of ['spectator','table'])test('resume '+role+' during a match pre
  assert.throws(()=>rooms.resume(room.id,{participantId:'observer',token:'0'.repeat(64)}));assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='observer').connected,false);
  const invalid=rooms.rooms.get(room.id).participants.find(p=>p.id==='observer');invalid.role='player';assert.throws(()=>rooms.resume(room.id,{participantId:'observer',token:joined.resumeToken}));invalid.role=role;
  const resumed=rooms.resume(room.id,{participantId:'observer',token:joined.resumeToken}),observer=resumed.room.participants.find(p=>p.id==='observer');assert.equal(observer.role,role);assert.equal(observer.seatId,null);assert.equal(observer.connected,true);assert.equal(rooms.playerCount(room.id),2);
+});
+
+test('lobby drag uses existing host, actor, occupied, closed and assigned-first command boundaries',()=>{
+ const {rooms,room}=createRoom();rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot',nickname:'Бот'});rooms.join(room.id,{id:'guest',nickname:'Гость'});rooms.claimSeat(room.id,'guest','seat-3');rooms.setLocalSeat(room.id,'host','seat-4',{kind:'closed'});
+ const before=rooms.snapshot(room.id),bot=before.seats[1].participantId;
+ assert.throws(()=>rooms.moveParticipant(room.id,'guest','host','seat-2'),/хост/);assert.throws(()=>rooms.claimSeat(room.id,'guest','seat-2'),/занят/);assert.throws(()=>rooms.claimSeat(room.id,'guest','seat-4'),/закрыт/);assert.throws(()=>rooms.configure(room.id,'guest',{firstPlayerMode:'assigned',firstParticipantId:'host'}),/хост/);assert.deepEqual(rooms.snapshot(room.id).seats,before.seats);
+ rooms.setReady(room.id,'guest',true);assert.throws(()=>rooms.claimSeat(room.id,'guest','seat-1'),/готовность/);rooms.setReady(room.id,'guest',false);
+ rooms.configure(room.id,'host',{firstPlayerMode:'assigned',firstParticipantId:'guest'});const swapped=rooms.moveParticipant(room.id,'host',bot,'seat-1');assert.equal(swapped.seats[0].participantId,bot);assert.equal(swapped.seats[1].participantId,'host');assert.equal(swapped.firstParticipantId,'guest');assert.deepEqual(swapped.seats.map(s=>[s.id,s.index,s.sideId]),before.seats.map(s=>[s.id,s.index,s.sideId]));assert.equal(swapped.participants.length,before.participants.length);assert.throws(()=>rooms.moveParticipant(room.id,'host',bot,'seat-4'),/закрыт/);assert.throws(()=>rooms.configure(room.id,'host',{firstParticipantId:'missing'}));
 });

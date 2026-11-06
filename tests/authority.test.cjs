@@ -65,3 +65,10 @@ test('replacement roster applies bot control immediately without changing histor
   assert(!JSON.stringify(pub.snapshot()).includes('SECRET0'));
  }finally{authority.dispose();}
 });
+
+test('local clients reuse owned immutable projections while external inputs stay detached',()=>{
+ const {authority,a}=make();try{const authorized=a.snapshot(),client=new Client({});client.accept(authorized);assert.equal(client.snapshot,authorized);assert(Object.isFrozen(authorized.state.players[0]));assert.throws(()=>{authorized.state.players[0].name='changed';},TypeError);
+ const external=JSON.parse(JSON.stringify(authorized));external.revision++;external.state.move++;client.accept(external);assert.notEqual(client.snapshot,external);external.state.players[0].name='mutated';assert.notEqual(client.snapshot.state.players[0].name,'mutated');
+ assert.equal(P.immutable(undefined),undefined);const shallow=Object.freeze({nested:{value:1}}),copy=P.immutable(shallow);shallow.nested.value=2;assert.equal(copy.nested.value,1);assert.notEqual(copy,shallow);assert.equal(P.immutable(copy),copy);const packet=P.immutable({snapshot:external});assert.equal(P.immutable(packet.snapshot),packet.snapshot,'nested wire snapshots are owned by the same immutable packet');
+ }finally{authority.dispose();}
+});

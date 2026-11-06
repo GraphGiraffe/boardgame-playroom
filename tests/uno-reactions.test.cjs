@@ -146,7 +146,7 @@ test('session no-op reactions do not add snapshots and resolved episodes survive
 });
 
 const Authority=require('../core/authority.js'),Protocol=require('../core/protocol.js');
-function manualClock(){let now=0,sequence=0;const tasks=new Map();return {now:()=>now,setTimeout(fn,ms){const id=++sequence;tasks.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>tasks.delete(id),advance(ms){const end=now+ms;for(let count=0;count<1000;count++){const next=[...tasks].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next){now=end;return;}now=next[1].at;tasks.delete(next[0]);next[1].fn();}throw Error('timer loop');}};}
+function manualClock(){let now=0,sequence=0;const tasks=new Map();return {get pending(){return tasks.size;},now:()=>now,setTimeout(fn,ms){const id=++sequence;tasks.set(id,{fn,at:now+ms});return id;},clearTimeout:id=>tasks.delete(id),advance(ms){const end=now+ms;for(let count=0;count<1000;count++){const next=[...tasks].filter(([,t])=>t.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next){now=end;return;}now=next[1].at;tasks.delete(next[0]);next[1].fn();}throw Error('timer loop');}};}
 function onlineFixture({bots=[false,false],persistence=null}={}){
   const state=fixture(bots.map((_,i)=>i===0?['u1','u3']:i===1?['u5','u7']:['u26','u28']));state.players.forEach((p,i)=>p.bot=bots[i]);
   const saved=new Session(E,'uno',{seed:17,unoMode:'manual',players:state.players}).export();saved.states[0]=state;
@@ -154,6 +154,16 @@ function onlineFixture({bots=[false,false],persistence=null}={}){
   let sequence=0;const send=(actor,type,target)=>{const c=clients[actor],action=c.snapshot().actions.find(a=>a.type===type&&(target===undefined||a.target===target))||(['draw','pass'].includes(type)?{type}:null);assert(action,type);return c.dispatch(Protocol.command(c.snapshot(),action,`reaction-${++sequence}`));};
   return {session,clock,authority,clients,send};
 }
+test('disposed authority rejects late presentation readiness without reviving reaction timers',()=>{
+ const {session,clock,authority,clients,send}=onlineFixture();try{
+  assert(send(0,'play').ok);const ready=Protocol.presentationReady(clients[0].snapshot());assert(clock.pending>0,'the live declaration has a fallback timer');
+  authority.dispose();const before=session.serialize();assert.equal(clock.pending,0,'dispose clears all owned timers');
+  assert.deepEqual(clients[0].presentationReady(ready),{ok:false,code:'CLOSED'});
+  assert.equal(clock.pending,0,'a late valid public acknowledgement cannot revive a disposed reaction window');
+  clock.advance(12000);assert.equal(session.serialize(),before,'late callbacks never mutate the abandoned session');
+ }finally{authority.dispose();}
+});
+
 test('online grace starts after only the owning viewer finishes; early accusation is neutral and advance waits one second',()=>{
   const {clock,authority,clients,send}=onlineFixture();try{
     assert(send(0,'play').ok);assert.equal(authority.revision,1);const ready=Protocol.presentationReady(clients[0].snapshot());

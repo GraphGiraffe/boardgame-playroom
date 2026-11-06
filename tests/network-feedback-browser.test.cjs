@@ -4,17 +4,19 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const Engine=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),P=require('../core/protocol.js');
 require('../packs/uno/rules.js');
 const root=path.resolve(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
+if(process.env.PLAYROOM_FEEDBACK_EVIDENCE_DIR)fs.mkdirSync(process.env.PLAYROOM_FEEDBACK_EVIDENCE_DIR,{recursive:true});
 const compiledPacks={};require('node:vm').runInNewContext(read('installed-packs.js'),compiledPacks);
 const unoBundle=compiledPacks.PlayroomInstalledPacks.find(bundle=>bundle.manifest.id==='uno');
 const assets=bundle=>Object.fromEntries(Object.entries(bundle.files).filter(([name])=>name.startsWith('assets/')).map(([name,value])=>[name,value.startsWith('data:')?value:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(value)]));
 const definition={assets:assets(unoBundle),manifest:unoBundle.manifest,view:unoBundle.files['view.js'],styles:unoBundle.files['styles.css'],rules:Engine.get('uno').rules,sounds:{'uno.call':{label:'UNO!',notes:[{at:0,duration:.2,frequency:440}]}}};
 const seed=()=>new Session(Engine,'uno',{seed:23,mode:'pass',preset:'quick',unoMode:'manual',players:[{name:'Иван'},{name:'Джон'}]});
 async function fixture(browser){
+ if(process.env.PLAYROOM_FEEDBACK_EVIDENCE_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_FEEDBACK_EVIDENCE_DIR,'browser.json'),JSON.stringify({browserType:browser.browserType().name(),version:browser.version()},null,2));
   const page=await browser.newPage({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
   await page.setContent('<!doctype html><html lang="ru"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="app"></div><div id="modal-root"></div><div id="toast"></div></body></html>');
   await page.evaluate(()=>{const values=new Map();Object.defineProperty(window,'localStorage',{value:{getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)}});});
   for(const name of ['app/styles.css','core/game-components.css','core/ui.css','core/input.css','app/first-turn-guide.css','app/shared-views.css','app/game-interactions.css','app/design-system.css'])await page.addStyleTag({content:read(name)});
-  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','application/tutorial-controller.js','platform/web/guide-preferences.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
+  for(const name of ['core/messages.js','presentation/localization.js','core/protocol.js','core/vector-art.js','core/component-assets.js','core/game-components.js','core/token-layout.js','core/ui.js','core/player-target.js','core/motion.js','presentation/plan-player.js','presentation/scheduler.js','core/game-flow.js','core/hand-overflow.js','core/size-tokens.js','platform/web/element-sizes.js','app/views.js','application/history-controller.js','application/game-screen-controller.js','platform/web/dom.js','app/game-screen.js','application/tutorial-controller.js','platform/web/guide-preferences.js','app/first-turn-guide.js','platform/web/action-reveal.js','presentation/event-plan.js','app/game-feedback.js','core/input.js','platform/web/pack-loader.js','app/shared-views.js'])await page.addScriptTag({content:read(name)});
   await page.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('uno',false);PlayroomFirstTurnGuide.setEnabled('ludo',false);});
   return page;
 }
@@ -69,9 +71,9 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     assert.equal(announced.kind,'false-uno');
     announced.notice={title:'Иван: UNO! слишком рано',detail:'За ранний выкрик штрафа нет',tone:'warning'};
     await page.evaluate(next=>qaClient.emit(next),projected);
-    await page.waitForFunction(()=>document.querySelector('.status-event')?.textContent.includes('UNO'));
+    await page.waitForFunction(()=>document.querySelector('.game-frame-event')?.textContent.includes('UNO'));
     assert.equal(await page.locator('.game-notice').count(),0,'Routine action never covers the hand');
-    assert.match(await page.locator('.status-event').innerText(),/UNO/);
+    assert.match(await page.locator('.game-frame-event').innerText(),/UNO/);
     assert.deepEqual(await page.evaluate(()=>qaAudio),[{ids:['uno.call'],pack:'uno'}]);
     await page.evaluate(next=>qaClient.emit(next),projected);
     assert.equal(await page.evaluate(()=>qaAudio.length),1,'Duplicate snapshot must be silent');
@@ -80,14 +82,14 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     finish.events.push({id:3,kind:'finish',player:1,text:'Джон побеждает'});finish.state.events=finish.events;
     finish.cues=[{id:'defeat',eventId:3}];
     await page.evaluate(next=>qaClient.emit(next),finish);
-    const modal=page.locator('#modal-root .modal');
+    const modal=page.locator('#modal-root>[data-surface-state=active] .modal');
     await modal.waitFor();
     assert.equal(await modal.count(),1,'Finish should open results automatically');
     assert.match(await modal.innerText(),/Поражение/);
     assert.match(await modal.innerText(),/Джон/);assert.match(await modal.innerText(),/148/);
     assert.deepEqual(await page.evaluate(()=>qaAudio.map(x=>x.ids[0])),['uno.call','defeat']);
-    await modal.locator('[data-command=close-modal]').click();
-    await page.locator('[data-command=result]').first().click();
+    assert.equal(await modal.locator('[data-command=close-modal]').count(),0,'network results use the explicit return action');
+    await page.evaluate(()=>qaGame.showResult());
     assert.equal(await page.evaluate(()=>qaAudio.length),2,'Reopening results is silent');
     await page.evaluate(next=>qaClient.emit(next),finish);
     assert.equal(await modal.count(),1,'Duplicate finish must not open another dialog');
@@ -95,6 +97,7 @@ test('projected actions stay in status, cues play once; finish shows per-player 
     await modal.locator('[data-command=result-replay]').click();
     await page.locator('.history-panel').waitFor();
     assert.equal(await page.locator('.network-game .scene [data-action]').count(),0,'Historical view is read-only');
+    await page.locator('.game-frame-tools [data-command=history-close]').click();await page.locator('#modal-root>[data-surface-state=active] .result-modal').waitFor();assert.equal(await page.locator('.history-panel').count(),0);assert.equal(await page.evaluate(()=>qaAudio.length),2,'returning from results history stays silent');
     await page.evaluate(()=>qaGame.destroy());
   }finally{await page.close();await browser.close();}
 });
@@ -168,7 +171,7 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
       await page.waitForFunction(n=>qaFrames.length===n,revision);assert.equal(await page.locator('.network-game').getAttribute('data-revision'),String(revision));
       assert.equal(await page.locator('.scene [data-action]:enabled').evaluateAll(nodes=>nodes.filter(node=>!['declare-uno','accuse-uno'].includes(JSON.parse(node.dataset.action).type)).length),0,'Only independent reactions remain usable during presentation');
       if(revision===1){await page.locator('.uno-call').click();assert.equal(await page.evaluate(()=>qaSubmitted.at(-1).type),'declare-uno');assert.equal(await page.evaluate(()=>qaFrames.length),1,'Reaction does not cancel the current animation');}
-      assert.match(await page.locator('.status-event').innerText(),new RegExp(history[revision].events.at(-1).text));
+      assert.match(await page.locator('.game-frame-event').innerText(),new RegExp(history[revision].events.at(-1).text));
       await page.evaluate(()=>qaReleases.shift()());
     }
     await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
@@ -176,8 +179,8 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
     assert.equal(await page.evaluate(()=>qaCancel),0,'New packets do not cancel an active animation');
     assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass']);
     await page.evaluate(next=>qaClient.emit(next),snapshots[3]);assert.equal(await page.evaluate(()=>qaFrames.length),4);
-    await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history');
-    assert.equal(await page.locator('.status-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
+    await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history',await page.locator('#toast').innerText());
+    assert.equal(await page.locator('.game-frame-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
     await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>qaFrames.length===5);
     assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass'],'Explicit history stays silent');
     await page.locator('#replay-range').evaluate(el=>{el.value='3';el.dispatchEvent(new Event('input',{bubbles:true}));});
@@ -383,11 +386,13 @@ test('Yatzy confirms category and zero score before player or public Table submi
   },{initial,definition,table});
   const category=page.locator('.yatzy-score button[data-action]').filter({hasText:/^0$/}).first();
   for(const cancel of [true,false]){
-   await category.click();await page.locator('.modal [data-command="confirm-action"]').waitFor();assert.match(await page.locator('.modal .lead').textContent(),/0 очков/);assert.equal(await page.evaluate(()=>qaSent.length),0);assert.equal(JSON.stringify(session.current),before);
+   await category.click();await page.locator('.modal [data-command="confirm-action"]').waitFor();assert.match(await page.locator('.modal h2').textContent(),/0 очков/);assert.equal(await page.locator('.modal .lead').textContent(),'Это завершит ход.');assert.equal(await page.evaluate(()=>qaSent.length),0);assert.equal(JSON.stringify(session.current),before);
    if(cancel)await page.locator('.modal [data-command="close-modal"]').last().click();
   }
   // A newer authoritative frame invalidates the pending choice.
-  session.act(0,{type:'hold',index:0});await page.evaluate(next=>qaClient.emit(next),client.snapshot());await page.locator('.modal [data-command="confirm-action"]').click();assert.equal(await page.evaluate(()=>qaSent.length),0);
+  await page.evaluate(()=>{window.qaRetainedDice=[...document.querySelectorAll('.yatzy-dice .shared-die')].map(node=>({node,art:node.querySelector('svg')}));window.qaRetainedRows=[...document.querySelectorAll('.yatzy-score tr')];});
+  session.act(0,{type:'hold',index:0});await page.evaluate(next=>qaClient.emit(next),client.snapshot());
+  const retained=await page.evaluate(()=>({count:qaRetainedDice.length,current:document.querySelectorAll('.yatzy-dice .shared-die').length,items:qaRetainedDice.slice(1).map(({node,art},i)=>({node:node===document.querySelectorAll('.yatzy-dice .shared-die')[i+1],art:art===document.querySelectorAll('.yatzy-dice .shared-die')[i+1]?.querySelector('svg'),old:node.outerHTML.slice(0,320),next:document.querySelectorAll('.yatzy-dice .shared-die')[i+1]?.outerHTML.slice(0,320)}))}));assert.equal(retained.count,5,JSON.stringify({table,retained}));assert(retained.items.every(item=>item.node&&item.art),JSON.stringify({table,retained}));assert(await page.evaluate(()=>qaRetainedRows.every((row,i)=>row===document.querySelectorAll('.yatzy-score tr')[i])),'hold preserves category rows, headers and totals');await page.locator('.modal [data-command="confirm-action"]').click();assert.equal(await page.evaluate(()=>qaSent.length),0);
   await category.click();const chosen=JSON.parse(await category.getAttribute('data-action'));
   await page.locator('.modal [data-command="confirm-action"]').click();await page.waitForFunction(()=>qaSent.length===1);assert.equal(session.current.data.scores[0][chosen.key],0);assert.equal(session.current.move,3);
   await page.evaluate(()=>qaGame.destroy());await page.close();
@@ -611,6 +616,135 @@ test('empty UNO stock keeps one outer button and the same table geometry without
 test('opponent UNO +2 and +4 reveal from the opponent hand before the local penalty draw',{timeout:40000},async()=>{
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{for(const value of ['+2','+4']){let session,action;for(let seedValue=1;seedValue<500;seedValue++){const candidate=new Session(Engine,'uno',{seed:seedValue,mode:'pass',preset:'classic',unoMode:'auto',firstPlayerMode:'assigned',firstPlayer:1,players:[{name:'Иван'},{name:'Бот'}]});const legal=Engine.legalActions(candidate.current,1).find(a=>a.type==='play'&&candidate.current.data.hands[1].find(c=>c.id===a.card)?.value===value);if(legal){session=candidate;action=legal;break;}}assert(session,'fixture must find '+value);const authority=new Authority(session),remote=authority.connect(1),local=authority.connect(0),before=structuredClone(local.snapshot());await remote.dispatch(P.command(remote.snapshot(),action,'qa-'+value.replace('+','plus')));const after=structuredClone(local.snapshot());assert(after.events.some(e=>e.reveal&&e.player===1));const page=await fixture(browser);
-  await page.evaluate(({before,definition})=>{window.qaFlights=[];const original=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.classList.contains('action-reveal-art'))qaFlights.push(frames);return original.call(this,frames,options);};window.listeners=new Set();window.qaClient={snapshot:before,pending:null,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn);},history:async()=>before,send:async()=>({ok:true}),presentationReady:async()=>null};window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{onExit(){}});qaGame.render();},{before,definition});await page.evaluate(after=>{qaClient.snapshot=after;for(const fn of listeners)fn(after);},after);await page.waitForFunction(()=>qaFlights.length>0);const transform=await page.evaluate(()=>qaFlights[0][0].transform);assert.match(transform,/translate\([^,]+,-[\d.]+px\)/,'card must start above reveal, at the opponent');await page.screenshot({path:path.join(root,'../tmp_files/online-video-review-020/opponent-'+value.replace('+','plus')+'.png')});await page.close();}
+  await page.evaluate(({before,definition})=>{window.qaFlights=[];const original=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.classList.contains('action-reveal-art'))qaFlights.push(frames);return original.call(this,frames,options);};window.listeners=new Set();window.qaClient={snapshot:before,pending:null,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn);},history:async()=>before,send:async()=>({ok:true}),presentationReady:async()=>null};window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{onExit(){}});qaGame.render();},{before,definition});await page.evaluate(after=>{qaClient.snapshot=after;for(const fn of listeners)fn(after);},after);await page.waitForFunction(()=>qaFlights.length>0);const transform=await page.evaluate(()=>qaFlights[0][0].transform);assert.match(transform,/translate\([^,]+,-[\d.]+px\)/,'card must start above reveal, at the opponent');await page.screenshot({path:path.join(process.env.PLAYROOM_FEEDBACK_EVIDENCE_DIR||path.join(root,'../tmp_files/online-video-review-020'),'opponent-'+value.replace('+','plus')+'.png')});await page.close();}
  }finally{await browser.close();}
+});
+
+test('UI audio 0.21 first native touch plays the first committed cue without a second action',{timeout:45000},async()=>{
+ const {serveBrowserFixture}=require('./browser-origin.cjs'),engine=process.env.PLAYROOM_AUDIO_ENGINE||'chromium',server=await serveBrowserFixture(root),browser=await (engine==='webkit'?require('playwright-core').webkit.launch({headless:true}):chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']})),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
+ const net=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}})),out=path.resolve(process.env.PLAYROOM_AUDIO_OUT_DIR||path.join(root,'../tmp_files/ux-021/audio-first-gesture'));fs.mkdirSync(out,{recursive:true});
+ await context.addInitScript(()=>{
+  localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'audio-test',name:'Проверка',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:true,uiSounds:true,volume:.6,animationSpeed:'instant',tutorialsEnabled:false}));window.qaAudioTrace=[];window.qaAudioContexts=[];
+  for(const type of ['pointerdown','pointerup','touchend','click','keydown'])document.addEventListener(type,event=>qaAudioTrace.push({kind:'gesture',type,trusted:event.isTrusted,active:navigator.userActivation?.isActive,at:performance.now()}),{capture:true,passive:true});
+  const Native=window.AudioContext||window.webkitAudioContext;if(Native){const Observed=new Proxy(Native,{construct(target,args){const context=Reflect.construct(target,args,target);qaAudioContexts.push(context);qaAudioTrace.push({kind:'context',state:context.state,active:navigator.userActivation?.isActive,at:performance.now()});const resume=context.resume.bind(context);context.resume=()=>{qaAudioTrace.push({kind:'resume',state:context.state,active:navigator.userActivation?.isActive,at:performance.now()});return resume().then(value=>{qaAudioTrace.push({kind:'resumed',state:context.state,at:performance.now()});return value;});};const oscillator=context.createOscillator.bind(context);context.createOscillator=()=>{const source=oscillator(),start=source.start.bind(source);source.start=(...values)=>{qaAudioTrace.push({kind:'start',state:context.state,at:performance.now()});return start(...values);};return source;};return context;}});window.AudioContext=Observed;if(window.webkitAudioContext)window.webkitAudioContext=Observed;}
+ });
+ try{
+  await page.goto(server.url);await page.locator('.game-tile').first().waitFor();assert.equal(await page.evaluate(()=>qaAudioContexts.length),0,'loading alone does not create an audio context');await page.evaluate(()=>PlayroomUIFeedback.emit('message',{id:'startup-message'}));await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);assert.equal(await page.evaluate(()=>qaAudioContexts.length),0,'an incoming cue before consent never creates a context or waits for a later tap');await page.evaluate(async()=>{PlayroomFirstTurnGuide.setEnabled('yatzy',false);const session=new TabletopSession(TabletopCore,'yatzy',{seed:17,players:[{name:'Первый'},{name:'Второй'}]}),authority=new SessionAuthority(session),viewer=session.current.turn,client=new PlayroomSessionClient(PlayroomLocalTransport(authority.connect(viewer)));await client.refresh();const mounted=PlayroomSharedViews.mount(client,PlayroomPacks.exportView('yatzy',session.packVersion),{surface:'combined'});mounted.render();window.qaFirstAudio={client,mounted,revision:client.snapshot.revision};const button=[...document.querySelectorAll('.scene [data-action]')].find(node=>JSON.parse(node.dataset.action).type==='roll');if(!button)throw Error('No legal first roll');button.setAttribute('data-audio-first','');});assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length),0,'mounting a scene never plays a startup sound');
+  await page.locator('[data-audio-first]').tap();await page.waitForFunction(()=>qaFirstAudio.client.snapshot.revision>qaFirstAudio.revision);await page.waitForFunction(()=>qaAudioTrace.some(e=>e.kind==='start'),null,{timeout:3000});assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='gesture'&&e.type==='pointerdown').length),1,'exactly one trusted touch action was needed');
+  await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);await page.evaluate(()=>{qaFirstAudio.mounted.destroy();PlayroomAppBridge.showHub();});
+  await page.locator('[data-start=klondike]').first().tap();await page.locator('[data-game-mode=hotseat]').tap();await page.locator('.room-setup-modal [data-command=lobby-start]').waitFor();
+  const beforeStart=await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length);await page.locator('.room-setup-modal [data-command=lobby-start]').tap();await page.waitForFunction(before=>qaAudioTrace.filter(e=>e.kind==='start').length===before+3,beforeStart);await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);
+  const currentId=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().id);assert.equal(await page.evaluate(id=>PlayroomUIFeedback.emit('game.start',{id}),currentId),false,'same durable game start never plays twice');
+  await page.evaluate(()=>PlayroomAppBridge.showSettings());const active=page.locator('#modal-root>[data-surface-state=active]');await active.locator('[data-settings-tab=effects],[data-settings-tab=effects]').click();const volume=active.locator('#setting-volume');await volume.focus();await volume.press('Home');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound),false);
+  const muted=await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length);assert.equal(await page.evaluate(()=>PlayroomUIFeedback.emit('message',{id:'muted-message'})),false);assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length),muted);await volume.press('End');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound),true);
+  await active.locator('#setting-ui-sounds').uncheck();assert.equal(await page.evaluate(()=>PlayroomUIFeedback.emit('friend.request',{id:'quiet-friend'})),false);await active.locator('#setting-ui-sounds').check();assert.equal(await page.evaluate(()=>PlayroomUIFeedback.emit('friend.request',{id:'quiet-friend'})),false,'muted UI notifications do not replay after re-enable');
+  await page.evaluate(()=>PlayroomAppBridge.showHub());
+  const beforeUpdate=await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length);await page.evaluate(()=>dispatchEvent(new Event('playroom-update-ready')));await page.waitForFunction(before=>qaAudioTrace.filter(e=>e.kind==='start').length===before+2,beforeUpdate);await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);await page.evaluate(()=>dispatchEvent(new Event('playroom-update-ready')));assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length),beforeUpdate+2,'update redisplay is silent');
+   // Exercise the real notification poll/dispatch and native audio port. Only
+   // the account/service/storage inputs are local; no provider or person is contacted.
+   await page.evaluate(async()=>{
+    window.qaNotificationAudio=[];
+    window.qaAudioInbox={direct:[],groups:[],friends:[{id:'outgoing',userId:'outgoing',nickname:'Исходящая заявка',accepted:false,incoming:false}],directCursor:0,groupCursor:0,calls:[]};
+    PlayroomChatNotifications.init({account:{snapshot:()=>({kind:'account',id:'native-audio-fixture'}),subscribe(){}},store:{read:()=> '0',write(){},readFriends:()=>({outgoing:'outgoing'}),writeFriends(){}},service:{call:async action=>{
+     qaAudioInbox.calls.push(action);
+     if(action==='unread')return {chats:[],friends:qaAudioInbox.friends};
+     if(action==='inbox')return {cursor:String(++qaAudioInbox.directCursor),items:qaAudioInbox.direct.splice(0)};
+     if(action==='group-inbox')return {cursor:String(++qaAudioInbox.groupCursor),items:qaAudioInbox.groups.splice(0)};
+     return {messages:[]};
+    }}});
+    await PlayroomChatNotifications.poll();
+   });
+   async function notificationAudio(label,packet,notes){
+    await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);
+    await page.waitForTimeout(280); // Real semantic-cue cooldown, not a fake audio clock.
+    const before=await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length);
+    await page.evaluate(async packet=>{
+     const peer={userId:'audio-peer',id:'audio-peer',nickname:'Локальный собеседник',avatar:null};
+     if(packet.channel==='friend')qaAudioInbox.friends=packet.friends;
+     else{const item={person:peer,at:new Date().toISOString(),...packet.item};qaAudioInbox[packet.channel].push(item);}
+     await PlayroomChatNotifications.poll();
+    },packet);
+    if(notes)await page.waitForFunction(({before,notes})=>qaAudioTrace.filter(e=>e.kind==='start').length===before+notes,{before,notes});
+    await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);
+    assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length),before+notes,label);
+    await page.evaluate(value=>qaNotificationAudio.push(value),{label,notes});
+   }
+   await notificationAudio('incoming direct message',{channel:'direct',item:{id:'audio-dm-1',kind:'message',body:'Входящее сообщение'}},2);
+   assert(await page.locator('[data-chat-notifications]').innerText().then(text=>text.includes('Входящее сообщение')),'the real message banner is mounted');
+   await notificationAudio('duplicate direct message is silent',{channel:'direct',item:{id:'audio-dm-1',kind:'message',body:'Входящее сообщение'}},0);
+   await notificationAudio('incoming direct invitation',{channel:'direct',item:{id:'audio-invite-1',kind:'invitation',invitationState:'active',gameName:'Домино',body:'Приглашение в комнату'}},3);
+   await notificationAudio('expired invitation is silent',{channel:'direct',item:{id:'audio-expired-1',kind:'invitation',invitationState:'expired',body:'Истекшее приглашение'}},0);
+   await notificationAudio('incoming reaction',{channel:'direct',item:{id:'audio-reaction-1',kind:'message',body:':nice:'}},1);
+   await notificationAudio('incoming group message',{channel:'groups',item:{id:'audio-group-1',kind:'message',group:{id:'audio-group',name:'Локальная группа'},body:'Сообщение в группе'}},2);
+   await notificationAudio('incoming group invitation',{channel:'groups',item:{id:'audio-group-invite-1',kind:'group-invitation',group:{id:'audio-group',name:'Локальная группа'},invitationState:'active',body:'Локальная группа'}},3);
+   const outgoing={id:'outgoing',userId:'outgoing',nickname:'Исходящая заявка',accepted:false,incoming:false},incoming={id:'incoming',userId:'incoming',nickname:'Новая заявка',accepted:false,incoming:true};
+   await notificationAudio('incoming friend request',{channel:'friend',friends:[outgoing,incoming]},2);
+   await notificationAudio('outgoing friend request accepted',{channel:'friend',friends:[{...outgoing,accepted:true},incoming]},2);
+   // Native audio through existing connection and foreground Push-message routes.
+   // Local ports supply state; no subscription, permission request or provider send.
+   await page.evaluate(()=>{
+    window.qaRouteAudio=[];window.qaRouteTrace=[];window.qaRouteEmits=[];
+    const feedback=PlayroomUIFeedback;window.PlayroomUIFeedback={...feedback,emit:(type,options)=>{const before=PlayroomAppBridge.audio.busy,result=feedback.emit(type,options);qaRouteEmits.push({type,options,before,result,visible:!document.hidden,focused:document.hasFocus()});return result;}};
+    window.qaOriginalIce=PlayroomIceConfig;window.PlayroomIceConfig={...PlayroomIceConfig,trace:(...args)=>qaRouteTrace.push(args)};
+    window.qaOriginalPushDevice=PlayroomPushDevice;window.PlayroomPushDevice={...PlayroomPushDevice,supported:()=>false};
+    window.qaOriginalCloudNetwork=PlayroomCloudNetwork;window.PlayroomCloudNetwork={...PlayroomCloudNetwork,roomId:()=> 'audio-room'};
+    PlayroomPushUI.init({account:{snapshot:()=>({kind:'account',id:'audio-recipient'}),subscribe(){}},remote:{call:async()=>{throw Error('No Push provider calls expected');}}});
+   });
+   async function routeAudio(label,packet,notes){
+    await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);await page.waitForTimeout(280);
+    const before=await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length);
+    await page.evaluate(value=>{window.qaRoutePending=value;},{label,before,notes});
+    await page.evaluate(async packet=>{
+     if(packet.kind==='connection'){
+      const attempt=PlayroomConnectionProgress.create();
+      if(packet.stage==='connected')await attempt.connected({pc:{getStats:async()=>new Map()}});
+      else if(packet.stage==='failed')attempt.fail({code:'connection-timeout'});
+      else attempt.cancel();
+     }else{
+      const payload={recipient:'audio-recipient',type:'room',id:'audio-room',title:'Локальный сигнал',body:'Проверка маршрута',...packet.payload};
+      const channel=new MessageChannel();
+      window.qaRouteAck=await new Promise(resolve=>{channel.port1.onmessage=event=>{channel.port1.close();channel.port2.close();resolve(event.data.handled);};navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-push-visible',payload},ports:[channel.port2]}));});
+     }
+    },packet);
+    if(packet.kind==='push')assert.equal(await page.evaluate(()=>qaRouteAck),packet.payload.recipient!=='other'&&packet.payload.id!=='other-room',label+' foreground ACK');
+    if(notes)await page.waitForFunction(({before,notes})=>qaAudioTrace.filter(e=>e.kind==='start').length===before+notes,{before,notes});
+    await page.waitForFunction(()=>!PlayroomAppBridge.audio.busy);
+    assert.equal(await page.evaluate(()=>qaAudioTrace.filter(e=>e.kind==='start').length),before+notes,label);
+    await page.evaluate(value=>qaRouteAudio.push(value),{label,notes});
+   }
+   await routeAudio('connection accepted',{kind:'connection',stage:'connected'},2);
+   await routeAudio('connection failed',{kind:'connection',stage:'failed'},2);
+   await routeAudio('connection cancelled is silent',{kind:'connection',stage:'cancelled'},0);
+   for(const [activity,notes] of [['offer',3],['accepted',2],['declined',2],['complete',3]])await routeAudio('foreground host transfer '+activity,{kind:'push',payload:{activity:'host-transfer-'+activity,transferId:'audio-transfer-'+activity}},notes);
+   await routeAudio('duplicate host transfer is silent',{kind:'push',payload:{activity:'host-transfer-offer',transferId:'audio-transfer-offer'}},0);
+   await routeAudio('other recipient is silent',{kind:'push',payload:{activity:'host-transfer-offer',transferId:'audio-other-recipient',recipient:'other'}},0);
+   await routeAudio('other room is silent',{kind:'push',payload:{activity:'host-transfer-offer',transferId:'audio-other-room',id:'other-room'}},0);
+   fs.writeFileSync(path.join(out,engine+'-routes.json'),JSON.stringify(await page.evaluate(()=>({cases:qaRouteAudio,trace:qaRouteTrace,contextStates:qaAudioContexts.map(context=>context.state)})),null,2));
+   await page.evaluate(()=>{window.PlayroomIceConfig=qaOriginalIce;window.PlayroomPushDevice=qaOriginalPushDevice;window.PlayroomCloudNetwork=qaOriginalCloudNetwork;});
+   fs.writeFileSync(path.join(out,engine+'-notifications.json'),JSON.stringify(await page.evaluate(()=>({cases:qaNotificationAudio,calls:qaAudioInbox.calls,contextStates:qaAudioContexts.map(context=>context.state)})),null,2));
+   assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+ }finally{fs.writeFileSync(path.join(out,engine+'-trace.json'),JSON.stringify({engine,browserType:browser.browserType().name(),browserVersion:browser.version(),routeDiagnostic:await page.evaluate(()=>({cases:window.qaRouteAudio,pending:window.qaRoutePending,emits:window.qaRouteEmits})).catch(()=>null),events:await page.evaluate(()=>qaAudioTrace).catch(()=>[]),contexts:await page.evaluate(()=>qaAudioContexts.map(c=>({state:c.state,currentTime:c.currentTime}))).catch(()=>[]),errors,nativeSupabaseRequests:net.nativeSupabaseRequests},null,2));await context.close();await browser.close();await server.close();}
+});
+
+test('Pexeso retained slots flip and close mismatches without replacing untouched public positions',{timeout:45000},async()=>{
+ require('../packs/pexeso/rules.js');
+ const bundle=compiledPacks.PlayroomInstalledPacks.find(pack=>pack.manifest.id==='pexeso'),definition={manifest:bundle.manifest,view:bundle.files['view.js'],styles:bundle.files['styles.css'],rules:Engine.get('pexeso').rules,assets:assets(bundle)};
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const deck of ['cartoon','52']){
+  const page=await fixture(browser),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const session=new Session(Engine,'pexeso',{seed:17,preset:'easy',deck,firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]}),authority=new Authority(session),client=authority.connect(0);
+  const first=session.current.data.board[0],second=session.current.data.board.findIndex(c=>deck==='52'?c.rank!==first.rank:c.character!==first.character||c.shape!==first.shape||c.color!==first.color);assert(second>0);
+  let sequence=0;await page.exposeFunction('pexesoCommit',action=>{const receipt=client.dispatch(P.command(client.snapshot(),action,'pexeso-'+(++sequence)));assert(receipt.ok);return {receipt,snapshot:client.snapshot()};});
+  await page.evaluate(({definition,initial})=>{
+   window.qaSent=[];window.PlayroomAppBridge={profile:()=>({id:'default'}),gameOptions:()=>({animationSpeed:'fast',quickPlay:true})};PlayroomFirstTurnGuide.setEnabled('pexeso',false);
+   const listeners=new Set();window.qaClient={snapshot:initial,pending:null,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async send(action){qaSent.push(action);const {receipt,snapshot}=await pexesoCommit(action);this.snapshot=snapshot;for(const fn of listeners)fn(snapshot);return receipt;},async history(){return this.snapshot;},close(){}};
+   window.qaGame=PlayroomSharedViews.mount(qaClient,definition,{surface:'combined'});qaGame.render();window.qaSlots=[...document.querySelectorAll('.pexeso-slot')];window.qaSlotArt=qaSlots.map(slot=>slot.querySelector('svg'));
+  },{definition,initial:client.snapshot()});
+  for(const index of [0,second]){
+   await page.locator(`.pexeso-slot[data-motion-value="${index}"] [data-action]`).click();await page.locator('[data-motion-kind="flip"]').first().waitFor();await page.locator('[data-motion-kind="flip"]').first().waitFor({state:'detached'});await page.locator('.network-game>.scene[aria-busy="false"]').waitFor();
+   assert(await page.evaluate(()=>qaSlots.every((slot,i)=>slot===document.querySelectorAll('.pexeso-slot')[i])),'public position roots survive flip, permission changes and mismatch closing');const artChanges=await page.evaluate(skip=>qaSlotArt.flatMap((art,i)=>{const now=document.querySelectorAll('.pexeso-slot')[i].querySelector('svg');return skip.includes(i)||art===now?[]:[{index:i,old:art?.outerHTML.slice(0,650),next:now?.outerHTML.slice(0,650),oldParent:art?.parentElement?.outerHTML.slice(0,350),newParent:now?.parentElement?.outerHTML.slice(0,350)}];}),[0,second]);assert.deepEqual(artChanges,[],'unrevealed SVG artwork survives both flip sequences');
+  }
+  assert.equal(session.current.data.phase,'reveal');assert.equal(session.current.turn,1);assert.equal(await page.locator('.pexeso-slot .shared-card-back').count(),session.current.data.board.length,'mismatch is closed after its animation');assert.equal(await page.locator('.pexeso-slot [data-action]').count(),0,'previous player cannot flip during the next turn');assert.equal(await page.evaluate(()=>qaSent.length),2);assert.deepEqual(errors,[]);
+  await page.evaluate(()=>qaGame.destroy());await page.close();
+ }}finally{await browser.close();}
 });

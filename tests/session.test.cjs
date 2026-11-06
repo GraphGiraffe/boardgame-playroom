@@ -330,3 +330,13 @@ test('removed local saves preserve the library error instead of throwing during 
  const Library=require('../app/library.js');const library=new Library(()=>({getItem:()=>null}),Core,Session);
  assert.throws(()=>library.write(create({seed:'removed-local'}),'removed-local'),error=>error.code==='LIBRARY_REMOVED'&&error.name==='Error');
 });
+
+test('active save identity never restores a session and follows replacement and removal',()=>{
+ const Library=require('../application/library.js'),data=new Map(),store={getItem:key=>data.get(key)||null};const library=new Library(()=>store,Core,Session);library.restore=()=>{throw Error('Identity lookup must not restore history');};
+ data.set('playroom.session.v1',JSON.stringify({...create().export(),libraryId:'first'}));assert.equal(library.currentId(),'first');assert.equal(library.currentId(),'first');
+ data.set('playroom.session.v1',JSON.stringify({...create().export(),libraryId:'replacement'}));assert.equal(library.currentId(),'replacement');data.delete('playroom.session.v1');assert.equal(library.currentId(),null);assert.equal(library.activeIdentity,null);
+});
+
+test('legacy library summaries are read once and invalidate with the saved bytes',()=>{
+ const Library=require('../application/library.js'),data=new Map(),store={get length(){return data.size;},key:i=>[...data.keys()][i],getItem:key=>data.get(key)||null,removeItem:key=>data.delete(key)};let restores=0;const port={restore:(...args)=>{restores++;return Session.restore(...args);}};const library=new Library(()=>store,Core,port),saved={...create().export(),libraryId:'legacy-menu'};data.set('playroom.session.v1',JSON.stringify(saved));const first=library.list();assert.equal(restores,1);first[0].players[0]='mutated';assert.notEqual(library.list()[0].players[0],'mutated');assert.equal(restores,1);saved.updatedAt++;data.set('playroom.session.v1',JSON.stringify(saved));library.list();assert.equal(restores,2);library.remove('legacy-menu');assert.equal(library.summaryCache.size,0);assert.deepEqual(library.list(),[]);
+});

@@ -88,7 +88,17 @@ test('projection protects hands, stock, RNG, drawn identity and private event pa
   for (const game of ['uno', 'domino', 'durak']) {
     const s = create(game, 2), own = s.turn;
     E.event(s, 'secret card', own, 'draw', { privateTo: own, publicText: 'one card', card: { secret: 'value' } });
+    let privateCopies=0,eventArrayCopies=0;
+    Object.defineProperty(s.data,'toJSON',{value(){privateCopies++;return this;},configurable:true});
+    Object.defineProperty(s.events,'toJSON',{value(){eventArrayCopies++;return this;},configurable:true});
+    // Pack projections retain their own immutable model boundary. Compare with
+    // that required work, rather than banning its authorized snapshots.
+    for(const viewer of [own,1-own,-1])E.get(game).project({...s,data:{},events:[]},viewer,s);
+    const requiredPrivateCopies=privateCopies,requiredEventCopies=eventArrayCopies;
+    privateCopies=0;eventArrayCopies=0;
     const p = E.project(s, own), opponent = E.project(s, 1 - own), spectator = E.project(s, -1);
+    assert.equal(privateCopies,requiredPrivateCopies,'projection adds no discarded complete private data copy');
+    assert.equal(eventArrayCopies,requiredEventCopies,'projection adds no discarded complete raw event array copy');
     assert.deepEqual(p.data.hands[own], s.data.hands[own]);
     assert(opponent.data.hands[own].every(c => c.hidden && Object.keys(c).length === 1));
     assert(spectator.data.hands.flat().every(c => c.hidden)); assert.equal(spectator.rng, undefined);
@@ -346,6 +356,16 @@ test('standalone audio library registers scoped pack overrides without a browser
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);
+  assert.equal(await audio.prepare(),false,'preparation never creates a context');assert.equal(contexts,1);
+  let release,resumes=0,created=0;
+  const gain=()=>({gain:{value:0},connect(){}}),context={state:'suspended',destination:{},createGain:gain,resume(){resumes++;return new Promise(resolve=>{release=()=>{context.state='running';resolve();};});}};
+  const warming=new Audio({enabled:true,contextFactory:()=>{created++;return context;}});
+  const unlocking=warming.unlock();assert.equal(created,1,'construct synchronously in the gesture');assert.equal(resumes,1,'resume synchronously in the gesture');
+  let prepared=false;const ready=warming.prepare().then(value=>{prepared=value;return value;});await Promise.resolve();assert.equal(prepared,false);assert.equal(warming.busy,true);release();assert.equal(await unlocking,true);assert.equal(await ready,true);assert.equal(warming.busy,false);
+  context.state='suspended';warming.unlock();const cancelled=warming.prepare();warming.stop();assert.equal(await cancelled,false,'stop aborts a pending readiness barrier');
+  const abort=new AbortController(),aborted=warming.prepare({signal:abort.signal});abort.abort();assert.equal(await aborted,false);
+  assert.equal(await warming.prepare({timeoutMs:1}),false,'OS refusal cannot stall presentation indefinitely');
+  warming.setVolume(0);assert.equal(await warming.prepare(),false);warming.setVolume(.6);warming.setEnabled(false);assert.equal(await warming.prepare(),false);
   audio.setEnabled(false);assert.equal(await audio.play('move'),false);
   const started=[],ends=[];audio.play=id=>{started.push(id);return new Promise(resolve=>ends.push(resolve));};
   let finished=false;const mixed=audio.batch(['move','success','move']).then(()=>finished=true);

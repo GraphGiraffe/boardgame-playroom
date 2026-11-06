@@ -31,7 +31,15 @@
     if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
     return value;
   }
-  const snapshot = value => freeze(copy(value));
+  // Only snapshots created here are trusted. Object.isFrozen alone does not
+  // establish valid JSON or recursively immutable descendants.
+  const snapshots = new WeakSet();
+  function snapshot(value) {
+    if (value && typeof value === 'object' && snapshots.has(value)) return value;
+    const result = freeze(copy(value));
+    if (result && typeof result === 'object') snapshots.add(result);
+    return result;
+  }
   const canonical = value => JSON.stringify(value, (_, item) => record(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
   function command(value) {
