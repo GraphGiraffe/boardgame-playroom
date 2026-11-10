@@ -20,6 +20,12 @@ async function freePoint(page){return page.evaluate(()=>{for(const y of [280,420
 async function swipe(page,cdp,direction){const p=await freePoint(page);assert(p,'an exposed page background is available for a page gesture');await touch(cdp,page,p,{x:p.x+(direction==='left'?-120:120),y:p.y});}
 async function tab(page,id){await page.locator('[data-hub-page='+id+']').tap();await page.waitForFunction(id=>document.querySelector('.hub-shell-v021')?.dataset.hubDestination===id,id);await page.waitForTimeout(100);}
 async function position(page,top){await page.evaluate(top=>window.scrollTo({top,behavior:'instant'}),top);await page.waitForTimeout(100);return page.evaluate(()=>scrollY);}
+async function exposedBox(locator){
+ await locator.scrollIntoViewIfNeeded();
+ const hits=await locator.evaluate(node=>{const r=node.getBoundingClientRect();return [.1,.5,.9].map(f=>{const x=r.x+r.width*f,y=r.y+r.height/2,hit=document.elementFromPoint(x,y);return {x,y,inside:x>0&&y>0&&x<innerWidth&&y<innerHeight,ownsHit:!!hit&&(hit===node||node.contains(hit)),hit:hit?.tagName};});});
+ assert(hits.every(p=>p.inside&&p.ownsHit),'native touch starts, crosses and ends on the exposed fixture, not sticky chrome: '+JSON.stringify(hits));
+ return locator.boundingBox();
+}
 
 test('hub smartphone swipes reuse tabs and preserve independent page scroll through back and refresh',{timeout:75000},()=>fixture(async({page,cdp})=>{
  // Controlled long pages isolate the scroll-memory contract from account data
@@ -47,9 +53,13 @@ test('hub touch page gestures preserve vertical scroll, card taps, nested contro
  await touch(cdp,page,from,{x:from.x-110,y:from.y});assert.equal(await destination(page),'sessions','horizontal card swipe navigates');assert.equal(await page.locator('#modal-root>*').count(),0,'the trailing compatibility click does not open a game');
  await tab(page,'games');await position(page,0);const before=await page.evaluate(()=>scrollY);await touch(cdp,page,{x:210,y:620},{x:205,y:230});assert.equal(await destination(page),'games');assert(await page.evaluate(()=>scrollY)>before+80,'vertical touch still scrolls normally');
  await position(page,0);await page.locator('.game-tile').first().tap();await page.locator('#modal-root .game-card-modal').waitFor();await touch(cdp,page,{x:300,y:350},{x:90,y:350});assert.equal(await destination(page),'games','modal owns its touch');await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').tap();
+ // Returning focus can restore the previous catalog scroll on the next frame.
+ // Finish that restoration before placing controls inside a transformed panel;
+ // scrollIntoView alone does not detect a sticky header covering the input.
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await position(page,0);
  await page.evaluate(()=>{const panel=document.querySelector('#hub-games-page');panel.insertAdjacentHTML('beforeend','<input data-swipe-fixture="range" type="range" min="0" max="100" value="0" style="position:fixed;left:45px;top:200px;width:280px;z-index:1000"><div data-swipe-fixture="carousel" style="position:fixed;left:45px;top:300px;width:280px;height:90px;overflow-x:auto;touch-action:pan-x;z-index:1000;background:var(--paper)"><div style="width:1000px;height:80px">Прокручиваемый ряд</div></div>');});
- const range=page.locator('[data-swipe-fixture=range]');await range.scrollIntoViewIfNeeded();const r=await range.boundingBox();await touch(cdp,page,{x:r.x+r.width*.1,y:r.y+r.height/2},{x:r.x+r.width*.9,y:r.y+r.height/2});assert.equal(await destination(page),'games');assert(Number(await range.inputValue())>40,'range retains native horizontal input');
- const carousel=page.locator('[data-swipe-fixture=carousel]');await carousel.scrollIntoViewIfNeeded();const c=await carousel.boundingBox();await touch(cdp,page,{x:c.x+c.width*.9,y:c.y+c.height/2},{x:c.x+c.width*.1,y:c.y+c.height/2});assert.equal(await destination(page),'games');assert(await carousel.evaluate(n=>n.scrollLeft)>80,'nested horizontal scrolling remains native');
+ const range=page.locator('[data-swipe-fixture=range]'),r=await exposedBox(range);await touch(cdp,page,{x:r.x+r.width*.1,y:r.y+r.height/2},{x:r.x+r.width*.9,y:r.y+r.height/2});assert.equal(await destination(page),'games');assert(Number(await range.inputValue())>40,'range retains native horizontal input');
+ const carousel=page.locator('[data-swipe-fixture=carousel]'),c=await exposedBox(carousel);await touch(cdp,page,{x:c.x+c.width*.9,y:c.y+c.height/2},{x:c.x+c.width*.1,y:c.y+c.height/2});assert.equal(await destination(page),'games');assert(await carousel.evaluate(n=>n.scrollLeft)>80,'nested horizontal scrolling remains native');
  await page.evaluate(()=>document.querySelectorAll('[data-swipe-fixture]').forEach(n=>n.remove()));await page.locator('[data-edit-toggle]').tap();await card.scrollIntoViewIfNeeded();const edit=await card.boundingBox();await touch(cdp,page,{x:edit.x+edit.width*.8,y:edit.y+35},{x:edit.x+edit.width*.2,y:edit.y+35});assert.equal(await destination(page),'games','catalog editing is not a page gesture');
  await page.screenshot({path:path.join(out,'hub-phone.png')});fs.writeFileSync(path.join(out,'gestures.json'),JSON.stringify({cardSwipe:true,tap:true,vertical:true,range:true,carousel:true,modal:true,edit:true},null,2));
 }));
