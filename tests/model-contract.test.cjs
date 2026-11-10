@@ -551,3 +551,56 @@ test('shared turn-order policy validates cycles, directions, repeat overrides an
  assert.equal(base.turnOrder({...projection,decisionWindow:{participants:[0,1]}}),null);
  for(const bad of [{players:[0,0]},{players:[4]},{players:[0,2],direction:0},{next:4}])assert.throws(()=>custom(()=>bad).turnOrder(projection),coded('TURN_ORDER_INVALID'));
 });
+
+test('parameter preview metadata stays public, bounded and identical across compiler and runtime',()=>{
+ const script=`
+import copy,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);path=root/'shared/pack_compiler.py';ns={'__file__':str(path)};exec(compile(path.read_text(),str(path),'exec'),ns)
+bundles=[ns['build_pack'](root/'packs'/game) for game in ['battleship','ludo','mage-brawl','uno','gofish','durak','oldmaid','klondike','snakes']]
+for path in (root/'packs').glob('*/manifest.json'):ns['validate_manifest'](json.loads(path.read_text()),path.parent.name)
+base=copy.deepcopy(bundles[2]['manifest']);health=next(i for i,f in enumerate(base['settings']) if f['key']=='health')
+bad=[]
+def reject(change):
+ value=copy.deepcopy(base);change(value);bad.append(value)
+ try:ns['validate_manifest'](value,'bad-preview')
+ except ValueError:return
+ raise AssertionError('unsafe preview accepted')
+def field(m):return m['settings'][health]
+def option(m):return field(m)['options'][0]
+for preview in [None,[],{'kind':'html'},{'kind':'health','html':'<svg/>'},{'kind':{}}]:reject(lambda m,p=preview:field(m).__setitem__('preview',p))
+for preview in [None,[], {'kind':None}, {'kind':'html','html':'<svg/>'}, {'count':-1},{'count':101},{'count':True},{'count':1.5},{'count':'3'},{'count':4,'countFrom':{'field':'actionsPerTurn','values':{'1':3}}},{'countFrom':{'field':'missing','values':{'1':3}}},{'countFrom':{'field':'actionsPerTurn','values':{}}},{'countFrom':{'field':'actionsPerTurn','values':{'unknown':3}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':101}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':3},'html':'<img>'}}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
+for preview in [{'kind':'fleet','pieces':[0]},{'kind':'fleet','pieces':[17]},{'kind':'fleet','pieces':[1]*17},{'kind':'teams','teamSizes':[0]},{'kind':'teams','teamSizes':[32,1]},{'kind':'teams','teamSizes':[1]*9},{'kind':'fleet','pieces':[4],'html':'<svg>'},{'kind':'cards','count':7}]:
+ def change(m,p=preview):m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':p}]})
+ reject(change)
+reject(lambda m:m['presetSetting'].__setitem__('presentation','large'))
+reject(lambda m:field(m).__setitem__('presentation','mode'))
+for preview in [{'kind':'declaration','actor':'other','label':'UNO!'},{'kind':'declaration','actor':'human','label':'x'*25},{'kind':'declaration','actor':'human'},{'kind':'symbol','icon':'not-a-ui-icon'},{'kind':'symbol','icon':'first','html':'<svg/>'}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
+for description in [None,False,[], '', 'x'*361]:reject(lambda m,d=description:option(m).__setitem__('description',d))
+valid=[]
+for count in [0,100]:
+ value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
+for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'}]:
+ value=copy.deepcopy(base);option(value)['preview']=preview;ns['validate_manifest'](value,'valid-common-preview');valid.append(value)
+print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False))
+`;
+ const result=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8',maxBuffer:8*1024*1024}));
+ const Packs=require('../core/packs.js'),parse=manifest=>Packs.parse({format:'playroom-pack',formatVersion:1,manifest,files:{'rules.js':'fixture','view.js':'fixture','styles.css':'/* fixture */','sounds.js':'fixture'}});
+ for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
+ for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
+ const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},manager=new Packs({engine:Engine,views:UI.createRegistry(),modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
+ for(const bundle of result.bundles){const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);assert.deepEqual(catalog[id].settings,bundle.manifest.settings);const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings);assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);}
+ const fleet=require('../packs/battleship/domain/geometry.js').fleets;
+ for(const o of catalog.battleship.presetSetting.options)assert.deepEqual(o.preview.pieces,fleet[o.value]);
+ for(const f of catalog['mage-brawl'].settings.filter(f=>['health','handLimit'].includes(f.key)))assert.deepEqual(f.options[0].preview.countFrom,{field:'actionsPerTurn',values:{'1':3,'2':4}});
+ for(const steps of ['1','2']){const state=Engine.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'}],actionsPerTurn:steps,health:'mode',handLimit:'mode'});for(const key of ['health','handLimit']){const field=catalog['mage-brawl'].settings.find(f=>f.key===key);assert.equal(field.options[0].preview.countFrom.values[steps],state.data.config[key],'automatic preview agrees with the actual domain value');}}
+ assert.equal(catalog.uno.presetSetting.presentation,undefined,'quantity choices never become a mode hero');
+ for(const option of catalog.uno.presetSetting.options){const state=Engine.createGame('uno',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.count,state.data.hands[0].length,'hand preview agrees with the actual initial deal');}
+ assert.deepEqual(catalog.ludo.presetSetting.options.map(o=>o.preview.teamSizes),[[1,1,1,1],[2,2]]);
+ const board=require('../packs/ludo/domain/board.js'),teamSizes=Object.values(Array.from({length:4},(_,player)=>board.team(player)).reduce((groups,team)=>({...groups,[team]:(groups[team]||0)+1}),{}));assert.deepEqual(catalog.ludo.presetSetting.options.find(o=>o.value==='teams').preview.teamSizes,teamSizes,'team diagram agrees with actual partner grouping');
+ for(const game of ['gofish','durak','oldmaid']){const field=catalog[game].settings.find(f=>f.key==='deck');for(const option of field.options){const state=Engine.createGame(game,{seed:17,deck:option.value,players:[{name:'A'},{name:'B'}]}),count=game==='oldmaid'?state.data.hands.flat().length+state.data.discard.length:state.data.deckSize;assert.equal(option.preview?.count??Number(option.value),count,game+' preview describes the actual card pool');}}
+ for(const option of catalog.klondike.settings.find(f=>f.key==='draw').options){const state=Engine.createGame('klondike',{seed:17,draw:option.value,players:[{name:'A'}]});assert.equal(Number(option.value),state.data.config.draw,'draw preview agrees with actual solitaire configuration');}
+ const declaration=catalog.uno.settings.find(f=>f.key==='unoMode');assert.deepEqual(declaration.preview,{kind:'declaration',label:'UNO!'});assert.deepEqual(declaration.options.map(o=>o.preview.actor),['human','bot']);
+ assert.equal(catalog.snakes.presetSetting.presentation,undefined,'dice-count choices remain compact');
+ for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'dice');assert.equal(option.preview.count,Array.isArray(state.data.dice)?state.data.dice.length:1,'mode preview agrees with the actual initial dice');}
+});

@@ -9,7 +9,7 @@
       if(players.length<room.constraints.min)throw Error('HOST_PLAYERS_REQUIRED');
       if(room.recovery&&!restored)throw Error('HOST_RECOVERY_REQUIRED');
       this.packs.activate(room.game.id,room.game.version);
-      const session=restored?.session||new this.Session(this.engine,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:!!room.rules.openHands,firstPlayerMode:room.firstPlayerMode||'random',firstPlayer:occupied.findIndex(seat=>seat.participantId===room.firstParticipantId),...(room.rules.options||{})});
+      const session=restored?.session||new this.Session(this.engine,room.game.id,{packVersion:room.game.version,players,mode:'solo',preset:room.rules.preset,presetLabel:room.rules.presetLabel,firstPlayerMode:room.firstPlayerMode||'random',firstPlayer:occupied.findIndex(seat=>seat.participantId===room.firstParticipantId),...(room.rules.options||{}),openHands:false});
       const sessionId=restored?.sessionId||this.idFactory();
       if(!this.store)throw Error('HOST_STORAGE_REQUIRED');
       let releaseLock=null,persisted=false;

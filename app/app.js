@@ -19,7 +19,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     try{
       const seats=state.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
       const players=seats.map(seat=>{const p=state.participants.find(p=>p.id===seat.participantId);return {name:p.nickname,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),...(p.avatar?{avatar:p.avatar}:{})};});
-      E.validateState(E.createGame(state.game.id,{...(state.rules.options||{}),players,packVersion:state.game.version,preset:state.rules.preset,openHands:!!state.rules.openHands,seed:1,firstPlayerMode:'assigned',firstPlayer:state.firstPlayerMode==='assigned'?seats.findIndex(s=>s.participantId===state.firstParticipantId):0}));
+      E.validateState(E.createGame(state.game.id,{...(state.rules.options||{}),players,packVersion:state.game.version,preset:state.rules.preset,openHands:false,seed:1,firstPlayerMode:'assigned',firstPlayer:state.firstPlayerMode==='assigned'?seats.findIndex(s=>s.participantId===state.firstParticipantId):0}));
       return null;
     }catch(_){return globalThis.PlayroomMessages.text('ui.rooms.roster-invalid');}
   }});
@@ -149,15 +149,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return [field.key,chosen?chosen.value:field.default??field.options?.[0]?.value];
     }));
     const rules={preset:preset.id,presetLabel:Multiplayer.presetLabel(preset.id,g,catalog[gameId]?.presetSetting),
-      firstPlayerMode:catalog[gameId]?.capabilities?.firstPlayer===false?'rules':['rules','random','assigned'].includes(saved.firstPlayerMode)?saved.firstPlayerMode:'rules',seatOrder:saved.seatOrder==='random'?'random':'normal',openHands:!!catalog[gameId]?.capabilities?.hands&&saved.openHands===true,options};
-    rules.display=Multiplayer.describeRules(rules,fields,!!catalog[gameId]?.capabilities?.hands,catalog[gameId]?.presetSetting);
+      firstPlayerMode:catalog[gameId]?.capabilities?.firstPlayer===false?'rules':['rules','random','assigned'].includes(saved.firstPlayerMode)?saved.firstPlayerMode:'rules',seatOrder:saved.seatOrder==='random'?'random':'normal',openHands:false,options};
+    rules.display=Multiplayer.describeRules(rules,fields,false,catalog[gameId]?.presetSetting);
     return rules;
   }
   function rememberRules(gameId,rules){
     try{
       const all=JSON.parse(localStorage.getItem(lastRulesKey)||'{}');
       const saved=all&&typeof all==='object'&&!Array.isArray(all)?all:{};
-      saved[gameId]={firstPlayerMode:rules.firstPlayerMode||'rules',seatOrder:rules.seatOrder||'normal',preset:rules.preset,openHands:!!rules.openHands,options:rules.options||{}};
+      saved[gameId]={firstPlayerMode:rules.firstPlayerMode||'rules',seatOrder:rules.seatOrder||'normal',preset:rules.preset,openHands:false,options:rules.options||{}};
       localStorage.setItem(lastRulesKey,JSON.stringify(saved));
     }catch(_){}
   }
@@ -784,8 +784,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function roomRulesFromForm(form){
     const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,choiceValue(form.elements['option-'+field.key])]));
-    const rules={firstPlayerMode:(form.elements.firstPlayerMode?.value||'rules'),seatOrder:(form.elements.seatOrder?.value||'normal'),preset:choiceValue(form.elements.preset),presetLabel:Multiplayer.presetLabel(choiceValue(form.elements.preset),meta(game),catalog[game]?.presetSetting),openHands:!!form.elements.openHands?.checked,options:packOptions};
-    return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],!!catalog[game]?.capabilities?.hands,catalog[game]?.presetSetting)};
+    const rules={firstPlayerMode:(form.elements.firstPlayerMode?.value||'rules'),seatOrder:(form.elements.seatOrder?.value||'normal'),preset:choiceValue(form.elements.preset),presetLabel:Multiplayer.presetLabel(choiceValue(form.elements.preset),meta(game),catalog[game]?.presetSetting),openHands:false,options:packOptions};
+    return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],false,catalog[game]?.presetSetting)};
   }
   function latestRoomEvent(type){return room?.events?.slice().reverse().find(event=>!type||event.type===type)||null;}
   let autoStartRoom=null,autoStartUnsub=null,autoStartQueued=false;
@@ -885,7 +885,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!players.some(p=>!p.bot))throw Error(globalThis.PlayroomMessages.text("ui.app.dc875925c351"));
     if(room.firstPlayerMode==='assigned'&&!seats.some(s=>s.participantId===room.firstParticipantId))throw Error(globalThis.PlayroomMessages.text("ui.app.467f6abb2682"));
     activatePack(room.game.id,room.game.version);
-    const mode=players.filter(p=>!p.bot).length>1?'pass':'solo',next=new Session(E,room.game.id,{players,mode,lobbyConfig:roomService.snapshot(room.id),preset:room.rules.preset,presetLabel:room.rules.presetLabel,openHands:room.rules.openHands,firstPlayerMode:room.firstPlayerMode||'rules',firstPlayer:seats.findIndex(s=>s.participantId===room.firstParticipantId),...(room.rules.options||{})});
+    const mode=players.filter(p=>!p.bot).length>1?'pass':'solo',next=new Session(E,room.game.id,{players,mode,lobbyConfig:roomService.snapshot(room.id),preset:room.rules.preset,presetLabel:room.rules.presetLabel,firstPlayerMode:room.firstPlayerMode||'rules',firstPlayer:seats.findIndex(s=>s.participantId===room.firstParticipantId),...(room.rules.options||{}),openHands:false});
     if(!await save())return;
     const nextId=library.newId();
     try{await library.activateAsync(next,nextId);}catch(error){reportSaveFailure(error);return;}
@@ -935,7 +935,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function showRoomRules(){
     const state=roomService.snapshot(room.id),game=meta(state.game.id);
-    const rows=state.rules.display||Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],!!catalog[state.game.id]?.capabilities?.hands,catalog[state.game.id]?.presetSetting);
+    const rows=Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],false,catalog[state.game.id]?.presetSetting);
     openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(PlayroomRulebookView.header()),p1:String(PlayroomLobbyView.rulesMarkup(state,rows,game,catalog[state.game.id]?.settings||[]))}),'rulebook-modal');modalBack ||= renderLobby;
   }
   function showRoomHelp(){openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)))}));modalBack ||= renderLobby;}
@@ -956,32 +956,88 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(wrap){const split=label.lastIndexOf(' '),prefix=split<0?'':label.slice(0,split+1),last=split<0?label:label.slice(split+1);return `<span class="setting-title setting-title-wrapped"><span class="setting-title-text">${esc(prefix)}<span class="setting-title-end"><span class="setting-title-last">${esc(last)}</span>${PlayroomLobbyView.fieldHelp(help)}</span></span></span>`;}
     return `<span class="setting-title"><span class="setting-title-text">${esc(label)}</span>${PlayroomLobbyView.fieldHelp(help)}</span>`;
   }
-  function ruleChoiceArt(field,option){
-    const key=field.key||'',value=String(option.value),label=String(option.label||value);
-    const glyph=field.icon||(/dice/i.test(key)?'dice':/hand|deck|card/i.test(key+' '+field.label)?'cards':/health/i.test(key)?'shield':/lives/i.test(key)?'player':/team/i.test(value)?'teams':/round/i.test(key)?'history':/firstPlayer/i.test(key)?'first':/seatOrder/i.test(key)?'people':/end/i.test(key)?'trophy':/actionsPerTurn/i.test(key)?'sword':/ship|sinking/i.test(key)?'ship':/preset|mode|variant/i.test(key)?'layers':'settings');
-    if(glyph==='cards')return `<span class="rule-choice-cards" aria-hidden="true">${TabletopUI.helpers.back()}</span>`;
-    if(glyph==='dice')return `<span class="rule-choice-dice" aria-hidden="true">${Array.from({length:Math.max(1,Math.min(3,Number(label)||1))},(_,i)=>TabletopUI.helpers.components.pieceTypes.die.render({value:i+1})).join('')}</span>`;
-    return `<span class="rule-choice-icon" aria-hidden="true">${icon(glyph)}</span>`;
+  function rulePreviewCount(field,option,form){
+    const preview={...(field.preview||{}),...(option.preview||{})};
+    if(preview.countFrom){
+      if(!form)return null;
+      const ref=preview.countFrom,control=form.elements['option-'+ref.field];
+      const value=control&&choiceValue(control);return Object.hasOwn(ref.values||{},String(value))?ref.values[String(value)]:null;
+    }
+    const value=preview.count??(/^\d+$/.test(String(option.value))?Number(option.value):null);
+    return Number.isSafeInteger(value)&&value>=0&&value<=100?value:null;
+  }
+  function ruleChoicePreview(field,option,form){
+    const H=TabletopUI.helpers,C=H.components,preview={...(field.preview||{}),...(option.preview||{})},kind=preview.kind,count=rulePreviewCount(field,option,form);
+    let art='';
+    if(kind==='cards'&&count!==null){
+      const shown=count<=10?count:3;
+      art=`<span class="rule-preview-cards" style="--preview-cards:${Math.max(1,shown)}" data-preview-count="${count}">${Array.from({length:shown},(_,i)=>`<span style="--preview-index:${i}">${H.back()}</span>`).join('')}${count>10?`<span class="rule-preview-deck-count">${H.countBadge(count,'Карт',{hand:true})}</span>`:''}</span>`;
+    }else if(kind==='dice'&&count!==null){
+      art=`<span class="rule-preview-dice" data-preview-count="${count}">${Array.from({length:Math.min(count,6)},(_,i)=>C.dieArt(i%6+1)).join('')}${count>6?`<b>×${count}</b>`:''}</span>`;
+    }else if(['health','lives'].includes(kind)&&count!==null){
+      const token=kind==='health'?'heart':'meeple';
+      art=`<span class="rule-preview-tokens token-${token}" data-preview-count="${count}">${C.tokenStrip({value:count,capacity:Math.min(count,8),icon:token})}</span>`;
+    }else if(kind==='fleet'&&Array.isArray(preview.pieces)){
+      art=`<span class="rule-preview-fleet" data-preview-count="${preview.pieces.length}">${preview.pieces.map(size=>`<span>${C.shipSilhouette(size)}</span>`).join('')}</span>`;
+    }else if(kind==='teams'&&Array.isArray(preview.teamSizes)){
+      art=`<span class="rule-preview-teams" data-preview-count="${preview.teamSizes.length}">${preview.teamSizes.map((size,i)=>`<span class="rule-preview-team" style="color:${esc(field.teamLayouts?.[String(option.value)]?.teams?.[i]?.color||H.playerColor(i))}">${C.tokenStrip({value:size,capacity:Math.min(size,8),icon:'meeple'})}</span>`).join('')}</span>`;
+    }else if(kind==='symbol'&&typeof preview.icon==='string'){
+      const glyph=H.icon(preview.icon);if(/<(?:path|circle|rect|g|ellipse|polygon)\b/.test(glyph))art=`<span class="rule-preview-symbol">${glyph}</span>`;
+    }else if(kind==='declaration'&&['human','bot'].includes(preview.actor)&&typeof preview.label==='string'){
+      art=`<span class="rule-preview-declaration">${H.button({label:preview.label,ariaLabel:preview.label,variant:'secondary',disabled:true,attrs:'inert tabindex="-1"'}).replace(/^<button\b/,'<span').replace(/<\/button>$/,'</span>')}<span class="rule-preview-actor">${H.icon(preview.actor==='human'?'player':'bot')}</span></span>`;
+
+    }
+    const automatic=!!preview.countFrom&&count!==null,label=String(automatic?count:option.label||option.value),detail=String(option.description||(automatic?option.label:''));
+    return `<button type="button" data-rule-next class="rule-choice-preview${art?' has-art':''}${label.length>12?' is-long-label':''}" data-rule-preview-kind="${esc(kind||'text')}" data-rule-preview-value="${esc(option.value)}" aria-label="${esc('Следующий вариант: '+(field.label||field.name||'параметр')+'. Сейчас: '+(automatic?option.label+', '+count:label))}" ${field.readonly?'disabled':''}><span class="rule-choice-preview-art" aria-hidden="true">${art}</span><output data-rule-preview-label aria-live="polite">${esc(label)}</output>${detail?`<small data-rule-preview-detail>${esc(detail)}</small>`:''}</button>`;
   }
   function ruleControl(field,name,value,{mode=false,readonly=false}={}){
     const options=field.options,index=Math.max(0,options.findIndex(option=>String(option.value)===String(value)));
     if(options.length===1)return `<input type="hidden" name="${esc(name)}" value="${esc(options[0].value)}">`;
-    const key=field.key||'preset',counter=!mode&&options.length>4&&options.every(option=>/^\d+$|^∞$|^Авто/.test(String(option.label))),textual=!mode&&options.some(option=>String(option.label).length>5);
-    const stepper=counter?`<div class="rule-choice-stepper"><button type="button" data-rule-step="-1" aria-label="${esc('Уменьшить: '+field.label)}">−</button><span class="rule-choice-counter">${ruleChoiceArt(field,options[index])}<output data-rule-counter-value aria-live="polite">${esc(options[index].label)}</output></span><button type="button" data-rule-step="1" aria-label="${esc('Увеличить: '+field.label)}">+</button></div>`:'';
-    return `<fieldset class="rules-v021-field rule-choice-field${mode?' is-mode-choice':''}${readonly?' is-readonly':''}${textual?' is-text-choice':''}${counter?' is-counter-choice':''}" data-rule-field="${esc(key)}"><legend>${settingTitle(field.label,field.help)}</legend>${stepper}<div class="rule-choice-options${mode?' rule-mode-track':''}" ${counter?'hidden':''} ${mode?'data-rule-mode-track tabindex="0" aria-label="'+esc(field.label)+'"':''}>${options.map((option,i)=>`<label class="rule-choice${mode?' rule-mode-card':''}"><input type="radio" name="${esc(name)}" value="${esc(option.value)}" ${i===index?'checked':''} ${readonly?'disabled':''}><span class="rule-choice-body">${ruleChoiceArt(field,option)}<strong>${esc(option.label)}</strong>${mode&&option.description?`<small>${esc(option.description)}</small>`:''}<span class="rule-choice-mark" aria-hidden="true">${icon('check')}</span></span></label>`).join('')}</div>${mode?`<div class="rule-mode-pages" aria-label="Выбор варианта">${options.map((option,i)=>`<button type="button" data-rule-page="${i}" aria-label="${esc(option.label)}" aria-pressed="${i===index}" ${readonly?'disabled':''}><span></span></button>`).join('')}</div>`:''}</fieldset>`;
+    const key=field.key||'preset',counter=!mode&&options.length>4&&options.every(option=>/^\d+$/.test(String(option.value))||option.preview?.countFrom),numericFour=options.length===4&&options.every(option=>/^(?:\d+(?:[.,]\d+)?|∞)$/.test(String(option.label))),schema={name,label:field.label,readonly,preview:field.preview,teamLayouts:field.teamLayouts,options:options.map(({value,label,description,preview})=>({value,label,description,preview}))};
+    const choices=options.map((option,i)=>`<label class="rule-choice"><input type="radio" name="${esc(name)}" value="${esc(option.value)}" ${i===index?'checked':''} ${readonly?'disabled':''} aria-label="${esc(option.label)}" title="${esc(option.label)}"><span class="rule-choice-body" title="${esc(option.label)}">${esc(option.shortLabel||option.label)}</span></label>`).join('');
+    const stepper=counter?`<div class="rule-choice-stepper"><button type="button" data-rule-step="-1" aria-label="${esc('Уменьшить: '+field.label)}">−</button><button type="button" data-rule-step="1" aria-label="${esc('Увеличить: '+field.label)}">+</button></div>`:'';
+    return `<fieldset class="rules-v021-field rule-choice-field${mode?' is-mode-choice':''}${readonly?' is-readonly':''}${counter?' is-counter-choice':''}" data-rule-field="${esc(key)}" data-rule-schema="${esc(JSON.stringify(schema))}"><legend>${settingTitle(field.label,field.help)}</legend>${ruleChoicePreview({...field,readonly},options[index])}<div class="rule-choice-options" data-rule-option-count="${options.length}" data-rule-grid="${numericFour?'two':'flow'}" ${counter?'hidden':''}>${choices}</div>${stepper}</fieldset>`;
   }
   function syncRuleChoices(form){
-    for(const field of form.querySelectorAll('.rule-choice-field')){const radios=[...field.querySelectorAll('input[type=radio]')];field.querySelectorAll('[data-rule-page]').forEach((button,i)=>button.setAttribute('aria-pressed',String(!!radios[i]?.checked)));const index=radios.findIndex(radio=>radio.checked),output=field.querySelector('[data-rule-counter-value]');if(output){output.textContent=radios[index]?.nextElementSibling.querySelector('strong')?.textContent||'';field.querySelectorAll('[data-rule-step]').forEach(button=>button.disabled=field.classList.contains('is-readonly')||index+Number(button.dataset.ruleStep)<0||index+Number(button.dataset.ruleStep)>=radios.length);}}
+    for(const field of form.querySelectorAll('.rule-choice-field')){
+      const schema=JSON.parse(field.dataset.ruleSchema),radios=[...field.querySelectorAll('input[type=radio]')],index=radios.findIndex(radio=>radio.checked),option=schema.options[index];
+      if(!option)continue;
+      const old=field.querySelector('.rule-choice-preview'),html=ruleChoicePreview(schema,option,form);
+      // Only the miniature preview changes. Keep the actual controls, focus,
+      // form, scroll position and the rest of the app screen intact.
+      if(field.rulePreviewHTML!==html&&old){
+        const template=document.createElement('template');template.innerHTML=html;const next=template.content.firstElementChild;
+        old.className=next.className;old.disabled=next.disabled;old.setAttribute('aria-label',next.getAttribute('aria-label'));old.dataset.rulePreviewKind=next.dataset.rulePreviewKind;old.dataset.rulePreviewValue=next.dataset.rulePreviewValue;
+        const art=old.querySelector('.rule-choice-preview-art'),nextArt=next.querySelector('.rule-choice-preview-art');art.replaceChildren(...nextArt.childNodes);
+        old.querySelector('[data-rule-preview-label]').textContent=next.querySelector('[data-rule-preview-label]').textContent;
+        const detail=old.querySelector('[data-rule-preview-detail]'),nextDetail=next.querySelector('[data-rule-preview-detail]');
+        if(detail&&nextDetail)detail.textContent=nextDetail.textContent;else if(detail)detail.remove();else if(nextDetail)old.append(nextDetail);
+        field.rulePreviewHTML=html;
+      }
+      field.querySelectorAll('[data-rule-step]').forEach(button=>button.disabled=field.classList.contains('is-readonly')||index+Number(button.dataset.ruleStep)<0||index+Number(button.dataset.ruleStep)>=radios.length);
+    }
   }
   function bindRuleChoices(form){
-    form.addEventListener('click',event=>{const step=event.target.closest('[data-rule-step]');if(step){if(step.disabled)return;const radios=[...step.closest('.rule-choice-field').querySelectorAll('input[type=radio]')],radio=radios[radios.findIndex(r=>r.checked)+Number(step.dataset.ruleStep)];if(radio&&!radio.disabled){radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));}return;}const page=event.target.closest('[data-rule-page]');if(!page||page.disabled)return;const field=page.closest('.rule-choice-field'),radio=field.querySelectorAll('input[type=radio]')[Number(page.dataset.rulePage)];if(!radio||radio.disabled||field.disabled)return;radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));radio.closest('.rule-choice').scrollIntoView({block:'nearest',inline:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});});
-    for(const track of form.querySelectorAll('[data-rule-mode-track]')){
-      // The user opened this panel: reveal its selected mode once, without
-      // moving the document/body or scrolling again when a child closes.
-      requestAnimationFrame(()=>{if(!form.isConnected||form.closest('[inert],[hidden]'))return;const card=track.querySelector('input:checked')?.closest('.rule-mode-card');if(card)track.scrollLeft+=card.getBoundingClientRect().left-track.getBoundingClientRect().left-(track.clientWidth-card.clientWidth)/2;});
-      let userScroll=false,timer=null;const arm=()=>{userScroll=true;};track.addEventListener('pointerdown',arm);track.addEventListener('wheel',arm,{passive:true});track.addEventListener('keydown',arm);
-      track.addEventListener('scroll',()=>{if(!userScroll)return;clearTimeout(timer);timer=setTimeout(()=>{userScroll=false;if(!form.isConnected||track.querySelector('input')?.disabled)return;const center=track.getBoundingClientRect().left+track.clientWidth/2,cards=[...track.querySelectorAll('.rule-mode-card')],card=cards.reduce((best,item)=>Math.abs(item.getBoundingClientRect().left+item.clientWidth/2-center)<Math.abs(best.getBoundingClientRect().left+best.clientWidth/2-center)?item:best,cards[0]),radio=card?.querySelector('input');if(radio&&!radio.checked){radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));}},180);},{passive:true});
-    }
+    let gesture=null,suppressClickUntil=0;
+    form.addEventListener('pointerdown',event=>{if(event.isPrimary&&event.button===0){gesture={id:event.pointerId,x:event.clientX,y:event.clientY,dragged:false};suppressClickUntil=0;}},{passive:true});
+    form.addEventListener('pointermove',event=>{if(gesture?.id===event.pointerId&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>8)gesture.dragged=true;},{passive:true});
+    for(const type of ['pointerup','pointercancel'])form.addEventListener(type,event=>{if(gesture?.id===event.pointerId){if(gesture.dragged||event.type==='pointercancel')suppressClickUntil=performance.now()+600;gesture=null;}},{passive:true});
+    const choose=(field,offset,{wrap=false}={})=>{
+      if(!field||field.classList.contains('is-readonly')||field.closest('[hidden],[inert]')||!field.getClientRects().length||!form.ruleEditorCurrent?.())return;
+      const radios=[...field.querySelectorAll('input[type=radio]')].filter(radio=>!radio.disabled);if(radios.length<2)return;
+      const current=radios.findIndex(radio=>radio.checked),index=wrap?(current+offset+radios.length)%radios.length:current+offset,radio=radios[index];
+      if(radio){radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));}
+    };
+    form.addEventListener('click',event=>{
+      const field=event.target.closest('.rule-choice-field');if(!field)return;
+      if(event.detail>0&&performance.now()<suppressClickUntil){event.preventDefault();event.stopPropagation();return;}
+      const next=event.target.closest('[data-rule-next]');if(next){if(!next.disabled)choose(field,1,{wrap:true});return;}
+      const step=event.target.closest('[data-rule-step]');if(step){if(!step.disabled)choose(field,Number(step.dataset.ruleStep));return;}
+      // Native radio/label activation selects exactly that choice. Help, links
+      // and popovers are independent controls, never a request to cycle.
+      if(event.target.closest('button,input,label,select,textarea,a,[popover],.rule-help,.rule-choice-options'))return;
+      choose(field,1,{wrap:true});
+    });
   }
   function showRoomRulesEditor({room:externalRoom=null}={}){
     if(!externalRoom&&!room)return;
@@ -989,19 +1045,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const readonly=!!externalRoom||state.ownerId!==actor||state.phase!=='lobby'||!!state.recovery;
     const reason=externalRoom?'Параметры меняет ведущий комнаты.':readonly?'Параметры можно менять до начала партии.':'';
     const valid=()=>{if(externalRoom){const current=globalThis.PlayroomNetworkLibrary?.inviteContext?.();return current?.room?.id===state.id&&current.room.game.id===state.game.id&&current.room.rulesRevision===state.rulesRevision;}if(room?.id!==state.id||lobbyParticipantId!==actor)return false;const current=roomService.snapshot(state.id);return current.ownerId===state.ownerId&&current.game.id===state.game.id&&current.phase===state.phase&&current.rulesRevision===state.rulesRevision;};
-    const presetSource=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))},preset={...presetSource,key:'preset',icon:presetSource.icon||(manifest.capabilities?.hands&&presetSource.options.every(option=>/^\d+$/.test(String(option.label)))?'cards':undefined),options:presetSource.options.map(option=>({...option,description:option.description||presets.find(p=>p.id===option.value)?.description}))};
+    const presetSource=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))},preset={...presetSource,key:'preset',teamLayouts:manifest.teamLayouts,options:presetSource.options.map(option=>({...option,description:option.description||(presetSource.presentation==='mode'?presets.find(p=>p.id===option.value)?.description:undefined)}))};
     const controls=new Map(fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default,{readonly})]));
     const groups=manifest.ruleGroups||[{fields:fields.map(field=>field.key)}],endingKeys=new Set(groups.filter(group=>group.end).flatMap(group=>group.fields));
     const renderFields=group=>group.fields.filter(key=>controls.has(key)).map(key=>{const html=controls.get(key);controls.delete(key);return html;}).join('');
     const body=groups.filter(group=>!group.end).map(renderFields).join(''),ending=groups.filter(group=>group.end).map(renderFields).join(''),rest=[...controls.values()].join('');
-    const parametersVisible=preset.options.length>1||!!manifest.capabilities?.hands||fields.some(field=>!endingKeys.has(field.key)&&field.options.length>1),endingVisible=fields.some(field=>endingKeys.has(field.key)&&field.options.length>1);
+    const parametersVisible=preset.options.length>1||fields.some(field=>!endingKeys.has(field.key)&&field.options.length>1),endingVisible=fields.some(field=>endingKeys.has(field.key)&&field.options.length>1);
     const common=g.max===1?'':`<section class="rules-v021-group" data-rule-section="order"><h3>Порядок игры</h3><div class="rules-v021-fields">${[
-      ['firstPlayerMode',globalThis.PlayroomMessages.text("ui.app.39210fbb29ff"),[['rules','По правилам'],['random','Случайно'],['assigned','Назначить']]],
-      ['seatOrder',globalThis.PlayroomMessages.text("ui.app.f7ca1ccfc66b"),[['normal','По местам'],['random','Случайно']]]
-    ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options:options.map(([value,label])=>({value,label}))},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
-    const openHands=manifest.capabilities?.hands?`<div class="rules-v021-field rules-v021-field-wide"><label class="rules-v021-switch">${settingTitle(globalThis.PlayroomMessages.text('ui.app.957e469d885d'),PlayroomLobbyView.ruleText('openHands'))}<input type="checkbox" name="openHands" ${state.rules.openHands?'checked':''} ${readonly?'disabled':''}><span class="rules-v021-toggle" aria-hidden="true"><span></span></span></label></div>`:'';
+      ['firstPlayerMode','Первый ход',[
+        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока определяют правила игры.',preview:{kind:'symbol',icon:'first'}},
+        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно перед началом партии.',preview:{kind:'dice',count:1}},
+        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Назначьте первого игрока жетоном в лобби.',preview:{kind:'symbol',icon:'people'}}]],
+      ['seatOrder','Порядок мест',[
+        {value:'normal',label:'По местам',shortLabel:'Места',description:'Игроки ходят в порядке мест за столом.',preview:{kind:'symbol',icon:'people'}},
+        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Перед началом партии места перемешиваются.',preview:{kind:'symbol',icon:'shuffle'}}]]
+    ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
     const header=modalHead('Параметры игры',{className:'rules-v021-header',actions:GameScreen.iconButton(`data-rules="${esc(state.game.id)}"`,'Как играть','help')});
-    const frame=openModal(`${header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}"><section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters"><section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:true,readonly})}</div>${body}${rest}${openHands}</div></section>${common}<section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div></form>`,'room-rules-modal',{valid,onBack:captureModalReturn()});
+    const frame=openModal(`${header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}"><section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div></form>`,'room-rules-modal',{valid,onBack:captureModalReturn()});
     if(!frame)return;
     const form=frame.element.querySelector('#room-rules-form');form.ruleEditorCurrent=()=>valid()&&localModal.isActive(frame)&&!readonly;bindRuleChoices(form);syncRuleVisibility(form);
     form.closest('.room-rules-modal').querySelector('[data-rules]').addEventListener('click',event=>{event.stopPropagation();const back=captureModalReturn();showRules(state.game.id);modalBack=back;});
