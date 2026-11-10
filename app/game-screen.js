@@ -283,7 +283,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   // Surface type is decided before insertion; short choices never become long editors.
   function classifySurface(className=''){
     const classes=new Set(String(className).split(/\s+/));
-    const screens=['lobby-incoming-modal','online-connecting-modal','lobby-invites-modal','updates-modal','post-update-modal','chat-modal','community-modal','settings-modal','appearance-modal','appearance-gallery-modal','storage-data-modal','cloud-saves-modal','pack-manager-modal','packs-modal','rulebook-modal','account-modal','notification-settings-modal','room-setup-modal','room-rules-modal','nearby-modal','result-modal'];
+    const screens=['lobby-incoming-modal','online-connecting-modal','lobby-invites-modal','updates-modal','post-update-modal','chat-modal','community-modal','settings-modal','appearance-modal','appearance-gallery-modal','storage-data-modal','cloud-saves-modal','pack-manager-modal','packs-modal','account-modal','notification-settings-modal','room-setup-modal','nearby-modal','result-modal'];
     return screens.some(name=>classes.has(name))?'screen':'panel';
   }
   function modalContent(content,{className='',surface=classifySurface(className)}={}){
@@ -1050,7 +1050,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.denseRoster=String(!portrait&&h<policy.denseRosterHeightPx&&roster>2&&stage.dataset.opponentHands==='true');
       applyStandardSizes(stage,scene);
       const rosterMinimum=locked?.rosterMinimum??rosterMinimumWidth(stage);
-      if(portrait&&!anchors&&stage.querySelector(':scope > .layout-status'))stage.style.setProperty('grid-template-rows','max-content max-content minmax(0,1fr) max-content max-content','important');
+      if(portrait&&!anchors&&stage.dataset.soloField!=='true'&&stage.querySelector(':scope > .layout-status'))stage.style.setProperty('grid-template-rows','max-content max-content minmax(0,1fr) max-content max-content','important');
       stage.dataset.croppedHands='true';
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
       const fallback=!anchors&&stage.dataset.preferredSeating==='circle'&&(w<policy.circleMinWidthPx||h<policy.circleMinHeightPx||(!portrait&&(w<policy.circleLandscapeMinWidthPx||h<policy.denseRosterHeightPx&&roster>3&&stage.dataset.opponentHands==='true')));
@@ -1074,7 +1074,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.dataset.anchorCompactControls=String(anchoredNoHand&&!portrait&&!fallback&&!!baseCopy);
       stage.style.setProperty('--anchor-control-column',baseCopy?.dataset.seat?.includes('east')?'3':'1');
       stage.dataset.seatMode=compact&&anchors?'corners':'ring';
-      if(portrait&&!anchors){stage.style.setProperty('grid-template-areas','"participants" "status" "field" "self" "auxiliary"','important');stage.style.setProperty('grid-template-rows','max-content max-content minmax(0,1fr) max-content max-content','important');stage.style.setProperty('grid-template-columns','minmax(0,1fr)','important');}
+      if(stage.dataset.soloField==='true'){
+        // Solo scenes own only field/actions. Multiplayer names create implicit
+        // columns for the action slot and collapse the tableau in portrait.
+        for(const name of ['grid-template-areas','grid-template-rows','grid-template-columns'])stage.style.removeProperty(name);
+      }else if(portrait&&!anchors){stage.style.setProperty('grid-template-areas','"participants" "status" "field" "self" "auxiliary"','important');stage.style.setProperty('grid-template-rows','max-content max-content minmax(0,1fr) max-content max-content','important');stage.style.setProperty('grid-template-columns','minmax(0,1fr)','important');}
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?policy.ownNoHandPx:Math.min(hands?policy.ownHandFocusMaxPx:policy.ownDefaultMaxPx,Math.max(h<policy.ownCompactThresholdPx?policy.ownCompactMinPx:policy.ownMinPx,h*policy.ownFraction))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+layoutRect(node).height,policy.ownNaturalPaddingPx);ownZone=Math.min(Math.max(policy.ownCompactMinPx,h*policy.ownMaxFraction),Math.max(ownZone,natural));}
       if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>layoutRect(node).height+12));

@@ -1455,6 +1455,43 @@ await page.locator('[data-game-menu]').click();await page.locator('[data-game-me
  },{safeSupabase:true,settings:{sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false,tutorialsEnabled:false}}));
 
 
+test('fresh learning is offered before the first action and keeps the table usable', {timeout:60000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(5000);await page.setViewportSize({width:390,height:844});
+ await page.evaluate(()=>{const G=PlayroomFirstTurnGuide,update=G.update;G.update=context=>{window.freshGuideContext=context;return update(context);};});
+ await page.locator('[data-start="tictactoe"]').click();
+ await page.locator('[data-game-mode=hotseat]').click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+ await page.locator('[data-command=lobby-start]').click();
+ const intro=page.locator('#modal-root>[data-surface-state=active] .learning-intro');
+ await intro.waitFor();
+ await page.evaluate(()=>PlayroomFirstTurnGuide.update({...window.freshGuideContext}));
+ assert.equal(await page.locator('.tic-cell:not(:empty)').count(),0,'offer precedes any player move');
+ await intro.locator('[data-learning-choice=yes]').click();
+ const caption=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await caption.waitFor();
+ for(let turn=0;turn<2;turn++){
+  const cell=page.locator('[data-action]:not([disabled])').first();await cell.waitFor();await cell.click();
+  await page.waitForFunction(()=>!!document.querySelector('[data-action]:not([disabled])')&&!document.querySelector('#app').inert);
+  assert.equal(await page.locator('#modal-root .learning-intro').count(),0,'offer is not repeated');
+ }
+},{learningPrompted:false,safeSupabase:true,settings:{sound:false,animationSpeed:'fast',quickPlay:false,autoPass:false}}));
+
+for(const game of ['uno','durak','gofish','oldmaid','domino','ludo','snakes','battleship','checkers','tictactoe','pexeso','yatzy','klondike','spider','mage-brawl'])test('fresh first decision offers learning before input: '+game,{timeout:30000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(6000);await page.setViewportSize({width:844,height:390});
+ await page.evaluate(()=>{const G=PlayroomFirstTurnGuide,update=G.update,commit=G.committed;window.freshHumanCommands=0;G.update=c=>{window.freshGuideContext=c;return update(c);};G.committed=(owner,viewer,...args)=>{if(!freshGuideContext?.state.players[viewer]?.bot)freshHumanCommands++;return commit(owner,viewer,...args);};});
+ await page.locator('[data-start="'+game+'"]').click();await page.locator('[data-game-mode=hotseat]').click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+ await page.locator('[data-command=lobby-start]').click();
+ const intro=page.locator('#modal-root>[data-surface-state=active] .learning-intro');await intro.waitFor();
+ assert.equal(await page.evaluate(()=>freshHumanCommands),0,'offer precedes the first human command, including simultaneous setup');
+ await page.evaluate(()=>{const c=freshGuideContext;PlayroomFirstTurnGuide.update({...c});PlayroomFirstTurnGuide.update({...c});});
+ await intro.locator('[data-learning-choice=yes]').click();
+ const hint=page.locator('.first-turn-guide:not([hidden]) .guide-caption');await hint.waitFor();
+ const target=await page.evaluate(()=>{const c=freshGuideContext,g=PlayroomViews.get(c.state.game).tutorial({...c,guideProgress:{seen:[]}});return {steps:g.steps.filter(s=>s.available!==false).map(s=>s.selector),blocked:document.querySelector('#app').inert,move:c.state.move};});
+ assert.equal(target.blocked,false);assert.equal(await page.evaluate(()=>freshHumanCommands),0);assert(target.steps.some(selector=>selector),'a real actionable guide is available');
+ await page.setViewportSize({width:390,height:844});
+ await page.waitForFunction(()=>{const n=document.querySelector('.first-turn-guide:not([hidden]) .guide-caption');if(!n)return false;const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1;},null,{timeout:6000});
+},{learningPrompted:false,safeSupabase:true,settings:{sound:false,animationSpeed:'normal',quickPlay:false,autoPass:false}}));
+
 test('learning reset is confirmed, enables learning and resets only the current pack',async()=>fixture(async page=>{
  page.setDefaultTimeout(7000);await page.setViewportSize({width:390,height:844});
  const active=()=>page.locator('#modal-root>[data-surface-state=active]');

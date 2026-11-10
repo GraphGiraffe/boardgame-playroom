@@ -28,7 +28,7 @@
     const art=illustrate(figure.id);if(!art)return '';
     const role=['card','tile','diagram','control'].includes(figure.role)?figure.role:'card';
     const raw=art.match(/^\s*<svg\b[^>]*\bviewBox=["']([^"']+)["']/i),box=raw?.[1].trim().split(/[\s,]+/).map(Number),natural=box?.length===4&&box.every(Number.isFinite)&&box[2]>0&&box[3]>0?` style="--rulebook-art-width:${box[2]}px;--rulebook-art-aspect:${box[2]/box[3]}"`:'';
-    return `<figure class="rulebook-figure is-${role}"><div class="rulebook-illustration"${natural} role="img" aria-label="${esc(figure.caption||'')}">${art}</div>${figure.caption?`<figcaption>${esc(figure.caption)}</figcaption>`:''}</figure>`;
+    return `<figure class="rulebook-figure is-${role}" data-rulebook-figure="${esc(figure.id)}"${natural}><div class="rulebook-illustration" role="img" aria-label="${esc(figure.caption||'')}">${art}</div>${figure.caption?`<figcaption>${esc(figure.caption)}</figcaption>`:''}</figure>`;
    }).join('');
    const content=Array.isArray(section.blocks)?section.blocks.map(block=>renderBlock(block,esc)).join(''):(section.paragraphs||[]).map(text=>`<p>${esc(text)}</p>`).join('');
    return `<section class="rulebook-section" id="rulebook-section-${index}" tabindex="-1">${section.title?`<h3>${esc(section.title)}</h3>`:''}${content}${figures?`<div class="rulebook-figures is-${layout}">${figures}</div>`:''}${section.note?`<aside class="rulebook-note">${esc(section.note)}</aside>`:''}</section>`;

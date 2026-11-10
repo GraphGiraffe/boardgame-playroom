@@ -18,7 +18,9 @@
   current=context;learner=context.learningUserId||null;install();
   if(root.PlayroomAppBridge?.gameOptions?.().tutorialsEnabled===false){controller.stop();hide();return;}
   if(!preferences.read(context.state.game).prompted){
-   const ready=()=>current===context&&controller.canOffer(context,root.PlayroomViews.get(context.state.game)?.tutorial)&&!!document.querySelector('.table-shell')&&!document.hidden;
+   // Rendering creates new context objects even within the same decision.
+   // Keep the offer owned by the learner/seat, and evaluate current readiness.
+   const ready=()=>current?.owner===context.owner&&current.viewer===context.viewer&&current.learningUserId===context.learningUserId&&current.state.game===context.state.game&&controller.canOffer(current,root.PlayroomViews.get(current.state.game)?.tutorial)&&!!document.querySelector('.table-shell')&&!document.hidden;
    if(ready())root.PlayroomTutorialSettings?.offer(context.state.game,ready);
    controller.stop();hide();return;
   }
@@ -67,6 +69,9 @@
  }
  function refresh(){
   if(!current||root.PlayroomAppBridge?.gameOptions?.().tutorialsEnabled===false)return hide();
+  // An unrelated surface can postpone the first offer. Its dismissal must
+  // retry without waiting for another move or an app visibility change.
+  if(!preferences.read(current.state.game).prompted&&!document.querySelector('#modal-root')?.children.length){update(current);return;}
   const {state,guide,progress,active,busy,replay}=current;
 
   if(!guide||guide.complete||!progress?.started||!progress.ownTurn||progress.done||active===false||replay||document.hidden||skipped(state.game)||!document.querySelector('.table-shell'))return hide();
@@ -94,8 +99,12 @@
   root.PlayroomDOM.positionFixed(overlay,{left:x,top:y});
   const text=cue?root.PlayroomMessages.text('ui.app.guide-scroll-'+cue.direction)+' '+step.text:step.text;
   const caption=overlay.querySelector('.guide-caption');if(caption.textContent!==text)caption.textContent=text;
-  overlay.style.setProperty('--caption-x',Math.max(8-x,Math.min(-95,innerWidth-198-x))+'px');
-  overlay.classList.toggle('caption-above',y>innerHeight-130);
+  const captionWidth=Math.min(240,innerWidth-24);
+  overlay.style.setProperty('--caption-width',captionWidth+'px');
+  overlay.style.setProperty('--caption-x',Math.max(12-x,Math.min(-captionWidth/2,innerWidth-12-captionWidth-x))+'px');
+  const height=caption.getBoundingClientRect().height,below=cue?24:66,above=y+below+height>innerHeight-12;
+  const top=Math.max(12,Math.min(above?y-24-height:y+below,innerHeight-12-height));
+  overlay.style.setProperty('--caption-y',(top-y)+'px');
   if(lastTarget!==target||changedCue){overlay.classList.remove('is-tapping');if(!cue){void overlay.offsetWidth;overlay.classList.add('is-tapping');}lastTarget=target;}
   current.target=target;current.step=step;current.stepIndex=index;
  }
@@ -110,14 +119,14 @@
  function install(){if(observer||!root.document)return;
   listeners=new AbortController();const on=(target,type,fn,options={})=>target.addEventListener(type,fn,{capture:true,...options,signal:listeners.signal});
   observer=new MutationObserver(records=>{if(records.some(r=>!r.target.closest?.('.first-turn-guide')))schedule();});
-  observer.observe(document.body,{childList:true,subtree:true});
+  observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style','hidden','disabled','inert','aria-hidden']});
   on(document,'pointerdown',()=>{pointerHeld=true;activity();});
   on(document,'pointerup',()=>{pointerHeld=false;activity();});on(document,'pointercancel',()=>{pointerHeld=false;activity();});
   for(const type of ['pointermove','keydown','input','click','change'])on(document,type,activity,{passive:true});
   // Learn local input before document-level network handlers replace controls or open a modal.
   // Game commands are still recorded only by committed() after successful acknowledgement.
   on(root,'click',interaction);on(root,'change',interaction);
-  on(document,'scroll',activity);on(document,'visibilitychange',schedule);on(root,'resize',schedule);
+  on(document,'scroll',activity);on(document,'visibilitychange',()=>{pointerHeld=false;schedule();});on(root,'resize',schedule);
  }
  function stop(owner){if(!owner||current?.owner===owner){controller.stop(owner);current=null;learner=null;clearTimeout(idleTimer);idleTimer=null;pointerHeld=false;if(frame)root.cancelAnimationFrame(frame);frame=0;observer?.disconnect();observer=null;listeners?.abort();listeners=null;hide();overlay?.remove();overlay=null;}}
  const api={update,stop,skipped,setSkipped,restart,capture,committed,settings:game=>preferences.read(game),setEnabled:(game,value)=>setSkipped(game,!value)};root.PlayroomFirstTurnGuide=api;

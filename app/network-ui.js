@@ -894,6 +894,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         onConfirm:async()=>{const cloudRoomId=clientId?root.PlayroomCloudNetwork?.roomId?.():null;if(clientId){if(clientConnected()){try{await clientTransport.dispatch({type:'room-leave'});}catch(error){toast(globalThis.PlayroomMessages.error(error));}}resumeStore.remove(clientId);closeClient();}else bridge().leaveLobby?.();networkInMenu=false;bridge().showHub();if(cloudRoomId){try{await root.PlayroomSocialUI.service.perform('leave',{roomId:cloudRoomId});}catch(error){if(!['not-found','forbidden'].includes(error.code))toast(root.PlayroomSocialUI.message(error));}}}
       });return;
     }
+    if(target.dataset.netAction==='parameters')return bridge().showRoomRuleParameters({room:clientRoom});
     if(target.dataset.netAction==='rules')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(root.PlayroomRulebookView.header()),p1:String(PlayroomLobbyView.rulesMarkup(clientRoom,rulesRows(clientRoom),bridge().meta(clientRoom.game.id)||{},PlayroomCatalog[clientRoom.game.id]?.settings||[]))}),'rulebook-modal');
     if(target.dataset.netAction==='help')return bridge().openModal(globalThis.PlayroomMessages.text("ui.network-ui.380e3dbd6730",{p0:String(bridge().modalHead(globalThis.PlayroomMessages.text("ui.network-ui.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(clientRoom))}));
     if(target.dataset.netAction==='settings')return bridge().showSettings({room:clientRoom,participantId:clientParticipantId,client:true});
