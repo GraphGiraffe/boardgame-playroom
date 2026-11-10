@@ -27,7 +27,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[]}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[],realtime=null}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
       if(typeof paused!=='boolean'||!Number.isSafeInteger(controlRevision)||controlRevision<0)throw Error('Invalid restored control');
       const controlsApi=globalThis.PlayroomPlayerControls||(typeof require==='function'?require('./player-controls.js'):null);
@@ -44,7 +44,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(receipts.has(key))throw Error('Duplicate restored receipt');
         receipts.set(key,{signature:row.signature,receipt:freeze(clone(row.receipt))});
       }
-      records.set(this,{playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+      const realtimePort=typeof realtime==='function'?realtime({sessionId,authorityEpoch}):realtime;
+      if(realtimePort&&(!realtimePort.scope||Object.keys(realtimePort.scope).some(k=>!['sessionId','authorityEpoch','roundId'].includes(k))||typeof realtimePort.scope.roundId!=='string'||!/^[a-zA-Z0-9_.:-]{1,128}$/.test(realtimePort.scope.roundId)||realtimePort.scope.sessionId!==sessionId||realtimePort.scope.authorityEpoch!==authorityEpoch||typeof realtimePort.request!=='function'||typeof realtimePort.preview!=='function'))throw Error('REALTIME_PORT_INVALID');
+      records.set(this,{realtime:realtimePort,playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),activityListeners:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
     }
     _processor() {
       const r=records.get(this);
@@ -53,6 +55,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         checkpoint:(before,next,actor,command)=>r.session.engine.checkpoint?.(before,next,actor,command)??true,
         begin:()=>{r.busy=true;},end:()=>this._idle(),
         commit:next=>r.session.commitPrepared(next),
+        describeAction:next=>r.session.preparedAction?.(next),
         remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
         publish:(before,next)=>{
           this._publish();if(r.persistence&&!r.botBatch)this.scheduleBot();
@@ -62,6 +65,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
     }
     get revision(){return records.get(this).session.current.move;}
+    // Host-local metadata port: never a scene, never a network capability.
+    activity(){
+      const r=records.get(this),s=r.session;this._syncReactionWindows();const targets=[];
+      if(!r.disposed&&!r.paused&&s.current.status==='playing')for(let actor=0;actor<s.current.players.length;actor++){
+        if(this._botControlled(actor)||r.playerControls[actor]?.away)continue;
+        if(s.engine.availableCommands(s.current,actor).some(action=>!this._currentReaction(actor,action)&&this._reactionDecision(actor,action)!=='REACTION_WAIT'))targets.push(actor);
+      }
+      return P.immutable({sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:this.revision,controlRevision:r.controlRevision,state:s.current.status==='finished'?'finished':r.paused?'paused':'playing',targets});
+    }
+    subscribeActivity(listener){const r=records.get(this);if(r.disposed||typeof listener!=='function')throw Error('ACTIVITY_SUBSCRIPTION_INVALID');r.activityListeners.add(listener);return ()=>r.activityListeners.delete(listener);}
+
     connect(viewer=-1){
       const r=records.get(this);
       if(r.disposed||!Number.isInteger(viewer)||viewer < -1||viewer>=r.session.current.players.length)throw Error('Invalid audience');
@@ -76,37 +90,54 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     _connect(access){
       const r=records.get(this);if(r.disposed)throw Error('Invalid audience');
-      const binding={...access,listeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);
+      const binding={...access,listeners:new Set(),wireListeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);if(binding.role==='player')r.realtime?.connected?.(viewer);
       const requireOpen=()=>{if(binding.closed||r.disposed)throw Error(text.CLOSED);};
       return Object.freeze({
-        snapshot:()=>{requireOpen();return this._snapshot(viewer,undefined,binding);},
-        history:(index)=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.states.length)throw Error('Invalid history index');return this._snapshot(viewer,index,binding);},
+        snapshot:(options={})=>{requireOpen();return this._snapshot(viewer,undefined,binding,!!options.wire);},
+        status:()=>{requireOpen();return this._status(binding);},
+        history:(index,options={})=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.historyLength)throw Error('Invalid history index');return this._snapshot(viewer,index,binding,!!options.wire);},
+        historyRange:(start,count,options={})=>{requireOpen();return P.historyRange(index=>this._snapshot(viewer,index,binding,!!options.wire),start,count,r.session.historyLength);},
+        realtimeScope:()=>{requireOpen();return r.realtime?P.immutable(r.realtime.scope):null;},
+        realtime:value=>{requireOpen();if(!r.realtime)throw Error('REALTIME_UNAVAILABLE');if(!value||typeof value.method!=='string'||!/^[a-zA-Z0-9_.:-]{1,64}$/.test(value.method)||value.method==='finalize'||new TextEncoder().encode(JSON.stringify(value)).length>512*1024)throw Error('REALTIME_REQUEST_INVALID');const actor=binding.role==='player'?viewer:-1;if(!['checkpoint','stroke'].includes(value.method)&&(actor<0||r.paused||r.playerControls[actor]?.away||this._botControlled(actor)))throw Error('REALTIME_UNAVAILABLE');return value.method==='preview'?r.realtime.preview(actor,value.envelope):r.realtime.request(actor,value.method,value.envelope);},
         presentationReady:message=>this._presentationReady(binding,message),
-        dispatch:command=>this._dispatch(binding,command),
-        subscribe:listener=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');binding.listeners.add(listener);return ()=>binding.listeners.delete(listener);},
-        close:()=>{binding.closed=true;binding.listeners.clear();r.bindings.delete(binding);}
+        dispatch:(command,options={})=>this._dispatch(binding,command,false,options),
+        subscribe:(listener,options={})=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');const listeners=options.wire?binding.wireListeners:binding.listeners;listeners.add(listener);return ()=>listeners.delete(listener);},
+        close:()=>{binding.closed=true;binding.listeners.clear();binding.wireListeners.clear();r.bindings.delete(binding);if(binding.role==='player'&&![...r.bindings].some(b=>!b.closed&&b.role==='player'&&b.viewer===viewer))r.realtime?.disconnected?.(viewer);}
       });
     }
-    _snapshot(viewer,index,binding=null){
+    _status(binding){
+      const r=records.get(this),s=r.session;this._syncReactionWindows();
+      return P.freeze({kind:'status',scope:'session',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,game:s.game,packVersion:s.packVersion,viewer:binding.viewer,role:binding.role,revision:s.current.move,controlRevision:r.controlRevision,playerControlRevision:r.playerControlRevision,reactionRevision:r.reactionRevision,rosterRevision:s.metadataRevision||0});
+    }
+    _snapshot(viewer,index,binding=null,wire=false){
       const r=records.get(this),s=r.session,live=index===undefined,state=live?s.current:s.states[index];
       const windows=live?this._syncReactionWindows():[];
       const reactionWindows=windows.map(window=>({...window.descriptor,suspended:window.suspended,protected:window.readyAt===null||this._now()<window.readyAt+window.descriptor.humanMs}));
       const reactionWindow=reactionWindows.find(w=>w.owner===viewer)||reactionWindows[0]||null;
       const role=binding?.role||(viewer<0?'spectator':'player');
       const actor=role==='table'?(live&&binding.actors.includes(state.turn)&&!this._botControlled(state.turn)&&!r.playerControls[state.turn]?.away?state.turn:-1):viewer;
-      const projected=role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor):s.engine.project(state,viewer),previous=live?s.states.at(-2):s.states[index-1];
-      const visible=previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
+      // Cache facts only. Reaction clocks, control gates and permissions below
+      // are evaluated on every read, even when no game revision has changed.
+      r.projections??=new Map();if(!r.projections.has(state)){r.projections.set(state,new Map());while(r.projections.size>2)r.projections.delete(r.projections.keys().next().value);}
+      const cache=r.projections.get(state),key=JSON.stringify([role,actor,viewer,wire,s.metadataRevision||0]);
+      let projected=cache.get(key);if(!projected){projected=P.immutable(role==='table'&&s.engine.projectTable?s.engine.projectTable(state,actor,{rawEvents:wire}):s.engine.project(state,viewer,{rawEvents:wire}));cache.set(key,projected);while(cache.size>128)cache.delete(cache.keys().next().value);}
+      const previous=live?s.previous:s.states[index-1];
+      const visible=!wire&&previous?transfers(previous,state,projected.events).map((draw,i)=>({id:`${state.move}:draw:${i}`,revision:state.move,...draw})):[];
       const effects=visible.filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer)).map(({privateTo,...draw})=>draw);
       // All outer fields are deliberate. options, seed and authority journal are absent.
       const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
       if(live&&safe.players&&s.playerMetadata)safe.players=safe.players.map((player,index)=>({...player,...s.playerMetadata(index)}));
-      const actions=live&&!r.paused&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
+      const inputAllowed=live&&!r.paused&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away;
+      const actions=!wire&&inputAllowed?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
       if(projected.modelProjection){
-        const projection={...projected.modelProjection,actions:authorizedCommands(projected.modelProjection.actions,actions)};
-        safe.scene=s.engine.get(s.game,s.packVersion).scene(projection,safe.players);
+        const allowed=wire?[]:authorizedCommands(projected.modelProjection.actions,actions);
+        if(wire){const {events,...model}=projected.modelProjection;safe.modelProjection=P.composeRecord(model);delete safe.scene;}
+        else if(allowed.length===projected.modelProjection.actions.length&&safe.players.every((player,index)=>player.name===state.players[index].name))safe.scene=projected.scene;
+        else safe.scene=s.engine.get(s.game,s.packVersion).scene({...projected.modelProjection,actions:allowed},safe.players);
       }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      return P.immutable({protocolVersion:3,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:safe,actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.states.length,cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects,reactionWindow,reactionWindows});
+      const frame=P.composeRecord({protocolVersion:3,inputAllowed,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',...(live&&r.realtime?{realtimeScope:r.realtime.scope}:{}),sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:P.composeRecord(safe),actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.historyLength,rosterRevision:s.metadataRevision||0,...(!wire?{cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects}:{}),reactionWindow,reactionWindows});
+      return projected.modelProjection?P.withProjection(frame,projected.modelProjection):frame;
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -188,26 +219,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const s=records.get(this).session;
       return binding.role==='table'?s.engine.tableCommand(s.current,actor,action):action;
     }
-    _dispatch(binding,command,internalBot=false){
+    _dispatch(binding,command,internalBot=false,{wire=false,receiptOnly=false}={}){
       const r=records.get(this),s=r.session;
-      const snapshot=()=>this._snapshot(binding.viewer,undefined,binding);
+      const snapshot=()=>this._snapshot(binding.viewer,undefined,binding,wire);
       const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
         revision:this.revision,...(!binding.closed&&!r.disposed?{snapshot:snapshot()}:{})});
       if(binding.closed||r.disposed)return reject('CLOSED');
-      if(!P.validate(command))return reject('BAD_COMMAND');
+      if(!P.validate(command)||wire&&s.engine.get(s.game,s.packVersion).isIntent?.(command.action)===false)return reject('BAD_COMMAND');
       if(command.sessionId!==r.sessionId)return reject('WRONG_SESSION');
       // A restored durable authority may replay an existing receipt across epochs.
       if(!r.persistence&&command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
       const access=this._commandActor(binding,command,internalBot);
       if(access.code)return reject(access.code);
       const actor=access.actor,key=`${actor}:${command.commandId}`,signature=canonical(command),cached=r.receipts.get(key);
-      if(cached)return cached.signature===signature?freeze({...cached.receipt,duplicate:true,snapshot:snapshot()}):reject('ID_CONFLICT');
+      if(cached){const answer=equal=>binding.closed||r.disposed?reject('CLOSED'):equal?freeze({...cached.receipt,duplicate:true,...(!receiptOnly||!cached.receipt.ok?{snapshot:snapshot()}:{})}):reject('ID_CONFLICT');return cached.signature.startsWith('sha256:')?P.fingerprint(signature).then(hash=>answer(hash===cached.signature)):answer(cached.signature===signature);}
       if(command.authorityEpoch!==r.authorityEpoch)return reject('WRONG_EPOCH');
       if(!internalBot&&(this._botControlled(actor)||r.playerControls[actor]?.away))return reject('READ_ONLY');
       if(r.controlPending)return reject('BUSY');
       if(r.stopRequested)return reject('PAUSED');
       if(r.busy||r.botBatch&&!internalBot)return reject('BUSY');
-      if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject);
+      if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject,{wire,receiptOnly});
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
       const decision=this._reactionDecision(actor,command.action);
@@ -215,10 +246,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action)?reject('STALE'):null;
       const result=this._processor().execute({sessionId:r.sessionId,actor,command,signature,before:s.current,rejection,
         prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action))});
-      const reply=receipt=>freeze({...receipt,...(!r.disposed?{snapshot:snapshot()}:{})});
+      const reply=receipt=>freeze({...receipt,...(!r.disposed&&(!receiptOnly||!receipt.ok)?{snapshot:snapshot()}:{})});
       return result&&typeof result.then==='function'?result.then(reply):reply(result);
     }
-    async _pause(binding,command,signature,key,reject){
+    async _pause(binding,command,signature,key,reject,{wire=false,receiptOnly=false}={}){
       const r=records.get(this);
       if(r.session.current.players[binding.viewer]?.bot)return reject('READ_ONLY');
       if(typeof command.action.paused!=='boolean')return reject('BAD_COMMAND');
@@ -233,7 +264,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
         r.receipts.set(key,{signature,receipt:freeze(receipt)});
         this.cancelBot();this._publish();
-        return freeze({...receipt,snapshot:this._snapshot(binding.viewer,undefined,binding)});
+        return freeze({...receipt,...(!receiptOnly?{snapshot:this._snapshot(binding.viewer,undefined,binding,wire)}:{})});
       }catch(_){return reject('STORAGE_ERROR');}finally{this._idle();if(!r.paused&&r.persistence)this.scheduleBot();}
     }
     _idle(){const r=records.get(this);r.busy=false;if(!r.botBatch)for(const resolve of r.idleWaiters.splice(0))resolve();}
@@ -302,7 +333,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     _publish(){
       const r=records.get(this);
       if(r.botBatch){r.botBatch.changed=true;return;}
-      for(const binding of [...r.bindings])if(!binding.closed){let snapshot;try{snapshot=this._snapshot(binding.viewer,undefined,binding);}catch(_){continue;}for(const listener of [...binding.listeners]){try{listener(snapshot);}catch(_){/* View failure cannot roll back a committed move. */}}}
+      for(const listener of [...r.activityListeners])try{listener();}catch(_){}
+      for(const binding of [...r.bindings])if(!binding.closed)for(const wire of [false,true]){
+        const listeners=wire?binding.wireListeners:binding.listeners;if(!listeners.size)continue;
+        let snapshot;try{snapshot=this._snapshot(binding.viewer,undefined,binding,wire);}catch(_){continue;}
+        for(const listener of [...listeners])try{listener(snapshot);}catch(_){/* UI failure cannot invalidate a commit. */}
+      }
     }
     cancelBot(){const r=records.get(this);r.botOptions=null;if(r.timer!==null){r.clock.clearTimeout(r.timer);r.timer=null;}}
     async _drainDecisionBots(window){
@@ -383,7 +419,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!receipt.ok)throw Error(receipt.message);
       return s.current;
     }
-    dispose(){const r=records.get(this);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;for(const b of r.bindings){b.closed=true;b.listeners.clear();}r.bindings.clear();}
+    dispose(){const r=records.get(this);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;r.realtime?.close?.();r.activityListeners.clear();for(const b of r.bindings){b.closed=true;b.listeners.clear();b.wireListeners.clear();}r.bindings.clear();}
   }
   SessionAuthority.transfers=transfers;
   return SessionAuthority;

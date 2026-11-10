@@ -35,6 +35,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
+  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1']);
   function parse(value){
     const text=typeof value==='string'?value:JSON.stringify(value);
     if(typeof text!=='string'||bytes(text)>MAX_BYTES)throw Error(globalThis.PlayroomMessages.text("ui.packs.f5b2ba2ded85"));
@@ -47,6 +48,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(m.skinFamilies!==undefined&&(!Array.isArray(m.skinFamilies)||m.skinFamilies.length>32||m.skinFamilies.some(f=>typeof f!=='string'||!ID.test(f))||new Set(m.skinFamilies).size!==m.skinFamilies.length)||m.defaultSkins!==undefined&&(!record(m.defaultSkins)||Object.entries(m.defaultSkins).some(([family,variant])=>!m.skinFamilies?.includes(family)||typeof variant!=='string'||!ID.test(variant))))throw Error('PACK_SKINS_INVALID');
     if(m.viewApi!==3)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
     if(m.engineApi!==4||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
+    if(m.sdkFeatures!==undefined&&(!Array.isArray(m.sdkFeatures)||m.sdkFeatures.length>16||new Set(m.sdkFeatures).size!==m.sdkFeatures.length||m.sdkFeatures.some(feature=>!SDK_FEATURES.includes(feature))))throw Error(globalThis.PlayroomMessages.text('ui.packs.4cec05765e2b'));
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     if(m.shortName!==undefined&&(typeof m.shortName!=='string'||!m.shortName.trim()||m.shortName.length>60))throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error(globalThis.PlayroomMessages.text("ui.packs.a2c15b806ca4"));
@@ -91,7 +93,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     prepare(value){
       const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
-      const scope={PlayroomMessages:root.PlayroomMessages,PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,adaptModel:spec=>{
+      const scope={PlayroomMessages:root.PlayroomMessages,PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,sdkFeatures:SDK_FEATURES,adaptModel:spec=>{
         if(m.engineApi!==4||typeof this.modelAdapter!=='function')throw Error(globalThis.PlayroomMessages.text("ui.packs.33a5bbc8c9da"));
         return this.modelAdapter(this.engine,spec);
       }})};

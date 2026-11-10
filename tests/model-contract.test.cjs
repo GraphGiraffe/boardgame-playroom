@@ -321,7 +321,8 @@ test('portable reactions have independent episodes, authorized public choices an
  const repeat=model.apply(changed.position,1,command);assert.deepEqual(repeat.position,changed.position);assert.deepEqual(repeat.events,[]);
  assert.equal(model.reactionControl(changed.position,1,command).ignore,true);
  assert.throws(()=>model.commandFor(initial,1,{type:'declare-uno',episode:999},'table'),coded('TABLE_ACTION_UNAVAILABLE'));
- assert.equal(model.project(changed.position,-1).data.uno.situations,undefined);
+ assert.deepEqual(model.project(changed.position,-1).data.uno.situations,changed.position.data.uno.situations);
+ assert(model.project(changed.position,-1).data.hands.flat().every(card=>card.hidden));
 });
 
 test('preparation is durable but does not create game turns; public projection exposes only its boundary',()=>{
@@ -508,7 +509,7 @@ test('immutable snapshots reuse only their own validated frozen values',()=>{
   assert.notEqual(first,source);assert.notEqual(first.nested,source.nested);
   assert.equal(values.snapshot(first),first);
   const nested=values.snapshot(first.nested);
-  assert.notEqual(nested,first.nested);assert.equal(values.snapshot(nested),nested);
+  assert.equal(nested,first.nested);assert.equal(values.snapshot(nested),nested);
   assert.throws(()=>{first.nested.cards[0].id='changed';},TypeError);
   source.nested.cards[0].id='changed';assert.equal(first.nested.cards[0].id,'card-1');
   const mutable=values.copy(first);mutable.nested.cards.push({id:'card-2'});
@@ -535,4 +536,18 @@ test('unimplemented optional mechanics do not traverse the complete game positio
 test('model validation reuses validated immutable positions but rechecks mutable or changed inputs',()=>{
  let calls=0;const counted=new GameModel({...definition,validate(position){calls++;return definition.validate(position);}}),position=counted.create({playerCount:2,firstPlayer:0,preset:'classic'});calls=0;counted.validate(position);const once=calls;counted.validate(position);counted.validate(position);assert.equal(calls,once,'one immutable position is validated once');
  const mutable=JSON.parse(JSON.stringify(position));counted.validate(mutable);const checked=calls;counted.validate(mutable);assert(calls>checked,'mutable callers are detached and rechecked');mutable.data.board[0]=0;mutable.data.board[1]=0;assert.throws(()=>counted.validate(mutable));
+});
+
+test('shared turn-order policy validates cycles, directions, repeat overrides and simultaneous windows',()=>{
+ const projection={status:'playing',playerCount:4,turn:2,data:{},timeline:{},decisionWindow:null},base=new GameModel(definition);
+ assert.equal(base.turnOrder(projection).next,3);
+ const custom=turnOrder=>new GameModel({...definition,turnOrder});
+ assert.equal(custom(()=>({players:[0,2,3],direction:-1})).turnOrder(projection).next,0);
+ assert.equal(custom(()=>({next:2})).turnOrder(projection).next,2,'rules may declare a repeat');
+ assert.equal(custom(()=>null).turnOrder(projection),null);
+ assert.equal(base.turnOrder({...projection,status:'finished'}),null);
+ assert.equal(base.turnOrder({...projection,playerCount:1,turn:0}),null);
+ assert.equal(base.turnOrder({...projection,timeline:{preparing:true}}),null);
+ assert.equal(base.turnOrder({...projection,decisionWindow:{participants:[0,1]}}),null);
+ for(const bad of [{players:[0,0]},{players:[4]},{players:[0,2],direction:0},{next:4}])assert.throws(()=>custom(()=>bad).turnOrder(projection),coded('TURN_ORDER_INVALID'));
 });

@@ -175,12 +175,12 @@ test('Pexeso keeps the empty cell at the centre of a 5 by 5 twelve-pair layout',
 }));
 
 
-test('web startup and manifest stay black before the saved light or dark appearance loads',{timeout:45000},async()=>{
+test('web startup matches the saved light or dark canvas before appearance loads',{timeout:45000},async()=>{
  const server=await serveBrowserFixture(process.env.PLAYROOM_BROWSER_ROOT||root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
  try{for(const mode of ['light','dark']){
   const context=await browser.newContext({viewport:{width:390,height:740}});await context.addInitScript(mode=>localStorage.setItem('playroom.appearance.v1',JSON.stringify({formatVersion:1,activeId:mode,avatarStyle:'minimal',presets:[]})),mode);
   let release;const ready=new Promise(resolve=>release=resolve);await context.route('**/appearance-models*.js',async route=>{await ready;await route.continue();});const page=await context.newPage();
-  try{await page.goto(server.url,{waitUntil:'commit'});await page.waitForFunction(()=>document.documentElement.dataset.appLoading==='true');assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),'rgb(0, 0, 0)');assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),'#000000');release();await page.locator('.game-tile').first().waitFor();await page.waitForFunction(()=>!document.documentElement.dataset.appLoading);assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),mode);const manifest=await page.evaluate(()=>fetch('manifest.webmanifest').then(r=>r.json()));assert.equal(manifest.background_color,'#000000');assert.equal(manifest.theme_color,'#000000');}
+  try{await page.goto(server.url,{waitUntil:'commit'});await page.waitForFunction(()=>document.documentElement.dataset.appLoading==='true');assert.equal(await page.evaluate(()=>getComputedStyle(document.body).backgroundColor),mode==='dark'?'rgb(0, 0, 0)':'rgb(243, 240, 231)');assert.equal(await page.locator('meta[name=theme-color]').getAttribute('content'),mode==='dark'?'#000000':'#f3f0e7');release();await page.locator('.game-tile').first().waitFor();await page.waitForFunction(()=>!document.documentElement.dataset.appLoading);assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),mode);assert.equal(await page.evaluate(()=>getComputedStyle(document.documentElement,'::backdrop').backgroundColor),mode==='dark'?'rgb(0, 0, 0)':'rgb(243, 240, 231)');const manifest=await page.evaluate(()=>fetch('manifest.webmanifest').then(r=>r.json()));assert.equal(manifest.background_color,'#f3f0e7');assert.equal(manifest.theme_color,'#f3f0e7');}
   finally{release();await context.close();}
  }}finally{await browser.close();await server.close();}
 });

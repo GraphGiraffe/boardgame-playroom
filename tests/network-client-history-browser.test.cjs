@@ -12,14 +12,14 @@ test('projected journals are pooled on disk and legacy frames migrate atomically
    await store.tx(['matches','frames'],'readwrite',tx=>{tx.objectStore('matches').put({id:key,sessionId:'s',viewer:0,game:'uno',packVersion:'0.6.7',revision:79});for(let i=0;i<80;i+=2)tx.objectStore('frames').put({id:key,revision:i,frame:PlayroomNetworkClientHistory.frame(mk(i))});});
    for(let i=79;i>=0;i-=2)await store.save({roomId:'room',participantId:'guest',snapshot:mk(i)});
    const expected=journal.map((_,i)=>PlayroomNetworkClientHistory.frame(mk(i))),before=JSON.stringify(expected),saved=await store.read(key);
-   const raw=await store.tx(['matches','frames'],'readonly',(tx,done)=>{const data={};tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;tx.objectStore('frames').index('id').getAll(key).onsuccess=e=>data.frames=e.target.result;done(data);});
+   const raw=await store.tx(['matches','frames','events'],'readonly',(tx,done)=>{const data={};tx.objectStore('events').index('id').getAll(key).onsuccess=e=>data.events=e.target.result;tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;tx.objectStore('frames').index('id').getAll(key).onsuccess=e=>data.frames=e.target.result;done(data);});
    const twins={...mk(0),sessionId:'twins',state:{...mk(0).state,players:[{name:'Alex'},{name:'Alex'}]}};
    const twinsKey=await store.save({roomId:'room',participantId:'guest',snapshot:twins,participants:[{nickname:'Alex'},{nickname:'Alex'}]});
    const twinSummary=(await store.list()).find(v=>v.id===twinsKey);if(JSON.stringify(twinSummary.participants.map(p=>p.playerIndex))!=='[0,1]')throw Error('duplicate nicknames must not collapse seats');await store.remove(twinsKey);
    const list=await store.list();if(list[0].firstPlayer!==1||list[0].turn!==1||list[0].presetId!=='classic')throw Error('latest summary must survive older backfill');
    await store.tx(['matches'],'readwrite',tx=>{const r=tx.objectStore('matches').get(key);r.onsuccess=()=>{const old={...r.result};delete old.firstPlayer;delete old.presetId;tx.objectStore('matches').put(old);};});
    const repaired=await store.list();if(repaired[0].firstPlayer!==1||repaired[0].presetId!=='classic')throw Error('legacy list must recover first-player from one local frame');store.close();const reopened=new PlayroomNetworkClientHistory({name:'pooled-client-history'}),again=await reopened.read(key);await reopened.remove(key);const empty=await reopened.list();reopened.close();
-   return {exact:JSON.stringify(saved.frames)===before,reloaded:JSON.stringify(again.frames)===before,compact:JSON.stringify(raw).length<before.length/10,pool:raw.match.eventPool.length,allCompact:raw.frames.every(row=>row.frame.encoding==='event-pool-v1'),noPoolInList:!('eventPool' in list[0]),removed:empty.length===0,received:saved.receivedRevision};
+   return {exact:JSON.stringify(saved.frames)===before,reloaded:JSON.stringify(again.frames)===before,compact:JSON.stringify(raw).length<before.length/10,pool:raw.events.length,allCompact:raw.frames.every(row=>row.frame.encoding==='event-pool-v1'),noPoolInList:!('eventPool' in list[0]),removed:empty.length===0,received:saved.receivedRevision};
   });assert.deepEqual(result,{exact:true,reloaded:true,compact:true,pool:80,allCompact:true,noPoolInList:true,removed:true,received:79});
  }finally{await browser.close();await close();}
 });
@@ -130,5 +130,47 @@ test('cloud replay replacement keeps its match ID and updates frames atomically'
   const key=await store.importPortable(source,'Cloud'),next={...source,updatedAt:3,frames:[frame(0),frame(1)]};await store.replacePortable(key,next,'Cloud');const row=await store.read(key),count=(await store.list()).length;let rejected=false;try{await store.replacePortable(key,{...next,viewer:1,frames:next.frames.map(f=>({...f,viewer:1}))},'Wrong viewer');}catch{rejected=true;}
   const unchanged=(await store.read(key)).frames.length;store.close();return {key:row.id===key,count,frames:row.frames.length,last:row.frames.at(-1).revision,rejected,unchanged};
  });assert.deepEqual(result,{key:true,count:1,frames:2,last:1,rejected:true,unchanged:2});
+ }finally{await browser.close();await close();}
+});
+
+test('live history reads received and persisted projections locally and fetches each hole once',{timeout:60000},async()=>{
+ const {url,close}=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const page=await browser.newPage();await page.goto(url);
+ const result=await page.evaluate(async()=>{
+  const store=new PlayroomNetworkClientHistory({name:'local-history-cache-021'}),key=PlayroomNetworkClientHistory.id('r','p','s');let calls=0,bytes=0;
+  const mk=revision=>({kind:'snapshot',protocolVersion:3,sessionId:'s',authorityEpoch:'e',role:'player',viewer:0,game:'uno',packVersion:'1',revision,historyLength:5,state:{move:revision,game:'uno',packVersion:'1',players:[],scene:{players:[]}},events:[{id:revision,revision,text:'event '+revision,transfer:{from:'hand',to:'discard'}}],cues:[{eventId:revision,sound:'play'}],effects:[{revision,from:'hand',to:'discard'}]});
+  await store.save({roomId:'r',participantId:'p',snapshot:mk(0)});await store.save({roomId:'r',participantId:'p',snapshot:mk(1)});
+  store.close();
+  const transport={history:async i=>{calls++;const frame={...mk(i),kind:'history'};bytes+=JSON.stringify(frame).length;return frame;}};
+  const options={readHistory:i=>store.readFrame(key,i),writeHistory:snapshot=>store.save({roomId:'r',participantId:'p',snapshot})};
+  const client=new PlayroomSessionClient(transport,options);client.accept(mk(3));client.accept(mk(4));
+  for(let pass=0;pass<3;pass++)for(const i of [0,1,3,4])await client.history(i);
+  const before={calls,bytes},a=client.history(2),b=client.history(2);await Promise.all([a,b]);await client.history(2);
+  const sync=new PlayroomHistorySyncService({store,key:()=>key,current:()=>true});
+  await sync.backfill(mk(4),transport,{roomId:'r',participantId:'p'},i=>client.history(i));
+  const holeCalls=calls,holeBytes=bytes;
+  client.close();store.close();
+  const reopened=new PlayroomSessionClient({history(){throw Error('offline');}},options);reopened.accept(mk(4));
+  const old=await reopened.history(2),missing=await store.readFrame(key,99),saved=await store.read(key);reopened.close();store.close();
+  return {before,holeCalls,holeBytes,role:old.role,events:old.events,retainedEffects:old.effects.length,actions:old.actions.length,missing,frames:saved.frames.length};
+ });
+ assert.deepEqual(result.before,{calls:0,bytes:0});assert.equal(result.holeCalls,1);assert(result.holeBytes>0);assert.equal(result.role,'player');assert.equal(result.retainedEffects,1);assert.equal(result.actions,0);assert.equal(result.missing,null);assert.equal(result.frames,5);assert.deepEqual(result.events,[{id:2,revision:2,text:'event 2',transfer:{from:'hand',to:'discard'}}]);
+ }finally{await browser.close();await close();}
+});
+
+test('append-only event batches rollback atomically, recover writer conflicts and remove event records',{timeout:60000},async()=>{
+ const {url,close}=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const page=await browser.newPage();await page.goto(url);const result=await page.evaluate(async()=>{
+  const name='append-only-batch-021',store=new PlayroomNetworkClientHistory({name}),other=new PlayroomNetworkClientHistory({name}),context={roomId:'room',participantId:'guest'},key=PlayroomNetworkClientHistory.id('room','guest','s');
+  const mk=revision=>({kind:'snapshot',protocolVersion:3,sessionId:'s',authorityEpoch:'e',viewer:0,role:'player',game:'fixture',packVersion:'1',revision,state:{move:revision,game:'fixture',packVersion:'1',players:[{name:'A'}]},events:Array.from({length:revision+1},(_,id)=>({id,revision:id,text:'e'+id}))});
+  const db=await store.open(),proto=Object.getPrototypeOf(db.transaction('events').objectStore('events')),put=proto.put;let failed=false;
+  proto.put=function(...args){if(this.name==='events'&&!failed){failed=true;throw Error('injected event write failure');}return put.apply(this,args);};
+  let rejected=false;try{await store.saveBatch(context,[mk(0),mk(1)]);}catch(_){rejected=true;}finally{proto.put=put;}
+  const rolledBack=await store.read(key)===null;const original=mk(0),job=store.saveBatch(context,[original,mk(1)]);original.events[0].text='mutated-after-save';await job;if((await store.readFrame(key,0)).events[0].text!=='e0')throw Error('pending write must own its input');await other._eventWriter(key);
+  await store.save({...context,snapshot:mk(2)});await other.save({...context,snapshot:mk(3)});
+  const saved=await store.read(key),progress=await store.progress(key,3),raw=await store.tx(['events','matches'],'readonly',(tx,done)=>{const data={};tx.objectStore('events').index('id').count(key).onsuccess=e=>data.events=e.target.result;tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;done(data);});
+  await store.remove(key);const remaining=await store.tx(['events'],'readonly',(tx,done)=>{tx.objectStore('events').index('id').count(key).onsuccess=e=>done(e.target.result);});store.close();other.close();
+  return {rejected,rolledBack,frames:saved.frames.length,events:raw.events,poolInMetadata:'eventPool' in raw.match,received:progress.receivedRevision,missing:progress.missing,remaining};
+ });assert.deepEqual(result,{rejected:true,rolledBack:true,frames:4,events:4,poolInMetadata:false,received:3,missing:[],remaining:0});
  }finally{await browser.close();await close();}
 });

@@ -1,16 +1,25 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../../core/messages.js");
 (function(root,factory){
   'use strict';
-  const Journal=root.PlayroomJournal||(typeof require==='function'?require('../../core/journal.js'):null);
+  const Protocol=root.PlayroomProtocol||(typeof require==='function'?require('../../core/protocol.js'):null);
   const Recovery=root.PlayroomHostRecovery||(typeof require==='function'?require('../../application/host-recovery.js'):null);
-  const api=factory(Journal,Recovery);
+  const api=factory(Protocol,Recovery);
   if(typeof module==='object'&&module.exports)module.exports=api;
   root.PlayroomNetworkSessionStore=api;
-})(typeof globalThis!=='undefined'?globalThis:this,function(Journal,Recovery){
+})(typeof globalThis!=='undefined'?globalThis:this,function(Protocol,Recovery){
   'use strict';
   const DB_NAME='playroom.network-host.v1',DB_VERSION=2;
   const isId=value=>typeof value==='string'&&value.length>0&&value.length<=128;
   const clone=value=>JSON.parse(JSON.stringify(value));
+  const FORMAT='actions-checkpoint-v1',MAX_BYTES=48*1024*1024;
+  const compression=()=>globalThis.PlayroomSaveCompression||(typeof require==='function'?require('../../application/save-compression.js'):null);
+  const cleanRoom=room=>({...clone(room),events:[]});
+  const withoutRoom=recovery=>recovery?{version:1,tokens:clone(recovery.tokens)}:null;
+  async function pack(value){const text=JSON.stringify(value);if(text.length<512||!compression())return clone(value);const data=await compression().encode(text,MAX_BYTES);return data&&data.length+64<text.length?{encoding:compression().encoding,data}:clone(value);}
+  async function unpack(value){if(!value?.encoding)return value;if(value.encoding!==compression()?.encoding)throw Error('CHECKPOINT_ENCODING_INVALID');return JSON.parse(await compression().decode(value.data,MAX_BYTES));}
+  async function packReceipt(row){const {ok,code,revision,commandId:_,...extra}=row.receipt;return {sessionId:row.sessionId,viewer:row.viewer,commandId:row.commandId,h:row.signature.startsWith('sha256:')?row.signature.slice(7):(await Protocol.fingerprint(row.signature)).slice(7),r:[ok,code,revision,...(Object.keys(extra).length?[extra]:[])]};}
+  function unpackReceipt(row){if(!/^[0-9a-f]{64}$/.test(row.h)||!Array.isArray(row.r)||row.r.length<3||row.r.length>4)throw Error('CHECKPOINT_RECEIPT_INVALID');return {sessionId:row.sessionId,viewer:row.viewer,commandId:row.commandId,signature:'sha256:'+row.h,receipt:{ok:row.r[0],code:row.r[1],commandId:row.commandId,revision:row.r[2],...(row.r[3]||{})}};}
+  function checkpoint(engine,state){const Session=globalThis.TabletopSession||(typeof require==='function'?require('../../core/session.js'):null),Codec=globalThis.PlayroomSessionCodec||(typeof require==='function'?require('../../core/session-codec.js'):null),value=Session.storageState(engine,state);return {state:value,fingerprint:Codec.fingerprint(value)};}
 
   // All network authority data is PRIVATE to the host origin. No record from
   // this store may be returned through RTC snapshot/history or a public link.
@@ -25,7 +34,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return 'sha256:'+Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('');
     }
     constructor({indexedDB=globalThis.indexedDB,name=DB_NAME,now=()=>Date.now(),describe=state=>({turn:state.turn,turnName:state.players?.[state.turn]?.name||null})}={}){
-      this.indexedDB=indexedDB;this.name=name;this.database=null;this.now=now;this.describe=describe;
+      this.indexedDB=indexedDB;this.name=name;this.database=null;this.now=now;this.describe=describe;this.engines=new Map();
     }
     async open(){
       if(this.database)return this.database;
@@ -74,71 +83,32 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return release;
     }
     async create({sessionId,room,session,recovery=null,packDigest=null}){
-      if(!isId(sessionId)||!isId(room?.id)||!session?.export||room.game?.id!==session.game||room.game?.version!==session.packVersion)
-        throw Error(globalThis.PlayroomMessages.text("ui.session-store.099b09754c00"));
-      if(session.current.move!==0)throw Error(globalThis.PlayroomMessages.text("ui.session-store.a2b51bf7339c"));
-      if((packDigest!==null&&!/^sha256:[0-9a-f]{64}$/.test(packDigest))||
-          (recovery&&packDigest===null))throw Error(globalThis.PlayroomMessages.text("ui.session-store.242c365de395"));
-      if(recovery&&(recovery.version!==1||recovery.room?.id!==room.id||
-          recovery.room?.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))
-        throw Error(globalThis.PlayroomMessages.text("ui.session-store.bb42b8fe18a9"));
-      const timestamp=this.now();
-      const record={format:'playroom-network-host',version:1,sessionId,roomId:room.id,
-        game:session.game,packVersion:session.packVersion,packDigest,room:clone(room),
-        eventStorage:'delta-v2',eventCursor:Journal.cursor(session.current.events),
-        ...this.describe(session.current),recovery:recovery?clone(recovery):null,initial:session.export(),revision:0,finished:session.current.status==='finished',createdAt:timestamp,updatedAt:timestamp};
-      await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));
-      return {sessionId,revision:0};
+      if(!isId(sessionId)||!isId(room?.id)||session.current.move!==0||room.game?.id!==session.game||room.game.version!==session.packVersion||(packDigest!==null&&!/^sha256:[0-9a-f]{64}$/.test(packDigest)))throw Error('CHECKPOINT_INVALID');
+      if(recovery&&(packDigest===null||recovery.version!==1||recovery.room?.id!==room.id||recovery.room.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))throw Error('CHECKPOINT_INVALID');
+      this.engines.set(sessionId,session.engine);
+      const timestamp=this.now(),initial=await pack(session.initialSave()),latest=await pack(checkpoint(session.engine,session.current));
+      const record={format:'playroom-network-host',version:2,eventStorage:FORMAT,sessionId,roomId:room.id,game:session.game,packVersion:session.packVersion,packDigest,room:cleanRoom(room),recovery:withoutRoom(recovery),initial,checkpoint:latest,playerBots:session.current.players.map(player=>player.bot),...this.describe(session.current),revision:0,finished:false,createdAt:timestamp,updatedAt:timestamp};
+      await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));return {sessionId,revision:0};
     }
-    // A single readwrite transaction makes the state, receipt, and committed
-    // revision indivisible. Resolve only on transaction COMPLETE, not on put().
     commit(entry){return this.commitBatch({entries:[entry],receipts:[]});}
     async commitBatch({entries,receipts=[]}){
       if(!Array.isArray(entries)||!entries.length||!Array.isArray(receipts))throw Error('COMMIT_BATCH_INVALID');
       const first=entries[0],last=entries.at(-1),sessionId=first.sessionId;
-      for(let i=0;i<entries.length;i++){
-        const row=entries[i],{nextState,viewer,commandId,signature,receipt}=row;
-        if(!isId(sessionId)||row.sessionId!==sessionId||!Number.isSafeInteger(row.previousRevision)||row.previousRevision<0||
-          nextState?.move!==row.previousRevision+1||(i&&row.previousRevision!==entries[i-1].nextState.move)||!Number.isInteger(viewer)||viewer<0||
-          !isId(commandId)||typeof signature!=='string'||!signature||!receipt?.ok||receipt.commandId!==commandId||receipt.revision!==nextState.move||
-          (row.previousState&&row.previousState.move!==row.previousRevision))throw Error(globalThis.PlayroomMessages.text('ui.session-store.586724de354e'));
-      }
-      await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
-        const sessions=tx.objectStore('sessions'),request=sessions.get(sessionId);
-        request.onsuccess=()=>{
-          const entry=request.result,nextState=last.nextState;
-          if(!entry||entry.revision!==first.previousRevision||entry.transfer&&(entry.transfer.role==='outgoing'||entry.transfer.state!=='active')){abort(Error(globalThis.PlayroomMessages.text('ui.session-store.c5c51f878fc6')));return;}
-          if(entries.some(row=>entry.game!==row.nextState.game||entry.packVersion!==(row.nextState.packVersion||'0.1.0'))){abort(Error(globalThis.PlayroomMessages.text('ui.session-store.aaed7e7ce6b1')));return;}
-          try{
-            const journal=['delta-v1','delta-v2'].includes(entry.eventStorage);let cursor=entry.eventCursor,compact=false;
-            for(const row of entries){
-              const step=journal?Journal.encode(row.nextState,cursor,row.previousState||null):{state:clone(row.nextState)};
-              compact||=!!step.delta;if(journal)cursor=step.eventTail;
-              tx.objectStore('steps').add({sessionId,revision:row.nextState.move,...step});
-              tx.objectStore('receipts').add({sessionId,viewer:row.viewer,commandId:row.commandId,signature:row.signature,receipt:clone(row.receipt)});
-            }
-            for(const row of receipts){
-              if(row.sessionId!==sessionId||!Number.isInteger(row.viewer)||row.viewer<0||!isId(row.commandId)||row.receipt?.commandId!==row.commandId||row.receipt?.ok!==false||row.receipt.revision>nextState.move)throw Error('COMMIT_BATCH_INVALID');
-              tx.objectStore('receipts').add(clone(row));
-            }
-            sessions.put({...entry,...this.describe(nextState),revision:nextState.move,finished:nextState.status==='finished',...(journal?{eventCursor:cursor,...(compact?{eventStorage:'delta-v2'}:{})}:{}),updatedAt:Math.max(this.now(),entry.updatedAt)});
-            tx.commit?.();
-          }catch(error){abort(error);}
-        };
-      });
-      return last.receipt;
+      for(let i=0;i<entries.length;i++){const row=entries[i];if(row.sessionId!==sessionId||!isId(sessionId)||row.nextState?.move!==row.previousRevision+1||(i&&row.previousRevision!==entries[i-1].nextState.move)||row.action?.actor!==row.viewer||!row.action.command||typeof row.action.command!=='object'||!isId(row.commandId)||typeof row.signature!=='string'||!row.receipt?.ok||row.receipt.revision!==row.nextState.move||row.receipt.commandId!==row.commandId)throw Error('COMMIT_BATCH_INVALID');}
+      for(const row of receipts)if(row.sessionId!==sessionId||row.receipt?.ok!==false||row.receipt.commandId!==row.commandId||row.receipt.revision>last.nextState.move)throw Error('COMMIT_BATCH_INVALID');
+      const engine=this.engines.get(sessionId);if(!engine)throw Error('HOST_SESSION_NOT_LOADED');
+      const latest=await pack(checkpoint(engine,last.nextState)),accepted=await Promise.all([...entries,...receipts].map(packReceipt));
+      await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{const sessions=tx.objectStore('sessions'),q=sessions.get(sessionId);q.onsuccess=()=>{const record=q.result;
+          if(record?.version!==2||record.eventStorage!==FORMAT||record.revision!==first.previousRevision||record.transfer&&(record.transfer.role==='outgoing'||record.transfer.state!=='active')){abort(Error('CHECKPOINT_CONFLICT'));return;}
+          try{if(entries.some(row=>row.nextState.game!==record.game||row.nextState.packVersion!==record.packVersion))throw Error('CHECKPOINT_CONFLICT');
+            for(const row of entries)tx.objectStore('steps').add({sessionId,revision:row.nextState.move,a:[row.action.actor,clone(row.action.command),...(row.action.players?[clone(row.action.players)]:[])]});
+            for(const row of accepted)tx.objectStore('receipts').add(row);
+            sessions.put({...record,...this.describe(last.nextState),checkpoint:latest,revision:last.nextState.move,finished:last.nextState.status==='finished',updatedAt:Math.max(this.now(),record.updatedAt)});tx.commit?.();
+          }catch(error){abort(error);}};});return last.receipt;
     }
-    async recordReceipt({sessionId,viewer,commandId,signature,receipt}){
-      if(!isId(sessionId)||!Number.isInteger(viewer)||viewer<0||!isId(commandId)||
-          typeof signature!=='string'||!signature||receipt?.ok!==false||receipt.commandId!==commandId)
-        throw Error(globalThis.PlayroomMessages.text("ui.session-store.e1c7dd72a0d9"));
-      await this.transaction(['sessions','receipts'],'readwrite',(tx,_,abort)=>{
-        const check=tx.objectStore('sessions').get(sessionId);
-        check.onsuccess=()=>{
-          if(!check.result){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.a18d186f439f")));return;}
-          tx.objectStore('receipts').add({sessionId,viewer,commandId,signature,receipt:clone(receipt)});
-        };
-      });
+    async recordReceipt(row){
+      if(!isId(row?.sessionId)||!Number.isInteger(row.viewer)||row.viewer<0||!isId(row.commandId)||typeof row.signature!=='string'||row.receipt?.ok!==false||row.receipt.commandId!==row.commandId)throw Error('CHECKPOINT_RECEIPT_INVALID');
+      const value=await packReceipt(row);await this.transaction(['sessions','receipts'],'readwrite',(tx,_,abort)=>{const q=tx.objectStore('sessions').get(row.sessionId);q.onsuccess=()=>{if(q.result?.version!==2||q.result.eventStorage!==FORMAT){abort(Error('SAVE_FORMAT'));return;}tx.objectStore('receipts').add(value);};});
     }
     async rotateResumeToken({sessionId,participantId,previousToken,nextToken,previousExpiresAt}){
       if(!isId(sessionId)||!isId(participantId)||![previousToken,nextToken].every(t=>typeof t==='string'&&/^[0-9a-f]{64}$/.test(t))||
@@ -173,7 +143,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const store=tx.objectStore('sessions'),request=store.get(value.sessionId);
         request.onsuccess=()=>{const record=request.result;
           if(!record||(record.playerControlRevision||0)!==value.previousRevision||record.transfer&&(record.transfer.role==='outgoing'||record.transfer.state!=='active')){abort(Error('PLAYER_CONTROL_CONFLICT'));return;}
-          try{const controls=(globalThis.PlayroomPlayerControls||(typeof require==='function'?require('../../core/player-controls.js'):null)).validate(value,record.initial.states[0].players,record.revision);store.put({...record,...controls,updatedAt:Date.now()});}catch(error){abort(error);}
+          try{const controls=(globalThis.PlayroomPlayerControls||(typeof require==='function'?require('../../core/player-controls.js'):null)).validate(value,record.playerBots.map(bot=>({bot})),record.revision);store.put({...record,...controls,updatedAt:Date.now()});}catch(error){abort(error);}
         };
       });
     }
@@ -189,7 +159,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           // Existing identities keep the latest atomically stored credential;
           // explicit removals still revoke it, and new identities add theirs.
           next.tokens=next.tokens.map(token=>clone(durable.get(token.participantId)||token));
-          store.put({...record,room:clone(room),recovery:next,updatedAt:Date.now()});
+          store.put({...record,room:cleanRoom(room),recovery:withoutRoom(next),updatedAt:Date.now()});
         };
       });
     }
@@ -202,22 +172,25 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     async readPrivate(sessionId){
       if(!isId(sessionId))throw Error('HOST_TRANSFER_INVALID');
-      return this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{
-        const values={},record=tx.objectStore('sessions').get(sessionId),steps=tx.objectStore('steps').index('sessionId').getAll(sessionId),receipts=tx.objectStore('receipts').index('sessionId').getAll(sessionId);
-        record.onsuccess=()=>{values.record=record.result;};steps.onsuccess=()=>{values.steps=steps.result;};receipts.onsuccess=()=>{values.receipts=receipts.result;};done(values);
-      });
+      const value=await this.transaction(['sessions','steps','receipts'],'readonly',(tx,done)=>{const values={},a=tx.objectStore('sessions').get(sessionId),b=tx.objectStore('steps').index('sessionId').getAll(sessionId),c=tx.objectStore('receipts').index('sessionId').getAll(sessionId);a.onsuccess=()=>{values.record=a.result;};b.onsuccess=()=>{values.steps=b.result;};c.onsuccess=()=>{values.receipts=c.result;};done(values);});
+      if(!value.record)return value;
+      if(value.record.version!==2||value.record.eventStorage!==FORMAT)throw Error('SAVE_FORMAT');
+      const record=value.record;[record.initial,record.checkpoint]=await Promise.all([unpack(record.initial),unpack(record.checkpoint)]);
+      if(record.recovery)record.recovery={...record.recovery,room:clone(record.room)};
+      value.receipts=value.receipts.map(unpackReceipt);return value;
     }
     async stageTransfer(value,engine,Session,hostDeviceId){
       const v=clone(value),r=v.record;if(r?.transfer?.role!=='incoming'||r.transfer.state!=='prepared'||r.room.ownerId!==r.transfer.target||!isId(hostDeviceId))throw Error('HOST_TRANSFER_INVALID');
       Recovery.restore({...v,record:{...r,transfer:undefined}},r.sessionId,engine,Session);
       r.hostDeviceId=hostDeviceId;
+      this.engines.set(r.sessionId,engine);const initial=await pack(r.initial),latest=await pack(r.checkpoint),receipts=await Promise.all(v.receipts.map(packReceipt));
       await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{
         const store=tx.objectStore('sessions'),request=store.get(r.sessionId);
         request.onsuccess=()=>{const existing=request.result;if(existing){if(existing.transfer?.id===r.transfer.id)return;
           if(!(existing.transfer?.role==='outgoing'||existing.transfer?.state==='prepared')||existing.revision>r.revision||existing.packDigest!==r.packDigest){abort(Error('HOST_TRANSFER_CONFLICT'));return;}
           let remaining=2;for(const name of ['steps','receipts']){const old=tx.objectStore(name).index('sessionId').getAllKeys(r.sessionId);old.onsuccess=()=>{for(const key of old.result)tx.objectStore(name).delete(key);if(!--remaining)write();};}
         }else write();
-          function write(){store.put(r);for(const step of v.steps)tx.objectStore('steps').add(step);for(const receipt of v.receipts)tx.objectStore('receipts').add(receipt);}
+          function write(){store.put({...r,room:cleanRoom(r.room),recovery:withoutRoom(r.recovery),initial,checkpoint:latest});for(const step of v.steps)tx.objectStore('steps').add(step);for(const receipt of receipts)tx.objectStore('receipts').add(receipt);}
         };
       });return r.transfer.id;
     }
@@ -235,27 +208,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         store.put(r);
       };});
     }
-    async load(sessionId,engine,Session){const raw=await this.readPrivate(sessionId),saved=Recovery.restore(raw,sessionId,engine,Session);return saved?{...saved,compactNeeded:raw.record.eventStorage!=='delta-v2'||raw.steps.some(row=>!row.delta)}:saved;}
-    async compact(sessionId,session){
-      const states=session.states;if(states.length<2)return false;
-      const idle=()=>new Promise(resolve=>globalThis.requestIdleCallback?globalThis.requestIdleCallback(resolve,{timeout:200}):setTimeout(resolve,0)),rows=[],events=session.current.events;
-      let offset=0;while(offset<events.length&&events[offset].id<=Journal.cursor(states[0].events))offset++;
-      for(let i=1;i<states.length;i++){
-        if(i%4===1)await idle();
-        const start=offset,tail=Journal.cursor(states[i].events);while(offset<events.length&&events[offset].id<=tail)offset++;
-        const emitted=events.slice(start,offset),head=emitted.length?emitted:offset?[events[offset-1]]:[];
-        rows.push({sessionId,revision:states[i].move,...Journal.encode({...states[i],events:head},Journal.cursor(states[i-1].events),states[i-1])});
-      }
-      await this.transaction(['sessions','steps'],'readwrite',(tx,_,abort)=>{
-        const store=tx.objectStore('sessions'),request=store.get(sessionId);
-        request.onsuccess=()=>{
-          const record=request.result;
-          if(!record||record.game!==session.game||record.packVersion!==session.packVersion||record.revision<states.at(-1).move||record.transfer||(!record.eventStorage&&record.revision!==states.at(-1).move)){abort(Error('COMPACTION_STALE'));return;}
-          for(const row of rows)tx.objectStore('steps').put(row);
-          store.put({...record,eventStorage:'delta-v2',eventCursor:record.eventCursor??Journal.cursor(states.at(-1).events)});tx.commit?.();
-        };
-      });return true;
-    }
+    async load(sessionId,engine,Session){this.engines.set(sessionId,engine);return Recovery.restore(await this.readPrivate(sessionId),sessionId,engine,Session);}
 
     async list(){
       return this.transaction(['sessions'],'readonly',(tx,done)=>{

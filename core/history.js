@@ -6,7 +6,9 @@
 })(globalThis,function(Values){
   'use strict';
   const {record,integer,freeze,check}=Values;
+  const owned=new WeakSet(),seal=state=>{freeze(state);owned.add(state);return state;};
   return class History {
+    static owns(state){return !!state&&owned.has(state);}
     #states; #revision; #validate; #compact; #generation=0; #prepared=new WeakMap();
     constructor(states,{revision=state=>state.revision,validate=()=>true,compact=state=>state}={}){
       check(Array.isArray(states)&&states.length>0&&[revision,validate,compact].every(fn=>typeof fn==='function'),'HISTORY_INVALID');
@@ -14,7 +16,7 @@
       for(let index=0;index<states.length;index++){
         this.#frame(states[index]);
         check(index===0||revision(states[index])===revision(states[index-1])+1,'HISTORY_REVISION_INVALID');
-        freeze(states[index]);
+        seal(states[index]);
       }
       this.#states=Object.freeze([...states]);
     }
@@ -29,7 +31,7 @@
       const previous=this.current,generation=this.#generation,next=produce(previous);
       this.#frame(next);
       check(next===previous||this.#revision(next)===this.#revision(previous)+1,'HISTORY_REVISION_INVALID');
-      freeze(next);this.#prepared.set(next,{previous,generation});return next;
+      seal(next);this.#prepared.set(next,{previous,generation});return next;
     }
     commit(next){
       const prepared=record(next)?this.#prepared.get(next):null;
@@ -37,7 +39,7 @@
       if(next!==this.current){
         const previous=this.#compact(this.current);this.#frame(previous);
         check(this.#revision(previous)===this.#revision(this.current),'HISTORY_REVISION_INVALID');
-        freeze(previous);
+        seal(previous);
         this.#states=Object.freeze([...this.#states.slice(0,-1),previous,next]);
       }
       this.#prepared.delete(next);return this.current;

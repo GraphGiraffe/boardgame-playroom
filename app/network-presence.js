@@ -5,6 +5,13 @@
     create(ports) {
       const $ = (s) => document.querySelector(s),
         tableAvailability = new WeakMap(), rosterIdentity = new WeakMap();
+      const indicators=new root.PlayroomConnectionIndicators({onChange:()=>renderPresence()});
+      root.addEventListener('pagehide',()=>indicators.close(),{once:true});
+      function presented(data){
+        const lost=!!ports.clientRoom&&!ports.clientConnected()&&!!(ports.clientRecovery?.error||ports.clientPeer?.pc?.connectionState!=='connected');
+        const keys=data.participants.map(p=>data.roomId+':'+p.id);indicators.retain(keys);
+        return {...data,participants:data.participants.map(p=>({...p,...indicators.project(data.roomId+':'+p.id,!(lost&&(p.isHost||p.id===ports.clientParticipantId))&&p.connected)}))};
+      }
       function roomPresence(room) {
         const occupied = room.seats
           .filter((s) => s.participantId)
@@ -40,7 +47,7 @@
           } catch (_) {}
         } else if (ports.clientGameClient?.snapshot?.sessionId === sessionId)
           data = ports.clientPresence || roomPresence(ports.clientRoom);
-        return data?.participants.filter(p=>p.playerIndex>=0).map(p=>({...p,name:p.nickname,network:true}))||[];
+        return data&&presented(data).participants.filter(p=>p.playerIndex>=0).map(p=>({...p,name:p.nickname,network:true}))||[];
       }
       function playerMetadata(sessionId,index){
         return playersMetadata(sessionId).find(p=>p.playerIndex===index)||null;
@@ -52,7 +59,7 @@
           if (!item.roomConnection?.participantId || item.peer?.channel?.readyState !== 'open')
             continue;
           try {
-            item.peer.channel.send(JSON.stringify(data));
+            root.PlayroomWebRTCTransport.send(item.peer.channel,data);
           } catch (_) {}
         }
       }
@@ -67,11 +74,12 @@
         } else if (ports.clientGameClient && ports.clientPresence?.roomId === ports.clientRoom?.id)
           data = ports.clientPresence;
         if (!data) return;
+        data=presented(data);
         const available = data.participants.some(
           (person) => person.role === 'table' && person.connected === true,
         );
         const mounted = ports.hostMount || ports.clientMount;
-        const identity=JSON.stringify(data.participants.filter(p=>p.playerIndex>=0).map(p=>[p.playerIndex,p.id,p.nickname,p.avatar,p.role,p.bot,p.botSettings,p.local,p.isHost,p.connected,p.hasConnected,p.replacement]));
+        const identity=JSON.stringify(data.participants.filter(p=>p.playerIndex>=0).map(p=>[p.playerIndex,p.id,p.nickname,p.avatar,p.role,p.bot,p.botSettings,p.local,p.isHost,p.connected,p.hasConnected,p.replacement,p.connectionOffline,p.connectionRestored]));
         if (mounted && (tableAvailability.get(mounted) !== available || rosterIdentity.get(mounted) !== identity)) {
           // Store first: rendering can call presence again. Identity belongs to
           // the common card renderer, never to this status adapter.
@@ -99,46 +107,7 @@
             if (!old) (panel.querySelector('.player-label') || panel).appendChild(badge);
           }
         }
-        const status = shell.querySelector('.table-status');
-        if (!status) return;
-        let line = shell.querySelector('.network-presence');
-        if (!line) {
-          line = document.createElement('div');
-          line.className = 'network-presence';
-          line.setAttribute('role', 'status');
-          line.setAttribute('aria-live', 'polite');
-          status.after(line);
-        }
-        const players = data.participants.filter((p) => p.role === 'player');
-        const connected = players.filter((p) => p.connected).length;
-        const value =
-          '<span class="network-presence-count">' +
-          globalThis.PlayroomMessages.text('ui.network-ui.77c8e957f165') +
-          connected +
-          globalThis.PlayroomMessages.text('ui.network-ui.e029cc4b39ce') +
-          players.length +
-          '</span>' +
-          players
-            .filter((p) => !p.connected)
-            .map(
-              (p) =>
-                '<span class="network-person ' +
-                (p.connected ? 'online' : 'offline') +
-                '">' +
-                '<i class="network-person-dot" aria-hidden="true"></i>' +
-                ports.esc(p.nickname) +
-                (p.isHost ? globalThis.PlayroomMessages.text('ui.network-ui.32c4ccc5277d') : '') +
-                (p.connected
-                  ? ''
-                  : globalThis.PlayroomMessages.text('ui.network-ui.111a4e391195')) +
-                '</span>',
-            )
-            .join('');
-        line.hidden = connected === players.length;
-        if (line.dataset.content !== value) {
-          line.dataset.content = value;
-          line.innerHTML = value;
-        }
+        shell.querySelector('.network-presence')?.remove();
       }
       function showDisconnectBanner() {
         if (!ports.clientPeer || !ports.clientRoom) return;
@@ -147,6 +116,7 @@
           document.querySelector('.room-setup-modal .lobby-shell') ||
           document.querySelector('.network-resume-card');
         if (!shell) return;
+        if (shell.classList.contains('network-game')) { shell.querySelector('.network-reconnect-banner')?.remove(); return; }
         if (shell.classList.contains('network-resume-card')) {
           shell.querySelector('.network-reconnect-banner')?.remove();
           return;

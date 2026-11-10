@@ -101,7 +101,7 @@
   root.PlayroomCloudSavesUI.init({account:service,remote:remote('playroom_cloud_saves_rpc')});
   root.PlayroomHostTransferUI.init({account:service,remote:auth?new root.PlayroomSupabaseSocial({auth,rpc:'playroom_host_transfer'}):null});
   root.PlayroomLobbyNetwork.init();
-  if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal'})});
+  if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal_sync'})});
   service.subscribe(()=>{updateButtons();render();root.dispatchEvent(new Event('playroom:profile-identity-updated'));});
   root.PlayroomSocialUI.service.subscribe(render);
   let syncIdentity=service.snapshot().kind+':'+service.snapshot().id;

@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/game-components.js; sha256=8ac0219c9f22d6d856dbcc44248191e3645a83f43439d249a7778fba82a88d2b
+// Vendored from playroom-paks/shared/components/game-components.js; sha256=4ee7ba25a1f3a3f90c57bc59eb80465628477ca23a3e221ac6deae5ddb636d9c
 // Canonical scalable Web component geometry. Values, visibility and actions are external.
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameComponents=api;})(globalThis,function(root){
  'use strict';
@@ -59,11 +59,11 @@ function publicFrames({plan,frames,source=null,live,livePlayers='',liveProgress=
   const {id,initial,final,groups}=plan||{};
   if(source){
    const f=source.initial;
-   if(typeof id!=='string'||!Array.isArray(groups)||groups.length>32||initial!==0||final!==groups.length||typeof source.id!=='string'||!f||typeof f.markup!=='string'||typeof f.label!=='string')throw Error('PUBLIC_PLAN_INVALID');
+   if(typeof id!=='string'||!Array.isArray(groups)||groups.length>64||initial!==0||final!==groups.length||typeof source.id!=='string'||!f||typeof f.markup!=='string'||typeof f.label!=='string')throw Error('PUBLIC_PLAN_INVALID');
    return `<section class="public-sequence" data-public-sequence="${esc(id)}" data-public-lazy data-public-frame-source="${esc(source.id)}" data-presentation-plan="${esc(JSON.stringify({id,initial,final,groups}))}"><div class="public-sequence-stage"><div data-public-display data-dom-key="public-display" data-public-frame="0">${f.markup}${f.players?`<template data-sequence-players>${f.players}</template>`:''}</div></div></section>`;
   }
   if(!Array.isArray(groups)||groups.length!==frames?.length||initial!==0||final!==frames?.length)throw Error('PUBLIC_PLAN_INVALID');
-  if(typeof id!=='string'||!Array.isArray(frames)||frames.length>32||frames.some(f=>typeof f.markup!=='string'||typeof f.label!=='string'))throw Error('PUBLIC_FRAMES_INVALID');
+  if(typeof id!=='string'||!Array.isArray(frames)||frames.length>64||frames.some(f=>typeof f.markup!=='string'||typeof f.label!=='string'))throw Error('PUBLIC_FRAMES_INVALID');
 
   if(lazy){
    const records=[...frames,{markup:live,label,players:livePlayers,progress:liveProgress}].map((f,i)=>({...f,duration:groups[i]?.duration||650}));

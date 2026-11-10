@@ -97,7 +97,7 @@
           const event = deliver(item.roomConnection?.participantId);
           if (event && item.peer.channel?.readyState === 'open') {
             try {
-              item.peer.channel.send(JSON.stringify(event));
+              root.PlayroomWebRTCTransport.send(item.peer.channel,event);
             } catch (_) {}
           }
         }
@@ -170,7 +170,7 @@
           for (const item of ports.connectedHostPeers) {
             if (item.roomConnection?.participantId && item.peer.channel?.readyState === 'open') {
               try {
-                item.peer.channel.send(JSON.stringify(event));
+                root.PlayroomWebRTCTransport.send(item.peer.channel,event);
               } catch (_) {}
             }
           }

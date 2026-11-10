@@ -104,3 +104,10 @@ test('semantic UI audio has distinct cues, consented preferences and bounded ded
  assert(feedback.emit('friend.request',{id:'edge'}));now=600;port.busy=true;assert.equal(feedback.emit('handoff.offer',{id:'offer'}),false);port.busy=false;visible=false;assert.equal(feedback.emit('message',{id:'background'}),false);visible=true;assert.equal(feedback.emit('message',{id:'background'}),false);now=900;assert.equal(feedback.emit('error',{quiet:true}),false);assert(feedback.emit('connection.success',{id:'join'}));
  user='b';assert(feedback.emit('message',{id:'m1'}),'dedupe is account scoped');assert.equal(registered.length,1);assert.deepEqual(played.map(([id])=>id),['message','friend.request','connection.success','message']);now=1200;assert(feedback.emit('game.start',{id:'session'}));assert.equal(feedback.emit('game.start',{id:'session'}),false,'duplicate start ACK stays silent');assert.notDeepEqual(sounds['game.start'].notes,sounds['connection.success'].notes);
 });
+test('back feedback follows synchronous teardown, coalesces returns and respects audio preferences',async()=>{
+ const {create}=require('../app/ui-feedback.js'),trace=[];let now=0,user='a',visible=true;
+ const port={uiEnabled:true,busy:false,registerPack(){},play:ids=>trace.push(ids[0])},feedback=create({audio:()=>port,visible:()=>visible,identity:()=>user,now:()=>now});
+ assert(feedback.emit('menu.open'));now=10;assert(feedback.back());assert.equal(feedback.back(),false);assert.equal(feedback.emit('menu.open'),false);trace.push('stop');await Promise.resolve();assert.deepEqual(trace,['menu.open','stop','navigation.back']);
+ port.uiEnabled=false;feedback.back();await Promise.resolve();assert.equal(trace.at(-1),'navigation.back');port.uiEnabled=true;port.busy=true;feedback.back();await Promise.resolve();assert.equal(trace.length,3);
+ port.busy=false;visible=false;feedback.back();await Promise.resolve();assert.equal(trace.length,3);visible=true;feedback.back();user='b';await Promise.resolve();assert.equal(trace.length,3,'an old account return cannot sound after account replacement');
+});

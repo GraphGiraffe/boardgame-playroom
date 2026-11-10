@@ -16,6 +16,23 @@ for(const [width,height] of [[320,740],[390,740],[740,390],[1280,800]])test(`scr
   const toggle=page.locator('[data-hub-filters-toggle]'),panel=page.locator('#modal-root>[data-surface-state=active] .catalog-filter-modal');
   const ids=()=>page.locator('#hub-games-page .catalog-card').evaluateAll(items=>items.map(e=>e.dataset.game));
   const before=await ids();assert(before.length>0);
+  const favorite=await page.locator('.catalog-card .tile-favorite').first().evaluate(button=>{
+   const circle=button.getBoundingClientRect(),star=button.querySelector('svg').getBoundingClientRect();
+   return {width:star.width,height:star.height,dx:star.x+star.width/2-circle.x-circle.width/2,dy:star.y+star.height/2-circle.y-circle.height/2};
+  });
+  assert.equal(favorite.width,14);assert.equal(favorite.height,14);
+  assert(Math.abs(favorite.dx)<.5&&Math.abs(favorite.dy)<.5,'favorite star is centered within its unchanged circle: '+JSON.stringify(favorite));
+  const originalMode=await page.locator('.hub-shell-v021').getAttribute('data-catalog-view');
+  for(const mode of ['2','3']){
+   await page.locator(`[data-catalog-mode="${mode}"]`).click();
+   const misaligned=await page.locator('.catalog-card').evaluateAll(cards=>cards.flatMap(card=>{
+    const title=card.querySelector('.catalog-card-title').getBoundingClientRect(),type=card.querySelector('.catalog-card-type').getBoundingClientRect(),favorite=card.querySelector('.tile-favorite').getBoundingClientRect(),description=card.querySelector('.catalog-card-description');
+    const parts=[title,...(description.getClientRects().length?[description.getBoundingClientRect()]:[])];
+    return parts.some(part=>Math.abs(part.left-type.left)>1||Math.abs(part.right-favorite.right)>1)?[card.dataset.game]:[];
+   }));
+   assert.deepEqual(misaligned,[],'catalog text aligns with type and favorite in mode '+mode);
+  }
+  await page.locator(`[data-catalog-mode="${originalMode}"]`).click();
   assert.equal(await panel.count(),0);assert.equal(await page.locator('[data-filter],.filter-scope,[data-hub-filter-panel]').count(),0);
   assert.equal(await toggle.getAttribute('aria-label'),'Фильтры');assert.equal(await toggle.getAttribute('aria-expanded'),'false');
   assert.equal(await toggle.locator('[data-ui-icon=filter]').count(),1);assert.equal((await toggle.innerText()).trim(),'','only the filter icon is visible');

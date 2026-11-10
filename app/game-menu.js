@@ -6,10 +6,10 @@
  const registry=()=>dialogs||(dialogs=new root.PlayroomDOM.ModalController({host:document.getElementById('modal-root'),background:document.getElementById('app')}));
  const active=()=>!!menuFrame&&menuFrame.state==='active'&&registry().isActive(menuFrame);
 
- function close(){const closed=active()?registry().close(menuFrame,{reason:'dismiss'}):false;if(closed)root.PlayroomUIFeedback?.emit('menu.close');return closed;}
+ function close({feedback=true}={}){const closed=active()?registry().close(menuFrame,{reason:'dismiss'}):false;if(closed&&feedback)root.PlayroomUIFeedback?.back();return closed;}
  function open(actions){
   const controller=registry();if(menuFrame?.state==='suspended'||controller.activeFrame()&&controller.activeFrame()!==menuFrame)return false;
-  close();const app=document.getElementById('app'),shell=app?.querySelector('.table-shell');if(!shell)return false;
+  close({feedback:false});const app=document.getElementById('app'),shell=app?.querySelector('.table-shell');if(!shell)return false;
   root.PlayroomGameChatPanel?.close({restoreFocus:false});
   const identity=shell.dataset.layoutIdentity,context=root.PlayroomNetworkLibrary?.inviteContext?.(),room=context?.room?{id:context.room.id,participantId:context.participantId,ownerId:context.room.ownerId,phase:context.room.phase}:null;
   const localSessionId=shell.matches('.network-game')?null:root.PlayroomAppBridge.saveLibrary.currentId();
@@ -39,7 +39,12 @@
    const action=event.target.closest('[data-game-menu-action]:not(:disabled)');if(!action)return;
    // Forms and confirmations retain this exact parent. Navigation retires it.
    const child=action.dataset.surfaceAction==='child';
-   if(!child)close();
+   if(!child){
+    const chat=action.hasAttribute('data-room-chat-open');
+    close({feedback:false});
+    // The retiring menu is inert; its original click cannot open a drawer later.
+    if(chat){event.stopPropagation();root.PlayroomRoomChatUI?.show();}
+   }
   },true);
   return true;
  }

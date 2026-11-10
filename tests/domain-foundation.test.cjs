@@ -192,8 +192,9 @@ test('pack tutorials remain separate pure projection consumers and never load in
 test('player settings normalization and persistence remain independent of UI and gameplay',()=>{
  const S=require('../application/player-settings.js'),Store=require('../platform/web/player-settings-store.js'),Guide=require('../platform/web/guide-preferences.js');
  const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)},store=new Store(()=>storage),guide=new Guide(()=>storage);
- store.write({autoPass:true,sound:false,hotseatAutoPass:{bad:true,'1:2':true},seatingByGame:{uno:'row',missing:'row'}});guide.setSkipped('uno',true);
+ store.write({useDisplayCutout:true,autoPass:true,sound:false,hotseatAutoPass:{bad:true,'1:2':true},seatingByGame:{uno:'row',missing:'row'}});guide.setSkipped('uno',true);
  const result=S.normalize(store.read(),{catalog:{uno:{}},normalizeScale:v=>v||100,normalizeSpeed:v=>v});
+ assert.equal(Object.hasOwn(result,'useDisplayCutout'),false);assert.equal(Object.hasOwn(S.defaults(),'useDisplayCutout'),false);
  assert.equal(result.autoPass,true);assert.deepEqual(result.hotseatAutoPass,{'1:2':true});assert.deepEqual(result.seatingByGame,{uno:'row'});assert(guide.skipped('uno'));
  const first=S.defaults();first.hotseatAutoPass.x=true;assert.deepEqual(S.defaults().hotseatAutoPass,{});
  const unavailable=new Store(()=>{throw Error('blocked');});assert.deepEqual(unavailable.read(),{});assert.equal(unavailable.write({}),false);

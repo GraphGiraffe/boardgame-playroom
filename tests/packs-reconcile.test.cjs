@@ -2,6 +2,39 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const Packs=require('../core/packs.js');
+const PackStorage=require('../platform/web/pack-storage.js');
+function durable(raw=null){
+ let value=raw;
+ return {getItem:()=>value,setItem:(_key,next)=>{value=next;},removeItem:()=>{value=null;},async transact(fn,{guard}={}){guard?.();return fn();}};
+}
+
+test('compressed pack storage preserves exact versions, quarantine, preferences and recovery bytes',async()=>{
+ const old=bundle('old'),current=bundle('current');current.manifest.version='1.1.0';
+ const snapshot=JSON.stringify({format:'playroom-packs',formatVersion:1,packs:[old,current],active:{demo:'1.1.0'},removed:['other@1.0.0'],quarantined:[{bundle:bundle('quarantine'),reason:'retained'}],rawBackups:['invalid bytes '.repeat(1000)]});
+ const data=durable(snapshot),storage=await PackStorage.create({data,key:'packs'});assert.equal(storage.get(),snapshot);
+ await storage.commit(snapshot);assert.equal(JSON.parse(data.getItem()).encoding,'gzip-base64-v1');assert(Buffer.byteLength(data.getItem())<Buffer.byteLength(snapshot)/2);
+ const reloaded=await PackStorage.create({data,key:'packs'});assert.equal(reloaded.get(),snapshot);
+ const Upgrade=require('../application/upgrade-service.js'),prefs={getItem:()=>null,length:0,key:()=>null};
+ const payloads={getItem:()=>data.getItem(),length:1,key:()=> 'playroom.packs.v1'};
+ const service=new Upgrade(prefs,payloads,reloaded);assert.equal(JSON.parse(service.export()).entries['playroom.packs.v1'],snapshot);
+ const incompatible=JSON.parse(snapshot);incompatible.quarantined[0].bundle.manifest.engineApi=3;await reloaded.commit(JSON.stringify(incompatible));assert.equal(service.inspect(),true);
+});
+test('compressed pack storage failures and cancellation preserve prior bytes; plain fallback and deletion work',async()=>{
+ const before='original bytes',data=durable(before),compression=require('../application/save-compression.js');
+ const failed=await PackStorage.create({data,key:'packs',codec:{encoding:compression.encoding,encode:async()=>{throw Error('compression failed');}}});
+ await assert.rejects(failed.commit('x'.repeat(2000)),/compression failed/);assert.equal(data.getItem(),before);assert.equal(failed.get(),before);
+ const storage=await PackStorage.create({data,key:'packs'}),transaction=data.transact;data.transact=async()=>{throw Error('quota');};
+ await assert.rejects(storage.commit('x'.repeat(2000)),/quota/);assert.equal(data.getItem(),before);assert.equal(storage.get(),before);data.transact=transaction;
+ let current=true;const cancelled=await PackStorage.create({data,key:'packs',codec:{encoding:compression.encoding,encode:async value=>{current=false;return compression.encode(value,10000);}}});
+ await assert.rejects(cancelled.commit('x'.repeat(2000),{guard:()=>{if(!current)throw Error('cancelled');}}),/cancelled/);assert.equal(data.getItem(),before);assert.equal(cancelled.get(),before);
+ const plain=await PackStorage.create({data,key:'packs',codec:null});await plain.commit('x'.repeat(2000));assert.equal(data.getItem(),'x'.repeat(2000));await plain.commit('{}');assert.equal(data.getItem(),'{}');await plain.commit(null);assert.equal(data.getItem(),null);assert.equal(plain.get(),null);
+});
+test('corrupt compressed pack storage reaches quarantine without losing the original bytes',async()=>{
+ const raw=JSON.stringify({format:'playroom-pack-storage',version:1,encoding:'gzip-base64-v1',data:'broken'}),data=durable(raw),storage=await PackStorage.create({data,key:'packs'});
+ assert.equal(storage.get(),raw);const repo=new Packs({engine:engine(),views:views(),catalog:{},document:null,storage});
+ await repo.bootstrap([bundle('current')]);assert.equal(repo.list().length,1);assert.deepEqual(JSON.parse(storage.get()).rawBackups,[raw]);
+ assert.equal((await PackStorage.create({data,key:'packs'})).get(),storage.get());
+});
 
 function engine(){
   const versions=new Map();let active=null;

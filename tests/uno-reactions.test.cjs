@@ -299,7 +299,7 @@ test('UNO learning receives public declaration windows and records an out-of-tur
  const Tutorial=require(require('node:path').resolve(process.env.PLAYROOM_PACKS_DIR || require('node:path').join(__dirname,'../packs'),'uno/presentation/tutorial.js'))({format:m=>m.key});
  const Controller=require('../application/tutorial-controller.js');
  let s=fixture([['u1'],['u5','u7']],{turn:1});s.players[0].bot=false;
- const projected=E.project(s,0);assert.equal(projected.data.uno.situations,undefined);assert.deepEqual(projected.scene.declarationOpen,[true,false]);
+ const projected=E.project(s,0);assert(Array.isArray(projected.data.uno.situations));assert.deepEqual(projected.scene.declarationOpen,[true,false]);
  const owner={},controller=new Controller(),context={owner,viewer:0,state:projected,actions:E.legalActions(s,0),busy:true,active:true};
  const result=controller.update(context,Tutorial);assert(result.guide.concurrent);assert(result.progress.started);
  const step=result.guide.steps.find(x=>x.id==='declare-uno');assert(step.available);assert(step.immediate);
@@ -370,4 +370,13 @@ test('temporary bot releases its disconnected owner reaction window without chan
   assert(clients[0].snapshot().reactionWindows.every(w=>w.owner!==0||!w.suspended));assert.equal(clients[0].snapshot().state.players[0].bot,false);
   authority.scheduleBot({delay:10});clock.advance(20000);assert(authority.revision>1);
  }finally{authority.dispose();}
+});
+
+test('next-player indicator is reconstructed for every viewer and Table without wire hints',()=>{
+ const Authority=require('../core/authority.js'),Projection=require('../presentation/network-projection.js');
+ for(const direction of [1,-1]){const s=fixture([['u1','u3'],['u5','u7'],['u11','u13']]);s.data.direction=direction;const expected=(s.turn+direction+s.players.length)%s.players.length;
+  for(const viewer of [-1,0,1,2])assert.equal(E.project(s,viewer).scene.nextPlayer,expected,'local viewer '+viewer);
+  const live=new Session(E,'uno',{seed:17,players:s.players,firstPlayerMode:'assigned',firstPlayer:0}),a=new Authority(live),bindings=[a.connect(0),a.connect(1),a.connectTable([0,1,2])];try{for(const binding of bindings){const raw=Projection.compact(binding.snapshot({wire:true}));assert(!Object.hasOwn(raw.model.data,'nextPlayer'));const restored=Projection.restore(raw,(event,frame)=>E.get('uno').presentEvent(event,frame.state.players),E.get('uno'));assert.equal(restored.state.scene.nextPlayer,1);}}finally{bindings.forEach(b=>b.close());a.dispose();}
+ }
+ const finished=play(fixture([['u1'],['u5','u7'],['u11','u13']]),0,'u1');assert.equal(finished.status,'finished');assert.equal(E.project(finished,0).scene.nextPlayer,null);
 });

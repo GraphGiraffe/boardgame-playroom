@@ -137,6 +137,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function startRecovery(){
     clientRecovery?.close();const transport=clientTransport,peer=clientPeer;
     clientRecovery=new W.Recovery({pc:peer.pc,transport,
+      currentStatus:()=>root.PlayroomProtocol.status(clientGameClient?.snapshot||{kind:'lobby',room:clientRoom,participantId:clientParticipantId}),
       onState:report=>{if(report.state==='connected')void flushReady();clientMount?.setConnected(report.state==='connected',{notice:report.notice});if(report.state!=='connected')historySync.cancel();if(report.state==='invite')root.PlayroomCloudNetwork?.reconnect?.();showDisconnectBanner();renderPresence();ensureButtons();},
       reconcile:async(snapshot,{recovering})=>{
         if(transport!==clientTransport)throw Error(globalThis.PlayroomMessages.text("ui.network-ui.2175de681bca"));
@@ -233,11 +234,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // transport switches to the host-authority game projection.
     root.PlayroomHostTransferWire.bind(peer.channel,()=>{throw Error('HOST_TRANSFER_UNAUTHORIZED');});
     const served={
-      snapshot:async()=>{await admit?.();return switchable.snapshot();},
-      history:async index=>{await admit?.();if(switchable.completedHistory){if(!Number.isSafeInteger(index)||!switchable.completedHistory[index])throw Error(globalThis.PlayroomMessages.text("ui.network-ui.b50111de0c3a"));return switchable.completedHistory[index];}return switchable.history(index);},
-      subscribe:listener=>W.subscribeAuthorized(switchable,listener,admit,{isOpen:()=>peer.pc.connectionState!=='closed',deny:()=>peer.close()}),
+      realtimeScope:()=>switchable.realtimeScope(),
+      realtime:async value=>{await admit?.();return switchable.realtime(value);},
+      status:async()=>{await admit?.();return switchable.status();},
+      snapshot:async options=>{await admit?.();return switchable.snapshot(options);},
+      history:async(index,options)=>{await admit?.();if(switchable.completedHistory){if(!Number.isSafeInteger(index)||!switchable.completedHistory[index])throw Error(globalThis.PlayroomMessages.text("ui.network-ui.b50111de0c3a"));return switchable.completedHistory[index];}return switchable.history(index,options);},
+      historyRange:async(start,count,options)=>{await admit?.();if(switchable.completedHistory)return root.PlayroomProtocol.historyRange(index=>switchable.completedHistory[index],start,count,switchable.completedHistory.length);return switchable.historyRange(start,count,options);},
+      subscribe:(listener,options={})=>W.subscribeAuthorized(switchable,listener,admit,{wire:!!options.wire,isOpen:()=>peer.pc.connectionState!=='closed',deny:()=>peer.close()}),
       presentationReady:async message=>{if(hostTransferBlocked)return {ok:false};await admit?.();return switchable.presentationReady(message);},
-      dispatch:async command=>{
+      dispatch:async(command,options)=>{
         if(hostTransferBlocked)return {ok:false,code:'BUSY'};
         let done;const pending=new Promise(resolve=>done=resolve);hostTransferCalls.add(pending);
         try{await admit?.();
@@ -250,7 +255,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(['room-chat-read','room-chat-send','room-chat-seen','room-chat-summary','room-chat-react'].includes(command?.type))return chatCommand(roomId,roomConnection.participantId,command);
         if(command?.type==='quick-reaction')return relayReaction(roomId,roomConnection.participantId,command);
         if(['invitation-offer','invitation-answer'].includes(command?.type))return delegatedInvites.dispatch(roomConnection.participantId,command);
-        const result=await (command?.type==='avatar'?roomConnection.dispatch(command):switchable.dispatch(command));
+        const result=await (command?.type==='avatar'?roomConnection.dispatch(command):switchable.dispatch(command,options));
         if((command?.type==='resume'||command?.type==='join')&&result?.ok){
           const id=result.snapshot.participantId;
           for(const old of connectedHostPeers.filter(p=>p.roomConnection?.participantId===id&&p.peer!==peer)){
@@ -264,14 +269,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
         if(result?.ok&&(command?.type==='resume'||command?.type==='join')){
           const room=bridge().roomService.snapshot(roomId);
-          if(peer.channel?.readyState==='open')peer.channel.send(JSON.stringify(roomPresence(room)));
+          if(peer.channel?.readyState==='open')root.PlayroomWebRTCTransport.send(peer.channel,roomPresence(room));
         }
         return result;
         }finally{hostTransferCalls.delete(pending);done();}
       },
       close:()=>{roomConnection.close?.();switchable.close();}
     };
-    return W.serve(peer.channel,served);
+    return W.serve(peer.channel,served,{peer});
   }
   let nearbyView=null,nearbyAttempt=0;
   function cancelNearbyIO(){stopHostAudio();stopClientAudio();for(const [id,controller]of pendingAudio)if(/^net-(host|client)-acoustic/.test(id)){controller.abort();pendingAudio.delete(id);}}
@@ -655,7 +660,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const b=bridge(),room=saved.room,st=saved.session.current;
       b.openModal(b.modalHead(globalThis.PlayroomMessages.text("ui.network-ui.a4db76e0cf30"))+
         '<p class="lead"><strong>'+esc(room.name)+'</strong> · '+esc(room.game.name)+' · '+esc(saved.session.packVersion)+'</p>'+
-        ("<p class=\"rules-mode-note\">"+globalThis.PlayroomMessages.text("ui.network-ui.fc4d00f8bb17"))+globalThis.PlayroomMessages.text("ui.app.action-count",{count:saved.session.states.length-1})+
+        ("<p class=\"rules-mode-note\">"+globalThis.PlayroomMessages.text("ui.network-ui.fc4d00f8bb17"))+globalThis.PlayroomMessages.text("ui.app.action-count",{count:saved.session.current.move})+
         globalThis.PlayroomMessages.text("ui.network-ui.archive-participants")+st.players.length+globalThis.PlayroomMessages.text("ui.network-ui.24513972bfc6")+esc(st.status)+
         (". "+globalThis.PlayroomMessages.text("ui.network-ui.885ded0175d4")+"</p>")+
         '<button class="btn secondary" type="button" data-network-history="'+esc(sessionId)+("\">"+globalThis.PlayroomMessages.text("ui.network-ui.e85ca6f85325")+"</button>")+
@@ -685,7 +690,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const binding=archiveAuthority.connect(viewer);
       const reader={snapshot:binding.snapshot(),pending:null,subscribe:()=>()=>{},
         history:index=>Promise.resolve(binding.history(index)),send:()=>Promise.reject(Error(globalThis.PlayroomMessages.text("ui.network-ui.c71aa1caa69c")))};
-      const exit=()=>{closeHostHistory();returnToOrigin();};
+      const exit=()=>{closeHostHistory();returnToOrigin();root.PlayroomUIFeedback?.back();};
       b.closeModal(true);document.getElementById('app').inert=false;
       archiveMount=Shared.mount(reader,definition,{surface:viewer<0?'table':'combined',readOnly:true,onExit:exit});
       archiveKey=sessionId;archiveMount.render();if(results)archiveMount.showResult();else await archiveMount.openHistory(saved.revision);
@@ -747,10 +752,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function saveClientProjection(snapshot){
     if(!clientRoom)return;
-    const saved=historySync.save(snapshot,{roomId:clientRoom.id,participantId:clientParticipantId,roomName:clientRoom.name,transportMode:clientRoom.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id,participants:clientPresence?.participants||clientRoom.participants});
+    const batch=Array.isArray(snapshot)?snapshot:null;if(batch)snapshot=batch.at(-1);
+    const persist=batch?context=>historySync.saveBatch(batch,context):context=>historySync.save(snapshot,context);
+    const saved=persist({roomId:clientRoom.id,participantId:clientParticipantId,roomName:clientRoom.name,transportMode:clientRoom.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id,participants:clientPresence?.participants||clientRoom.participants});
     saved?.then(key=>root.PlayroomCloudSavesUI?.saved('network:client:'+key,{finished:snapshot.state.status==='finished'})).catch(()=>{});
+    return saved;
   }
-  function backfillClientHistory(initial,transport,roomId,participantId){return historySync.backfill(initial,transport,{roomId,participantId,roomName:clientRoom?.name||'',transportMode:clientRoom?.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id});}
+  function backfillClientHistory(initial,transport,roomId,participantId){const client=clientGameClient;return historySync.backfill(initial,transport,{roomId,participantId,roomName:clientRoom?.name||'',transportMode:clientRoom?.transportMode,cloudRoomId:root.PlayroomCloudNetwork?.roomId(),accountId:root.PlayroomAccountUI?.service.snapshot().id},client?index=>client.history(index):null,client?(start,count)=>client.historyRange(start,count):null);}
 
   async function listNetworkArchives({strict=false}={}){
     const responses=await Promise.allSettled([hostSessionStore?.list()||Promise.resolve([]),clientHistoryStore?.list()||Promise.resolve([])]);
@@ -788,7 +796,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         history:index=>frames.has(index)?Promise.resolve(packet(frames.get(index),'history')):
           Promise.reject(Error(globalThis.PlayroomMessages.text("ui.network-ui.38483b57407a"))),
         send:()=>Promise.reject(Error(globalThis.PlayroomMessages.text("ui.network-ui.316a9c326672")))};
-      const exit=()=>{closeHostHistory();returnToOrigin();};
+      const exit=()=>{closeHostHistory();returnToOrigin();root.PlayroomUIFeedback?.back();};
       b.closeModal(true);document.getElementById('app').inert=false;
       archiveMount=Shared.mount(reader,definition,{surface:saved.viewer<0?'table':'combined',readOnly:true,onExit:exit});
       archiveKey='client:'+key;archiveMount.render();if(results)archiveMount.showResult();else await archiveMount.openHistory(last.revision);
@@ -817,12 +825,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     try{
       clearInterval(clientLobbyTimer);clientLobbyTimer=null;clientUnsub?.();clientUnsub=null;
       const b=bridge();b.packs.activate(snapshot.game,snapshot.packVersion);const definition=b.packs.exportView(snapshot.game,snapshot.packVersion);
-      clientGameClient=new SessionClient(clientTransport);clientGameClient.accept(snapshot);
+      clientGameClient=new SessionClient(clientTransport,{
+        readHistory:async(index,current)=>{
+          if(!clientHistoryStore||!clientRoom||!clientParticipantId)return null;
+          await historySync.idle;
+          return clientHistoryStore.readFrame(ClientHistory.id(clientRoom.id,clientParticipantId,current.sessionId),index);
+        },
+        writeHistory:frame=>saveClientProjection(frame),
+        writeHistoryRange:frames=>saveClientProjection(frames)
+      });clientGameClient.accept(snapshot);
       attachClientLobbyListener();clientWaitingForLobby=false;
       if(clientHistoryStore&&clientRoom?.id&&clientParticipantId){
         clientHistoryUnsub=clientGameClient.subscribe(saveClientProjection);
-        saveClientProjection(snapshot);
-        void backfillClientHistory(snapshot,clientTransport,clientRoom.id,clientParticipantId);
+        saveClientProjection(clientGameClient.snapshot);
+        void backfillClientHistory(clientGameClient.snapshot,clientTransport,clientRoom.id,clientParticipantId);
       }
       if(resumeIntent){const intent=resumeIntent;resumeIntent=null;
         if(intent.roomId===clientRoom.id&&intent.participantId===clientParticipantId&&(['sessionId','authorityEpoch','game','packVersion'].every(k=>intent.snapshot[k]===snapshot[k])&&root.PlayroomProtocol.sameAudience(intent.snapshot,snapshot))){
@@ -866,7 +882,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(target.dataset.netAction==='return-game'){void returnToNetwork();return;}
     if(target.dataset.netAction==='dismiss-room'){if(!clientGameClient)networkInMenu=true;bridge().closeModal();return;}
     if(target.dataset.netAction==='room'){renderClientLobby(true);return;}
-    if(target.dataset.netAction==='collapse'){bridge().closeModal(true);return;}
+    if(target.dataset.netAction==='collapse'){bridge().closeModal(true);root.PlayroomUIFeedback?.back();return;}
     if(target.dataset.netAction==='stop-match'){
       const authority=hostAuthority;if(!authority)return;
       bridge().confirmOperation(globalThis.PlayroomMessages.text("ui.network-ui.2940743f79f8"),{isCurrent:()=>hostAuthority===authority,onConfirm:async()=>{await authority.stopForLobby();exitHostGame({stopped:true});}});return;
@@ -920,7 +936,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     ensureHostSubscription(room);cloudParticipantUsers.set(identity.participantId,identity.userId);
     const connection=b.roomService.connection(room.id,{boundParticipantId:identity.participantId}),switchable=new M.SwitchableConnection(connection),peer=await W.createHostPeer(rtcOptions);
     const serveClose=hostPeerServing(peer,switchable,connection,room.id,check),item={peer,switchable,roomConnection:connection,serveClose};
-    return {offer:peer.offer,validate:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open'?validate():undefined,closed:()=>['failed','closed'].includes(peer.pc.connectionState),async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);await progress?.connected(peer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){progress?.cancel();serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
+    return {offer:peer.offer,active:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open',validate:()=>peer.pc.connectionState==='connected'&&peer.channel.readyState==='open'?validate():undefined,closed:()=>['failed','closed'].includes(peer.pc.connectionState),async accept(answer){await check();if(peer.pc.connectionState!=='connected')await peer.acceptAnswer(answer);await progress?.connected(peer);if(!connectedHostPeers.includes(item))connectedHostPeers.push(item);},close(){progress?.cancel();serveClose();peer.close();const i=connectedHostPeers.indexOf(item);if(i>=0)connectedHostPeers.splice(i,1);}};
   }
   async function cloudAttachClient(peer,expectedRoomId,{background=false,beforeEnter}={}){
     if(hasActiveRoom()&&(hostRoomId||clientConnected()))throw Error('CLOUD_ROOM_ACTIVE');
@@ -1028,6 +1044,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     client:{roomPhase:clientRoom?.phase,roomRevision:clientRoom?.revision,pendingReady:pendingReady?{ready:pendingReady.ready}:null,recovery:clientRecovery?.report()||null,peer:!!clientPeer,channel:clientPeer?.pc?.connectionState||null,ice:clientPeer?.pc?.iceConnectionState||null,transport:!!clientTransport,room:!!clientRoom,participantId:clientParticipantId,hasResumeToken:!!clientRoom?.id&&!!resumeStore.load(clientRoom.id),rpc:clientTransport?.debug?.()||null}
   });
   const observer=new MutationObserver(ensureButtons);observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['open']});ensureButtons();
-  document.addEventListener('click',event=>{const back=event.target.closest('.network-game .table-header [data-command=home]');if(back&&!archiveMount){event.preventDefault();event.stopImmediatePropagation();const client=hostGameClient||clientGameClient;if(client?.snapshot?.state?.status==='finished')(hostGameClient?exitHostGame:exitClientGame)({finished:true});else parkNetworkView();}},true);
+  document.addEventListener('click',event=>{const back=event.target.closest('.network-game .table-header [data-command=home]');if(back&&!archiveMount){event.preventDefault();event.stopImmediatePropagation();const client=hostGameClient||clientGameClient;if(client?.snapshot?.state?.status==='finished')(hostGameClient?exitHostGame:exitClientGame)({finished:true});else parkNetworkView();root.PlayroomUIFeedback?.back();}},true);
   root.addEventListener('pagehide',()=>{closeHostHistory();closeClient();hostRoomUnsub?.();hostAuthority?.dispose?.();closeHostPeer();hostLockRelease?.();hostLockRelease=null;});
 })(globalThis);

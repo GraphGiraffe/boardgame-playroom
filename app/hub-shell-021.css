@@ -1,7 +1,14 @@
 /* Root destinations share a bottom bar in portrait and a compact rail in landscape. */
+#app .hub-pages.shared-page-deck{position:relative;overflow:hidden}
+#app .hub-pages>.shared-page-panel{display:flow-root;position:absolute;inset:0 auto auto 0;width:100%;min-width:0;transform:translateX(calc((var(--page-number,0) - var(--page-index,0))*100%));transition:transform var(--ui-duration-page,300ms) var(--ui-easing-page,cubic-bezier(.22,.61,.36,1))}
+#app .hub-pages>.shared-page-panel.is-active{position:relative}
+/* Keep the last card shadow inside the page deck clipping boundary. */
+#app #hub-games-page{padding-bottom:8px}
+body.reduced-motion #app .hub-pages>.shared-page-panel{transition:none}
+@media(prefers-reduced-motion:reduce){#app .hub-pages>.shared-page-panel{transition:none}}
 #app .hub-shell-v021{display:block;min-height:100dvh;width:100%;min-width:0;--hub-content-max:1200px;--catalog-columns:2;--catalog-gap:14px;--catalog-card-min:220px;--catalog-text-min:10rem;--catalog-track-min:calc((100% - var(--catalog-gap))/2)}
-#app .hub-shell-v021>.hub-main{width:100%;max-width:var(--hub-content-max);min-width:0;margin:0 auto;padding:12px max(var(--surface-inline-inset),env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom) + var(--hub-nav-extra-space,0px)) max(var(--surface-inline-inset),env(safe-area-inset-left))}
-#app .hub-navigation-v021{position:fixed;z-index:45;inset:auto 0 0;min-width:0;padding:4px max(6px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));border-top:1px solid var(--line);background:var(--paper)}
+#app .hub-shell-v021>.hub-main{width:100%;max-width:var(--hub-content-max);min-width:0;margin:0 auto;padding:12px max(var(--surface-inline-inset),var(--app-safe-right,0px)) calc(80px + var(--app-safe-bottom,0px) + var(--hub-nav-extra-space,0px)) max(var(--surface-inline-inset),var(--app-safe-left,0px))}
+#app .hub-navigation-v021{position:fixed;z-index:45;inset:auto 0 0;min-width:0;padding:4px max(6px,var(--app-safe-right,0px)) max(4px,var(--app-safe-bottom,0px)) max(6px,var(--app-safe-left,0px));border-top:1px solid var(--line);background:var(--paper)}
 #app .hub-navigation-v021>.hub-page-tabs{--hub-nav-item-min:4.375rem;position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(var(--hub-nav-columns,4),minmax(min(var(--hub-nav-item-min),100%),1fr));grid-template-rows:1fr;grid-auto-rows:1fr;width:100%;height:auto;min-height:56px;margin:0;padding:4px;border:0;border-radius:0;box-shadow:none;background:transparent}
 #app .hub-navigation-v021 .hub-page-tabs::before{content:'';display:block;position:absolute;z-index:0;inset:4px auto auto 4px;width:var(--hub-nav-active-width,calc((100% - 8px)/4));height:var(--hub-nav-active-height,calc(100% - 8px));border-radius:12px;transform:translate(var(--hub-nav-active-x,calc(var(--page-index,0)*100%)),var(--hub-nav-active-y,0px));pointer-events:none}
 #app .hub-navigation-v021 .nav-item{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:44px;padding:4px;font-size:.6875rem;line-height:1.2;font-weight:500;text-align:center;white-space:normal;overflow-wrap:normal;border-radius:12px;scroll-margin-block:var(--surface-focus-clearance,6px)}
@@ -33,11 +40,11 @@
 /* Catalogue density presets share real counts, capsule tags and responsive covers. */
 #app .hub-shell-v021 .catalog-card{position:relative;display:grid;grid-column:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;gap:2px;align-content:stretch;width:100%;height:auto;min-height:0;aspect-ratio:1;padding:6px;border-radius:16px;container-type:inline-size;container-name:catalog-card}
 #app .hub-shell-v021 .catalog-card-header{position:absolute;inset:0 0 auto auto;z-index:4;display:block;margin:0;padding:12px}
-#app .hub-shell-v021 .catalog-card .tile-favorite{width:20px;height:20px;min-width:20px;min-height:20px;padding:0;margin:0}
-#app .hub-shell-v021 .catalog-card .tile-favorite>svg{display:block;width:100%;height:100%;min-width:0;min-height:0}
+#app .hub-shell-v021 .catalog-card .tile-favorite{display:grid;place-items:center;width:20px;height:20px;min-width:20px;min-height:20px;padding:0;margin:0;line-height:0}
+#app .hub-shell-v021 .catalog-card .tile-favorite>svg{display:block;width:14px;height:14px;min-width:0;min-height:0;margin:0;transform:none}
 #app .hub-shell-v021 .catalog-card-art{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:transparent}
 #app .hub-shell-v021 .catalog-card-art>svg{display:block;width:100%;height:100%;object-fit:contain}
-#app .hub-shell-v021 .catalog-card-copy{display:grid;gap:2px;min-width:0;min-height:0}
+#app .hub-shell-v021 .catalog-card-copy{display:grid;gap:2px;min-width:0;min-height:0;padding:0 6px 6px}
 #app .hub-shell-v021 .catalog-card .catalog-card-title{display:block;height:auto;min-height:0;margin:0;padding:0;font-size:var(--ui-type-caption,.8125rem);font-weight:650;line-height:1.2;letter-spacing:normal}
 #app .hub-shell-v021 .catalog-card .catalog-card-title>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden}
 #app .hub-shell-v021[data-catalog-view="3"] .catalog-card .catalog-card-title{font-size:.75rem}
@@ -54,6 +61,7 @@
 /* Compact cards keep one metadata row and put the title at the bottom. */
 #app .hub-shell-v021[data-catalog-view="3"] .catalog-card{padding:5px;gap:1px}
 #app .hub-shell-v021[data-catalog-view="3"] .catalog-card-header{padding:6px}
+#app .hub-shell-v021[data-catalog-view="3"] .catalog-card-copy{padding:0 1px 1px}
 #app .hub-shell-v021[data-catalog-view="3"] .tile-favorite::before{inset:-6px -6px auto auto;transform:none}
 #app .hub-shell-v021[data-catalog-view="3"] .catalog-card-metadata{grid-template-rows:minmax(16px,auto);gap:0 3px;padding:3px 1px 0}
 #app .hub-shell-v021[data-catalog-view="3"] .catalog-card-mechanic,#app .hub-shell-v021[data-catalog-view="3"] .catalog-card-description{display:none}
@@ -62,7 +70,7 @@
 #app .hub-shell-v021[data-catalog-view="list"] .catalog-card-art{grid-column:1;grid-row:1/3;padding:0}
 #app .hub-shell-v021[data-catalog-view="list"] .catalog-card-header{padding:6px}
 #app .hub-shell-v021[data-catalog-view="list"] .tile-favorite::before{inset:-6px -6px auto auto;transform:none}
-#app .hub-shell-v021[data-catalog-view="list"] .catalog-card-copy{grid-column:2;grid-row:1;align-self:end;padding-right:0;gap:1px}
+#app .hub-shell-v021[data-catalog-view="list"] .catalog-card-copy{grid-column:2;grid-row:1;align-self:end;padding:0;gap:1px}
 #app .hub-shell-v021[data-catalog-view="list"] .catalog-card .catalog-card-title{min-height:20px;padding-right:32px;font-size:var(--ui-type-label,.875rem)}
 #app .hub-shell-v021[data-catalog-view="list"] .catalog-card-description{display:block;-webkit-line-clamp:none;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;font-size:.6875rem}
 #app .hub-shell-v021[data-catalog-view="list"] .catalog-card-metadata{grid-column:2;grid-row:2;display:flex;flex-wrap:wrap;gap:4px;padding:0;overflow:visible;white-space:normal;color:var(--muted)}
@@ -77,7 +85,7 @@
 #app .hub-shell-v021 #hub-games-page .intro p{margin:0;font-size:13px;line-height:1.45}
 @media(orientation:landscape) and (min-width:600px){
  #app .hub-shell-v021{--hub-rail-width:84px;padding-left:var(--hub-rail-width)}
- #app .hub-navigation-v021{inset:0 auto 0 0;width:min-content;min-width:calc(84px + env(safe-area-inset-left));padding:max(8px,env(safe-area-inset-top)) 4px max(8px,env(safe-area-inset-bottom)) max(4px,env(safe-area-inset-left));border-top:0;border-right:1px solid var(--line)}
+ #app .hub-navigation-v021{inset:0 auto 0 0;width:min-content;min-width:calc(84px + var(--app-safe-left,0px));padding:max(8px,var(--app-safe-top,0px)) 4px max(8px,var(--app-safe-bottom,0px)) max(4px,var(--app-safe-left,0px));border-top:0;border-right:1px solid var(--line)}
  #app .hub-navigation-v021{display:flex;flex-direction:column;gap:4px}
  #app .hub-navigation-v021>.hub-brand,#app .hub-shell-v021[data-hub-destination="games"] .hub-navigation-v021>.hub-brand{position:static;display:flex;justify-content:center;flex:none;inset:auto;width:100%;height:44px;min-height:44px;padding:0;font-size:18px;gap:4px;letter-spacing:-1px}
  #app .hub-navigation-v021>.hub-brand .brand-mark{grid-template-columns:10px 10px;gap:3px}
@@ -86,7 +94,7 @@
  #app .hub-navigation-v021>.hub-page-tabs{grid-template-columns:1fr;grid-template-rows:repeat(4,minmax(max-content,1fr));min-width:min-content;height:max-content;min-height:248px;max-height:calc(100% - 48px);padding:4px;overflow-y:auto;scroll-padding-block:var(--surface-focus-clearance,6px)}
  #app .hub-navigation-v021 .nav-item{width:100%;min-width:min-content;min-height:44px;padding:4px;font-size:.6875rem;white-space:normal;text-align:center}
  #app .hub-navigation-v021 .nav-item>span:last-child{min-width:min-content}
- #app .hub-shell-v021>.hub-main{padding:12px max(var(--surface-inline-inset),env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) var(--surface-inline-inset)}
+ #app .hub-shell-v021>.hub-main{padding:12px max(var(--surface-inline-inset),var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) var(--surface-inline-inset)}
  #app .hub-shell-v021[data-catalog-view="list"]{--catalog-columns:2}
  /* Definite track minimums use the actual grid width: always3–5 columns, without stretching a lone favourite. */
  #app .hub-shell-v021:is([data-catalog-view="2"],[data-catalog-view="3"]) .game-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,max(var(--catalog-text-min),calc((100% - 4 * var(--catalog-gap))/5),min(var(--catalog-card-min),calc((100% - 2 * var(--catalog-gap))/3)))),1fr))}
@@ -166,3 +174,13 @@
 @media(orientation:landscape) and (min-width:600px) and (max-width:700px){
  #app .hub-shell-v021[data-catalog-view="2"] .game-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,max(var(--catalog-text-min),var(--catalog-track-min))),1fr))}
 }
+
+.welcome-install-options{display:grid;gap:12px;min-width:0;margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:14px}
+.welcome-install-options>legend{padding:0 4px;font-weight:650}
+.welcome-install-options>[data-welcome-install]{width:100%;min-height:44px}
+.welcome-install-options>[data-welcome-install][hidden]{display:none}
+.welcome-install-choice{display:flex;align-items:flex-start;gap:10px;min-height:44px;cursor:pointer}
+.welcome-install-choice>input{flex:none;width:20px;height:20px;margin:2px 0}
+.welcome-install-choice>span{min-width:0}
+.welcome-install-choice strong,.welcome-install-choice small{display:block;line-height:1.45}
+.welcome-install-choice small{margin-top:4px;color:var(--muted);font-size:.8125rem}

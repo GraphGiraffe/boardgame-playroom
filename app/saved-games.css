@@ -27,8 +27,9 @@
 .session-card .icon-btn{flex:none;width:44px;min-width:44px;height:44px;padding:0;border-radius:14px}
 .session-card .saved-continue{background:var(--green);border-color:var(--green);color:var(--color-action-on-primary,#fffdf4)}
 .session-card .saved-status{display:inline-flex;flex:none}
-#app .session-card .saved-status .pill{display:inline-flex;align-items:center;gap:4px;justify-content:center;min-width:46px;min-height:0;margin:0;padding:3px 6px;line-height:1;border:1px solid color-mix(in srgb,var(--green) 42%,transparent);border-radius:999px;background:color-mix(in srgb,var(--color-surface-tile-green,#e2ead7) 76%,var(--green));color:var(--ink)}
-#app .session-card:not([data-card-mode=hotseat]) .saved-status .pill{background:color-mix(in srgb,var(--color-surface-tile-blue,#dbe9e8) 76%,#527b8d);border-color:#7798a5}
+#app .session-kind-badge{display:inline-flex;align-items:center;flex:none;gap:4px;justify-content:center;min-width:46px;min-height:0;margin:0;padding:3px 6px;line-height:1;border:1px solid color-mix(in srgb,var(--green) 42%,transparent);border-radius:999px;background:color-mix(in srgb,var(--color-surface-tile-green,#e2ead7) 76%,var(--green));color:var(--ink)}
+#app [data-card-mode]:not([data-card-mode=hotseat]) .session-kind-badge{background:color-mix(in srgb,var(--color-surface-tile-blue,#dbe9e8) 76%,#527b8d);border-color:#7798a5}
+.session-kind-badge>.saved-state-icon,.session-kind-badge>.saved-state-icon svg,.session-kind-badge>.saved-state-icon[data-ui-icon]{display:inline-flex;width:14px;height:14px}
 .session-card .saved-state-icon{display:inline-flex;width:14px;height:14px;align-items:center;justify-content:center}
 .session-card .saved-state-icon svg[data-ui-icon]{width:14px;height:14px}
 .session-card .connection-light{margin:0}

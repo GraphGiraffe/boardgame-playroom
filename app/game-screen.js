@@ -95,7 +95,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const pageTabBindings=new WeakMap();let pageTabSequence=0;
   function pageTabsId(){return 'page-tabs-'+(++pageTabSequence);}
   function syncPageTabs(list,{panel=null}={}){
-    if(!list)return;const tabs=[...list.querySelectorAll(':scope>[role=tab]')],selected=tabs.find(tab=>tab.getAttribute('aria-selected')==='true'&&!tab.disabled);
+    if(!list)return;list.setAttribute('aria-orientation',list.ownerDocument.defaultView.getComputedStyle(list).getPropertyValue('--page-tabs-vertical').trim()==='1'?'vertical':'horizontal');const tabs=[...list.querySelectorAll(':scope>[role=tab]')],selected=tabs.find(tab=>tab.getAttribute('aria-selected')==='true'&&!tab.disabled);
     if(panel&&!panel.id)panel.id='page-tabs-panel-'+(++pageTabSequence);
     for(const [index,tab]of tabs.entries()){
       tab.tabIndex=tab===selected?0:-1;
@@ -107,15 +107,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function bindPageTabs(list,{panel=null,current=()=>true}={}){
     if(!list)return ()=>{};pageTabBindings.get(list)?.();
     const valid=()=>list.isConnected&&current()&&!list.closest('[inert],[hidden],[aria-hidden="true"],[data-surface-state="suspended"]');
-    const sync=()=>{if(list.isConnected)syncPageTabs(list,{panel});};sync();
+    let observer;const sync=()=>{if(list.isConnected)syncPageTabs(list,{panel});else observer?.disconnect();};sync();
     const click=()=>queueMicrotask(sync),keydown=event=>{
-      const tab=event.target.closest('[role=tab]');if(!tab||tab.parentElement!==list||!valid()||event.altKey||event.ctrlKey||event.metaKey||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+      const vertical=list.ownerDocument.defaultView.getComputedStyle(list).getPropertyValue('--page-tabs-vertical').trim()==='1',keys=vertical?['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End']:['ArrowLeft','ArrowRight','Home','End'];
+      const tab=event.target.closest('[role=tab]');if(!tab||tab.parentElement!==list||!valid()||event.altKey||event.ctrlKey||event.metaKey||!keys.includes(event.key))return;
       const tabs=[...list.querySelectorAll(':scope>[role=tab]:not(:disabled)')].filter(item=>!item.hidden),index=tabs.indexOf(tab);if(index<0)return;
-      const direction=list.ownerDocument.defaultView.getComputedStyle(list).direction==='rtl'?-1:1,next=event.key==='Home'?tabs[0]:event.key==='End'?tabs.at(-1):tabs[(index+(event.key==='ArrowRight'?direction:-direction)+tabs.length)%tabs.length];
+      const direction=list.ownerDocument.defaultView.getComputedStyle(list).direction==='rtl'?-1:1,next=event.key==='Home'?tabs[0]:event.key==='End'?tabs.at(-1):tabs[(index+(event.key==='ArrowDown'?1:event.key==='ArrowUp'?-1:event.key==='ArrowRight'?direction:-direction)+tabs.length)%tabs.length];
       event.preventDefault();event.stopPropagation();if(next.getAttribute('aria-selected')!=='true')next.click();sync();if(next.isConnected&&valid())next.focus({preventScroll:true});
     };
-    list.addEventListener('click',click);list.addEventListener('keydown',keydown);
-    const dispose=()=>{list.removeEventListener('click',click);list.removeEventListener('keydown',keydown);if(pageTabBindings.get(list)===dispose)pageTabBindings.delete(list);};pageTabBindings.set(list,dispose);return dispose;
+    const win=list.ownerDocument.defaultView;if(win.ResizeObserver){observer=new win.ResizeObserver(sync);observer.observe(list);}list.addEventListener('click',click);list.addEventListener('keydown',keydown);
+    const dispose=()=>{observer?.disconnect();list.removeEventListener('click',click);list.removeEventListener('keydown',keydown);if(pageTabBindings.get(list)===dispose)pageTabBindings.delete(list);};pageTabBindings.set(list,dispose);return dispose;
   }
   const modalHead=(title,{actions='',dismissible=true,symbol='help',dismissAttrs='data-command="close-modal"',className=''}={})=>`<header class="modal-head ui-dialog-head${className?' '+esc(className):''}">${title?`<span class="surface-head-symbol" data-surface-symbol="${esc(symbol)}" aria-hidden="true">${icon(symbol)}</span>`:''}<h2${title?` title="${esc(title)}"`:''}>${esc(title)}</h2><div class="surface-head-actions">${actions}${dismissible?iconButton(dismissAttrs,globalThis.PlayroomMessages.text("ui.game-screen.a7a4033657e8"),'back'):''}</div></header>`;
   function normalizeSurfaceHead(head,className,{surface=null}={}){
@@ -528,16 +529,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function transportInfo(mode='hotseat'){const key=['hotseat','network','online'].includes(mode)?mode:'hotseat';return {mode:key,icon:{hotseat:'gamepad',network:'wifi',online:'globe'}[key],label:root.PlayroomMessages.text('ui.community.mode-'+key)};}
   function transportBadge(mode){const info=transportInfo(mode);return `<span class="transport-badge" data-transport-mode="${info.mode}" role="img" aria-label="${esc(info.label)}" title="${esc(info.label)}">${icon(info.icon)}</span>`;}
   function sessionCard({tag='article',className='',attrs='',gameName='',mode='hotseat',status='',badgeTitle='',participants='',roomName='',progress='',actions='',details='',bottomAction='',summary=''}){
+    const kindBadge=(cloud=false)=>`<span class="pill session-kind-badge" title="${esc(badgeTitle||transportInfo(mode).label)}">${status}${cloud?'':transportBadge(mode)}</span>`;
     if(className.split(/\s+/).includes('saved-game')){
       // Saved cards keep their full context stable; rare operations belong to an owned overlay.
       const labelled=markup=>markup.replace(/<button\b([^>]*)>([\s\S]*?)<\/button>/g,(_,attributes,body)=>{const label=attributes.match(/aria-label="([^"]*)"/)?.[1]||attributes.match(/title="([^"]*)"/)?.[1]||'';return `<button${attributes.replace(/class="([^"]*)"/,(_,classes)=>`class="${classes.split(/\s+/).filter(c=>c!=='icon-btn').join(' ')} saved021-command"`)}>${body}${label?`<span>${label}</span>`:''}</button>`;});
       const cloud=className.split(/\s+/).includes('cloud-only-game');
       const cloudId=attrs.match(/data-cloud-id="([^"]*)"/)?.[1];if(cloudId&&!attrs.includes('data-entity='))attrs+=` data-entity="cloud:${cloudId}"`;
-      const copy=`<span class="saved021-copy"><strong class="saved021-title">${status.includes('<')?`<span class="saved021-state">${status}</span>`:''}${esc(gameName)}</strong></span>`;
-      const descriptor=`<span class="saved021-summary">${cloud?'':transportBadge(mode)}${esc(cloud?badgeTitle||'В облаке':summary||badgeTitle)}</span>`;
+      const copy=`<span class="saved021-copy"><strong class="saved021-title">${kindBadge(cloud)}${esc(gameName)}</strong></span>`;
+      const descriptor=`<span class="saved021-summary">${esc(cloud?badgeTitle||'В облаке':summary||badgeTitle)}</span>`;
       return `<${tag} class="${className} saved021-card" data-card-mode="${esc(mode)}" ${attrs} role="button" tabindex="0" data-saved-actions-toggle aria-expanded="false" aria-haspopup="dialog" aria-label="Действия партии ${esc(gameName)}"><div class="saved021-front">${copy}</div><section class="saved021-context" data-saved-context aria-label="Сведения о партии">${descriptor}${roomName?`<strong class="saved021-room">${esc(roomName)}</strong>`:''}${participants}${progress?`<span class="saved021-progress">${esc(progress)}</span>`:''}${details?`<div class="saved021-details">${details}</div>`:''}</section><template data-saved-action-tray>${labelled(actions+bottomAction)}</template></${tag}>`;
     }
-    return `<${tag} class="session-card ${className}" data-card-mode="${esc(mode)}" ${attrs}><div class="session-card-heading"><span class="saved-status"><span class="pill" title="${esc(badgeTitle||transportInfo(mode).label)}">${status}${transportBadge(mode)}</span></span><h2 class="session-card-title"><strong>${esc(gameName)}</strong></h2>${className.includes('saved-game')?'<button type="button" class="icon-btn" data-saved-actions-toggle aria-expanded="false" aria-label="Действия партии">⋯</button>':''}</div><div class="session-card-actions ${className.includes('resume-banner')?'resume-actions':'saved-game-actions'}">${actions}</div>${roomName?`<strong class="session-card-room">${esc(roomName)}</strong>`:''}${participants}<div class="session-card-footer"><div class="session-card-progress"><span class="session-card-stats">${esc(progress)}</span></div>${details||bottomAction?`<div class="session-card-details">${details}</div><div class="session-card-bottom-action ui-action-row">${bottomAction}</div>`:''}</div></${tag}>`;
+    return `<${tag} class="session-card ${className}" data-card-mode="${esc(mode)}" ${attrs}><div class="session-card-heading"><span class="saved-status">${kindBadge()}</span><h2 class="session-card-title"><strong>${esc(gameName)}</strong></h2>${className.includes('saved-game')?'<button type="button" class="icon-btn" data-saved-actions-toggle aria-expanded="false" aria-label="Действия партии">⋯</button>':''}</div><div class="session-card-actions ${className.includes('resume-banner')?'resume-actions':'saved-game-actions'}">${actions}</div>${roomName?`<strong class="session-card-room">${esc(roomName)}</strong>`:''}${participants}<div class="session-card-footer"><div class="session-card-progress"><span class="session-card-stats">${esc(progress)}</span></div>${details||bottomAction?`<div class="session-card-details">${details}</div><div class="session-card-bottom-action ui-action-row">${bottomAction}</div>`:''}</div></${tag}>`;
   }
   function resumeCard({attrs='',roomName='',gameName='',state=null,network=false,transportMode=network?'network':'hotseat',connected=true,participants=[],teamLayouts={},action='data-command="resume"',leave='',hide=''}){
     if(state?.status==='finished'&&(!network||!connected))return '';
@@ -747,11 +749,22 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const mini of scopedNodes(scope,'.player-panel .mini-hand'))fitOpponentHand(mini,stage);
     for(const track of scopedNodes(scope,'.layout-hand .hand-track.is-fan'))fitCardHand(track,stage);
   }
+  const fieldViewports=new WeakMap();
+  // The field's grid cell can be larger than its fitted square board. Reveals
+  // use that available cell; the board and physical objects keep their sizes.
+  function fieldBounds(mount){
+    const slot=mount?.querySelector('.layout-field'),stage=slot?.closest('.app-game-layout'),saved=slot&&fieldViewports.get(slot);
+    if(!slot)return null;
+    if(!saved||!stage)return slot.getBoundingClientRect();
+    const origin=stage.getBoundingClientRect(),left=origin.left+saved.left,top=origin.top+saved.top;
+    return {left,top,right:left+saved.width,bottom:top+saved.height,width:saved.width,height:saved.height};
+  }
   function fitField(stage){
     const slot=stage.querySelector('.layout-field'),field=slot?.firstElementChild;if(!field)return;
     // Measure the whole grid track before reserving the board's intrinsic shape.
     for(const key of ['width','height','justify-self','align-self'])slot.style.removeProperty(key);
     const width=slot.clientWidth,height=slot.clientHeight;if(width<=0||height<=0)return;
+    const full=slot.getBoundingClientRect(),origin=stage.getBoundingClientRect();fieldViewports.set(slot,{left:full.left-origin.left,top:full.top-origin.top,width:full.width,height:full.height});
     const portraitCards=field.querySelector('[data-card-fit="portrait"]');
     if(portraitCards&&root.PlayroomElementSizes){
       const win=stage.ownerDocument.defaultView,columns=Number(portraitCards.dataset.cardColumns)||1;
@@ -822,12 +835,33 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(seatAnchors==='true'||seatAnchors===true)return 'bases';
     return 'standard';
   }
-  function landscapeZones(width,height,opponents,hasSelf=true,selfWidth=null){
-    // Geometry belongs to the viewport, never to roster size or hand contents.
-    const gap=6,padding=12,w=Math.max(0,width-padding),h=Math.max(0,height-padding);
-    const field=Math.max(0,Math.min(h,w-gap*2));
-    const side=Math.max(0,(w-field-gap*2)/2),self=selfWidth===null?side:Math.min(Math.max(0,selfWidth),Math.max(0,w-field-gap*2)),left=Math.max(0,w-field-gap*2-self);
-    const columns=opponents>Math.max(3,Math.floor((h-60)/70))&&left>=280?2:1;
+  function rosterMinimumWidth(stage){
+    const win=stage.ownerDocument.defaultView,panels=[...stage.querySelectorAll('.layout-participants .player-panel')];
+    const px=value=>parseFloat(value)||0;
+    const cardWidth=Math.max(0,...panels.map(panel=>{
+      const info=panel.querySelector('.player-info'),data=info?.querySelector('.player-data'),avatar=info?.querySelector('.player-avatar-wrap');if(!info||!data)return 0;
+      const style=win.getComputedStyle(info),outer=win.getComputedStyle(panel),flow=win.getComputedStyle(data);
+      const widths=[...data.children].filter(node=>node.getClientRects().length&&node.offsetWidth).map(node=>node.offsetWidth);
+      const metrics=flow.flexDirection.startsWith('column')?Math.max(0,...widths):widths.reduce((sum,width)=>sum+width,0)+Math.max(0,widths.length-1)*px(flow.columnGap);
+      const identity=avatar?.offsetWidth||0,content=win.getComputedStyle(data).gridColumnStart==='1'?Math.max(identity,metrics):identity+px(style.columnGap)+metrics;
+      return Math.ceil(content+px(style.paddingLeft)+px(style.paddingRight)+px(outer.paddingLeft)+px(outer.paddingRight)+px(outer.borderLeftWidth)+px(outer.borderRightWidth));
+    }));
+    return cardWidth;
+  }
+  function landscapeZones(width,height,opponents,hasSelf=true,selfWidth=null,opponentMinimum=0){
+    // Protect readable identities and the local hand before maximizing the field.
+    // Only viewport/explicit geometry refreshes reach here; turns retain the lock.
+    const policy=root.PlayroomSizeCatalogue?.composition.geometry||{},gap=6,padding=12;
+    const w=Math.max(0,width-padding),h=Math.max(0,height-padding),available=Math.max(0,w-gap*2);
+    const card=Math.max(policy.landscapePlayerMinWidthPx||144,opponentMinimum);
+    const selfMinimum=hasSelf?(policy.landscapeSelfMinWidthPx||240):144;
+    const fieldMinimum=Math.min(h,policy.landscapeFieldMinWidthPx||200);
+    const columns=opponents>1&&available>=card*2+4+selfMinimum+fieldMinimum?2:1;
+    const leftMinimum=opponents?Math.max(160,card*columns+(columns-1)*4):selfMinimum;
+    const wantedSelf=Math.max(selfMinimum,selfWidth??selfMinimum);
+    const field=Math.max(0,Math.min(h,available-leftMinimum-wantedSelf));
+    const surplus=Math.max(0,available-field-leftMinimum-wantedSelf);
+    const left=Math.min(available,leftMinimum+(selfWidth===null?Math.floor(surplus/2):surplus)),self=Math.max(0,available-field-left);
     return {opponents:Math.floor(left),field:Math.floor(field),self:Math.floor(self),columns};
   }
   function alignInZone(zone,size,{inline='center',block='center',inset=0}={}){
@@ -952,6 +986,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const shell=host.querySelector('.table-shell'),stage=scene.querySelector('.app-game-layout');if(shell&&stage){const reserve=handReserves.get(host);if(reserve){const hand=stage.querySelector('.layout-hand');if(hand)reserve.own=hand.offsetHeight;for(const panel of stage.querySelectorAll('.player-panel')){const mini=panel.querySelector('.player-hand');if(mini)reserve.players.set(panel.dataset.playerIndex,mini.offsetHeight);}}}
   }
   function updateGeometry(host,changes,{defer=false}={}){
+    // The DOM patcher may reuse an action section for the hand slot. Numeric
+    // action locks belong to that role, never to the repurposed physical node.
+    for(const {node}of changes)if(node?.nodeType===1&&actionGeometryLocks.has(node)&&!node.classList.contains('layout-actions'))releaseActionGeometry(node);
     const state=geometryOwners.get(host);if(!state)return;
     if(state.viewport!==geometryViewport(host)){layoutScene(host);return;}
     const field=host.querySelector('.layout-field');
@@ -1002,7 +1039,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
     if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
       if(!locked)for(const node of stage.querySelectorAll('.layout-actions'))releaseActionGeometry(node);
-      for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('overflow');}
+      for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('max-height');node.style.removeProperty('overflow');}
     }
     if(stage){const policy=root.PlayroomSizeCatalogue.composition.geometry;stage.dataset.composition=root.PlayroomElementSizes.composition(stage.dataset);const win=scene.ownerDocument.defaultView;stage.dataset.layoutMode=win.TabletopUI.selectLayout(scene.clientWidth,scene.clientHeight);
       const w=scene.clientWidth-policy.sceneInsetPx,h=scene.clientHeight-policy.sceneInsetPx,hands=stage.dataset.layoutFocus==='hands',anchors=stage.dataset.seatAnchors==='true',portrait=win.innerHeight>=win.innerWidth,compact=anchors?portrait:w<policy.compactWidthPx;
@@ -1012,6 +1049,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const roster=stage.querySelectorAll('.layout-participants .player-panel:not([data-seat-copy])').length;
       stage.dataset.denseRoster=String(!portrait&&h<policy.denseRosterHeightPx&&roster>2&&stage.dataset.opponentHands==='true');
       applyStandardSizes(stage,scene);
+      const rosterMinimum=locked?.rosterMinimum??rosterMinimumWidth(stage);
       if(portrait&&!anchors&&stage.querySelector(':scope > .layout-status'))stage.style.setProperty('grid-template-rows','max-content max-content minmax(0,1fr) max-content max-content','important');
       stage.dataset.croppedHands='true';
       const anchoredNoHand=anchors&&stage.dataset.hasHand==='false';
@@ -1027,7 +1065,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         const sw=scene.clientWidth,sh=scene.clientHeight,left=zones.opponents+9,right=left+zones.field+6;scene.style.clipPath='path("'+zoneOutline([[0,68],[left,68],[left,0],[right,0],[right,68],[sw,68],[sw,sh],[0,sh]])+'")';
       }
       if(stage.dataset.soloField!=='true'&&!portrait&&w>=560){
-        const zones=landscapeZones(scene.clientWidth,scene.clientHeight,roster,!!stage.querySelector('.layout-self'),heldSelfWidth);
+        const zones=landscapeZones(scene.clientWidth,scene.clientHeight,roster,!!stage.querySelector('.layout-self'),heldSelfWidth,rosterMinimum);if(!fullScreen)fullscreenZoneWidths.set(host,zones.self);
         stage.style.setProperty('grid-template-areas','"host field self" "participants field self" "status field self" "auxiliary field self"','important');stage.style.setProperty('grid-template-rows','var(--side-top,88px) minmax(0,1fr) auto auto','important');stage.style.setProperty('--opponent-zone-width',zones.opponents+'px');stage.style.setProperty('--field-zone-width',zones.field+'px');stage.style.setProperty('grid-template-columns',zones.opponents+'px '+zones.field+'px minmax(0,1fr)','important');stage.dataset.landscapeRosterColumns=String(zones.columns);const sw=scene.clientWidth,sh=scene.clientHeight,left=zones.opponents+9,right=left+zones.field+6;scene.style.clipPath='path("'+zoneOutline([[0,68],[left,68],[left,0],[right,0],[right,68],[sw,68],[sw,sh],[0,sh]])+'")';const shell=host.querySelector('.table-shell');shell?.style.setProperty('--opponent-zone-width',zones.opponents+'px');shell?.style.setProperty('--field-zone-width',zones.field+'px');shell?.style.setProperty('--self-zone-width',zones.self+'px');
       }else{if(portrait||stage.dataset.fieldColumns!=='3')scene.style.removeProperty('clip-path');stage.style.removeProperty('grid-template-areas');stage.style.removeProperty('--opponent-zone-width');stage.style.removeProperty('--field-zone-width');delete stage.dataset.landscapeRosterColumns;const shell=host.querySelector('.table-shell');if(portrait||stage.dataset.fieldColumns!=='3')for(const name of ['--opponent-zone-width','--field-zone-width','--self-zone-width'])shell?.style.removeProperty(name);}
 
@@ -1083,7 +1121,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       root.PlayroomHandOverflow?.sync?.(host);
       // Freeze the grid tracks, not game objects: new controls stay inside their zone.
-      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?layoutRect(own).height:0,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands,actions:[...stage.querySelectorAll('.layout-actions')].map(node=>layoutRect(node).height)};fixedLayouts.set(host,locked);}
+      // History and large controls can consume the remaining player-only pane.
+      // Bound its scroll viewport before freezing tracks, never clip the whole scene.
+      if(own){const bounds=layoutRect(stage),box=layoutRect(own),inset=parseFloat(win.getComputedStyle(stage).paddingBottom)||0;own.style.maxHeight=Math.max(0,bounds.bottom-box.top-inset)+'px';}
+      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rosterMinimum,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?layoutRect(own).height:0,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands,actions:[...stage.querySelectorAll('.layout-actions')].map(node=>layoutRect(node).height)};fixedLayouts.set(host,locked);}
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       for(const [index,node]of [...stage.querySelectorAll('.layout-actions')].entries())if(locked.actions?.[index]>0)lockActionGeometry(node,locked.actions[index]);
@@ -1130,5 +1171,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(shell){for(const bar of shell.querySelectorAll('.table-status>.turn-label,.table-status>.status-details'))for(const prop of ['left','right','width'])bar.style.removeProperty(prop);}
 
   }
-  return Object.freeze({screenLayout,landscapeZones,alignInZone,zoneOutline,sessionCard,transportInfo,transportBadge,gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,gameMenuActions,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,bindSurfaceDismiss,bindPanelGesture,openSelectChoice,classifySurface,modalContent,updateModal,patchChildren,update,interactionState,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,resultSound,presentResultSound,turnNotice,render,layoutScene,geometryMetrics,allowLayoutChange,iconButton,toolbar,pageTabs,pageTabsId,bindPageTabs,syncPageTabs,modalHead,normalizeSurfaceHead,fullscreenAction});
+  return Object.freeze({fieldBounds,screenLayout,landscapeZones,alignInZone,zoneOutline,sessionCard,transportInfo,transportBadge,gameTitle,fitGameTitles,button:UI.button,rangeSetting,tileTheme,packRow,fitCovers,roundText,participantsMarkup,quickAccessMarkup,gameMenuActions,addPlayerButton,deleteConfirmation,actionConfirmationMarkup,confirmDialog,bindSurfaceDismiss,bindPanelGesture,openSelectChoice,classifySurface,modalContent,updateModal,patchChildren,update,interactionState,reservePlayerHand,resumeCard,icon,esc,playersMarkup,historyMarkup,resultMarkup,resultSound,presentResultSound,turnNotice,render,layoutScene,geometryMetrics,allowLayoutChange,iconButton,toolbar,pageTabs,pageTabsId,bindPageTabs,syncPageTabs,modalHead,normalizeSurfaceHead,fullscreenAction});
 });

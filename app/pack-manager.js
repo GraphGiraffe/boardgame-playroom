@@ -57,7 +57,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!root.TabletopPacks)return;
     const data=await new root.PlayroomDataStorage().open();root.PlayroomData=data;
     root.PlayroomPacks=new root.TabletopPacks({engine:root.TabletopCore,views:root.PlayroomViews,catalog:root.PlayroomCatalog,
-      storage:{get:()=>data.getItem(STORAGE),commit:(value,{guard=()=>{}}={})=>data.transact(()=>{guard();return value===null?data.removeItem(STORAGE):data.setItem(STORAGE,value);},{guard})}});
+      storage:await root.PlayroomPackStorage.create({data,key:STORAGE})});
     await root.PlayroomPacks.bootstrap(root.PlayroomInstalledPacks||[]);
     root.PlayroomPackLoadError=root.PlayroomPacks.warnings.join(' ');
     root.PlayroomRemotePacks=root.PlayroomRemoteCatalog?new root.PlayroomRemoteCatalog.RemoteCatalog({manager:root.PlayroomPacks}):null;
@@ -70,9 +70,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     root.PlayroomPackLoadError=manager.warnings?.join(' ')||'';
     return list;
   }
-  function create({manager,library,networkLibrary,openModal,modalHead,toast,onChange,onCatalog=()=>{},captureOperation=()=>({current:()=>true,guard:()=>{}}),onInstalled=()=>{}}) {
+  function create({manager,library,networkLibrary,openModal,modalHead,toast,onChange,onCatalog=()=>{},captureOperation=()=>({current:()=>true,guard:()=>{}})}) {
     let pending = null, message = '', reading = 0, savedScroll = null, busy = false,previewReturn=null;
     const remote=root.PlayroomRemotePacks;
+    const availableIds=new Set(),onlineStates=new Map();
     const title = manifest => manifest.name || manifest.title || manifest.id;
     const references = (id,version) => library.references(id,version);
     const cleanup=new root.PlayroomPackUpdateCleanup({manager,localReferences:references,networkArchives:()=>networkLibrary.list({strict:true}),activeRoom:()=>!!networkLibrary.hasActiveRoom?.(),compare:manager.constructor.compareVersions});
@@ -99,7 +100,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     function listMarkup() {
       const source=manager?.list()||[],preferences=displayPreferences(),ids=ordered(source.filter(item=>item.active).map(item=>item.id),preferences),position=id=>ids.indexOf(id)<0?ids.length:ids.indexOf(id);
       const list=source.slice().sort((a,b)=>position(a.id)-position(b.id)||Number(b.active)-Number(a.active));
-      if(!list.length)return '<p class="packs-v021-empty">На устройстве пока нет игр. Выберите игру во вкладке «Доступно» или импортируйте файл через «Дополнительно».</p>';
+      if(!list.length)return '<p class="packs-v021-empty">На устройстве пока нет игр. Выберите игру во вкладке «Доступно» или импортируйте файл кнопкой вверху.</p>';
       return `<ul class="packs-v021-list">${list.map(item=>{
         const count=references(item.id,item.version).length,name=title(item.manifest),update=item.active?catalogEntries().find(next=>next.id===item.id):null,key=item.id+'@'+item.version;
         const status=update?'Доступно обновление · '+update.version:item.active?'Установлено':'Предыдущая версия';
@@ -112,39 +113,50 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const manifest = pending.manifest, known = manager.list().some(item=>item.id===manifest.id);
       return `<section class="pack-preview packs-v021-preview" tabindex="-1" aria-label="${globalThis.PlayroomMessages.text("ui.pack-manager.13eb691fe3b3")}"><span class="eyebrow">${globalThis.PlayroomMessages.text("ui.pack-manager.080b18f6ca51")}</span><h3>${esc(title(manifest))}</h3><p>${esc(manifest.id)} · ${globalThis.PlayroomMessages.text("ui.pack-manager.d9ae8e2e1567")}${esc(manifest.version)}</p>${manifest.description||manifest.tagline?`<p>${esc(manifest.description||manifest.tagline)}</p>`:''}${manifest.author?`<p>${globalThis.PlayroomMessages.text("ui.pack-manager.745b218447d3")}${esc(typeof manifest.author==='string'?manifest.author:manifest.author.name||globalThis.PlayroomMessages.text("ui.pack-manager.0d836c1579f1"))}</p>`:''}<p class="pack-trust">${globalThis.PlayroomMessages.text("ui.pack-manager.48eac42eff92")}</p>${known?("<p>"+globalThis.PlayroomMessages.text("ui.pack-manager.3c343bc73176")+"</p>"):''}<div class="modal-foot"><button class="btn secondary" data-pack-cancel>${globalThis.PlayroomMessages.text("ui.pack-manager.8fbe9b75cbdf")}</button><button class="btn" data-pack-install ${busy?'disabled':''}>${known?globalThis.PlayroomMessages.text("ui.pack-manager.e6acd89e236f"):globalThis.PlayroomMessages.text("ui.pack-manager.b7cd6fae08d9")}</button></div></section>`;
     }
-    let packTab='installed',catalogLoading=false,catalogJob=null,opening=0,packFrame=null,confirmationFrame=null,returnToManager=null,operation=null,packOrder=null;
+    let packTab='installed',catalogLoading=false,catalogJob=null,opening=0,packFrame=null,confirmationFrame=null,returnToManager=null,operation=null,packOrder=null,installBatch=null,installAllWhenReady=false;
     const currentModal=()=>packFrame?.state!=='disposed'?packFrame?.element.querySelector('.pack-manager-modal'):null;
+    function quickMarkup(){const access=catalogAvailability();return H.iconButton('data-pack-file-open','Импорт файла','file-import',{disabled:busy})+H.iconButton('data-pack-catalog-refresh',catalogLoading?'Проверяем…':'Проверить обновления','refresh',{disabled:busy||catalogLoading||!access.available});}
     function catalogMarkup(){
       const pendingUpdates=updates(),failure=remote?.warning,access=catalogAvailability();
-      return `<div class="packs-v021-catalog" data-pack-catalog-status>${operation?`<div class="packs-v021-operation"><p role="status">${esc(operation.label)} · установлено ${operation.done} из ${operation.total}</p>${root.PlayroomStatusMeter.markup({label:'Установлено игр',value:operation.done,max:operation.total,state:'busy',valueText:operation.done+' из '+operation.total})}</div>`:''}${!access.available?`<p role="status" data-pack-catalog-unavailable>${esc(access.reason)}</p>`:catalogLoading?'<p role="status">Проверяем игры и обновления…</p>':failure?`<p role="alert">Не удалось загрузить список игр. Проверьте соединение и повторите проверку.</p><details data-pack-catalog-error><summary>Технические подробности</summary><p>${esc(failure)}</p></details>`:''}${pendingUpdates.length?H.button({attrs:'data-pack-update-all',label:busy?'Обновляем игры…':'Обновить игры · '+pendingUpdates.length,icon:'download',disabled:busy||catalogLoading||!access.available}):''}${H.button({attrs:'data-pack-catalog-refresh'+(!access.available?' title="'+esc(access.reason)+'"':''),label:!access.available?'Проверка недоступна':catalogLoading?'Проверяем…':failure?'Повторить проверку':'Проверить обновления',icon:'refresh',variant:'secondary',disabled:busy||catalogLoading||!access.available})}</div>`;
+      return `<div class="packs-v021-catalog" data-pack-catalog-status>${operation?`<div class="packs-v021-operation"><p role="status">${esc(operation.label)} · установлено ${operation.done} из ${operation.total}</p>${root.PlayroomStatusMeter.markup({label:'Установлено игр',value:operation.done,max:operation.total,state:'busy',valueText:operation.done+' из '+operation.total})}</div>`:''}${!access.available?`<p role="status" data-pack-catalog-unavailable>${esc(access.reason)}</p>`:catalogLoading?'<p role="status">Проверяем игры и обновления…</p>':failure?`<p role="alert">Не удалось загрузить список игр. Проверьте соединение и повторите проверку.</p><details data-pack-catalog-error><summary>Технические подробности</summary><p>${esc(failure)}</p></details>`:''}${pendingUpdates.length?H.button({attrs:'data-pack-update-all',label:busy?'Обновляем игры…':'Обновить игры · '+pendingUpdates.length,icon:'download',disabled:busy||catalogLoading||!access.available}):''}</div>`;
+    }
+    function installButton(item,done){
+      const job=onlineStates.get(item.id),loading=job?.phase==='loading',name=item.name||item.id;
+      return H.iconButton(`data-pack-online="${esc(item.id)}" data-pack-install-state="${done?'ready':loading?'loading':job?.error?'error':'available'}" aria-disabled="${busy||done||!catalogAvailability().available}" aria-busy="${loading}"`,done?'Установлено: '+name:loading?'Устанавливаем: '+name:job?.error?'Повторить установку: '+name:'Установить: '+name,done?'check':loading?'sync':'download',{className:'packs-v021-install'});
     }
     function onlineMarkup(){
-      const installed=new Set(manager.list().map(item=>item.id)),available=catalogEntries().filter(item=>!installed.has(item.id)),access=catalogAvailability();
+      const rows=manager.list(),installed=new Set(rows.map(item=>item.id)),versions=new Set(rows.map(item=>item.id+'@'+item.version)),available=(remote?.current?.packs||[]).filter(item=>!installed.has(item.id)||availableIds.has(item.id)),access=catalogAvailability();
       if(!available.length)return !access.available||catalogLoading||remote?.warning?'':'<p class="packs-v021-empty">Новых игр в каталоге пока нет. Установленные игры находятся в соседней вкладке.</p>';
-      return `<ul class="packs-v021-list">${available.map(item=>{const manifest=root.PlayroomCatalog[item.id]||(root.PlayroomInstalledPacks||[]).find(bundle=>bundle.manifest?.id===item.id)?.manifest||{id:item.id,name:item.name||item.id},name=title(manifest);return `<li class="packs-v021-game" data-entity="available-${esc(item.id)}"><div class="packs-v021-summary">${cover(item.id,manifest)}<div><strong>${esc(name)}</strong><small>v${esc(item.version)}</small></div></div><p class="packs-v021-status">${access.available?'Можно установить':'Для установки откройте веб-версию'}</p>${H.button({attrs:`data-pack-online="${esc(item.id)}"`,label:'Установить',icon:'download',disabled:busy||!access.available})}${item.releases?.length?`<details class="packs-v021-details"><summary>Что изменилось</summary>${root.PlayroomUpdateDialog?.changes(item.releases,'0.0.0',item.version,esc)||''}</details>`:''}</li>`;}).join('')}</ul>`;
+      const missing=available.filter(item=>!installed.has(item.id)).length,bulk=H.button({attrs:'data-pack-install-all data-entity="install-all"',label:installBatch?`Устанавливаем · ${installBatch.done}/${installBatch.total}`:missing?`Установить все · ${missing}`:'Все игры установлены',icon:missing?'download':'check',className:'packs-v021-install-all',disabled:busy||catalogLoading||!access.available||!missing});
+      return `${bulk}<ul class="packs-v021-list">${available.map(item=>{
+        availableIds.add(item.id);
+        const manifest=root.PlayroomCatalog[item.id]||(root.PlayroomInstalledPacks||[]).find(bundle=>bundle.manifest?.id===item.id)?.manifest||item,name=title(manifest),description=item.tagline||manifest.tagline||'',latest=root.PlayroomUpdateDialog?.releases(item.releases,'0.0.0',item.version).at(-1),error=onlineStates.get(item.id)?.error;
+        return `<li class="packs-v021-game" data-available-pack="${esc(item.id)}" data-entity="available-${esc(item.id)}"><div class="packs-v021-summary">${cover(item.id,manifest)}<span class="packs-v021-copy"><strong>${esc(name)}</strong><small>v${esc(item.version)}${item.byteSize?' · '+esc(root.PlayroomStorageUsage.format(item.byteSize)):''}</small></span>${installButton(item,versions.has(item.id+'@'+item.version))}</div>${description?`<p class="packs-v021-description">${esc(description)}</p>`:''}${error?`<p class="packs-v021-install-error" role="alert">${esc(error)}</p>`:''}${!access.available?`<p class="packs-v021-status">Для установки откройте веб-версию</p>`:''}${latest?`<details class="packs-v021-details" data-pack-details="available-${esc(item.id)}"><summary>Последнее обновление</summary>${root.PlayroomUpdateDialog.changes([latest],'0.0.0',item.version,esc)}</details>`:''}</li>`;
+      }).join('')}</ul>`;
     }
-    function rememberView(modal){return {scroll:modal?.querySelector('.modal-body')?.scrollTop||0,focus:modal?.contains(document.activeElement)?document.activeElement:null,details:new Set([...(modal?.querySelectorAll('[data-pack-details][open]')||[])].map(node=>node.dataset.packDetails)),maintenance:!!modal?.querySelector('[data-pack-maintenance][open]')};}
+    function rememberView(modal){return {scroll:modal?.querySelector('.modal-body')?.scrollTop||0,focus:modal?.contains(document.activeElement)?document.activeElement:null,details:new Set([...(modal?.querySelectorAll('[data-pack-details][open]')||[])].map(node=>node.dataset.packDetails))};}
     function restoreView(modal,state){
       if(!modal||!state)return;for(const node of modal.querySelectorAll('[data-pack-details]'))node.open=state.details.has(node.dataset.packDetails);
-      const maintenance=modal.querySelector('[data-pack-maintenance]');if(maintenance)maintenance.open=state.maintenance;
       if(state.focus?.isConnected&&modal.contains(state.focus)&&!state.focus.disabled)state.focus.focus({preventScroll:true});
       const body=modal.querySelector('.modal-body');if(body)body.scrollTop=state.scroll;
     }
     function refreshOnline(modal){
       if(!modal?.isConnected||currentModal()!==modal)return;
       const state=rememberView(modal),region=modal.querySelector('[data-pack-online-region]'),status=modal.querySelector('[data-pack-catalog-region]'),installed=modal.querySelector('[data-pack-installed-region]');
+      const quick=modal.querySelector('[data-pack-quick]');if(quick)root.PlayroomDOM.ListController.update(quick,quickMarkup());
       if(status)root.PlayroomDOM.ListController.update(status,catalogMarkup());
       if(region)root.PlayroomDOM.ListController.update(region,onlineMarkup());
       if(installed)root.PlayroomDOM.ListController.update(installed,listMarkup());restoreView(modal,state);bindOrder();
     }
     function maintenanceMarkup(){
-      return `<details class="packs-v021-maintenance" data-pack-maintenance><summary>Дополнительно</summary><div>${actionRow('data-pack-file-open','Импорт файла',{icon:'file-import',disabled:busy})}${actionRow('data-cloud-data-open','Данные и облако',{icon:'cloud'})}${actionRow('data-pack-bulk="old"','Удалить старые версии',{icon:'trash',disabled:!manager.list().some(item=>!item.active),danger:true})}${actionRow('data-pack-bulk="all"','Удалить все игры',{icon:'trash',disabled:!manager.list().length&&!manager.quarantined?.length,danger:true})}${actionRow('data-pack-restore','Восстановить встроенные',{icon:'undo',disabled:busy})}</div>${quarantineMarkup()}</details>`;
+      return `<div class="packs-v021-maintenance menu-list" data-pack-maintenance>${actionRow('data-pack-bulk="old"','Удалить старые версии',{icon:'trash',disabled:!manager.list().some(item=>!item.active),danger:true})}${actionRow('data-pack-bulk="all"','Удалить все игры',{icon:'trash',disabled:!manager.list().length&&!manager.quarantined?.length,danger:true})}${root.PlayroomInstalledPacks?.length?actionRow('data-pack-restore','Восстановить встроенные',{icon:'undo',disabled:busy}):''}${quarantineMarkup()}</div>`;
     }
     function open() {
       if(packFrame&&packFrame.state!=='active')return;
       const state=rememberView(currentModal());
-      const epoch=opening;packFrame=openModal(`${modalHead('Игры')}<main class="packs-v021"><div class="packs-v021-tabs" role="tablist" aria-label="Игры">${[['installed','Установлено'],['available','Доступно']].map(([id,label])=>`<button type="button" role="tab" data-pack-tab="${id}" id="packs-tab-${id}" aria-controls="packs-panel-${id}" tabindex="${packTab===id?0:-1}" aria-selected="${packTab===id}">${label}</button>`).join('')}</div>${message?`<p class="pack-message packs-v021-message" role="alert" tabindex="-1">${esc(message)}</p>`:''}${previewMarkup()}<div data-pack-catalog-region>${catalogMarkup()}</div><section id="packs-panel-installed" role="tabpanel" aria-labelledby="packs-tab-installed" data-pack-tab-panel="installed" ${packTab==='installed'?'':'hidden'}><div data-pack-installed-region>${listMarkup()}</div></section><section id="packs-panel-available" role="tabpanel" aria-labelledby="packs-tab-available" data-pack-tab-panel="available" ${packTab==='available'?'':'hidden'}><div data-pack-online-region>${onlineMarkup()}</div></section>${maintenanceMarkup()}<input id="pack-file" type="file" hidden accept=".playroom-pack.json,application/json"></main>`,'pack-manager-modal',{valid:()=>epoch===opening,onDispose:()=>{if(epoch===opening){reading++;packOrder?.dispose();packOrder=null;}}});
+      let disposeTabs=()=>{};const epoch=opening;packFrame=openModal(`${modalHead('Игры').replace('</h2>','</h2><div class="packs-v021-quick" data-pack-quick role="group" aria-label="Быстрые действия">'+quickMarkup()+'</div>')}<main class="packs-v021">${H.pageTabs({label:'Игры',tabs:[['installed','Установлено'],['available','Доступно']],value:packTab,attribute:'data-pack-tab',className:'packs-v021-tabs',idPrefix:'packs-tab-',panelPrefix:'packs-panel-'})}<div class="packs-v021-content">${message?`<p class="pack-message packs-v021-message" role="alert" tabindex="-1">${esc(message)}</p>`:''}${previewMarkup()}<div data-pack-catalog-region>${catalogMarkup()}</div><section id="packs-panel-installed" role="tabpanel" aria-labelledby="packs-tab-installed" data-pack-tab-panel="installed" ${packTab==='installed'?'':'hidden'}><div data-pack-installed-region>${listMarkup()}</div></section><section id="packs-panel-available" role="tabpanel" aria-labelledby="packs-tab-available" data-pack-tab-panel="available" ${packTab==='available'?'':'hidden'}><div data-pack-online-region>${onlineMarkup()}</div></section></div>${maintenanceMarkup()}<input id="pack-file" type="file" hidden accept=".playroom-pack.json,application/json"></main>`,'pack-manager-modal',{valid:()=>epoch===opening,onDispose:()=>{disposeTabs();if(epoch===opening){reading++;packOrder?.dispose();packOrder=null;}}});
       const next=currentModal();if(!next)return;
+      disposeTabs=H.bindPageTabs(next.querySelector('.packs-v021-tabs'),{current:()=>epoch===opening&&packFrame?.state==='active'&&currentModal()===next});
       restoreView(next,state);
       if(savedScroll!==null){next.querySelector('.modal-body')?.scrollTo(0,savedScroll);savedScroll=null;}
       bindOrder();
@@ -183,7 +195,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
         if(here())message='';
       }catch(error){if(here()&&error.code!=='cancelled')message=globalThis.PlayroomMessages.text("ui.pack-manager.9dfa32b39696",{p0:String(globalThis.PlayroomMessages.error(error))});}
-      finally{busy=false;if(epoch===opening){operation=null;if(here()){packTab='installed';open();}}if(installed)onChange();if(here()&&!pending){const item=currentModal()?.querySelector('[data-installed-pack][data-pack-id="'+id+'"] summary');item?.focus({preventScroll:true});item?.scrollIntoView({block:'center'});if(!message)toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));onInstalled([id]);}}
+      finally{busy=false;if(epoch===opening){operation=null;if(here()){packTab='installed';open();}}if(installed)onChange();if(here()&&!pending){const item=currentModal()?.querySelector('[data-installed-pack][data-pack-id="'+id+'"] summary');item?.focus({preventScroll:true});item?.scrollIntoView({block:'center'});if(!message)toast(globalThis.PlayroomMessages.text("ui.pack-manager.3c381137bf00",{p0:String(id)}));}}
     }
     async function removalPlan(items,all=false){
       const keys=new Set(items.map(item=>item.id+'@'+item.version));
@@ -223,31 +235,33 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
     }
     async function installOnline(ids) {
-      if(busy||!ids.length)return;const epoch=opening,owner=packFrame,capability=captureOperation({idle:true}),here=()=>epoch===opening&&owner===packFrame&&owner?.state==='active';
-      busy=true;message='';savedScroll=currentModal()?.querySelector('.modal-body')?.scrollTop??null;open();
-      const errors=[],changedIds=[];let completed=0;const progress={done:0,total:ids.length,label:'Устанавливаем игры'};operation=progress;
+      if(busy||!ids.length)return;
+      const epoch=opening,owner=packFrame,here=()=>epoch===opening&&owner===packFrame&&owner?.state==='active',refresh=()=>{if(here())refreshOnline(currentModal());};
+      busy=true;message='';const errors=[];let completed=0;if(ids.length>1)installBatch={done:0,total:ids.length};
       try {
         for(const id of [...ids]){
-          progress.label='Загружаем '+(root.PlayroomCatalog[id]?.name||id);if(here())open();
-          try{await remote.install(id,{activate:true});completed++;changedIds.push(id);progress.done=completed;}
-          catch(error){if(error.code!=='cancelled')errors.push(`${id}: ${globalThis.PlayroomMessages.error(error)}`);}
+          if(epoch===opening)onlineStates.set(id,{phase:'loading'});refresh();
+          try{await remote.install(id,{activate:true});completed++;if(epoch===opening){onlineStates.set(id,{phase:'ready'});if(installBatch)installBatch.done++;}}
+          catch(error){const detail=globalThis.PlayroomMessages.error(error);errors.push(`${id}: ${detail}`);if(epoch===opening)onlineStates.set(id,{phase:'error',error:detail});}
+          refresh();
         }
       }finally{
-        busy=false;if(epoch===opening){operation=null;message=errors.length?globalThis.PlayroomMessages.text('ui.pack-manager.update-errors',{count:completed,errors:errors.join('; ')}):'';if(here())open();}
-        if(completed){onChange();if(here())onInstalled(changedIds);}
-        if(here())toast(!errors.length?globalThis.PlayroomMessages.text('ui.pack-manager.c45e419df7a2'):message);
+        busy=false;if(epoch===opening)installBatch=null;
+        if(epoch===opening&&ids.length>1&&errors.length)message=globalThis.PlayroomMessages.text('ui.pack-manager.update-errors',{count:completed,errors:errors.join('; ')});
+        if(completed)onChange();if(here())refresh();else if(packFrame?.state==='active')refreshOnline(currentModal());
       }
     }
     document.addEventListener('change',event=>{if(!busy&&packFrame?.state==='active'&&currentModal()?.contains(event.target)&&event.target.id==='pack-file')void read(event.target.files?.[0]);});
     document.addEventListener('click',async event=>{
       const confirmationTarget=event.target.closest('[data-pack-confirm],[data-pack-cancel-remove],[data-pack-quarantine-confirm]');if(confirmationTarget&&(!confirmationFrame||confirmationFrame.state!=='active'||!confirmationFrame.element.contains(confirmationTarget)))return;
       if(!confirmationTarget&&(!currentModal()?.contains(event.target)||packFrame?.state!=='active'))return;
-      if(event.target.closest('[data-pack-catalog-refresh]')){loadCatalog(currentModal(),opening);return;}
-      const tab=event.target.closest('[data-pack-tab]');if(tab){packTab=tab.dataset.packTab;const modal=currentModal();if(!modal)return;for(const item of modal.querySelectorAll('[data-pack-tab]'))item.setAttribute('aria-selected',String(item.dataset.packTab===packTab));for(const item of modal.querySelectorAll('[data-pack-tab]'))item.tabIndex=item===tab?0:-1;for(const panel of modal.querySelectorAll('[data-pack-tab-panel]'))panel.hidden=panel.dataset.packTabPanel!==packTab;return;}
-      const button=event.target.closest('[data-pack-file-open],[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-bulk],[data-pack-confirm],[data-pack-cancel-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite],[data-pack-online],[data-pack-update-all]');if(!button||button.disabled||busy)return;
+      if(event.target.closest('[data-pack-catalog-refresh]')){availableIds.clear();loadCatalog(currentModal(),opening);return;}
+      const tab=event.target.closest('[data-pack-tab]');if(tab){packTab=tab.dataset.packTab;tab.parentElement.style.setProperty('--page-index',packTab==='available'?1:0);const modal=currentModal();if(!modal)return;for(const item of modal.querySelectorAll('[data-pack-tab]'))item.setAttribute('aria-selected',String(item.dataset.packTab===packTab));for(const item of modal.querySelectorAll('[data-pack-tab]'))item.tabIndex=item===tab?0:-1;for(const panel of modal.querySelectorAll('[data-pack-tab-panel]'))panel.hidden=panel.dataset.packTabPanel!==packTab;return;}
+      const button=event.target.closest('[data-pack-file-open],[data-pack-install],[data-pack-cancel],[data-pack-remove],[data-pack-bulk],[data-pack-confirm],[data-pack-cancel-remove],[data-pack-restore],[data-pack-quarantine],[data-pack-quarantine-confirm],[data-pack-move],[data-pack-visibility],[data-pack-favorite],[data-pack-online],[data-pack-update-all],[data-pack-install-all]');if(!button||button.disabled||busy)return;
+      if(button.hasAttribute('data-pack-install-all')){const installed=new Set(manager.list().map(item=>item.id));void installOnline((remote?.current?.packs||[]).filter(item=>!installed.has(item.id)).map(item=>item.id));return;}
       if(button.hasAttribute('data-pack-file-open')){document.getElementById('pack-file')?.click();return;}
       if(button.hasAttribute('data-pack-update-all')){const installed=new Set(manager.list().map(item=>item.id));void installOnline((remote?.pending()||[]).filter(item=>installed.has(item.id)).map(item=>item.id));return;}
-      if(button.dataset.packOnline){void installOnline([button.dataset.packOnline]);return;}
+      if(button.dataset.packOnline){event.preventDefault();if(button.getAttribute('aria-disabled')!=='true')void installOnline([button.dataset.packOnline]);return;}
       if(button.hasAttribute('data-pack-cancel-remove')){planned=null;restoreManager();open();return;}
       if(button.hasAttribute('data-pack-confirm')){if(!planned)return;if(button.dataset.packConfirm==='1'&&planned.local.length+planned.network.length){confirmation(planned,2);return;}void commitRemove();return;}
       if(button.hasAttribute('data-pack-bulk')){const all=button.dataset.packBulk==='all';void askRemove(manager.list().filter(item=>all||!item.active),all);return;}
@@ -281,16 +295,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       else if(button.hasAttribute('data-pack-cancel')){reading++;pending=null;message='';const state=previewReturn;previewReturn=null;open();restoreView(currentModal(),state);}
       else return;
     });
-    document.addEventListener('keydown',event=>{const tab=event.target.closest('[data-pack-tab]');if(!tab||packFrame?.state!=='active'||!currentModal()?.contains(tab)||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const target=event.key==='Home'?'installed':event.key==='End'?'available':tab.dataset.packTab==='installed'?'available':'installed';currentModal().querySelector('[data-pack-tab='+target+']').click();currentModal().querySelector('[data-pack-tab='+target+']').focus();});
+
     function loadCatalog(modal,epoch){
       if(!remote||!modal||catalogLoading||busy)return;if(!catalogAvailability().available){refreshOnline(modal);return;}catalogLoading=true;refreshOnline(modal);
       if(!catalogJob)catalogJob=Promise.resolve().then(()=>remote.load()).finally(()=>{catalogJob=null;});
       void catalogJob.then(()=>{
         if(epoch!==opening||!modal.isConnected||currentModal()!==modal)return;catalogLoading=false;refreshOnline(modal);onCatalog();
+        if(installAllWhenReady&&!remote.warning&&remote.current){installAllWhenReady=false;const installed=new Set(manager.list().map(item=>item.id));void installOnline(remote.current.packs.filter(item=>!installed.has(item.id)).map(item=>item.id));}
       }).catch(error=>{if(epoch===opening&&modal.isConnected&&currentModal()===modal){catalogLoading=false;message=globalThis.PlayroomMessages.error(error);open();}});
     }
-    return {open(){
-      const epoch=++opening;reading++;packTab='installed';catalogLoading=false;pending=null;previewReturn=null;planned=null;confirmationFrame=null;returnToManager=null;message=currentBootWarnings();packFrame=null;open();
+    return {open({installAll=false}={}){
+      const epoch=++opening;reading++;availableIds.clear();onlineStates.clear();installBatch=null;installAllWhenReady=installAll;packTab=installAll||!manager.list().length?'available':'installed';catalogLoading=false;pending=null;previewReturn=null;planned=null;confirmationFrame=null;returnToManager=null;message=currentBootWarnings();packFrame=null;open();
       loadCatalog(currentModal(),epoch);
     }};
   }

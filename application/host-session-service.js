@@ -25,7 +25,6 @@
         }
         persisted=true;
         const authority=new this.Authority(session,{sessionId,restoredReceipts:restored?.receipts||[],paused:!!restored?.paused,controlRevision:restored?.controlRevision||0,playerControls:restored?.playerControls?.map((control,index)=>occupied[index]?.previousParticipant&&occupied[index].participantId!==occupied[index].previousParticipant.id?{...control,away:false,bot:false}:control),playerControlRevision:restored?.playerControlRevision||0,playerControlReceipts:restored?.playerControlReceipts||[],persistence:{commit:entry=>this.store.commit(entry),...(typeof this.store.commitBatch==='function'?{commitBatch:entry=>this.store.commitBatch(entry)}:{}),recordReceipt:entry=>this.store.recordReceipt(entry),setControl:entry=>this.store.setControl(entry),setPlayerControls:entry=>this.store.setPlayerControls(entry)}});
-        if(restored?.compactNeeded&&typeof this.store.compact==='function')void this.store.compact(sessionId,session).catch(()=>{});
         return {session,sessionId,authority,releaseLock,persisted};
       }catch(error){releaseLock?.();error.persisted=persisted;throw error;}
     }

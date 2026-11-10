@@ -166,6 +166,18 @@ test('history navigates explicit turn and round boundaries while the slider rema
  assert.doesNotMatch(Screen.historyMarkup({index:5,count:12}),/data-command="replay-round-prev"/);
 });
 
+test('history skips human and bot planning drafts to the next public presentation only',async()=>{
+ const History=require('../application/history-controller.js'),Controller=require('../application/game-screen-controller.js');
+ const state=(id,event=1,window='round:1')=>({status:'playing',events:[{id:event}],scene:{plan:{id},decisionWindow:{id:window,participants:[0,1],ready:[]}}});
+ const states=[state('a'),state('a'),state('a'),state('a'),state('b',2,'round:2'),state('b',3,'respawn:2'),state('b',3,'round:2'),state('b',3,'round:2'),state('c',4,'round:3')];
+ assert.equal(History.presentationEnd(states,1,s=>s),4);assert.equal(History.presentationEnd(states,5,s=>s),5);assert.equal(History.presentationEnd(states,7,s=>s),8);
+ const frame=index=>({sessionId:'same',authorityEpoch:'same',game:'fixture',packVersion:'1',viewer:0,role:'player',revision:index,historyLength:states.length,state:states[index],events:states[index].events});
+ const reads=[],history=new History({read:async i=>{reads.push(i);return frame(i);}});history.receive(frame(8));await history.enter(0);reads.length=0;
+ const next=await history.seek(1,{skip:Controller.planningUpdate});assert.equal(next.revision,4);assert.equal(history.index,4);assert.deepEqual(reads,[1,0,2,3,4]);
+ assert.equal((await history.seek(5,{skip:Controller.planningUpdate})).revision,5,'respawn/loot/event transitions stay visible');
+ history.read=async i=>{history.close();return frame(i);};assert.equal(await history.seek(7,{skip:Controller.planningUpdate}),null,'cancelled scans cannot select a late result');
+});
+
 test('history clamps preparation and keeps its view controls separate from the live view',async()=>{
  const History=require('../application/history-controller.js'),Controller=require('../application/game-screen-controller.js');
  const live={sessionId:'s',game:'battleship',packVersion:'test',viewer:0,revision:8,historyLength:9,state:{turn:0,data:{},timeline:{turn:3,starts:[4,6,8],playStart:4}}};
@@ -197,6 +209,11 @@ test('Continuation cards share heading, player and room progress rows',()=>{
     assert.match(html,new RegExp('data-transport-mode="'+transportMode+'"'));assert.match(html,/<strong>Морской бой<\/strong>/);assert.match(html,/Раунд 4 · Ход 8/);assert.match(html,/session-card-heading.*session-card-room.*resume-participants.*session-card-progress/s);
     assert.match(html,/class="resume-person saved-current-turn"/);assert.equal((html.match(/class="avatar /g)||[]).length,2);
     assert.equal(html.includes('connection-light'),network);assert.match(html,/resume-actions.*resume-participants/s);
+    const common={gameName:'UNO',mode:transportMode,status:'<svg data-status="paused"></svg>',badgeTitle:'Тип партии'};
+    const recent=Screen.sessionCard({...common,className:'resume-banner'}),saved=Screen.sessionCard({...common,className:'saved-game'});
+    const capsule=markup=>markup.match(/<span class="pill session-kind-badge"[^]*?<\/span><\/span>/)?.[0];
+    assert(capsule(recent));assert.equal(capsule(saved),capsule(recent),'saved and recent cards use the same kind badge');
+    assert.match(saved,/saved021-title.*pill session-kind-badge.*UNO/);assert.equal((saved.match(/data-transport-mode=/g)||[]).length,1,'transport icon is not repeated in the extra summary');
   }
   assert.match(Screen.resumeCard({state,network:true,connected:false}),/is-disconnected/);
   for(const [move,label] of [[0,'0 действий'],[1,'1 действие'],[2,'2 действия'],[5,'5 действий'],[11,'11 действий'],[21,'21 действие'],[22,'22 действия'],[25,'25 действий']]) {
@@ -270,18 +287,24 @@ test('all packs use one result sound on first presentation, with neutral interme
  }
 });
 
-test('shared landscape allocation stays stable across player counts and balances side zones',()=>{
- for(const [width,height]of [[844,390],[932,430],[1024,600]]){
-  const zones=Screen.landscapeZones(width,height,1);
-  assert.equal(zones.self,zones.opponents,'side zones are equal');
-  for(const count of [2,3,7]){const other=Screen.landscapeZones(width,height,count);assert.equal(other.field,zones.field);assert.equal(other.self,zones.self);assert.equal(other.opponents,zones.opponents);}
+test('shared landscape allocation reserves readable players and hand before the field',()=>{
+ for(const [width,height]of [[600,280],[740,390],[844,390],[900,600],[932,430],[1024,600]]){
+  const zones=Screen.landscapeZones(width,height,7);
+  assert(zones.self>=240,'local hand keeps its minimum width');
+  assert((zones.opponents-(zones.columns-1)*4)/zones.columns>=144,'each opponent keeps a readable footprint');
   assert(zones.field<=height-12,'field fits the usable height');
   assert(Math.abs(zones.opponents+zones.field+zones.self+24-width)<=3,'all zones share one viewport budget');
+  for(const count of [2,3,15])assert.deepEqual(Screen.landscapeZones(width,height,count),zones,'same budget for every multi-opponent roster');
  }
- const dense=Screen.landscapeZones(844,390,7);
- assert.equal(dense.columns,1,'narrow side zones preserve two identity rows beside the avatar');
- assert.equal(Screen.landscapeZones(1200,390,7).columns,2,'wide side zones fit two complete cards');
- assert.equal(dense.self,dense.opponents);
+ assert.equal(Screen.landscapeZones(740,390,7).columns,1,'narrow landscape scrolls one readable roster column');
+ assert.equal(Screen.landscapeZones(844,390,7).columns,2,'two columns when both cards fit');
+ const tall=Screen.landscapeZones(900,600,5);
+ assert(tall.field<600-12,'field yields width rather than squeezing side zones');
+ const measured=Screen.landscapeZones(844,390,7,true,null,210);
+ assert(measured.opponents>=210,'larger authorized metric footprints are respected');
+ assert.equal(measured.columns,1,'wide metrics reduce columns before shrinking identities');
+ const fullscreen=Screen.landscapeZones(900,650,5,true,tall.self);
+ assert.equal(fullscreen.self,tall.self,'fullscreen retains the local reserve');
 });
 
 // Header markup carries its canonical glyph so the prepaint policy can be idempotent.
@@ -316,7 +339,8 @@ test('zone alignment contains oversized content and supports edge alignment',()=
 
 test('fullscreen keeps the established player width and gives remaining width to the opponent zone',()=>{
  const before=Screen.landscapeZones(797,339,7),after=Screen.landscapeZones(832,384,7,true,before.self);
- assert.equal(after.self,before.self);assert.equal(after.field,384-12);assert(after.opponents<after.self);
+ assert.equal(after.self,before.self);assert(after.field<=384-12);assert(after.opponents>=292,'two complete opponent cards survive fullscreen');
+ const readable=Screen.landscapeZones(816,382,7,true,246,204);assert.equal(readable.self,246);assert.equal(readable.opponents,204);assert.equal(readable.field,342,'field respects intrinsic roster width while self width stays fixed');
 });
 
 test('screen layout selects one declared profile independently of player count',()=>{

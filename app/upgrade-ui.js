@@ -15,7 +15,7 @@
   }
   let current=null;
   root.PlayroomUpgradeUI={show(){
-    const service=new root.PlayroomUpgradeService(root.localStorage,root.PlayroomData||root.localStorage);if(!service.inspect())return false;
+    const service=new root.PlayroomUpgradeService(root.localStorage,root.PlayroomData||root.localStorage,root.PlayroomPacks?.storage);if(!service.inspect())return false;
     if(current&&current.frame?.state!=='disposed')return true;
     const H=root.PlayroomGameScreen,t=key=>root.PlayroomMessages.text('upgrade.'+key),dialogs=new root.PlayroomDOM.ModalController({host:document.getElementById('modal-root'),background:document.getElementById('app')});
     const view={frame:null,busy:false},id='upgrade-title';current=view;

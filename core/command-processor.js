@@ -59,7 +59,7 @@
         const entry = {sessionId, viewer:actor, commandId:command.commandId, signature, receipt};
         let pending;
         if(ports.persistence){
-          const step=next?{...entry,previousRevision:before.move,previousState:before,nextState:next}:null;
+          const step=next?{...entry,previousRevision:before.move,previousState:before,nextState:next,action:ports.describeAction?.(next)||{actor,command:JSON.parse(JSON.stringify(command.action))}}:null;
           const staged=typeof ports.persistence.commitBatch==='function';
           if(staged&&next&&ports.checkpoint?.(before,next,actor,command.action)===false){receipt.draft=true;this.#staged.push(step);volatile=true;}
           else if(staged&&(this.#staged.length||this.#receipts.length)){

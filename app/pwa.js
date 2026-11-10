@@ -166,10 +166,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   void refreshInstallation();
   let registrationReady=Promise.resolve(null);
   async function checkForUpdate(){
-    if(navigator.onLine===false)throw Object.assign(Error('Нет сети. Подключитесь и повторите проверку.'),{code:'offline'});
+    // OS connectivity hints may be false while the origin remains reachable through a VPN.
+    // The worker update request is authoritative; its real failures still reject below.
     if(updates.started||updates.locked)throw Object.assign(Error('Дождитесь завершения установки.'),{code:'busy'});
     const registration=await registrationReady;
     if(!registration)throw Object.assign(Error('Проверка обновлений недоступна в этом браузере.'),{code:'unavailable'});
+    // A coalesced update() may resolve without a network request. HEAD bypasses
+    // the GET-only shell cache without downloading or storing another worker body.
+    const script=registration.active?.scriptURL||registration.waiting?.scriptURL||new URL('./sw.js',location.href).href;
+    const response=await fetch(script,{method:'HEAD',cache:'no-store',credentials:'same-origin',redirect:'error'});
+    if(!response.ok)throw Object.assign(Error('Не удалось связаться с сервером обновлений.'),{code:'network',status:response.status});
     await registration.update();
     const worker=registration.installing;
     if(worker&&!['installed','activated','redundant'].includes(worker.state))await new Promise((resolve,reject)=>{

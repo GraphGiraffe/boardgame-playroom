@@ -1,12 +1,21 @@
 # Ordered presentation execution (local refactor)
 
+## Field viewport for enlarged displays (preview.28)
+
+Web GameScreen records the available field grid cell before fitting an intrinsic
+board shape. `fieldBounds(mount)` returns current viewport coordinates for that
+cell. Shared ActionReveal uses this rectangle, clipped to the visible viewport,
+without changing board geometry or the existing physical sizes of cards/dice.
+Groups wrap within that area; enlarging the area does not enlarge their objects.
+This is a Web geometry port, not SceneModel data or an authority dependency.
+
 ## Progressive public frames (preview.14)
 
 Owned registry renders with a `regionSink` expose the optional local
 `ui.publicFrames({key, plan, renderFrame, live})` port. `key` names a sequence
 within the view; `renderFrame(index)` returns authorized `{markup, label,
 players?, progress?, pack?, sound?}`. `live` has the same shape. There are at most
-32 historical frames. Functions are renderer ports, never SceneModel/wire data.
+64 historical frames. Functions are renderer ports, never SceneModel/wire data.
 Older hosts without the port retain the eager `GameComponents.publicFrames`
 fallback. The host component also supports its source-shell descriptor.
 
@@ -484,3 +493,64 @@ Example pack calls are Mage's `cell-<index>` buttons and `piece-<player>` roots.
 The pack describes component boundaries; the common host owns parsing, reuse,
 patching and cancellation. Older hosts receive ordinary inline live markup;
 older packs use their existing physical keys without changing saved rule versions.
+
+### Владение переходом публичного плана
+
+При новом `scene.plan.id` с непустыми `groups` переход принадлежит проигрывателю
+этого плана. Общий обработчик не захватывает параллельную fallback-анимацию
+по последнему событию. Пак помечает `sound: null` у фактов, звук которых уже
+включён в его публичные кадры; самостоятельные действия сохраняют свой feedback.
+Это правило SDK, без ветвлений по ID игры.
+
+### Начальный снимок восстановленного окна
+
+Первый авторизованный снимок живого окна — текущая точка состояния, а не новый
+переход. `PublicSequence.setBaseline(host, planId)` подготавливает и монтирует
+его итоговый кадр без старой анимации и звука. Метка относится к одному ID и
+потребляется при первом live-bind. Новый plan ID проигрывается обычно; явный
+режим истории не подавляется.
+
+SharedViews задаёт эту точку при создании окна; локальное приложение — при
+возобновлении сохранения. Подготовка off-DOM учитывает её до вставки поля, чтобы
+не мелькал исходный кадр. Состояние правил, журнал, команды и ACK не меняются.
+
+## Participant previews and turn handoff (preview.41)
+
+`playerContent.turnPreview` is an optional local presentation hint: `positive` or
+`negative`. `H.playerContent(...,{turnPreview:index=>tone})` and the common player
+panel render the hint without changing rules, commands, layout or player order.
+The pack supplies targets from its authorized projection; editable selection
+hints must clear when the choice is unavailable or committed. Infinite preview
+pulses do not own presentation time. Reduced motion keeps static colours.
+
+After committed effects, GameFeedback appends an owned `turn-handoff` cue. Its
+outgoing/incoming scales come from `PlayroomGameFlow.turnHandoff` (.96/1.07).
+The cue switches displayed turn/next markers together, then pulses whole primary
+player panels through `PlayroomMotion.pulseParticipant`. This port freezes the
+two affected DOM visuals in the existing fixed motion layer, so scaling never
+changes scrollport overflow. Originals and layers restore on completion/cancel. Finite animations use the existing effect context,
+so pause/rate/skip/cancel apply. It does not run on initial mount, unchanged turn,
+or instant/reduced-motion playback, and never participates in authority timing.
+
+### Motion visual geometry (preview.42)
+
+Computed visual copies retain grid row/column placement, auto tracks, per-axis
+gaps, order and flex basis. Participant pulses convert viewport rectangles into
+the fixed motion layer's actual origin and CSS scale. Tests compare internal
+relative rectangles and the whole card's centre in portrait and landscape;
+scrollport integrity alone is not visual equivalence.
+
+### Stable participant nodes (preview.43)
+
+`pulseParticipant` animates the existing primary DOM node in place, without a
+visual clone or subtree rebuild. Its ancestor clipping has a short owned lease;
+existing scrollbar gutter is preserved. Mini-hand descendants retain their real
+CSS context, dimensions and overlap. A replacement/disconnection or resize
+cancels the old-node effect, restoring leased properties. An already scrolled
+ancestor keeps its position and the pulse is omitted there. Pause/rate/cancel
+remain part of the existing effect context.
+
+Reference passing is already the default for object values in JavaScript. This
+visual ownership change does not replace immutable history snapshots or network
+serialization with shared mutable references. Disappearing piece transfers may
+still need a retained visual after the committed renderer removes the source.

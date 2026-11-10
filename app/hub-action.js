@@ -39,6 +39,7 @@
  root.PlayroomHubAction={open,hintMarkup,mount({hasUpdates}){
   function sync(){
    const value=state(),installed=value.mode==='installed';let dismissed=false;try{dismissed=localStorage.getItem(dismissedKey)==='1';}catch{}
+   for(const button of document.querySelectorAll('[data-welcome-install]'))button.hidden=installed;
    for(const entry of document.querySelectorAll('[data-install-entry]')){entry.hidden=installed;entry.querySelector('strong').textContent='Установить ХОД';}
    for(const link of document.querySelectorAll('[data-installed-app]')){link.hidden=!value.launchable;link.href=canonicalUrl();}
    if(!document.querySelector('#modal-root>[data-surface-state=active]'))for(const hint of document.querySelectorAll('[data-install-hint]'))hint.hidden=installed||dismissed||!interested||!['native','ios'].includes(value.mode);

@@ -1,5 +1,5 @@
 /* Offer receipt is a passive banner. Consent is a separate explicit overlay. */
-.host-offer-banner{position:fixed;z-index:120;top:max(8px,env(safe-area-inset-top));left:50%;translate:-50% 0;width:min(560px,calc(100% - 24px));margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:0 4px 18px #172b2426;color:var(--ink)}
+.host-offer-banner{position:fixed;z-index:120;top:max(8px,var(--app-safe-top,0px));left:50%;translate:-50% 0;width:min(560px,calc(100% - 24px));margin:0;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--paper);box-shadow:0 4px 18px #172b2426;color:var(--ink)}
 .host-offer-banner>button{display:flex;align-items:center;gap:10px;width:100%;min-height:64px;padding:10px 12px;border:0;border-radius:inherit;background:transparent;box-shadow:none;color:inherit;text-align:left;font:inherit}
 .host-offer-banner svg{width:24px;height:24px;flex:none}
 .host-offer-banner>button>span:first-of-type{flex:1;min-width:0}

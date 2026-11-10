@@ -6,7 +6,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const {manifest,view,styles,assets={}}=definition;
     if(!manifest||typeof manifest.id!=='string'||typeof view!=='string'||typeof styles!=='string')throw Error(globalThis.PlayroomMessages.text("ui.shared-views.d7b67cfc3bd2"));
     const catalog={[manifest.id]:manifest},scope={PlayroomMessages:root.PlayroomMessages,PlayroomViews:V,PlayroomComponents:root.PlayroomComponents,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error(globalThis.PlayroomMessages.text("ui.shared-views.1d8d3c6abbb7"));return assets[path];}})};
-    // A trusted view module executes here. The remote client does not receive Session or rules code.
+    // A trusted view module executes here. The remote client receives authorized model facts, never the private Session.
     root.PlayroomPackLoader.execute(view,scope);
     let style=document.querySelector?.('style[data-shared-pack="'+manifest.id+'"]');
     if(!style){style=document.createElement('style');style.dataset.sharedPack=manifest.id;document.head.appendChild(style);}
@@ -20,6 +20,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let selected=null,connected=initialConnected,connectionNotice=!initialConnected,historyOpen=false,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,queuedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,replayPaused=false,replayTicket=0,destroyed=false,historyPause=null,historyReturnToResult=false;
     const flow=new Flow.GameFlow({options:()=>root.PlayroomAppBridge?.gameOptions?.(pack.manifest.id)||{},motion:root.PlayroomMotion.surface(()=>app.querySelector('.table-shell')),presentation:()=>({minimumVisibleMs:Flow.viewingTime(pack.manifest.capabilities,(controller.shown||client.snapshot)?.state)}),reducedMotion:()=>root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||false});
+    root.PlayroomPublicSequence?.useExecutor(app,flow.executor);
+    root.PlayroomPublicSequence?.setBaseline(app,client.snapshot?.state.scene?.plan?.id);
     let animationTicket=0,transitionActive=false,lastPresented=-1,lastReviewed=null;
     let presentedWindow=null,renderedFrame=null,renderedLive=null,renderedDisplay=null,renderedInteractions=null;
     const controller=new root.PlayroomGameScreenController({client,present:presentFrame,visible:()=>!document.hidden,report:error=>toast(globalThis.PlayroomMessages.error(error)),changed(){if(destroyed)return;settledRender();const status=controller.shown?.state.status||liveStatus;if(liveStatus==='playing'&&status==='finished')result(true);liveStatus=status;}});
@@ -69,7 +71,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         fragmentSink:regionSink,layoutId:s.sessionId,fieldToggle:hasTable?{hidden:fieldHidden}:null,network:true,revision:s.revision,gameName:historyOpen||readOnly?'История партии':pack.manifest.name,subtitle:'',
         state:s.state,viewer:s.viewer,actions:commands,scoreLabel:pack.catalog.scoreLabel||globalThis.PlayroomMessages.text("ui.shared-views.d7ab0767bbee"),
         playerBadge:(state,index)=>pack.catalog.playerBadge?.(state,index),
-        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?globalThis.PlayroomMessages.text("ui.shared-views.a92c2f3c7ff1"):readOnly?globalThis.PlayroomMessages.text("ui.shared-views.ef90e06de5f0"):!connected&&connectionNotice?globalThis.PlayroomMessages.text("ui.shared-views.1b183e4d703e"):finished?globalThis.PlayroomMessages.text("ui.shared-views.64f3ad19b9c6"):live.paused?globalThis.PlayroomMessages.text("ui.shared-views.65530fd463ea"):(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?globalThis.PlayroomMessages.text("ui.shared-views.2a3e6d5708df"):turn?globalThis.PlayroomMessages.text("ui.shared-views.6e352d281a89",{p0:String(turn.name)}):globalThis.PlayroomMessages.text("ui.shared-views.a353dfef7d2f"),
+        scene,replay:historyOpen,busy:transitionActive,animationSpeed:flow.pace().mode,turnText:historyOpen?globalThis.PlayroomMessages.text("ui.shared-views.a92c2f3c7ff1"):readOnly?globalThis.PlayroomMessages.text("ui.shared-views.ef90e06de5f0"):finished?globalThis.PlayroomMessages.text("ui.shared-views.64f3ad19b9c6"):live.paused?globalThis.PlayroomMessages.text("ui.shared-views.65530fd463ea"):(s.reactionWindows||[s.reactionWindow]).some(w=>w?.protected)?globalThis.PlayroomMessages.text("ui.shared-views.2a3e6d5708df"):turn?globalThis.PlayroomMessages.text("ui.shared-views.6e352d281a89",{p0:String(turn.name)}):globalThis.PlayroomMessages.text("ui.shared-views.a353dfef7d2f"),
         turnExtra:historyOpen?'':globalThis.PlayroomMessages.text("ui.shared-views.e954f44bf49a",{p0:String(s.state.move+1),p1:String(s.viewer<0?(s.role==='table'?globalThis.PlayroomMessages.text("ui.shared-views.1508d1c8b4c0"):globalThis.PlayroomMessages.text("ui.shared-views.9ae566816505")):s.state.scene.players.some(person=>Array.isArray(person.hand))?'':'')}),
         extraMenuActions:canStopRoom?[{attrs:'data-net-action="stop-match"',label:'Остановить партию',name:'stop'}]:[],historyHTML,historyCaption:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.03f70ecc37a6"),readOnly,pause:!!live.paused,canPause:connected&&!client.pending&&live.viewer>=0,historyResult:live.state.status==='finished'&&!readOnly,roomAction:!readOnly?{attrs:'data-command="room"'}:null,footerText:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.efcdf40bd477"),footerTitle:eventText(s)||globalThis.PlayroomMessages.text("ui.shared-views.efcdf40bd477"),
         statusExtra:client.pending&&client.deliveryError?("<button class=\"text-btn network-retry\" data-command=\"retry\">"+globalThis.PlayroomMessages.text("ui.shared-views.0c2b4e7e894e")+"</button>"):'',
@@ -143,7 +145,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     async function submit(action,confirmed=false,context={}){
       if(!usable()&&!independent(action))return;
-      if(action.confirmation&&!confirmed){pendingAction={action,context,revision:client.snapshot.revision};show(GameScreen.actionConfirmationMarkup(action));return;}
+      if(action.confirmation&&!confirmed){try{await client.flushLocalDraft?.();}catch(error){toast(globalThis.PlayroomMessages.error(error));return;}pendingAction={action,context,revision:client.snapshot.revision};show(GameScreen.actionConfirmationMarkup(action));return;}
       input.cancel();
       const guideViewer=client.snapshot.viewer,guideToken=root.PlayroomFirstTurnGuide?.capture(client,guideViewer);
       try{
@@ -168,7 +170,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const previous=controller.history.frame;
       controller.history.receive(client.snapshot);controller.history.open=true;
       app.querySelector('.history-panel')?.setAttribute('aria-busy','true');
-      let result;try{result=await controller.history.seek(index);}catch(error){if(error.message==='HISTORY_FRAME_INVALID')throw Error(globalThis.PlayroomMessages.text("ui.shared-views.988d20a2c641"));throw error;}if(!result||destroyed||!historyOpen)return;
+      let result;try{result=await controller.history.seek(index,{skip:root.PlayroomGameScreenController.planningUpdate});}catch(error){if(error.message==='HISTORY_FRAME_INVALID')throw Error(globalThis.PlayroomMessages.text("ui.shared-views.988d20a2c641"));throw error;}if(!result||destroyed||!historyOpen)return;
       const ticket=controller.history.ticket,change=animate?Flow.eventAction(previous,result):null;
       const shot=change?flow.capture({actor:change.actor,action:change.action,viewer:result.viewer,sceneModel:previous.state.scene,deferDepartures:true}):null;
       shot?.prepareDepartures?.(result.state.scene);
@@ -232,7 +234,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         case 'card-help':root.PlayroomAppBridge?.showCardHelp?.({present:show});break;
         case 'rules':{const game={presets:[],...(root.PlayroomAppBridge?.meta?.(pack.manifest.id)||{}),rules:pack.rules,rulebook:pack.rulebook};(dialogs.activeRoot()?.querySelector('[data-settings-screen]')?root.PlayroomAppBridge.openModal:show)(root.PlayroomRulebookView.header()+(root.PlayroomLobbyView?.gameRulesMarkup?.({...game,max:pack.manifest.maxPlayers||game.max},pack.manifest.settings||[],{rules:readOnly?null:root.PlayroomNetworkLibrary?.ruleContext?.(pack.manifest.id),presetSetting:pack.manifest.presetSetting,hasHands:!!pack.manifest.capabilities?.hands,firstPlayer:pack.manifest.capabilities?.firstPlayer!==false})||pack.rules.map(rule=>'<p>'+H.esc(rule)+'</p>').join('')),'rulebook-modal');break;}
         case 'fullscreen':
-          if(root.PlayroomAppBridge?.fullscreen)await root.PlayroomAppBridge.fullscreen();else if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();break;
+          if(root.PlayroomAppBridge?.fullscreen)await root.PlayroomAppBridge.fullscreen();else if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen({navigationUI:'hide'});break;
         case 'retry':{
           const receipt=await client.retry();if(!receipt.ok&&!receipt.ignored)toast(receipt.message);if(receipt.ok)selected=null;render();break;
         }
@@ -259,6 +261,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const dialog=event.target.closest('.shared-modal-backdrop');
       if(dialog&&(!ownedDialog||dialog!==ownedDialog.element||!dialogs.isActive(ownedDialog)))return;
       if(event.target.closest('[data-room-chat-open]'))return; // Application chat is outside the pack input contract.
+      // Reader controls belong to the rulebook's document handler, not pack input.
+      if(event.target.closest('[data-rulebook-mode],[data-rulebook-jump]'))return;
       const shortcut=event.target.closest('[data-quick-shortcut][data-command]');if(shortcut){event.stopImmediatePropagation();const child=shortcut.dataset.surfaceAction==='child'&&activeSurface?.contains(shortcut);if(shortcut.dataset.command!=='fullscreen'&&!child)root.PlayroomAppBridge?.closeModal?.(true);void action(shortcut.dataset.command).catch(error=>toast(globalThis.PlayroomMessages.error(error)));return;}
       if(event.target.closest('[data-shared-rules]')){event.stopImmediatePropagation();void action('rules');return;}
       if(!event.target.closest('.table-shell.network-game,.shared-modal-backdrop'))return;
@@ -334,7 +338,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       input.invalidate();playerTargets.cancel();
       feedback.accept(next.events||[],next.cues||[],pack.manifest.id,{initialScene:previous?.state.scene,finalScene:next.state.scene,defer:true,silent:!connected||document.hidden,mode:flow.pace().mode,snapshot:shot,motion:shot?(context,step)=>flow.play(step?.snapshot||shot,{draws:step?.draws??(next.effects||[]).filter(effect=>effect.revision===next.revision),transferOnly:step?.transferOnly,context}):null});
       render();
-      try{await flow.present(()=>{feedback.next();return feedback.whenIdle();});}finally{if(current())transitionActive=false;}
+      try{
+        await flow.present(()=>{feedback.next();return feedback.whenIdle();});
+        // A committed snapshot can arrive while its authored public plan is
+        // still playing. Queue the next snapshot here, never in authority:
+        // replacing the plan early cancels damage/death frames in bot-only play.
+        await root.PlayroomPublicSequence?.whenIdle(app);
+      }finally{if(current())transitionActive=false;}
     }
     function subscribe(){
       const live=client.snapshot;syncInteraction();controller.history.receive(live);

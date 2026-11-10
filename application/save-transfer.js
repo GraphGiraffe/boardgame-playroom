@@ -1,5 +1,5 @@
 /* Portable, independent saves. No live room identity or reconnect capability. */
-(function(root,factory){const api=factory(root.PlayroomProtocol||(typeof require==='function'?require('../core/protocol.js'):null),root.PlayroomReplayCodec||(typeof require==='function'?require('./replay-codec.js'):null),root.PlayroomSaveCompression||(typeof require==='function'?require('./save-compression.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomSaveTransfer=api;})(globalThis,function(Protocol,ReplayCodec,Compression){
+(function(root,factory){const api=factory(root.PlayroomProtocol||(typeof require==='function'?require('../core/protocol.js'):null),root.PlayroomReplayCodec||(typeof require==='function'?require('./replay-codec.js'):null),root.PlayroomSaveCompression||(typeof require==='function'?require('./save-compression.js'):null),root.PlayroomSessionCodec||(typeof require==='function'?require('../core/session-codec.js'):null));if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomSaveTransfer=api;})(globalThis,function(Protocol,ReplayCodec,Compression,Codec){
  'use strict';const MAX_BYTES=48*1024*1024,{clone,canonical}=Protocol;
  const fail=code=>{throw Object.assign(Error(code),{code});},id=x=>typeof x==='string'&&/^[a-z][a-z0-9_-]{0,63}$/.test(x),version=x=>typeof x==='string'&&x.length<=100&&/^\d+\.\d+\.\d+(?:[-+][\w.+-]+)?$/.test(x);
  async function digest(value){const data=new TextEncoder().encode(typeof value==='string'?value:canonical(value));if(data.length>MAX_BYTES)fail('SAVE_TOO_LARGE');return 'sha256:'+Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)),x=>x.toString(16).padStart(2,'0')).join('');}
@@ -10,14 +10,17 @@
   return out;
  }
  function sessionPayload(session,manifest,Session){
-  const portable=options(session.options,manifest);portable.mode=session.states[0].players.filter(p=>!p.bot).length>1?'pass':'solo';
+  const first=session.initialSave().states[0],portable=options(session.options,manifest);portable.mode=first.players.filter(p=>!p.bot).length>1?'pass':'solo';
   const saved=JSON.parse(session.serialize());
   // A deterministic action journal stays a journal. Compare only its initial
   // position before sanitizing options; custom/legacy starts retain snapshots.
   if(saved.version===3){
    const initial=new Session(session.engine,session.game,portable,{now:()=>session.createdAt}).current;
-   const withoutEvents=state=>{const {events,...position}=state;return position;};
-   if(canonical(withoutEvents(initial))===canonical(withoutEvents(session.states[0])))return {...saved,options:portable};
+   const withoutEvents=state=>{const {events,mode,...position}=state;return position;};
+   if(canonical(withoutEvents(initial))===canonical(withoutEvents(first))){
+    const current=saved.encoding==='actions-v2'?Session.storageState(session.engine,session.current):session.current;
+    return {...saved,options:portable,end:{...saved.end,fingerprint:Codec.fingerprint({...current,mode:initial.mode})}};
+   }
   }
   const copy=session.export();copy.options=portable;return JSON.parse(Session.restore(session.engine,copy).serialize());
  }

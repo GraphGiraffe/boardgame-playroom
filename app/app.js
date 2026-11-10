@@ -109,6 +109,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
   settings=globalThis.PlayroomPlayerSettings.normalize(settingsStore.read(),{catalog,normalizeScale:globalThis.PlayroomInterfaceScale.normalize,normalizeSpeed:Flow.speed});
   globalThis.PlayroomInterfaceScale.set(settings.interfaceScale);
+  function syncDisplayCutout(){globalThis.PlayroomDisplayCutout.apply();requestAnimationFrame(()=>{GameScreen.layoutScene($('#app'));GameScreen.fitGameTitles(document);});}
+  syncDisplayCutout();
   const volumeLevels=[0,.3,.6,1],speedLevels=Object.keys(animationPresets);
   const volumeLabels=[globalThis.PlayroomMessages.text('ui.app.volume.mute'),globalThis.PlayroomMessages.text('ui.app.a884586f7f7d'),globalThis.PlayroomMessages.text('ui.app.709ce533ba0a'),globalThis.PlayroomMessages.text('ui.app.251ddcd158f4')];
   try { const saved = library.current(); if (saved) { session = saved.session; sessionId = saved.id; } }
@@ -198,6 +200,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   try{shownUpdateKey=localStorage.getItem('playroom.shown-update.v1')||'';}catch(_){}
   function updateIdle(){return screen==='hub'&&!room&&!transition&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()&&storageOK&&!globalThis.PlayroomData.pending;}
   globalThis.PlayroomPWA?.setUpdateGuard(()=>updateIdle()&&(!$('#modal-root').children.length||!!$('#modal-root .updates-modal')));
+  const unifiedCleanup=new globalThis.PlayroomPackUpdateCleanup({manager:packs,localReferences:(id,version)=>{if(library.list().some(row=>row.invalid))throw Error('SAVED_ARCHIVE_UNREADABLE');return library.references(id,version);},networkArchives:()=>globalThis.PlayroomNetworkLibrary.list({strict:true}),activeRoom:()=>!!room||!!globalThis.PlayroomNetworkLibrary.hasActiveRoom?.(),compare:globalThis.TabletopPacks.compareVersions});
+  const unifiedUpdate=new globalThis.PlayroomUpdateAll({storage:localStorage,manager:packs,remote:globalThis.PlayroomRemotePacks,cleanup:unifiedCleanup,version:()=>appVersion,idle:()=>screen==='hub'&&!room&&!transition&&storageOK&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.(),settle:()=>globalThis.PlayroomData.queue,app:()=>globalThis.PlayroomPWA,progress:message=>{const status=$('[data-update-status]');if(status)status.textContent=message;}});
+  async function updateEverything(start=false){
+    if(globalThis.PlayroomUnifiedUpdateBusy)return;globalThis.PlayroomUnifiedUpdateBusy=true;const button=$('[data-command="update-all"]');if(button)button.disabled=true;
+    try{const result=await unifiedUpdate.run(start);if(result&&!result.reloading){rememberInstalledState();if(afterUpdate){closeModal(true);await showAfterUpdate();}else{closeModal(true);renderHub();toast('Приложение и игры обновлены.',{polite:true});}}return result;}
+    catch(error){const message=globalThis.PlayroomMessages.error(error),status=$('[data-update-status]');if(status)status.textContent=message;else toast('Обновление приостановлено. '+message,{action:'show-updates',label:'Продолжить'});}
+    finally{globalThis.PlayroomUnifiedUpdateBusy=false;if(button)button.disabled=false;}
+  }
   function showUpdates(force=false,notice=null){
     const existing=localModal.activeRoot()?.querySelector('.updates-modal');
     if(!force&&(screen!=='hub'||!updateIdle()||document.hidden||$('#modal-root').children.length))return false;
@@ -211,27 +221,27 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     rememberPackUpdates('dismissed');
     if(!force){toast('Доступно обновление',{action:'show-updates',label:'Открыть',polite:true});return true;}
     const important=notice||existing?.updateNotice||null,check=existing?.updateCheck||null;
-    const markup=globalThis.PlayroomUpdateDialog.markup({app,installedVersion:appVersion,packs:items.map(item=>({...item,name:meta(item.id)?.name||item.id})),installed:id=>packs.list().filter(p=>p.id===id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',esc,head:modalHead,notice:important,check,cover:id=>V.cover?.(id)||''});
+    const markup=globalThis.PlayroomUpdateDialog.markup({app,installedVersion:appVersion,resume:!!unifiedUpdate.pending(),packs:items.map(item=>({...item,name:meta(item.id)?.name||item.id})),installed:id=>packs.list().filter(p=>p.id===id).sort((a,b)=>globalThis.TabletopPacks.compareVersions(b.version,a.version))[0]?.version||'0.0.0',esc,head:modalHead,notice:important,check,cover:id=>V.cover?.(id)||''});
     const modal=existing||(openModal(markup,'updates-modal',{onDispose:(_reason,handle)=>handle.element.querySelector('.updates-modal')?.updateCheckCancel?.()})?.element.querySelector('.updates-modal'));
     if(existing)GameScreen.updateModal(existing,markup);
     if(modal){modal.updateNotice=important;modal.updateCheck=check;}
     globalThis.PlayroomUpdateDialog.sync();return true;
   }
-  async function showAfterUpdate(receipt=afterUpdate,{packsOnly=false}={}){
-    if(!receipt||afterUpdateShowing||!updateIdle()||document.hidden||(!packsOnly&&$('#modal-root').children.length)||receipt.to!==appVersion)return false;
+  async function showAfterUpdate(receipt=afterUpdate){
+    if(!receipt||afterUpdateShowing||!updateIdle()||document.hidden||$('#modal-root').children.length||receipt.to!==appVersion)return false;
     afterUpdateShowing=true;
     const rows=installedPackRows(),before=new Map((receipt.packs||[]).map(p=>[p.id,p.version]));
-    const changed=rows.filter(p=>packsOnly?receipt.ids.includes(p.id):before.get(p.id)!==p.version);
+    const changed=rows.filter(p=>before.get(p.id)!==p.version);
     const changes=globalThis.PlayroomUpdateDialog.changes(receipt.releases||[],receipt.from||'0.0.0',appVersion,esc);
     const cards=changed.map(p=>`<article class="post-update-pack"><div class="post-update-cover">${V.cover?.(p.id)||''}</div><div><h3>${esc(p.manifest.name||p.id)} · ${esc(p.version)}</h3><ul>${(globalThis.PlayroomUpdateDialog.releases(p.manifest.releases||[],'0.0.0',p.version).at(-1)?.changes||['Обновлена версия игрового пака.']).map(line=>`<li>${esc(line)}</li>`).join('')}</ul></div></article>`).join('');
     const acknowledge=()=>{afterUpdateShowing=false;if(receipt===afterUpdate){afterUpdate=null;try{sessionStorage.removeItem('playroom.after-update.v1');}catch(_){}}};
-    const handle=openModal(`${modalHead(packsOnly?'Игры обновлены':'ХОД обновлён')}<div class="post-update"><p>${packsOnly?'Обновлены игровые паки.':'Установлена версия '+esc(appVersion)+'.'}</p>${packsOnly?'':`<section data-installed-changes><h3>Что нового</h3>${changes}</section>`}${cards?`<section data-updated-pack-cards><h3>Обновлённые игры</h3>${cards}</section>`:''}<section data-cleanup-plan><h3>Старые и несовместимые паки</h3><p data-cleanup-description role="status">Проверяем, какие версии больше не используются…</p><div data-cleanup-items></div></section></div><footer class="modal-foot" data-fixed-footer><button type="button" class="btn secondary" data-post-update-done>Готово</button><button type="button" class="btn" data-post-update-cleanup disabled>Проверяем версии…</button></footer>`,'post-update-modal',{onDispose:acknowledge});
+    const handle=openModal(`${modalHead('ХОД обновлён')}<div class="post-update"><p>Установлена версия ${esc(appVersion)}.</p>${`<section data-installed-changes><h3>Что нового</h3>${changes}</section>`}${cards?`<section data-updated-pack-cards><h3>Обновлённые игры</h3>${cards}</section>`:''}<section data-cleanup-plan><h3>Старые версии игр</h3><p data-cleanup-description role="status">Проверяем, какие версии больше не используются…</p><div data-cleanup-items></div></section></div><footer class="modal-foot" data-fixed-footer><button type="button" class="btn secondary" data-post-update-done>Готово</button><button type="button" class="btn" data-post-update-cleanup hidden disabled aria-label="Удалить старые версии игр">Очистить</button></footer>`,'post-update-modal',{onDispose:acknowledge});
     if(!handle){acknowledge();return false;}const element=handle.element,status=element.querySelector('[data-cleanup-description]'),button=element.querySelector('[data-post-update-cleanup]');
     const cleanup=new globalThis.PlayroomPackUpdateCleanup({manager:packs,localReferences:(id,version)=>{if(library.list().some(entry=>entry.invalid))throw Error('SAVED_ARCHIVE_UNREADABLE');return library.references(id,version);},networkArchives:()=>globalThis.PlayroomNetworkLibrary.list({strict:true}),activeRoom:()=>!!room||!!globalThis.PlayroomNetworkLibrary.hasActiveRoom?.(),compare:globalThis.TabletopPacks.compareVersions});
     const guard=()=>{if(handle.state!=='active'||screen!=='hub'||room||transition||!storageOK||globalThis.PlayroomNetworkLibrary.hasActiveRoom?.())throw Object.assign(Error('CLEANUP_CHANGED'),{code:'cancelled'});};let plan=null,busy=false;
     element.querySelector('[data-post-update-done]').onclick=()=>{if(!busy)closeModal(true);};
-    const inspect=async()=>{button.disabled=true;try{plan=await cleanup.plan({guard});guard();status.textContent=plan.blocked?'Проверка доступна после выхода из комнаты.':plan.items.length?'Можно удалить перечисленные версии. Версии для сохранённых партий и активные паки останутся.':'Неиспользуемых версий для удаления нет.';element.querySelector('[data-cleanup-items]').innerHTML=(plan.items.length?`<ul>${plan.items.map(p=>`<li>${esc(p.name)} · ${esc(p.version)} · ${p.kind==='old'?'старая версия':'несовместимый пак'}</li>`).join('')}</ul>`:'')+(plan.retained.length?`<p class="muted">Сохранены для партий: ${plan.retained.length}.</p>`:'');button.hidden=!plan.items.length;button.disabled=plan.blocked;button.textContent='Удалить неиспользуемые · '+plan.items.length;}catch(error){if(handle.state==='active'){status.textContent='Не удалось проверить сохранения. Паки не удалены. Повторите проверку.';button.textContent='Повторить проверку';button.hidden=false;button.disabled=false;plan=null;}}};
-    button.onclick=async()=>{if(busy)return;if(!plan){await inspect();return;}busy=true;button.disabled=true;element.querySelector('[data-post-update-done]').disabled=true;try{const removed=await cleanup.removeUnused(plan,{guard});guard();await inspect();status.textContent=`Удалено версий: ${removed.length}. Сохранения и используемые версии сохранены.`;}catch(error){if(handle.state==='active')status.textContent='Очистка не завершена. Используемые версии сохранены; повторите проверку.';}finally{busy=false;if(handle.state==='active'){element.querySelector('[data-post-update-done]').disabled=false;button.disabled=false;}}};
+    const inspect=async()=>{button.disabled=true;try{plan=await cleanup.plan({guard});guard();status.textContent=plan.blocked?'Проверка доступна после выхода из комнаты.':plan.items.length?'Можно удалить перечисленные версии. Версии для сохранённых партий и активные паки останутся.':'Неиспользуемых версий для удаления нет.';element.querySelector('[data-cleanup-items]').innerHTML=(plan.items.length?`<ul>${plan.items.map(p=>`<li>${esc(p.name)} · ${esc(p.version)} · ${p.kind==='old'?'старая версия':'несовместимый пак'}</li>`).join('')}</ul>`:'')+(plan.retained.length?`<p class="muted">Сохранены для партий: ${plan.retained.length}.</p>`:'');button.hidden=!plan.items.length;button.disabled=plan.blocked;button.textContent='Очистить';button.setAttribute('aria-label','Удалить старые версии игр');}catch(error){if(handle.state==='active'){status.textContent='Не удалось проверить сохранения. Паки не удалены. Повторите проверку.';button.textContent='Повторить';button.setAttribute('aria-label','Повторить проверку старых версий');button.hidden=false;button.disabled=false;plan=null;}}};
+    button.onclick=async()=>{if(busy)return;if(!plan){await inspect();return;}busy=true;button.disabled=true;element.querySelector('[data-post-update-done]').disabled=true;try{await cleanup.removeUnused(plan,{guard});guard();closeModal(true);}catch(error){if(handle.state==='active')status.textContent='Очистка не завершена. Используемые версии сохранены; повторите проверку.';}finally{busy=false;if(handle.state==='active'){element.querySelector('[data-post-update-done]').disabled=false;button.disabled=false;}}};
     await inspect();return true;
   }
   async function checkUpdates(){
@@ -245,8 +255,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!operation.current()||localModal.activeRoot()?.querySelector('.updates-modal')!==modal)return;
     state.busy=false;
     if(!results){state.error=true;state.message='Проверка заняла слишком много времени. Повторите её.';showUpdates(true);return;}
-    const failed=results.find(result=>result.status==='rejected'),packFailure=results[1].status==='rejected'||!!globalThis.PlayroomRemotePacks.warning;
-    if(failed||packFailure){state.error=true;state.message=failed?.reason?.code==='offline'?'Нет сети. Подключитесь и повторите проверку.':failed?.reason?.code==='unavailable'&&!packFailure?'Проверка приложения недоступна в этом браузере. Обновления игр проверены отдельно.':'Не удалось проверить все обновления. Повторите проверку.';}
+    const appFailure=results[0].status==='rejected',packFailure=results[1].status==='rejected'||!!globalThis.PlayroomRemotePacks.warning;
+    if(appFailure||packFailure){
+      state.error=true;
+      const appStatus=appFailure?(results[0].reason?.code==='offline'?'Приложение: Нет сети. Подключитесь и повторите проверку.':results[0].reason?.code==='unavailable'?'Проверка приложения недоступна в этом браузере.':'Не удалось проверить обновление приложения. Повторите проверку.'):globalThis.PlayroomPWA.updateInfo?'Найдено обновление приложения.':'Приложение актуально.';
+      const packStatus=packFailure?'Не удалось проверить обновления игр: каталог недоступен. Повторите проверку.':packUpdates().length?'Найдены обновления игр.':'Обновления игр проверены.';
+      state.message=appStatus+' '+packStatus;
+    }
     else state.message=globalThis.PlayroomPWA.updateInfo||packUpdates().length?'Найдены новые обновления.':'Новых обновлений не найдено.';
     showUpdates(true);
   }
@@ -284,7 +299,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const ticket=++soundTicket;
     if(await audio.unlock()&&ticket===soundTicket&&settings.sound&&!document.hidden)void audio.sequence([id],{pack});
   }
-  function stopSounds() {soundTicket++;audio.stop();}
+  function stopSounds() {soundTicket++;audioRequest++;audioPending=false;audio.stop();}
   function cancelBot() { clearTimeout(botTimer); botTimer=null; authority?.cancelBot(); }
   function clearViewHints(){const changed=Object.hasOwn(viewState,'hint')||Object.hasOwn(screenController.viewState,'hint');delete viewState.hint;delete screenController.viewState.hint;return changed;}
   function setLocalPaused(value){
@@ -336,6 +351,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       rememberGame(session.game);
       screen='table';historyOpen=false;replayIndex=null;selected=null;paused=false;awaitingPass=false;lastResult=null;missedFrom=null;
       viewer=isPass()&&!session.current.players[session.current.turn]?.bot?session.current.turn:session.current.players.findIndex(p=>!p.bot);gate=needsGate(session.current)?viewer:null;
+      globalThis.PlayroomPublicSequence?.useExecutor($('#app'),flow.executor);
+      globalThis.PlayroomPublicSequence?.setBaseline($('#app'),localProjection(session.current,viewer).scene?.plan?.id);
       setLocalPaused(false);closeModal(true);render();
       if(session.current.status==='finished')showResult();
     } catch(error) {toast(globalThis.PlayroomMessages.text("ui.app.893a6738231c",{p0:String(globalThis.PlayroomMessages.error(error))}));}
@@ -519,9 +536,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const chooser=historyOrigin?.kind==='library'&&isPass()?`<label class="history-viewer">${globalThis.PlayroomMessages.text("ui.app.f54f58cf08df")}<select id="history-viewer" aria-label="${globalThis.PlayroomMessages.text("ui.app.55228669ae30")}">${session.current.players.map((p,i)=>`<option value="${i}" ${i===viewer?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
     return chooser+GameScreen.historyMarkup({minimum:historyStart(),turnStarts:historyStarts(),roundStarts:(E.project(session.current,-1).scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1})),index:idx,count:session.states.length-1,playing:!!replayTimer});
   }
+  function historyPresentationEnd(index){
+    const History=globalThis.PlayroomHistoryController,states=session.states;
+    return History.presentationEnd(states,History.readyBatchEnd(states,index,s=>E.decisionWindow?.(s)),state=>E.project(state,viewer));
+  }
   function scrubHistory(index) {
     const slider=$('#replay-range'),focused=document.activeElement===slider,before=currentState(),previous=replayIndex??session.states.length-1;
-    input?.cancel();stopReplay();const next=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,Math.max(historyStart(),Math.min(session.states.length-1,index)),s=>E.decisionWindow?.(s)),after=session.states[next],events=E.project(after,viewer).events;
+    input?.cancel();stopReplay();const next=historyPresentationEnd(Math.max(historyStart(),Math.min(session.states.length-1,index))),after=session.states[next],events=E.project(after,viewer).events;
     const action=next<previous?{type:'replay-back'}:events.findLast(e=>e.presentation)?.presentation||{type:'replay'};
     const snapshot=next!==previous&&catalog[session.game]?.capabilities?.presentation?.entityMotion?flow.capture({actor:before.turn,action,viewer,deferDepartures:true}):null;
     replayIndex=next;selected=null;renderTable();if(snapshot)void flow.play(snapshot);
@@ -718,16 +739,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function rootModalFocus(){const host=localModal.activeRoot();if(host&&!host.contains(document.activeElement))host.querySelector('input,textarea,button')?.focus({preventScroll:true});}
   function closeModal(ignoreBack=false) {
     const frame=localModal.activeFrame();
-    if(!ignoreBack&&frame?.meta?.owner!=='app')return frame?.meta?.dismiss?.()||false;
-    if(!ignoreBack&&typeof frame?.meta?.beforeBack==='function'&&frame.meta.beforeBack()===true)return true;
+    if(!ignoreBack&&frame?.meta?.owner!=='app'){const dismissed=frame?.meta?.dismiss?.()||false;if(dismissed||frame&&!localModal.isActive(frame))globalThis.PlayroomUIFeedback?.back();return dismissed;}
+    if(!ignoreBack&&typeof frame?.meta?.beforeBack==='function'&&frame.meta.beforeBack()===true){globalThis.PlayroomUIFeedback?.back();return true;}
     if(!saveSettingsNickname())return false;
     const hadModal=!!frame;
-    if($('#profile-form')&&!playerProfile?.name&&!ignoreBack)return false;
+    if(frame?.element.querySelector('#profile-form')&&!playerProfile?.name&&!ignoreBack)return false;
     const back=modalBack,returnFocus=modalReturn;
     pendingAction=null;pendingConfirmation=null;modalBack=null;modalReturn=null;dismissNotice();
     if(ignoreBack)localModal.reset({reason:'reset'});
     else if(frame&&!localModal.close(frame,{reason:'back'}))return false;
-    if(hadModal)globalThis.PlayroomUIFeedback?.emit('menu.close');
+    if(hadModal&&!ignoreBack)globalThis.PlayroomUIFeedback?.back();
     if(back&&!ignoreBack){back();return true;}
     if(screen!=='table'||isReplay()||paused)stopSounds();placeNotice();
     if(hadModal&&!localModal.activeFrame()&&returnFocus?.isConnected)returnFocus.focus?.({preventScroll:true});
@@ -1068,9 +1089,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     room=null;lobbyParticipantId=null;cancelBot();closeModal(true);screen='hub';hubTab='games';flashPacksOnHub=true;renderHub();refreshPackUpdates();
   }
   function showPlayerNamePrompt(){
-    openModal(`<header class="modal-head"><h2>${globalThis.PlayroomMessages.text("ui.app.773b1abc7b8c")}</h2></header><p class="lead">${globalThis.PlayroomMessages.text("ui.app.5418cf79756a")}</p><form id="profile-form"><div class="profile-identity-row">${globalThis.PlayroomAvatarPicker.button('',profileAvatar)}<label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.f189892b63a9")}</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="${globalThis.PlayroomMessages.text("ui.app.fec0b28c091d")}" required></label></div><div class="profile-entry-actions">${globalThis.PlayroomAccountUI.markup({labelled:true})}<button class="btn" type="submit">${icon('play')} <span data-profile-play-label>${globalThis.PlayroomAccountUI.service.snapshot().kind==='account'?'Играть':'Играть без облака'}</span></button></div></form>`);
+    const downloadable=!!globalThis.PlayroomRemotePacks?.availability().available,installState=globalThis.PlayroomPWA.installState();
+    const setup=`<fieldset class="welcome-install-options"><legend>Подготовить ХОД</legend>${installState.mode!=='installed'?GameScreen.button({attrs:'data-install-open data-welcome-install',type:'button',label:'Установить приложение ХОД',icon:'install',variant:'secondary'}):''}<label class="welcome-install-choice"><input type="checkbox" name="installAllGames" ${downloadable&&!packs.list().length?'checked':''} ${downloadable?'':'disabled'}><span><strong>Установить все игры</strong><small>${downloadable?'Загрузим коллекцию для игры без интернета. Снимите отметку, если хотите выбрать игры отдельно.':'Для загрузки игр откройте веб-версию ХОД.'}</small></span></label></fieldset>`;
+    openModal(`<header class="modal-head"><h2>Добро пожаловать в ХОД</h2></header><p class="lead">${globalThis.PlayroomMessages.text("ui.app.5418cf79756a")}</p><form id="profile-form"><div class="profile-identity-row">${globalThis.PlayroomAvatarPicker.button('',profileAvatar)}<label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.f189892b63a9")}</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="${globalThis.PlayroomMessages.text("ui.app.fec0b28c091d")}" required></label></div>${setup}<div class="profile-entry-actions">${globalThis.PlayroomAccountUI.markup({labelled:true})}<button class="btn" type="submit">${icon('play')} <span data-profile-play-label>${globalThis.PlayroomAccountUI.service.snapshot().kind==='account'?'Играть':'Играть без облака'}</span></button></div></form>`);
   }
-  function savePlayerProfile(form){try{playerProfile=profileStore.save(form.elements.playerName.value,{avatar:profileAvatar});closeModal(true);render();window.dispatchEvent(new Event('playroom:profile-ready'));}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function savePlayerProfile(form){try{const installAll=form.elements.installAllGames?.checked===true;playerProfile=profileStore.save(form.elements.playerName.value,{avatar:profileAvatar});closeModal(true);render();window.dispatchEvent(new Event('playroom:profile-ready'));if(installAll)packUI?.open({installAll:true});}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
   function showRules(gameId=($('#modal-root .room-setup-modal,#room-rules-form')?room?.game?.id:session?.game)) {
     const returnBack=modalBack,fromRoom=!!room&&(!!$('#modal-root .room-setup-modal,#room-rules-form')||modalBack===renderLobby);
     if(!gameId)return showHelp();const g=meta(gameId),manifest=catalog[gameId];
@@ -1153,7 +1176,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const title=field.querySelector('.settings-v021-range-heading > span,.settings-range-heading > span')||field.querySelector(':scope > span');if(!title)continue;const label=title.textContent;
       const wrapper=document.createElement('div');
       wrapper.className=root.querySelector('[data-settings-screen]')?'settings-v021-field-help':'setting-with-help';field.before(wrapper);wrapper.append(field);
-      title.outerHTML=settingTitle(label,globalThis.PlayroomMessages.text('ui.app.help.'+id),{wrap:field.matches('.switch')});
+      const help=globalThis.PlayroomMessages.text('ui.app.help.'+id);
+      title.outerHTML=settingTitle(label,help,{wrap:field.matches('.switch')});
       wrapper.querySelector('.rule-help>button')?.setAttribute('aria-label','Справка: '+label);
     }
   }
@@ -1190,7 +1214,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     viewer=Math.max(0,next.current.players.findIndex(p=>!p.bot&&p.name===playerProfile?.name));if(!next.current.players.some(p=>!p.bot&&p.name===playerProfile?.name))viewer=Math.max(0,next.current.players.findIndex(p=>!p.bot));
     selected=null;historyOpen=!results;replayIndex=results?null:next.states.length-1;closeModal(true);renderTable();if(results)showResult();
   }
-  function closeHistory(){stopReplay();if(historyOrigin?.kind==='library'&&!historyOpen)closeModal(true);if(historyOrigin?.kind==='library'&&historyOrigin.returnToResults){historyOrigin.returnToResults=null;historyOpen=false;replayIndex=null;selected=null;renderTable();showResult();return;}const origin=restoreHistoryOrigin();historyOpen=false;replayIndex=null;selected=null;setLocalPaused(paused);render();if(origin?.returnToResults){if(origin.returnToResults==='lobby')renderLobby();showResult();}else if(origin?.kind==='library')requestAnimationFrame(()=>window.scrollTo(0,origin.scrollY));}
+  function closeHistory(){globalThis.PlayroomUIFeedback?.back();stopReplay();if(historyOrigin?.kind==='library'&&!historyOpen)closeModal(true);if(historyOrigin?.kind==='library'&&historyOrigin.returnToResults){historyOrigin.returnToResults=null;historyOpen=false;replayIndex=null;selected=null;renderTable();showResult();return;}const origin=restoreHistoryOrigin();historyOpen=false;replayIndex=null;selected=null;setLocalPaused(paused);render();if(origin?.returnToResults){if(origin.returnToResults==='lobby')renderLobby();showResult();}else if(origin?.kind==='library')requestAnimationFrame(()=>window.scrollTo(0,origin.scrollY));}
   async function stopLocalMatch(confirmed=false){
     if(!session||session.current.status!=='playing'||room?.transportMode!=='hotseat'||room.phase!=='playing')return;
     if(!confirmed){const expectedSession=session,roomId=room.id;return confirmOperation(globalThis.PlayroomMessages.text("ui.app.986b3d9186b8"),{isCurrent:()=>session===expectedSession&&room?.id===roomId,onConfirm:()=>stopLocalMatch(true)});}
@@ -1221,7 +1245,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       await globalThis.PlayroomPublicSequence?.whenIdle($('#app'));
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
-      const nextIndex=globalThis.PlayroomHistoryController.readyBatchEnd(session.states,replayIndex+1,s=>E.decisionWindow?.(s));
+      const nextIndex=historyPresentationEnd(replayIndex+1);
       const before=currentState(),after=session.states[nextIndex],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
       const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer,sceneModel:E.project(before,viewer).scene,deferDepartures:true});
       const beforeProjection=E.project(before,viewer),afterProjection=E.project(after,viewer);feedback.start(beforeProjection.events);feedback.accept(afterProjection.events,E.soundCues(after,viewer,before.events.at(-1)?.id||0),session.game,{initialScene:beforeProjection.scene,finalScene:afterProjection.scene,mode:timing.mode,snapshot,motion:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??cardTransfers(before,after),transferOnly:step?.transferOnly,context}),defer:true});
@@ -1234,7 +1258,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   async function fullscreen() {
     try {
       if(document.fullscreenElement)await document.exitFullscreen();
-      else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();
+      else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen({navigationUI:'hide'});
       else {const enabled=document.documentElement.classList.toggle('fullscreen-fallback');toast(enabled?globalThis.PlayroomMessages.text("ui.app.2bce29e3ceaa"):globalThis.PlayroomMessages.text("ui.app.a225326b7ef6"));}
     }catch(_){toast(globalThis.PlayroomMessages.text("ui.app.a2c8210f6267"));}
     finally{refreshFullscreenEntry();}
@@ -1244,12 +1268,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     'dismiss-notice':dismissNotice,
     'dismiss-recovery'(){loadWarning='';renderHub();},
     rematch,'rematch-start':async()=>{await rematch();if(room?.transportMode==='hotseat'&&roomService.canStart(room.id))await startLobbyCountdown();},
-    home(){leaveTable('games');},
+    home(){leaveTable('games');globalThis.PlayroomUIFeedback?.back();},
     sessions(){leaveTable('sessions');},
     resume(){resumeSession();},
     'hide-local-session'(){settings.hiddenLocalSession=sessionId;settingsStore.write(settings);renderHub();},
     'show-updates'(){const origin=noticeElement.contains(document.activeElement)&&noticeElement.returnFocus;if(origin?.isConnected&&origin.getClientRects().length&&!origin.closest('[hidden],[inert]')&&!origin.matches(':disabled'))origin.focus({preventScroll:true});showUpdates(true);},
     'check-updates':checkUpdates,
+    'update-all'(){return updateEverything(true);},
     'update-packs'(){closeModal(true);commands.packs();},
     async 'download-app'(){try{await globalThis.PlayroomPWA.downloadUpdate();}catch(error){const status=$('[data-update-status]');if(status&&error.code!=='update-changed')status.textContent=globalThis.PlayroomMessages.error(error);}globalThis.PlayroomUpdateDialog.sync();},
     async 'update-app'(){
@@ -1266,14 +1291,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const values={firstPlayerMode:'rules',seatOrder:'normal',preset:g.presets?.[0]?.id||'default',openHands:false,...Object.fromEntries(fields.map(f=>['option-'+f.key,f.default??f.options?.[0]?.value]))};
       for(const input of form.elements){if(!(input.name in values))continue;const value=values[input.name];if(input.type==='radio')input.checked=input.value===value;else if(input.type==='checkbox')input.checked=!!value;else if(input.dataset.choiceOptions){input.value=Math.max(0,JSON.parse(input.dataset.choiceOptions).findIndex(o=>o.value===value));syncChoice(input);}else input.value=value;}
       syncRuleVisibility(form);
-    },'reset-settings':async()=>{const original=document.querySelector('[data-settings-screen]'),resume=settingsReturn,network=!!document.querySelector('.network-game');if(!await GameScreen.confirmDialog(globalThis.PlayroomMessages.text('ui.app.confirm-reset-settings'))||!original?.isConnected||!localModal.activeRoot()?.contains(original))return;settings=globalThis.PlayroomPlayerSettings.defaults();settingsStore.write(settings);audio.setEnabled(settings.sound);audio.setVolume(settings.volume);syncReducedMotion();window.dispatchEvent(new Event('playroom:game-options'));if(!network){if(screen==='table')renderTable();else if(screen==='hub')renderHub();}if(resume)resume();else showSettings();},'card-help':showCardHelp,fullscreen,rules:()=>showRules(),
+    },'reset-settings':async()=>{const original=document.querySelector('[data-settings-screen]'),resume=settingsReturn,network=!!document.querySelector('.network-game');if(!await GameScreen.confirmDialog(globalThis.PlayroomMessages.text('ui.app.confirm-reset-settings'))||!original?.isConnected||!localModal.activeRoot()?.contains(original))return;settings=globalThis.PlayroomPlayerSettings.defaults();settingsStore.write(settings);syncDisplayCutout();audio.setEnabled(settings.sound);audio.setVolume(settings.volume);syncReducedMotion();window.dispatchEvent(new Event('playroom:game-options'));if(!network){if(screen==='table')renderTable();else if(screen==='hub')renderHub();}if(resume)resume();else showSettings();},'card-help':showCardHelp,fullscreen,rules:()=>showRules(),
     'room-rules':showRoomRulesEditor,'room-change-game':showRoomGameEditor,'room-game-context':showRoomGameContext,
     'lobby-ready':toggleLobbyReady,
     'lobby-spectator':becomeLobbySpectator,
     'lobby-table':()=>{try{room=roomService.claimTable(room.id,lobbyParticipantId);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}},
     'stop-local-match':stopLocalMatch,
     'lobby-start':startLobbyCountdown,
-    'lobby-leave':async()=>{const expected=room;if(room&&!await GameScreen.confirmDialog(room.transportMode==='hotseat'?'Выйти из комнаты? Партия сохранится на устройстве.':globalThis.PlayroomMessages.text("ui.app.15bd355dbb93")))return;if(room===expected){try{await globalThis.PlayroomLobbyNetwork?.closeRoom?.(room?.id);if(room===expected)leaveLobby();}catch(error){toast(globalThis.PlayroomSocialUI.message(error));}}},
+    'lobby-leave':async()=>{const expected=room;if(room&&!await GameScreen.confirmDialog(room.transportMode==='hotseat'?'Выйти из комнаты? Партия сохранится на устройстве.':globalThis.PlayroomMessages.text("ui.app.15bd355dbb93")))return;if(room===expected){try{await globalThis.PlayroomLobbyNetwork?.closeRoom?.(room?.id);if(room===expected){leaveLobby();globalThis.PlayroomUIFeedback?.back();}}catch(error){toast(globalThis.PlayroomSocialUI.message(error));}}},
     'close-modal':()=>closeModal(),
     async 'confirm-operation'(){const todo=pendingConfirmation;closeModal(true);if(todo?.isCurrent())try{await todo.onConfirm();}catch(error){toast(globalThis.PlayroomMessages.error(error));}},
     'confirm-action'(){const todo=pendingAction;closeModal();if(todo&&todo.session===session&&todo.state===session.current&&screen==='table'&&todo.actor===viewer)act(todo.actor,todo.action,{...todo.context,confirmed:true});},
@@ -1471,8 +1496,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!restoringBackBoundary)return;
     restoringBackBoundary=false;
     const dialogs=[...document.querySelectorAll('dialog[open]')],top=dialogs.at(-1);
-    if(top){const event=new Event('cancel',{cancelable:true});if(top.dispatchEvent(event))top.close();return;}
-    if(globalThis.PlayroomHostTransferUI?.dismissIncomingPanel?.())return;
+    if(top){const event=new Event('cancel',{cancelable:true});if(top.dispatchEvent(event))top.close();if(!top.open)globalThis.PlayroomUIFeedback?.back();return;}
+    if(globalThis.PlayroomHostTransferUI?.dismissIncomingPanel?.()){globalThis.PlayroomUIFeedback?.back();return;}
     if($('#modal-root').children.length){closeModal();return;}
     if(globalThis.PlayroomGameMenu?.opened){globalThis.PlayroomGameMenu.close();return;}
     if(globalThis.PlayroomGameChatPanel?.opened){globalThis.PlayroomGameChatPanel.close();return;}
@@ -1482,10 +1507,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(await GameScreen.confirmDialog(globalThis.PlayroomMessages.text('ui.app.confirm-leave-table'))){
         const back=document.querySelector('.table-header [data-command="home"],.table-header [data-net-action]');
         if(document.querySelector('.network-game')&&(globalThis.PlayroomNetworkLibrary?.hasActiveRoom()||globalThis.PlayroomNetworkLibrary?.isConnecting()))globalThis.PlayroomNetworkLibrary.exitToMenu();else if(back)back.click();else leaveTable('games');
+        globalThis.PlayroomUIFeedback?.back();
       }
       return;
     }
-    if(hubTab!=='games'){hubTab='games';renderHub();return;}
+    if(hubTab!=='games'){hubTab='games';renderHub();globalThis.PlayroomUIFeedback?.back();return;}
     armBack();
   });
   document.addEventListener('keydown',event=>{
@@ -1498,7 +1524,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return;
     }
     if(event.key==='Tab'){
-      const dialog=localModal.activeRoot()?.querySelector('.modal')||$('.handoff');if(!dialog)return;
+      const dialog=(globalThis.PlayroomGameChatPanel?.interactive?$('.game-chat-panel'):null)||localModal.activeRoot()?.querySelector('.modal')||$('.handoff');if(!dialog)return;
       const items=Array.from(dialog.querySelectorAll('button,input,textarea,select,a[href],[contenteditable=true],[tabindex="0"]')).filter(e=>!e.matches(':disabled')&&e.tabIndex>=0&&e.offsetParent!==null&&!e.closest('[inert],[hidden],[aria-hidden="true"]')&&getComputedStyle(e).visibility==='visible');
       if(!items.length)return;const first=items[0],last=items[items.length-1];
       if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
@@ -1517,7 +1543,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     stopSounds();if(session)save();
     try{sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen,sessionId:screen==='table'?sessionId:null,viewState:screen==='table'?Object.fromEntries(Object.entries(viewState).filter(([key])=>key!=='hint')):{},scroll:screen==='table'?{top:$('#app [data-scene-scroll]')?.scrollTop||0,left:$('#app [data-scene-scroll]')?.scrollLeft||0}:null}));}catch(_){}
   });
-  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,captureOperation:captureUIOperation,onInstalled:ids=>void showAfterUpdate({to:appVersion,ids,packs:[]},{packsOnly:true}),onCatalog(){
+  packUI=globalThis.PlayroomPackManager?.create({manager:packs,library,networkLibrary:globalThis.PlayroomNetworkLibrary,openModal,modalHead,toast,captureOperation:captureUIOperation,onCatalog(){
     rememberPackUpdates('read');rememberPackUpdates('dismissed');if(screen==='hub')renderHub();
   },onChange(){
     rememberInstalledState();
@@ -1565,15 +1591,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(navigation.scroll){const board=$('#app [data-scene-scroll]');if(board){board.scrollTop=Number(navigation.scroll.top)||0;board.scrollLeft=Number(navigation.scroll.left)||0;}}
   }else render();
   if(globalThis.PlayroomRemotePacks){
-    void globalThis.PlayroomRemotePacks.load().then(async catalog=>{
-      if(!catalog)return;
-      if(!packs.list().length)for(const item of catalog.packs){
-        try{await globalThis.PlayroomRemotePacks.install(item.id,{activate:true});}
-        catch(error){loadWarning=globalThis.PlayroomMessages.text("ui.app.f59d35944a49",{p0:String(item.id),p1:String(globalThis.PlayroomMessages.error(error))});}
-      }
+    void globalThis.PlayroomRemotePacks.load().then(()=>{
       if(screen==='hub')renderHub();
     });
   }
-  if(afterUpdate)queueMicrotask(()=>void showAfterUpdate());
+  if(unifiedUpdate.pending())queueMicrotask(()=>void updateEverything());else if(afterUpdate)queueMicrotask(()=>void showAfterUpdate());
   if(!globalThis.PlayroomUpgradeUI?.show()&&!playerProfile?.name&&!document.querySelector('.account-modal'))setTimeout(showPlayerNamePrompt,0);
 })();

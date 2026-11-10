@@ -10,6 +10,7 @@
   'menu.open':{label:'Открытие меню',notes:[note(523,0,.055)]},
   'menu.close':{label:'Закрытие меню',notes:[note(440,0,.055)]},
   'navigation':{label:'Переход',notes:[note(587,0,.05)]},
+  'navigation.back':{label:'Назад',notes:[note(440,0,.06)]},
   'control.change':{label:'Изменение параметра',notes:[note(659,0,.045)]},
   'game.start':{label:'Начало партии',notes:[note(523,0,.09),note(659,.075,.09),note(784,.15,.16)]},
   'message':{label:'Сообщение',notes:[note(660),note(880,.075,.11)]},
@@ -26,15 +27,16 @@
   'update.ready':{label:'Доступно обновление',notes:[note(698),note(880,.12,.18)]}
  });
  function create({audio,visible=()=>true,identity=()=> 'local',now=Date.now}){
-  let owner=null,registered=null,last=-Infinity;const seen=new Set();
+  let owner=null,registered=null,last=-Infinity,pendingBack=false;const seen=new Set();
   function emit(type,{id=null,quiet=false}={}){
-   if(!sounds[type])return false;const who=identity();if(who!==owner){owner=who;seen.clear();last=-Infinity;}
+   if(!sounds[type]||pendingBack&&['menu.open','menu.close','navigation'].includes(type))return false;const who=identity();if(who!==owner){owner=who;seen.clear();last=-Infinity;}
    const key=id===null?null:type+':'+id;if(key&&seen.has(key))return false;if(key){seen.add(key);while(seen.size>256)seen.delete(seen.values().next().value);}
-   const port=audio();if(quiet||!visible()||!port||port.uiEnabled===false||port.busy||now()-last<250)return false;
+   const port=audio();if(quiet||!visible()||!port||port.uiEnabled===false||port.busy||type!=='navigation.back'&&now()-last<250)return false;
    if(port!==registered){port.registerPack('app-feedback',sounds);registered=port;}
    last=now();port.play([type],'app-feedback');return true;
   }
-  return Object.freeze({emit});
+  function back(){if(pendingBack)return false;pendingBack=true;const who=identity();queueMicrotask(()=>{pendingBack=false;if(identity()===who)emit('navigation.back');});return true;}
+  return Object.freeze({emit,back});
  }
  return {create,sounds};
 });

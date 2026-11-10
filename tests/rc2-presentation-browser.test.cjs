@@ -22,6 +22,39 @@ async function scene(page,game,options={}){
   window.rcRender=()=>{const actual=rcStateOverride||rcSession.current,state=TabletopCore.project(actual,0),actions=TabletopCore.legalActions(actual,0),scene=PlayroomViews.render(state,0,actions,{selected:null,preferences:{},viewState:{},...rcUI});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:TabletopCore.get(game).name,state,viewer:0,actions,scene,turnText:'Ваш ход'}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));};rcRender();
  },{game,options});
 }
+test('landscape reserves readable player zones before maximizing the field',{timeout:90000},async()=>fixture(async page=>{
+ const rows=[];
+ for(const game of ['uno','mage-brawl','durak','domino','yatzy','battleship','checkers','gofish','ludo','oldmaid','pexeso','snakes','tictactoe']){
+  const count=await page.evaluate(game=>TabletopCore.get(game).max,game);
+  await scene(page,game,{players:Array.from({length:count},(_,i)=>({name:['Иван','Мика','Луна','Ника','Тео','Сэм','Лев','Кира'][i]}))});
+  for(const [width,height]of [[900,600],[844,390],[740,390],[390,844],[900,600]]){
+   await page.setViewportSize({width,height});
+   await page.waitForFunction(()=>document.querySelector('.app-game-layout')?.dataset.screenOrientation===(innerWidth>innerHeight?'landscape':'portrait'));
+   const row=await page.evaluate(()=>{
+    const stage=document.querySelector('.app-game-layout'),rect=node=>node.getBoundingClientRect().toJSON();
+    const roster=stage.querySelector('.layout-participants'),self=stage.querySelector('.layout-self'),field=stage.querySelector('.layout-field');
+    const panels=[...roster.querySelectorAll('.player-panel')].filter(n=>n.getClientRects().length);
+    const hand=self.querySelector('.layout-hand'),cards=[...hand?.querySelectorAll('.hand-card')||[]];
+    return {width:innerWidth,height:innerHeight,anchors:stage.dataset.seatAnchors==='true',columns:Number(stage.dataset.landscapeRosterColumns)||0,roster:rect(roster),self:rect(self),field:rect(field),panels:panels.map(rect),names:panels.map(p=>{const n=p.querySelector('.player-heading strong');return {text:n.textContent,width:n.clientWidth,needed:n.scrollWidth};}),cards:cards.map(rect),pageOverflow:document.documentElement.scrollWidth-innerWidth};
+   });
+   assert(row.pageOverflow<=1,game+' page stays within viewport');
+   if(width>height&&!row.anchors){
+    assert(row.self.width>=239,game+' keeps the local hand reserve: '+JSON.stringify(row));
+    assert(row.panels.every(p=>p.width>=143),game+' keeps readable opponent cards');
+    assert(row.names.every(n=>n.width>=n.needed),game+' ordinary player names fit');
+    assert.equal(row.columns,width===740||count===2?1:2,game+' chooses columns from their minimum widths');
+    assert(row.field.left>=row.roster.right-1&&row.field.right<=row.self.left+1,game+' field stays between player zones');
+   }
+   rows.push({game,...row});
+   if(width===900&&height===600)await page.screenshot({path:path.join(shots,`readable-zones-${game}.png`)});
+  }
+  // Repainting the same committed state cannot silently renegotiate zone sizes.
+  const before=await page.locator('.layout-self').boundingBox();await page.evaluate(()=>rcRender());
+  assert.deepEqual(await page.locator('.layout-self').boundingBox(),before,game+' repaint preserves geometry');
+ }
+ fs.writeFileSync(path.join(shots,'readable-zones.json'),JSON.stringify(rows,null,2));
+},{safeSupabase:true}));
+
 test('shared-grid games force rows and the complete Yatzy table fits phone and tablet widths',{timeout:45000},async()=>fixture(async page=>{
  const dir=path.join(root,'tmp_files/dice-review');fs.mkdirSync(dir,{recursive:true});
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768]]){
@@ -1817,4 +1850,22 @@ test('first-turn guidance explains clipped scroll targets without moving the fie
  await page.evaluate(()=>{const host=document.querySelector('#scroll-guide-fixture');host.style.overflow='hidden';host.style.direction='ltr';host.scrollLeft=0;host.scrollTop=0;document.querySelector('#scroll-guide-target').style.left='500px';const state=TabletopCore.project(rcSession.current,0);PlayroomFirstTurnGuide.update({owner:scrollGuideOwner,state,viewer:0,actions:TabletopCore.legalActions(rcSession.current,0),active:true,busy:false});dispatchEvent(new Event('resize'));});
  await page.locator('.first-turn-guide:not([hidden]) .guide-caption').filter({hasText:'Alternative action.'}).waitFor();assert.equal(await page.locator('.first-turn-guide.is-scroll-cue:not([hidden])').count(),0,'non-scrollable clipping must not advertise an impossible scroll');
  fs.writeFileSync(path.join(shots,'scroll-cue-directions.json'),JSON.stringify(rows,null,2));
+},{safeSupabase:true}));
+
+test('shared game frame aligns system edges and fits eight-player landscape counters',{timeout:45000},async()=>fixture(async page=>{
+ const report=[];
+ for(const [width,height] of [[844,320],[844,390],[932,430],[390,844]]){
+  await page.setViewportSize({width,height});
+  for(const [game,count] of [['mage-brawl',8],['uno',6],['battleship',2]]){
+   await scene(page,game,{players:Array.from({length:count},(_,i)=>({name:'Игрок '+i}))});
+   const m=await page.evaluate(()=>{const box=n=>n.getBoundingClientRect(),shell=document.querySelector('.table-shell'),stage=document.querySelector('.app-game-layout'),scene=document.querySelector('.scene'),roster=stage.querySelector('.layout-participants'),heading=document.querySelector('.game-frame-heading'),tools=document.querySelector('.game-frame-tools'),list=roster.querySelector('.players-panels'),cards=[...roster.querySelectorAll('.player-panel')];return {scene:box(scene).toJSON(),heading:box(heading).toJSON(),tools:box(tools).toJSON(),padding:getComputedStyle(shell).padding,roster:{height:roster.clientHeight,scroll:roster.scrollHeight,bottom:box(roster).bottom,lastBottom:Math.max(...cards.map(n=>box(n).bottom))},columns:getComputedStyle(list).gridTemplateColumns.split(' ').length,counters:cards.map(card=>{const c=card.querySelector('.player-scores');return {card:box(card).toJSON(),scores:c?box(c).toJSON():null};}),overflow:document.documentElement.scrollWidth>innerWidth+1};});
+   assert(!m.overflow,JSON.stringify({game,width,m}));
+   if(width>height){assert(Math.abs(m.heading.x-m.scene.x)<1);assert(Math.abs(m.tools.right-m.scene.right)<1);assert(Math.abs(m.heading.y-m.scene.y)<1);assert.equal(m.columns,count>2?2:1);if(game==='mage-brawl'){assert(m.roster.scroll<=m.roster.height+1,JSON.stringify(m));assert(m.roster.lastBottom<=m.roster.bottom+1);for(const item of m.counters)assert(item.scores.right<=item.card.right-1,JSON.stringify(item));}}
+   if(game==='mage-brawl'&&width>height){const stable=await page.evaluate(()=>{const bounds=()=>['.layout-field','.game-frame-heading','.game-frame-tools'].map(selector=>{const b=document.querySelector(selector).getBoundingClientRect();return [b.x,b.y,b.width,b.height];}),before=bounds();rcStateOverride=structuredClone(rcSession.current);for(const player of rcStateOverride.data.players){player.health=1;player.lives=1;}rcRender();return {before,after:bounds()};});assert.deepEqual(stable.after,stable.before,'counter changes preserve the field and system blocks');const overflow=await page.evaluate(()=>{const roster=document.querySelector('.layout-participants'),list=roster.querySelector('.players-panels');for(let i=0;i<20;i++)list.append(list.firstElementChild.cloneNode(true));roster.scrollTop=roster.scrollHeight;const last=list.lastElementChild.getBoundingClientRect(),edge=roster.getBoundingClientRect();return {scrollable:roster.scrollHeight>roster.clientHeight,atEnd:Math.abs(roster.scrollHeight-roster.clientHeight-roster.scrollTop)<1,lastVisible:last.bottom<=edge.bottom+1};});assert(overflow.scrollable&&overflow.atEnd&&overflow.lastVisible,JSON.stringify(overflow));}
+   report.push({game,width,height,...m});
+  }
+ }
+ await page.setViewportSize({width:844,height:320});await scene(page,'mage-brawl',{players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))});await page.evaluate(()=>document.documentElement.requestFullscreen());await page.setViewportSize({width:844,height:390});await page.evaluate(()=>PlayroomGameScreen.layoutScene(document.querySelector('#app')));
+ const fullscreen=await page.locator('.layout-participants .player-panel').evaluateAll(cards=>cards.map(card=>({width:card.getBoundingClientRect().width,right:card.getBoundingClientRect().right,scoreRight:card.querySelector('.player-scores').getBoundingClientRect().right})));assert(fullscreen.every(c=>c.scoreRight<=c.right-1),JSON.stringify(fullscreen));await page.evaluate(()=>document.exitFullscreen());
+ console.log('game frame geometry',JSON.stringify(report));
 },{safeSupabase:true}));

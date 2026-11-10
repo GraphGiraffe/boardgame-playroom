@@ -231,3 +231,10 @@ test('rebinding the same plan rate preserves its timer and running animation',as
  assert.deepEqual(calls,[],'passive rebind does not pause/resume the visible effect');assert.equal([...timers.keys()][0],ticket,'the original deadline stays armed');
  player.setRate(2);assert.deepEqual(calls,['pause','play']);assert.equal(animation.playbackRate,2);player.skip();await pending;
 });
+
+test('a new authored public plan owns its transition instead of a generic action capture',()=>{
+ const before={sessionId:'match',authorityEpoch:'epoch',revision:1,events:[{id:1}],state:{scene:{plan:{id:'old',groups:[]}}}};
+ const next={...before,revision:2,events:[{id:2,kind:'play',player:0}],state:{scene:{plan:{id:'round',groups:[{scene:0,duration:250,cues:[]}]}}}};
+ assert.equal(Flow.eventAction(before,next),null);
+ assert.equal(Flow.eventAction({...before,state:next.state},next).action.type,'play','a later event outside a new public plan keeps the normal path');
+});

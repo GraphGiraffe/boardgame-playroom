@@ -23,17 +23,17 @@
 /* Data usage followed by always-visible transfer and maintenance actions. */
 .storage-data-modal [data-storage-content]{margin-top:12px;display:flex;flex-direction:column;gap:14px;min-width:0}
 .storage-data-modal .data-summary{padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-selected,var(--paper));color:var(--ink)}
-.storage-data-modal .data-summary>strong{display:block;font-size:1rem;line-height:1.4}
+.storage-data-modal .data-summary>strong{display:block;min-height:2.8em;font-size:1rem;line-height:1.4}
 .storage-data-modal .data-summary>p{font-size:0.875rem;line-height:1.45;color:var(--muted);margin:6px 0 12px}
 .storage-data-modal .data-note{margin:0;color:var(--muted);font-size:0.875rem;line-height:1.45}
-.storage-data-modal .data-usage-legend{display:flex;flex-wrap:wrap;gap:10px 18px;margin:12px 0 0;font-size:0.75rem;line-height:1.4}
+.storage-data-modal .data-usage-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px;box-sizing:border-box;min-height:4.5rem;margin:0;padding-top:12px;font-size:0.75rem;line-height:1.4}
 .storage-data-modal .data-usage-legend>div{flex:1 1 80px;min-width:0}
 .storage-data-modal .data-usage-legend dt:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:var(--green)}
 .storage-data-modal .data-usage-legend [data-meter-category=packs] dt:before{background:var(--color-side-blue,#668fad)}
 .storage-data-modal .data-usage-legend [data-meter-category=saves] dt:before{background:var(--color-side-yellow,#d6aa36)}
 .storage-data-modal .data-usage-legend dd{margin:3px 0 0 12px;color:var(--muted)}
-.storage-data-modal .data-export-list>summary{min-height:48px;cursor:pointer;padding:14px 0;font-weight:600;line-height:1.4}
-.storage-data-modal .data-export-list>summary small{display:block;font-weight:400;color:var(--muted);font-size:0.8125rem;margin-top:3px}
+.storage-data-modal .data-quick-actions{display:flex;flex:none;gap:4px}
+.storage-data-modal .data-save-list{min-width:0}
 .storage-data-modal .menu-row{min-height:56px;gap:12px}
 .storage-data-modal .menu-row>span:first-child{min-width:0;overflow-wrap:anywhere}
 .storage-data-modal .data-entry-actions{display:flex;flex:none;gap:6px}
@@ -41,3 +41,10 @@
 .storage-data-modal .data-action-danger strong{color:var(--color-feedback-error)}
 .storage-data-modal .menu-row:disabled{opacity:.5;cursor:default}
 .storage-data-modal .switch{margin:0;min-height:48px;gap:12px}
+
+/* Both overviews share a header/meter and the same legend-or-autosave row. */
+.storage-data-modal .data-overview{min-width:0}
+:is(#modal-root,[data-ui-surface-exit]) .storage-data-modal .data-overview>.switch{box-sizing:border-box;min-height:4.5rem;margin:0}
+.storage-data-modal .data-summary>.data-total{display:flex;align-items:center;gap:5px;min-height:1.45em;color:var(--muted)}
+.storage-data-modal .data-total>svg,.storage-data-modal .data-total .storage-cloud-label svg{display:block;flex:none;width:18px;height:18px}
+.storage-data-modal .data-total .storage-cloud-label{color:inherit;font:inherit}

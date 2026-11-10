@@ -7,8 +7,8 @@ function fakeChannel(){
     readyState:'open',
     addEventListener(type,fn){if(!listeners.has(type))listeners.set(type,new Set());listeners.get(type).add(fn);},
     removeEventListener(type,fn){listeners.get(type)?.delete(fn);},
-    emit(type,value){for(const fn of listeners.get(type)||[])fn(type==='message'?{data:JSON.stringify(value)}:{});},
-    send(raw){const message=JSON.parse(raw);if(message.kind==='hello')queueMicrotask(()=>this.emit('message',{kind:'transport-ready',version:2}));},
+    async emit(type,value){for(const fn of listeners.get(type)||[])fn(type==='message'?{data:require('../application/wire-codec.js').encode(value)}:{});await new Promise(resolve=>setImmediate(resolve));},
+    send(raw){const message=require('../application/wire-codec.js').decode(raw);if(message.kind==='hello')queueMicrotask(()=>this.emit('message',{kind:'transport-ready',version:Transport.TRANSPORT_VERSION}));},
     close(){if(closed)return;closed=true;this.readyState='closed';this.emit('close');}
   };
 }
@@ -19,13 +19,13 @@ test('RTC presence is isolated from game snapshots and ignores out-of-order stat
     const seen=[];client.subscribePresence(s=>seen.push(s));
     const p=(revision,connected)=>({kind:'room-presence',roomId:'room-test',revision,
       participants:[{id:'guest-a',nickname:'Игрок & ко',connected}]});
-    channel.emit('message',p(5,false));assert.equal(seen.length,1);assert.equal(seen[0].participants[0].connected,false);
-    channel.emit('message',p(4,true));assert.equal(seen.length,1,'older status must not erase a disconnect');
-    channel.emit('message',p(5,true));assert.equal(seen.length,1,'same-revision status is a duplicate');
-    channel.emit('message',{kind:'room-presence',roomId:'room-test',revision:6,
+    await channel.emit('message',p(5,false));assert.equal(seen.length,1);assert.equal(seen[0].participants[0].connected,false);
+    await channel.emit('message',p(4,true));assert.equal(seen.length,1,'older status must not erase a disconnect');
+    await channel.emit('message',p(5,true));assert.equal(seen.length,1,'same-revision status is a duplicate');
+    await channel.emit('message',{kind:'room-presence',roomId:'room-test',revision:6,
       participants:[{id:'x',nickname:'X',connected:'yes'}]});assert.equal(seen.length,1,'invalid connection flag rejected');
-    for(const extra of [{playerIndex:1.5},{playerIndex:32},{bot:'yes'},{local:'yes'},{hasConnected:'yes'}]){channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],...extra}]});assert.equal(seen.length,1,'invalid role metadata rejected');}
-    channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],playerIndex:1,hasConnected:true,local:false,bot:false}]});assert.equal(seen.length,2);assert.equal(seen[1].participants[0].connected,true);
+    for(const extra of [{playerIndex:1.5},{playerIndex:32},{bot:'yes'},{local:'yes'},{hasConnected:'yes'}]){await channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],...extra}]});assert.equal(seen.length,1,'invalid role metadata rejected');}
+    await channel.emit('message',{...p(6,true),participants:[{...p(6,true).participants[0],playerIndex:1,hasConnected:true,local:false,bot:false}]});assert.equal(seen.length,2);assert.equal(seen[1].participants[0].connected,true);
     seen[1].participants[0].nickname='TAMPER';
     client.subscribePresence(s=>{assert.equal(s.participants[0].nickname,'Игрок & ко');})();
   }finally{client.close();}
@@ -45,7 +45,7 @@ test('quick reactions are ephemeral, bounded and bound to the authenticated play
  const channel=fakeChannel(),client=Transport.client(channel,{handshakeTimeout:1000});
  try{await client.ready();const events=[],snapshots=[];client.subscribe(s=>snapshots.push(s));client.subscribeReactions(e=>events.push(e));
   const event={kind:'quick-reaction',sessionId:'game-1',id:'r-1',player:2,emoji:'😮'};
-  channel.emit('message',event);channel.emit('message',{...event,player:-1});assert.equal(events.length,1);assert.equal(snapshots.length,0);
+  await channel.emit('message',event);await channel.emit('message',{...event,player:-1});assert.equal(events.length,1);assert.equal(snapshots.length,0);
   const replay=[];client.subscribeReactions(e=>replay.push(e));assert.equal(replay.length,0,'new subscription never replays old reactions');
  }finally{client.close();}
 });
@@ -65,7 +65,7 @@ test('room conversation persists messages/reactions and filters team history and
  const restored=new Chat(ports);assert.equal(restored.read('room','s').messages.length,2);assert.equal(restored.read('room','s').messages[0].kind,'reaction');
  await restored.markRead('room','c',{scope:'room',through:3});assert.equal(restored.read('room','a').messages[0].read,true);
  assert.equal(service.read('room','b',{after:2}).messages.length,1);
- const delta=service.read('room','a',{after:3,known:['2']});assert.equal(delta.messages[0].body,undefined);assert.equal(delta.messages[0].read,true);
+ const delta=service.read('room','a',{after:3,known:[{seq:'2',version:-1}]});assert.equal(delta.messages[0].body,undefined);assert.equal(delta.messages[0].read,true);
  await service.append('room','a',{id:'missed-old',body:'Пока были настройки'});await service.append('room','a',{id:'seen-new',body:'На экране игры'});
  await service.markRead('room','b',{through:5,only:true});assert.equal(service.summary('room','b').room,2,'live bubbles do not consume earlier missed messages');
  await service.append('room','a',{id:'reply-common',body:'Ответ',replyToId:'msg-2'});assert.equal(service.read('room','s').messages.find(m=>m.id==='reply-common').reply.body,'Всем привет');
@@ -82,7 +82,8 @@ test('room conversation persists messages/reactions and filters team history and
  await append({id:'private-root',body:'PRIVATE-TEAM-ONLY',scope:'team'});await append({id:'private-reply',body:'PRIVATE-TEAM-REPLY',scope:'team',replyToId:'private-root'});now+=61000;await bulk.append('bulk','b',{id:'private-root',body:'OTHER-PRIVATE-TEAM',scope:'team'});await append({id:'public-root',body:'Общий исходный текст'});
  for(let i=0;i<100;i++)await append({id:'bulk-'+i,body:'Ответ '+i,replyToId:'public-root'});
  sourceReads=resolutions=0;const page=bulk.read('bulk','s');assert.equal(page.messages.length,80);assert.equal(sourceReads,1,'one persisted source read per synchronous history page');assert.equal(resolutions,1,'one fresh access context per history page');assert(page.messages.every(row=>row.reply.body==='Общий исходный текст'));assert(!JSON.stringify(page).includes('PRIVATE-TEAM'),'shared lookup must not reveal another channel');assert(!JSON.stringify(page).includes('audience'));
- sourceReads=resolutions=0;const metadata=bulk.read('bulk','s',{after:104,known:['104']});assert.equal(sourceReads,1);assert.equal(resolutions,1);assert.equal(metadata.messages[0].body,undefined);assert.equal(metadata.messages[0].reply.body,'Общий исходный текст','known receipt/reaction updates retain safe quote metadata');
+ sourceReads=resolutions=0;const metadata=bulk.read('bulk','s',{after:104,known:[{seq:'104',version:-1}]});assert.equal(sourceReads,1);assert.equal(resolutions,1);assert.equal(metadata.messages[0].body,undefined);assert.equal(metadata.messages[0].reply.body,'Общий исходный текст','known receipt/reaction updates retain safe quote metadata');
+ const unchanged=bulk.read('bulk','s',{after:104,known:[{seq:'104',version:metadata.messages[0].version}]});assert.deepEqual(unchanged.messages,[],'unchanged known metadata sends no rows');await bulk.react('bulk','a',{targetId:'bulk-99',emoji:'👏',enabled:true});const changed=bulk.read('bulk','s',{after:104,known:[{seq:'104',version:metadata.messages[0].version}]});assert.equal(changed.messages.length,1);assert.equal(changed.messages[0].reactions[0].count,1);assert.equal(changed.messages[0].body,undefined);assert(Object.isFrozen(bulk.records('bulk')[0]));
  const bluePage=bulk.read('bulk','a',{scope:'team'});assert.equal(bluePage.messages.length,2);assert.equal(bluePage.messages.find(row=>row.id==='private-reply').reply.body,'PRIVATE-TEAM-ONLY','request lookup preserves first-match reply semantics across author ID collisions');const privateReply=bulk.records('bulk').find(row=>row.id==='private-reply');teams.a='red';assert.equal(bulk.read('bulk','a',{scope:'team'}).messages.length,0,'the next read resolves membership afresh');assert.deepEqual(bulk.project(privateReply,'a','bulk').reply,{unavailable:true},'standalone live projection retains its fresh authorization fallback');teams.a='blue';
  people.b.connected=false;await assert.rejects(()=>service.append('room','b',{id:'bad',body:'Нет доступа'}));
  await assert.rejects(()=>service.append('room','a',{id:'msg-1',body:'Подмена',scope:'team'}));

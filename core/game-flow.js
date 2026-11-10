@@ -30,6 +30,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   // presentation; the shared motion engine detects public entities by ID.
   function eventAction(previous,next){
     if(!previous||!next||previous.sessionId!==next.sessionId||previous.authorityEpoch!==next.authorityEpoch||next.revision<=previous.revision)return null;
+    // Authored public plans own their complete transition and field animation.
+    // A parallel fallback capture would briefly expose the committed end state.
+    const plan=next.state?.scene?.plan;
+    if(plan?.groups?.length&&plan.id!==previous.state?.scene?.plan?.id)return null;
     const cursor=previous.events?.at(-1)?.id||0;
     const updates=(next.events||[]).filter(event=>Number.isSafeInteger(event?.id)&&event.id>cursor);
     const event=updates.findLast(item=>item.presentation)||updates.find(item=>item.reveal&&Number.isInteger(item.player))||updates.findLast(item=>['play','draw','roll','move','attack','defend','capture','take','pass'].includes(item.kind))||updates.at(-1);
@@ -55,5 +59,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     cancelAction(){this.actions.cancel();this.scheduler.cancel();this.motion?.cancel?.();}
     cancel(){this.executor.cancel();this.motion?.cancel?.();}
   }
-  return Object.freeze({presets,effectTimes,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
+  const turnHandoff=Object.freeze({outgoingScale:.96,incomingScale:1.07,duration:260});
+  return Object.freeze({turnHandoff,presets,effectTimes,speed,timing,quickPlay,eventAction,viewingTime,GameFlow});
 });

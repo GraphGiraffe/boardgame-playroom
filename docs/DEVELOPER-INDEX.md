@@ -31,3 +31,9 @@
 Перенос отдельных сохранений с точными паками: [SAVE-TRANSFER.md](SAVE-TRANSFER.md).
 
 Сеть 0.20: [статус четырёх этапов и SQL для Supabase](NETWORK-0.20-PREVIEW.md).
+
+- [Realtime ink and guessing SDK](REALTIME-SDK.md) — optional pack ports, durable commits, preview, repair and authorization.
+
+RTC 14: [компактные разрешённые данные, ACK, история и ограничения](NETWORK-PERFORMANCE.md).
+
+Подготовка 0.21 и живые проверки: [план и состояние](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21-PREPARATION.md), [итоги](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21.md), [чеклист](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21-LIVE-CHECKLIST.md).

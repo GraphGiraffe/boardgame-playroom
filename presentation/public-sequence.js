@@ -1,9 +1,11 @@
 /* Public presentation frames only. Playback has no command/state mutation port. */
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPublicSequence=api;})(globalThis,function(root){
  const Scheduler=root.PlayroomPresentationScheduler||(typeof require==='function'?require('./scheduler.js'):null);
- const hosts=new WeakMap(),pending=new WeakMap(),executors=new WeakMap(),modes=new WeakMap(),sources=new WeakMap(),sourceSets=new WeakMap();
+ const hosts=new WeakMap(),pending=new WeakMap(),executors=new WeakMap(),modes=new WeakMap(),sources=new WeakMap(),sourceSets=new WeakMap(),baselines=new WeakMap();
  function useSources(host,value){sources.set(host,value||new Map());}
  function setMode(host,mode){modes.set(host,mode);const state=hosts.get(host);if(mode==='pause'){state?.player.pause();if(state)state.playing=false;}else if(mode==='play')state?.player.resume();}
+ // A restored authoritative snapshot is a baseline, not a newly received action.
+ function setBaseline(host,id){if(typeof id==='string'&&id)baselines.set(host,id);else baselines.delete(host);}
  function whenIdle(host){return hosts.get(host)?.player.whenIdle()||Promise.resolve();}
  function playing(host){const state=hosts.get(host);return !!state&&state.index<(state.last??0);}
  function releaseDisplay(state){state?.preparing?.cancel();if(state)state.preparing=null;state?.releaseDisplay?.();if(state){state.releaseDisplay=null;state.display=null;}}
@@ -13,7 +15,7 @@
  }
  function useExecutor(host,executor){
   if(executors.get(host)===executor)return;
-  hosts.get(host)?.player.cancel();releaseDisplay(hosts.get(host));hosts.delete(host);pending.delete(host);executors.set(host,executor);
+  hosts.get(host)?.player.cancel();releaseDisplay(hosts.get(host));hosts.delete(host);pending.delete(host);baselines.delete(host);executors.set(host,executor);
  }
  function defer(host,callback){if(!host.querySelector('.app-game-layout.is-public-playback'))return false;let queue=pending.get(host);if(!queue){queue=new Set();pending.set(host,queue);}queue.add(callback);return true;}
  const frameBanks=new WeakMap();
@@ -24,7 +26,7 @@
   }
   const bank=node.querySelector('[data-public-frame-bank]');if(!bank)return {frames:[...node.querySelectorAll('[data-public-frame]')],lazy:false};
   const raw=bank.content.textContent;let data=frameBanks.get(bank);if(data?.raw===raw)return data;
-  const records=JSON.parse(raw);if(!Array.isArray(records)||!records.length||records.length>33||records.some(r=>typeof r.markup!=='string'))throw Error('PUBLIC_FRAMES_INVALID');
+  const records=JSON.parse(raw);if(!Array.isArray(records)||!records.length||records.length>65||records.some(r=>typeof r.markup!=='string'))throw Error('PUBLIC_FRAMES_INVALID');
   data={raw,records,lazy:true,frames:records.map(r=>({dataset:{frameDuration:String(r.duration||650),frameLabel:r.label||'',frameProgress:r.progress||'',frameSound:r.sound||'',framePack:r.pack||''}}))};frameBanks.set(bank,data);return data;
  }
  const recordFragments=new WeakMap();
@@ -90,7 +92,7 @@
  function prepare(host,next){
   const state=hosts.get(host),node=next.querySelector('[data-public-sequence]');
   if(!node)return;
-  const same=state?.id===node.dataset.publicSequence,set=frameSet(node,host),frames=set.frames,index=same?Math.min(state.index,frames.length-1):0,scene=node.closest('.app-game-layout');
+  const same=state?.id===node.dataset.publicSequence,set=frameSet(node,host),frames=set.frames,baseline=(modes.get(host)||'live')==='live'&&baselines.get(host)===node.dataset.publicSequence,index=baseline?frames.length-1:same?Math.min(state.index,frames.length-1):0,scene=node.closest('.app-game-layout');
   if(!set.lazy)frames.forEach((frame,i)=>{frame.hidden=i!==index;});
   scene?.classList.toggle('is-public-playback',index<frames.length-1);
   if(set.source&&same){
@@ -112,8 +114,9 @@
   // DOM patching can reset hidden attributes and scene classes on the same node.
   // Restore the consumed frame on every bind, including after local choice changes.
   const playback=modes.get(host)||'live',scope=playback==='live'?'live':'history',restoring=state.scope==='history'&&scope==='live';
+  const baseline=scope==='live'&&baselines.get(host)===id;if(baseline)baselines.delete(host);
   const fresh=state.id!==id||state.scope!==scope;state.node=node;state.id=id;state.scope=scope;state.last=last;
-  const mode=node.closest('[data-animation-speed]')?.dataset.animationSpeed||'normal',immediate=playback==='still'||restoring||mode==='instant'||win.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const mode=node.closest('[data-animation-speed]')?.dataset.animationSpeed||'normal',immediate=baseline||playback==='still'||restoring||mode==='instant'||win.matchMedia('(prefers-reduced-motion: reduce)').matches;
   state.mode=mode;
   if(fresh){state.index=immediate?last:0;state.playing=state.index<last;}
   if(immediate){state.index=last;state.playing=false;}
@@ -178,5 +181,5 @@
   if(playback==='pause'){state.player.pause();state.playing=false;}else{start();if(playback==='play')state.player.resume();}draw();
 
  }
- return Object.freeze({bind,defer,prepare,useExecutor,useSources,setMode,whenIdle,playing});
+ return Object.freeze({bind,defer,prepare,useExecutor,useSources,setMode,setBaseline,whenIdle,playing});
 });

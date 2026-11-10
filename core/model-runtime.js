@@ -30,7 +30,7 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext'].every(key=>
+        ['storageState','checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext','turnOrder'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -83,8 +83,9 @@
       check(new Set(signatures).size === signatures.length, 'ACTION_INVALID');
       return snapshot(choices);
     }
+    intent(value){if(value?.type==='batch'&&Array.isArray(value.actions))return Values.composeRecord({...value,actions:Values.composeArray(value.actions.map(action=>this.intent(action)))});const fields=this.#definition.derivedFields?.[value.type]||[];if(!fields.length)return value;return snapshot(Object.fromEntries(Object.entries(value).filter(([key])=>!fields.includes(key))));}
     legalActions(position, actor) {
-      return snapshot(this.#choices(position, actor).map(choice => choice.command));
+      return snapshot(this.#choices(position, actor).map(choice => this.intent(choice.command)));
     }
     reactions(position, actor) {
       return snapshot(this.#choices(position,actor,'reactions').map(choice=>choice.command));
@@ -121,18 +122,49 @@
       check(record(value)&&typeof value.id==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(value.id)&&Array.isArray(value.participants)&&value.participants.length>0&&new Set(value.participants).size===value.participants.length&&value.participants.every(i=>integer(i,0,position.playerCount-1))&&Array.isArray(value.ready)&&new Set(value.ready).size===value.ready.length&&value.ready.every(i=>value.participants.includes(i))&&record(value.versions)&&value.participants.every(i=>integer(value.versions[i],0,Number.MAX_SAFE_INTEGER)), 'DECISION_WINDOW_INVALID');
       return snapshot({id:value.id,participants:value.participants,ready:value.ready,versions:Object.fromEntries(value.participants.map(i=>[i,value.versions[i]]))});
     }
+    turnOrder(projection){
+      if(projection.status!=='playing'||projection.playerCount<2||projection.timeline?.preparing)return null;
+      if(!this.#definition.turnOrder&&projection.decisionWindow?.participants.length>1)return null;
+      const hint=this.#definition.turnOrder?this.#definition.turnOrder(snapshot(projection)):{players:Array.from({length:projection.playerCount},(_,i)=>i)};
+      if(hint===null)return null;check(record(hint),'TURN_ORDER_INVALID');
+      if(Object.hasOwn(hint,'next')){check(hint.next===null||integer(hint.next,0,projection.playerCount-1),'TURN_ORDER_INVALID');return snapshot({next:hint.next});}
+      const players=hint.players,direction=hint.direction??1;check(Array.isArray(players)&&players.length<=projection.playerCount&&new Set(players).size===players.length&&players.every(i=>integer(i,0,projection.playerCount-1))&&[1,-1].includes(direction),'TURN_ORDER_INVALID');
+      const index=players.indexOf(projection.turn),next=index<0||players.length<2?null:players[(index+direction+players.length)%players.length];return snapshot({players,direction,next});
+    }
+    draftSpec(projection){return this.#definition.draft?.(snapshot(projection))??null;}
+    draftProjection(projection,actions){check(typeof this.#definition.draftProjection==='function','DRAFT_UNAVAILABLE');return snapshot(this.#definition.draftProjection(snapshot(projection),snapshot(actions)));}
+    localCommands(projection){
+      check(record(projection)&&projection.choicesVersion===1&&projection.game===this.id&&integer(projection.actor,-1,projection.playerCount-1)&&typeof this.#definition.localChoices==='function','LOCAL_CHOICES_INVALID');
+      const choices=projection.actor<0||projection.status!=='playing'?[]:this.#definition.localChoices(projection).filter(choice=>projection.audience!=='public'||choice.visibility==='public');
+      check(Array.isArray(choices)&&choices.every(choice=>record(choice)&&['public','private'].includes(choice.visibility)),'ACTION_INVALID');const actions=choices.map(choice=>this.intent(choice.command)),keys=actions.map(command);check(new Set(keys).size===keys.length,'ACTION_INVALID');return Values.composeArray(actions);
+    }
+    batch(position,actor,input,surface='player'){
+      check(record(input)&&input.type==='batch'&&Object.keys(input).every(k=>['type','actions'].includes(k))&&Array.isArray(input.actions)&&input.actions.length>0&&input.actions.length<=16,'BATCH_INVALID');
+      const spec=this.draftSpec(this.project(position,actor,[],{factsOnly:true})),last=input.actions.at(-1);
+      check(spec&&['sequence','coalesce'].includes(spec.mode)&&input.actions.length<=(spec.max??spec.count)&&
+        (spec.mode!=='sequence'||input.actions.length===spec.count)&&
+        input.actions.slice(0,-1).every(c=>spec.select.includes(c?.type))&&
+        (spec.commit.includes(last?.type)||spec.mode==='coalesce'&&spec.select.includes(last?.type)),'BATCH_INVALID');
+      let current=position;const actions=[];
+      for(let i=0;i<input.actions.length;i++){
+        check(input.actions[i]?.type!=='batch','BATCH_INVALID');const rich=this.commandFor(current,actor,input.actions[i],surface);actions.push(this.intent(rich));
+        if(i<input.actions.length-1){const next=this.#definition.reduce(this.#position(current),actor,rich);check(next&&next.events?.length===0&&!next.turnEnded&&!next.roundEnded&&next.position.status==='playing'&&next.position.turn===position.turn&&next.position.rng===position.rng,'BATCH_SELECTOR_INVALID');current=Values.composeRecord({...next.position,revision:position.revision,timeline:position.timeline});this.validate(current);}
+      }
+      return Values.composeRecord({type:'batch',actions:Values.composeArray(actions)});
+    }
     commandFor(position, actor, action, surface = 'player') {
       check(['player','table'].includes(surface), 'ACTION_INVALID');
-      const signature = command(action);
+      if(action?.type==='batch')return this.batch(position,actor,action,surface);
+      const signature = command(this.intent(action));
       const found = [...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].find(choice =>
-        (surface !== 'table' || choice.visibility === 'public') && command(choice.command) === signature);
+        (surface !== 'table' || choice.visibility === 'public') && command(this.intent(choice.command)) === signature);
       check(found !== undefined, surface === 'table' ? 'TABLE_ACTION_UNAVAILABLE' : 'ACTION_UNAVAILABLE');
       return found.command;
     }
     apply(position, actor, action) {
       if(this.reactionControl(position,actor,action)?.ignore)return snapshot({position,events:[]});
       const legal = this.commandFor(position, actor, action);
-      const result = this.#definition.reduce(this.#position(position), actor, legal);
+      let result;if(legal.type==='batch'){let current=position;for(const action of legal.actions){const step=this.commandFor(current,actor,action);result=this.#definition.reduce(this.#position(current),actor,step);current=Values.composeRecord({...result.position,revision:position.revision,timeline:position.timeline});}}else result=this.#definition.reduce(this.#position(position),actor,legal);
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
       check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
@@ -149,36 +181,43 @@
       this.#validated.add(owned.position);
       return owned;
     }
-    project(position, viewer, events = []) {
+    project(position, viewer, events = [], {factsOnly=false}={}) {
       this.validate(position);
       if (!integer(viewer, 0, position.playerCount - 1)) viewer = -1;
       const data = this.#definition.project(this.#position(position), viewer);
       check(record(data), 'PROJECTION_INVALID');
-      return snapshot({contractVersion:1, game:this.id, viewer, actor:viewer, audience:viewer < 0 ? 'public' : 'player',
+      const base={contractVersion:1,...(this.#definition.localChoices?{choicesVersion:1}:{}),game:this.id, viewer, actor:viewer, audience:viewer < 0 ? 'public' : 'player',
         playerCount:position.playerCount, turn:position.turn, status:position.status,
         ...(position.preset!==undefined?{preset:position.preset}:{}),
         ...(position.revision!==undefined?{revision:position.revision}:{}),
         decisionWindow:this.decisionWindow(position),winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
-        actions:this.availableActions(position, viewer), events:projectEvents(events, viewer, position.playerCount)});
+        events:projectEvents(events, viewer, position.playerCount)};
+      if(factsOnly){check(typeof this.#definition.localChoices==='function','LOCAL_CHOICES_REQUIRED');return snapshot({...base,choicesVersion:1});}
+      return snapshot({...base,data:this.#definition.localData?this.#definition.localData(base):base.data,actions:this.availableActions(position,viewer)});
     }
-    projectTable(position, actor, events = []) {
-      const projected = this.project(position, -1, events);
+    projectTable(position, actor, events = [], options={}) {
+      const projected = this.project(position, -1, events,options);
       if (!integer(actor, 0, position.playerCount - 1)) actor = -1;
+      if(options.factsOnly)return snapshot({...projected,actor});
       return snapshot({...projected, actor,
         actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command)});
     }
+    localProjection(projection) {
+      check(record(projection)&&projection.choicesVersion===1&&projection.game===this.id&&integer(projection.viewer,-1,projection.playerCount-1)&&integer(projection.actor,-1,projection.playerCount-1)&&typeof this.#definition.localChoices==='function','LOCAL_CHOICES_INVALID');
+      const source=snapshot(projection),data=this.#definition.localData?this.#definition.localData(source):source.data;
+      const value=Values.composeRecord({...source,data});
+      return Values.composeRecord({...value,actions:this.localCommands(value)});
+    }
+    localReaction(projection, action) {return this.#definition.localReaction?.(snapshot(projection),snapshot(action))??null;}
     botAction(position, actor, settings) {
-      const projection = this.project(position, actor), actions = this.legalActions(position,actor);
-      if (!actions.length) return null;
+      const projection=this.project(position,actor),actions=this.#choices(position,actor).map(choice=>choice.command);
+      if(!actions.length)return null;
       const memory=snapshot(this.#definition.observe?.(this.#position(position),actor)||{});
       const context={...snapshot(this.#definition.botContext?.(this.#position(position),actor)||{}),...Difficulty.context(settings,position.rng,this.id+':'+(position.revision||0)+':'+actor)};
       const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??actions[Math.floor(context.random()*actions.length)];
-      const preferred=actions.find(value=>command(value)===command(selected));
-      check(preferred!==undefined,'BOT_ACTION_INVALID');
+      const preferred=actions.find(value=>command(this.intent(value))===command(this.intent(selected)));check(preferred!==undefined,'BOT_ACTION_INVALID');
       const chosen=this.#definition.botHandlesDifficulty||settings?.enabled===false?preferred:Difficulty.choose(preferred,this.#definition.botMistakes?.(projection,actor,actions)||actions,context);
-      const found = actions.find(value => command(value) === command(chosen));
-      check(found !== undefined, 'BOT_ACTION_INVALID');
-      return found;
+      const found=actions.find(value=>command(this.intent(value))===command(this.intent(chosen)));check(found!==undefined,'BOT_ACTION_INVALID');return this.intent(found);
     }
     botReaction(position,actor,settings) {
       const actions=this.reactions(position,actor);

@@ -30,7 +30,7 @@
 .invite-v021-link small{font-size:12px;line-height:1.4;color:var(--muted)}
 .invite-v021 [data-online-message]{margin:0;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
 .invite-v021 [data-online-message]:empty{display:none}
-:is(#modal-root,[data-ui-surface-exit]) .lobby-invites-modal[data-ui-surface="screen"]>.invite-v021-footer{margin:12px calc(-1 * max(12px,env(safe-area-inset-right))) calc(-1 * max(12px,env(safe-area-inset-bottom))) calc(-1 * max(12px,env(safe-area-inset-left)));padding:10px max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));border-top:1px solid var(--line);background:var(--paper)}
+:is(#modal-root,[data-ui-surface-exit]) .lobby-invites-modal[data-ui-surface="screen"]>.invite-v021-footer{margin:12px calc(-1 * max(12px,var(--app-safe-right,0px))) calc(-1 * max(12px,var(--app-safe-bottom,0px))) calc(-1 * max(12px,var(--app-safe-left,0px)));padding:10px max(12px,var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) max(12px,var(--app-safe-left,0px));border-top:1px solid var(--line);background:var(--paper)}
 .invite-v021-footer>.btn{background:transparent;border:1px solid var(--line);font-weight:400;color:var(--ink)}
 .room-online-access-021{display:flex;flex-direction:column;gap:12px;min-width:0}
 .room-online-access-021>.field{display:flex;flex-direction:column;gap:6px;margin:0;font-size:13px;font-weight:650}

@@ -10,6 +10,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const item of input.packs){
       if(!item||!ID.test(item.id)||!SEMVER.test(item.version)||!Number.isSafeInteger(item.stateVersion)||item.stateVersion<1||item.engineApi!==4||item.viewApi!==3||!HEX.test(item.sha256)||item.url!==`/api/packs/files/${item.id}/${item.version}/${item.sha256}.playroom-pack.json`)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.bb5762ca842a"));
       if(item.releases!==undefined&&(!Array.isArray(item.releases)||item.releases.length>128||item.releases.some(release=>!release||!SEMVER.test(release.version)||!Array.isArray(release.changes)||release.changes.length>128||release.changes.some(line=>typeof line!=='string'||line.length>4000))))throw Error('Invalid pack release notes');
+      if(['name','tagline'].some(key=>item[key]!==undefined&&(typeof item[key]!=='string'||item[key].length>2048))||item.byteSize!==undefined&&(!Number.isSafeInteger(item.byteSize)||item.byteSize<1||item.byteSize>4*1024*1024))throw Error('Invalid pack catalog metadata');
       if(seen.has(item.id))throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.dd2d739e7aa6"));seen.add(item.id);
     }
     return input;
@@ -43,7 +44,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const installed=new Set(this.manager.list().map(item=>item.id+'@'+item.version));
       return (this.current?.packs||[]).filter(item=>!installed.has(item.id+'@'+item.version));
     }
-    async install(id,{activate=false}={}){
+    async prepare(id){
       this.requireAvailable();
       const item=this.pending().find(entry=>entry.id===id);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.3456539518cb"));
@@ -56,8 +57,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const bundle=this.manager.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
       const manifest=bundle.manifest;
       if(manifest.id!==item.id||manifest.version!==item.version||manifest.stateVersion!==item.stateVersion||manifest.engineApi!==item.engineApi||manifest.viewApi!==item.viewApi)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.75fccc8516b6"));
-      return this.manager.install(this.manager.prepare(bundle),{activate});
+      return this.manager.prepare(bundle);
     }
+    async install(id,{activate=false}={}){return this.manager.install(await this.prepare(id),{activate});}
   }
   root.PlayroomRemoteCatalog={RemoteCatalog,validate};
   if(typeof module==='object'&&module.exports)module.exports={RemoteCatalog,validate};

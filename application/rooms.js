@@ -555,6 +555,7 @@ class RoomService{
       const active=()=>!participantId||service.connectionLeases.get(service._key(roomId,participantId))===lease;
       return {
         get participantId(){return participantId;},
+        status:()=>{if(!active())throw Error('CLOSED');const room=service._room(roomId);return {kind:'status',scope:'room',roomId:room.id,participantId,phase:room.phase,revision:room.revision};},
         snapshot:()=>{if(!active())throw Error(globalThis.PlayroomMessages.text("ui.rooms.d97ec0ecd6a9"));return packet();},
         dispatch:command=>{
           if(!command||typeof command.type!=='string')throw Error(globalThis.PlayroomMessages.text("ui.rooms.1ccd31203132"));
@@ -609,19 +610,28 @@ class RoomService{
     snapshot(roomId){return clone(this._room(roomId));}
   }
 class SwitchableConnection{
-    constructor(connection=null){this.current=null;this.listeners=new Set();this.unsubscribe=null;if(connection)this.set(connection);}
+    constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
+    _bind(){
+      this.unsubscribe?.();this.unsubscribeWire?.();this.unsubscribe=null;this.unsubscribeWire=null;
+      if(this.listeners.size)this.unsubscribe=this.current?.subscribe?.(snapshot=>{for(const listener of this.listeners)listener(snapshot);});
+      if(this.wireListeners.size)this.unsubscribeWire=this.current?.subscribe?.(snapshot=>{for(const listener of this.wireListeners)listener(snapshot);},{wire:true});
+    }
     set(connection){
-      this.unsubscribe?.();this.current=connection;
-      this.unsubscribe=connection?.subscribe?.(snapshot=>{for(const listener of this.listeners)listener(snapshot);})||null;
-      if(connection)for(const listener of this.listeners)listener(connection.snapshot());
+      this.current=connection;this._bind();
+      if(connection){if(this.listeners.size){const frame=connection.snapshot();for(const listener of this.listeners)listener(frame);}if(this.wireListeners.size){const frame=connection.snapshot({wire:true});for(const listener of this.wireListeners)listener(frame);}}
       return this;
     }
-    snapshot(){if(!this.current)throw Error(globalThis.PlayroomMessages.text("ui.rooms.52ee0cc75c7e"));return this.current.snapshot();}
-    dispatch(value){if(!this.current)throw Error(globalThis.PlayroomMessages.text("ui.rooms.52ee0cc75c7e"));return this.current.dispatch(value);}
-    history(value){if(!this.current)throw Error(globalThis.PlayroomMessages.text("ui.rooms.52ee0cc75c7e"));return this.current.history(value);}
-    presentationReady(value){if(!this.current)throw Error(globalThis.PlayroomMessages.text("ui.rooms.52ee0cc75c7e"));return this.current.presentationReady?.(value)||{ok:false};}
-    subscribe(listener){this.listeners.add(listener);return ()=>this.listeners.delete(listener);}
-    close(){this.unsubscribe?.();this.current?.close?.();this.listeners.clear();this.current=null;}
+    snapshot(options){if(!this.current)throw Error('CLOSED');return this.current.snapshot(options);}
+    status(){if(!this.current)throw Error('CLOSED');return this.current.status();}
+    dispatch(value,options){if(!this.current)throw Error('CLOSED');return this.current.dispatch(value,options);}
+    history(value,options){if(!this.current)throw Error('CLOSED');return this.current.history(value,options);}
+    historyRange(start,count,options){if(!this.current)throw Error('CLOSED');return this.current.historyRange(start,count,options);}
+    realtimeScope(){return this.current?.realtimeScope?.()||null;}
+    realtime(value){if(!this.current?.realtime)throw Error('REALTIME_UNAVAILABLE');return this.current.realtime(value);}
+    presentationReady(value){if(!this.current)throw Error('CLOSED');return this.current.presentationReady?.(value)||{ok:false};}
+    subscribe(listener,options={}){const listeners=options.wire?this.wireListeners:this.listeners;listeners.add(listener);this._bind();return()=>{listeners.delete(listener);this._bind();};}
+    close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
+
 return Object.freeze({readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
 });

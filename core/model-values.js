@@ -36,10 +36,11 @@
   const snapshots = new WeakSet();
   function snapshot(value) {
     if (value && typeof value === 'object' && snapshots.has(value)) return value;
-    const result = freeze(copy(value));
-    if (result && typeof result === 'object') snapshots.add(result);
-    return result;
+    const own=item=>{if(item&&typeof item==='object'&&!snapshots.has(item)){Object.values(item).forEach(own);Object.freeze(item);snapshots.add(item);}return item;};
+    return own(copy(value));
   }
+  function composeRecord(fields){check(record(fields)&&[Object.prototype,null].includes(Object.getPrototypeOf(fields)),'JSON_INVALID');const result={};for(const [key,value]of Object.entries(fields))if(value!==undefined)Object.defineProperty(result,key,{value:snapshot(value),enumerable:true});Object.freeze(result);snapshots.add(result);return result;}
+  function composeArray(values){check(Array.isArray(values),'JSON_INVALID');const result=values.map(snapshot);Object.freeze(result);snapshots.add(result);return result;}
   const canonical = value => JSON.stringify(value, (_, item) => record(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
   function command(value) {
@@ -47,5 +48,5 @@
     json(value);
     return canonical(value);
   }
-  return Object.freeze({record,integer,identifier,ModelError,check,json,copy,freeze,snapshot,canonical,command});
+  return Object.freeze({record,integer,identifier,ModelError,check,json,copy,freeze,snapshot,composeRecord,composeArray,canonical,command});
 });

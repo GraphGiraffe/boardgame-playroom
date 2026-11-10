@@ -171,15 +171,15 @@ test('cloud signaling: stopping during discovery cancels polling and ignores a l
 });
 test('cloud signaling: stop closes a peer created by an earlier host generation',async()=>{
  let finish,closed=0;
- const driver=new CloudSignaling({remote:async action=>action==='host'?{}:action==='poll-host'?[{id:'slot'}]:{userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'},peers:{host:()=>new Promise(done=>{finish=done;})},idFactory:()=> 'epoch'});
+ const driver=new CloudSignaling({remote:async action=>action==='host'?{}:action==='poll-host'?{contract:1,signals:[{id:'slot',userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'}],peers:[]}:{},peers:{host:()=>new Promise(done=>{finish=done;})},idFactory:()=> 'epoch'});
  await driver.host('room','local');await new Promise(done=>setImmediate(done));driver.stop();finish({offer:'private-sdp',close(){closed++;}});await driver.running;assert.equal(closed,1);assert.equal(driver.handles.size,0);
 });
 
-test('cloud RTC capability does not await per-command HTTP, survives transient validation and revokes on denial',async()=>{
- let resume,phase='allow',checks,validates,authorizations=0,closed=0,accepted=false,polls=0;
+test('cloud RTC capability uses one batch, survives API outage and revokes before closing',async()=>{
+ let resume,phase='allow',checks,authorizations=0,closed=0,accepted=false,polls=0;
  const identity={userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'};
- const driver=new CloudSignaling({remote:async(action,data)=>{if(action==='host'||action==='offer')return {};if(action==='poll-host'){polls++;return [{id:'slot',...(polls>1?{offer:'offer',answer:'answer'}:{})}];}if(action==='authorize'){authorizations++;if(data.userId&&phase!=='allow')throw Object.assign(Error(phase),{code:phase});return identity;}},peers:{host:async({check,validate})=>{checks=check;validates=validate;return {offer:'offer',validate,closed:()=>false,accept:async()=>{accepted=true;},close:()=>{closed++;}};}},idFactory:()=> 'epoch',clock:{setTimeout:fn=>{resume=fn;return 1;},clearTimeout(){}}});
- const tick=()=>new Promise(resolve=>setImmediate(resolve));await driver.host('room','local');await tick();assert.equal(authorizations,1);for(let i=0;i<50;i++)checks();assert.equal(authorizations,1);resume();await tick();assert(accepted);phase='network';resume();await tick();assert.equal(closed,0);assert.doesNotThrow(checks);assert.equal(driver.handles.size,1);phase='forbidden';resume();await tick();assert.equal(closed,1);assert.throws(checks,e=>e.code==='forbidden');driver.stop();await driver.running;
+ const driver=new CloudSignaling({remote:async(action,data)=>{if(action==='authorize'){authorizations++;throw Error('extra RPC');}if(action!=='poll-host')return {};polls++;if(phase==='network')throw Object.assign(Error('network'),{code:'network'});return {contract:1,signals:polls<3?[{id:'slot',...identity,...(polls>1?{offer:'offer',answer:'answer'}:{})}]:[],peers:data.peers.map(p=>({id:p.id,allowed:phase!=='forbidden'}))};},peers:{host:async({check,validate})=>{checks=check;return {offer:'offer',validate,active:()=>true,closed:()=>false,accept:async()=>{accepted=true;},close:()=>{closed++;}};}},idFactory:()=> 'epoch',clock:{setTimeout:fn=>{resume=fn;return 1;},clearTimeout(){}}});
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));try{await driver.host('room','local');await tick();for(let i=0;i<50;i++)checks();assert.equal(authorizations,0);resume();await tick();assert(accepted);phase='network';resume();await tick();assert.equal(closed,0);assert.doesNotThrow(checks);phase='forbidden';resume();await tick();assert.equal(closed,1);assert.throws(checks,e=>e.code==='forbidden');}finally{driver.stop();await driver.running;}
 });
 
 test('cloud rendezvous polls quickly only while a join is pending',async()=>{
@@ -188,14 +188,14 @@ test('cloud rendezvous polls quickly only while a join is pending',async()=>{
  const client=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='request'?{id:'slot',epoch:'epoch'}:action==='poll'?{epoch:'epoch',...(++polls===3?{offer:'offer'}:{})}:{},peers:{client:async()=>({answer:'answer',close(){}}),attach:async()=>{}}});
  const pending=client.connect('room');await new Promise(r=>setImmediate(r));wake();await new Promise(r=>setImmediate(r));wake();await pending;assert.deepEqual(delays,[500,500]);client.stop();
  delays.length=0;
- const host=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='poll-host'?[]:{},peers:{}});await host.host('room','local');await new Promise(r=>setImmediate(r));assert.deepEqual(delays,[2000]);host.stop();await host.running;
+ const host=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='poll-host'?{contract:1,signals:[],peers:[]}:{},peers:{}});await host.host('room','local');await new Promise(r=>setImmediate(r));assert.deepEqual(delays,[2000]);host.stop();await host.running;
 });
 
 test('cloud rendezvous uses inline server identities and omits accepted signaling payloads',{timeout:5000},async()=>{
  let resume,polls=0,authorizations=0,known,dead=false,created=0;const identity={userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'},delays=[];
  const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:(fn,ms)=>{resume=fn;delays.push(ms);return 1;},clearTimeout(){}},peers:{host:async()=>{created++;return {offer:'offer',accept:async()=>{},closed:()=>dead,close(){}};}},remote:async(action,data)=>{
   if(action==='authorize'){authorizations++;throw Error('Unnecessary identity request');}
-  if(action==='poll-host'){known=data.known;if(data.known.length)dead=true;return [{id:'slot',...identity,...(++polls>1&&!data.known.length?{offer:'offer',answer:'answer'}:{})}];}return {};
+  if(action==='poll-host'){known=data.known;if(data.known.length)dead=true;return {contract:1,signals:[{id:'slot',...identity,...(++polls>1&&!data.known.length?{offer:'offer',answer:'answer'}:{})}],peers:data.peers.map(p=>({id:p.id,allowed:true}))};}return {};
  }});
  const tick=()=>new Promise(r=>setImmediate(r));await driver.host('room','local');await tick();resume();await tick();resume();await tick();assert.equal(authorizations,0);assert.deepEqual(known,['slot']);assert.equal(created,1,'a peer lost during a compact poll must not recreate an already answered signal');assert.equal(driver.handles.size,0);assert.equal(delays.at(-1),2000);driver.stop();await driver.running;
 });
@@ -218,4 +218,11 @@ test('friend notifications announce requests and outgoing acceptance once, inclu
  assert.deepEqual(t.update([incoming,outgoing]).map(e=>e.kind),['friend-request']);assert.deepEqual(t.update([incoming,outgoing]),[]);
  const reloaded=new Tracker({states:saved});assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}]).map(e=>e.kind),['friend-accepted']);assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}],['friend-accepted:outgoing']),[]);
  const first=new Tracker();assert.deepEqual(first.update([{...outgoing,accepted:true}]),[]);assert.equal(new Tracker().update([{...outgoing,accepted:true}],['friend-accepted:outgoing'])[0].kind,'friend-accepted');
+});
+
+test('cloud rendezvous silently retries transient signaling failures without recreating a peer and stops on revocation',async()=>{
+ const failures=new Set(['request','poll','answer']),calls=[],delays=[];let peers=0,attached=0;
+ const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:(fn,ms)=>{delays.push(ms);queueMicrotask(fn);return delays.length;},clearTimeout(){}},remote:async action=>{calls.push(action);if(failures.delete(action))throw Object.assign(Error('network'),{code:'network'});if(action==='request')return {id:'slot',epoch:'epoch',localRoomId:'local'};if(action==='poll')return {epoch:'epoch',offer:'offer'};return {};},peers:{client:async()=>{peers++;return {answer:'answer',close(){}};},attach:async()=>{attached++;}}});
+ try{await driver.connect('room');assert.equal(peers,1);assert.equal(attached,1);assert.deepEqual(calls,['request','request','poll','poll','answer','answer']);assert.deepEqual(delays,[500,500,500]);}finally{driver.stop();}
+ let denied=0;const blocked=new CloudSignaling({idFactory:()=> 'epoch',remote:async()=>{denied++;throw Object.assign(Error('forbidden'),{code:'forbidden'});},peers:{}});await assert.rejects(blocked.connect('room'),e=>e.code==='forbidden');assert.equal(denied,1);blocked.stop();
 });

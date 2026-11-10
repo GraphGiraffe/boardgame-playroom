@@ -3,6 +3,12 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 
+async function clickExposedCard(page,selector){
+ const card=page.locator(selector).first();await card.waitFor({state:'visible'});
+ const point=await card.evaluate(node=>{const r=node.getBoundingClientRect();for(let y=Math.max(1,r.top+3);y<Math.min(innerHeight,r.bottom-3);y+=4)for(let x=Math.max(1,r.left+3);x<Math.min(innerWidth,r.right-3);x+=4){const hit=document.elementFromPoint(x,y);if(hit&&(hit===node||node.contains(hit)))return {x,y};}return null;});
+ if(!point)throw Error('No exposed card hit area');await page.mouse.click(point.x,point.y);
+}
+
 async function pair(run){
  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -125,7 +131,7 @@ test('RTC Mage local choices and both planning steps are distinct persistent goa
   let progress=await mastered(page,'mage-brawl');assert.equal(progress.rotate,1);assert.equal(progress.help,1);assert.equal(progress.card,1);assert.equal(progress['card-second'],undefined);
   await page.locator('#modal-root [data-command="close-modal"]').first().click();
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.ready===1);
-  await page.locator('.mage-card:not([disabled]):not(.selected)').first().click();
+  await clickExposedCard(page,'.mage-card:not([disabled]):not(.selected)');
   assert.equal((await mastered(page,'mage-brawl'))['card-second'],1);
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered['ready-second']===1);
  }

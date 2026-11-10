@@ -22,7 +22,7 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
   for(const [width,height,n] of [[360,640,8],[390,844,2],[390,844,8],[844,390,2],[844,390,8],[820,1180,8],[1180,820,8],[1440,900,8]])await t.test(`${width}x${height}, ${n} players`,async()=>{
    const ctx=await browser.newContext({viewport:{width,height},playroomProfile:false}),p=await ctx.newPage(),errors=[];p.setDefaultTimeout(7000);p.on('pageerror',e=>errors.push(e.message));await ctx.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,autoPass:false})));const sync=require('./account-sync-fixture.cjs'),provider=await sync.installFetch(ctx,sync(async route=>route.fulfill({status:200,json:{profile:null,friends:[],groups:[],entries:[],rooms:[],invitations:[],messages:[]}})));
    try{
-    await openMageFixture(p,server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.locator('[data-game-mode=hotseat]').click();
+    await openMageFixture(p,server.url);await p.locator('#profile-form input[name=playerName]').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.locator('[data-game-mode=hotseat]').click();
     await p.locator('[data-bot-settings]').first().click();await p.locator('.choice021-advanced>summary').click();await p.locator('#bot-settings-form [name=strategy][value=fighter]').check();await p.locator('#bot-settings-form [name=nickname]').fill('Боец');await p.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();
     assert.equal(await p.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.bot).botSettings),undefined,'cancel does not commit');
     await p.locator('[data-bot-settings]').first().click();await p.locator('.choice021-advanced>summary').click();await p.locator('#bot-settings-form [name=strategy][value=fighter]').check();await p.locator('#bot-settings-form [name=botLevel][value="0"]').check();
@@ -43,7 +43,7 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
   });
   await t.test('two humans, closed choices and automatic phases',async()=>{
    const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false}),p=await ctx.newPage();p.setDefaultTimeout(8000);await ctx.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,autoPass:false})));const sync=require('./account-sync-fixture.cjs'),provider=await sync.installFetch(ctx,sync(async route=>route.fulfill({status:200,json:{profile:null,friends:[],groups:[],entries:[],rooms:[],invitations:[],messages:[]}})));
-   try{await openMageFixture(p,server.url);await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.locator('[data-game-mode=hotseat]').click();await p.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Борис'});b.renderLobby();});await p.locator('[data-command=lobby-start]').click();await p.locator('[data-command=unlock]').click();
+   try{await openMageFixture(p,server.url);await p.locator('#profile-form input[name=playerName]').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());await p.locator('[data-start="mage-brawl"]').click();await p.locator('[data-game-mode=hotseat]').click();await p.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Борис'});b.renderLobby();});await p.locator('[data-command=lobby-start]').click();await p.locator('[data-command=unlock]').click();
     await p.locator('.mage-controls [data-action]').click();await p.locator('[data-decision-player="1"]').click();await p.locator('[data-command=unlock]').waitFor();assert.equal(await p.locator('.mage-card').count(),0,'curtain DOM contains no private hand');await p.locator('[data-command=unlock]').click();
     await p.locator('[data-decision-player="0"]').click();await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.mage-controls [data-action]').getAttribute('aria-label'),'Изменить план');await p.locator('.mage-controls [data-action]').click();await p.locator('.mage-controls [data-action]').click();await p.locator('[data-decision-player="1"]').click();await p.locator('[data-command=unlock]').click();await p.locator('.mage-controls [data-action]').click();await p.locator('[data-public-sequence]').waitFor();
     if(await p.locator('[data-command=unlock]').count())await p.locator('[data-command=unlock]').click();assert.equal(await p.locator('.public-sequence-controls').count(),0);await p.waitForFunction(()=>!document.querySelector('.is-public-playback'),null,{timeout:30000});assert.equal(await p.locator('[data-public-frame]:visible').count(),1);
@@ -52,13 +52,76 @@ test('Mage Brawl browser: bot drafts, modal footer, responsive table, hotseat pr
  }finally{await browser?.close();await server.close();}
 });
 
+test('Mage lost hand keeps its geometry without an empty action slot or phantom scrollbar',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:800},hasTouch:true,isMobile:true,serviceWorkers:'block'}),p=await context.newPage(),errors=[],reports=[];p.on('pageerror',e=>errors.push(e.message));await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));
+ try{
+  await openMageFixture(p,server.url);await p.waitForFunction(()=>globalThis.PlayroomAppBridge&&globalThis.PlayroomInstalledPacks?.length);
+  for(const viewport of [{width:390,height:800},{width:797,height:282}]){
+   await p.setViewportSize(viewport);
+   await p.evaluate(()=>{window.handSession=new TabletopSession(TabletopCore,'mage-brawl',{seed:17,actionsPerTurn:'2',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:8},(_,i)=>({name:'P'+i,bot:i>0}))});window.handOriginal=handSession.current;
+    window.handDraw=state=>{const projected=TabletopCore.project(state,0),actions=TabletopCore.legalActions(state,0),regions=new Map(),host=document.querySelector('#app');PlayroomPublicSequence.setMode(host,'still');const kept=PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'empty-hand-regression',network:true,gameName:'Стихийная потасовка',state:projected,viewer:0,actions,scene:PlayroomViews.render(projected,0,actions,{renderOwner:handSession,regionSink:regions})}),{fragments:regions});if(!kept)PlayroomGameScreen.layoutScene(host);};
+    window.handMeasure=()=>{const own=document.querySelector('.layout-self'),field=document.querySelector('.layout-field').getBoundingClientRect(),card=own.querySelector('.player-panel').getBoundingClientRect();return {height:own.getBoundingClientRect().height,client:own.clientHeight,scroll:own.scrollHeight,overflow:getComputedStyle(own).overflowY,handReserve:own.querySelector('.layout-hand')?.getBoundingClientRect().height||0,emptyActions:!!own.querySelector('.layout-actions'),buttons:own.querySelectorAll('button[data-action],button[data-view-key]').length,field:field.toJSON(),card:card.toJSON()};};handDraw(handOriginal);});
+   await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const alive=await p.evaluate(()=>handMeasure());
+   for(const kind of ['life-lost','eliminated','repeated']){
+    await p.evaluate(kind=>{if(kind!=='repeated')while(handSession.current.status==='playing'&&(kind==='life-lost'?handSession.current.data.players[0].pos:handSession.current.data.players[0].lives)){const s=handSession.current,w=TabletopCore.decisionWindow(s),actor=w?.participants.find(i=>!w.ready.includes(i))??s.turn;if(s.move>4000)throw Error('simulation limit');handSession.act(actor,TabletopCore.botAction(s,actor));}handDraw(handSession.current);},kind);
+    await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const value=await p.evaluate(()=>handMeasure());reports.push({viewport,kind,alive,value});
+    assert.equal(value.emptyActions,false,'no empty action wrapper after '+kind);assert(value.scroll<=value.client+1,'no empty scrolling: '+JSON.stringify({viewport,kind,value}));assert.equal(value.overflow,'auto','real controls still use the normal scroll policy');assert.equal(value.height,alive.height);assert.equal(value.handReserve,alive.handReserve);assert.equal(value.buttons,0);assert(Math.abs(value.field.width-alive.field.width)<1&&Math.abs(value.field.height-alive.field.height)<1,'field geometry stays fixed');
+   }
+   await p.evaluate(()=>handDraw(handOriginal));await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const restored=await p.evaluate(()=>handMeasure());assert(restored.buttons>0,'real hand controls return');assert.equal(restored.height,alive.height);assert(restored.scroll<=restored.client+1);
+  }
+  assert.deepEqual(errors,[]);if(process.env.MAGE_EVIDENCE_DIR)fs.writeFileSync(mageEvidence('empty-hand.json'),JSON.stringify({reports,errors},null,2));
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('Mage turn overviews show both steps and history skips all readiness revisions',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:384,height:782},hasTouch:true,isMobile:true,serviceWorkers:'block'}),p=await context.newPage(),errors=[],reports=[];p.on('pageerror',e=>errors.push(e.message));
+ await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));
+ const advance=async ms=>{await p.evaluate(()=>{for(const a of document.getAnimations())if(Number.isFinite(a.effect.getTiming().iterations)&&['running','paused'].includes(a.playState))a.finish();});await p.clock.runFor(ms);};
+ try{
+  await openMageFixture(p,server.url);await p.waitForFunction(()=>globalThis.PlayroomAppBridge&&globalThis.PlayroomInstalledPacks?.length);
+  await p.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('mage-brawl',false);window.PlayroomAppBridge={...PlayroomAppBridge,gameOptions:()=>({animationSpeed:'normal',tutorialsEnabled:false}),audio:{registerPack(){},batch:async()=>{},play(){}}};
+   const s=new TabletopSession(TabletopCore,'mage-brawl',{seed:17,actionsPerTurn:'2',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))});
+   while(s.current.data.round===1){const w=TabletopCore.decisionWindow(s.current),actor=w.participants.find(i=>!w.ready.includes(i));s.act(actor,TabletopCore.botAction(s.current,actor));}window.overviewSaved=s.export();
+  });
+  await p.clock.install();
+  for(const viewport of [{width:384,height:782},{width:797,height:282},{width:384,height:782}]){
+   await p.setViewportSize(viewport);
+   const expected=await p.evaluate(async()=>{const session=TabletopSession.restore(TabletopCore,overviewSaved),authority=new SessionAuthority(session),client=new PlayroomSessionClient(PlayroomLocalTransport(authority.connect(0)));await client.refresh();document.querySelector('#app').innerHTML='';const pack=PlayroomAppBridge.packs.exportView('mage-brawl',session.packVersion);const withEmpty={...pack,view:pack.view.replace('const plan=s.scene.plan;',"const plan={...s.scene.plan,scenes:s.scene.plan.scenes.map(scene=>scene.kind==='turn-reveal'?{...scene,phases:scene.phases.map(p=>({...p,cards:p.cards.filter(c=>![0,7].includes(c.actor))}))}:scene)};")};const mount=PlayroomSharedViews.mount(client,withEmpty);mount.render();await mount.openHistory(0);window.overviewFixture={session,authority,client,mount};return {revision:session.current.move,groups:client.snapshot.state.scene.plan.groups,overviews:client.snapshot.state.scene.plan.scenes.filter(s=>s.kind==='turn-reveal').map(s=>s.phases.flatMap(p=>p.cards.map(c=>c.actor)))};});
+   await p.locator('[data-command=replay-play]').click();await advance(101);await p.locator('[data-round-step="1"]').waitFor();
+   assert.equal(Number(await p.locator('#replay-range').inputValue()),expected.revision,'one replay step skips every human/bot draft and ready revision');
+   for(const step of [1,2]){
+    if(step===2){let attempts=0;while(!await p.locator('[data-round-step="2"]').count()){if(++attempts>30)throw Error('second overview missing');await advance(750);}}
+    const value=await p.locator('[data-round-step="'+step+'"]').evaluate(n=>{const r=n.getBoundingClientRect(),cards=[...n.querySelectorAll('[data-round-player]')].map(c=>({actor:Number(c.dataset.roundPlayer),rect:c.getBoundingClientRect().toJSON()}));const probe=document.createElement('div');probe.className='mage-phase-reveal';probe.style.visibility='hidden';probe.innerHTML='<div class="mage-phase-player"><div class="mage-phase-card"></div></div>';n.parentElement.append(probe);const phaseSize=probe.querySelector('.mage-phase-card').getBoundingClientRect().width;probe.remove();const first=n.querySelector('[data-round-player]'),last=[...n.querySelectorAll('[data-round-player]')].at(-1);n.scrollTop=0;const firstVisible=!first||first.getBoundingClientRect().top>=r.top-1;n.scrollTop=n.scrollHeight;const lastVisible=!last||last.getBoundingClientRect().bottom<=r.bottom+1;n.scrollTop=0;return {boxes:[n,n.querySelector('.mage-round-players'),n.querySelector('.mage-round-player'),n.querySelector('.mage-phase-card')].map(x=>({rect:x.getBoundingClientRect().toJSON(),width:getComputedStyle(x).width,height:getComputedStyle(x).height,container:getComputedStyle(x).containerType})),heading:n.querySelector('strong').textContent,duration:n.closest('[data-public-sequence]').style.getPropertyValue('--sequence-duration'),chosen:[...n.querySelectorAll('[data-round-choice=true]')].map(c=>Number(c.dataset.roundPlayer)),slots:[...n.querySelectorAll('[data-round-player]')].map(x=>({actor:Number(x.dataset.roundPlayer),name:x.firstElementChild.getBoundingClientRect().toJSON(),card:x.querySelector('.mage-phase-card').getBoundingClientRect().toJSON(),empty:x.dataset.roundChoice==='false',text:x.querySelector('.mage-phase-card').textContent.trim()})),metadata:[...n.querySelectorAll('.mage-reveal-meta')].map(m=>[...m.children].map(c=>c.className)),actors:cards.map(c=>c.actor),overflow:n.scrollWidth>n.clientWidth+1||n.scrollHeight>n.clientHeight+1,contained:cards.every(c=>c.rect.left>=r.left-1&&c.rect.right<=r.right+1&&c.rect.top>=r.top-1&&c.rect.bottom<=r.bottom+1),phaseSize,cardSizes:[...n.querySelectorAll('.mage-phase-card')].map(c=>c.getBoundingClientRect().width),reachable:firstVisible&&lastVisible};});
+    assert.equal(value.heading,'Раунд 1 · Ход '+(step===1?'I':'II'));assert.equal(value.duration,'1500ms');assert.deepEqual(value.actors,[0,1,2,3,4,5,6,7]);assert.deepEqual(value.chosen,[...expected.overviews[step-1]].filter(i=>![0,7].includes(i)).sort((a,b)=>a-b));assert(value.metadata.every(m=>JSON.stringify(m)===JSON.stringify(['mage-reveal-type','mage-card-facing','mage-reveal-element'])));assert.equal(value.overflow,false,JSON.stringify({viewport,value}));assert.equal(value.contained,true);assert(value.cardSizes.every(size=>size>=32&&size<=112),'overview cards fit field: '+JSON.stringify({viewport,value}));assert.equal(value.reachable,true,JSON.stringify({viewport,step,value}));for(const slot of value.slots){const peer=value.slots.find(p=>!p.empty&&Math.abs(p.card.y-slot.card.y)<1);assert(peer,'empty and chosen slots share card row');assert(Math.abs(peer.name.y-slot.name.y)<1,'names share baseline');assert(Math.abs(peer.card.width-slot.card.width)<1);if(slot.empty)assert.equal(slot.text,'—');}reports.push({viewport,step,...value});
+    if(step===1)await advance(1500);
+   }
+   await p.evaluate(()=>{overviewFixture.mount.destroy();overviewFixture.authority.dispose();});
+  }
+  assert.deepEqual(errors,[]);if(process.env.MAGE_EVIDENCE_DIR)fs.writeFileSync(mageEvidence('turn-overviews.json'),JSON.stringify({reports,errors},null,2));console.log(JSON.stringify({overviewScreens:reports.length,historySkippedReadiness:true,errors}));
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('Mage local history opens the round overview without planning waits',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,serviceWorkers:'block'}),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));
+ try{
+  await context.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'normal',tutorialsEnabled:false})));
+  await openMageFixture(p,server.url);await p.waitForFunction(()=>globalThis.PlayroomAppBridge&&globalThis.PlayroomInstalledPacks?.length);
+  const revision=await p.evaluate(async()=>{const s=new TabletopSession(TabletopCore,'mage-brawl',{seed:17,mode:'solo',actionsPerTurn:'2',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:8},(_,i)=>({name:'P'+i,bot:i>0}))});while(s.current.data.round===1){const w=TabletopCore.decisionWindow(s.current),actor=w.participants.find(i=>!w.ready.includes(i));s.act(actor,TabletopCore.botAction(s.current,actor));}await PlayroomAppBridge.saveLibrary.activateAsync(s,'overview-local');return s.current.move;});
+  await p.reload();await p.locator('[data-hub-page=sessions]').click();await p.locator('.saved-game[data-saved-actions-toggle]').first().click();await p.locator('[data-history-id]:visible').first().click();await p.locator('#replay-range').waitFor();
+  await p.clock.install();await p.locator('[data-command=replay-play]').click();await p.clock.runFor(251);await p.locator('[data-round-step="1"]').waitFor();assert.equal(Number(await p.locator('#replay-range').inputValue()),revision);assert.equal(await p.locator('[data-round-step="1"]>strong').innerText(),'Раунд 1 · Ход I');assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
 test('Mage Brawl playback: first render, player health, sounds, final callback and reduced motion',{timeout:30000},async()=>{
  // Playwright's JS clock does not advance the browser compositor clock.
  const advance=async(page,ms)=>{await page.evaluate(()=>{for(const a of document.getAnimations())if(Number.isFinite(a.effect.getTiming().iterations)&&['running','paused'].includes(a.playState))a.finish();});await page.clock.runFor(ms);await new Promise(resolve=>setTimeout(resolve,10));};
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
   const ctx=await browser.newContext({viewport:{width:390,height:844},playroomProfile:false}),p=await ctx.newPage();
-  await openMageFixture(p,server.url);await p.locator('[data-start="mage-brawl"]').first().waitFor({state:'attached'});await p.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('mage-brawl',false));p.setDefaultTimeout(7000);if(await p.locator('#profile-form').count()){await p.locator('#profile-form input').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());}await p.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('mage-brawl',false));
+  await ctx.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'mage-playback-owner',name:'Анна',createdAt:1,updatedAt:1})));
+  await openMageFixture(p,server.url);await p.locator('[data-start="mage-brawl"]').first().waitFor({state:'attached'});await p.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('mage-brawl',false));p.setDefaultTimeout(7000);if(await p.locator('#profile-form').count()){await p.locator('#profile-form input[name=playerName]').fill('Анна');await p.locator('#profile-form').evaluate(f=>f.requestSubmit());}await p.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('mage-brawl',false));
+  await p.evaluate(async()=>{const session=new TabletopSession(TabletopCore,'mage-brawl',{seed:17,mode:'solo',actionsPerTurn:'1',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:4},(_,i)=>({name:i?'Бот '+i:'Анна',bot:i>0}))});await PlayroomAppBridge.saveLibrary.activateAsync(session,'mage-playback-local');});
+  await p.reload();await p.locator('.game-tile').first().waitFor();
   await p.clock.install({time:new Date('2026-10-23T00:00:00Z')});await p.clock.pauseAt(new Date('2026-10-23T00:00:01Z'));
   await p.evaluate(()=>{
    window.PlayroomAppBridge={...PlayroomAppBridge,audio:{batch:()=>Promise.resolve(),play:()=>Promise.resolve()}};
@@ -66,7 +129,7 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
    TabletopSession.prototype.prepare=function(actor,action){if(this.game==='mage-brawl')window.tempoSession=this;return prepare.call(this,actor,action);};
    SessionAuthority.prototype.actBot=function(actor,action){botTempo.push({at:Date.now(),round:window.tempoSession?.current.data.round,playing:!!document.querySelector('.is-public-playback'),sequence:document.querySelector('[data-public-sequence]')?.dataset.publicSequence});return act.call(this,actor,action);};
   });
-  await p.locator('[data-start="mage-brawl"]').click();await p.locator('[data-game-mode=hotseat]').click();await p.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});for(let i=2;i<4;i++)b.roomService.setLocalSeat(r.id,r.ownerId,'seat-'+(i+1),{kind:'bot',nickname:'Бот '+i});b.renderLobby();});await p.locator('[data-command=lobby-start]').click();await p.locator('.mage-controls').waitFor();
+  await p.locator('[data-hub-page=sessions]').click();await p.locator('.saved-game[data-saved-actions-toggle]').first().click();await p.locator('[data-resume-id]:visible').first().click();await p.locator('.mage-controls').waitFor();
   await p.evaluate(()=>{window.readyNode=document.querySelector('.mage-ready');window.readyMutations=[];window.readyObserver=new MutationObserver(rs=>readyMutations.push(...rs.filter(r=>r.target===readyNode&&['disabled','class','aria-pressed'].includes(r.attributeName)).map(r=>r.attributeName)));readyObserver.observe(document.querySelector('.mage-controls'),{attributes:true,subtree:true,childList:true});});
   await p.clock.runFor(900);
   assert.equal(await p.evaluate(()=>botTempo.length),3);assert.equal(await p.evaluate(()=>new Set(botTempo.map(t=>t.at)).size),1,'all bots ready in one timer callback');assert.equal(await p.evaluate(()=>readyNode===document.querySelector('.mage-ready')&&!readyNode.disabled),true,'other bots never remove or disable Ready');assert.deepEqual(await p.evaluate(()=>readyMutations),[],'bot readiness does not flash own Ready');
@@ -98,8 +161,8 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
   },mode);
   assert.equal(initial.index,0,'HTML already shows the original frame before bind');assert.equal(initial.health,'Здоровье: 3');assert.equal(initial.finalHealth,1);assert.equal(initial.firstPlans,undefined);assert.deepEqual(initial.firstHands,[3,3]);
   if(mode==='normal'&&!reduced){
-   assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'250ms');
-   await advance(p,250);await advance(p,750); // Complete reveal before the attack.
+   assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'1500ms');
+   await advance(p,1500);await advance(p,750); // Complete reveal before the attack.
    const repeated=await p.evaluate(()=>{
     const h=document.querySelector('#app'),f=()=>h.querySelector('[data-public-frame]:not([hidden])'),before=f(),projectile=before.querySelector('.mage-projectile'),panel=h.querySelector('.player-panel[data-player-index="1"]'),child=panel.firstElementChild;
     const animation=projectile?.getAnimations()[0],hidden=[];
@@ -109,7 +172,7 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
     hidden.push(...observer.takeRecords().filter(r=>r.target===before&&r.attributeName==='hidden'));observer.disconnect();
     return {index:f().dataset.publicFrame,sameFrame:f()===before,hidden: hidden.length,sameAnimation:!!animation&&projectile.getAnimations()[0]===animation,samePlayerChild:panel.firstElementChild===child,sounds:magePlaybackFixture.sounds.length};
    });
-   assert.equal(repeated.index,'2');assert(repeated.sameFrame&&repeated.sameAnimation&&repeated.samePlayerChild,'redraw retains active effects and player nodes: '+JSON.stringify(repeated));assert.equal(repeated.hidden,0,'same-frame redraw never hides/restarts the effect');assert.equal(repeated.sounds,2,'redraw does not repeat reveal/attack audio');
+   assert.equal(repeated.index,'2');assert(repeated.sameFrame&&repeated.sameAnimation&&repeated.samePlayerChild,'redraw retains active effects and player nodes: '+JSON.stringify(repeated));assert.equal(repeated.hidden,0,'same-frame redraw never hides/restarts the effect');assert.equal(repeated.sounds,3,'redraw does not repeat reveal/attack audio');
    const paused=await p.evaluate(async()=>{
     phaseClock.pause();const a=document.querySelector('[data-public-frame]:not([hidden]) .mage-projectile').getAnimations()[0];
     await a.ready;window.phaseAnimation=a;return {time:a.currentTime,frame:document.querySelector('[data-public-frame]:not([hidden])').dataset.publicFrame};
@@ -119,7 +182,7 @@ test('Mage Brawl playback: first render, player health, sounds, final callback a
    assert.equal(await p.evaluate(()=>{phaseClock.setRate(2);const rate=phaseAnimation.playbackRate;phaseClock.resume();return rate;}),2);
 
   }
-  if(!reduced&&mode!=='instant'){assert.equal(await p.locator('.public-sequence-controls').count(),0);if(mode==='fast'){assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'250ms');await p.clock.runFor(140);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'0');await p.clock.runFor(1);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'1');for(let i=0;i<await p.locator('[data-public-sequence]').evaluate(n=>JSON.parse(n.dataset.presentationPlan).final+1);i++)await advance(p,1000);}else for(let i=0;i<await p.locator('[data-public-sequence]').evaluate(n=>JSON.parse(n.dataset.presentationPlan).final+1);i++)await advance(p,1000);
+  if(!reduced&&mode!=='instant'){assert.equal(await p.locator('.public-sequence-controls').count(),0);if(mode==='fast'){assert.equal(await p.locator('.public-sequence').evaluate(n=>n.style.getPropertyValue('--sequence-duration')),'1500ms');await p.clock.runFor(843);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'0');await p.clock.runFor(1);assert.equal(await p.locator('[data-public-frame]:not([hidden])').getAttribute('data-public-frame'),'1');for(let i=0;i<await p.locator('[data-public-sequence]').evaluate(n=>JSON.parse(n.dataset.presentationPlan).final+1);i++)await advance(p,1000);}else for(let i=0;i<await p.locator('[data-public-sequence]').evaluate(n=>JSON.parse(n.dataset.presentationPlan).final+1);i++)await advance(p,1000);
    assert.equal(await p.evaluate(()=>magePlaybackFixture.done),1);
    const sounds=await p.evaluate(()=>magePlaybackFixture.sounds);assert(sounds.some(s=>s.pack==='mage-brawl'&&s.ids[0]==='mage.earth'));assert(sounds.some(s=>s.ids[0]==='mage.reveal'));
   }else {assert.equal(await p.evaluate(()=>magePlaybackFixture.sounds.length),0);assert.equal(await p.locator('.is-public-playback').count(),0,'instant/reduced playback has no wait');}
@@ -447,6 +510,58 @@ test('Mage room choices and playback reuse viewport geometry until an actual res
   await p.locator('.mage-ready:not([disabled])').click();await p.locator('.mage-card:not([disabled])').last().click();await p.locator('.mage-ready:not([disabled])').click();await p.waitForFunction(()=>document.querySelector('.is-public-playback'));await p.waitForFunction(()=>!document.querySelector('.is-public-playback'),null,{timeout:30000});
   const prepared=await p.evaluate(()=>mageFrameBuilds.filter(f=>f.index>0));assert(prepared.length>2,'future frames are prepared incrementally');assert(prepared.every(f=>f.index===f.from+1),'prepare only the next frame during the current animation');assert.equal(new Set(prepared.map(f=>f.index)).size,prepared.length,'passive updates reuse prepared frames');assert.equal(await p.locator('[data-public-frame-bank]').count(),0,'live SDK rendering does not serialize the whole round into DOM');
   assert.equal(await p.evaluate(()=>mageViewportReads),0,'public player patches reuse the same viewport measurement');assert.equal(await p.evaluate(()=>mageEarlyAnimationReads),0,'animation reads follow both field and player writes');assert.equal(await p.evaluate(()=>mageStaleRenders.filter(r=>r.round===2&&r.revision>16).length),0,'queued private planning updates do not repaint the completed public round');assert(await p.evaluate(()=>mageBoard===document.querySelector('.mage-cell')));assert.equal(await p.locator('.mage-grid').count(),1);
+  assert.equal(await p.locator('.mage-hand>.mage-order-hint,.layout-auxiliary>.mage-order-hint').count(),0,'order legend is available in help instead of consuming scene height');
+  await p.locator('.mage-hand [data-command=card-help]').click();assert.equal(await p.locator('#modal-root .mage-memo-order svg').count(),1,'memo retains the order diagram');await p.locator('#modal-root [data-command=close-modal]').click();
+  await p.setViewportSize({width:797,height:260});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const roster=await p.locator('.layout-participants').evaluate(node=>{
+   const panels=node.querySelector('.players-panels'),cards=panels.querySelectorAll('.player-panel'),style=getComputedStyle(node);
+   node.scrollTop=node.scrollHeight;const box=node.getBoundingClientRect(),last=cards[cards.length-1].getBoundingClientRect();
+   return {columns:getComputedStyle(panels).gridTemplateColumns.split(' ').length,count:cards.length,overflow:style.overflowY,scrollTop:node.scrollTop,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight,lastVisible:last.top>=box.top-1&&last.bottom<=box.bottom+1};
+  });
+  assert.equal(roster.columns,2);assert.equal(roster.count,7);assert.equal(roster.overflow,'auto');assert(roster.scrollHeight>roster.clientHeight&&roster.scrollTop>0&&roster.lastVisible,'every opponent remains reachable in the short landscape scrollport: '+JSON.stringify(roster));
   await p.setViewportSize({width:797,height:339});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert(await p.evaluate(()=>mageViewportReads>0),'resize refreshes the viewport measurement');const reads=await p.evaluate(()=>mageViewportReads);await p.setViewportSize({width:384,height:782});await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));assert(await p.evaluate(n=>mageViewportReads>n,reads),'return to portrait refreshes geometry again');assert(await p.evaluate(()=>mageBoard===document.querySelector('.mage-cell')));assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('Mage respawn remount reserves the player hand before fitting the arena',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce',serviceWorkers:'block'}),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.stack));
+ try{
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'respawn-layout',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false}));});
+  await openMageFixture(p,server.url);await p.locator('[data-start=mage-brawl]').waitFor();
+  await p.evaluate(()=>{
+   const E=TabletopCore;window.respawnState=E.createGame('mage-brawl',{seed:17,actionsPerTurn:'2',players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))});
+   const s=respawnState,d=s.data,own=d.players[0];d.discard.push(...own.hand);own.hand=[];own.pos=null;own.health=0;own.lives=1;d.phase='respawn';d.respawn=[0];d.pendingDraw=[0];d.round=8;s.turn=0;E.validateState(s);
+   window.drawRespawn=(fresh=false)=>{
+    let host=document.querySelector('#app');if(fresh){const next=document.createElement('div');next.id='app';host.replaceWith(next);host=next;}
+    const viewer=window.respawnViewer??0,state=E.project(respawnState,viewer),actions=E.legalActions(respawnState,viewer);
+    let scene=PlayroomViews.render(state,viewer,actions,{});
+    // An independently disappearing context row must not leave its height on
+    // the hand when the generic patcher reuses the section node.
+    if(window.respawnContextRow&&respawnState.data.phase==='respawn')scene=scene.replace('<section class="game-layout-slot layout-hand"','<section class="game-layout-slot layout-actions"><div class="scene-actions"><button disabled>Выберите базу</button></div></section><section class="game-layout-slot layout-hand"');
+    PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'respawn-regression',gameName:E.get('mage-brawl').name,state,viewer,actions,scene}));PlayroomGameScreen.layoutScene(host);
+   };
+   drawRespawn(true);
+  });
+  const measure=()=>p.evaluate(()=>{
+   const stage=document.querySelector('.app-game-layout'),rect=selector=>{const node=stage.querySelector(selector);return node?node.getBoundingClientRect().toJSON():null;};
+   return {field:rect('.layout-field'),board:rect('.mage-grid'),hand:rect('.layout-hand'),self:rect('.layout-self'),info:rect('.self-player'),hasHand:stage.dataset.hasHand,cards:[...stage.querySelectorAll('.layout-hand .mage-card')].map(n=>n.getBoundingClientRect().toJSON())};
+  });
+  for(const viewport of [{width:390,height:844},{width:844,height:390},{width:390,height:844},{width:390,height:844,context:true}]){
+   await p.setViewportSize({width:viewport.width,height:viewport.height});await p.evaluate(extra=>{window.respawnContextRow=!!extra;drawRespawn(true);},viewport.context);await p.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+   const before=await measure();assert(before.hand&&before.hand.height>60,'fresh respawn must reserve the hand zone: '+JSON.stringify(before));assert.equal(before.hasHand,'true');assert.equal(before.cards.length,0,'reserve contains no old cards');assert(before.board.top>=before.field.top-1&&before.board.bottom<=before.field.bottom+1,'arena stays inside field');
+   if(process.env.MAGE_EVIDENCE_DIR)await p.screenshot({path:mageEvidence('respawn-empty-'+viewport.width+(viewport.context?'-context':'')+'.png')});
+   await p.evaluate(()=>{window.savedRespawn=TabletopCore.clone(respawnState);const action=TabletopCore.legalActions(respawnState,0)[0];if(action.type!=='respawn')throw Error('fixture must choose a base');respawnState=TabletopCore.applyAction(respawnState,0,action);drawRespawn();});
+   const after=await measure();assert(after.cards.length>=3);assert(Math.abs(after.field.y-before.field.y)<2&&Math.abs(after.field.height-before.field.height)<2,'base choice keeps field allocation: '+JSON.stringify({before,after}));assert(after.cards.every(c=>c.top>=after.hand.top-1&&c.bottom<=after.hand.bottom+1&&c.bottom<=after.info.top+1&&c.bottom<=viewport.height),'returned hand is fully visible in player zone: '+JSON.stringify({viewport,before,after}));
+   if(process.env.MAGE_EVIDENCE_DIR)await p.screenshot({path:mageEvidence('respawn-'+viewport.width+'.png')});await p.evaluate(()=>{respawnState=savedRespawn;});
+  }
+  // Loot temporarily replaces the hand too, including a fresh mount.
+  await p.evaluate(()=>{
+   respawnState=TabletopCore.createGame('mage-brawl',{seed:17,actionsPerTurn:'2',players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))});
+   const d=respawnState.data,p=d.players[0],cards=p.hand;p.hand=[];p.pos=null;p.health=0;p.lives=1;d.loot=[{victim:0,cards,recipients:[1]}];d.phase='loot';d.respawn=[0];respawnState.turn=1;window.respawnViewer=1;window.respawnContextRow=false;TabletopCore.validateState(respawnState);drawRespawn(true);
+  });
+  const loot=await measure();assert(loot.hand&&loot.hand.height>60);assert.equal(loot.cards.length,0,'loot reserve contains no private hand markup');assert.equal(await p.locator('.mage-loot-hand button').count(),1);
+  await p.evaluate(()=>{const E=TabletopCore;respawnState=E.applyAction(respawnState,1,E.legalActions(respawnState,1)[0]);drawRespawn();});
+  const reward=await measure();assert(reward.cards.length>=4);assert(Math.abs(reward.field.height-loot.field.height)<2);assert(reward.cards.every(c=>c.bottom<=reward.info.top+1&&c.bottom<=844),'reward hand remains visible inside its player zone');
+  assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });

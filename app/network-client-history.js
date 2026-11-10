@@ -19,7 +19,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function projectFrame(snapshot){
     if(!valid(snapshot))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.a0780d9bec32"));
     return COPY({sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,
-      revision:snapshot.revision,viewer:snapshot.viewer,game:snapshot.game,
+      revision:snapshot.revision,viewer:snapshot.viewer,...(snapshot.role?{role:snapshot.role}:{}),game:snapshot.game,
       packVersion:snapshot.packVersion,state:snapshot.state,events:snapshot.events||[]});
   }
   function metadata(state){return {firstPlayer:state.firstPlayer,presetId:state.preset,turnNumber:state.timeline?.turn||null,turn:state.turn,turnName:state.players?.[state.turn]?.name||null,round:state.scene?.round||null,players:(state.players||[]).map(p=>String(p.name).slice(0,64))};}
@@ -36,11 +36,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
 
   class ClientHistory {
-    constructor({indexedDB=globalThis.indexedDB,name=DB}={}){this.indexedDB=indexedDB;this.name=name;this.database=null;this.opening=null;}
+    constructor({indexedDB=globalThis.indexedDB,name=DB}={}){this.indexedDB=indexedDB;this.name=name;this.database=null;this.opening=null;this.writerCache=new Map();this.writeQueue=Promise.resolve();}
     async remove(key,{guard=()=>{}}={}){
       if(typeof key!=='string'||!key)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.b9efa6ceb037"));
-      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
-        guard();tx.objectStore('matches').delete(key);const request=tx.objectStore('frames').index('id').openCursor(key);
+      await this.writeQueue.catch(()=>{});this.writerCache.delete(key);
+      await this.tx(['matches','frames','events'],'readwrite',(tx,_,abort)=>{
+        guard();tx.objectStore('matches').delete(key);const events=tx.objectStore('events').index('id').openCursor(key);events.onsuccess=()=>{const cursor=events.result;if(cursor){cursor.delete();cursor.continue();}};const request=tx.objectStore('frames').index('id').openCursor(key);
         request.onsuccess=()=>{try{guard();}catch(error){abort(error);return;}const cursor=request.result;if(cursor){cursor.delete();cursor.continue();}};
       });
     }
@@ -49,9 +50,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(this.opening)return this.opening;
       if(!this.indexedDB)throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.c46c3923936b"));
       this.opening=new Promise((resolve,reject)=>{
-        const request=this.indexedDB.open(this.name,1);
+        const request=this.indexedDB.open(this.name,2);
         request.onupgradeneeded=()=>{
           const db=request.result;
+          if(!db.objectStoreNames.contains('events')){const events=db.createObjectStore('events',{keyPath:['id','index']});events.createIndex('id','id',{unique:false});}
           if(!db.objectStoreNames.contains('matches'))db.createObjectStore('matches',{keyPath:'id'});
           if(!db.objectStoreNames.contains('frames')){
             const frames=db.createObjectStore('frames',{keyPath:['id','revision']});
@@ -80,32 +82,44 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // play multiple games without overwriting (or mixing) the old replay.
       return [roomId,participantId,...(sessionId?[sessionId]:[])].map(encodeURIComponent).join('|');
     }
-    async save({roomId,participantId,roomName='',transportMode=null,cloudRoomId=null,accountId=null,participants=null,snapshot}){
-      const frame=projectFrame(snapshot),key=ClientHistory.id(roomId,participantId,frame.sessionId);
-      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
+    async _eventWriter(key){
+      if(this.writerCache.has(key))return this.writerCache.get(key);
+      const data=await this.tx(['matches','events'],'readonly',(tx,done)=>{
+        const data={};tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;
+        tx.objectStore('events').index('id').getAll(key).onsuccess=e=>data.events=e.target.result;done(data);
+      });
+      const pool=data.match?.eventPool||data.events.sort((a,b)=>a.index-b.index).map(row=>row.event),entry={writer:ReplayCodec.writer(pool),persisted:data.match?.eventPool?0:data.events.length};
+      this.writerCache.set(key,entry);if(this.writerCache.size>2)this.writerCache.delete(this.writerCache.keys().next().value);return entry;
+    }
+    save(context){return this.saveBatch(context,[context.snapshot]);}
+    async saveBatch(context,snapshots){
+      if(!Array.isArray(snapshots)||!snapshots.length||snapshots.length>64)throw Error('HISTORY_BATCH_INVALID');
+      const captured=snapshots.map(projectFrame),owned={...context,...(context.participants?{participants:COPY(context.participants)}:{})};
+      const job=this.writeQueue.catch(()=>{}).then(()=>this._saveBatch(owned,captured));this.writeQueue=job;return job;
+    }
+    async _saveBatch({roomId,participantId,roomName='',transportMode=null,cloudRoomId=null,accountId=null,participants=null},snapshots,attempt=0){
+      if(!Array.isArray(snapshots)||!snapshots.length||snapshots.length>64)throw Error('HISTORY_BATCH_INVALID');
+      const frames=[...snapshots].sort((a,b)=>a.revision-b.revision),frame=frames.at(-1),key=ClientHistory.id(roomId,participantId,frame.sessionId);
+      if(frames.some(f=>['sessionId','viewer','game','packVersion','role'].some(k=>f[k]!==frame[k])))throw Error('HISTORY_BATCH_SCOPE');
+      const entry=await this._eventWriter(key),writer=entry.writer;let stored;
+      try{stored=frames.map(f=>writer.frame(f));await this.tx(['matches','frames','events'],'readwrite',(tx,_,abort)=>{
         const matches=tx.objectStore('matches'),get=matches.get(key);
-        get.onsuccess=()=>{
+        get.onsuccess=()=>{try{
           const old=get.result;
-          if(old&&(old.sessionId!==frame.sessionId||old.viewer!==frame.viewer||
-              old.game!==frame.game||old.packVersion!==frame.packVersion)){
-            abort(Error(globalThis.PlayroomMessages.text("ui.network-client-history.a0b86bb0cd2d")));return;
-          }
-          const latest=frame.revision>=(old?.revision??-1);
-          const last=Math.max(frame.revision,old?.revision??0),now=Date.now(),writer=ReplayCodec.writer(old?.eventPool||[]),stored=writer.frame(frame);
-          const keys=tx.objectStore('frames').index('id').getAllKeys(key);
-          keys.onsuccess=()=>{
-          const revisions=new Set(keys.result.map(k=>k[1]));revisions.add(frame.revision);
-          let receivedRevision=-1;while(revisions.has(receivedRevision+1))receivedRevision++;
-          matches.put({eventPool:writer.events,receivedRevision,presentedRevision:old?.presentedRevision??null,reviewedRevision:old?.reviewedRevision??null,id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
-            game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),
-            cloudRoomId:id(cloudRoomId)?cloudRoomId:old?.cloudRoomId||null,accountId:id(accountId)?accountId:old?.accountId||null,
-            transportMode:transportMode==='online'||transportMode===null&&old?.transportMode==='online'?'online':'network',role:'client',revision:last,finished:frame.revision>=last?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
+          if((old?.eventCount||0)!==entry.persisted)throw Error('HISTORY_WRITE_CONFLICT');
+          if(old&&(old.sessionId!==frame.sessionId||old.viewer!==frame.viewer||old.game!==frame.game||old.packVersion!==frame.packVersion))throw Error('HISTORY_SCOPE_INVALID');
+          for(let i=0;i<frames.length;i++)tx.objectStore('frames').put({id:key,revision:frames[i].revision,frame:stored[i]});
+          for(let index=entry.persisted;index<writer.events.length;index++)tx.objectStore('events').put({id:key,index,event:writer.events[index]});
+          const latest=frame.revision>=(old?.revision??-1),last=Math.max(frame.revision,old?.revision??0),now=Date.now();let received=old?.receivedRevision??-1;
+          const finish=()=>matches.put({eventCount:writer.events.length,receivedRevision:received,presentedRevision:old?.presentedRevision??null,reviewedRevision:old?.reviewedRevision??null,id:key,roomId,participantId,sessionId:frame.sessionId,viewer:frame.viewer,
+            game:frame.game,packVersion:frame.packVersion,name:String(roomName).slice(0,100),cloudRoomId:id(cloudRoomId)?cloudRoomId:old?.cloudRoomId||null,accountId:id(accountId)?accountId:old?.accountId||null,
+            transportMode:transportMode==='online'||transportMode===null&&old?.transportMode==='online'?'online':'network',role:'client',revision:last,finished:latest?frame.state.status==='finished':!!old?.finished,createdAt:old?.createdAt||now,updatedAt:now,
             ...latest?metadata(frame.state):Object.fromEntries(['firstPlayer','presetId','turnNumber','turn','turnName','round','players'].map(k=>[k,old[k]])),
             participants:Array.isArray(participants)?roster(participants,latest?frame.state:{scene:{players:old?.participants?.map(p=>({player:p.playerIndex,team:p.team}))}}):old?.participants||[]});
-          };
-          tx.objectStore('frames').put({id:key,revision:frame.revision,frame:stored});
-        };
-      });
+          const advance=()=>{const r=tx.objectStore('frames').get([key,received+1]);r.onsuccess=()=>{if(r.result){received++;advance();}else finish();};};
+          if(old?.receivedRevision===undefined||frames.some(f=>f.revision===received+1))advance();else finish();
+        }catch(error){abort(error);}};
+      });entry.persisted=writer.events.length;}catch(error){this.writerCache.delete(key);if(error.message==='HISTORY_WRITE_CONFLICT'&&attempt<2)return this._saveBatch({roomId,participantId,roomName,transportMode,cloudRoomId,accountId,participants},snapshots,attempt+1);throw error;}
       return key;
     }
     async progress(key,upTo){
@@ -128,21 +142,29 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
             matches.put(row);done(true);};};
       });
     }
-    async backfill({roomId,participantId,roomName='',transportMode=null,snapshot,transport,isCurrent=()=>true}){
+    async backfill({roomId,participantId,roomName='',transportMode=null,snapshot,transport,isCurrent=()=>true,saveFrame=null}){
       const key=ClientHistory.id(roomId,participantId,snapshot.sessionId);
       const {missing}=await this.progress(key,snapshot.revision);
-      for(const revision of missing){
-        if(!isCurrent())break;
-        const frame=await transport.history(revision);
+      const buffered=new Map();
+      for(let offset=0;offset<missing.length;offset++){
+        const revision=missing[offset];if(!isCurrent())break;
+        if(!buffered.has(revision)&&transport.historyRange){
+          let count=1;while(count<64&&missing[offset+count]===revision+count)count++;
+          const reply=await transport.historyRange(revision,count);if(!isCurrent())break;
+          if(!Array.isArray(reply?.frames))throw Error('HISTORY_RANGE_INVALID');
+          for(const frame of reply.frames){if(frame.revision<revision||frame.revision>=revision+count||buffered.has(frame.revision))throw Error('HISTORY_RANGE_INVALID');buffered.set(frame.revision,frame);}
+        }
+        const frame=buffered.get(revision)||await transport.history(revision);buffered.delete(revision);
         if(!isCurrent())break;
         if(!valid(frame)||frame.kind!=='history'||frame.revision!==revision||
           ['sessionId','authorityEpoch','viewer','game','packVersion'].some(k=>frame[k]!==snapshot[k]))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.7c9ce377829e"));
-        await this.save({roomId,participantId,roomName,transportMode,snapshot:frame});
+        if(saveFrame)await saveFrame(frame);else await this.save({roomId,participantId,roomName,transportMode,snapshot:frame});
       }
     }
     async importPortable(value,roomName='',guard=()=>{}){
       const source=globalThis.PlayroomSaveTransfer.cleanReplay(value),nonce=globalThis.crypto.randomUUID(),roomId='import-'+nonce,participantId='import-'+nonce,sessionId='import-'+nonce,authorityEpoch='import-'+nonce,key=ClientHistory.id(roomId,participantId,sessionId),last=source.frames.at(-1),writer=ReplayCodec.writer(),frames=source.frames.map(frame=>writer.frame({...frame,sessionId,authorityEpoch}));
-      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
+      await this.tx(['matches','frames','events'],'readwrite',(tx,_,abort)=>{
+        const events=tx.objectStore('events').index('id').openCursor(key);events.onsuccess=()=>{const cursor=events.result;if(cursor){cursor.delete();cursor.continue();}};
         const matches=tx.objectStore('matches'),check=matches.get(key);check.onsuccess=()=>{try{guard();}catch(error){abort(error);return;}if(check.result){abort(Error('SAVE_ID_CONFLICT'));return;}
           matches.add({eventPool:writer.events,id:key,roomId,participantId,sessionId,viewer:source.viewer,game:source.game,packVersion:source.packVersion,name:String(roomName).slice(0,100),transportMode:'network',role:'client',revision:last.revision,finished:last.state.status==='finished',createdAt:source.createdAt,updatedAt:source.updatedAt,receivedRevision:-1,...metadata(last.state),participants:roster(last.state.players,last.state),imported:true});
           for(const frame of frames)tx.objectStore('frames').add({id:key,revision:frame.revision,frame});
@@ -150,13 +172,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });return key;
     }
     async replacePortable(key,value,roomName='',guard=()=>{}){
+      await this.writeQueue.catch(()=>{});this.writerCache.delete(key);
       const source=globalThis.PlayroomSaveTransfer.cleanReplay(value),old=await this.read(key);guard();
       if(!old||old.game!==source.game||old.packVersion!==source.packVersion||old.viewer!==source.viewer||old.createdAt!==source.createdAt)throw Object.assign(Error('SAVE_ID_CONFLICT'),{code:'SAVE_ID_CONFLICT'});
       const epoch=old.frames.at(-1)?.authorityEpoch||'import-'+globalThis.crypto.randomUUID(),writer=ReplayCodec.writer(),frames=source.frames.map(frame=>writer.frame({...frame,sessionId:old.sessionId,authorityEpoch:epoch})),last=source.frames.at(-1);let received=-1;for(const frame of source.frames){if(frame.revision!==received+1)break;received++;}
-      await this.tx(['matches','frames'],'readwrite',(tx,_,abort)=>{
+      await this.tx(['matches','frames','events'],'readwrite',(tx,_,abort)=>{
+        const events=tx.objectStore('events').index('id').openCursor(key);events.onsuccess=()=>{const cursor=events.result;if(cursor){cursor.delete();cursor.continue();}};
         const matches=tx.objectStore('matches'),check=matches.get(key);check.onsuccess=()=>{try{
           guard();const current=check.result;if(!current||current.updatedAt!==old.updatedAt||current.revision!==old.revision){abort(Error('SAVE_CHANGED'));return;}
-          const keys=tx.objectStore('frames').index('id').getAllKeys(key);keys.onsuccess=()=>{try{guard();for(const id of keys.result)tx.objectStore('frames').delete(id);for(const frame of frames)tx.objectStore('frames').put({id:key,revision:frame.revision,frame});matches.put({...current,eventPool:writer.events,name:String(roomName).slice(0,100),revision:last.revision,finished:last.state.status==='finished',updatedAt:source.updatedAt,receivedRevision:received,presentedRevision:null,reviewedRevision:null,...metadata(last.state)});}catch(error){abort(error);}};
+          const keys=tx.objectStore('frames').index('id').getAllKeys(key);keys.onsuccess=()=>{try{guard();for(const id of keys.result)tx.objectStore('frames').delete(id);for(const frame of frames)tx.objectStore('frames').put({id:key,revision:frame.revision,frame});matches.put({...current,eventCount:0,eventPool:writer.events,name:String(roomName).slice(0,100),revision:last.revision,finished:last.state.status==='finished',updatedAt:source.updatedAt,receivedRevision:received,presentedRevision:null,reviewedRevision:null,...metadata(last.state)});}catch(error){abort(error);}};
         }catch(error){abort(error);}};
       });return key;
     }
@@ -171,26 +195,38 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
       };
     });}
-    async read(key){if(typeof key!=='string'||key.length>515||!key.includes('|'))throw Error(globalThis.PlayroomMessages.text("ui.network-client-history.0c46209c576c"));
-      return this.tx(['matches','frames'],'readwrite',(tx,done,abort)=>{
-        const match=tx.objectStore('matches').get(key),frames=tx.objectStore('frames').index('id').getAll(key),data={};
-        match.onsuccess=()=>{data.match=match.result;};
-        frames.onsuccess=()=>{try{
-          data.frames=frames.result;if(!data.match)return;
-          const writer=ReplayCodec.writer(data.match.eventPool||[]),read=ReplayCodec.reader(writer.events);let changed=false;
-          for(const row of data.frames){
-            if(row.frame.encoding===ReplayCodec.encoding)row.frame=read(row.frame);
-            else{const stored=writer.frame(row.frame);tx.objectStore('frames').put({...row,frame:stored});changed=true;}
-          }
-          if(changed)tx.objectStore('matches').put({...data.match,eventPool:writer.events});
-          delete data.match.eventPool;
-        }catch(error){abort(error);}};
-        done(data);
-      }).then(data=>{if(!data.match)return null;const frames=data.frames.map(x=>x.frame).sort((a,b)=>a.revision-b.revision);
-        let receivedRevision=-1;for(const frame of frames){if(frame.revision!==receivedRevision+1)break;receivedRevision++;}
-        return {...data.match,receivedRevision,presentedRevision:data.match.presentedRevision??null,reviewedRevision:data.match.reviewedRevision??null,frames};});
+    async readFrame(key,revision){
+      if(typeof key!=='string'||!key.includes('|')||!Number.isSafeInteger(revision)||revision<0)throw Error('HISTORY_REVISION_INVALID');
+      const data=await this.tx(['matches','frames','events'],'readonly',(tx,done,abort)=>{
+        const data={pool:[]};tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;
+        tx.objectStore('frames').get([key,revision]).onsuccess=e=>{try{data.row=e.target.result;if(!data.row||data.match?.eventPool)return;
+          const frame=data.row.frame;if(frame.encoding!==ReplayCodec.encoding)return;
+          const indices=new Set([...(frame.events||[]),...(frame.state.events||[])]);
+          for(const index of indices){const r=tx.objectStore('events').get([key,index]);r.onsuccess=()=>{if(!r.result){abort(Error('HISTORY_EVENT_MISSING'));return;}data.pool[index]=r.result.event;};}
+        }catch(error){abort(error);}};done(data);
+      });
+      if(!data.match||!data.row)return null;
+      const frame=data.row.frame,decoded=frame.encoding===ReplayCodec.encoding?ReplayCodec.reader(data.match.eventPool||data.pool)(frame):COPY(frame);
+      return {...decoded,kind:'history',protocolVersion:3};
     }
-    close(){this.database?.close();this.database=null;}
+    async read(key){
+      if(typeof key!=='string'||key.length>515||!key.includes('|'))throw Error('HISTORY_KEY_INVALID');
+      const data=await this.tx(['matches','frames','events'],'readwrite',(tx,done,abort)=>{
+        const data={};tx.objectStore('matches').get(key).onsuccess=e=>data.match=e.target.result;
+        tx.objectStore('events').index('id').getAll(key).onsuccess=e=>data.events=e.target.result;
+        tx.objectStore('frames').index('id').getAll(key).onsuccess=e=>{try{
+          data.frames=e.target.result;if(!data.match)return;
+          const pool=data.match.eventPool||data.events.sort((a,b)=>a.index-b.index).map(row=>row.event),writer=ReplayCodec.writer(pool),read=ReplayCodec.reader(writer.events);let changed=false;
+          for(const row of data.frames){if(row.frame.encoding===ReplayCodec.encoding)row.frame=read(row.frame);else{const stored=writer.frame(row.frame);tx.objectStore('frames').put({...row,frame:stored});changed=true;}}
+          if(changed||data.match.eventPool){const start=data.match.eventPool?0:data.events.length;for(let index=start;index<writer.events.length;index++)tx.objectStore('events').put({id:key,index,event:writer.events[index]});const {eventPool,...match}=data.match;tx.objectStore('matches').put({...match,eventCount:writer.events.length});data.changed=true;}
+          delete data.match.eventPool;
+        }catch(error){abort(error);}};done(data);
+      });
+      if(data.changed)this.writerCache.delete(key);if(!data.match)return null;
+      const frames=data.frames.map(x=>x.frame).sort((a,b)=>a.revision-b.revision);let received=-1;for(const frame of frames){if(frame.revision!==received+1)break;received++;}
+      return {...data.match,receivedRevision:received,presentedRevision:data.match.presentedRevision??null,reviewedRevision:data.match.reviewedRevision??null,frames};
+    }
+    close(){this.database?.close();this.database=null;this.writerCache.clear();}
   }
   return ClientHistory;
 });

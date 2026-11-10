@@ -12,7 +12,7 @@ function server(){
     res.writeHead(200,{'Content-Type':(types[path.extname(file)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(file));
   });return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
-async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
+async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input[name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
 test('main app: public Table over WebRTC shares moves with a player without gaining private viewer rights',{timeout:90000},async()=>{
@@ -478,9 +478,9 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
   else if(req.url().endsWith('/playroom_cloud_saves_rpc'))result={enabled:false,entries:[],used:0,limit:10485760};
   else if(req.url().endsWith('/playroom_social')){assert.equal(req.postDataJSON().p_action,'list');result={profile:{id:uid,nickname:'Игрок'},friends:[],rooms:[],invitations:[]};}
   else{
-   assert(req.url().endsWith('/playroom_signal'));const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(d.roomId,cloudId);
+   assert(req.url().endsWith('/playroom_signal_sync'));const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(d.roomId,cloudId);
    if(action==='host'){assert.equal(uid,hostId);lease={epoch:d.epoch,localRoomId:d.localRoomId};result={};}
-   else if(action==='poll-host'){assert.equal(uid,hostId);if(d.known?.length)compactPolls++;result=slot?[{...slot,participantId:boundId,...(d.known?.includes(slot.id)?{offer:null,answer:null}:{})}]:[];}
+   else if(action==='poll-host'){assert.equal(uid,hostId);if(d.known?.length)compactPolls++;result={contract:1,signals:slot?[{...slot,participantId:boundId,...(d.known?.includes(slot.id)?{offer:null,answer:null}:{})}]:[],peers:d.peers.map(p=>({id:p.id,allowed:true}))};}
    else if(action==='request'){assert.equal(uid,userId);slot={id:require('node:crypto').randomUUID(),userId,offer:null,answer:null};result={id:slot.id,...lease};}
    else if(action==='authorize'){if(d.id)identityReads++;assert.equal(uid,hostId);result={userId,participantId:boundId};}
    else if(action==='offer'){assert.equal(uid,hostId);assert.equal(d.id,slot.id);if(slot.offer)assert.equal(slot.offer,d.signal);slot.offer=d.signal;result={};}
@@ -494,7 +494,7 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
  try{
   await profile(host,'Хост');await profile(client,'Игрок');assert.equal(requests,0);
   await host.evaluate(()=>PlayroomAccountUI.service.login('host@example.test','password123'));await client.evaluate(()=>PlayroomAccountUI.service.login('client@example.test','password123'));
-  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode][value=online]').check();
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-game-mode=network]').click();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{transportMode:'online'});b.renderLobby();});
   await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
   await host.evaluate(id=>PlayroomCloudNetwork.host(id),cloudId);
   {const started=Date.now();await client.evaluate(id=>PlayroomCloudNetwork.connect(id),cloudId);joinTimes.push(Date.now()-started);}
@@ -562,7 +562,7 @@ test('cloud host renews membership only for a connected RTC channel and rejects 
    let denied=false;try{await create();}catch(error){denied=error.message==='CLOUD_LOBBY_REQUIRED';}
    b.roomService.configure(r.id,r.ownerId,{transportMode:'online'});b.renderLobby();
    const Native=window.RTCPeerConnection;let connectionState='new',readyState='connecting',pc,channel;
-   window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);pc=this;}createDataChannel(...args){channel=super.createDataChannel(...args);return channel;}};
+   window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);pc=this;}createDataChannel(...args){const created=super.createDataChannel(...args);if(args[1]?.protocol!=='playroom.preview.v1')channel=created;return created;}};
    const handle=await create();Object.defineProperty(pc,'connectionState',{get:()=>connectionState});Object.defineProperty(channel,'readyState',{get:()=>readyState});
    await handle.validate();const before=validations;
    connectionState='connected';readyState='open';await handle.validate();const connected=validations;

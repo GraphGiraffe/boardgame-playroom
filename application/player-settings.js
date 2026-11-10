@@ -1,7 +1,7 @@
 /* Pure player preference schema. UI, persistence and application effects are ports. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomPlayerSettings=api;})(globalThis,function(){
  'use strict';
- const defaults=()=>({sound:true,uiSounds:true,tutorialsEnabled:true, volume:1, animationSpeed:'normal', interfaceScale:100, handShape:'arc', splitThreeOpponents:false, quickPlay:true,autoPass:false,hotseatAutoPass:{},seating:'circle',seatingByGame:{},showLastGame:false,lastRoomName:''});
+ const defaults=()=>({sound:true,uiSounds:true,tutorialsEnabled:true,volume:1, animationSpeed:'normal', interfaceScale:100, handShape:'arc', splitThreeOpponents:false, quickPlay:true,autoPass:false,hotseatAutoPass:{},seating:'circle',seatingByGame:{},showLastGame:false,lastRoomName:''});
  function normalize(stored,{catalog,normalizeScale,normalizeSpeed}){
   const settings=defaults();
     // Legacy density is retained in storage only; the UI starts at its adaptive baseline.

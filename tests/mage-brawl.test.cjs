@@ -3,6 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const E=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),Protocol=require('../core/protocol.js'),Client=require('../app/session-client.js');
 const {GameModel}=require('../core/model-runtime.js'),D=require('../packs/mage-brawl/domain/game.js');
 require('../packs/mage-brawl/rules.js');const model=new GameModel(D);
+const framesData=d=>{const {frames,...rest}=d;return {...rest,frameSequence:require('../../playroom-paks/shared/domain/frame-sequence.js').encode(frames)};};
 const clone=x=>JSON.parse(JSON.stringify(x)),plan=(element,action='movement',direction=0)=>({type:'plan',element,action,direction});
 function fixture(spec,{size,board={},shrink=null}={}){
  const n=spec.length,s=clone(model.create({playerCount:n,preset:'classic',firstPlayer:0,rng:17,options:{actionsPerTurn:1}})),d=s.data;
@@ -364,10 +365,29 @@ test('public phase plan distinguishes damage, fall, death and killer without pri
  const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js');
  const player={pos:[0,0],health:0,lives:1,maxHand:3,kills:0,ultimate:0,handCount:3,hand:[{id:'private'}]};
  const frame={phase:'attack-fire',board:['floor'],players:[player],outcomes:[{player:0,damage:2,death:true,fall:true,at:[0,0],killers:[1]}]};
- const plan=P.presentationPlan({round:2,board:['floor'],players:[player],draft:'private',frames:[{...frame,phase:'start',outcomes:[]},frame]});
+ const plan=P.presentationPlan(framesData({round:2,board:['floor'],players:[player],draft:'private',frames:[{...frame,phase:'start',outcomes:[]},frame]}));
  assert.deepEqual(plan.groups.flatMap(g=>g.cues.map(c=>c.kind)),['damage','fall','death','kill']);
  assert.equal(plan.groups.at(-1).cues.at(-1).target.entity.id,'1');
  assert(!JSON.stringify(plan.scenes[plan.final]).includes('private'));
+});
+
+test('public turn overview groups every announced card before each step at twice phase duration',()=>{
+ const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js');
+ const players=Array.from({length:8},()=>({pos:[0,0],health:4,lives:2,maxHand:4,kills:0,ultimate:0,handCount:4})),state={board:['ground'],players,inset:0};
+ const choices=Object.fromEntries(players.map((_,i)=>[i,{element:['air','earth','water','fire'][i%4],action:i<4?'movement':'attack',direction:i%4}]));
+ const frames=[{...state,phase:'start'}];
+ for(let step=0;step<2;step++){
+  frames.push({...state,phase:'reveal-actions',step,plans:choices});
+  for(const [actor,c]of Object.entries(choices))frames.push({...state,phase:c.action+'-'+c.element,step,effect:{actor:Number(actor),...c,origin:[0,0],cells:[]}});
+ }
+ const plan=P.presentationPlan(framesData({...state,round:8,frames})),overviews=plan.scenes.filter(s=>s.kind==='turn-reveal');
+ assert.equal(overviews.length,2);assert.deepEqual(overviews.map(s=>[s.round,s.step]),[[7,0],[7,1]]);
+ assert.deepEqual(overviews[0].phases.map(p=>p.phase),['movement-air','movement-earth','movement-water','movement-fire','attack-air','attack-earth','attack-water','attack-fire']);
+ assert.deepEqual(overviews[0].phases.flatMap(p=>p.cards.map(c=>c.actor)),[0,1,2,3,4,5,6,7]);
+ assert.equal(plan.scenes[0],overviews[0]);assert(plan.groups.length>32&&plan.groups.length<=64,'maximal eight-player plan stays within the bounded SDK');
+ assert.doesNotThrow(()=>require('../core/game-components.js').publicFrames({plan,frames:plan.scenes.slice(0,plan.final).map(()=>({markup:'<div></div>',label:'public'})),live:'<div></div>',label:'live',lazy:true}));
+ for(const overview of overviews){const duration=plan.groups.find(g=>plan.scenes[g.scene]===overview).duration;assert.equal(duration,2*plan.groups.find(g=>plan.scenes[g.scene].kind==='reveal').duration);assert(!JSON.stringify(overview.phases).includes('cardId'));}
+ const second=plan.scenes.indexOf(overviews[1]);assert(plan.scenes.slice(0,second).filter(s=>s.kind==='effects').every(s=>s.step===0));assert(plan.scenes.slice(second).filter(s=>s.kind==='effects').every(s=>s.step===1));
 });
 
 
@@ -401,7 +421,7 @@ test('fire ultimate: protected impact still bursts, adjacent shields face the ex
   assert.deepEqual(s.data.players.map(p=>p.health),[3,3,3,2,3]);
   const fx=s.data.frames.find(f=>f.effect?.actor===0)?.effect;
   assert.deepEqual(fx.burst,{origin:[2,2],cells:[[1,2],[2,3],[3,2],[2,1]]});
-  const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js'),p=P.presentationPlan(s.data);
+  const P=require('../../playroom-paks/packs/mage-brawl/presentation/scene.js'),p=P.presentationPlan(framesData(s.data));
   const stages=p.scenes.filter(f=>f.kind==='effects'&&f.phase==='attack-fire');
   assert.equal(stages.length,3);
   assert.deepEqual(stages[0].effects[0].origin,[2,0]);assert.deepEqual(stages[0].effects[0].projectile.end,[2,2]);
@@ -508,4 +528,15 @@ test('engine finishes a mage match with fractional damage and restores the resul
  const s=E.createGame('mage-brawl',{seed:19,players:[{name:'A'},{name:'B'}]});
  const loser=s.data.players[1];s.data.discard.push(...loser.hand);Object.assign(loser,{hand:[],health:0,lives:0,pos:null,ultimate:0,eliminatedRound:1});s.data.players[0].damageDealt=1.5;
  E.complete(s,0);assert.deepEqual(s.result.details,[1.5,0]);assert(E.validateState(E.clone(s)));
+});
+
+test('Mage round presentation owns its audio while respawn retains ordinary feedback',()=>{
+ const session=new Session(E,'mage-brawl',{seed:17,actionsPerTurn:'2',players:Array.from({length:8},(_,i)=>({name:'P'+i}))});let resolved=0,respawn=0;
+ for(let n=0;n<100&&(resolved<2||respawn===0);n++){
+  const before=session.current,window=E.decisionWindow(before),actor=window?.participants.find(i=>!window.ready.includes(i))??before.turn,command=E.legalActions(before,actor).find(c=>c.type!=='unready');assert(command);
+  session.act(actor,command);const cues=E.soundCues(session.current,0,before.events.at(-1)?.id||0);
+  if(session.current.data.round!==before.data.round){resolved++;assert(E.project(session.current,0).scene.plan.final>0);assert.deepEqual(cues,[],'no extra generic move before the authored reveal/movement sequence');}
+  if(command.type==='respawn'){respawn++;assert.deepEqual(cues.map(c=>c.id),['move']);}
+ }
+ assert.equal(resolved,2);assert(respawn>0);
 });

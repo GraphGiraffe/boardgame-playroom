@@ -137,14 +137,7 @@ for(const game of ['uno','battleship'])test(game+': guest reload + fresh QR reco
     await client.locator('.table-shell.network-game').waitFor({timeout:12000});
     assert.equal(await client.locator('.table-shell.network-game').getAttribute('data-viewer'),'1');
     await client.waitForFunction(()=>PlayroomNetworkDebug().client.recovery?.state==='connected');
-    await client.waitForFunction(()=>document.querySelector('.network-reconnect-banner')?.hidden);
-    const layout=await client.evaluate(()=>{
-      const shell=document.querySelector('.table-shell.network-game'),banner=shell.querySelector('.network-reconnect-banner'),before=shell.getBoundingClientRect();
-      banner.hidden=false;banner.textContent='Восстановление связи. Ваше игровое место сохраняется. Новое приглашение';
-      const after=shell.getBoundingClientRect(),position=getComputedStyle(banner).position;banner.hidden=true;
-      return {before:[before.width,before.height],after:[after.width,after.height],position};
-    });
-    assert.deepEqual(layout.before,layout.after,'connection banner does not resize the game');assert.equal(layout.position,'absolute');
+    assert.equal(await client.locator('.network-reconnect-banner,.network-presence').count(),0,'connection status is shown on player cards without text on the game field');
     if(game==='battleship'){
       // Guest can finish placement before the starter has placed any ships.
       await client.getByRole('button',{name:'Расставить флот',exact:true}).click();

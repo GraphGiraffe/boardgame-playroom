@@ -111,23 +111,20 @@ test('a clock failure cannot undo a committed move or corrupt its compact save c
 });
 
 
-test('durable journal stores each fact once and rejects a missing delta before recovery',()=>{
-  const Journal=require('../core/journal.js');
-  const initial={states:[{move:0,data:{count:0},events:[{id:1,text:'start'}]}]};
-  let events=[...initial.states[0].events],tail=1;const rows=[],full=[];
-  for(let revision=1;revision<=256;revision++){
-    events=[...events,{id:revision+1,revision,text:'Public action '+revision}];
-    const state={move:revision,data:{count:revision},events};full.push(state);
-    const step=Journal.encode(state,tail);rows.push({...step,revision});tail=step.eventTail;
-  }
-  assert.equal(rows.reduce((sum,row)=>sum+row.state.events.length,0),256);
-  assert(JSON.stringify(rows).length<JSON.stringify(full).length/10);
-  const restored=Journal.restore(initial,rows,tail);
-  assert.equal(restored.length,257);assert.deepEqual(restored.at(-1),full.at(-1));
-  assert(restored.slice(0,-1).every(state=>state.events.length<=4));
-  assert(restored.every((state,index)=>state.data.count===index));
-  const corrupt=structuredClone(rows);corrupt[100].eventBase--;
-  assert.throws(()=>Journal.restore(initial,corrupt,tail),error=>error.code==='JOURNAL_EVENT_GAP');
-  assert.throws(()=>Journal.restore(initial,rows,tail+1),error=>error.code==='JOURNAL_TAIL_INVALID');
-  restored.at(-1).events[0].text='changed';assert.equal(initial.states[0].events[0].text,'start');
+test('checkpoint restore and live snapshots do not replay historical actions',()=>{
+ const source=create({now:()=>10}),initial=source.initialSave(),actions=[];
+ for(let i=0;i<40;i++){const next=source.prepare(source.current.turn,{type:'next'});actions.push(source.preparedAction(next));source.commitPrepared(next);}
+ const Codec=require('../core/session-codec.js'),state=Session.storageState(E,source.current),beforeCreate=creations,apply=E.applyAction;let replays=0;
+ E.applyAction=(...args)=>{replays++;return apply(...args);};
+ try{
+  const restored=Session.restoreCheckpoint(E,{initial,checkpoint:{state,fingerprint:Codec.fingerprint(state)},actions,updatedAt:10},{now:()=>10});
+  assert.equal(replays,0);assert.equal(creations,beforeCreate);assert.equal(restored.current.move,40);assert.equal(restored.historyLength,41);
+  const Authority=require('../core/authority.js'),host=new Authority(restored);assert.equal(host.connect(0).snapshot().revision,40);assert.equal(replays,0,'live snapshot uses the checkpoint directly');host.dispose();
+  assert.deepEqual(restored.export().states,source.export().states);assert.equal(replays,40);assert.equal(restored.states.length,41);assert.equal(replays,40,'history replay is cached');
+  const originalHistory=restored.states;
+  step(restored);assert.equal(restored.current.move,41);assert.equal(replays,41);assert.equal(restored.export().states.length,42);assert.equal(replays,42,'history extends only the newly accepted command');
+  assert.equal(originalHistory.length,41,'previous history remains immutable');assert.equal(restored.states.length,42);assert.equal(replays,42,'repeated history reads do no work');
+  restored.setPlayerMetadata(1,{name:'Changed player',bot:true});step(restored);assert.equal(replays,43);const extended=restored.export().states;assert.equal(replays,44);assert.equal(extended.at(-1).players[1].name,'Changed player');assert.equal(extended.at(-1).players[1].bot,true);
+  assert.deepEqual(Session.restore(E,JSON.parse(restored.serialize())).export().states,extended);
+ }finally{E.applyAction=apply;}
 });

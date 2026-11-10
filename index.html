@@ -7,8 +7,9 @@
        License texts and component scope: https://github.com/GraphGiraffe/boardgame-playroom/blob/main/LICENSING.md -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#f3f0e7">
   <meta name="color-scheme" content="light">
+  <script src="platform/web/display-cutout.js"></script>
   <script src="app/appearance-startup.js"></script>
   <meta name="description" content="Настольные игры в кармане. Устанавливайте паки игр, играйте с ботами или вместе и пересматривайте ходы.">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -53,6 +54,7 @@
   <link rel="stylesheet" href="app/status-meter.css">
   <link rel="stylesheet" href="app/settings-021.css">
   <link rel="stylesheet" href="app/element-sizes.css">
+  <link rel="stylesheet" href="app/landscape-surfaces.css">
   <link rel="stylesheet" href="app/hub-shell-021.css">
   <link rel="stylesheet" href="app/catalog-filters-021.css">
   <link rel="stylesheet" href="app/result-021.css">
@@ -63,8 +65,12 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="core/messages.js"></script>
   <script src="core/random.js"></script>
+  <script src="presentation/event-stream.js"></script>
+  <script src="presentation/projection-sync.js"></script>
+  <script src="presentation/network-projection.js"></script>
   <script src="core/engine.js"></script>
   <script src="core/model-values.js"></script>
+  <script src="core/realtime.js"></script>
   <script src="core/events.js"></script>
   <script src="core/bot-difficulty.js"></script>
   <script src="core/model-runtime.js"></script>
@@ -105,6 +111,8 @@
   <script src="app/remote-catalog.js"></script>
   <script src="platform/web/storage-usage.js"></script>
   <script src="platform/web/data-storage.js"></script>
+  <script src="application/save-compression.js"></script>
+  <script src="platform/web/pack-storage.js"></script>
   <script src="app/status-meter.js"></script>
   <script src="app/pack-manager.js"></script>
   <script src="application/library.js"></script>
@@ -153,10 +161,10 @@
   <script src="app/account-ui.js"></script>
   <script src="application/account-sync-service.js"></script>
   <script src="app/multiplayer.js"></script>
-  <script src="core/journal.js"></script>
   <script src="application/host-recovery.js"></script>
   <script src="platform/web/session-store.js"></script>
   <script src="application/replay-codec.js"></script>
+  <script src="application/realtime-session.js"></script>
   <script src="app/network-client-history.js"></script>
   <script src="app/pairing.js"></script>
   <script src="application/pwa-update-coordinator.js"></script>
@@ -168,9 +176,17 @@
   <script src="app/vendor/ggwave.js"></script>
   <script src="app/acoustic-pairing.js"></script>
   <script src="application/recovery-coordinator.js"></script>
+  <script src="application/connection-indicators.js"></script>
+  <script src="platform/web/realtime-peer.js"></script>
+  <script src="platform/web/realtime-canvas.js"></script>
+  <script src="application/wire-codec.js"></script>
+  <script src="app/transports/reliable-channel.js"></script>
+  <script src="application/command-wire.js"></script>
   <script src="app/transports/webrtc.js"></script>
   <script src="app/transports/local.js"></script>
   <script src="application/client-connection-service.js"></script>
+  <script src="application/local-input-draft.js"></script>
+  <script src="platform/web/input-draft-store.js"></script>
   <script src="app/session-client.js"></script>
   <script src="core/size-tokens.js"></script>
   <script src="core/motion.js"></script>
@@ -203,7 +219,6 @@
   <script src="app/pairing-presenter.js"></script>
   <script src="app/network-invitations.js"></script>
   <script src="application/player-control-service.js"></script>
-  <script src="application/save-compression.js"></script>
   <script src="application/save-transfer.js"></script>
   <script src="application/host-transfer.js"></script>
   <script src="platform/web/host-transfer-wire.js"></script>
@@ -221,6 +236,7 @@
   <script src="core/tooltips.js"></script>
   <script src="application/upgrade-service.js"></script>
   <script src="application/pack-update-cleanup.js"></script>
+  <script src="application/update-all.js"></script>
   <script src="app/upgrade-ui.js"></script>
   <script src="app/hub-presenter.js"></script>
   <script src="app/avatar-picker.js"></script>

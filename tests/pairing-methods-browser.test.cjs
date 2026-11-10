@@ -28,7 +28,7 @@ async function fixture(browser,{microphone=false,share=false,standalone=false,ca
       openModal(html,className='',options={}){return modalController.open('<div class="modal-backdrop"><section class="modal '+className+'" data-ui-surface="'+PlayroomGameScreen.classifySurface(className)+'" role="dialog">'+PlayroomGameScreen.modalContent(html)+'</section></div>',{mode:options.mode||'reset',valid:options.valid,onDispose:options.onDispose});},
       closeModal(){modalController.reset()},toast(message){globalThis.__toast=message},renderLobby(){}};
   `});
-  await page.addScriptTag({content:['core/messages.js','application/history-sync-service.js','application/host-session-service.js','application/quick-reactions.js','application/room-chat.js','app/network-invitations.js','platform/web/host-transfer-wire.js','app/pairing-presenter.js','app/network-social.js','app/network-presence.js','app/nearby-view.js','app/network-ui.js'].map(read).join('\n')});
+  await page.addScriptTag({content:['core/messages.js','application/history-sync-service.js','application/host-session-service.js','application/quick-reactions.js','application/room-chat.js','app/network-invitations.js','platform/web/host-transfer-wire.js','app/pairing-presenter.js','app/network-social.js','application/connection-indicators.js','app/network-presence.js','app/nearby-view.js','app/network-ui.js'].map(read).join('\n')});
   if(errors.length){await context.close();await browser.close();assert.deepEqual(errors,[],'Pairing bootstrap must load before interactions');}
   return {context,page,errors};
 }

@@ -112,7 +112,7 @@
   }
   // Freeze visual/layout properties only; avoid copying the entire CSS catalogue
   // and thousands of inherited design tokens into every node of each flight.
-  const cloneStyleKeys=('display position box-sizing width height min-width min-height max-width max-height top right bottom left margin padding border border-radius background color opacity visibility overflow overflow-x overflow-y font font-size font-family font-weight line-height letter-spacing text-align text-transform white-space vertical-align align-items align-content align-self justify-content justify-items gap flex flex-direction flex-wrap flex-shrink flex-grow grid-template-columns grid-template-rows place-items box-shadow text-shadow transform transform-origin translate rotate scale perspective backface-visibility clip-path filter fill fill-opacity stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset paint-order text-anchor dominant-baseline vector-effect object-fit object-position aspect-ratio z-index').split(' ');
+  const cloneStyleKeys=('display position box-sizing width height min-width min-height max-width max-height top right bottom left margin padding border border-radius background color opacity visibility overflow overflow-x overflow-y font font-size font-family font-weight line-height letter-spacing text-align text-transform white-space vertical-align align-items align-content align-self justify-content justify-items gap flex flex-direction flex-wrap flex-shrink flex-grow grid-template-columns grid-template-rows grid-template-areas grid-column grid-row grid-area grid-auto-flow grid-auto-columns grid-auto-rows order flex-basis justify-self row-gap column-gap place-items box-shadow text-shadow transform transform-origin translate rotate scale perspective backface-visibility clip-path filter fill fill-opacity stroke stroke-width stroke-opacity stroke-linecap stroke-linejoin stroke-dasharray stroke-dashoffset paint-order text-anchor dominant-baseline vector-effect object-fit object-position aspect-ratio z-index').split(' ');
   const cloneMetricKeys=new Set(['width','height','transform-origin','transform']);
   function styledClone(el) {
     const clone = el.cloneNode(true), sourceNodes = [el, ...el.querySelectorAll('*')], cloneNodes = [clone, ...clone.querySelectorAll('*')];
@@ -145,6 +145,31 @@
     clone.classList.add('playroom-motion-piece');
     Object.assign(clone.style, { position: 'absolute', left: `${-minX}px`, top: `${-minY}px`, right: 'auto', bottom: 'auto', width: `${width}px`, height: `${height}px`, minWidth: '0', minHeight: '0', margin: '0', opacity: '1', visibility: 'visible' });
     return clone;
+  }
+  // Stable participant panels animate in place; their DOM/layout stays owned by
+  // GameScreen. Only ancestor clipping is leased for this short visual effect.
+  async function pulseParticipant(panel,{scale,duration,role,context}={}){
+    if(!context?.current()||!panel?.isConnected||!rectOf(panel))return;
+    const stage=panel.closest('.app-game-layout'),leases=[];
+    for(let node=panel.parentElement;node&&node!==stage;node=node.parentElement){
+      const css=root.getComputedStyle(node);if(!/(auto|scroll|hidden|clip)/.test(css.overflowX+' '+css.overflowY))continue;
+      // Keep an already scrolled viewport stationary rather than releasing it.
+      if(node.scrollLeft||node.scrollTop)return;
+      const values={'overflow-x':'visible','overflow-y':'visible'},px=k=>parseFloat(css.getPropertyValue(k))||0;
+      const vertical=Math.max(0,node.offsetWidth-node.clientWidth-px('border-left-width')-px('border-right-width'));
+      const left=Math.max(0,node.clientLeft-px('border-left-width')),horizontal=Math.max(0,node.offsetHeight-node.clientHeight-px('border-top-width')-px('border-bottom-width'));
+      if(vertical){values['padding-left']=px('padding-left')+left+'px';values['padding-right']=px('padding-right')+vertical-left+'px';}
+      if(horizontal)values['padding-bottom']=px('padding-bottom')+horizontal+'px';
+      leases.push({node,values,saved:Object.fromEntries(Object.keys(values).map(k=>[k,[node.style.getPropertyValue(k),node.style.getPropertyPriority(k)]]))});
+    }
+    const apply=()=>{for(const {node,values}of leases)for(const [key,value]of Object.entries(values))if(node.style.getPropertyValue(key)!==value||node.style.getPropertyPriority(key)!=='important')node.style.setProperty(key,value,'important');};
+    apply();let animation,restored=false;
+    const observer=new root.MutationObserver(()=>{if(!panel.isConnected||leases.some(l=>!l.node.contains(panel)))animation?.cancel();else apply();});
+    observer.observe(panel.ownerDocument.getElementById('app')||panel.ownerDocument.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']});
+    const resize=()=>animation?.cancel();root.addEventListener('resize',resize);
+    const restore=()=>{if(restored)return;restored=true;observer.disconnect();root.removeEventListener('resize',resize);for(const {node,saved}of leases)for(const [key,[value,priority]]of Object.entries(saved)){if(value)node.style.setProperty(key,value,priority);else node.style.removeProperty(key);}};
+    const detach=context.cleanup(restore);
+    try{if(!context.current())return;animation=context.animation(panel.animate([{scale:1},{scale,offset:.4},{scale:1}],{id:'turn-handoff-'+role,duration,easing:'ease-in-out'}));await animation.finished.catch(()=>{});}finally{detach();restore();}
   }
   const requests=new Set();
   // A request belongs to the whole exchange: lift, show, answer/transfer, return.
@@ -599,7 +624,7 @@
       } catch (error) { run.finish(); throw error; }
     });
   }
-  return { capture, prepare, stage, releaseStage, beginRequest, showRequest, play, withFieldTargets, cancel, poseOf };
+  return { pulseParticipant, capture, prepare, stage, releaseStage, beginRequest, showRequest, play, withFieldTargets, cancel, poseOf };
   }
   const api = root.PlayroomMotion = {...surface(),surface};
   if (typeof module === 'object' && module.exports) module.exports = api;

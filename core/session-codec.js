@@ -101,7 +101,7 @@
   // Strict, bounded command envelopes. Rule legality belongs to Session/engine replay.
   function actionLog(saved){
     const fail=()=>{throw Error('Invalid action history');};
-    if(saved.encoding!=='actions-v1'||typeof saved.game!=='string'||typeof saved.packVersion!=='string'||!saved.packVersion||
+    if(!['actions-v1','actions-v2'].includes(saved.encoding)||typeof saved.game!=='string'||typeof saved.packVersion!=='string'||!saved.packVersion||
        !isRecord(saved.options)||saved.options.packVersion!==saved.packVersion||saved.options.seed==null||
        !Number.isSafeInteger(saved.createdAt)||saved.createdAt<0||!Number.isSafeInteger(saved.updatedAt)||saved.updatedAt<saved.createdAt||
        !Array.isArray(saved.actions)||saved.actions.length>100000||!isRecord(saved.end)||saved.end.move!==saved.actions.length||!(/^[a-f0-9]{16}$/).test(saved.end.fingerprint))fail();

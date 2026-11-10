@@ -53,6 +53,13 @@ test('public frame ports prepare one authorized frame at a time and reuse its sc
  const other=new Map();registry.render({...state,scene:{...state.scene,viewer:1}},1,[],{renderOwner:owner,regionSink:other});assert.notEqual(other.publicFrames.get('scene:field'),source);other.publicFrames.get('scene:field').read(0);assert.deepEqual(calls.at(-1),[1,0],'another viewer never reuses the previous frame source');
 });
 
+test('public frame ports accept a full two-step overview and retain a finite 64-frame bound',()=>{
+ const registry=sandbox.TabletopUI.createRegistry(),owner={},sink=new Map();let count=34,calls=0;
+ registry.register('uno',(_state,_viewer,_actions,ui)=>{const plan={id:'bounded:'+count,initial:0,final:count,groups:Array.from({length:count},(_,scene)=>({scene,duration:750,cues:[]}))};return {api:3,family:'cards',elements:{field:ui.publicFrames({key:'round',plan,renderFrame:()=>{calls++;return {markup:'<b>public</b>',label:'phase'};},live:{markup:'<b>live</b>',label:'live'}})}};});
+ const state=E.project(make('uno'),0);registry.render(state,0,[],{renderOwner:owner,regionSink:sink});assert.equal(calls,0);const source=sink.publicFrames.get('scene:round');assert.equal(source.count,35);assert.equal(source.read(33).label,'phase');assert.equal(calls,1);assert.equal(source.read(34).label,'live');
+ count=64;const maximum=new Map();registry.render(state,0,[],{renderOwner:owner,regionSink:maximum});assert.equal(maximum.publicFrames.get('scene:round').count,65);count=65;const rejected=new Map();assert.doesNotMatch(registry.render(state,0,[],{renderOwner:owner,regionSink:rejected}),/data-public-frame-source/);assert.equal(rejected.publicFrames,undefined,'an over-bound plan fails closed');
+});
+
 test('standalone UI shares source and target policies without browser or game dependencies', () => {
   const UI = require('../core/ui.js'), H = UI.helpers;
   const id = 'card"<&', one = [{type:'play',card:id,label:'Play "<&'}];
@@ -209,14 +216,26 @@ test('domino selection exposes only legal table targets with the exact resulting
 
 test('UNO previews on click and exposes exact drag/swipe actions without guessing wild colours', () => {
   const covered = new Set();
-  for (const seed of [1, 7, 17, 21]) {
-    let state = make('uno', 'classic', 2, seed);
+  for (const count of [2,4]) for (const seed of [1, 7, 17, 21]) {
+    let state = make('uno', 'classic', count, seed);
     for (let step = 0; step < 28 && state.status === 'playing'; step++) {
       const legal = E.legalActions(state), base = render(state);
       const quick = V.render(E.project(state, state.turn), state.turn, legal, {selected:null, quickPlay:true});
       assert.doesNotMatch(base, /class="uno-drop-target"/, 'discard target requires a selection');
       for (const id of new Set(legal.filter(a => a.card).map(a => a.card))) {
         const choices = legal.filter(a => a.card === id);
+        const projection=E.project(state,state.turn),after=E.applyAction(state,state.turn,choices[0]),predicted=after.status==='playing'?after.turn:null;
+        assert.equal(projection.scene.nextPlayerByCard[id],predicted,'preview agrees with committed rules, including reverse/skip and finishing');
+        assert.equal(Object.keys(E.project(state,-1).scene.nextPlayerByCard).length,0,'spectator does not receive private card IDs');
+        const preview=render(state,state.turn,id),markers=[...preview.matchAll(/<article[^>]*\bis-next\b[^>]*data-player-index="(\d+)"/g)].map(m=>Number(m[1]));
+        assert.equal(markers.length,predicted===null?0:1);if(predicted!==null)assert.equal(markers[0],predicted);
+        const card=state.data.hands[state.turn].find(c=>c.id===id),special=['skip','reverse','+2','+4'].includes(card.value),hint=projection.scene.turnPreviewByCard[id];
+        const hinted=tone=>[...preview.matchAll(new RegExp('<article[^>]*data-player-index="(\\d+)"[^>]*data-turn-preview="'+tone+'"','g'))].map(m=>Number(m[1]));
+        assert.equal(!!hint,special);assert.equal(Object.keys(E.project(state,-1).scene.turnPreviewByCard).length,0);
+        if(special){covered.add(card.value);assert.equal(hint.nextPlayer,predicted);assert.deepEqual(hinted('negative'),Array.from(hint.affected));assert.deepEqual(hinted('positive'),predicted===null?[]:[predicted]);assert.doesNotMatch(render(state,state.turn,id,[]),/data-turn-preview=/,'committed or unavailable choice has no editable preview');}
+        else assert.doesNotMatch(preview,/data-turn-preview=/);
+
+
         const source = base.match(new RegExp(`<button[^>]*data-entity="card-${id}"[^>]*>`))[0];
         const quickSource = quick.match(new RegExp(`<button[^>]*data-entity="card-${id}"[^>]*>`))[0];
         assert.ok(source.includes(`data-drag-piece="${id}"`));
@@ -248,7 +267,7 @@ test('UNO previews on click and exposes exact drag/swipe actions without guessin
       state = E.applyAction(state, state.turn, E.botAction(state));
     }
   }
-  for (const type of ['normal', 'wild', '+4']) assert.ok(covered.has(type), type);
+  for (const type of ['normal','wild','skip','reverse','+2','+4']) assert.ok(covered.has(type), type);
 });
 
 test('manual UNO controls are constant and accusations use public player context without hints', () => {

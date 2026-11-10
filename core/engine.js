@@ -36,13 +36,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   // Presentation metadata stays independent of Web Audio and of game rules.
   // Only new, visible events produce cues; rendering/restoring a snapshot is silent.
-  function projectedEvents(state,viewer,afterEventId=null) {
+  function projectedEvents(state,viewer,afterEventId=null,{rawEvents=false}={}) {
     const pack=forState(state);
     return state.events.flatMap(raw=>{
       if(afterEventId!==null&&!(raw.id>afterEventId))return [];
       if(raw.visibility){
         const Events=root.PlayroomEvents||(typeof require==='function'?require('./events.js'):null);
-        return Events.project([raw],viewer,state.players.length).map(value=>pack.presentEvent(value,state.players));
+        return Events.project([raw],viewer,state.players.length).map(value=>rawEvents?value:pack.presentEvent(value,state.players));
       }
       if(raw.privateTo!=null&&!(Array.isArray(raw.privateTo)?raw.privateTo.includes(viewer):raw.privateTo===viewer))
         return [{id:raw.id,...(raw.revision!==undefined?{revision:raw.revision}:{}),text:raw.publicText||globalThis.PlayroomMessages.text("ui.engine.81ec674a9b53"),player:raw.player,kind:raw.kind,sound:raw.publicSound??null}];
@@ -53,27 +53,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   // Every authored visible effect owns its sound. Only unstructured legacy facts
   // compete for one fallback cue per revision.
   function soundCues(state, viewer, afterEventId = 0) {
-    const fallback={move:'move',play:'move',action:'move',draw:'draw',take:'take',attack:'attack',defend:'defend',capture:'attack.capture',roll:'dice',pass:'pass'};
-    const semantic={skip:'attack.skip',pass:'pass',discard:'discard',draw:'draw',take:'take',reverse:'reverse'};
-    const priorities={skip:90,discard:70,reverse:75,pass:60,take:55,draw:40};
-    const sounds={'penalty':85,'uno.call':80,'attack.capture':75,'success.special':65,'success.yatzy':65,'success':60,'mismatch':50};
-    const actions=new Map(),explicit=[],authored=new Set();
-    for(const e of projectedEvents(state,viewer,afterEventId)){
-      const id=e.kind==='finish'
-        ? state.winner==null?'draw-game':viewer<0||viewer>=state.players.length?'notify':(state.winners||[state.winner]).includes(viewer)?'victory':'defeat'
-        : e.sound===null?null:e.sound?.id||semantic[e.feedback?.kind]||fallback[e.kind];
-      if(!id)continue;
-      const priority=e.kind==='finish'?100:priorities[e.feedback?.kind]||sounds[id]||({draw:40,capture:75,roll:30}[e.kind]??10);
-      const revision=e.revision??e.id,previous=actions.get(revision);
-      const target=e.sound?.target??e.feedback?.player;
-      if(e.sound?.id||e.transfer||e.reveal||e.speech||e.feedback||e.presentation||e.kind==='finish'){
-        explicit.push({id,eventId:e.id,...(target!=null?{target}:{})});authored.add(revision);continue;
-      }
-      if(!previous||priority>previous.priority)actions.set(revision,{priority,cue:{id,eventId:e.id,...(target!=null?{target}:{})}});
-    }
-    const cues=[...explicit,...[...actions].filter(([revision])=>!authored.has(revision)).map(([,value])=>value.cue)];
-    return cues.sort((a,b)=>a.eventId-b.eventId);
+    const Presentation=root.PlayroomNetworkProjection||(typeof require==='function'?require('../presentation/network-projection.js'):null);
+    return Presentation.soundCues(projectedEvents(state,viewer,afterEventId),state,viewer);
   }
+
   const hidden = cards => cards.map(() => ({ hidden: true }));
   function checkedPack(pack) {
     for (const key of ['id', 'name', 'create', 'legal', 'apply']) if (!pack?.[key]) throw Error(globalThis.PlayroomMessages.text("ui.engine.c1e11992534e",{p0:String(key)}));
@@ -187,6 +170,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if (!activePlayer(state, actor)) return [];
     return [...((actor === state.turn || decisionWindow(state)?.participants.includes(actor)) ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
   }
+  function availableCommands(state,actor=state.turn){
+    if(!activePlayer(state,actor))return [];
+    const pack=forState(state),active=actor===state.turn||decisionWindow(state)?.participants.includes(actor);
+    return pack.commands?[...(active?pack.commands(state,actor):[]),...pack.commands(state,actor,true)]:legalActions(state,actor);
+  }
   function decisionWindow(state) { return forState(state).decisionWindow?.(state)??null; }
   // Packs describe a public reaction window; clocks and transport stay in the app.
   function reactionWindows(state) {
@@ -237,21 +225,21 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     forState(next).apply(next, actor, legal);
     return next;
   }
-  function project(state, viewer) {
+  function project(state, viewer, options={}) {
     // Private data and events are projected below. Do not copy their complete
     // authority payload only to discard it, and never copy the private RNG.
     const {data,events,rng,...header}=state;
     const out = {...clone(header),data:{}}, pack = forState(state);
     if (!Number.isInteger(viewer) || viewer < 0 || viewer >= state.players.length) viewer = -1;
-    out.events = projectedEvents(state,viewer);
-    if (pack.project) pack.project(out, viewer, state);
+    out.events = projectedEvents(state,viewer,null,options);
+    if (pack.project) pack.project(out, viewer, state,options);
     return out;
   }
-  function projectTable(state, actor) {
-    const out = project(state, -1), projection = forState(state).tableProjection?.(state, actor);
+  function projectTable(state, actor, options={}) {
+    const out = project(state, -1,options), projection = forState(state).tableProjection?.(state, actor, options);
     out.tableActor = projection?.actor ?? -1;
-    out.tableActions = forState(state).tableChoices?.(state,actor) ?? projection?.actions ?? [];
-    if (projection) {out.modelProjection = projection;out.scene=forState(state).scene(projection,state.players);}
+    out.tableActions = options.rawEvents?[]:forState(state).tableChoices?.(state,actor) ?? projection?.actions ?? [];
+    if (projection) {out.modelProjection = projection;if(!options.rawEvents)out.scene=forState(state).scene(projection,state.players);}
     return out;
   }
   function tableCommand(state, actor, action) {
@@ -301,7 +289,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
+  const api = { storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
   Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;

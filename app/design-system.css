@@ -89,7 +89,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 
 
-.handoff .handoff-nav{position:absolute;top:max(16px,env(safe-area-inset-top));left:max(16px,env(safe-area-inset-left))}
+.handoff .handoff-nav{position:absolute;top:max(16px,var(--app-safe-top,0px));left:max(16px,var(--app-safe-left,0px))}
 @media(max-width:400px){.app-game-layout .player-panel.opponent-hand{flex-basis:95px}.player-details strong{font-size:10px;}#app .table-tools{gap:3px}#app .table-title h1{font-size:16px}}
 /* Container dimensions also cover split-screen desktop and replay. */
 .app-game-layout[data-layout-mode="phone-landscape"]{grid-template-columns:minmax(120px,24%) minmax(0,1fr) minmax(140px,32%)!important;grid-template-rows:auto minmax(0,1fr) auto!important;grid-template-areas:"status field self" "participants field self" "auxiliary field self"!important}
@@ -269,7 +269,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 :is(#app,:is(#modal-root,[data-ui-surface-exit])) .icon-btn svg[data-ui-icon]{display:block;margin:0}
 #app .table-tools{flex-wrap:nowrap}
 /* Transient notices stay above the visible viewport without moving content. */
-.app-notice,#toast.show{position:fixed;z-index:120;top:max(8px,env(safe-area-inset-top));bottom:auto;height:auto;min-height:0;left:50%;transform:translateX(-50%);width:max-content;max-width:min(480px,calc(100% - 16px));margin:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-border-subtle,#c8b17c);border-radius:14px;background:var(--color-surface-notice,#f4e8c9);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto;font-size:.75rem;line-height:1.4}
+.app-notice,#toast.show{position:fixed;z-index:120;top:max(8px,var(--app-safe-top,0px));bottom:auto;height:auto;min-height:0;left:50%;transform:translateX(-50%);width:max-content;max-width:min(480px,calc(100% - 16px));margin:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--color-border-subtle,#c8b17c);border-radius:14px;background:var(--color-surface-notice,#f4e8c9);color:var(--ink);box-shadow:var(--shadow);pointer-events:auto;font-size:.75rem;line-height:1.4}
 .app-notice>span,#toast.show>span{white-space:pre-line;flex:1;min-width:0;overflow-wrap:anywhere}
 .app-notice .icon-btn,#toast.show .icon-btn{flex:none;width:36px;min-width:36px;height:36px}
 .app-notice:has(.app-notice-action),#toast.show:has(.app-notice-action){flex-wrap:wrap}
@@ -756,8 +756,8 @@ body.reduced-motion .connection-light.is-connected{animation:none}
 .action-reveal-art.scene>.shared-card{background:transparent!important;box-shadow:none!important;border-radius:0!important;overflow:visible}
 
 /* Public sets share the single-card reveal lifecycle. */
-.action-reveal-art.scene.is-card-set{display:flex!important;gap:8px;width:min(90vw,calc(var(--reveal-card-count)*150px));align-items:center}
-.action-reveal-art.scene.is-card-set>*{width:calc((100% - (var(--reveal-card-count) - 1)*8px)/var(--reveal-card-count))!important;flex:none;max-height:60dvh!important}
+.action-reveal-art.scene.is-card-set{--reveal-set-width:min(90vw,calc(var(--reveal-card-count)*150px));display:flex!important;flex-wrap:wrap;justify-content:center;gap:8px;width:var(--reveal-set-width);max-width:100%;align-items:center}
+.action-reveal-art.scene.is-card-set>*{width:calc((var(--reveal-set-width) - (var(--reveal-card-count) - 1)*8px)/var(--reveal-card-count))!important;flex:none;max-height:60dvh!important}
 :is(.game-scene,.app-game-layout) :is(.die,.shared-die):has(.shared-die-art){border-radius:20%!important}
 
 /* A board player's card already occupies its seat. Give its controls the full
@@ -961,7 +961,7 @@ body>.action-reveal{z-index:42}body>.game-feedback-layer{z-index:44}
 /* Application tabs own their geometry before any game stylesheet is loaded. */
 .app-page-tabs.shared-page-tabs{position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(var(--page-count,2),minmax(0,1fr));grid-template-rows:1fr;gap:0;min-width:0;min-height:52px;padding:4px;margin:0;border:1px solid var(--line);border-radius:16px;background:transparent;box-shadow:none}
 .app-page-tabs.shared-page-tabs::before{content:"";position:absolute;z-index:0;inset:4px auto 4px 4px;width:calc((100% - 8px)/var(--page-count,2));height:auto;border-radius:12px;background:var(--color-surface-selected,var(--line));transform:translateX(calc(var(--page-index,0)*100%));pointer-events:none}
-.app-page-tabs.shared-page-tabs>button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:44px;margin:0;padding:8px;border:0;border-radius:12px;box-shadow:none;background:transparent;color:var(--ink);font:inherit;font-size:var(--ui-type-label,.875rem);font-weight:500;line-height:1.3;text-align:center;white-space:normal;overflow-wrap:anywhere}
+.app-page-tabs.shared-page-tabs>button{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;min-height:44px;margin:0;padding:8px;border:0;border-radius:12px;box-shadow:none;background:transparent;color:var(--ink);font:inherit;font-size:var(--ui-type-tab,1rem);font-weight:500;line-height:1.3;text-align:center;white-space:normal;overflow-wrap:anywhere}
 .app-page-tabs.shared-page-tabs>button[aria-selected=true]{font-weight:650}
 @media(prefers-reduced-motion:no-preference){.app-page-tabs.shared-page-tabs::before{transition:transform var(--surface-motion,180ms) ease}}
 
@@ -973,8 +973,14 @@ body.reduced-motion :is(#app,:is(#modal-root,[data-ui-surface-exit])) .app-page-
 /* Shared parameter pages: Settings and Appearance use the same content and category tabs. */
 .parameter-screen-content{display:flex;flex-direction:column;gap:18px;min-width:0;width:100%;max-width:none;margin-inline:auto}
 .parameter-screen-tabs.app-page-tabs{flex-shrink:0;min-height:54px;padding:4px}
-.parameter-screen-tabs.app-page-tabs>button{min-width:0;min-height:44px;padding:8px 4px;font-size:var(--ui-type-caption,.8125rem);grid-row:1}
+.parameter-screen-tabs.app-page-tabs>button{min-width:0;min-height:44px;padding:8px 4px;font-size:var(--ui-type-tab,1rem);grid-row:1}
 
 /* Touch suppresses only UI focus decoration. Authored selected/validation and
    canonical game-component rules retain their original cascade and paint. */
 :where(:root[data-input-modality="touch"] :is(#app,#modal-root,.game-chat-panel,.quick-reaction-picker) :is(button,a,input,select,textarea,[tabindex],[contenteditable]):is(:focus,:focus-visible):not(:is(.hand-card,.mini-hand,.board-target,.domino-tile,[data-select],[data-drag-piece],[data-cell],[data-drop-piece],[data-drop-select],[data-hand-preview],[data-swipe-select],[data-player-target],[data-accuse-player]))){outline:none}
+
+/* Reveal bounds follow the field, while cards and dice keep their physical size. */
+.action-reveal-content{max-width:calc(100% - var(--size-length-24_0,24px));}
+.action-reveal-title{max-width:100%;box-sizing:border-box;}
+.action-reveal-art.is-dice{flex-wrap:wrap;max-width:100%;}
+.action-reveal-die{flex:none;}
