@@ -16,6 +16,16 @@ function createRoom(hostMode='player'){
   return {rooms,room};
 }
 
+test('fresh hosted games keep hands private while historical sessions retain their original view',async()=>{
+ const E=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js'),Host=require('../application/host-session-service.js');require('../packs/uno/rules.js');
+ const room={id:'privacy-room',game:{id:'uno',version:E.get('uno').version},seats:[{index:0,playerIndex:0,participantId:'a'},{index:1,playerIndex:1,participantId:'b'}],participants:[{id:'a',nickname:'A'},{id:'b',nickname:'B'}],constraints:{min:2},rules:{preset:'classic',openHands:true,options:{}},firstPlayerMode:'assigned',firstParticipantId:'a'};
+ const service=new Host({engine:E,Session,Authority,packs:{activate(){}},store:{acquireHostLock:async()=>()=>{},create:async()=>{},commit(){},recordReceipt(){},setControl(){},setPlayerControls(){}},fingerprint:async()=>'digest',recovery:()=>({}),idFactory:()=> 'fresh-private'});
+ const fresh=await service.start(room);
+ try{assert.equal(fresh.session.options.openHands,false);const hidden=fresh.session.current.data.hands[0][0].id;assert(!JSON.stringify(fresh.authority.connect(1).snapshot()).includes('"id":"'+hidden+'"'),'new games do not reveal an opponent physical card');}finally{fresh.authority.dispose();fresh.releaseLock?.();}
+ const historic=new Session(E,'uno',{players:[{name:'A'},{name:'B'}],openHands:true,firstPlayerMode:'assigned',firstPlayer:0}),restored=await service.start(room,{restored:{session:historic,sessionId:'historical'}});
+ try{assert.equal(restored.session,historic);assert.equal(restored.session.options.openHands,true,'restoring an existing game does not rewrite its recorded visibility');}finally{restored.authority.dispose();}
+});
+
 test('profile keeps stable id while player name changes',()=>{
   const storage=memoryStorage(),profiles=new ProfileStore(()=>storage);
   assert.equal(profiles.load(),null);
