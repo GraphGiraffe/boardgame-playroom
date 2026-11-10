@@ -1,6 +1,7 @@
 if(typeof module==='object'&&module.exports&&typeof require==='function')require("../core/messages.js");
 (function(root){
   'use strict';
+  const Deadline=root.PlayroomRequestDeadline||(typeof require==='function'?require('../platform/web/request-deadline.js'):null);
   const KEY='playroom.remote-catalog.v1',ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
   const HEX=/^[a-f0-9]{64}$/;
@@ -16,9 +17,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return input;
   }
   class RemoteCatalog {
-    constructor({manager,fetcher=root.fetch?.bind(root),storage=root.localStorage,crypto=root.crypto,basePath=root.PlayroomDeployment?.catalogBasePath||'/api/packs/'}={}){
+    constructor({manager,fetcher=root.fetch?.bind(root),storage=root.localStorage,crypto=root.crypto,basePath=root.PlayroomDeployment?.catalogBasePath||'/api/packs/',requestTimeout=8000}={}){
       if(typeof basePath!=='string'||!/^\/(?!\/)[A-Za-z0-9_/-]*\/$/.test(basePath))throw Error('Invalid catalog base path');
-      this.basePath=basePath;
+      this.basePath=basePath;this.requestTimeout=requestTimeout;
       this.manager=manager;this.fetcher=fetcher;this.storage=storage;this.crypto=crypto;this.current=null;this.warning='';this.readSequence=0;this.pageProtocol=root.location?.protocol;
       try{this.current=validate(JSON.parse(storage.getItem(KEY)||'null'));}catch(_){}
     }
@@ -31,9 +32,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const request=++this.readSequence;
       this.requireAvailable();
       if(!this.fetcher)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.a1dc0b587e18"));
-      const response=await this.fetcher(this.basePath+'catalog',{cache:'no-store',credentials:'same-origin',redirect:'error',signal});
+      const text=await Deadline.run(async(signal,touch)=>{const response=await this.fetcher(this.basePath+'catalog',{cache:'no-store',credentials:'same-origin',redirect:'error',signal});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.fe3b5e2914ec",{p0:String(response.status)}));
-      const text=await response.text();if(text.length>256*1024)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.174d1503aba8"));
+      return new TextDecoder('utf-8',{fatal:true}).decode(await Deadline.bytes(response,{signal,touch,limit:256*1024}));},{signal,timeout:this.requestTimeout});if(text.length>256*1024)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.174d1503aba8"));
       const catalog=validate(JSON.parse(text));
       if(signal?.aborted)throw Object.assign(Error('Request cancelled'),{name:'AbortError'});
       if(request!==this.readSequence)return this.current;
@@ -49,9 +50,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const item=this.pending().find(entry=>entry.id===id);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.3456539518cb"));
       if(!this.crypto?.subtle)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.b01d9b44b6a3"));
-      const response=await this.fetcher(this.basePath+item.url.slice('/api/packs/'.length),{cache:'no-store',credentials:'same-origin',redirect:'error'});
+      const bytes=await Deadline.run(async(signal,touch)=>{const response=await this.fetcher(this.basePath+item.url.slice('/api/packs/'.length),{cache:'no-store',credentials:'same-origin',redirect:'error',signal});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.40a73e8f9f18",{p0:String(response.status)}));
-      const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.byteLength>4*1024*1024)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.fb6f028993b8"));
+      return Deadline.bytes(response,{signal,touch,limit:4*1024*1024});},{timeout:this.requestTimeout});
       const hash=[...new Uint8Array(await this.crypto.subtle.digest('SHA-256',bytes))].map(value=>value.toString(16).padStart(2,'0')).join('');
       if(hash!==item.sha256)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.f5fc3d7faf71"));
       const bundle=this.manager.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));

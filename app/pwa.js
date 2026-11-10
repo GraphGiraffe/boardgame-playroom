@@ -165,7 +165,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   void refreshInstallation();
   let registrationReady=Promise.resolve(null);
-  async function checkForUpdate(){
+  async function checkForUpdate(){return root.PlayroomRequestDeadline.run(async(signal)=>{
     // OS connectivity hints may be false while the origin remains reachable through a VPN.
     // The worker update request is authoritative; its real failures still reject below.
     if(updates.started||updates.locked)throw Object.assign(Error('Дождитесь завершения установки.'),{code:'busy'});
@@ -174,7 +174,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // A coalesced update() may resolve without a network request. HEAD bypasses
     // the GET-only shell cache without downloading or storing another worker body.
     const script=registration.active?.scriptURL||registration.waiting?.scriptURL||new URL('./sw.js',location.href).href;
-    const response=await fetch(script,{method:'HEAD',cache:'no-store',credentials:'same-origin',redirect:'error'});
+    const response=await fetch(script,{method:'HEAD',cache:'no-store',credentials:'same-origin',redirect:'error',signal});
     if(!response.ok)throw Object.assign(Error('Не удалось связаться с сервером обновлений.'),{code:'network',status:response.status});
     await registration.update();
     const worker=registration.installing;
@@ -187,7 +187,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(worker?.state==='redundant'&&!registration.waiting&&!updateInfo)throw Object.assign(Error('Не удалось проверить новую версию. Повторите проверку.'),{code:'network'});
     if(registration.waiting&&navigator.serviceWorker.controller)await announceUpdate(registration.waiting);
     return {available:!!updateInfo};
-  }
+  },{timeout:8000});}
   if('serviceWorker' in navigator&&secure){
     registrationReady=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(registration=>{
       if(registration.waiting&&navigator.serviceWorker.controller)announceUpdate(registration.waiting);
