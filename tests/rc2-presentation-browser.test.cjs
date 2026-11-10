@@ -1869,3 +1869,19 @@ test('shared game frame aligns system edges and fits eight-player landscape coun
  const fullscreen=await page.locator('.layout-participants .player-panel').evaluateAll(cards=>cards.map(card=>({width:card.getBoundingClientRect().width,right:card.getBoundingClientRect().right,scoreRight:card.querySelector('.player-scores').getBoundingClientRect().right})));assert(fullscreen.every(c=>c.scoreRight<=c.right-1),JSON.stringify(fullscreen));await page.evaluate(()=>document.exitFullscreen());
  console.log('game frame geometry',JSON.stringify(report));
 },{safeSupabase:true}));
+
+test('Mage planning remains confirmable and cancellable after returning from live history',{timeout:30000},async()=>fixture(async page=>{
+ page.setDefaultTimeout(3500);await page.setViewportSize({width:390,height:844});
+ await page.locator('[data-start=mage-brawl]').click();await page.locator('[data-game-mode=hotseat]').click();
+ await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'1'}});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Луна'});b.renderLobby();});
+ await page.locator('[data-command=lobby-start]').click();await page.waitForFunction(()=>document.querySelector('[data-command=unlock],.mage-card'));
+ if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();
+ await page.locator('.mage-card').first().click();await page.locator('.mage-controls [data-action]').click();await page.locator('.mage-controls [data-action]').click();
+ await page.locator('[data-game-menu]').click();await page.locator('[data-command=history]').click();await page.locator('#replay-range').waitFor();
+ const latest=Number(await page.locator('#replay-range').inputValue());await page.locator('[data-command=replay-prev]').click();await page.waitForFunction(n=>Number(document.querySelector('#replay-range')?.value)<n,latest);
+ await page.locator('[data-command=history-close]').click();
+ await page.locator('.mage-card').first().click();
+ await page.waitForFunction(()=>[...document.querySelectorAll('.mage-controls [data-action]')].some(b=>!b.disabled),null,{timeout:1500});
+ await page.locator('.mage-controls [data-action]').click();const cancel=page.locator('.mage-controls [data-action]');assert.equal(JSON.parse(await cancel.getAttribute('data-action')).type,'unready');await cancel.click();
+ assert.notEqual(JSON.parse(await page.locator('.mage-controls [data-action]').getAttribute('data-action')).type,'unready','cancellation returned to selection');
+},{safeSupabase:true,settings:{sound:false,animationSpeed:'instant',tutorialsEnabled:false,autoPass:false,quickPlay:false}}));

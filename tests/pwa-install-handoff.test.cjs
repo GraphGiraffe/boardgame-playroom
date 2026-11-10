@@ -1,7 +1,7 @@
 'use strict';
 const{test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=['core/messages.js','application/pwa-update-coordinator.js','app/pwa.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
-function runtime(handoff,settings={}){const listeners=new Map();const context={isSecureContext:true,location:{protocol:'https:',hostname:'example.test',href:'https://example.test/playroom/'},document:{addEventListener(){}},navigator:{},matchMedia:()=>({matches:false}),PlayroomPairing:{extract:()=>null,protocolUrl:()=>''},PlayroomInstallHandoff:handoff,addEventListener:(type,listener)=>listeners.set(type,listener),dispatchEvent(){},URL,Set,Promise,Event};Object.assign(context.navigator,settings.navigator||{});if(settings.location)Object.assign(context.location,settings.location);context.globalThis=context;vm.runInNewContext(source,context);return{context,pwa:context.PlayroomPWA,listeners}}
+function runtime(handoff,settings={}){const listeners=new Map();const context={isSecureContext:true,location:{protocol:'https:',hostname:'example.test',href:'https://example.test/playroom/'},document:{addEventListener(){}},navigator:{},matchMedia:()=>({matches:false}),PlayroomPairing:{extract:()=>null,protocolUrl:()=>''},PlayroomInstallHandoff:handoff,addEventListener:(type,listener)=>listeners.set(type,listener),dispatchEvent(){},URL,Set,Promise,Event};Object.assign(context.navigator,settings.navigator||{});if(settings.location)Object.assign(context.location,settings.location);if(settings.globals)Object.assign(context,settings.globals);context.globalThis=context;vm.runInNewContext(source,context);return{context,pwa:context.PlayroomPWA,listeners}}
 test('PWA consumes a password-gate installation invitation exactly once',async()=>{let prompts=0;const event={prompt:async()=>{prompts++},userChoice:Promise.resolve({outcome:'dismissed'})},handoff={prompt:event};const{context,pwa}=runtime(handoff);assert.equal(pwa.canInstall(),true);assert.equal(handoff.prompt,null);assert.equal('PlayroomInstallHandoff'in context,false);assert.equal((await pwa.install()).outcome,'dismissed');assert.equal(prompts,1);assert.equal(pwa.canInstall(),false);await assert.rejects(pwa.install());assert.equal(prompts,1)});
 test('PWA does not advertise installation without a browser invitation',()=>{const{pwa}=runtime({prompt:null});assert.equal(pwa.canInstall(),false)});
 test('appinstalled clears the handed-off invitation',()=>{const{pwa,listeners}=runtime({prompt:{prompt(){}}});assert.equal(pwa.canInstall(),true);listeners.get('appinstalled')();assert.equal(pwa.canInstall(),false)});
@@ -34,4 +34,12 @@ test('late installed-app probe cannot consume a newer native installation invita
  e.listeners.get('beforeinstallprompt')({preventDefault(){},prompt(){}});
  resolve([{platform:'webapp',url:'https://example.test/playroom/manifest.webmanifest'}]);await pending;await e.pwa.refreshInstallation();
  assert.equal(e.pwa.installState().mode,'native');assert.equal(e.pwa.canInstall(),true);assert.equal(calls,2);
+});
+
+
+test('manual update check bounds both HEAD and native service worker update without trusting offline hints',async()=>{
+ const Deadline=require('../platform/web/request-deadline.js');let stage='head',signal,updates=0;const registration={active:{scriptURL:'https://example.test/sw.js'},addEventListener(){},update(){updates++;return new Promise(()=>{});}};
+ const {pwa}=runtime(null,{navigator:{onLine:false,serviceWorker:{controller:{},register:async()=>registration,addEventListener(){}}},globals:{PlayroomRequestDeadline:{run:(work,options)=>Deadline.run(work,{...options,timeout:25})},setInterval(){},fetch:async(url,options)=>{signal=options.signal;return stage==='head'?new Promise(()=>{}):new Response(null,{status:200});}}});
+ await assert.rejects(()=>pwa.checkForUpdate(),e=>e.code==='timeout');assert(signal.aborted);assert.equal(updates,0);
+ stage='native';await assert.rejects(()=>pwa.checkForUpdate(),e=>e.code==='timeout');assert.equal(updates,1,'a false offline hint still allows a real origin check');
 });

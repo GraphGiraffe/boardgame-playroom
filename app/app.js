@@ -34,7 +34,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const executor=localAuthority();
     if(!localClients.has(player)){
       const client=executor.connect(player);localClients.set(player,client);let shown=client.snapshot();
-      client.subscribe(next=>{const refresh=next.revision===shown.revision&&(next.reactionRevision||0)>(shown.reactionRevision||0);shown=next;
+      client.subscribe(next=>{const refresh=next.revision===shown.revision&&(next.controlRevision!==shown.controlRevision||(next.reactionRevision||0)>(shown.reactionRevision||0));shown=next;
+        if(refresh)localLegal.delete(player);
         if(refresh)queueMicrotask(()=>{if(localClients.get(player)===client&&viewer===player&&screen==='table'&&!isReplay()&&!transition)renderTable();});});
     }
     return localClients.get(player);
