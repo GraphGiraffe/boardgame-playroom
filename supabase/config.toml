@@ -1,3 +1,7 @@
 [functions.playroom-push]
 # Database webhook/cron uses x-playroom-push-secret, checked in the handler.
 verify_jwt = false
+
+[functions.playroom-ice]
+# The handler authorizes the JWT through the room-scoped PostgreSQL RPC.
+verify_jwt = false

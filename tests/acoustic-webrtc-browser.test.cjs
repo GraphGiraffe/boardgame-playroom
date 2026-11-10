@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const source=fs.readFileSync(path.join(__dirname,'../app/acoustic-pairing.js'),'utf8');
-const rtcSource=['core/messages.js','core/protocol.js','application/recovery-coordinator.js','app/transports/webrtc.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
+const rtcSource=['core/messages.js','core/protocol.js','application/recovery-coordinator.js','application/replay-codec.js','presentation/event-stream.js','presentation/projection-sync.js','presentation/network-projection.js','platform/web/realtime-peer.js','application/wire-codec.js','app/transports/reliable-channel.js','application/command-wire.js','app/transports/webrtc.js'].map(file=>fs.readFileSync(path.join(__dirname,'..',file),'utf8')).join('\n');
 const pairingSource=fs.readFileSync(path.join(__dirname,'../app/pairing.js'),'utf8');
 function localIPv4(){
   return Object.values(os.networkInterfaces()).flat().find(x=>x.family==='IPv4'&&!x.internal)?.address||null;

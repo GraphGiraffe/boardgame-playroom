@@ -27,36 +27,62 @@
   }
   const base = new Map(Object.entries(defaults).map(([id,definition])=>[id,normalize(definition,id)]));
   class TabletopAudio {
-    constructor({enabled=false, volume=.6, contextFactory}={}) {
-      this.enabled=!!enabled;this.volume=clamp(volume,0,1,.6);
+    constructor({enabled=false, volume=.6, contextFactory, diagnostics=null}={}) {
+      this._diagnostics=diagnostics;this.enabled=!!enabled;this.volume=clamp(volume,0,1,.6);
       this._factory=contextFactory || (()=>{const Context=root.AudioContext || root.webkitAudioContext;return Context?new Context():null;});
       this._context=null;this._contextPromise=null;this._master=null;this._graph=[];this._packs=new Map();this._buffers=new Map();this._noise=null;
-      this._groups=new Set();this._voices=new Set();this._generation=0;this._waits=new Set();
+      this._groups=new Set();this._voices=new Set();this._generation=0;this._waits=new Set();this._preparing=0;this._resumePromise=null;
     }
-    get busy() {return this._groups.size>0;}
+    get busy() {return this._groups.size>0||this._preparing>0;}
     setEnabled(enabled) { this.enabled=!!enabled;if(!this.enabled)this.stop();return this; }
     setVolume(volume) {
       this.volume=clamp(volume,0,1,this.volume);
       if(this._master){try{this._master.gain.setTargetAtTime(this.volume*.55,this._context.currentTime,.012);}catch(_){this._master.gain.value=this.volume*.55;}}
       return this;
     }
-    async unlock() {
-      if(!this.enabled)return false;
-      try {
-        if(this._context?.state==='closed'){this._context=null;this._contextPromise=null;this._buffers.clear();this._noise=null;}
-        if(!this._contextPromise)this._contextPromise=Promise.resolve().then(()=>this._factory()).then(context=>{
-          if(!context)throw new Error('Web Audio unavailable');
-          const master=context.createGain();master.gain.value=this.volume*.55;
-          const graph=[master];let tail=master;
-          if(context.createDynamicsCompressor){const compressor=context.createDynamicsCompressor();compressor.threshold.value=-10;compressor.knee.value=8;compressor.ratio.value=12;compressor.attack.value=.003;compressor.release.value=.09;tail.connect(compressor);graph.push(compressor);tail=compressor;}
-          if(context.createWaveShaper){const limiter=context.createWaveShaper(),curve=new Float32Array(1024);for(let i=0;i<curve.length;i++)curve[i]=Math.tanh((2*i/(curve.length-1)-1)*1.4)*.92;limiter.curve=curve;limiter.oversample='2x';tail.connect(limiter);graph.push(limiter);tail=limiter;}
-          tail.connect(context.destination);this._context=context;this._master=master;this._graph=graph;return context;
-        }).catch(()=>{this._contextPromise=null;return null;});
-        const context=await this._contextPromise;
-        if(!this.enabled||!context)return false;
-        if(context.state==='suspended'||context.state==='interrupted')await context.resume();
-        return this.enabled&&context.state==='running';
-      }catch(_){return false;}
+    unlock() {
+      if(!this.enabled)return Promise.resolve(false);
+      // Construct and resume inside the trusted gesture, before any microtask.
+      const attach=context=>{
+        if(!context)throw new Error('Web Audio unavailable');
+        const master=context.createGain();master.gain.value=this.volume*.55;
+        const graph=[master];let tail=master;
+        if(context.createDynamicsCompressor){const compressor=context.createDynamicsCompressor();compressor.threshold.value=-10;compressor.knee.value=8;compressor.ratio.value=12;compressor.attack.value=.003;compressor.release.value=.09;tail.connect(compressor);graph.push(compressor);tail=compressor;}
+        if(context.createWaveShaper){const limiter=context.createWaveShaper(),curve=new Float32Array(1024);for(let i=0;i<curve.length;i++)curve[i]=Math.tanh((2*i/(curve.length-1)-1)*1.4)*.92;limiter.curve=curve;limiter.oversample='2x';tail.connect(limiter);graph.push(limiter);tail=limiter;}
+        tail.connect(context.destination);this._context=context;this._master=master;this._graph=graph;return context;
+      };
+      const resume=context=>{
+        if(!this.enabled||!context)return Promise.resolve(false);
+        if(context.state==='suspended'||context.state==='interrupted'){
+          // A gesture-end retry is allowed even while gesture-start resume waits.
+          const pending=Promise.resolve(context.resume()).then(()=>this.enabled&&context.state==='running',()=>false);
+          this._resumePromise=pending;return pending;
+        }
+        return Promise.resolve(context.state==='running');
+      };
+      try{
+        if(this._context?.state==='closed'){this._context=null;this._contextPromise=null;this._resumePromise=null;this._buffers.clear();this._noise=null;}
+        if(!this._contextPromise){
+          const created=this._factory();
+          if(created?.then){this._contextPromise=Promise.resolve(created).then(attach).catch(()=>{this._contextPromise=null;return null;});return this._contextPromise.then(resume);}
+          attach(created);this._contextPromise=Promise.resolve(this._context);
+        }
+        return this._context?resume(this._context):this._contextPromise.then(resume);
+      }catch(_){if(!this._context)this._contextPromise=null;return Promise.resolve(false);}
+    }
+    prepare({signal,timeoutMs=1000}={}) {
+      // Only wait for an unlock already initiated by a gesture. Never queue a
+      // startup cue until a later interaction or indefinitely stall gameplay.
+      if(signal?.aborted||!this.enabled||!this.volume||!this._contextPromise)return Promise.resolve(false);
+      if(this._context?.state==='running')return Promise.resolve(true);
+      const generation=this._generation;this._preparing++;
+      return new Promise(resolve=>{
+        let settled=false;
+        const finish=value=>{if(settled)return;settled=true;clearTimeout(wait.timer);this._waits.delete(wait);signal?.removeEventListener('abort',abort);this._preparing--;resolve(!!value&&generation===this._generation&&this.enabled&&this.volume>0&&!signal?.aborted&&this._context?.state==='running');};
+        const abort=()=>finish(false),wait={resolve:finish,timer:setTimeout(()=>finish(false),clamp(timeoutMs,0,1500,1000))};
+        this._waits.add(wait);signal?.addEventListener('abort',abort,{once:true});
+        this._contextPromise.then(context=>context?.state==='running'||this._resumePromise||false).then(finish,()=>finish(false));
+      });
     }
     registerPack(pack, sounds) {
       if(!idPattern.test(pack)||!sounds||typeof sounds!=='object'||Array.isArray(sounds))throw new TypeError('Invalid sound pack');
@@ -70,7 +96,7 @@
       const definition=this._packs.get(pack)?.get(id)||base.get(id);if(!definition)return Promise.resolve(false);
       const generation=this._generation,context=this._context;
       let resolve;const promise=new Promise(done=>{resolve=done;});
-      const group={generation,done:false,sources:new Set(),nodes:new Set(),timer:null,resolve};this._groups.add(group);
+      const group={diagnosticStart:this._diagnostics?.begin()??null,generation,done:false,sources:new Set(),nodes:new Set(),timer:null,resolve};this._groups.add(group);
       const abort=()=>this._finish(group,false);signal?.addEventListener('abort',abort,{once:true});group.detach=()=>signal?.removeEventListener('abort',abort);
       while(this._groups.size>LIMITS.groups)this._finish(this._groups.values().next().value,false);
       const start=buffer=>{
@@ -112,6 +138,7 @@
       return played;
     }
     stop() {
+      this._diagnostics?.record('audio.stop',{groups:this._groups.size,voices:this._voices.size});
       this._generation++;
       for(const group of [...this._groups])this._finish(group,false);
       for(const wait of [...this._waits]){clearTimeout(wait.timer);wait.resolve(false);}this._waits.clear();
@@ -136,7 +163,7 @@
     }
     _timeout(group,duration) { group.timer=setTimeout(()=>this._finish(group,true),(duration+.15)*1000); }
     _finish(group,completed) {
-      if(group.done)return;group.done=true;group.detach?.();clearTimeout(group.timer);this._groups.delete(group);
+      if(group.done)return;this._diagnostics?.end('audio.group',group.diagnosticStart,{completed,voices:group.sources.size});group.done=true;group.detach?.();clearTimeout(group.timer);this._groups.delete(group);
       for(const source of group.sources){source.onended=null;try{source.stop();}catch(_){}this._voices.delete(source);}group.sources.clear();
       for(const node of group.nodes){try{node.disconnect();}catch(_){}}group.nodes.clear();group.resolve(completed);
     }

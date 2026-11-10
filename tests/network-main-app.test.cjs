@@ -12,7 +12,7 @@ function server(){
     res.writeHead(200,{'Content-Type':(types[path.extname(file)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(file));
   });return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
-async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
+async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form input[name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 
 test('main app: public Table over WebRTC shares moves with a player without gaining private viewer rights',{timeout:90000},async()=>{
@@ -22,12 +22,12 @@ test('main app: public Table over WebRTC shares moves with a player without gain
  for(const page of [host,table,phone]){page.setDefaultTimeout(10000);page.on('pageerror',error=>errors.push(error.message));}
  try{
   await profile(host,'Анна');await profile(table,'Стол');await profile(phone,'Борис');
-  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode][value=network]').check();
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-game-mode=hotseat]').click();await host.locator('[data-room-option=transportMode][value=network]').check();await host.locator('[data-room-auto-start]').uncheck();
   await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
   async function join(page){
    await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();
    const offer=await value(host,'#net-host-token');
-   await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
+   await page.locator('#network-join-button').click();await page.locator('.connection-alternative>summary').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
    await page.locator('#net-client-token').waitFor();
    await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
    await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(form=>form.requestSubmit());
@@ -36,7 +36,7 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   await join(phone);await phone.locator('[data-net-seat]:not([disabled])').first().click();await join(table);
   await phone.locator('.lobby-avatar-wrap[data-quick-reaction]').click();await phone.locator('[data-quick-emoji=":nice:"]').click();await host.locator('.avatar-message-bubble').filter({hasText:':nice:'}).waitFor();
   if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await host.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'lobby-reaction.png')});}
-  await phone.locator('[data-net-action=settings]').click();await phone.locator('[data-avatar-picker]').click();await phone.locator('[data-avatar-option=star-yellow]').click();
+  await phone.locator('[data-room-person]').filter({hasText:'Борис'}).click();await phone.locator('[data-command=profile-edit]').click();await phone.locator('[data-local-profile-avatar]').click();await phone.locator('[data-avatar-option=star-yellow]').click();await phone.locator('button[form=local-profile-editor]').click();
   await host.waitForFunction(()=>PlayroomAppBridge.room().participants.some(p=>p.nickname==='Борис'&&p.avatar==='star-yellow'));await phone.locator('.modal [data-command=close-modal]').click();
   await phone.locator('[data-net-action=settings]').click();await host.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-send',scope:'room',id:'missed-in-settings',body:'Сообщение, пока открыты настройки'}));
   await phone.evaluate(()=>PlayroomChatActivity.poll());assert.equal((await phone.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-summary'}))).room,1);
@@ -64,14 +64,42 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   assert.equal(await table.locator('[data-quick-reaction]').count(),0,'public Table cannot impersonate a player');
   await phone.locator('.quick-reaction-bubble').waitFor({state:'detached',timeout:3000});
   await host.locator('[data-quick-reaction]').click();await host.locator('[data-quick-emoji=":thanks:"]').click();await phone.locator('.quick-reaction-bubble').filter({hasText:':thanks:'}).waitFor();
-  assert.equal(await host.locator('.table-tools [data-command=history]').count(),0);await host.locator('.table-tools [data-room-chat-open]').click();await host.locator('[data-room-chat-messages]').filter({hasText:':wow:'}).waitFor();assert.equal(await host.locator('[data-room-chat-tabs]').isVisible(),false);
+  assert.equal(await host.locator('.table-tools [data-command=history]').count(),0);
+  const fieldBeforeChat=await host.locator('.scene').boundingBox();await host.evaluate(()=>window.chatSceneBefore=document.querySelector('.scene'));
+  await host.locator('.table-tools [data-room-chat-open]').click();
+  await host.locator('.game-chat-panel').waitFor();assert.equal(await host.locator('#app').evaluate(e=>e.inert),false);assert.deepEqual(await host.locator('.scene').boundingBox(),fieldBeforeChat);assert(await host.evaluate(()=>chatSceneBefore===document.querySelector('.scene')));
+  const panelBefore=await host.locator('.game-chat-panel').boundingBox();const grip=await host.locator('[data-game-chat-resize]').boundingBox();await host.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await host.mouse.down();await host.mouse.move(grip.x+grip.width/2-80,grip.y+grip.height/2,{steps:5});await host.mouse.up();assert((await host.locator('.game-chat-panel').boundingBox()).width>panelBefore.width+50);assert.deepEqual(await host.locator('.scene').boundingBox(),fieldBeforeChat);
+  await host.locator('[data-room-chat-form] [data-chat-editor]').fill('Черновик панели');await host.locator('.game-chat-panel [data-command=close-modal]').click();await host.locator('.game-chat-launcher').click();assert.equal(await host.locator('[data-room-chat-form] textarea').inputValue(),'Черновик панели');
+await host.locator('[data-room-chat-messages]').filter({hasText:':wow:'}).waitFor();assert.equal(await host.locator('[data-room-chat-tabs]').isVisible(),false);
   await host.locator('[data-room-chat-form] [data-chat-editor]').fill('Длинное сообщение комнаты. '.repeat(20));await host.locator('[data-room-chat-form] [type=submit]').click();
   await phone.locator('.room-message-bubble').waitFor();assert((await phone.locator('.room-message-bubble').boundingBox()).width<=230);assert.equal(await phone.locator('.room-message-bubble>span').evaluate(e=>getComputedStyle(e).webkitLineClamp),'2');assert((await phone.locator('.room-message-bubble').innerText()).endsWith('…'));
   if(process.env.PLAYROOM_CAPTURE_DIR)await phone.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'room-message-bubble.png')});
   await phone.bringToFront();await phone.evaluate(()=>PlayroomRoomChatUI.show());await phone.locator('[data-room-chat-messages]').filter({hasText:'Длинное сообщение комнаты.'}).waitFor();assert.equal(await phone.locator('.room-chat-game strong').innerText(),'Крестики-нолики');
-  if(process.env.PLAYROOM_CAPTURE_DIR)await phone.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'room-chat-390.png')});
+  if(process.env.PLAYROOM_CAPTURE_DIR)await phone.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'room-chat-390.png'),animations:'disabled'});
+  await phone.locator('[data-room-chat-content][data-reply-support=true]').waitFor();const parentMessage=phone.locator('.chat-message').filter({hasText:'Длинное сообщение комнаты.'}).last();const beforeReaction=await phone.locator('.chat-message').count();await parentMessage.locator('p').click();await phone.locator('[data-quick-emoji=":nice:"]').click();
+  await parentMessage.locator('[data-chat-react-emoji=":nice:"][aria-pressed=true]').waitFor();assert.equal(await phone.locator('.chat-message').count(),beforeReaction,'attached reaction creates no extra message');await host.locator('[data-chat-react-emoji=":nice:"]').waitFor();
+  await parentMessage.locator('p').click();await phone.locator('[data-chat-message-action=reply]').click();await phone.locator('[data-chat-reply]:not([hidden])').waitFor();await phone.locator('[data-room-chat-form] [data-chat-editor]').fill('Ответ на сообщение');
+  await phone.locator('.game-chat-panel [data-command=close-modal]').click();await phone.locator('.game-chat-launcher').click();assert.equal(await phone.locator('[data-room-chat-form] textarea').inputValue(),'Ответ на сообщение');await phone.locator('[data-chat-reply]:not([hidden])').waitFor();
+  await phone.locator('[data-room-chat-form] [type=submit]').click();const replied=host.locator('.chat-message').filter({hasText:'Ответ на сообщение'});await replied.locator('[data-chat-reply-jump]').waitFor();assert.match(await replied.locator('[data-chat-reply-jump]').innerText(),/Длинное сообщение комнаты/);await phone.locator('[data-chat-reply]').waitFor({state:'hidden'});
+  if(process.env.PLAYROOM_CAPTURE_DIR)await phone.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'chat-reply-reactions.png'),animations:'disabled'});
   await host.locator('[data-room-chat-refresh]').click();await host.locator('.chat-message.mine .message-receipt.is-read').first().waitFor();
   await phone.locator('.modal-head [data-command=close-modal]').click();await host.locator('.modal-head [data-command=close-modal]').click();
+  // Identity can change while a read is in flight: neither its history nor resume may leak into the next owner.
+  for(const changed of ['roomId','participantId']){
+   await host.evaluate(changed=>{
+    const live=PlayroomNetworkLibrary.chatContext();window.chatOwner={...live,roomId:'chat-lifecycle-'+changed,call:()=>new Promise(resolve=>window.finishOldChatRead=resolve)};
+    PlayroomRoomChatUI.show({source:()=>window.chatOwner});window.restoreOldChat=PlayroomRoomChatUI.captureReturn();
+   },changed);
+   await host.locator('[data-room-chat-form] [data-chat-editor]').fill('Черновик прежнего участника');
+   await host.evaluate(changed=>{window.chatOwner={...window.chatOwner,[changed]:window.chatOwner[changed]+'-next'};document.querySelector('#app').append(document.createComment('context changed'));},changed);
+   await host.locator('.game-chat-panel').waitFor({state:'detached'});
+   await host.evaluate(()=>window.restoreOldChat());assert.equal(await host.locator('.game-chat-panel').count(),0,'old resume cannot reopen for another room/participant');
+   await host.evaluate(()=>PlayroomRoomChatUI.show());
+   await host.evaluate(()=>window.finishOldChatRead({messages:[{id:'late-old-read',seq:900,body:'STALE OLD OWNER',at:Date.now()}],older:false,through:0}));
+   assert.equal(await host.locator('[data-room-chat-messages]').filter({hasText:'STALE OLD OWNER'}).count(),0,'late history cannot contaminate the current chat');
+   assert.notEqual(await host.locator('[data-room-chat-form] textarea').inputValue(),'Черновик прежнего участника');
+   await host.locator('.game-chat-panel [data-command=close-modal]').click();
+  }
   await table.locator('.network-game[data-viewer="-1"] .ttt-cell[data-action]').first().waitFor();
   await table.locator('.ttt-cell').nth(4).click();await host.locator('.ttt-cell.cross').waitFor();
   await phone.locator('.ttt-cell[data-action]').first().waitFor();if(await phone.locator('[data-learning-choice=no]').isVisible())await phone.locator('[data-learning-choice=no]').click();await phone.locator('.ttt-cell').nth(0).click();
@@ -80,7 +108,7 @@ test('main app: public Table over WebRTC shares moves with a player without gain
   await table.waitForFunction(()=>document.querySelectorAll('.ttt-cell.cross').length===2);
   assert.equal(await table.locator('.network-game').getAttribute('data-viewer'),'-1');
   assert.equal(await host.locator('.network-game').getAttribute('data-viewer'),'0');
-  await table.locator('[data-command=settings]').click();await table.locator('[data-command=history]').click();await table.locator('#replay-range').waitFor();
+  await table.locator('[data-game-menu]').click();await table.locator('[data-command=history]').click();await table.locator('#replay-range').waitFor();
   assert.equal(await table.locator('.ttt-cell[data-action]').count(),0);
   assert.deepEqual(errors,[]);
  }finally{await browser.close();await new Promise(resolve=>s.close(resolve));}
@@ -102,10 +130,11 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     await host.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await client.evaluate(()=>{const t=document.querySelector('#toast');if(t){t.textContent='';t.classList.remove('show');}});
     await host.locator('[data-start="uno"]').click();
-    await host.locator('[data-room-option=transportMode][value=network]').check();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
+    await host.locator('[data-room-option=transportMode][value=network]').check();await host.locator('[data-room-auto-start]').uncheck();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty',nickname:'Игрок'});b.renderLobby();});
+    assert.equal(await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).autoStart),false);
     await host.locator('[data-room-title]').fill('Тестовая комната');
     await host.locator('[data-room-title]').press('Tab');
-    await host.locator('.lobby-shell').waitFor();const addPlayerIcon=await host.locator('#network-pair-button').innerHTML();await host.locator('#network-pair-button').click();
+    await host.locator('.lobby-shell').waitFor();await host.locator('#network-pair-button').click();
     // Every ICE candidate supplied by the browser is visible in the IP selector;
     // manual choice remains available for browsers that hide interfaces behind mDNS.
     await host.locator('[data-net-scan="host"]').waitFor();
@@ -150,7 +179,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     if(pwaHandoff){
       await client.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),offerToken);
     }else{
-      await client.locator('#network-join-button').click();await client.locator('[data-lobby-online=manual]').click();
+      await client.locator('#network-join-button').click();await client.locator('.connection-alternative>summary').click();await client.locator('[data-lobby-online=manual]').click();
       await client.locator('#net-client-offer textarea[name=offer]').fill(offerLink);
       await client.locator('#net-client-offer').evaluate(form=>form.requestSubmit());
     }
@@ -163,13 +192,14 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
       await host.evaluate(token=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{kind:'playroom-pair-token',token}})),answerToken);
     }else{
       await host.locator('#net-host-answer textarea[name=answer]').fill(answerLink);
-      await host.locator('#net-host-answer').evaluate(form=>form.requestSubmit());
+      await host.locator('#net-host-answer').evaluate(form=>{form.requestSubmit();form.requestSubmit();});
     }
     try{await host.locator('#net-host-answer').waitFor({state:'detached',timeout:12000});}
     catch(_){
       const diag=await host.evaluate(()=>({toast:document.querySelector('#toast')?.textContent||'',modal:document.querySelector('.modal')?.innerText||''}));
       assert.fail('Host did not accept WebRTC answer: '+JSON.stringify(diag));
     }
+    assert.equal(await host.evaluate(()=>PlayroomNetworkDebug().host.connectedPeers),1,'repeated reply attaches exactly one peer');
     try{await client.locator('#net-client-join').waitFor({timeout:12000});}
     catch(_){
       const [clientDiag,hostDiag]=await Promise.all([
@@ -314,8 +344,7 @@ test('main app: two browsers join UNO lobby, ready, countdown and share a move',
     assert.equal(await host.locator('.table-tools #network-pair-button').count(),0);
     assert.equal(await host.locator('.table-tools button').count(),4);
     await host.locator('.table-tools [data-command=settings]').click();
-    assert.equal(await host.locator('.modal #network-pair-button').innerHTML(),addPlayerIcon);
-    assert.equal(await host.locator('.modal #network-pair-button').getAttribute('title'),'Подключить игрока или устройство');
+    assert.equal(await host.locator('.modal #network-pair-button').count(),0,'invitations belong to the lobby, not settings');
     await host.locator('.modal [data-command=close-modal]').click();
     for(const exit of ['guest','host']){
       const primaryPositions=await Promise.all([host,client].map(async page=>{
@@ -440,6 +469,7 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
  const cloudId='00000000-0000-4000-8000-000000000001',hostId='00000000-0000-4000-8000-000000000002',userId='00000000-0000-4000-8000-000000000003',boundId='00000000-0000-4000-8000-000000000004';
  let lease=null,slot=null,requests=0,identityReads=0,compactPolls=0;const joinTimes=[];
  await c.addInitScript(()=>{const Native=window.RTCPeerConnection;window.testCloudPeers=[];window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);window.testCloudPeers.push(this);}};});
+ for(const context of [h,c])await context.addInitScript(()=>{let api;Object.defineProperty(globalThis,'PlayroomIceConfig',{configurable:true,get:()=>api,set:value=>{api={...value,credentials:async()=>({configuration:{iceServers:[]},expiresAt:Date.now()+86400000,diagnosticsEnabled:false})};}});});
  for(const [context,uid] of [[h,hostId],[c,userId]])await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',require('./account-sync-fixture.cjs')(async route=>{
   const req=route.request();requests++;let result;
   if(req.url().includes('/auth/')){const user={id:uid,email:uid+'@example.test',is_anonymous:false};result=req.url().endsWith('/user')?user:{user,access_token:'access-'+uid,refresh_token:'refresh-'+uid,expires_in:3600};}
@@ -448,9 +478,9 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
   else if(req.url().endsWith('/playroom_cloud_saves_rpc'))result={enabled:false,entries:[],used:0,limit:10485760};
   else if(req.url().endsWith('/playroom_social')){assert.equal(req.postDataJSON().p_action,'list');result={profile:{id:uid,nickname:'Игрок'},friends:[],rooms:[],invitations:[]};}
   else{
-   assert(req.url().endsWith('/playroom_signal'));const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(d.roomId,cloudId);
+   assert(req.url().endsWith('/playroom_signal_sync'));const {p_action:action,p_data:d}=req.postDataJSON();assert.equal(d.roomId,cloudId);
    if(action==='host'){assert.equal(uid,hostId);lease={epoch:d.epoch,localRoomId:d.localRoomId};result={};}
-   else if(action==='poll-host'){assert.equal(uid,hostId);if(d.known?.length)compactPolls++;result=slot?[{...slot,participantId:boundId,...(d.known?.includes(slot.id)?{offer:null,answer:null}:{})}]:[];}
+   else if(action==='poll-host'){assert.equal(uid,hostId);if(d.known?.length)compactPolls++;result={contract:1,signals:slot?[{...slot,participantId:boundId,...(d.known?.includes(slot.id)?{offer:null,answer:null}:{})}]:[],peers:d.peers.map(p=>({id:p.id,allowed:true}))};}
    else if(action==='request'){assert.equal(uid,userId);slot={id:require('node:crypto').randomUUID(),userId,offer:null,answer:null};result={id:slot.id,...lease};}
    else if(action==='authorize'){if(d.id)identityReads++;assert.equal(uid,hostId);result={userId,participantId:boundId};}
    else if(action==='offer'){assert.equal(uid,hostId);assert.equal(d.id,slot.id);if(slot.offer)assert.equal(slot.offer,d.signal);slot.offer=d.signal;result={};}
@@ -464,8 +494,8 @@ test('cloud rendezvous: two real RTC clients resume the same playing seat after 
  try{
   await profile(host,'Хост');await profile(client,'Игрок');assert.equal(requests,0);
   await host.evaluate(()=>PlayroomAccountUI.service.login('host@example.test','password123'));await client.evaluate(()=>PlayroomAccountUI.service.login('client@example.test','password123'));
-  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-room-option=transportMode][value=online]').check();
-  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
+  await host.locator('[data-start=tictactoe]').click();await host.locator('[data-game-mode=network]').click();await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{transportMode:'online'});b.renderLobby();});
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'empty'});b.renderLobby();});
   await host.evaluate(id=>PlayroomCloudNetwork.host(id),cloudId);
   {const started=Date.now();await client.evaluate(id=>PlayroomCloudNetwork.connect(id),cloudId);joinTimes.push(Date.now()-started);}
   await client.locator('.lobby-shell').waitFor();await client.locator('[data-net-seat]:not([disabled])').first().click();
@@ -494,24 +524,28 @@ test('main app: team chat delivers only to allies and keeps a colored history',{
  try{
   for(const name of ['Анна','Борис','Вера']){const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),page=await context.newPage();page._url=url;page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));await profile(page,name);pages.push(page);}
   const [host,enemy,ally]=pages;
-  await host.locator('[data-start=ludo]').click();await host.locator('[data-room-option=transportMode][value=network]').check();
-  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.updateRules(r.id,r.ownerId,{...r.rules,preset:'teams'});for(const id of ['seat-2','seat-3'])b.roomService.setLocalSeat(r.id,r.ownerId,id,{kind:'empty'});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-4',{kind:'bot',nickname:'Бот'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
+  await host.locator('[data-start=ludo]').click();await host.locator('[data-game-mode=hotseat]').click();await host.locator('[data-room-option=transportMode][value=network]').check();await host.locator('[data-room-auto-start]').uncheck();
+  await host.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setAutoStart(r.id,r.ownerId,false);b.roomService.updateRules(r.id,r.ownerId,{...r.rules,preset:'teams'});for(const id of ['seat-2','seat-3'])b.roomService.setLocalSeat(r.id,r.ownerId,id,{kind:'empty'});b.roomService.setLocalSeat(r.id,r.ownerId,'seat-4',{kind:'bot',nickname:'Бот'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
   for(const [page,seat] of [[enemy,'seat-2'],[ally,'seat-3']]){
    await host.locator('#network-pair-button').click();await host.locator('#net-host-token').waitFor();const offer=await value(host,'#net-host-token');
-   await page.locator('#network-join-button').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());await page.locator('#net-client-token').waitFor();
+   await page.locator('#network-join-button').click();await page.locator('.connection-alternative>summary').click();await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer textarea[name=offer]').fill(offer);await page.locator('#net-client-offer').evaluate(f=>f.requestSubmit());await page.locator('#net-client-token').waitFor();
    await host.locator('#net-host-answer textarea[name=answer]').fill(await value(page,'#net-client-token'));await host.locator('#net-host-answer').evaluate(f=>f.requestSubmit());await page.locator('#net-client-join').waitFor();await page.locator('#net-client-join').evaluate(f=>f.requestSubmit());await page.locator(`[data-net-seat="${seat}"]`).click();
   }
   await host.locator('[data-command=lobby-ready]').click();for(const page of [enemy,ally])await page.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();for(const page of pages)await page.locator('.network-game').waitFor();
   await host.evaluate(()=>PlayroomRoomChatUI.show());await host.locator('[data-room-chat-tab=team]').click();await host.locator('[data-room-chat-form] [data-chat-editor]').fill('Синий командный план');await host.locator('[data-room-chat-form] [type=submit]').click();
   await ally.locator('.room-message-bubble.is-team').waitFor();assert.equal(await enemy.locator('.room-message-bubble').count(),0);await capture(ally,'team-bubble-blue');
   const enemyHistory=await enemy.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-read',scope:'team'}));assert(!JSON.stringify(enemyHistory).includes('Синий командный план'));assert.equal(enemyHistory.team,'red');
-  await ally.locator('.table-tools [data-command=settings],.table-tools [data-net-action=settings]').click();
+  await ally.locator('[data-game-menu]').click();await ally.locator('[data-command=preferences]').click();
   await host.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-send',scope:'team',id:'unread-team-message',body:'Пропущенное командное сообщение'}));
   await ally.evaluate(()=>PlayroomChatActivity.poll());await ally.locator('.modal [data-command=close-modal]').click();await ally.locator('[data-room-chat-open] .chat-counter-team').waitFor();assert.equal((await enemy.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-summary'}))).team,0);
   await capture(ally,'team-unread-counter');
   await ally.bringToFront();await ally.evaluate(()=>PlayroomRoomChatUI.show());await ally.locator('[data-room-chat-tab=team]').click();await ally.locator('[data-room-chat-messages]').filter({hasText:'Синий командный план'}).waitFor();await capture(ally,'team-chat-blue');
   assert(await ally.locator('[data-room-chat-content]').evaluate(el=>getComputedStyle(el.querySelector('.chat-messages')).backgroundColor!==getComputedStyle(el.querySelector('.chat-message')).backgroundColor));
   await host.locator('[data-room-chat-refresh]').click();await host.locator('.message-receipt.is-read').nth(1).waitFor();
+  await ally.locator('[data-room-chat-content][data-reply-support=true]').waitFor();const teamMessage=ally.locator('.chat-message').filter({hasText:'Синий командный план'});await teamMessage.locator('p').click();await ally.locator('[data-quick-emoji=":nice:"]').click();await teamMessage.locator('[data-chat-react-emoji=":nice:"][aria-pressed=true]').waitFor();await host.locator('[data-chat-react-emoji=":nice:"]').waitFor();
+  await teamMessage.locator('p').click();await ally.locator('[data-chat-message-action=reply]').click();await ally.locator('[data-chat-reply]:not([hidden])').waitFor();await ally.locator('[data-room-chat-form] [data-chat-editor]').fill('Ответ синей команде');await ally.locator('[data-room-chat-form] [type=submit]').click();await host.locator('.chat-message').filter({hasText:'Ответ синей команде'}).locator('[data-chat-reply-jump]').waitFor();
+  const safeEnemy=await enemy.evaluate(()=>PlayroomNetworkLibrary.chatContext().call({type:'room-chat-read',scope:'team'}));assert(!JSON.stringify(safeEnemy).includes('Ответ синей команде'));assert(!JSON.stringify(safeEnemy).includes(':nice:'));
+  if(process.env.PLAYROOM_CAPTURE_DIR)await ally.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'team-reply-attached.png'),animations:'disabled'});
   await ally.locator('[data-room-chat-tab=room]').click();assert.equal(await ally.locator('[data-room-chat-messages]').filter({hasText:'Синий командный план'}).count(),0);
   await enemy.evaluate(()=>PlayroomRoomChatUI.show());await enemy.locator('[data-room-chat-tab=team]').click();await enemy.locator('[data-room-chat-form] [data-chat-editor]').fill('Красная команда');await enemy.locator('[data-room-chat-form] [type=submit]').click();await enemy.locator('.chat-message.mine').waitFor();await capture(enemy,'team-chat-red');
   assert.deepEqual(errors,[]);
@@ -528,7 +562,7 @@ test('cloud host renews membership only for a connected RTC channel and rejects 
    let denied=false;try{await create();}catch(error){denied=error.message==='CLOUD_LOBBY_REQUIRED';}
    b.roomService.configure(r.id,r.ownerId,{transportMode:'online'});b.renderLobby();
    const Native=window.RTCPeerConnection;let connectionState='new',readyState='connecting',pc,channel;
-   window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);pc=this;}createDataChannel(...args){channel=super.createDataChannel(...args);return channel;}};
+   window.RTCPeerConnection=class extends Native{constructor(...args){super(...args);pc=this;}createDataChannel(...args){const created=super.createDataChannel(...args);if(args[1]?.protocol!=='playroom.preview.v1')channel=created;return created;}};
    const handle=await create();Object.defineProperty(pc,'connectionState',{get:()=>connectionState});Object.defineProperty(channel,'readyState',{get:()=>readyState});
    await handle.validate();const before=validations;
    connectionState='connected';readyState='open';await handle.validate();const connected=validations;

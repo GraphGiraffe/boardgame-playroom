@@ -2,6 +2,40 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+
+// Shared geometry assertions: identical thresholds for the existing scene matrix and focused eight-player case.
+function sceneGeometryIssues(){
+    const stage=document.querySelector('.app-game-layout'),issues=[];
+    if(!stage)return ['missing scene'];
+    const visible=e=>{const r=e.getBoundingClientRect();return !e.closest('[inert]')&&r.width>0&&r.height>0;};
+    for(const [selector,ratio]of [['.shared-card',5/7],['.shared-die',1],['.battle-cell',1],['.ttt-cell',1],['.ludo-board',1],['.ludo-pawn',1]])for(const e of stage.querySelectorAll(selector)){if(!visible(e))continue;const r={width:e.offsetWidth,height:e.offsetHeight};if(Math.abs(r.width/r.height-ratio)>.025)issues.push(`${selector} ratio ${r.width}/${r.height}`);}
+    if(document.documentElement.scrollWidth>innerWidth+1)issues.push('page overflow');
+    const actions=stage.querySelector('.layout-actions'),hand=stage.querySelector('.layout-hand'),field=stage.querySelector('.layout-field');
+    for(const e of [actions,hand].filter(Boolean)){const r=e.getBoundingClientRect(),s=stage.getBoundingClientRect();if(r.top<s.top-1||r.bottom>s.bottom+1)issues.push(`clipped ${e.className}: ${r.top}..${r.bottom}/${s.bottom}`);}
+    if(actions&&hand&&actions.getBoundingClientRect().bottom>hand.getBoundingClientRect().top+1)issues.push('actions overlap hand');
+    if(!stage.querySelector('[data-action],[data-select],[data-player-target],[data-view-key]'))issues.push('no interaction');
+    const gameShell=stage.closest('.table-shell');
+    if(gameShell&&getComputedStyle(gameShell.querySelector('.game-frame-title h1')).userSelect!=='none')issues.push('game text selectable');
+    if(stage.classList.contains('ludo-scene')){
+     const arrow=stage.querySelector('.ludo-start-arrow'),safe=stage.querySelector('.ludo-safe');
+     if([arrow,safe].some(el=>!el||getComputedStyle(el).userSelect!=='none'))issues.push('Ludo symbols selectable');
+     for(const [seat,color]of [[2,'#668fad'],[3,'#cfac4c']]){
+      const pawn=stage.querySelector(`[data-entity="token-${seat}-0"]`),base=stage.querySelectorAll('.ludo-base')[seat];
+      if(!base||(pawn&&getComputedStyle(pawn).getPropertyValue('--pawn').trim()!==color)||getComputedStyle(base).getPropertyValue('--base').trim()!==color)issues.push(`Ludo seat ${seat} color`);
+     }
+    }
+    if(innerWidth===390&&stage.classList.contains('battleship-scene')){
+     const ships=[...stage.querySelectorAll('.player-panel.opponent-hand .fleet-indicator')];
+     if(ships.length===4&&ships.some(ship=>Math.abs(ship.getBoundingClientRect().top-ships[0].getBoundingClientRect().top)>1))issues.push('opponent fleet wraps');
+    }
+    if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
+    // A side seat rotates its entire row; measure text wrapping before that transform.
+    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.offsetHeight>30)issues.push('vertical player name');
+    if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
+    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>w<28||Math.abs(w-widths[0])>1))issues.push('Yatzy unequal score columns');if(stage.querySelector('.yatzy-board').scrollWidth>stage.querySelector('.yatzy-board').clientWidth+1)issues.push('Yatzy horizontal scroll');}
+    for(const panel of stage.querySelectorAll('[data-hand-count].player-panel'))if(panel.querySelectorAll('.piece-count.is-hand').length!==1)issues.push('duplicate hand counter');
+    return [...new Set(issues)];
+}
 test('layered model renders assigned marks, public Table controls and projected client history',{timeout:45000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
@@ -50,47 +84,16 @@ test('layered model renders assigned marks, public Table controls and projected 
 });
 test('new game scenes preserve proportions, reachable controls and hands before and after a move',{timeout:120000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
- try{const page=await browser.newPage({viewport:{width:390,height:740}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}assert.equal(await page.locator('#modal-root .modal').count(),0);const games=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid'];
+ try{const page=await browser.newPage({viewport:{width:390,height:740}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'scene-geometry-owner',name:'Тест',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false}));});const safe=await require('./account-sync-fixture.cjs').installFetch(page.context(),async route=>route.fulfill({json:{}}));await page.goto(fixture.url);await page.waitForFunction(()=>PlayroomInstalledPacks.length===15&&PlayroomInstalledPacks.every(pack=>{try{return !!TabletopCore.get(pack.manifest.id);}catch(_){return false;}}));if(process.env.PLAYROOM_QA_DIR)fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});assert.equal(await page.locator('#modal-root .modal').count(),0);const games=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid'];
   for(const [width,height]of [[320,640],[390,740],[740,390],[640,280],[768,1024],[1280,900]]){await page.setViewportSize({width,height});for(const game of games)for(const progressed of [false,true]){
    await page.evaluate(({game,progressed,width})=>{
-    const E=TabletopCore,g=E.get(game);let state=E.createGame(game,{seed:17,preset:g.presets[0].id,...(game==='ludo'?{diceCount:3}:{}),players:Array.from({length:width<=390?g.max:2},(_,i)=>({name:['Аня','Борис','Вера','Глеб','Даша','Егор'][i]}))});
+    const E=TabletopCore,g=E.get(game);let state=E.createGame(game,{seed:17,preset:g.presets[0].id,...(game==='ludo'?{diceCount:3}:{}),players:Array.from({length:width<=390?g.max:2},(_,i)=>({name:['Аня','Борис','Вера','Глеб','Даша','Егор','Женя','Зоя'][i]}))});
     if(progressed){const count=game==='battleship'?2:game==='pexeso'?2:1;for(let n=0;n<count;n++)state=E.applyAction(state,state.turn,E.botAction(state));if(game==='yatzy')state=E.applyAction(state,state.turn,E.legalActions(state).find(a=>a.type==='score'));}
     window.fixtureState=state;const viewer=state.turn,projected=E.project(state,viewer),actions=E.legalActions(state,viewer),scene=PlayroomViews.render(projected,viewer,actions,{selected:null});
     document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:g.name,state:projected,viewer,actions,scene,turnText:'Ваш ход'});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
    },{game,progressed,width});
    await page.waitForTimeout(35);
-   const result=await page.evaluate(()=>{
-    const stage=document.querySelector('.app-game-layout'),issues=[];
-    if(!stage)return ['missing scene'];
-    const visible=e=>{const r=e.getBoundingClientRect();return !e.closest('[inert]')&&r.width>0&&r.height>0;};
-    for(const [selector,ratio]of [['.shared-card',5/7],['.shared-die',1],['.battle-cell',1],['.ttt-cell',1],['.ludo-board',1],['.ludo-pawn',1]])for(const e of stage.querySelectorAll(selector)){if(!visible(e))continue;const r={width:e.offsetWidth,height:e.offsetHeight};if(Math.abs(r.width/r.height-ratio)>.025)issues.push(`${selector} ratio ${r.width}/${r.height}`);}
-    if(document.documentElement.scrollWidth>innerWidth+1)issues.push('page overflow');
-    const actions=stage.querySelector('.layout-actions'),hand=stage.querySelector('.layout-hand'),field=stage.querySelector('.layout-field');
-    for(const e of [actions,hand].filter(Boolean)){const r=e.getBoundingClientRect(),s=stage.getBoundingClientRect();if(r.top<s.top-1||r.bottom>s.bottom+1)issues.push(`clipped ${e.className}: ${r.top}..${r.bottom}/${s.bottom}`);}
-    if(actions&&hand&&actions.getBoundingClientRect().bottom>hand.getBoundingClientRect().top+1)issues.push('actions overlap hand');
-    if(!stage.querySelector('[data-action],[data-select],[data-player-target],[data-view-key]'))issues.push('no interaction');
-    const gameShell=stage.closest('.table-shell');
-    if(gameShell&&getComputedStyle(gameShell.querySelector('.table-title h1')).userSelect!=='none')issues.push('game text selectable');
-    if(stage.classList.contains('ludo-scene')){
-     const arrow=stage.querySelector('.ludo-start-arrow'),safe=stage.querySelector('.ludo-safe');
-     if([arrow,safe].some(el=>!el||getComputedStyle(el).userSelect!=='none'))issues.push('Ludo symbols selectable');
-     for(const [seat,color]of [[2,'#668fad'],[3,'#cfac4c']]){
-      const pawn=stage.querySelector(`[data-entity="token-${seat}-0"]`),base=stage.querySelectorAll('.ludo-base')[seat];
-      if(!base||(pawn&&getComputedStyle(pawn).getPropertyValue('--pawn').trim()!==color)||getComputedStyle(base).getPropertyValue('--base').trim()!==color)issues.push(`Ludo seat ${seat} color`);
-     }
-    }
-    if(innerWidth===390&&stage.classList.contains('battleship-scene')){
-     const ships=[...stage.querySelectorAll('.player-panel.opponent-hand .fleet-indicator')];
-     if(ships.length===4&&ships.some(ship=>Math.abs(ship.getBoundingClientRect().top-ships[0].getBoundingClientRect().top)>1))issues.push('opponent fleet wraps');
-    }
-    if(field.clientHeight<80)issues.push(`field collapsed: ${field.clientHeight}; players ${stage.querySelector('.layout-participants').clientHeight}; self ${stage.querySelector('.layout-self')?.clientHeight}; mode ${stage.dataset.layoutMode}`);
-    // A side seat rotates its entire row; measure text wrapping before that transform.
-    for(const name of stage.querySelectorAll('.player-heading strong'))if(name.offsetHeight>30)issues.push('vertical player name');
-    if(stage.querySelectorAll('.battle-grid').length===2&&innerWidth<600&&[...stage.querySelectorAll('.battle-grid')].filter(visible).length!==1)issues.push('two mobile fleets');
-    if(stage.classList.contains('yatzy-scene')){const footer=stage.querySelector('tfoot th'),f=field.getBoundingClientRect(),r=footer.getBoundingClientRect();if(r.bottom>f.bottom+1||r.top<f.top)issues.push('Yatzy total not sticky');const widths=[...stage.querySelectorAll('thead [data-score-player]')].map(n=>n.getBoundingClientRect().width);if(widths.some(w=>w<28||Math.abs(w-widths[0])>1))issues.push('Yatzy unequal score columns');if(stage.querySelector('.yatzy-board').scrollWidth>stage.querySelector('.yatzy-board').clientWidth+1)issues.push('Yatzy horizontal scroll');}
-    for(const panel of stage.querySelectorAll('[data-hand-count].player-panel'))if(panel.querySelectorAll('.piece-count.is-hand').length!==1)issues.push('duplicate hand counter');
-    return [...new Set(issues)];
-   });
+   const result=await page.evaluate(sceneGeometryIssues);
    if(result.length&&process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'failure.png')});
    assert.deepEqual(result,[],`${game} ${width}x${height} ${progressed?'after':'initial'}`);
    if(process.env.PLAYROOM_QA_DIR&&[390,740].includes(width)){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`${game}-${width}-${progressed?'after':'initial'}.png`)});}
@@ -131,7 +134,7 @@ test('new game scenes preserve proportions, reachable controls and hands before 
   const publicViews=await page.evaluate(()=>{
    const E=TabletopCore,issues=[];
    for(const game of ['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid']){
-    let s=E.createGame(game,{seed:17,players:Array.from({length:E.get(game).max},(_,i)=>({name:`Игрок ${i+1}`}))});
+    let s=E.createGame(game,{seed:17,...(game==='ludo'?{diceCount:1}:{}),players:Array.from({length:E.get(game).max},(_,i)=>({name:`Игрок ${i+1}`}))});
     if(game==='battleship')for(let n=0;n<2;n++){s=E.applyAction(s,s.turn,{type:'auto'});s=E.applyAction(s,s.turn,{type:'ready'});}
     const p=E.project(s,-1);document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:game,state:p,viewer:-1,actions:[],scene:PlayroomViews.render(p,-1,[],{surface:'table'})});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
     if(document.querySelector('.view-error')||document.querySelector('[data-action]:not([disabled])'))issues.push(game+' public actions');
@@ -145,15 +148,15 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    }return issues;
   });assert.deepEqual(publicViews,[]);
   for(const id of ['ludo','yatzy']){
-   const replay=await page.evaluate(id=>{
+   const replay=await page.evaluate(async id=>{
     const E=TabletopCore,players=Array.from({length:id==='ludo'?4:2},(_,i)=>({name:`Игрок ${i+1}`}));let s=E.createGame(id,{seed:17,players,diceCount:3});
-    s=E.applyAction(s,s.turn,E.legalActions(s)[0]);const p=E.project(s,0),scene=PlayroomViews.render(p,0,[]);
-    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:id,state:p,viewer:0,scene,replay:true,historyHTML:PlayroomGameScreen.historyMarkup({index:1,count:3})});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    s=E.applyAction(s,s.turn,E.legalActions(s)[0]);const p=E.project(s,0),scene=PlayroomViews.render(p,0,[],{replay:true});
+    document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:id,state:p,viewer:0,scene,replay:true,historyHTML:PlayroomGameScreen.historyMarkup({index:1,count:3})});PlayroomGameScreen.layoutScene(document.querySelector('#app'));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     const outer=document.querySelector('.scene').getBoundingClientRect(),dice=[...document.querySelectorAll('.layout-actions .shared-die')],buttons=[...document.querySelectorAll('.layout-actions .scene-button')];
-    return {count:dice.length,visible:dice.every(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=outer.top&&r.bottom<=outer.bottom}),controls:buttons.some(el=>getComputedStyle(el).display!=='none')};
+    return {geometry:{outer:outer.toJSON(),dice:dice.map(el=>el.getBoundingClientRect().toJSON())},count:dice.length,visible:dice.every(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=outer.top&&r.bottom<=outer.bottom}),controls:buttons.some(el=>getComputedStyle(el).display!=='none')};
    },id);
-   assert.equal(replay.count,id==='ludo'?3:5);assert.equal(replay.visible,true,`${id} replay dice visible`);assert.equal(replay.controls,false,`${id} replay controls hidden`);
    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`${id}-history-390.png`)});
+   assert.equal(replay.count,id==='ludo'?3:5);assert.equal(replay.visible,true,`${id} replay dice visible: ${JSON.stringify(replay.geometry)}`);assert.equal(replay.controls,false,`${id} replay controls hidden`);
   }
   const choice=await page.evaluate(()=>{
    const E=TabletopCore;window.fixtureState=E.createGame('oldmaid',{seed:17,players:[{name:'Аня'},{name:'Борис'}]});const s=fixtureState,viewer=s.turn,actions=E.legalActions(s),projected=E.project(s,viewer);
@@ -168,14 +171,17 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    const E=TabletopCore;let s=E.createGame('yatzy',{seed:17,players:[{name:'Аня'},{name:'Борис'}]});const render=()=>{const p=E.project(s,0),actions=E.legalActions(s,0);document.querySelector('#app').innerHTML=PlayroomGameScreen.render({gameName:'Ятзи',state:p,viewer:0,actions,scene:PlayroomViews.render(p,0,actions)});PlayroomGameScreen.layoutScene(document.querySelector('#app'));};render();const a=E.legalActions(s)[0],snapshot=PlayroomMotion.capture({actor:0,viewer:0,action:a});s=E.applyAction(s,0,a);render();const done=PlayroomMotion.play(snapshot,{duration:220});await new Promise(r=>setTimeout(r,30));const count=document.querySelectorAll('[data-motion-kind="roll"].playroom-motion-flight').length;await done;return count;
   });assert.equal(rolls,5,'all five unheld dice animate');
   const sample=await page.evaluate(async()=>{const src=PlayroomCatalog.uno.sounds['uno.call'].src,bytes=Uint8Array.from(atob(src.split(',')[1]),c=>c.charCodeAt(0));const context=new AudioContext();try{const decoded=await context.decodeAudioData(bytes.buffer);return {duration:decoded.duration,channels:decoded.numberOfChannels};}finally{await context.close();}});assert(sample.duration>0&&sample.channels>0);
-  assert.deepEqual(errors,[]);
+  assert.deepEqual(errors,[]);assert.equal(safe.nativeSupabaseRequests,0);
  }finally{await browser.close();await fixture.close();}
 });
 test('Yatzy keeps score rows and table scroll stable when dice are held',{timeout:15000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
-  const page=await browser.newPage({viewport:{width:390,height:740}});page.setDefaultTimeout(5000);await page.goto(fixture.url);if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());}
-  await page.locator('[data-start="yatzy"]').first().click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command="lobby-start"]').click();
+  const page=await browser.newPage({viewport:{width:390,height:740}});page.setDefaultTimeout(5000);await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'yatzy-scroll-owner',name:'Тест',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,autoPass:false}));});const safe=await require('./account-sync-fixture.cjs').installFetch(page.context(),async route=>route.fulfill({json:{}}));if(process.env.PLAYROOM_YATZY_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_YATZY_ARTIFACT);await page.route('**/*',route=>route.abort());await page.route(fixture.url,route=>route.fulfill({status:200,contentType:'text/html',body}));}
+  const response=await page.goto(fixture.url);
+  if(process.env.PLAYROOM_YATZY_ARTIFACT){const hash=b=>require('node:crypto').createHash('sha256').update(b).digest('hex'),actual=hash(await response.body());assert.equal(actual,hash(fs.readFileSync(process.env.PLAYROOM_YATZY_ARTIFACT)));if(process.env.PLAYROOM_YATZY_EVIDENCE_DIR){fs.mkdirSync(process.env.PLAYROOM_YATZY_EVIDENCE_DIR,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYROOM_YATZY_EVIDENCE_DIR,'artifact.json'),JSON.stringify({sha256:actual,engine:browser.browserType().name(),version:browser.version()},null,2));}}
+  await page.locator('[data-start="yatzy"]').first().waitFor();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('yatzy',false));
+  await page.locator('[data-start="yatzy"]').first().click();await page.locator('#modal-root>[data-surface-state=active] [data-game-mode=hotseat]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.seats.find(s=>s.participantId).participantId});b.renderLobby();});await page.locator('[data-command="lobby-start"]').click();await page.locator('.yatzy-score').waitFor();
   const before=await page.locator('.yatzy-score tbody tr').evaluateAll(rows=>rows.map(row=>row.getBoundingClientRect().height));
   await page.locator('.yatzy-roll[data-action]').click();await page.locator('[data-motion-kind="roll"]').first().waitFor();
   await page.locator('[data-motion-kind="roll"]').first().waitFor({state:'detached'});const landed=Date.now();
@@ -187,5 +193,64 @@ test('Yatzy keeps score rows and table scroll stable when dice are held',{timeou
   assert(await page.locator('.yatzy-board').evaluate(board=>board===window.qaYatzyBoard),'holding a die keeps the table node');
   assert(Math.abs(await page.locator('.yatzy-board').evaluate(board=>board.scrollTop)-top)<=1,'holding a die keeps table scroll');
   await page.locator('.yatzy-roll[data-action]').click();await page.waitForFunction(()=>document.querySelector('.yatzy-board')?.scrollTop>0);
+  await page.waitForFunction(()=>PlayroomAppBridge.saveLibrary.current().session.current.data.rolls===2);await page.locator('.table-shell>.scene[aria-busy="false"]').waitFor();assert(Math.abs(await page.locator('.yatzy-board').evaluate(board=>board.scrollTop)-top)<=1,'reroll settles at the retained table position');
+  if(process.env.PLAYROOM_YATZY_EVIDENCE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_YATZY_EVIDENCE_DIR,'yatzy-reroll-390.png')});
+  assert.equal(safe.nativeSupabaseRequests,0);
  }finally{await browser.close();await fixture.close();}
+});
+
+
+test('Mage eight-player geometry preserves controls and field through one legal commit across viewports',{timeout:90000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const context=await browser.newContext(),page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const safe=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'mage-eight-geometry',name:'Тест',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false}));});
+  await page.goto(fixture.url);await page.waitForFunction(()=>{try{return TabletopCore.get('mage-brawl').max===8;}catch(_){return false;}});
+  const report=[];
+  if(process.env.PLAYROOM_QA_DIR)fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});
+  for(const [width,height]of [[320,640],[390,740],[740,390],[640,280],[768,1024],[1280,900]]){
+   await page.setViewportSize({width,height});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   await page.evaluate(({width,height})=>{
+    const E=TabletopCore;window.qaMageEightSession=new TabletopSession(E,'mage-brawl',{seed:17,firstPlayerMode:'assigned',firstPlayer:0,players:['Аня','Борис','Вера','Глеб','Даша','Егор','Женя','Зоя'].map(name=>({name}))});
+    window.qaMageEightRender=()=>{const state=qaMageEightSession.current,viewer=0,projected=E.project(state,viewer),actions=E.legalActions(state,viewer),host=document.querySelector('#app');const markup=PlayroomGameScreen.render({layoutId:'mage-eight:'+width+'x'+height,gameName:E.get('mage-brawl').name,state:projected,viewer,actions,scene:PlayroomViews.render(projected,viewer,actions,{selected:null}),turnText:'Ваш ход'});const kept=PlayroomGameScreen.update(host,markup);if(!kept)PlayroomGameScreen.layoutScene(host);return kept;};
+    qaMageEightRender();
+   },{width,height});
+   for(const phase of ['initial','committed']){
+    if(phase==='committed'){
+     const commit=await page.evaluate(()=>{const session=qaMageEightSession,E=TabletopCore,before=session.current.move,actor=session.current.turn,action=E.botAction(session.current);if(!E.legalActions(session.current,actor).some(legal=>JSON.stringify(legal)===JSON.stringify(action)))throw Error('No legal Mage command');session.act(actor,action);return {before,after:session.current.move,kept:qaMageEightRender(),action};});
+     assert.equal(commit.before,0);assert.equal(commit.after,1);assert.equal(commit.kept,true,'one legal commit retains the same authorized scene allocation');
+    }
+    await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+    const issues=await page.evaluate(sceneGeometryIssues),players=await page.locator('.app-game-layout .player-panel[data-player-index]').evaluateAll(nodes=>new Set(nodes.map(node=>node.dataset.playerIndex)).size);
+    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`mage-eight-${width}x${height}-${phase}.png`)});
+    assert.equal(players,8,'all eight actual players remain represented');assert.deepEqual(issues,[],`Mage eight ${width}x${height} ${phase}`);report.push({width,height,phase,players,issues});
+   }
+  }
+  assert.deepEqual(errors,[]);assert.equal(safe.nativeSupabaseRequests,0);
+  if(process.env.PLAYROOM_QA_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_QA_DIR,'report.json'),JSON.stringify({states:report,errors,nativeSupabaseRequests:safe.nativeSupabaseRequests},null,2));
+ }finally{await browser.close();await fixture.close();}
+});
+
+test('Pexeso resumes every board size and flips only the selected slot through the real application',{timeout:90000},async()=>{
+ const Engine=require('../core/engine.js'),Session=require('../core/session.js');require('../packs/pexeso/rules.js');
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{for(const deck of ['cartoon','52'])for(const preset of ['easy','medium','hard']){
+  const saved=new Session(Engine,'pexeso',{seed:17,preset,deck,firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]}).export();
+  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true,reducedMotion:'no-preference'}),page=await context.newPage(),errors=[];page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));
+  try{
+   await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'pexeso-artifact-owner',name:'Тест',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({animationSpeed:'fast',sound:false,tutorialsEnabled:false,autoPass:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+   const safe=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));
+   if(process.env.PLAYROOM_PEXESO_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_PEXESO_ARTIFACT);await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));}
+   const response=await page.goto(server.url);
+   if(process.env.PLAYROOM_PEXESO_ARTIFACT){const hash=b=>require('node:crypto').createHash('sha256').update(b).digest('hex'),actual=hash(await response.body());assert.equal(actual,hash(fs.readFileSync(process.env.PLAYROOM_PEXESO_ARTIFACT)));if(process.env.PLAYROOM_PEXESO_EVIDENCE_DIR){fs.mkdirSync(process.env.PLAYROOM_PEXESO_EVIDENCE_DIR,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYROOM_PEXESO_EVIDENCE_DIR,'artifact.json'),JSON.stringify({sha256:actual,engine:browser.browserType().name(),version:browser.version()},null,2));}}
+   await page.locator('[data-hub-page=sessions]:visible').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.pexeso-slot').first().waitFor();
+   assert.equal(await page.locator('.pexeso-slot').count(),saved.states[0].data.board.length);
+   await page.evaluate(()=>window.qaPexesoSlots=[...document.querySelectorAll('.pexeso-slot')].map(node=>({node,art:node.querySelector('svg')})));
+   await page.locator('.pexeso-slot[data-motion-value="0"] [data-action]').tap();await page.locator('[data-motion-kind="flip"]').first().waitFor();await page.locator('[data-motion-kind="flip"]').first().waitFor({state:'detached'});await page.locator('.table-shell>.scene[aria-busy="false"]').waitFor();
+   assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move),1);assert.equal(await page.locator('.pexeso-slot .shared-card-back').count(),saved.states[0].data.board.length-1);
+   assert(await page.evaluate(()=>qaPexesoSlots.every(({node,art},i)=>node===document.querySelectorAll('.pexeso-slot')[i]&&(i===0||art===node.querySelector('svg')))),`${deck}/${preset} retains untouched positions and artwork`);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));assert.deepEqual(errors,[]);assert.equal(safe.nativeSupabaseRequests,0);
+   if(process.env.PLAYROOM_PEXESO_EVIDENCE_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_PEXESO_EVIDENCE_DIR,`${deck}-${preset}-390.png`)});
+  }finally{await context.close();}
+ }}finally{await browser.close();await server.close();}
 });

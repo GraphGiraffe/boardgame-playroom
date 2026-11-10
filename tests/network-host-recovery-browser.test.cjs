@@ -245,7 +245,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.equal(await guest.locator('.table-shell.network-game').getAttribute('data-viewer'),String(mode==='network-player'?index+1:index));
           assert.equal(Number(await guest.locator('.table-shell.network-game').getAttribute('data-revision')),savedRevision);
         }
-        await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length===0);
+        await host.waitForFunction(()=>document.querySelectorAll('.player-panel.is-network-offline').length===0);
         assert.equal(await host.locator('.player-panel .participant-role.is-offline').count(),0,'reconnected icons clear offline status');
         for(const guest of guests){await guest.waitForFunction(()=>document.querySelectorAll('.player-panel .participant-role.is-online').length>=2);assert.equal(await guest.locator('.player-panel [data-participant-role=bot].is-online').count(),0);}
         const room=await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id));
@@ -271,7 +271,7 @@ for(const [mode,guestCount] of [['network-player',1],['network-table',2]]){
           assert.equal(await guests[0].evaluate(()=>PlayroomNetworkDebug().client.channel),'connected');
           await guests[0].locator('[data-net-action=room]').click();
           await confirmedLeave(guests[0],'[data-net-action=leave]');
-          await host.waitForFunction(()=>document.querySelectorAll('.network-presence .network-person.offline').length>=1);
+          await host.waitForFunction(()=>document.querySelectorAll('.player-panel.is-network-offline').length>=1);
         }
         // An unfinished match can also be parked and restored in the same page.
         // Releasing its authority must release the original lobby RTC leases.

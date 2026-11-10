@@ -76,19 +76,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   async function install(){
     if(!installPrompt)throw Error(globalThis.PlayroomMessages.text("ui.pwa.30950cf49d2a"));
-    const event=installPrompt;installPrompt=null;await event.prompt();return event.userChoice;
+    const event=installPrompt;installPrompt=null;root.dispatchEvent(new Event('playroom-install-state'));await event.prompt();return event.userChoice;
   }
-  let updateInfo=null,infoWorker=null,downloadJob=null;
+  let updateInfo=null,infoWorker=null,downloadJob=null,announceJob=null;
   function receiveUpdateState(worker,data){
     if(worker!==infoWorker||data?.version&&updateInfo?.version&&data.version!==updateInfo.version||!data?.download)return;
     updateInfo={...updateInfo,download:data.download};root.dispatchEvent(new CustomEvent('playroom-update-progress'));
   }
-  const announceUpdate=async worker=>{
-    if(!worker||infoWorker===worker)return;infoWorker=worker;downloadJob=null;if(!updates.announce(worker))return;
-    let info;try{info=await workerRequest(worker,'playroom-update-info',{timeout:2500});}catch{info={};}
-    if(infoWorker!==worker)return;
-    updateInfo={...info,download:info.download||{phase:info.version?'ready':'available',received:0,total:0}};
-    root.dispatchEvent(new CustomEvent('playroom-update-ready'));
+  const announceUpdate=worker=>{
+    if(!worker)return Promise.resolve();
+    if(infoWorker===worker)return announceJob||Promise.resolve();
+    infoWorker=worker;downloadJob=null;announceJob=null;if(!updates.announce(worker))return Promise.resolve();
+    const task=(async()=>{
+      let info;try{info=await workerRequest(worker,'playroom-update-info',{timeout:2500});}catch{info={};}
+      if(infoWorker!==worker)return;
+      updateInfo={...info,download:info.download||{phase:info.version?'ready':'available',received:0,total:0}};
+      root.dispatchEvent(new CustomEvent('playroom-update-ready'));
+    })();
+    announceJob=task;const clear=()=>{if(announceJob===task)announceJob=null;};task.then(clear,clear);return task;
   };
   async function downloadUpdate(){
     if(downloadJob)return downloadJob;if(!infoWorker)throw Error('UPDATE_NOT_READY');
@@ -105,10 +110,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   for(const type of ['click','submit','keydown'])document.addEventListener(type,event=>{
     if(updates.locked){event.preventDefault();event.stopImmediatePropagation();}
   },true);
-  function reloadUpdatedDocument(){if(root.__playroomUpdateReloading)return;root.__playroomUpdateReloading=true;location.reload();}
+  const receiptKey='playroom.after-update.v1';
+  function updateReceipt(){const rows=root.PlayroomPacks?.list?.()||[];return {from:root.PlayroomAppVersion||'0.0.0',to:updateInfo?.version,cache:updateInfo?.cache,releases:updateInfo?.releases||[],packs:rows.filter(p=>!rows.some(other=>other.id===p.id&&root.TabletopPacks.compareVersions(other.version,p.version)>0)).map(p=>({id:p.id,version:p.version}))};}
+  function reloadUpdatedDocument(){if(root.__playroomUpdateReloading)return;try{if(updateInfo?.version&&!root.sessionStorage.getItem(receiptKey))root.sessionStorage.setItem(receiptKey,JSON.stringify(updateReceipt()));}catch(_){}root.__playroomUpdateReloading=true;location.reload();}
   async function activateUpdate(){
     if(updateInfo?.download?.phase!=='ready')throw Error('Сначала загрузите обновление.');
-    const worker=infoWorker,result=await updates.activate();
+    const before=root.sessionStorage.getItem(receiptKey),receipt=JSON.stringify(updateReceipt());root.sessionStorage.setItem(receiptKey,receipt);
+    let result;const worker=infoWorker;try{result=await updates.activate();}catch(error){if(root.sessionStorage.getItem(receiptKey)===receipt){if(before===null)root.sessionStorage.removeItem(receiptKey);else root.sessionStorage.setItem(receiptKey,before);}throw error;}
+
     // Another window may already have activated this worker, or Android may
     // miss controllerchange. Observe its state locally; never reload early.
     let timer=null;
@@ -120,10 +129,67 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     };
     worker.addEventListener?.('statechange',check);check();return result;
   }
-  root.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;root.dispatchEvent(new Event('playroom-install-available'));});
-  root.addEventListener('appinstalled',()=>{installPrompt=null;root.dispatchEvent(new Event('playroom-installed'));});
+  let installationObserved=false,relatedInstalled=false,installationCheck=null,installationRevision=0;
+  const standaloneMode=matchMedia('(display-mode: standalone)');
+  const manifestUrl=()=>{const url=new URL(document.querySelector?.('link[rel="manifest"]')?.href||'./manifest.webmanifest',location.href);url.username='';url.password='';url.hash='';return url.href;};
+  async function refreshInstallation(){
+    if(!secure||typeof navigator.getInstalledRelatedApps!=='function')return false;
+    if(installationCheck)return installationCheck;
+    const revision=installationRevision;
+    installationCheck=Promise.resolve().then(()=>navigator.getInstalledRelatedApps()).then(apps=>{
+      if(revision!==installationRevision)return relatedInstalled;
+      const url=manifestUrl(),id=new URL('/playroom',url).href;
+      const installed=Array.isArray(apps)&&apps.some(app=>{
+        if(app?.platform!=='webapp'||!app.url)return false;
+        try{return new URL(app.url,url).href===url&&(!app.id||new URL(app.id,url).href===id);}catch{return false;}
+      });
+      const changed=relatedInstalled!==installed;relatedInstalled=installed;
+      if(installed)installPrompt=null;
+      if(changed)root.dispatchEvent(new Event('playroom-install-state'));
+      return installed;
+    }).catch(()=>relatedInstalled).finally(()=>{installationCheck=null;if(revision!==installationRevision)void refreshInstallation();});
+    return installationCheck;
+  }
+  root.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installationRevision++;installationObserved=false;relatedInstalled=false;installPrompt=event;root.dispatchEvent(new Event('playroom-install-available'));});
+  root.addEventListener('appinstalled',()=>{installationRevision++;installPrompt=null;installationObserved=true;root.dispatchEvent(new Event('playroom-installed'));void refreshInstallation();});
+  standaloneMode.addEventListener?.('change',()=>root.dispatchEvent(new Event('playroom-install-state')));
+  root.addEventListener('focus',()=>{void refreshInstallation();});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void refreshInstallation();});
+  function installState(){
+    const standalone=standaloneMode.matches||navigator.standalone===true;
+    if(standalone||installationObserved||relatedInstalled)return {mode:'installed',standalone,launchable:relatedInstalled&&!standalone};
+    if(!secure)return {mode:'insecure',standalone:false};
+    if(installPrompt)return {mode:'native',standalone:false};
+    const ua=navigator.userAgent||'',platform=navigator.platform||'',ios=/iPhone|iPad|iPod/.test(ua)||platform==='MacIntel'&&navigator.maxTouchPoints>1;
+    return {mode:ios?'ios':'manual',standalone:false,mac:!ios&&/Mac/.test(platform||ua)};
+  }
+  void refreshInstallation();
+  let registrationReady=Promise.resolve(null);
+  async function checkForUpdate(){
+    // OS connectivity hints may be false while the origin remains reachable through a VPN.
+    // The worker update request is authoritative; its real failures still reject below.
+    if(updates.started||updates.locked)throw Object.assign(Error('Дождитесь завершения установки.'),{code:'busy'});
+    const registration=await registrationReady;
+    if(!registration)throw Object.assign(Error('Проверка обновлений недоступна в этом браузере.'),{code:'unavailable'});
+    // A coalesced update() may resolve without a network request. HEAD bypasses
+    // the GET-only shell cache without downloading or storing another worker body.
+    const script=registration.active?.scriptURL||registration.waiting?.scriptURL||new URL('./sw.js',location.href).href;
+    const response=await fetch(script,{method:'HEAD',cache:'no-store',credentials:'same-origin',redirect:'error'});
+    if(!response.ok)throw Object.assign(Error('Не удалось связаться с сервером обновлений.'),{code:'network',status:response.status});
+    await registration.update();
+    const worker=registration.installing;
+    if(worker&&!['installed','activated','redundant'].includes(worker.state))await new Promise((resolve,reject)=>{
+      const finish=error=>{clearTimeout(timer);worker.removeEventListener('statechange',changed);error?reject(error):resolve();};
+      const changed=()=>{if(['installed','activated','redundant'].includes(worker.state))finish();};
+      const timer=setTimeout(()=>finish(Object.assign(Error('Проверка заняла слишком много времени. Повторите её.'),{code:'timeout'})),12000);
+      worker.addEventListener('statechange',changed);changed();
+    });
+    if(worker?.state==='redundant'&&!registration.waiting&&!updateInfo)throw Object.assign(Error('Не удалось проверить новую версию. Повторите проверку.'),{code:'network'});
+    if(registration.waiting&&navigator.serviceWorker.controller)await announceUpdate(registration.waiting);
+    return {available:!!updateInfo};
+  }
   if('serviceWorker' in navigator&&secure){
-    navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(registration=>{
+    registrationReady=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(registration=>{
       if(registration.waiting&&navigator.serviceWorker.controller)announceUpdate(registration.waiting);
       registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',()=>{
         if(registration.waiting&&navigator.serviceWorker.controller)announceUpdate(registration.waiting);
@@ -137,7 +203,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh();});
       root.addEventListener('focus',()=>{void refresh();});
       setInterval(()=>{void refresh();},15*60*1000);
-    }).catch(()=>{});
+      return registration;
+    }).catch(()=>null);
     navigator.serviceWorker.addEventListener('message',event=>{
       if(event.data?.kind==='playroom-pair-token')emitPair(event.data.token);
       if(event.data?.kind==='playroom-update-ready')navigator.serviceWorker.getRegistration().then(registration=>announceUpdate(registration?.waiting)).catch(()=>{});
@@ -152,10 +219,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   root.PlayroomPWA=Object.freeze({
     get updateInfo(){return updateInfo;},
     secure,
-    standalone:matchMedia('(display-mode: standalone)').matches||navigator.standalone===true,
+    get standalone(){return standaloneMode.matches||navigator.standalone===true;},
+    installState,refreshInstallation,
     canShare,
     canInstall:()=>!!installPrompt,
-    shareToken,install,pairingUrl,tokenFromUrl,subscribePair,setUpdateGuard,downloadUpdate,activateUpdate,isUpdateLocked:()=>updates.locked,
+    shareToken,install,pairingUrl,tokenFromUrl,subscribePair,setUpdateGuard,checkForUpdate,downloadUpdate,activateUpdate,isUpdateLocked:()=>updates.locked,
     protocolUrl:Pairing.protocolUrl
   });
 })(globalThis);

@@ -103,7 +103,7 @@
       this.#catalog = catalog;
       this.#repository = repository;
       this.#idFactory = idFactory;
-      this.#state = freeze({formatVersion:1, activeId:catalog.defaultId, presets:[],avatarStyle:'minimal'});
+      this.#state = freeze({formatVersion:1, activeId:catalog.defaultId, presets:[],avatarStyle:'minimal',accentColor:null});
       try {
         const saved = repository.read();
         if (saved != null) {
@@ -119,7 +119,10 @@
           }
           const validActive = catalog.isBuiltin(saved.activeId) || seen.has(saved.activeId);
           if (!validActive) this.#warnings.push('ACTIVE_PRESET_MISSING');
-          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets,avatarStyle:'minimal'});
+          const savedColor=Object.hasOwn(saved,'accentColor')?saved.accentColor:saved.fieldColor;
+          const accentColor=typeof savedColor==='string'&&/^#[a-f0-9]{6}$/i.test(savedColor)?savedColor.toLowerCase():null;
+          if(savedColor!=null&&!accentColor)this.#warnings.push('ACCENT_COLOR_INVALID');
+          this.#state = freeze({formatVersion:1, activeId:validActive?saved.activeId:catalog.defaultId, presets,avatarStyle:'minimal',accentColor});
         }
       } catch (error) { this.#warnings.push(error.code || 'PREFERENCES_UNAVAILABLE'); }
     }
@@ -188,6 +191,12 @@
       this.#find(id);
       this.#commit({...clone(this.#state), activeId:id}, 'selected');
       return this.active();
+    }
+    setAccentColor(color) {
+      requireValue(color===null||typeof color==='string'&&/^#[a-f0-9]{6}$/i.test(color),'ACCENT_COLOR_INVALID');
+      const accentColor=color===null?null:color.toLowerCase();
+      this.#commit({...clone(this.#state),accentColor},'accent-color-selected');
+      return accentColor;
     }
     rename(id, name) {
       requireValue(!this.#catalog.isBuiltin(id), 'BUILTIN_IMMUTABLE');

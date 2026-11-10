@@ -2,7 +2,7 @@
 (function(root){
  'use strict';
  const PACKS='playroom.packs.v1',ACTIVE='playroom.session.v1',PREFIX='playroom.paused.v1.';
- const owned=key=>key===PACKS||key===ACTIVE||key.startsWith(PREFIX);
+ const owned=key=>key===PACKS||key===ACTIVE||key.startsWith(PREFIX)||key.startsWith('playroom.match-status.v1.');
  const bytes=value=>new TextEncoder().encode(value).byteLength;
  class DataStorage {
   constructor({indexedDB=root.indexedDB,legacy=root.localStorage,name='playroom.data.v1'}={}){Object.assign(this,{indexedDB,legacy,name});this.values=new Map();this.queue=Promise.resolve();this.pending=0;}
@@ -27,13 +27,13 @@
    }
    return this;
   }
-  transact(operation){
+  transact(operation,{guard=()=>{}}={}){
    this.pending++;
    const result=this.queue.then(async()=>{
-    const draft=new Map(this.values);let value;
+    guard();const draft=new Map(this.values);let value;
     this.draft=draft;try{value=operation();if(value?.then)throw Error('Storage transaction callback must be synchronous');}finally{this.draft=null;}
     const changes=[];for(const [key,raw]of draft)if(this.values.get(key)!==raw)changes.push([key,raw]);for(const key of this.values.keys())if(!draft.has(key))changes.push([key,null]);
-    if(changes.length)await new Promise((resolve,reject)=>{const tx=this.db.transaction('records','readwrite'),store=tx.objectStore('records');for(const [key,raw]of changes){const read=store.get(key);read.onsuccess=()=>{if((read.result??null)!==(this.values.get(key)??null)){tx.abort();return;}raw===null?store.delete(key):store.put(raw,key);};}tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error||Error('Storage transaction aborted'));});
+    if(changes.length)await new Promise((resolve,reject)=>{const tx=this.db.transaction('records','readwrite'),store=tx.objectStore('records');let failure;for(const [key,raw]of changes){const read=store.get(key);read.onsuccess=()=>{try{guard();}catch(error){failure=error;tx.abort();return;}if((read.result??null)!==(this.values.get(key)??null)){tx.abort();return;}raw===null?store.delete(key):store.put(raw,key);};}tx.oncomplete=resolve;tx.onabort=()=>reject(failure||tx.error||Error('Storage transaction aborted'));});
     this.values=draft;return value;
    });
    this.queue=result.catch(()=>{}).finally(()=>{this.pending--;});return result;

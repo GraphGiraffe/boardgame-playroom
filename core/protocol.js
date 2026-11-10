@@ -2,8 +2,56 @@
   'use strict';
   const version=3, record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
   const clone=x=>JSON.parse(JSON.stringify(x));
+  async function fingerprint(signature){const bytes=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(signature));return 'sha256:'+Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');}
   const freeze=x=>{if(x&&typeof x==='object'&&!Object.isFrozen(x)){Object.values(x).forEach(freeze);Object.freeze(x);}return x;};
-  const canonical=x=>JSON.stringify(x,(_,v)=>record(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
+  // Only copies made here may cross an in-process boundary without another
+  // serialization. Frozen external objects still get a detached deep copy.
+  const ownedValues=new WeakSet(),projectionModels=new WeakMap(),draftSources=new WeakMap();
+  function immutable(value){
+    if(value===undefined)return undefined; // Optional wire replies may omit a result.
+    if(value&&typeof value==='object'&&ownedValues.has(value))return value;
+    return own(clone(value));
+  }
+  function own(value){if(value&&typeof value==='object'&&!ownedValues.has(value)){Object.values(value).forEach(own);Object.freeze(value);ownedValues.add(value);}return value;}
+  function withProjection(value,model){const frame=immutable(value);projectionModels.set(frame,immutable(model));return frame;}
+  const projectedModel=value=>projectionModels.get(value);
+  function withDraft(value,base){const frame=immutable(value),source=immutable(base);if(!sameAudience(frame,source)||['sessionId','authorityEpoch','game','packVersion','revision'].some(key=>frame[key]!==source[key]))throw Error('DRAFT_SCOPE_INVALID');draftSources.set(frame,source);return frame;}
+  const authoritativeFrame=value=>draftSources.get(value)||value;
+  function parse(text){if(typeof text!=='string')throw Error('JSON_WIRE_INVALID');return own(JSON.parse(text));}
+  // Internal composition preserves only descendants already owned by this
+  // protocol. Frozen foreign objects still cross the normal detached boundary.
+  function composeRecord(fields){
+    if(!record(fields)||![Object.prototype,null].includes(Object.getPrototypeOf(fields)))throw Error('IMMUTABLE_RECORD_INVALID');
+    const out={};for(const [key,value] of Object.entries(fields))if(value!==undefined)Object.defineProperty(out,key,{value:immutable(value),enumerable:true});
+    Object.freeze(out);ownedValues.add(out);return out;
+  }
+  function composeArray(values){
+    if(!Array.isArray(values))throw Error('IMMUTABLE_ARRAY_INVALID');
+    const out=Array.from(values,value=>value===undefined?null:immutable(value));Object.freeze(out);ownedValues.add(out);return out;
+  }
+  // Memoize only detached, recursively immutable values owned by this port.
+  // A bounded cache cannot retain a whole match through old history frames.
+  const canonicalCache=new Map();let canonicalBytes=0;
+  function canonical(value){
+    const ancestors=new Set();
+    const write=(v,key='')=>{
+      if(v&&typeof v.toJSON==='function')v=v.toJSON(key);
+      if(!v||typeof v!=='object')return JSON.stringify(v);
+      if(ownedValues.has(v)&&canonicalCache.has(v))return canonicalCache.get(v);
+      if(ancestors.has(v))throw TypeError('Circular JSON');ancestors.add(v);
+      let text;
+      if(Array.isArray(v))text='['+Array.from(v,(item,i)=>write(item,String(i))??'null').join(',')+']';
+      else{
+        // JSON's integer property order precedes lexically sorted string keys.
+        const index=k=>String(Number(k))===k&&Number(k)>=0&&Number(k)<4294967295;
+        const keys=Object.keys(v).sort((a,b)=>index(a)?index(b)?Number(a)-Number(b):-1:index(b)?1:a<b?-1:a>b?1:0);
+        text='{'+keys.flatMap(k=>{const item=write(v[k],k);return item===undefined?[]:[JSON.stringify(k)+':'+item];}).join(',')+'}';
+      }
+      ancestors.delete(v);
+      if(ownedValues.has(v)&&text.length>=64&&text.length<=1024*1024){canonicalCache.set(v,text);canonicalBytes+=text.length*2;while(canonicalCache.size>2048||canonicalBytes>8*1024*1024){const first=canonicalCache.keys().next().value;canonicalBytes-=canonicalCache.get(first).length*2;canonicalCache.delete(first);}}
+      return text;
+    };return write(value);
+  }
   const id=x=>typeof x==='string'&&/^[a-zA-Z0-9_.:-]{1,128}$/.test(x);
   function validate(command){
     if(!record(command)||Object.keys(command).some(k=>!['protocolVersion','sessionId','authorityEpoch','commandId','expectedRevision','action','actor'].includes(k))||command.protocolVersion!==version||!id(command.sessionId)||!id(command.authorityEpoch)||!id(command.commandId)||!Number.isSafeInteger(command.expectedRevision)||command.expectedRevision<0||!record(command.action)||typeof command.action.type!=='string'||(Object.hasOwn(command,'actor')&&(!Number.isInteger(command.actor)||command.actor<0||command.actor>=32)))return false;
@@ -19,5 +67,22 @@
   }
   function presentationReady(snapshot){return {protocolVersion:version,kind:'presentation-ready',sessionId:snapshot.sessionId,authorityEpoch:snapshot.authorityEpoch,controlRevision:snapshot.controlRevision||0,revision:snapshot.reactionWindow?.revision??snapshot.revision,windowId:snapshot.reactionWindow?.id};}
   function validatePresentationReady(message){return record(message)&&Object.keys(message).every(k=>['protocolVersion','kind','sessionId','authorityEpoch','controlRevision','revision','windowId'].includes(k))&&message.protocolVersion===version&&message.kind==='presentation-ready'&&id(message.sessionId)&&id(message.authorityEpoch)&&id(message.windowId)&&Number.isSafeInteger(message.controlRevision)&&message.controlRevision>=0&&Number.isSafeInteger(message.revision)&&message.revision>=0;}
-  return {version,clone,freeze,canonical,validate,command,role,sameAudience,presentationReady,validatePresentationReady};
+  async function historyRange(read,start,count,length){
+    if(!Number.isSafeInteger(start)||start<0||start>=length||!Number.isSafeInteger(count)||count<1||count>64)throw Error('HISTORY_RANGE_INVALID');
+    const frames=[];let bytes=256;
+    for(let index=start;index<Math.min(length,start+count);index++){
+      const frame=await read(index),size=new TextEncoder().encode(JSON.stringify(frame)).byteLength+1;
+      if(bytes+size>256*1024)return {frames,next:start+frames.length,...(!frames.length?{oversized:start}:{})};
+      frames.push(frame);bytes+=size;
+    }
+    return {frames,next:start+frames.length};
+  }
+  function status(value){
+    if(value?.kind==='status')return value;
+    if(value?.kind==='snapshot')return {kind:'status',scope:'session',sessionId:value.sessionId,authorityEpoch:value.authorityEpoch,game:value.game,packVersion:value.packVersion,viewer:value.viewer,role:role(value),revision:value.revision,controlRevision:value.controlRevision||0,playerControlRevision:value.playerControlRevision||0,reactionRevision:value.reactionRevision||0,rosterRevision:value.rosterRevision||0,...(value.projectionHash?{projectionHash:value.projectionHash}:{})};
+    if(value?.room)return {kind:'status',scope:'room',roomId:value.room.id,participantId:value.participantId||null,phase:value.room.phase,revision:value.room.revision};
+    throw Error('STATUS_INVALID');
+  }
+  const sameStatus=(a,b)=>!!a&&!!b&&canonical(status(a))===canonical(status(b));
+  return {parse,withDraft,authoritativeFrame,withProjection,projectedModel,composeRecord,composeArray,historyRange,status,sameStatus,version,clone,freeze,immutable,canonical,validate,command,fingerprint,role,sameAudience,presentationReady,validatePresentationReady};
 });

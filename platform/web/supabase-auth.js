@@ -24,10 +24,10 @@
    const value={access_token:result.access_token,refresh_token:result.refresh_token,user:result.user,expires_at:this.now()+Number(result.expires_in)*1000,recovery};
    this.write(this.key,value);this.memory=value;return value.user;
   }
-  async request(path,{body,method=body?'POST':'GET',token}={}){
-   let response;try{response=await this.fetch(this.config.url+'/auth/v1/'+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{apikey:this.config.publishableKey,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});}catch(_){throw fail('network');}
+  async request(path,{body,method=body?'POST':'GET',token,api='auth/v1'}={}){
+   let response;try{response=await this.fetch(this.config.url+'/'+api+'/'+path,{method,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{apikey:this.config.publishableKey,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});}catch(error){throw fail(error?.name==='TimeoutError'?'timeout':'network');}
    let result;try{result=await response.json();}catch(_){if(response.ok&&response.status===204)return null;throw fail('response',response.status);}
-   if(!response.ok){const known={same_password:'same-password',weak_password:'weak-password',email_not_confirmed:'email-not-confirmed',invalid_credentials:'credentials',reauthentication_needed:'reauthentication',reauthentication_not_valid:'reauthentication',current_password_invalid:'current-password',current_password_mismatch:'current-password',current_password_required:'current-password'};const code=known[result?.error_code||result?.code]||(response.status===429?'rate-limit':response.status===401||response.status===403?'credentials':response.status>=500?'unavailable':'request');throw fail(code,response.status);}
+   if(!response.ok){const known={PGRST202:'setup',over_email_send_rate_limit:'email-rate-limit',email_address_not_authorized:'email-sender-unavailable',same_password:'same-password',weak_password:'weak-password',email_not_confirmed:'email-not-confirmed',invalid_credentials:'credentials',reauthentication_needed:'reauthentication',reauthentication_not_valid:'reauthentication',current_password_invalid:'current-password',current_password_mismatch:'current-password',current_password_required:'current-password'};const code=known[result?.error_code||result?.code]||(response.status===429?'rate-limit':response.status===401||response.status===403?'credentials':response.status>=500?'unavailable':'request');throw fail(code,response.status);}
    return result;
   }
   async locked(fn){return this.locks?.request?this.locks.request(this.key,fn):fn();}
@@ -46,7 +46,7 @@
    const verifier=base64(bytes),challenge=base64(new Uint8Array(await this.crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier))));
    this.write(this.pendingKey,{verifier,kind,createdAt:this.now()});return {code_challenge:challenge,code_challenge_method:'s256'};
   }
-  async signup(email,password){const pkce=await this.challenge('signup');const result=await this.request('signup?redirect_to='+encodeURIComponent(this.redirect()),{body:{email,password,...pkce}});if(!result.access_token)return null;this.write(this.pendingKey,null);return this.save(result);}
+  async signup(email,password,username){const handle=String(username||'').trim().replace(/^@/,'').toLowerCase();if(!/^[a-z][a-z0-9_]{2,23}$/.test(handle))throw fail('username-invalid');const available=await this.request('playroom_signup_name_available',{api:'rest/v1/rpc',body:{p_username:handle}});if(typeof available!=='boolean')throw fail('response');if(!available)throw fail('username-taken');const pkce=await this.challenge('signup');const result=await this.request('signup?redirect_to='+encodeURIComponent(this.redirect()),{body:{email,password,data:{username:handle},...pkce}});if(!result.access_token)return null;this.write(this.pendingKey,null);return this.save(result);}
   async guest(){return this.save(await this.request('signup',{body:{}}));}
   isRecovery(){return !!this.read()?.recovery;}
   async recover(email){const pkce=await this.challenge('recovery');await this.request('recover?redirect_to='+encodeURIComponent(this.redirect()),{body:{email,...pkce}});}

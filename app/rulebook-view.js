@@ -33,21 +33,59 @@
    return `<section class="rulebook-section" id="rulebook-section-${index}" tabindex="-1">${section.title?`<h3>${esc(section.title)}</h3>`:''}${content}${figures?`<div class="rulebook-figures is-${layout}">${figures}</div>`:''}${section.note?`<aside class="rulebook-note">${esc(section.note)}</aside>`:''}</section>`;
   }).join('');
  }
+ let readerHelpId=0;
  function header(){
-  const t=key=>root.PlayroomMessages.text('rules-help.'+key),screen=root.PlayroomGameScreen;
-  const actions='<div class="rulebook-toolbar">'+[['top','up'],['contents','rules-contents'],['options','rules']].map(([target,icon])=>screen.iconButton(`data-rulebook-jump="rulebook-${target}"`,t(target),icon)).join('')+'</div>';
-  return screen.modalHead(t('title'),{actions}).replace('class="modal-head','class="rulebook-head modal-head');
+  const screen=root.PlayroomGameScreen,id='rulebook-help-'+(++readerHelpId);
+  const actions=screen.iconButton(`popovertarget="${id}"`,'О чтении правил','help')+`<aside id="${id}" class="mini-help-popover" popover="auto">Краткие правила можно прочитать одним списком. В полных правилах оглавление всегда доступно сверху. Параметры партии изменяются в отдельном окне «Правила партии».</aside>`;
+  return screen.modalHead(root.PlayroomMessages.text('rules-help.title'),{actions}).replace('class="modal-head','class="rulebook-head modal-head');
+ }
+ // Small escaped Markdown subset for legacy text; pack HTML is never evaluated.
+ function markdownInline(value,esc){
+  return String(value||'').split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).map(part=>{
+   if(part.startsWith('`')&&part.endsWith('`'))return '<code>'+esc(part.slice(1,-1))+'</code>';
+   if(part.startsWith('**')&&part.endsWith('**'))return '<strong>'+esc(part.slice(2,-2))+'</strong>';
+   if(part.startsWith('*')&&part.endsWith('*'))return '<em>'+esc(part.slice(1,-1))+'</em>';
+   return esc(part);
+  }).join('');
+ }
+ function renderBrief(paragraphs,{esc}){
+  return paragraphs.map((rule,index)=>{
+   const lines=String(rule).split('\n').map(line=>line.trim()).filter(Boolean),title=lines.length>1?lines.shift().replace(/^#{1,6}\s+/,''):'';
+   let list='',body='';
+   const flush=()=>{if(list){body+='</'+list+'>';list='';}};
+   for(const line of lines){
+    const match=line.match(/^(?:([-*])|\d+[.)])\s+(.+)$/),kind=match?(match[1]?'ul':'ol'):'';
+    if(kind){if(kind!==list){flush();body+='<'+kind+'>';list=kind;}body+='<li>'+markdownInline(match[2],esc)+'</li>';}
+    else{flush();body+='<p>'+markdownInline(line,esc)+'</p>';}
+   }
+   flush();return `<section class="rulebook-section" id="rulebook-section-${index}" tabindex="-1">${title?'<h3>'+markdownInline(title,esc)+'</h3>':''}${body}</section>`;
+  }).join('');
  }
  function contents(titles,{esc,label,optionsLabel}){
-  return `<nav id="rulebook-contents" class="rulebook-contents" tabindex="-1" aria-label="${esc(label)}"><h3>${esc(label)}</h3><ol>${titles.map((title,index)=>title?`<li><a href="#rulebook-section-${index}" data-rulebook-jump="rulebook-section-${index}">${esc(title)}</a></li>`:'').join('')}<li><a href="#rulebook-options" data-rulebook-jump="rulebook-options">${esc(optionsLabel)}</a></li></ol></nav>`;
+  return `<details class="rulebook-toc"><summary>${esc(label)}</summary><nav id="rulebook-contents" class="rulebook-contents" tabindex="-1" aria-label="${esc(label)}"><h3>${esc(label)}</h3><ol>${titles.map((title,index)=>title?`<li><a href="#rulebook-section-${index}" data-rulebook-jump="rulebook-section-${index}">${esc(title)}</a></li>`:'').join('')}<li><a href="#rulebook-options" data-rulebook-jump="rulebook-options">${esc(optionsLabel)}</a></li></ol></nav></details>`;
  }
+ function selectMode(rules,full){
+  rules.querySelector('[data-rulebook-full]').hidden=!full;rules.querySelector('[data-rulebook-brief]').hidden=full;
+  rules.querySelector('.rulebook-mode').style.setProperty('--page-index',full?'1':'0');
+  rules.querySelectorAll('[data-rulebook-mode]').forEach(button=>{const selected=(button.dataset.rulebookMode==='full')===full;button.setAttribute('aria-pressed',String(selected));button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;});
+ }
+ root.document?.addEventListener('keydown',event=>{
+  const button=event.target.closest('[data-rulebook-mode]'),modal=button?.closest('.rulebook-modal');
+  if(!modal||modal.closest('[data-surface-state]')?.dataset.surfaceState==='suspended'||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  event.preventDefault();const full=event.key==='End'||event.key!=='Home'&&button.dataset.rulebookMode!=='full',next=modal.querySelector('[data-rulebook-mode='+(full?'full':'brief')+']');next.click();next.focus({preventScroll:true});
+ });
  root.document?.addEventListener('click',event=>{
+  const modal=event.target.closest('.rulebook-modal');if(!modal||modal.closest('[data-surface-state]')?.dataset.surfaceState==='suspended')return;
+  const mode=event.target.closest('[data-rulebook-mode]');
+  if(mode){selectMode(mode.closest('.game-rules-help'),mode.dataset.rulebookMode==='full');return;}
   const button=event.target.closest('[data-rulebook-jump]');if(!button)return;
   const id=button.dataset.rulebookJump;if(!/^rulebook-(top|contents|options|section-\d+)$/.test(id))return;
-  const modal=button.closest('.modal'),body=modal?.querySelector('.modal-body'),target=modal?.querySelector('#'+id);if(!body||!target)return;
+  const body=modal.querySelector('.modal-body'),target=modal.querySelector('#'+id);if(!body||!target)return;
   event.preventDefault();event.stopPropagation();
-  body.scrollTo({top:id==='rulebook-top'?0:body.scrollTop+target.getBoundingClientRect().top-body.getBoundingClientRect().top,behavior:root.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  if(id!=='rulebook-top'){const rules=modal.querySelector('.game-rules-help');if(rules)selectMode(rules,true);}
+  const toc=modal.querySelector('.rulebook-toc');if(toc){toc.open=id==='rulebook-contents';}
+  body.scrollTo({top:id==='rulebook-top'?0:body.scrollTop+target.getBoundingClientRect().top-body.getBoundingClientRect().top-(toc?.getBoundingClientRect().height||0)-8,behavior:root.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   target.focus({preventScroll:true});
  });
- return Object.freeze({render,header,contents});
+ return Object.freeze({render,renderBrief,header,contents});
 });

@@ -2,9 +2,36 @@
 (function(root){
  'use strict';const H=()=>root.PlayroomGameScreen;
  function header(identity,actions){return H().modalHead('',{actions}).replace('<h2></h2>',identity);}
- function composer(prefix){return `<form class="chat-composer" data-${prefix}-form data-inline-actions><button type="button" class="icon-btn chat-reactions" data-${prefix}-reactions aria-label="Быстрые реакции" title="Быстрые реакции">☺</button><textarea name="message" hidden tabindex="-1" aria-hidden="true"></textarea><div data-chat-editor contenteditable="true" role="textbox" aria-label="Сообщение" aria-multiline="true" data-placeholder="Сообщение"></div>${H().iconButton('','Отправить','send',{type:'submit',disabled:true})}</form>`;}
+ function composer(prefix){return `<div class="chat-reply-draft" data-chat-reply hidden></div><form class="chat-composer" data-${prefix}-form data-inline-actions><button type="button" class="icon-btn chat-reactions" data-${prefix}-reactions aria-label="Быстрые реакции" title="Быстрые реакции">${H().icon('reaction')}</button><textarea name="message" hidden tabindex="-1" aria-hidden="true"></textarea><div data-chat-editor contenteditable="true" role="textbox" aria-label="Сообщение" aria-multiline="true" data-placeholder="Сообщение"></div>${H().iconButton('data-chat-send','Отправить','send',{type:'submit',disabled:true})}</form><p class="chat-composer-status" data-chat-send-state role="status" aria-live="polite" aria-atomic="true"></p>`;}
  function resize(form,busy=false){if(form)root.PlayroomChatComposer.sync(form,busy);}
 
+ const actionBindings=new WeakMap();let swipe=null;
+ function details(message,part='all'){
+  const esc=H().esc,reply=part==='reactions'?null:message.reply,reactions=part==='reply'?[]:message.reactions||[];
+  return (reply?reply.unavailable?'<span class="chat-reply-quote is-unavailable">Сообщение недоступно</span>':`<button type="button" class="chat-reply-quote" data-chat-reply-jump="${esc(reply.id)}"><strong>${esc(reply.nickname||'Игрок')}</strong><span>${esc(reply.body)}</span></button>`:'')+(reactions.length?`<div class="chat-attached-reactions">${reactions.filter(r=>root.PlayroomQuickReactions.valid(r.emoji)).map(r=>`<button type="button" aria-pressed="${!!r.mine}" aria-label="Реакция ${esc(r.emoji)}, ${Number(r.count)||0}" data-chat-react-target="${esc(message.id)}" data-chat-react-emoji="${esc(r.emoji)}">${root.PlayroomReactionView.icon(r.emoji)}<span>${Number(r.count)||0}</span></button>`).join('')}</div>`:'');
+ }
+ function replyDraft(form,message){
+  if(!form)return;const node=form.parentElement.querySelector('[data-chat-reply]');if(!node)return;
+  form.dataset.replyToId=message?.id||'';form._replyMessage=message||null;node.hidden=!message;
+  node.innerHTML=message?`<span><strong>Ответ ${H().esc(message.nickname||'на сообщение')}</strong><small>${H().esc((message.body||'').slice(0,160))}</small></span>${H().iconButton('data-chat-reply-cancel','Отменить ответ','close')}`:'';
+  form.dispatchEvent(new Event('playroom:chat-draft-changed',{bubbles:true}));
+ }
+ function bindings(node){for(let el=node;el;el=el.parentElement)if(actionBindings.has(el))return {host:el,...actionBindings.get(el)};return null;}
+ function bindActions(host,resolve,handlers){if(host)actionBindings.set(host,{resolve,handlers});}
+ function actions(target,message,handlers){
+  root.PlayroomReactionUI.open(target,emoji=>handlers.react(message,emoji),{reactions:handlers.canReact!==false,actions:[...(handlers.canReply===false?[]:[{id:'reply',label:'Ответить',run:()=>handlers.reply(message)}]),{id:'copy',label:'Копировать',run:async()=>{try{await navigator.clipboard.writeText(message.body||'');}catch(_){root.PlayroomAppBridge.toast('Не удалось скопировать сообщение. Выделите текст и повторите.');}}}]});
+ }
+ document.addEventListener('click',event=>{
+  const cancel=event.target.closest('[data-chat-reply-cancel]');if(cancel){const form=cancel.closest('[data-chat-reply]').parentElement.querySelector('.chat-composer');replyDraft(form,null);form.querySelector('[data-chat-editor]').focus();return;}
+  const chip=event.target.closest('[data-chat-react-target]'),jump=event.target.closest('[data-chat-reply-jump]');if(!chip&&!jump)return;
+  const bound=bindings(event.target);if(!bound)return;
+  if(chip){const message=bound.resolve(chip.dataset.chatReactTarget);if(message)void bound.handlers.react(message,chip.dataset.chatReactEmoji);}
+  else {const list=bound.host.querySelector('.chat-messages'),node=[...list.querySelectorAll('[data-entity]')].find(e=>['message-'+jump.dataset.chatReplyJump,'room-message-'+jump.dataset.chatReplyJump].includes(e.dataset.entity));if(node){list.scrollTop+=node.getBoundingClientRect().top-list.getBoundingClientRect().top-12;}else root.PlayroomAppBridge.toast('Сообщение пока не загружено. Откройте более раннюю историю.');}
+ });
+ document.addEventListener('pointerdown',event=>{const message=event.target.closest('.chat-message:not(.chat-invitation)'),bound=message&&bindings(message);swipe=bound&&event.isPrimary&&!root.getSelection()?.toString()&&!event.target.closest('button,a,input,[contenteditable]')?{message,bound,x:event.clientX,y:event.clientY,id:event.pointerId}:null;});
+ document.addEventListener('pointerup',event=>{const start=swipe;swipe=null;if(!start||start.id!==event.pointerId||root.getSelection()?.toString())return;const dx=start.x-event.clientX,dy=Math.abs(start.y-event.clientY);if(dx>60&&dx>dy*1.5){const id=start.message.dataset.entity.replace(/^(?:room-)?message-/,''),message=start.bound.resolve(id);if(message&&start.bound.handlers.canReply!==false){root.PlayroomDOM.consumePointerReleaseClick({x:event.clientX,y:event.clientY});start.bound.handlers.reply(message);}}});
+ document.addEventListener('pointercancel',()=>swipe=null);
+ function messageTarget(event,host){if(!host||event.target.closest('button,a,input,[contenteditable]')||root.getSelection()?.toString())return null;const message=event.target.closest('.chat-message:not(.chat-invitation)');return message&&host.contains(message)?message:null;}
  function teamColor(value,role){const base=typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value)?value:'#668fad';return /^side\.(blue|red|green|yellow)$/.test(role||'')?'var(--color-'+role.replaceAll('.','-')+','+base+')':base;}
  function receipt(read){return `<span class="message-receipt ${read?'is-read':''}" role="img" aria-label="${read?'Прочитано':'Доставлено'}" title="${read?'Прочитано':'Доставлено'}"><svg viewBox="0 0 18 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m1 7 3 3 6-7"/>${read?'<path d="m8 8 2 2 6-7"/>':''}</svg></span>`;}
  function seen(list,rows,prefix){if(!list||document.hidden||!document.hasFocus())return null;const box=list.getBoundingClientRect();let latest=null;for(const row of rows){if(row.mine)continue;const node=[...list.querySelectorAll('[data-entity]')].find(n=>n.dataset.entity===prefix+row.id),r=node?.getBoundingClientRect();if(r&&r.bottom>box.top&&r.top<box.bottom)latest=row;}return latest;}
@@ -20,5 +47,5 @@
  document.addEventListener('scroll',event=>{if(event.target.matches?.('.chat-messages'))navigation(event.target,{scrolled:true});},true);
  root.addEventListener('resize',()=>document.querySelectorAll('.chat-messages').forEach(list=>navigation(list)));
  function time(at,{mine=false,read=false}={}){const date=new Date(at);return `<time datetime="${H().esc(at)}" title="${H().esc(date.toLocaleString('ru-RU'))}">${mine?receipt(read):''}${date.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</time>`;}
- root.PlayroomChatComponents=Object.freeze({header,composer,resize,time,receipt,seen,teamColor,invitation,navigation});
+ root.PlayroomChatComponents=Object.freeze({header,composer,resize,time,receipt,seen,teamColor,messageTarget,details,replyDraft,bindActions,actions,invitation,navigation});
 })(globalThis);

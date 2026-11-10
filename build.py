@@ -48,7 +48,7 @@ def read_source_pack(manifest_path):
 _registry = json.loads((ROOT / "core/tags.json").read_text(encoding="utf-8"))
 (ROOT / "core/tag-registry.js").write_text("// Generated from core/tags.json by build.py.\nglobalThis.PlayroomTagRegistry = " + json.dumps(_registry, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
 _app_version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
-(ROOT / "app/version.js").write_text("// Generated from package.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\n", encoding="utf-8")
+(ROOT / "app/version.js").write_text("// Generated from package.json and updates.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\nglobalThis.PlayroomAppReleases = " + json.dumps([r for r in json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))["releases"] if r["version"] == _app_version], ensure_ascii=False) + ";\n", encoding="utf-8")
 ASSET_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 ATTR = re.compile(r"([\w-]+)\s*=\s*(['\"])(.*?)\2", re.DOTALL)
 
@@ -220,7 +220,7 @@ def source_files():
     for name in ("package.json", "package-lock.json", ".gitignore", ".gitattributes", "CONTRIBUTING.md", "CHANGELOG.md", "updates.json", "AGENTS.md", ".nvmrc"):
         if (ROOT / name).is_file():
             paths.add(ROOT / name)
-    for pattern in ("app/*.js", "app/*.css", "app/assets/reactions/*.svg", "app/assets/reactions/*.png", "app/assets/reactions/*.webp", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "tooling/*.py", "tooling/*.json", "application/*.js", "server/*.sql", "server/push/*.sql", "server/push/*.md", "server/push/*.mjs", "supabase/config.toml", "supabase/functions/playroom-push/*.ts", "supabase/functions/playroom-push/*.mjs", "supabase/functions/playroom-push/deno.json", "supabase/functions/playroom-push/deno.lock", "presentation/*.js", "platform/web/*.js", "themes/*.json", "locales/*/*.json", "docs/*.md", "tests/*.cjs", "scripts/*.py", "scripts/*.js", "scripts/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
+    for pattern in ("app/*.js", "app/*.css", "app/assets/reactions/*.svg", "app/assets/reactions/*.png", "app/assets/reactions/*.webp", "app/transports/*.js", "app/vendor/*.js", "app/vendor/LICENSE.*", "icons/*.svg", "dev/*.js", "dev/*.cjs", "dev/*.html", "dev/*.py", "core/*.js", "core/*.css", "core/*.json", "core/*.md", "tooling/*.py", "tooling/*.json", "application/*.js", "server/*.sql", "server/push/*.sql", "server/push/*.md", "server/push/*.mjs", "supabase/config.toml", "supabase/functions/playroom-ice/*.ts", "supabase/functions/playroom-ice/*.mjs", "supabase/functions/playroom-push/*.ts", "supabase/functions/playroom-push/*.mjs", "supabase/functions/playroom-push/deno.json", "supabase/functions/playroom-push/deno.lock", "presentation/*.js", "platform/web/*.js", "themes/*.json", "locales/*/*.json", "docs/*.md", "tests/*.cjs", "scripts/*.py", "scripts/*.js", "scripts/*.cjs", "scripts/codex/*.sh", "scripts/codex/*.cjs", "app/AGENTS.md", "core/AGENTS.md", "tests/AGENTS.md", "scripts/AGENTS.md", "scripts/codex/AGENTS.md", ".github/workflows/*.yml", ".github/workflows/*.yaml"):
         paths.update(ROOT.glob(pattern))
     for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(ROOT):
@@ -273,8 +273,8 @@ def update_release_metadata():
 
 update_release_metadata()
 
-def pwa_runtime_items(packs=(), remote_catalog=False):
-    """Return a static HTTPS-hostable PWA bundle with generated installed packs."""
+def pwa_runtime_items(packs=(), remote_catalog=True):
+    """Return a catalog-only PWA; explicit bundled fixtures remain available to tests."""
     paths = {ROOT / "index.html", ROOT / "manifest.webmanifest", ROOT / "sw.js", ROOT / "platform/web/push-worker.js"}
     paths.update(licensing_files())
     # Entry points remain authoritative when portable modules move to new layers.
@@ -302,6 +302,12 @@ def pwa_runtime_items(packs=(), remote_catalog=False):
     originals = dict(items)
     items = [(name, document.encode("utf-8") if name == "index.html" else content) for name, content in items]
     worker = originals["sw.js"].decode("utf-8")
+    # Ship bundled pack notes with the waiting worker, before activation and
+    # independently of the remote catalog's availability.
+    info = {"version": _app_version, **json.loads((ROOT / "updates.json").read_text(encoding="utf-8")),
+            "packs": [{key: bundle["manifest"][key] for key in ("id", "version", "name", "releases") if key in bundle["manifest"]}
+                      for bundle in ([] if remote_catalog else packs)]}
+    worker = re.sub(r"^const UPDATE_INFO=.*?;$", lambda _: "const UPDATE_INFO=" + json.dumps(info, ensure_ascii=False, separators=(",", ":")) + ";", worker, count=1, flags=re.M)
     worker = re.sub(r"const CACHE='[^']+';", "const CACHE='playroom-pwa-v" + _app_version + "';", worker, count=1)
     for name, alias in aliases.items():
         worker = worker.replace("'./" + name + "'", "'./" + alias + "'")
@@ -424,7 +430,7 @@ def main():
     parser.add_argument("--packs-dir", type=Path, help="Внешний каталог packs/ с manifest.json или dist/ с *.playroom-pack.json")
     parser.add_argument("--all-games", action="store_true", help="Дополнительно собрать playroom-all-games.html из --packs-dir")
     parser.add_argument("--pwa", action="store_true", help="Дополнительно собрать installable PWA-каталог и playroom-pwa.zip")
-    parser.add_argument("--remote-catalog", action="store_true", help="PWA получает паки из защищённого каталога; автономный HTML сохраняет встроенные версии")
+    parser.add_argument("--remote-catalog", action="store_true", help="Установка паков из каталога (режим PWA по умолчанию); --all-games отдельно создаёт полный автономный HTML")
     parser.add_argument("--prepare-dev", action="store_true", help="Создать installed-packs.js для index.html и ссылку packs/ для локальных тестов")
     args = parser.parse_args()
     if args.all_games and not args.packs_dir:
@@ -469,7 +475,7 @@ def main():
         artifacts.append(complete)
     if args.pwa:
         pwa_dir = output / "pwa"
-        pwa_items = pwa_runtime_items(packs, remote_catalog=args.remote_catalog)
+        pwa_items = pwa_runtime_items(packs)
         write_directory(pwa_dir, pwa_items)
         pwa_archive = output / "playroom-pwa.zip"
         write_zip(pwa_archive, [("playroom-pwa/" + name, content) for name, content in pwa_items])

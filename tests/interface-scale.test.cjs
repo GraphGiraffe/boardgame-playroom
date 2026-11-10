@@ -13,26 +13,30 @@ async function fixture(run,{width=390,height=844,settings={}}={}){
  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
  try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await context.close();await browser.close();await server.close();}
 }
-async function change(page,id,value){await page.locator('#'+id).evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));},value);}
-test('settings sliders keep all ticks, clamp unavailable scale, preserve nodes and restore preferences',async()=>fixture(async page=>{
- await page.locator('[data-command=settings]:visible').first().click();
- assert.equal(await page.locator('#setting-sound').count(),0);
- for(const [id,count]of [['setting-scale',11],['setting-speed',4],['setting-volume',4]]){assert.equal(await page.locator('#'+id).getAttribute('type'),'range');assert.equal(await page.locator('#'+id).locator('..').locator('[data-range-stop]').count(),count);}
- assert.equal(await page.locator('#setting-scale').inputValue(),'100');assert.equal(await page.locator('#setting-scale').getAttribute('max'),'150');assert.equal(await page.locator('#setting-scale').getAttribute('data-allowed-max'),'120');
- assert(await page.locator('#setting-scale').evaluate(e=>e.closest('.settings-range').compareDocumentPosition(document.querySelector('.settings-grid'))&Node.DOCUMENT_POSITION_PRECEDING));
- await page.evaluate(()=>window.scaleInput=document.getElementById('setting-scale'));
- await change(page,'setting-scale',150);assert.equal(await page.locator('#setting-scale').inputValue(),'120');assert.equal(await page.locator('#setting-scale-value').textContent(),'120%');assert(await page.evaluate(()=>scaleInput===document.getElementById('setting-scale')));
- await page.locator('#setting-scale').focus();await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#setting-scale').inputValue(),'120');
- await page.keyboard.press('End');assert.equal(await page.locator('#setting-scale').inputValue(),'120');const rail=await page.locator('#setting-scale').boundingBox();await page.mouse.click(rail.x+rail.width-3,rail.y+rail.height/2);assert.equal(await page.locator('#setting-scale').inputValue(),'120','grey positions cannot be clicked');
- const dots=await page.locator('#setting-scale').locator('..').locator('[data-range-stop]').evaluateAll(nodes=>nodes.map(n=>!n.hidden));assert.equal(dots.length,11);assert(dots.every(Boolean));
- await change(page,'setting-volume',2);assert.equal(await page.locator('#setting-volume-value').textContent(),'Средне');assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound));
- await change(page,'setting-volume',0);assert.equal(await page.locator('#setting-volume-value').textContent(),'Без звука');assert.equal(await page.locator('#setting-volume').isDisabled(),false);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound),false);
- await change(page,'setting-speed',1);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).animationSpeed),'fast');
- await page.locator('#setting-scale').locator('..').locator('..').scrollIntoViewIfNeeded();await page.locator('#setting-scale').evaluate(e=>e.blur());await page.screenshot({path:path.join(shots,'settings-390-120.png')});
- await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.locator('html').getAttribute('data-interface-scale'),'120');
- await page.setViewportSize({width:320,height:640});await page.waitForFunction(()=>PlayroomInterfaceScale.applied===100);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.requested),120);
- await page.setViewportSize({width:844,height:390});await page.waitForFunction(()=>PlayroomInterfaceScale.applied===110);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.requested),120);await page.locator('[data-command=settings]:visible').first().click();await page.locator('#setting-scale').locator('..').locator('..').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(shots,'settings-844-110.png')});
-}));
+async function change(page,id,value){if(id==='setting-scale'){await page.evaluate(value=>PlayroomInterfaceScale.set(value),value);return;}await page.locator('#'+id).evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));},value);}
+test('adaptive mobile settings remove manual geometry and label connection choices',async()=>fixture(async page=>{
+ for(const [width,height]of [[360,800],[390,844],[412,915],[430,932],[844,390]]){
+  await page.setViewportSize({width,height});
+  await page.locator('[data-command=settings]:visible').first().click();
+  assert.equal(await page.locator('#setting-scale,#setting-three-opponents').count(),0);
+  assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),100);
+  const bounds=await page.locator('#modal-root .modal').evaluate(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:document.documentElement.clientWidth};});
+  assert(bounds.left>=0&&bounds.right<=bounds.width+1,JSON.stringify(bounds));
+  await page.screenshot({path:path.join(shots,'adaptive-settings-'+width+'.png')});
+  await page.locator('.modal-head [data-command=close-modal]').click();
+ }
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('[data-start=domino]').click();
+ assert.deepEqual(await page.locator('.room-mode-label').allTextContents(),['Онлайн','На устройстве','Рядом']);
+ await page.screenshot({path:path.join(shots,'adaptive-lobby.png')});
+ await page.locator('.room-setup-modal [data-command=close-modal]').click();
+ await page.locator('#network-join-button').click();
+ assert.equal(await page.locator('[data-lobby-online=manual]').isVisible(),false);
+ await page.locator('.connection-alternative summary').click();
+ assert.equal(await page.locator('[data-lobby-online=manual]').isVisible(),true);
+ await page.screenshot({path:path.join(shots,'adaptive-join.png')});
+ await page.locator('[data-lobby-online=manual]').click();await page.locator('#net-client-offer').waitFor();
+},{settings:{interfaceScale:150,splitThreeOpponents:true}}));
 test('all packs keep square boards and contained slots at every available scale position', {timeout:90000},async()=>fixture(async page=>{
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768],[1440,900]]){
   await page.setViewportSize({width,height});
@@ -85,6 +89,12 @@ test('standard size catalogue has discrete monotonic families and valid componen
   let previous=0;for(const scale of Sizes.catalogue.scaleStops){const sizes=Sizes.resolve(scale,width,height);assert(Sizes.catalogue.families.card.includes(sizes.card));assert(sizes.card>=previous);assert(sizes.control>=32);previous=sizes.card;}
  }
  assert.equal(Sizes.resolve(100,390,844).card,50);assert.equal(Sizes.resolve(50,390,844).card,24);
+ const properties=new Map(),doc={documentElement:{style:{setProperty:(name,value)=>properties.set(name,value)},dataset:{}}};
+ Sizes.apply(doc,100,390,844);
+ assert.equal(properties.get('--size-type-16_0'),'1rem','text follows the browser font preference');
+ assert.equal(properties.get('--size-type-20_0'),'1.25rem');
+ assert.equal(properties.get('--size-card'),'50px','art and input coordinates retain physical CSS pixels');
+ for(const binding of Sizes.catalogue.bindings)assert(properties.get(binding.name).endsWith(binding.family==='type'?'rem':'px'),binding.name);
 });
 
 test('standard size roles match across packs and shrink without compensating root zoom',{timeout:60000},async()=>fixture(async page=>{
@@ -162,3 +172,34 @@ test('release0.18.3 defines the100% menu and settings baseline independently of 
  }
  await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>PlayroomInterfaceScale.set(150));assert.equal(await page.locator('html').getAttribute('data-ui-compact'),'false');await check('wide lobby',['.lobby-header','.lobby-card','.lobby-primary']);assert.deepEqual(failures,[]);
  },{width:390,height:844}));
+
+test('Chromium native font preference scales profile fields skins and canonical composer',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),samples=[],out=path.resolve(root,'../tmp_files/ux-021/web-dev-audit');
+ try{for(const size of [16,32]){
+  const browser=await require('playwright-core').chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking','--blink-settings=defaultFontSize='+size]});
+  try{
+   const context=await browser.newContext({viewport:{width:390,height:740},reducedMotion:'reduce'}),network=await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));
+   await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'font-consumer-audit',name:'Игрок'})));
+   const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(server.url);
+   await page.locator('[data-hub-page=profile]').click();const profile=await page.locator('.profile021-person strong').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.locator('[data-profile-account]').click();const input=await page.locator('[data-account-form=login] input[type=email]').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>PlayroomAppearanceUI.show());await page.locator('[data-appearance-tab=components]').click();
+   const skin=await page.locator('.appearance-skin-label>strong').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.locator('.appearance-gallery-modal .modal-head [data-command=close-modal]').click();
+   await page.evaluate(()=>PlayroomAppBridge.openModal(PlayroomGameScreen.modalHead('Типографика')+PlayroomChatComponents.composer('chat'),'chat-modal'));
+   const editor=await page.locator('[data-chat-editor]').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>PlayroomCloudSavesUI.showData());
+   const dataSummary=await page.locator('.data-summary>strong').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   const dataNote=await page.locator('.data-note').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.locator('[data-command=packs]').click();
+   const library=await page.locator('.packs-v021-summary strong,.packs-v021-empty').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>{window.PlayroomPWA={...PlayroomPWA,updateInfo:{version:'font-audit-update',releases:[],download:{phase:'available'}}};dispatchEvent(new Event('playroom-update-ready'));});
+   const notification=await page.locator('#toast.show').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   samples.push({nativeDefaultFont:size,profile,input,skin,editor,dataSummary,dataNote,library,notification});
+   assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
+  }finally{await browser.close();}
+ }
+ fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'font-consumer-runtime-report.json'),JSON.stringify({samples,scope:'Real profile/account/appearance/Data/Pack library UI and canonical composer in owned modal; not a live chat flow'},null,2));
+ for(const key of ['profile','input','skin','editor','dataSummary','dataNote','library','notification'])assert(Math.abs(samples[1][key]/samples[0][key]-2)<.01,key+' follows the native user font preference, not a fixed px override');
+ }finally{await server.close();}
+});

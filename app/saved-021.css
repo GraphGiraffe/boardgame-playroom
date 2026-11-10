@@ -1,0 +1,31 @@
+/* Informative saved cards never slide or expand when their actions open. */
+#app .saved021-card{display:block;min-width:0;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised,var(--paper));box-shadow:none;overflow:hidden;touch-action:pan-y}
+.saved021-front{display:flex;align-items:center;gap:8px;min-width:0;padding:10px 10px 4px}
+.saved021-copy{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;overflow-wrap:anywhere}
+#app .saved021-title{display:flex;align-items:center;gap:7px;min-width:0;margin:0;font-size:16px;line-height:1.3;font-weight:650;overflow-wrap:anywhere}
+.saved021-state{display:inline-flex;align-items:center;flex:none;color:var(--green)}
+.saved021-state .saved-state-icon,.saved021-state .saved-state-icon>svg,.saved021-state>svg{display:inline-flex;width:16px;height:16px}
+.saved021-summary{display:block;margin:0;font-size:12px;line-height:1.4;color:var(--muted);font-weight:400;overflow-wrap:anywhere}
+.saved021-context{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:4px 8px;padding:0 10px 10px;min-width:0}
+.saved021-context>.saved021-summary{grid-column:2;grid-row:1;text-align:right}
+.saved021-context>.saved021-room{grid-column:1;grid-row:1;align-self:start}
+.saved021-context:not(:has(>.saved021-room))>.saved021-summary{grid-column:1/-1;text-align:left}
+.saved021-context>.resume-participants,.saved021-context>.saved021-progress,.saved021-context>.saved021-details{grid-column:1/-1}
+.saved021-room{display:block;margin:0;font-size:14px;line-height:1.4;font-weight:600;overflow-wrap:anywhere}
+#app .saved021-context>.resume-participants{display:flex;flex-wrap:wrap;gap:4px 12px;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
+#app .saved021-context .resume-person{display:flex;align-items:center;gap:6px;min-width:0;max-width:100%;padding:0;border:0;background:transparent;box-shadow:none}
+.saved021-context .resume-person .player-avatar-wrap,.saved021-context .resume-person .avatar{width:28px;height:28px;min-width:28px}
+.saved021-context .resume-person .avatar{font-size:13px;border-radius:8px}
+.saved021-context .resume-person-name{min-width:0;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+.saved021-progress{display:block;font-size:12px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.saved021-details p{margin:0;font-size:11px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+:where(:root:not([data-input-modality="touch"])) .saved021-card:has(:focus-visible){outline:2px solid var(--ui-focus);outline-offset:2px}
+.saved-actions-title{margin:0 0 10px;font-weight:600;overflow-wrap:anywhere}
+.saved-actions-menu>.saved021-command{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;max-width:none;min-height:48px;height:auto;margin:0;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font:inherit;font-size:15px;line-height:1.4;text-align:left;white-space:normal}
+.saved-actions-menu>.saved021-command svg{width:20px;height:20px;flex:none}
+.saved-actions-menu>.saved021-command.ui-action-danger{color:var(--ui-danger)}
+
+.saved021-summary>.transport-badge{margin-right:5px}
+
+#app .saved021-card[role="button"]{cursor:pointer}
+:where(:root:not([data-input-modality="touch"])) #app .saved021-card[role="button"]:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}

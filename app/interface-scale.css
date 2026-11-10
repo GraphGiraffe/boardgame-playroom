@@ -1,9 +1,12 @@
+/* Paint to every available edge; only content reserves the cutout/system insets. */
+:root{--app-safe-top:max(env(safe-area-inset-top,0px),env(safe-area-max-inset-top,0px));--app-safe-right:max(env(safe-area-inset-right,0px),env(safe-area-max-inset-right,0px));--app-safe-bottom:max(env(safe-area-inset-bottom,0px),env(safe-area-max-inset-bottom,0px));--app-safe-left:max(env(safe-area-inset-left,0px),env(safe-area-max-inset-left,0px))}
+html,html::backdrop{background:var(--paper,#f3f0e7)}
 :root{--ui-viewport-height:calc(100dvh / var(--ui-interface-scale,1));--ui-viewport-width:calc(100vw / var(--ui-interface-scale,1));--interface-viewport-height:calc(100dvh / var(--interface-scale,1));--interface-viewport-width:calc(100vw / var(--interface-scale,1))}
 /* Layout roots zoom; drag, motion and tooltip layers keep screen coordinates. */
-#app .app-shell,#modal-root,#avatar-picker-root,#toast,.appearance-dialog{zoom:var(--ui-interface-scale,1)}
-#app .table-shell:has(.table-header){height:var(--interface-viewport-height,100dvh)}
+#app .app-shell,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,#toast,.appearance-dialog{zoom:var(--ui-interface-scale,1)}
+
 #app .sidebar{height:var(--ui-viewport-height,100dvh)}
-#modal-root .modal,#modal-root .avatar-picker-modal{max-height:calc(var(--ui-viewport-height,100dvh) - 32px)}
+:is(#modal-root,[data-ui-surface-exit]) .modal,:is(#modal-root,[data-ui-surface-exit]) .avatar-picker-modal{max-height:calc(var(--ui-viewport-height,100dvh) - 32px)}
 .appearance-dialog{max-height:calc(var(--ui-viewport-height,100dvh) - 24px);max-width:calc(var(--ui-viewport-width,100vw) - 24px)}
 #app .table-shell .history-panel{max-height:calc(var(--ui-viewport-height,100dvh) * .25)}
 .settings-range{display:block;min-width:0;margin-block:12px;color:var(--ink);font-size:12px;font-weight:700}
@@ -26,27 +29,24 @@
 /* Narrow participant columns keep identity above the cropped hand. */
 #app .app-game-layout .player-panel.opponent-hand[data-compact-hand="true"]{flex-direction:column}
 #app .app-game-layout .opponent-hand[data-compact-hand="true"] :is(.player-info,.player-hand){flex:none;width:100%;min-width:0}
-#app .app-game-layout[data-layout-mode="phone-landscape"][data-dense-roster="false"][data-opponent-hands="true"] .opponent-hand[data-compact-hand="false"] .player-info{flex:1 1 140px;width:auto;min-width:140px}
 
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-info{gap:3px;padding:3px}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] :is(.player-avatar-wrap,.avatar){width:20px;height:20px;min-width:20px}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading{gap:2px}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .participant-role svg{width:10px;height:10px}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading strong{font-size:10px}
-#app .app-game-layout[data-dense-roster="true"] .opponent-hand[data-compact-identity="true"] .player-info{padding:0;gap:2px}
 
-/* A range's visible control is its rounded thumb, not its transparent hit area. */
-:is(#app,#modal-root) .settings-range input[type=range]:focus-visible{outline:none}
-.settings-range input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
-.settings-range input[type=range]:focus-visible::-moz-range-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
+
+
+
+
+/* A range's visible control is its rounded thumb, :where(:root:not([data-input-modality="touch"])) not its transparent hit area. */
+:is(#app,:is(#modal-root,[data-ui-surface-exit])) .settings-range input[type=range]:focus-visible{outline:none}
+:where(:root:not([data-input-modality="touch"])) .settings-range input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
+:where(:root:not([data-input-modality="touch"])) .settings-range input[type=range]:focus-visible::-moz-range-thumb{box-shadow:0 0 0 2px var(--ui-focus),0 2px 0 var(--line)}
 
 /* One frame for full editing/list surfaces; compact confirmations keep content height. */
-#modal-root .modal-backdrop:has(>.modal[data-dialog-size="large"]){padding:var(--ui-dialog-viewport-inset,20px)}
-#modal-root .modal[data-dialog-size="large"]{
+:is(#modal-root,[data-ui-surface-exit]) .modal-backdrop:has(>.modal[data-dialog-size="large"]:not([data-ui-surface])){padding:var(--ui-dialog-viewport-inset,20px)}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-dialog-size="large"]:not([data-ui-surface]){
  width:min(100%,var(--ui-dialog-large-max-width,680px))!important;
  max-width:var(--ui-dialog-large-max-width,680px)!important;
  height:calc(var(--ui-viewport-height,100dvh) - 2 * var(--ui-dialog-viewport-inset,20px));
  max-height:calc(var(--ui-viewport-height,100dvh) - 2 * var(--ui-dialog-viewport-inset,20px));
  padding:var(--ui-dialog-padding,14px)!important;
 }
-#modal-root .modal[data-dialog-size="large"]>.modal-body{flex:1;min-height:0}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-dialog-size="large"]:not([data-ui-surface])>.modal-body{flex:1;min-height:0}

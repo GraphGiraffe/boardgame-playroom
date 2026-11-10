@@ -126,6 +126,34 @@ $$;
 revoke all on function public.playroom_invitation_state(uuid,uuid) from public,anon,authenticated;
 
 -- Counts use server read cursors, including chats not cached on this device.
+-- Replies store references, never client-supplied quoted text. Reactions are attached state.
+alter table public.playroom_messages add column if not exists reply_to bigint references public.playroom_messages(id) on delete set null;
+alter table public.playroom_group_messages add column if not exists reply_to bigint references public.playroom_group_messages(id) on delete set null;
+create table if not exists public.playroom_message_reactions (
+ message_id bigint not null references public.playroom_messages(id) on delete cascade,
+ user_id uuid not null references auth.users(id) on delete cascade,
+ emoji text not null check(emoji in (':hi:',':thanks:',':nice:',':think:',':hehe:',':wow:',':time:',':challenge:',':censor:')), primary key(message_id,user_id,emoji)
+);
+alter table public.playroom_message_reactions enable row level security;
+revoke all on public.playroom_message_reactions from public,anon,authenticated;
+create table if not exists public.playroom_group_message_reactions (
+ message_id bigint not null references public.playroom_group_messages(id) on delete cascade,
+ user_id uuid not null references auth.users(id) on delete cascade,
+ emoji text not null check(emoji in (':hi:',':thanks:',':nice:',':think:',':hehe:',':wow:',':time:',':challenge:',':censor:')), primary key(message_id,user_id,emoji)
+);
+alter table public.playroom_group_message_reactions enable row level security;
+revoke all on public.playroom_group_message_reactions from public,anon,authenticated;
+create or replace function public.playroom_message_extras(message_id bigint) returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+ select coalesce((select jsonb_build_object('reply',case when m.reply_to is null then null else coalesce((select jsonb_build_object('id',q.id::text,'nickname',coalesce((select nickname from public.playroom_profiles where id=q.sender),'Игрок'),'body',left(q.body,160)) from public.playroom_messages q where q.id=m.reply_to and least(q.sender,q.recipient)=least(m.sender,m.recipient) and greatest(q.sender,q.recipient)=greatest(m.sender,m.recipient)),jsonb_build_object('unavailable',true)) end,
+ 'reactions',coalesce((select jsonb_agg(jsonb_build_object('emoji',e.emoji,'count',e.total,'mine',e.mine) order by e.emoji) from(select r.emoji,count(*) total,bool_or(r.user_id=auth.uid()) mine from public.playroom_message_reactions r where r.message_id=m.id group by r.emoji)e),'[]'::jsonb)) from public.playroom_messages m where m.id=message_id and auth.uid() in(m.sender,m.recipient)),'{}'::jsonb);
+$$;
+revoke all on function public.playroom_message_extras(bigint) from public,anon,authenticated;
+create or replace function public.playroom_group_message_extras(message_id bigint) returns jsonb language sql stable security definer set search_path=pg_catalog,public as $$
+ select coalesce((select jsonb_build_object('reply',case when m.reply_to is null then null else coalesce((select jsonb_build_object('id',q.id::text,'nickname',coalesce((select nickname from public.playroom_profiles where id=q.sender),'Игрок'),'body',left(q.body,160)) from public.playroom_group_messages q where q.id=m.reply_to and q.group_id=m.group_id and q.id>member.history_after),jsonb_build_object('unavailable',true)) end,
+ 'reactions',coalesce((select jsonb_agg(jsonb_build_object('emoji',e.emoji,'count',e.total,'mine',e.mine) order by e.emoji) from(select r.emoji,count(*) total,bool_or(r.user_id=auth.uid()) mine from public.playroom_group_message_reactions r where r.message_id=m.id group by r.emoji)e),'[]'::jsonb)) from public.playroom_group_messages m join public.playroom_group_members member on member.group_id=m.group_id and member.user_id=auth.uid() and member.left_at is null where m.id=message_id and m.id>member.history_after),'{}'::jsonb);
+$$;
+revoke all on function public.playroom_group_message_extras(bigint) from public,anon,authenticated;
+
 create or replace function public.playroom_unread_rpc() returns jsonb
 language sql stable security definer set search_path=pg_catalog,public as $$
  select jsonb_build_object('chats',coalesce((select jsonb_agg(row) from (
@@ -142,7 +170,11 @@ language sql stable security definer set search_path=pg_catalog,public as $$
   from public.playroom_groups g join public.playroom_group_members mem on mem.group_id=g.id and mem.user_id=auth.uid() and mem.left_at is null
   left join public.playroom_group_messages m on m.group_id=g.id and m.id>mem.history_after left join public.playroom_room_invites ri on ri.group_message_id=m.id and ri.target_id=auth.uid()
   where g.closed_at is null group by g.id,mem.read_through
- ) q),'[]'::jsonb));
+ ) q),'[]'::jsonb),'friends',coalesce((select jsonb_agg(row) from (
+  select jsonb_build_object('id',f.id,'userId',p.id,'nickname',p.nickname,'avatar',p.avatar,'username',p.username,'accepted',f.accepted,'incoming',f.recipient=auth.uid(),'requested',not f.accepted) row
+  from public.playroom_friendships f join public.playroom_profiles p on p.id=case when f.sender=auth.uid() then f.recipient else f.sender end
+  where f.sender=auth.uid() or f.recipient=auth.uid() order by f.created_at desc,f.id limit 200
+ ) friends),'[]'::jsonb));
 $$;
 revoke all on function public.playroom_unread_rpc() from public,anon,authenticated;
 
@@ -247,31 +279,94 @@ begin
   through_id:=(p_data->>'through')::bigint;
   if not exists(select 1 from public.playroom_group_messages where id=through_id and group_id=gid and sender<>me and id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me)) then raise exception 'social:invalid'; end if;
   update public.playroom_group_members set read_through=greatest(read_through,through_id) where group_id=gid and user_id=me;return '{}'::jsonb;
+ elsif p_action='react' then
+  if jsonb_typeof(p_data->'enabled') is distinct from 'boolean' or coalesce(p_data->>'emoji','') not in (':hi:',':thanks:',':nice:',':think:',':hehe:',':wow:',':time:',':challenge:',':censor:') or not exists(select 1 from public.playroom_group_messages where id=(p_data->>'targetId')::bigint and group_id=gid and kind='message' and id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me)) then raise exception 'social:forbidden'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(me::text,3));
+  if (p_data->>'enabled')::boolean then insert into public.playroom_group_message_reactions(message_id,user_id,emoji) values((p_data->>'targetId')::bigint,me,p_data->>'emoji') on conflict do nothing;
+  else delete from public.playroom_group_message_reactions where message_id=(p_data->>'targetId')::bigint and user_id=me and emoji=p_data->>'emoji';end if;
  elsif p_action='send' then
+  if p_data->>'replyToId' is not null and not exists(select 1 from public.playroom_group_messages where id=(p_data->>'replyToId')::bigint and group_id=gid and kind='message' and id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me)) then raise exception 'social:forbidden';end if;
   body_text:=trim(p_data->>'body');
   if body_text is null or char_length(body_text) not between 1 and 2000 or p_data->>'id' is null then raise exception 'social:invalid'; end if;
   perform pg_advisory_xact_lock(hashtextextended(me::text,3));
-  if exists(select 1 from public.playroom_group_messages where sender=me and nonce=(p_data->>'id')::uuid and (group_id<>gid or body<>body_text or kind<>'message')) then raise exception 'social:invalid'; end if;
+  if exists(select 1 from public.playroom_group_messages where sender=me and nonce=(p_data->>'id')::uuid and (group_id<>gid or body<>body_text or kind<>'message' or reply_to is distinct from (p_data->>'replyToId')::bigint)) then raise exception 'social:invalid'; end if;
   if not exists(select 1 from public.playroom_group_messages where sender=me and nonce=(p_data->>'id')::uuid) then
    if (select count(*) from public.playroom_group_messages where sender=me and created_at>now()-interval '1 minute')>=30 then raise exception 'social:rate-limit'; end if;
-   insert into public.playroom_group_messages(group_id,sender,nonce,body) values(gid,me,(p_data->>'id')::uuid,body_text);
+   insert into public.playroom_group_messages(group_id,sender,nonce,body,reply_to) values(gid,me,(p_data->>'id')::uuid,body_text,(p_data->>'replyToId')::bigint);
   end if;
  elsif p_action<>'read' then raise exception 'social:invalid';
  end if;
- select coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'seq',m.id,'kind',m.kind,'at',m.created_at,'authorId',m.sender,'nickname',p.nickname,'avatar',p.avatar,'mine',m.sender=me,'read',exists(select 1 from public.playroom_group_members r where r.group_id=gid and r.user_id<>m.sender and r.read_through>=m.id))||case when p_data->>'after' is null or m.id>(p_data->>'after')::bigint then jsonb_build_object('body',m.body) else '{}'::jsonb end||case when m.kind='invitation' then jsonb_build_object('roomId',m.room_id,'roomOwnerId',room_view.owner_id,'roomAvailable',not room_view.closed and room_view.host_until>now(),'roomName',m.body,'gameName',m.game_name,'inviteId',ri.id,'shared',true,'state',case when m.sender=me then case when room_view.id is null or room_view.closed then 'expired' when room_view.host_until<=now() then 'offline' else 'active' end else public.playroom_invitation_state(ri.id,me) end) else '{}'::jsonb end order by m.id),'[]'::jsonb) into rows_json
+ select coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'seq',m.id::text,'kind',m.kind,'at',m.created_at,'authorId',m.sender,'nickname',p.nickname,'avatar',p.avatar,'mine',m.sender=me,'read',exists(select 1 from public.playroom_group_members r where r.group_id=gid and r.user_id<>m.sender and r.read_through>=m.id))||public.playroom_group_message_extras(m.id)||case when p_data->>'after' is null or m.id>(p_data->>'after')::bigint then jsonb_build_object('body',m.body) else '{}'::jsonb end||case when m.kind='invitation' then jsonb_build_object('roomId',m.room_id,'roomOwnerId',room_view.owner_id,'roomAvailable',not room_view.closed and room_view.host_until>now(),'roomName',m.body,'gameName',m.game_name,'inviteId',ri.id,'shared',true,'state',case when m.sender=me then case when room_view.id is null or room_view.closed then 'expired' when room_view.host_until<=now() then 'offline' else 'active' end else public.playroom_invitation_state(ri.id,me) end) else '{}'::jsonb end order by m.id),'[]'::jsonb) into rows_json
  from (select * from (select * from public.playroom_group_messages where group_id=gid and id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me) and (p_data->>'before' is null or id<(p_data->>'before')::bigint) and (p_data->>'after' is null or id>(p_data->>'after')::bigint)
  order by case when p_data->>'after' is not null then id end asc,id desc limit 80) fresh
  union select msg.* from public.playroom_group_messages msg join public.playroom_cloud_rooms r on r.id=msg.room_id where msg.group_id=gid and msg.kind='invitation' and not r.closed and r.host_until>now() and p_data->>'after' is null and p_data->>'before' is null and msg.id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me)
  union select * from public.playroom_group_messages where group_id=gid and id>(select history_after from public.playroom_group_members where group_id=gid and user_id=me) and p_data->>'after' is not null and id<=(p_data->>'after')::bigint and id::text in(select jsonb_array_elements_text(coalesce(p_data->'known','[]'::jsonb)))) m join public.playroom_profiles p on p.id=m.sender left join public.playroom_room_invites ri on ri.group_message_id=m.id and ri.target_id=me left join public.playroom_cloud_rooms room_view on room_view.id=m.room_id;
- return jsonb_build_object('messages',rows_json,'older',jsonb_array_length(rows_json)>=80,'through',(select read_through::text from public.playroom_group_members where group_id=gid and user_id=me),'team',null,'roomId',gid,'historyAfter',(select history_after::text from public.playroom_group_members where group_id=gid and user_id=me));
+ return jsonb_build_object('features',jsonb_build_object('replies',true,'reactions',true,'search',true),'messages',rows_json,'older',jsonb_array_length(rows_json)>=80,'through',(select read_through::text from public.playroom_group_members where group_id=gid and user_id=me),'team',null,'roomId',gid,'historyAfter',(select history_after::text from public.playroom_group_members where group_id=gid and user_id=me));
 end;$$;
 revoke all on function public.playroom_groups_rpc(text,jsonb) from public,anon,authenticated;
+
+-- Internal conversation search implementation; included in owner-applied upgrades.
+-- One fixed-window abuse row per account; no query text, peer IDs or history cursors.
+-- Explicit Unicode casing remains correct even when the database default is C.
+do $$begin
+ if current_setting('server_encoding')<>'UTF8' or not exists(select 1 from pg_catalog.pg_collation where collprovider='i') then
+  raise exception 'PlayRoom chat search requires UTF8 and PostgreSQL ICU support; run server/chat-search-preflight.sql before applying this upgrade';
+ end if;
+end$$;
+create collation if not exists public.playroom_search_unicode (provider=icu,locale='und',deterministic=true);
+create table if not exists public.playroom_search_attempts (
+ user_id uuid primary key references auth.users(id) on delete cascade,
+ window_start timestamptz not null default now(), attempts integer not null default 0
+);
+alter table public.playroom_search_attempts enable row level security;
+revoke all on public.playroom_search_attempts from public,anon,authenticated;
+create or replace function public.playroom_conversation_search(p_action text,p_data jsonb)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+ me uuid:=auth.uid(); target_user uuid; gid uuid; history_start bigint; boundary bigint;
+ query_text text; tries integer; hits jsonb;
+begin
+ if me is null or coalesce((auth.jwt()->>'is_anonymous')::boolean,false) or not exists(select 1 from public.playroom_profiles where id=me) then raise exception 'social:account-required'; end if;
+ if p_action not in ('chat-search','group-search') or jsonb_typeof(p_data->'query') is distinct from 'string' then raise exception 'social:invalid'; end if;
+ query_text:=btrim(p_data->>'query');
+ if char_length(query_text) not between 2 and 200 then raise exception 'social:invalid'; end if;
+ if p_data ? 'before' then
+  if coalesce(p_data->>'before','') !~ '^[0-9]{1,19}$' or (p_data->>'before')::numeric not between 1 and 9223372036854775807 then raise exception 'social:invalid'; end if;
+  boundary:=(p_data->>'before')::bigint;
+ end if;
+ if p_action='chat-search' then
+  target_user:=(p_data->>'userId')::uuid;
+  if target_user is null or target_user=me or not exists(select 1 from public.playroom_profiles where id=target_user) then raise exception 'social:forbidden'; end if;
+ else
+  gid:=(p_data->>'groupId')::uuid;
+  select member.history_after into history_start from public.playroom_group_members member join public.playroom_groups grp on grp.id=member.group_id
+   where member.group_id=gid and member.user_id=me and member.left_at is null and grp.closed_at is null;
+  if not found then raise exception 'social:forbidden'; end if;
+ end if;
+ insert into public.playroom_search_attempts(user_id,attempts) values(me,1) on conflict(user_id) do update set
+  attempts=case when public.playroom_search_attempts.window_start<now()-interval '1 minute' then 1 else least(public.playroom_search_attempts.attempts,30)+1 end,
+  window_start=case when public.playroom_search_attempts.window_start<now()-interval '1 minute' then now() else public.playroom_search_attempts.window_start end returning attempts into tries;
+ -- A typed result persists the abuse count, including through aggregate RPC sections.
+ if tries>30 then return jsonb_build_object('error','rate-limit'); end if;
+ if p_action='chat-search' then
+  select coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'at',m.created_at,'mine',m.sender=me,'kind','message','body',m.body,'authorId',m.sender,'nickname',p.nickname) order by m.id desc),'[]'::jsonb) into hits
+   from (select id,created_at,sender,body from public.playroom_messages where least(sender,recipient)=least(me,target_user) and greatest(sender,recipient)=greatest(me,target_user)
+    and kind='message' and (boundary is null or id<boundary) and strpos(lower(body collate public.playroom_search_unicode),lower(query_text collate public.playroom_search_unicode))>0 order by id desc limit 41) m join public.playroom_profiles p on p.id=m.sender;
+ else
+  select coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'at',m.created_at,'mine',m.sender=me,'kind','message','body',m.body,'authorId',m.sender,'nickname',p.nickname) order by m.id desc),'[]'::jsonb) into hits
+   from (select id,created_at,sender,body from public.playroom_group_messages where group_id=gid and id>(select member.history_after from public.playroom_group_members member join public.playroom_groups grp on grp.id=member.group_id where member.group_id=gid and member.user_id=me and member.left_at is null and grp.closed_at is null)
+    and kind='message' and (boundary is null or id<boundary) and strpos(lower(body collate public.playroom_search_unicode),lower(query_text collate public.playroom_search_unicode))>0 order by id desc limit 41) m join public.playroom_profiles p on p.id=m.sender;
+ end if;
+ return jsonb_build_object('messages',case when jsonb_array_length(hits)>40 then hits-40 else hits end,
+  'hasMore',jsonb_array_length(hits)>40,'nextBefore',case when jsonb_array_length(hits)>40 then hits->39->>'id' else null end);
+end;$$;
+revoke all on function public.playroom_conversation_search(text,jsonb) from public,anon,authenticated;
 
 create or replace function public.playroom_online(p_action text,p_data jsonb default '{}'::jsonb)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$
 declare
  me uuid:=auth.uid(); guest boolean:=coalesce((auth.jwt()->>'is_anonymous')::boolean,false);
- rid uuid:=(p_data->>'roomId')::uuid;
+ rid uuid:=case when p_action='room-preview' then null else (p_data->>'roomId')::uuid end;
  r public.playroom_cloud_rooms%rowtype; code text; alphabet text:='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; entropy bytea;
  i integer; tries integer; nick text; payload jsonb; target uuid; invitation uuid; manager boolean; after_id bigint;
 begin
@@ -289,6 +384,7 @@ begin
   if guest then raise exception 'social:account-required'; end if;
   return public.playroom_unread_rpc()||case when rid is null then '{}'::jsonb else jsonb_build_object('roomUnavailable',not exists(select 1 from public.playroom_cloud_rooms q join public.playroom_room_members m on m.room_id=q.id and m.user_id=me where q.id=rid and not q.closed)) end;
  end if;
+ if p_action in ('chat-search','group-search') then return public.playroom_conversation_search(p_action,p_data); end if;
  if left(p_action,6)='group-' then return public.playroom_groups_rpc(substr(p_action,7),p_data); end if;
  if p_action='read-messages' then
   target:=(p_data->>'userId')::uuid;
@@ -324,21 +420,27 @@ begin
     'game',case when f.accepted and p.last_seen>now()-interval '75 seconds' then p.activity_game else null end,'online',coalesce(f.accepted and p.last_seen>now()-interval '75 seconds',false)) order by c.at desc,p.id)
     from (select case when sender=me then recipient else sender end other,max(created_at) at from public.playroom_messages where sender=me or recipient=me group by 1) c
     join public.playroom_profiles p on p.id=c.other left join public.playroom_friendships f on (f.sender=me and f.recipient=p.id) or (f.recipient=me and f.sender=p.id)),'[]'::jsonb));
- elsif p_action in ('chat','send-message') then
+ elsif p_action in ('chat','send-message','react-message') then
   target:=(p_data->>'userId')::uuid;
   if guest or target is null or target=me or not exists(select 1 from public.playroom_profiles where id=me) or not exists(select 1 from public.playroom_profiles where id=target) then raise exception 'social:forbidden'; end if;
-  if p_action='send-message' then
+  if p_action='react-message' then
+   if jsonb_typeof(p_data->'enabled') is distinct from 'boolean' or coalesce(p_data->>'emoji','') not in (':hi:',':thanks:',':nice:',':think:',':hehe:',':wow:',':time:',':challenge:',':censor:') or not exists(select 1 from public.playroom_messages where id=(p_data->>'targetId')::bigint and least(sender,recipient)=least(me,target) and greatest(sender,recipient)=greatest(me,target) and kind='message') then raise exception 'social:forbidden';end if;
+   perform pg_advisory_xact_lock(hashtextextended(me::text,0));
+   if (p_data->>'enabled')::boolean then insert into public.playroom_message_reactions(message_id,user_id,emoji) values((p_data->>'targetId')::bigint,me,p_data->>'emoji') on conflict do nothing;
+   else delete from public.playroom_message_reactions where message_id=(p_data->>'targetId')::bigint and user_id=me and emoji=p_data->>'emoji';end if;
+  elsif p_action='send-message' then
+   if p_data->>'replyToId' is not null and not exists(select 1 from public.playroom_messages where id=(p_data->>'replyToId')::bigint and least(sender,recipient)=least(me,target) and greatest(sender,recipient)=greatest(me,target) and kind='message') then raise exception 'social:forbidden';end if;
    nick:=trim(p_data->>'body');
    if nick is null or char_length(nick) not between 1 and 2000 or p_data->>'nonce' is null then raise exception 'social:invalid'; end if;
    -- Serialize per-sender retries/rate checks, without locking other conversations.
    perform pg_advisory_xact_lock(hashtextextended(me::text,0));
-   if exists(select 1 from public.playroom_messages where sender=me and nonce=(p_data->>'nonce')::uuid and (recipient<>target or body<>nick or kind<>'message')) then raise exception 'social:invalid'; end if;
+   if exists(select 1 from public.playroom_messages where sender=me and nonce=(p_data->>'nonce')::uuid and (recipient<>target or body<>nick or kind<>'message' or reply_to is distinct from (p_data->>'replyToId')::bigint)) then raise exception 'social:invalid'; end if;
    if not exists(select 1 from public.playroom_messages where sender=me and nonce=(p_data->>'nonce')::uuid) then
     if (select count(*) from public.playroom_messages where sender=me and kind='message' and created_at>now()-interval '1 minute')>=30 then raise exception 'social:rate-limit'; end if;
-    insert into public.playroom_messages(sender,recipient,nonce,body) values(me,target,(p_data->>'nonce')::uuid,nick);
+    insert into public.playroom_messages(sender,recipient,nonce,body,reply_to) values(me,target,(p_data->>'nonce')::uuid,nick,(p_data->>'replyToId')::bigint);
    end if;
   end if;
-  return jsonb_build_object('messages',coalesce((select jsonb_agg(jsonb_build_object('id',m.id::text,'mine',m.sender=me,'at',m.created_at,'kind',m.kind,'read',exists(select 1 from public.playroom_chat_reads cr where cr.reader=m.recipient and cr.peer=m.sender and cr.through_id>=m.id))||case when p_data->>'after' is null or m.id>(p_data->>'after')::bigint then jsonb_build_object('body',m.body) else '{}'::jsonb end||case when m.kind='invitation' then jsonb_build_object('roomId',inv.room_id,'roomOwnerId',room_view.owner_id,'roomAvailable',not room_view.closed and room_view.host_until>now(),'inviteId',m.invitation_id,'roomName',m.body,'gameName',m.game_name,'state',public.playroom_invitation_state(m.invitation_id,m.recipient)) when m.kind='group-invitation' then jsonb_build_object('inviteId',gi.id,'groupId',gi.group_id,'groupName',gg.name,'state',case when gi.id is null then 'expired' when gi.declined_at is not null then 'declined' when gi.accepted_at is not null then 'joined' when gi.expires_at<=now() then 'expired' else 'active' end) else '{}'::jsonb end order by m.id) from
+  return jsonb_build_object('features',jsonb_build_object('replies',true,'reactions',true,'search',true),'messages',coalesce((select jsonb_agg(jsonb_build_object('id',m.id::text,'mine',m.sender=me,'at',m.created_at,'kind',m.kind,'read',exists(select 1 from public.playroom_chat_reads cr where cr.reader=m.recipient and cr.peer=m.sender and cr.through_id>=m.id))||public.playroom_message_extras(m.id)||case when p_data->>'after' is null or m.id>(p_data->>'after')::bigint then jsonb_build_object('body',m.body) else '{}'::jsonb end||case when m.kind='invitation' then jsonb_build_object('roomId',inv.room_id,'roomOwnerId',room_view.owner_id,'roomAvailable',not room_view.closed and room_view.host_until>now(),'inviteId',m.invitation_id,'roomName',m.body,'gameName',m.game_name,'state',public.playroom_invitation_state(m.invitation_id,m.recipient)) when m.kind='group-invitation' then jsonb_build_object('inviteId',gi.id,'groupId',gi.group_id,'groupName',gg.name,'state',case when gi.id is null then 'expired' when gi.declined_at is not null then 'declined' when gi.accepted_at is not null then 'joined' when gi.expires_at<=now() then 'expired' else 'active' end) else '{}'::jsonb end order by m.id) from
    (select * from (select * from public.playroom_messages where least(sender,recipient)=least(me,target) and greatest(sender,recipient)=greatest(me,target) and (p_data->>'before' is null or id<(p_data->>'before')::bigint) and (p_data->>'after' is null or id>(p_data->>'after')::bigint)
  order by case when p_data->>'after' is not null then id end asc,id desc limit 80) fresh
  union select msg.* from public.playroom_messages msg where least(msg.sender,msg.recipient)=least(me,target) and greatest(msg.sender,msg.recipient)=greatest(me,target) and msg.kind='invitation' and public.playroom_invitation_state(msg.invitation_id,msg.recipient)='active' and p_data->>'after' is null and p_data->>'before' is null
@@ -351,6 +453,34 @@ begin
  elsif p_action='discover' then
   return coalesce((select jsonb_agg(jsonb_build_object('id',q.id,'name',q.name,'visibility',q.visibility,'ownerName',p.nickname,'hasPassword',q.password_enabled,'available',true,'hostUntil',q.host_until)) from
    (select c.* from public.playroom_cloud_rooms c where not c.closed and c.host_until>now() and c.room_code is not null and (c.visibility='all' or c.visibility='friends' and not guest and exists(select 1 from public.playroom_friendships f where f.accepted and ((f.sender=me and f.recipient=c.owner_id) or(f.recipient=me and f.sender=c.owner_id)))) order by c.created_at desc limit 20) q join public.playroom_profiles p on p.id=q.owner_id),'[]'::jsonb);
+ elsif p_action='room-preview' then
+  -- Read-only for room/admission state. Only the existing abuse counter changes.
+  insert into public.playroom_join_attempts(user_id,attempts) values(me,1) on conflict(user_id) do update set
+   attempts=case when public.playroom_join_attempts.window_start<now()-interval '1 minute' then 1 else public.playroom_join_attempts.attempts+1 end,
+   window_start=case when public.playroom_join_attempts.window_start<now()-interval '1 minute' then now() else public.playroom_join_attempts.window_start end returning attempts into tries;
+  if tries>10 then return jsonb_build_object('error','rate-limit'); end if;
+  code:=upper(trim(coalesce(p_data->>'password','')));
+  if (p_data->>'roomCode' is null)=(p_data->>'roomId' is null) or (code<>'' and code !~ '^[A-Z2-9]{6}$') then return jsonb_build_object('error','not-found'); end if;
+  if p_data->>'roomId' is not null then
+   if p_data->>'roomId' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then return jsonb_build_object('error','not-found'); end if;
+   select * into r from public.playroom_cloud_rooms where id=(p_data->>'roomId')::uuid and not closed and host_until>now();
+   if not found then return jsonb_build_object('error','not-found'); end if;
+  else
+   if p_data->>'roomCode' !~ '^\d{4}$' then return jsonb_build_object('error','not-found'); end if;
+   if (select count(*) from public.playroom_cloud_rooms where room_code=p_data->>'roomCode' and not closed and host_until>now())<>1 then return jsonb_build_object('error','not-found'); end if;
+   select * into r from public.playroom_cloud_rooms where room_code=p_data->>'roomCode' and not closed and host_until>now();
+  end if;
+  if r.room_code is null then return jsonb_build_object('error','not-found'); end if;
+  -- Hidden/non-visible protected rooms require the same secret as joining, or
+  -- existing room authority. A four-digit number alone is not that secret.
+  if r.password_enabled and not (
+   r.owner_id=me or exists(select 1 from public.playroom_room_members where room_id=r.id and user_id=me)
+   or r.visibility='all'
+   or r.visibility='friends' and not guest and exists(select 1 from public.playroom_friendships f where f.accepted and ((f.sender=me and f.recipient=r.owner_id) or(f.recipient=me and f.sender=r.owner_id)))
+   or r.room_password is not null and r.room_password=code
+  ) then return jsonb_build_object('error','not-found'); end if;
+  return jsonb_build_object('id',r.id,'roomCode',r.room_code,'name',r.name,'gameName',r.game_name,
+   'ownerName',(select nickname from public.playroom_profiles where id=r.owner_id),'hasPassword',r.password_enabled,'available',true);
  elsif p_action='join-password' then
   -- Count both successful and failed attempts, committing failures as a typed result.
   insert into public.playroom_join_attempts(user_id,attempts) values(me,1) on conflict(user_id) do update set

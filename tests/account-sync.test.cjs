@@ -15,4 +15,14 @@ test('startup push config can be consumed after worker readiness without a secon
  const f=fixture(),job=f.sync.request('playroom_push','config');f.callbacks.shift()();await job;await f.sync.request('playroom_push','config');assert.equal(f.calls.length,1);f.sync.invalidate();const again=f.sync.request('playroom_push','config');f.callbacks.shift()();await again;assert.equal(f.calls.length,2);
 });
 
-test('room discovery and membership refresh share one account request',async()=>{const f=fixture(),a=f.sync.request('playroom_social','list'),b=f.sync.request('playroom_online','discover');f.callbacks.shift()();await Promise.all([a,b]);assert.equal(f.calls.length,1);assert.deepEqual(f.calls[0].data.requests.map(r=>r.action),['list','discover']);});
+test('room discovery and membership refresh share one account request',async()=>{
+ const f=fixture(),a=f.sync.request('playroom_social','list'),b=f.sync.request('playroom_online','discover'),c=f.sync.request('playroom_online','room-preview',{roomCode:'0123'});
+ f.callbacks.shift()();const values=await Promise.all([a,b,c]);assert.equal(f.calls.length,1);assert.deepEqual(f.calls[0].data.requests.map(r=>r.action),['list','discover','room-preview']);assert.deepEqual(values[2].data,{roomCode:'0123'});assert.equal(f.sync.supports('playroom_online','join-password'),false,'preview eligibility never admits a join mutation');
+});
+
+test('conversation search batches bounded requests without caching private results or changing mutation revision',async()=>{
+ const f=fixture(),Community=require('../application/community-service.js'),service=new Community({account:f.account,remote:{call:(action,data,options)=>f.sync.request('playroom_online',action,data,options)}});
+ const first=service.call('chat-search',{userId:'bob',query:'%_literal',before:'9007199254740994'}),group=service.call('group-search',{groupId:'group',query:'hello'});f.callbacks.shift()();const values=await Promise.all([first,group]);assert.equal(f.calls.length,1);assert.deepEqual(values[0].data,{userId:'bob',query:'%_literal',before:'9007199254740994'});assert.equal(service.revision,0);
+ const again=service.call('chat-search',{userId:'bob',query:'%_literal',before:'9007199254740994'});f.callbacks.shift()();await again;assert.equal(f.calls.length,2,'search is not retained in the account read cache');
+ let finish;f.remote.call=()=>new Promise(resolve=>finish=resolve);const pending=service.call('group-search',{groupId:'group',query:'private'}),rejected=assert.rejects(pending,/account-changed/);f.callbacks.shift()();f.account.set('bob');finish({results:[{id:'r4',data:{messages:[{body:'private'}]}}]});await rejected;
+});

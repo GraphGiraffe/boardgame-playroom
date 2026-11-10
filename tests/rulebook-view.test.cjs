@@ -13,3 +13,7 @@ test('rules illustration registry preserves pack scope and removes providers wit
  assert.equal(registry.illustration('example','one'),'<svg>one</svg>');assert.equal(registry.illustration('example','../path'),'');
  registry.remove('example');assert.equal(registry.illustration('example','one'),'');
 });
+test('brief rules format escaped Markdown paragraphs, lists and inline emphasis',()=>{
+ const {renderBrief}=require('../app/rulebook-view.js');const html=renderBrief(['Цель\n**Победите** *сейчас*\n- Карта `7`\n- <img src=x>\n1. Первый ход\n2. Второй ход','Legacy line'],{esc});
+ assert.match(html,/<strong>Победите<\/strong> <em>сейчас<\/em>/);assert.match(html,/<ul><li>Карта <code>7<\/code><\/li><li>&lt;img src=x&gt;<\/li><\/ul><ol>/);assert.match(html,/<p>Legacy line<\/p>/);assert(!html.includes('<img'));
+});

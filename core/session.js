@@ -25,7 +25,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function envelope(session) {
     const {game, options, createdAt, updatedAt, history} = records.get(session);
-    return {format: 'playroom-session', version: 1, game, packVersion:session.packVersion, options, createdAt, updatedAt, states:history.states};
+    return {format: 'playroom-session', version: 1, game, packVersion:session.packVersion, options, createdAt, updatedAt, states:session.states};
   }
   class Session {
     constructor(engine, game, options = {}, runtime = {}) {
@@ -42,12 +42,32 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     get game() { return records.get(this).game; }
     get packVersion() { return this.options.packVersion || this.current.packVersion || '0.1.0'; }
     get options() { return records.get(this).options; }
-    get states() { return records.get(this).history.states; }
+    get states() {
+      const record=records.get(this);
+      if(!record.replayInitial)return record.history.states;
+      if(record.replaySession?.current.move===this.current.move)return record.replaySession.states;
+      const replay=record.replaySession||Session.restore(this.engine,record.replayInitial,{now:()=>this.createdAt});
+      try{
+        // History is lazy, but an active restored match must not replay its
+        // entire prefix again whenever the next committed revision is reviewed.
+        for(let index=replay.current.move;index<record.actions.length;index++){
+          const entry=record.actions[index];for(const {index,...metadata}of entry.players||[])replay.setPlayerMetadata(index,metadata);replay.act(entry.actor,entry.command);
+        }
+        if(Codec.fingerprint(Session.storageState(this.engine,replay.current))!==Codec.fingerprint(Session.storageState(this.engine,this.current)))throw Error('CHECKPOINT_HISTORY_MISMATCH');
+        record.replaySession=replay;return replay.states;
+      }catch(error){record.replaySession=null;throw error;}
+    }
     get createdAt() { return records.get(this).createdAt; }
     get updatedAt() { return records.get(this).updatedAt; }
-    get current() { return this.states[this.states.length - 1]; }
+    get current() { return records.get(this).history.current; }
+    get previous() { return records.get(this).history.states.at(-2); }
+    get historyLength() { return this.current.move+1; }
+    initialSave(){const record=records.get(this);return clone(record.replayInitial||{...envelope(this),states:[record.history.states[0]]});}
+    preparedAction(next){return records.get(this).preparedActions?.get(next)||null;}
+    static storageState(engine,state){const value=clone(engine.storageState?.(state)||state);value.events=value.events.slice(-4);return value;}
     // Room membership is authority-owned. Install the replacement roster before
     // the next real move, retaining historical players and event attribution.
+    get metadataRevision(){return records.get(this).metadataRevision||0;}
     playerMetadata(index) { return clone(records.get(this).playerMetadata?.[index] || {}); }
     setPlayerMetadata(index, metadata) {
       if (!Number.isInteger(index) || index < 0 || index >= this.current.players.length || !isRecord(metadata) ||
@@ -58,7 +78,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           (metadata.avatar != null && (typeof metadata.avatar !== 'string' || !/^(crescent|triangle|square|circle|star|rectangle|diamond|hexagon)-(red|orange|yellow|green|blue|purple)$/.test(metadata.avatar)))) throw Error(globalThis.PlayroomMessages.text("ui.session.d1e2fa296dc9"));
       const record = records.get(this);
       record.playerMetadata ||= {};
+      if(Object.keys(metadata).every(key=>JSON.stringify(record.playerMetadata[index]?.[key])===JSON.stringify(metadata[key])))return;
       record.playerMetadata[index] = {...record.playerMetadata[index], ...clone(metadata)};
+      record.metadataRevision=(record.metadataRevision||0)+1;
       record.history.invalidate();
     }
     // The candidate is not applied to the live session. A network host may
@@ -74,7 +96,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         let input = previous;
         for (const [key, metadata] of Object.entries(record.playerMetadata || {})) {
           const index = Number(key), player = previous.players[index];
-          if (Object.keys(metadata).some(field => player[field] !== metadata[field])) changes.push({index,...metadata});
+          if (Object.keys(metadata).some(field => player[field] !== metadata[field] && JSON.stringify(player[field]) !== JSON.stringify(metadata[field]))) changes.push({index,...metadata});
         }
         if (changes.length) {
           input = clone(previous);
@@ -89,7 +111,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }
         return next;
       });
-      if(candidate!==this.current&&record.actions){
+      if(candidate!==this.current){
+        record.preparedActions||=new WeakMap();
         record.preparedActions.set(candidate,freeze({actor,command,...(candidate.playerChanges?{players:clone(candidate.playerChanges)}:{})}));
       }
       return candidate;
@@ -104,8 +127,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         // A missing command must never produce an incomplete replay log.
         if(entry){record.actions.push(entry);record.preparedActions.delete(next);}else record.actions=null;
       }
+      record.preparedActions?.delete(next);
       // Serialization is an optimization. A failed cache update must not
       // invalidate a transition already committed to durable storage.
+      if(record.replayInitial)record.saveCache=null;
       if (record.saveCache) {
         try { record.saveCache.states.push(Codec.encodeSnapshot(record.saveCache, next)); }
         catch (_) { record.saveCache = null; }
@@ -124,16 +149,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     serialize({compact = true, history:historyFormat = 'actions'} = {}) {
       if (!compact) return JSON.stringify(envelope(this));
       const record = records.get(this);
-      if(historyFormat==='actions'&&record.actions)return JSON.stringify({format:'playroom-session',version:3,encoding:'actions-v1',game:this.game,packVersion:this.packVersion,options:this.options,createdAt:this.createdAt,updatedAt:this.updatedAt,actions:record.actions,end:{move:this.current.move,fingerprint:Codec.fingerprint(this.current)}});
+      if(historyFormat==='actions'&&record.actions)return JSON.stringify({format:'playroom-session',version:3,encoding:record.replayInitial?'actions-v2':'actions-v1',game:this.game,packVersion:this.packVersion,options:this.options,createdAt:this.createdAt,updatedAt:this.updatedAt,actions:record.actions,end:{move:this.current.move,fingerprint:Codec.fingerprint(record.replayInitial?Session.storageState(this.engine,this.current):this.current)}});
       if (!record.saveCache) {
         record.saveCache = Codec.create();
         record.saveCache.states = this.states.map(state => Codec.encodeSnapshot(record.saveCache, state));
       }
       const codec = record.saveCache, options = codec.encode(this.options);
-      const journal = this.current.events.map(codec.encode);
+      const journal = (record.replayInitial?this.states.at(-1):this.current).events.map(codec.encode);
       return JSON.stringify({format: 'playroom-session', version: 2, encoding: 'interned-json-v1',
         game: this.game, packVersion:this.packVersion, options, createdAt: this.createdAt, updatedAt: this.updatedAt,
         states: codec.states, journal, nodes: codec.nodes});
+    }
+    static restoreCheckpoint(engine,{initial,checkpoint,actions,updatedAt},runtime={}){
+      const session=Session.restore(engine,initial,runtime),record=records.get(session),state=checkpoint?.state;
+      if(!Array.isArray(actions)||!state||state.game!==session.game||state.packVersion!==session.packVersion||state.move!==actions.length||state.players.length!==session.current.players.length||state.preset!==session.current.preset||state.openHands!==session.current.openHands||!Number.isSafeInteger(updatedAt)||updatedAt<session.createdAt)throw Error('CHECKPOINT_INVALID');
+      engine.validateState(state);
+      if(Codec.fingerprint(state)!==checkpoint.fingerprint)throw Error('CHECKPOINT_INVALID');
+      for(const entry of actions){if(!isRecord(entry)||!Number.isInteger(entry.actor)||entry.actor<0||entry.actor>=state.players.length||!isRecord(entry.command)||Object.keys(entry).some(key=>!['actor','command','players'].includes(key)))throw Error('CHECKPOINT_ACTION_INVALID');}
+      record.replayInitial=freeze(clone(initial));record.actions=freeze(clone(actions)).slice();record.preparedActions=new WeakMap();
+      record.history=history([clone(state)],engine);record.updatedAt=updatedAt;
+      return session;
     }
     static restoreActions(engine,saved,runtime={}) {
       try {
@@ -149,7 +184,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           replay.act(entry.actor,entry.command);
           if(replay.current===before)throw Error('No-op in action history');
         }
-        if(Codec.fingerprint(replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');
+        if(Codec.fingerprint(log.encoding==='actions-v2'?Session.storageState(engine,replay.current):replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');
         record.updatedAt=log.updatedAt;record.now=clockPort(runtime);
         return replay;
       }catch(error){
@@ -190,7 +225,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           const prior = index ? data.states[index - 1].players : state.players, changes = state.playerChanges || [];
           if (!Array.isArray(changes) || (!index && changes.length) || new Set(changes.map(change => change?.index)).size !== changes.length ||
               changes.some(change => !isRecord(change) || !Number.isInteger(change.index) || change.index < 0 || change.index >= state.players.length ||
-                Object.keys(change).some(key => !['index','name','bot','avatar'].includes(key)) || Object.keys(change).length < 2 ||
+                Object.keys(change).some(key => !['index','name','bot','avatar','botSettings'].includes(key)) || Object.keys(change).length < 2 ||
                 (change.name !== undefined && (typeof change.name !== 'string' || !change.name.trim() || change.name.length > 40)) ||
                 (change.bot !== undefined && typeof change.bot !== 'boolean') ||
                 (change.avatar != null && (typeof change.avatar !== 'string' || !/^(crescent|triangle|square|circle|star|rectangle|diamond|hexagon)-(red|orange|yellow|green|blue|purple)$/.test(change.avatar))))) throw Error('Invalid player changes');

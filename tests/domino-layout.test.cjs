@@ -36,9 +36,9 @@ function fixture(length = 7) {
   Core.validateState(state); return saved;
 }
 async function center(locator) { const r = await locator.boundingBox(); assert(r); return {x: r.x + r.width / 2, y: r.y + r.height / 2}; }
-async function state(page) { return page.evaluate(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current); }
+async function state(page) { return page.evaluate(() => PlayroomAppBridge.saveLibrary.current().session.current); }
 async function ready(page, move) {
-  await page.waitForFunction(move => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === move, move);
+  await page.waitForFunction(move => PlayroomAppBridge.saveLibrary.current().session.current.move === move, move);
   await page.waitForFunction(() => document.querySelector('.scene').getAttribute('aria-busy') !== 'true');
 }
 async function touch(cdp, type, point) { await cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{...point, radiusX: 4, radiusY: 4, force: 1}]}); }
@@ -55,7 +55,7 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
     if (tiles.length !== count) errors.push(`chain count ${tiles.length}/${count}`);
     for (const tile of tiles) {
       const b=r(tile);if(Math.abs(b.width/b.height-(tile.classList.contains('double')?4/7:7/4))>.03)errors.push('tile aspect changed');
-      for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'half outside tile');
+      for (const half of tile.querySelectorAll('[data-domino-half]')) within(half, tile, 'half outside tile');
       if (r(tile).width < 25 || r(tile).height < 25) errors.push('unreadably small tile');
 
     }
@@ -69,7 +69,7 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
       if(track.scrollWidth>track.clientWidth+1)errors.push('seven starting tiles require horizontal scroll');
       for (const tile of track.querySelectorAll('.domino-tile')) {
 
-        for (const half of tile.querySelectorAll('.domino-half')) within(half, tile, 'hand half clipped');
+        for (const half of tile.querySelectorAll('[data-domino-half]')) within(half, tile, 'hand half clipped');
 
       }
     }
@@ -83,9 +83,10 @@ async function geometry(page, {fullScene = false, count = 7} = {}) {
 }
 
 test('Domino snake field keeps the complete chain, real endpoints and seven hand tiles readable on phones', {timeout: 120000}, async t => {
+  const server=await require('./browser-origin.cjs').serveBrowserFixture(path.resolve(__dirname,'..'));
   const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
-    await t.test(name, async () => {
+    await t.test(name,{skip:options.nativeTouch&&browser.browserType().name()!=='chromium'}, async () => {
       const context = await browser.newContext({viewport: options.viewport || {width: 390, height: 740}, isMobile: true, hasTouch: true, reducedMotion: 'reduce'});
       const saved = fixture(options.length || 7);
       if(options.double){
@@ -96,10 +97,12 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
         }
         Core.validateState(saved.states[0]);
       }
-      await context.addInitScript(saved => {localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false, showLastGame:true})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
+      await context.addInitScript(saved => {localStorage.clear();localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'domino-layout-owner',name:'Проверка',createdAt:1,updatedAt:1})); localStorage.setItem('playroom.settings.v1', JSON.stringify({animationSpeed:'instant',sound:false,quickPlay:false,autoPass:false,showLastGame:true,tutorialsEnabled:false})); localStorage.setItem('playroom.session.v1', JSON.stringify(saved));}, saved);
       const page = await context.newPage(), errors = []; page.setDefaultTimeout(5000); page.on('pageerror', e => errors.push(e.message));
       try {
-        await page.goto(url); if(saved.states[0].status==='finished'){await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('[data-history-id]').first().click();}else await page.locator('.resume-banner [data-command=resume]').click(); await page.locator('.domino-chain').waitFor({state: 'visible'});
+        await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));const targetUrl=process.env.PLAYROOM_URL||server.url;
+        if(process.env.PLAYROOM_DOMINO_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_DOMINO_ARTIFACT),hash=b=>require('node:crypto').createHash('sha256').update(b).digest('hex');await page.route('**/*',route=>route.abort());await page.route(targetUrl,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(targetUrl);assert.equal(hash(await response.body()),hash(body));fs.mkdirSync(shots,{recursive:true});fs.writeFileSync(path.join(shots,'artifact.json'),JSON.stringify({sha256:hash(body),engine:browser.browserType().name(),version:browser.version()},null,2));}else await page.goto(targetUrl);
+        await page.locator('[data-hub-page=sessions]:visible').click();if(saved.states[0].status==='finished')await page.locator('[data-saved-status=history]:visible').click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator(saved.states[0].status==='finished'?'[data-history-id]:visible':'[data-resume-id]:visible').first().click();await page.locator('.domino-chain').waitFor({state:'visible'});
         await run({page, context, saved}); assert.deepEqual(errors, []);
       } finally { await context.close(); }
     });
@@ -127,7 +130,7 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
     await check('A folded row reverses visible halves; clicking its real end preserves canonical orientation', {}, async ({page, saved}) => {
       await page.locator('.hand-track [data-select="d14"]').click();
       const target = page.locator('.domino-end-slot.right .domino-drop-target');
-      const flow = await target.evaluate(el => {const node = el.closest('.domino-node'), halves = [...el.querySelectorAll('.domino-half')].map(h => h.getBoundingClientRect().x); return {row: Number(node.dataset.flowRow), halves};});
+      const flow = await target.evaluate(el => {const node = el.closest('.domino-node'), halves = [...el.querySelectorAll('[data-domino-half]')].map(h => h.getBoundingClientRect().x); return {row: Number(node.dataset.flowRow), halves};});
       assert.equal(flow.row, 1); assert(flow.halves[0] > flow.halves[1], 'entry half is on the right of the reversed row');
       const action = JSON.parse(await target.getAttribute('data-action')), expected = Core.applyAction(saved.states[0], 0, action);
       await target.click(); await ready(page, 1); assert.deepEqual((await state(page)).data.chain, expected.data.chain);
@@ -142,12 +145,12 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
       assert.deepEqual((await state(page)).data.chain.at(-1),{id:'d55',a:5,b:5});
     });
     for (const side of ['left', 'right']) {
-      await check(`Native touch drag reaches the ${side} physical endpoint on a 320px folded board`, {viewport: {width: 320, height: 640}}, async ({page, context, saved}) => {
+      await check(`Native touch drag reaches the ${side} physical endpoint on a 320px folded board`, {viewport: {width: 320, height: 640},nativeTouch:true}, async ({page, context, saved}) => {
         const cdp = await context.newCDPSession(page);
         // Pan the intrinsic field to the endpoint before dragging from the hand.
         await page.locator(`.domino-end-slot.${side}`).scrollIntoViewIfNeeded();
         const from = await center(page.locator('.hand-track [data-drag-piece="d14"]'));
-        await touch(cdp, 'touchStart', from); await page.waitForTimeout(280); await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
+        await touch(cdp, 'touchStart', from); await page.waitForTimeout(280);await touch(cdp,'touchMove',{x:from.x,y:from.y-14}); await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
         const target = page.locator(`.domino-end-slot.${side} .domino-drop-target`), to = await center(target), action = JSON.parse(await target.getAttribute('data-action'));
         for (let step = 1; step <= 5; step++) await touch(cdp, 'touchMove', {x: from.x + (to.x - from.x) * step / 5, y: from.y + (to.y - from.y) * step / 5});
         await touch(cdp, 'touchEnd'); await ready(page, 1);
@@ -155,5 +158,5 @@ test('Domino snake field keeps the complete chain, real endpoints and seven hand
         assert.equal(await page.locator('.playroom-drag-ghost').count(), 0);
       });
     }
-  } finally { await browser.close(); }
+  } finally { await browser.close();await server.close(); }
 });

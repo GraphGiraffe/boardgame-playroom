@@ -22,16 +22,26 @@
       event(value.publicEvent, playerCount);
     }
   }
+  // Weak keys retain no retired journal. Only module-owned deep snapshots are
+  // reused; mutable external facts are detached on every call.
+  const projections = new WeakMap();
   // Visibility is resolved before presentation receives parameters or message refs.
   function projectEvents(events, viewer, playerCount) {
     check(Array.isArray(events), 'EVENT_INVALID');
-    return snapshot(events.flatMap(value => {
-      event(value, playerCount);
-      const visible = value.visibility.kind === 'public' ||
-        integer(viewer, 0, playerCount - 1) && value.visibility.players.includes(viewer);
-      const allowed = visible ? value : value.publicEvent;
-      return allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params,
-        ...(value.id!==undefined?{id:value.id,revision:value.revision}:{})}] : [];
+    const audience = integer(viewer, 0, playerCount - 1) ? viewer : -1;
+    return Object.freeze(events.flatMap(value => {
+      const owned = snapshot(value), key = playerCount + ':' + audience;
+      let cached = projections.get(owned);
+      if (cached?.has(key)) return cached.get(key);
+      event(owned, playerCount);
+      const visible = owned.visibility.kind === 'public' ||
+        audience >= 0 && owned.visibility.players.includes(audience);
+      const allowed = visible ? owned : owned.publicEvent;
+      const result = snapshot(allowed ? [{type:allowed.type, actor:allowed.actor, params:allowed.params,
+        ...(owned.id!==undefined?{id:owned.id,revision:owned.revision}:{})}] : []);
+      if (!cached) { cached = new Map(); projections.set(owned, cached); }
+      cached.set(key, result);
+      return result;
     }));
   }
 

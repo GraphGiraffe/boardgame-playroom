@@ -31,10 +31,10 @@ async function center(locator) {
   return {x: r.x + r.width / 2, y: r.y + r.height / 2};
 }
 async function state(page) {
-  return page.evaluate(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current);
+  return page.evaluate(() => PlayroomAppBridge.saveLibrary.current().session.current);
 }
 async function expectMove(page, move) {
-  await page.waitForFunction(move => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === move, move);
+  await page.waitForFunction(move => PlayroomAppBridge.saveLibrary.current().session.current.move === move, move);
   await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') !== 'true');
   assert.equal((await state(page)).move, move);
 }
@@ -74,23 +74,27 @@ async function touchDrag(page, cdp, from, to, {hold = false, cancel = false, ins
 }
 
 test('Checkers drag/drop through the real application', {timeout: 120000}, async t => {
-  const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
+  const webkit=process.env.PLAYROOM_TEST_BROWSER==='webkit',server=await require('./browser-origin.cjs').serveBrowserFixture(path.resolve(__dirname,'..')),report=[];
+  const browser = await (webkit?require('playwright-core').webkit:chromium).launch(webkit?{headless:true}:{headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, options, run) {
-    await t.test(name, async () => {
+    await t.test(name, async child => {
+      const entry={name};report.push(entry);if(webkit&&options.mobile){entry.skip='Native CDP touch is Chromium-only';child.skip(entry.skip);return;}
       const context = await browser.newContext({viewport: options.mobile ? {width: 390, height: 844} : {width: 1280, height: 900},
         hasTouch: !!options.mobile, isMobile: !!options.mobile, reducedMotion: options.motion ? 'no-preference' : 'reduce'});
       const saved = fixture(options);
       await context.addInitScript(({saved, motion}) => {
-        localStorage.clear(); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false, autoPass:false}));
+        localStorage.clear();localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'checkers-drag-owner',name:'Аня',createdAt:1,updatedAt:1})); localStorage.setItem('playroom.settings.v1', JSON.stringify({motion, sound: false, autoPass:false,tutorialsEnabled:false}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
       }, {saved, motion: !!options.motion});
+      const network=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));
       const page = await context.newPage(), errors = [];
       page.setDefaultTimeout(4500); page.on('pageerror', error => errors.push(error.message));
       try {
-        await page.goto(url); await page.locator('.resume-banner [data-command=resume]').click();
+        if(process.env.PLAYROOM_CHECKERS_ARTIFACT){const fs=require('node:fs'),body=fs.readFileSync(process.env.PLAYROOM_CHECKERS_ARTIFACT),hash=value=>require('node:crypto').createHash('sha256').update(value).digest('hex');await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));const response=await page.goto(server.url);entry.artifactSha256=hash(await response.body());assert.equal(entry.artifactSha256,hash(body));}else await page.goto(process.env.PLAYROOM_URL||server.url);
+        await page.locator('.game-tile').first().waitFor();await page.locator('[data-hub-page=sessions]:visible').first().click();await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();
         await page.locator('.checker-board').waitFor({state: 'visible'});
-        await run({page, context, saved}); await assertNoOverflow(page); assert.deepEqual(errors, []);
-      } finally { await context.close(); }
+        await run({page, context, saved}); await assertNoOverflow(page); assert.deepEqual(errors, []);assert.equal(network.nativeSupabaseRequests,0);entry.pass=true;
+      } finally {entry.errors=errors;entry.nativeSupabaseRequests=network.nativeSupabaseRequests;await context.close(); }
     });
   }
   try {
@@ -199,5 +203,5 @@ test('Checkers drag/drop through the real application', {timeout: 120000}, async
         assert(frames.every(f => f.distance === null || f.distance <= 3), `dropped checker must not fly back to its old cell: ${Math.max(...frames.map(f => f.distance || 0))}px`);
       });
     }
-  } finally { await browser.close(); }
+  } finally {if(process.env.PLAYROOM_DRAG_REPORT_DIR){const fs=require('node:fs');fs.mkdirSync(process.env.PLAYROOM_DRAG_REPORT_DIR,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYROOM_DRAG_REPORT_DIR,'checkers-'+browser.browserType().name()+'.json'),JSON.stringify({engine:browser.browserType().name(),version:browser.version(),report},null,2));}await browser.close();await server.close(); }
 });
