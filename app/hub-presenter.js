@@ -6,7 +6,52 @@ const pageScroll={games:0,sessions:0,social:0,profile:0};
 let savedStatus='active',savedReturnPending=false;const savedOpen=new Set(),savedScroll={active:0,history:0};
 const savedKey=card=>card?.dataset.entity||card?.dataset.sessionId&&'local:'+card.dataset.sessionId||card?.dataset.networkSessionId&&'network:'+card.dataset.networkSessionId||card?.dataset.cloudId&&'cloud:'+card.dataset.cloudId;
 root.document.addEventListener('click',event=>{const button=event.target.closest('[data-saved-status]');if(!button||ports.screen!=='hub')return;savedScroll[savedStatus]=root.scrollY;savedReturnPending=false;savedStatus=button.dataset.savedStatus;updateSavedPanel();root.scrollTo(0,savedScroll[savedStatus]);});
-root.document.addEventListener('click',event=>{if(event.target.closest('[data-profile-catalog]')){ports.hubTab='games';ports.hubEditing=true;renderHub();return;}if(event.target.closest('[data-profile-account]')){root.PlayroomAccountUI.show();return;}const button=event.target.closest('[data-hub-page]');if(!button||ports.screen!=='hub')return;event.stopImmediatePropagation();ports.hubTab=button.dataset.hubPage;renderHub();});
+function selectPage(id,{focus=false}={}){
+ if(ports.screen!=='hub'||!pages.some(([page])=>page===id))return;
+ if(ports.hubTab!==id){ports.hubTab=id;renderHub();}
+ if(focus)ports.$('[data-hub-page="'+id+'"]')?.focus({preventScroll:true});
+}
+root.document.addEventListener('click',event=>{if(event.target.closest('[data-profile-catalog]')){ports.hubTab='games';ports.hubEditing=true;renderHub();return;}if(event.target.closest('[data-profile-account]')){root.PlayroomAccountUI.show();return;}const button=event.target.closest('[data-hub-page]');if(!button||ports.screen!=='hub')return;event.stopImmediatePropagation();selectPage(button.dataset.hubPage);});
+root.document.addEventListener('keydown',event=>{
+ const tab=event.target.closest('[data-hub-page]');if(!tab||ports.screen!=='hub'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
+ const index=pages.findIndex(([id])=>id===tab.dataset.hubPage),next=event.key==='Home'?0:event.key==='End'?pages.length-1:(index+(['ArrowLeft','ArrowUp'].includes(event.key)?-1:1)+pages.length)%pages.length;
+ event.preventDefault();event.stopImmediatePropagation();selectPage(pages[next][0],{focus:true});
+});
+let pageSwipe=null;
+const hubAvailable=()=>ports.screen==='hub'&&!ports.hubEditing&&!ports.$('#app')?.inert&&!root.document.querySelector('#modal-root>*,dialog[open]');
+function swipeTarget(target){
+ const panel=target.closest('.hub-pages>.shared-page-panel.is-active');if(!panel||!hubAvailable())return null;
+ const control=target.closest('button,a,input,textarea,select,[contenteditable="true"],[role="slider"],[data-edit-handle],[data-drag-piece],[data-swipe-action],[data-swipe-select],[data-social-actions],.chat-message');
+ if(control&&!control.matches('.game-tile[data-start],.game-tile>.tile-hit[data-start]'))return null;
+ for(let node=target;node&&node!==panel;node=node.parentElement){const css=root.getComputedStyle(node);if(['auto','scroll'].includes(css.overflowX)&&node.scrollWidth>node.clientWidth+1)return null;}
+ return panel;
+}
+root.document.addEventListener('touchstart',event=>{
+ pageSwipe=null;if(event.touches.length!==1)return;
+ const panel=swipeTarget(event.target),touch=event.touches[0];
+ // Leave operating-system edge navigation and text selection to the browser.
+ if(!panel||touch.clientX<24||touch.clientX>root.innerWidth-24||root.getSelection()?.toString())return;
+ pageSwipe={id:touch.identifier,x:touch.clientX,y:touch.clientY,tab:ports.hubTab,panel,horizontal:false};
+},{passive:true});
+root.document.addEventListener('touchmove',event=>{
+ const gesture=pageSwipe;if(!gesture)return;
+ const touch=[...event.touches].find(t=>t.identifier===gesture.id);
+ if(!touch||event.touches.length!==1||!hubAvailable()||gesture.tab!==ports.hubTab||!gesture.panel.isConnected){pageSwipe=null;return;}
+ const dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
+ if(!gesture.horizontal){if(Math.abs(dy)>12&&Math.abs(dy)>=Math.abs(dx)){pageSwipe=null;return;}if(Math.abs(dx)<12||Math.abs(dx)<Math.abs(dy)*1.5)return;gesture.horizontal=true;}
+ // Only an intentional horizontal page gesture cancels native scrolling.
+ // Blanket pan-y on the deck would break its nested pan-x chip carousels.
+ if(event.cancelable)event.preventDefault();
+},{passive:false});
+root.document.addEventListener('touchend',event=>{
+ const gesture=pageSwipe;pageSwipe=null;if(!gesture||!gesture.horizontal||!hubAvailable()||gesture.tab!==ports.hubTab)return;
+ const touch=[...event.changedTouches].find(t=>t.identifier===gesture.id);if(!touch)return;
+ const dx=touch.clientX-gesture.x,dy=touch.clientY-gesture.y;
+ root.PlayroomDOM.consumePointerReleaseClick({x:touch.clientX,y:touch.clientY},{document:root.document});
+ if(Math.abs(dx)<Math.max(56,Math.min(96,root.innerWidth*.18))||Math.abs(dx)<Math.abs(dy)*1.5)return;
+ const next=pageIndex()+(dx<0?1:-1);if(next>=0&&next<pages.length)selectPage(pages[next][0]);
+},{passive:true});
+root.document.addEventListener('touchcancel',()=>{pageSwipe=null;},{passive:true});
 let savedActionFrame=null;
 function savedActions(card,open){
  if(!card)return;
@@ -20,7 +65,7 @@ function savedActions(card,open){
 }
 root.document.addEventListener('click',event=>{const trigger=event.target.closest('#saved-games-panel [data-saved-actions-toggle]');if(!trigger||ports.screen!=='hub'||ports.hubTab!=='sessions')return;event.preventDefault();event.stopImmediatePropagation();savedActions(trigger.closest('.saved-game'),true);});
 root.document.addEventListener('keydown',event=>{const card=event.target.closest('#saved-games-panel .saved-game[data-saved-actions-toggle]');if(!card||event.target!==card||!['Enter',' '].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation();savedActions(card,true);});
-function navigation(){return `<div class="hub-page-tabs app-page-tabs shared-page-tabs" style="--page-count:4;--page-index:${pageIndex()}">${pages.map(([id,label,glyph])=>`<button class="nav-item ${ports.hubTab===id?'current':''}" data-hub-page="${id}" ${id==='social'?'data-social-unread':''} ${id==='games'?'data-command="home"':id==='sessions'?'data-command="sessions"':''} aria-current="${ports.hubTab===id?'page':'false'}"><span class="hub-nav-icon">${ports.icon(glyph)}${id==='sessions'?activeBadge():''}</span><span>${label}</span></button>`).join('')}</div>`;}
+function navigation(){return `<div class="hub-page-tabs app-page-tabs shared-page-tabs" role="tablist" aria-label="Разделы приложения" style="--page-count:4;--page-index:${pageIndex()}">${pages.map(([id,label,glyph])=>`<button type="button" role="tab" id="hub-tab-${id}" aria-controls="hub-${id}-page" aria-selected="${ports.hubTab===id}" tabindex="${ports.hubTab===id?0:-1}" class="nav-item ${ports.hubTab===id?'current':''}" data-hub-page="${id}" ${id==='social'?'data-social-unread':''} ${id==='games'?'data-command="home"':id==='sessions'?'data-command="sessions"':''} aria-current="${ports.hubTab===id?'page':'false'}"><span class="hub-nav-icon">${ports.icon(glyph)}${id==='sessions'?activeBadge():''}</span><span>${label}</span></button>`).join('')}</div>`;}
 function profileIdentity(){
  const p=root.PlayroomAppBridge?.profile?.(),account=root.PlayroomAccountUI?.service?.snapshot?.(),social=root.PlayroomSocialUI?.service?.snapshot?.().profile;
  const status=account?.kind==='account'?'Облачный аккаунт'+(social?.username?' · @'+social.username:''):'Войти в облако';
@@ -48,13 +93,28 @@ function activeBadge(){
 }
 function paintActiveBadge(){for(const item of document.querySelectorAll('[data-hub-page=sessions]')){item.querySelector('.active-games-badge')?.remove();(item.querySelector('.hub-nav-icon')||item).insertAdjacentHTML('beforeend',activeBadge());}}
 root.addEventListener('playroom:cloud-saves-updated',()=>{if(ports.screen==='hub'){if(ports.hubTab==='sessions')updateSavedPanel();paintActiveBadge();}});
-let restoringScroll=false;
+let restoringScroll=false,scrollRestore=null,scrollTicket=0,observedPage=null;
+const pageObserver=root.ResizeObserver?new root.ResizeObserver(()=>{if(scrollRestore)restorePageScroll(scrollRestore);}):null;
+function rememberPageScroll(){
+ if(ports.screen!=='hub'||restoringScroll||scrollRestore||root.document.querySelector('#modal-root>*'))return;
+ const tab=visibleHubTab();if(tab)pageScroll[tab]=root.scrollY;
+}
+function restorePageScroll(request){
+ if(request!==scrollRestore||request.tab!==ports.hubTab||ports.screen!=='hub')return;
+ restoringScroll=true;root.scrollTo({top:request.top,behavior:'instant'});
+ root.requestAnimationFrame(()=>{if(request!==scrollRestore)return;root.scrollTo({top:request.top,behavior:'instant'});root.requestAnimationFrame(()=>{if(request!==scrollRestore)return;restoringScroll=false;if(Math.abs(root.scrollY-request.top)<2)scrollRestore=null;});});
+}
+function cancelScrollRestore(){scrollRestore=null;restoringScroll=false;}
+root.document.addEventListener('touchstart',cancelScrollRestore,{passive:true});
+root.document.addEventListener('wheel',cancelScrollRestore,{passive:true});
+root.document.addEventListener('keydown',event=>{if(['PageDown','PageUp','Home','End','ArrowDown','ArrowUp',' '].includes(event.key)&&!event.target.closest('[data-hub-page]'))cancelScrollRestore();});
 let headerSlot=null,headerFrame=0,navigationObserved=[];
 function syncNavigation(navigation){
   const tabs=navigation?.querySelector(':scope>.hub-page-tabs'),items=[...(tabs?.querySelectorAll(':scope>.nav-item')||[])],observed=[navigation,tabs,...items].filter(Boolean);
   if(observed.length!==navigationObserved.length||observed.some((node,index)=>node!==navigationObserved[index])){navigationObserved.forEach(node=>headerObserver?.unobserve(node));navigationObserved=observed;observed.forEach(node=>headerObserver?.observe(node));}
   if(!tabs)return;
   const rail=root.matchMedia('(orientation:landscape) and (min-width:600px)').matches,style=root.getComputedStyle(tabs),selected=items.find(node=>node.classList.contains('current'));
+  tabs.setAttribute('aria-orientation',rail?'vertical':'horizontal');
   const set=(node,key,value)=>{if(node&&node.style.getPropertyValue(key)!==value)node.style.setProperty(key,value);};
   if(!rail){const minimum=parseFloat(style.getPropertyValue('--hub-nav-item-min'))*parseFloat(root.getComputedStyle(root.document.documentElement).fontSize),available=tabs.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0),count=Math.floor(available/minimum);set(tabs,'--hub-nav-columns',String(count>=4?4:count>=2?2:1));}
   set(ports.$('.hub-shell-v021'),'--hub-nav-extra-space',(rail?0:Math.max(0,tabs.offsetHeight-(parseFloat(style.minHeight)||0)))+'px');
@@ -86,8 +146,7 @@ root.addEventListener('resize',scheduleHeader);root.visualViewport?.addEventList
 root.document.addEventListener('fullscreenchange',scheduleHeader);
 const visibleHubTab=()=>pages.find(([id])=>ports.$('#hub-'+id+'-page.is-active'))?.[0]||null;
 root.addEventListener('scroll',()=>{
-  const tab=visibleHubTab();
-  if(tab&&!restoringScroll)pageScroll[tab]=root.scrollY;
+  rememberPageScroll();
 },{passive:true});
 function orderedVisibleGames(){
     const p=globalThis.PlayroomPackManager?.displayPreferences()||{order:[],hidden:[],favorites:[]};
@@ -157,7 +216,7 @@ function showCatalogFilters(){
 
 function renderHub() {
     const previousTab=visibleHubTab();
-    if(previousTab==='social')root.PlayroomCommunityUI.remember();if(previousTab&&!restoringScroll)pageScroll[previousTab]=root.scrollY;
+    if(previousTab==='social')root.PlayroomCommunityUI.remember();rememberPageScroll();
     const targetScroll=pageScroll[ports.hubTab]||0;
     restoringScroll=true;
     ports.interruptAction();ports.input?.cancel();ports.playerTargets?.cancel();ports.feedback.clear();ports.cancelBot(); ports.latestPacks();
@@ -180,17 +239,17 @@ function renderHub() {
     ports.GameScreen.update(ports.$('#app'), `<div class="hub-shell-v021" data-hub-destination="${ports.hubTab}" data-catalog-view="${catalogView}" data-hub-editing="${ports.hubEditing}"><nav class="hub-navigation-v021" aria-label="${globalThis.PlayroomMessages.text("ui.app.8fff0bba4454")}">${navigation()}</nav>
       <main class="hub-main"><div class="hub-topbar-slot"><header class="topbar"><span class="eyebrow muted">${globalThis.PlayroomMessages.text("ui.app.a9979c201901")}</span><button class="brand hub-brand hub-root-brand" data-command="home" aria-label="${globalThis.PlayroomMessages.text("ui.app.4c890677e7fd")}">${ports.brand}</button>${ports.hubTab==='games'?'':`<h1 class="hub-root-title">${ports.icon(pages[pageIndex()][2])}<span>${pages[pageIndex()][1]}</span></h1>`}<div class="hub-root-actions">${ports.hubTab==='games'?root.PlayroomAppearanceUI.settingsButton():''}${ports.hubTab==='games'?ports.GameScreen.iconButton(`data-edit-toggle aria-pressed="${ports.hubEditing}"`,globalThis.PlayroomMessages.text(ports.hubEditing?'ui.app.ef05d57959cf':'ui.app.93f7d70b0155'),ports.hubEditing?'check':'edit'):''}${ports.hubTab==='sessions'?ports.GameScreen.iconButton('data-saved-refresh','Обновить список партий','refresh'):''}${ports.hubTab==='social'?ports.GameScreen.iconButton('data-community-refresh','Обновить','refresh'):''}${ports.GameScreen.fullscreenAction()}</div>
 </header></div>
-      <div class="hub-pages shared-page-deck" style="--page-index:${pageIndex()}"><section id="hub-games-page" class="shared-page-panel ${ports.hubTab==='games'?'is-active':''}" style="--page-number:0" ${ports.hubTab==='games'?'':'inert aria-hidden="true"'}><section class="intro" data-entity="catalog-intro"><div class="intro-heading"><h1><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.14d61d0ff252")}</span><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.032385a2501c")}</span></h1></div><p>Любимые настолки, всегда под рукой.</p></section>${root.PlayroomHubAction.hintMarkup()}
+      <div class="hub-pages shared-page-deck" style="--page-index:${pageIndex()}"><section id="hub-games-page" role="tabpanel" aria-labelledby="hub-tab-games" class="shared-page-panel ${ports.hubTab==='games'?'is-active':''}" style="--page-number:0" ${ports.hubTab==='games'?'':'inert aria-hidden="true"'}><section class="intro" data-entity="catalog-intro"><div class="intro-heading"><h1><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.14d61d0ff252")}</span><span class="intro-line">${globalThis.PlayroomMessages.text("ui.app.032385a2501c")}</span></h1></div><p>Любимые настолки, всегда под рукой.</p></section>${root.PlayroomHubAction.hintMarkup()}
       ${ports.loadWarning?`<p class="recovery-note" role="alert">${ports.esc(ports.loadWarning)}<button class="icon-btn" data-command="dismiss-recovery" aria-label="${globalThis.PlayroomMessages.text("ui.app.e7c9a9e482fd")}">${ports.icon('close')}</button></p>`:''}
       ${ports.session&&ports.localResumeVisible!==false?ports.GameScreen.resumeCard({attrs:'data-entity="catalog-resume"',hide:'data-command="hide-local-session"',state:ports.E.project(ports.session.current,-1),roomName:ports.session.options?.lobbyConfig?.name||globalThis.PlayroomMessages.text('ui.app.499f4549c0b2',{p0:ports.session.current.players.find(p=>!p.bot)?.name||ports.session.current.players[0]?.name||''}),gameName:ports.meta(ports.session.game).name,teamLayouts:ports.catalog?.[ports.session.game]?.teamLayouts||{}}):''}
       <div class="catalog-toolbar" data-entity="catalog-toolbar">${catalogControls()}<div class="library-heading"><div class="hub-library-tools"><span class="collection-count">${collectionCount}</span></div></div>
-      </div>${sections}${!ports.hubEditing&&!games.length&&ports.E.GAMES.length?`<div class="catalog-filter-empty"><h3>${!orderedVisibleGames().length?'Все игры скрыты':'Нет подходящих игр'}</h3><p>${'Попробуйте изменить условия подбора.'}</p><button type="button" class="text-btn" ${!orderedVisibleGames().length?'data-command="packs"':'data-hub-filters-toggle'}>${!orderedVisibleGames().length?'Показать скрытые игры':'Изменить фильтры'}</button></div>`:''}${!ports.E.GAMES.length?("<div class=\"packs-empty-hub\"><h2>"+globalThis.PlayroomMessages.text("ui.app.094e88b64d93")+"</h2><p>"+globalThis.PlayroomMessages.text("ui.app.bda06013d1fa")+"</p><button class=\"btn\" data-command=\"packs\">"+globalThis.PlayroomMessages.text("ui.app.ab032a53861d")+"</button></div>"):!games.length?("<p class=\"lead\">"+globalThis.PlayroomMessages.text("ui.app.fc36b3243089")+"</p>"):''}</section><section id="hub-sessions-page" class="shared-page-panel ${ports.hubTab==='sessions'?'is-active':''}" style="--page-number:1" ${ports.hubTab==='sessions'?'':'inert aria-hidden="true"'}><div id="saved-games-panel">${savedGamesMarkup()}</div></section>${['social','profile'].map((id,i)=>`<section id="hub-${id}-page" class="shared-page-panel ${ports.hubTab===id?'is-active':''}" style="--page-number:${i+2}" ${ports.hubTab===id?'':'inert aria-hidden="true"'}>${id==='social'?'<section class="community-modal hub-community" data-hub-community></section>':ports.hubTab===id?profilePage():''}</section>`).join('')}</div>
+      </div>${sections}${!ports.hubEditing&&!games.length&&ports.E.GAMES.length?`<div class="catalog-filter-empty"><h3>${!orderedVisibleGames().length?'Все игры скрыты':'Нет подходящих игр'}</h3><p>${'Попробуйте изменить условия подбора.'}</p><button type="button" class="text-btn" ${!orderedVisibleGames().length?'data-command="packs"':'data-hub-filters-toggle'}>${!orderedVisibleGames().length?'Показать скрытые игры':'Изменить фильтры'}</button></div>`:''}${!ports.E.GAMES.length?("<div class=\"packs-empty-hub\"><h2>"+globalThis.PlayroomMessages.text("ui.app.094e88b64d93")+"</h2><p>"+globalThis.PlayroomMessages.text("ui.app.bda06013d1fa")+"</p><button class=\"btn\" data-command=\"packs\">"+globalThis.PlayroomMessages.text("ui.app.ab032a53861d")+"</button></div>"):!games.length?("<p class=\"lead\">"+globalThis.PlayroomMessages.text("ui.app.fc36b3243089")+"</p>"):''}</section><section id="hub-sessions-page" role="tabpanel" aria-labelledby="hub-tab-sessions" class="shared-page-panel ${ports.hubTab==='sessions'?'is-active':''}" style="--page-number:1" ${ports.hubTab==='sessions'?'':'inert aria-hidden="true"'}><div id="saved-games-panel">${savedGamesMarkup()}</div></section>${['social','profile'].map((id,i)=>`<section id="hub-${id}-page" role="tabpanel" aria-labelledby="hub-tab-${id}" class="shared-page-panel ${ports.hubTab===id?'is-active':''}" style="--page-number:${i+2}" ${ports.hubTab===id?'':'inert aria-hidden="true"'}>${id==='social'?'<section class="community-modal hub-community" data-hub-community></section>':ports.hubTab===id?profilePage():''}</section>`).join('')}</div>
 </main></div>`,{preserveLayout:true});
     if(ports.hubTab==='social')root.PlayroomCommunityUI.show({host:ports.$('[data-hub-community]')});
     bindSavedTabs();
     ports.GameScreen.fitCovers(ports.$('#app'));syncHeader();bindCatalogTouchOrder();
-    root.scrollTo({top:targetScroll,behavior:'instant'});
-    requestAnimationFrame(()=>{restoringScroll=false;});
+    if(observedPage)pageObserver?.unobserve(observedPage);observedPage=ports.$('#hub-'+ports.hubTab+'-page');if(observedPage)pageObserver?.observe(observedPage);
+    scrollRestore={tab:ports.hubTab,top:targetScroll,ticket:++scrollTicket};restorePageScroll(scrollRestore);
     if(ports.hubTab==='sessions')refreshNetworkSaved();
     root.dispatchEvent(new Event('playroom:hub-rendered'));
   }

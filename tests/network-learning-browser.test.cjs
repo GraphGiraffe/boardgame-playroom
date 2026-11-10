@@ -49,6 +49,22 @@ async function pair(run){
 }
 const mastered=(page,game)=>page.evaluate(g=>PlayroomFirstTurnGuide.settings(g).mastered,game);
 
+test('fresh RTC learning follows the first actionable seat and survives repeated frames', {timeout:60000},()=>pair(async({pages,start})=>{
+ for(let viewer=0;viewer<2;viewer++)await pages[viewer].evaluate(viewer=>localStorage.removeItem('playroom.learning.v1.learner-'+viewer),viewer);
+ await start('tictactoe',0);
+ const intro=page=>page.locator('#modal-root>[data-surface-state=active] .learning-intro');
+ await intro(pages[0]).waitFor();assert.equal(await intro(pages[1]).count(),0,'waiting player is not offered learning');
+ await pages[0].evaluate(()=>{PlayroomFirstTurnGuide.update({...netGuideContext});PlayroomFirstTurnGuide.update({...netGuideContext});});
+ await intro(pages[0]).locator('[data-learning-choice=yes]').click();await pages[0].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ await pages[0].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ await intro(pages[1]).waitFor();assert.equal(await pages[1].evaluate(()=>netClient.snapshot.revision),1);
+ await intro(pages[1]).locator('[data-learning-choice=yes]').click();await pages[1].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ await pages[1].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ await pages[0].waitForFunction(()=>netClient.snapshot.revision===2&&!netClient.pending&&!netGuideContext.busy);
+ assert.equal(await pages[0].evaluate(()=>document.querySelector('#app').inert),false);
+ assert.equal(await intro(pages[0]).count(),0,'no repeated introduction on the next turn');
+}));
+
 test('two RTC clients persist UNO help without a host command', {timeout:90000},()=>pair(async({pages,start})=>{
  for(let viewer=0;viewer<2;viewer++){
   await start('uno',viewer);const page=pages[viewer],other=pages[1-viewer];

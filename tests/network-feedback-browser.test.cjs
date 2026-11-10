@@ -169,23 +169,27 @@ test('rapid remote revisions queue every authorized frame including backfill; hi
     await page.evaluate(snapshots=>{qaClient.emit(snapshots[2]);qaClient.emit(snapshots[3]);},snapshots);
     for(let revision=1;revision<=4;revision++){
       await page.waitForFunction(n=>qaFrames.length===n,revision);assert.equal(await page.locator('.network-game').getAttribute('data-revision'),String(revision));
-      assert.equal(await page.locator('.scene [data-action]:enabled').evaluateAll(nodes=>nodes.filter(node=>!['declare-uno','accuse-uno'].includes(JSON.parse(node.dataset.action).type)).length),0,'Only independent reactions remain usable during presentation');
+      const blocked=page.locator('.scene [data-action]:enabled').filter({hasNot:page.locator('.uno-call')});
+      const attempts=await page.evaluate(()=>qaSubmitted.length);
+      const ordinary=await blocked.evaluateAll(nodes=>nodes.findIndex(node=>!['declare-uno','accuse-uno'].includes(JSON.parse(node.dataset.action).type)));
+      if(ordinary>=0){await blocked.nth(ordinary).click({force:true});assert.equal(await page.evaluate(()=>qaSubmitted.length),attempts,'ordinary commands cannot pass the input gate during presentation');}
       if(revision===1){await page.locator('.uno-call').click();assert.equal(await page.evaluate(()=>qaSubmitted.at(-1).type),'declare-uno');assert.equal(await page.evaluate(()=>qaFrames.length),1,'Reaction does not cancel the current animation');}
       assert.match(await page.locator('.game-frame-event').innerText(),new RegExp(history[revision].events.at(-1).text));
       await page.evaluate(()=>qaReleases.shift()());
     }
-    await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
+    await page.waitForFunction(()=>document.querySelector('.app-game-layout').getAttribute('aria-busy')==='false');
     assert.deepEqual(await page.evaluate(()=>qaFrames.map(f=>f.revision)),[1,2,3,4]);assert.deepEqual(await page.evaluate(()=>qaHistory),[1,2]);
     assert.equal(await page.evaluate(()=>qaCancel),0,'New packets do not cancel an active animation');
     assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass']);
     await page.evaluate(next=>qaClient.emit(next),snapshots[3]);assert.equal(await page.evaluate(()=>qaFrames.length),4);
     await page.evaluate(()=>qaGame.openHistory(0));assert.equal(await page.locator('.network-game').getAttribute('data-mode'),'history',await page.locator('#toast').innerText());
-    assert.equal(await page.locator('.game-frame-event').innerText(),'Начальная расстановка');assert.equal(await page.locator('.history-caption').count(),0);
+    assert.equal(await page.evaluate(()=>qaGame.historyIndex),0);assert.equal(await page.locator('.history-panel').count(),1);
     await page.locator('[data-command="replay-play"]').click();await page.waitForFunction(()=>qaFrames.length===5);
-    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass'],'Explicit history stays silent');
+    assert.equal(await page.evaluate(()=>qaFrames[4].revision),1);assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass','draw'],'Autoplay sounds follow the reviewed move, separately from live play');
     await page.locator('#replay-range').evaluate(el=>{el.value='3';el.dispatchEvent(new Event('input',{bubbles:true}));});
-    await page.waitForFunction(()=>document.querySelector('#replay-range').value==='3'&&document.querySelector('.scene').getAttribute('aria-busy')==='false');
+    await page.waitForFunction(()=>document.querySelector('#replay-range').value==='3'&&document.querySelector('.app-game-layout').getAttribute('aria-busy')==='false');
     assert.equal(await page.evaluate(()=>qaFrames.length),5,'Manual history scrub is immediate, without a new flight');
+    assert.deepEqual(await page.evaluate(()=>qaSounds),['draw','pass','draw','pass','draw'],'Scrubbing does not produce repeated sounds');
     await page.evaluate(()=>qaGame.destroy());
   }finally{authority.dispose();await page.close();await browser.close();}
 });

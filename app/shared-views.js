@@ -179,7 +179,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         shot.prepareTransfers(addedEvents.flatMap(event=>event.transfer?[event.transfer]:[]),{back:addedEvents.some(event=>event.speech&&event.reveal?.kind==='card')});
       }
       transitionActive=!!shot;render();
-      if(change){feedback.start(previous.events||previous.state.events||[]);feedback.accept(result.events||result.state.events||[],[],result.game,{initialScene:previous.state.scene,finalScene:result.state.scene,mode:flow.pace().mode,snapshot:shot,motion:(context,step)=>flow.play(step?.snapshot||shot,{draws:step?.draws??result.effects??[],transferOnly:step?.transferOnly,context}),defer:true});await flow.present(()=>{feedback.next();return feedback.whenIdle();});}
+      if(change){feedback.start(previous.events||previous.state.events||[]);feedback.accept(result.events||result.state.events||[],result.cues||root.PlayroomNetworkProjection.soundCues(result.events||result.state.events||[],result.state,result.viewer),result.game,{initialScene:previous.state.scene,finalScene:result.state.scene,mode:flow.pace().mode,snapshot:shot,motion:(context,step)=>flow.play(step?.snapshot||shot,{draws:step?.draws??result.effects??[],transferOnly:step?.transferOnly,context}),defer:true});await flow.present(()=>{feedback.next();return feedback.whenIdle();});}
       if(animate)await root.PlayroomPublicSequence?.whenIdle(app);
       if(ticket!==controller.history.ticket||!historyOpen||destroyed)return;transitionActive=false;render();
     }

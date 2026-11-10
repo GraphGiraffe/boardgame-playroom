@@ -67,6 +67,7 @@ module.exports = {
     {"file": "appearance-browser.test.cjs", "profiles": [], "subblock": "ui/appearance"},
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "rc2-hub-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
+    {"file": "hub-swipe-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "first-medallion-browser.test.cjs", "profiles": [], "subblock": "ui/navigation"},
     {"file": "ludo-team-markers-browser.test.cjs", "profiles": [], "subblock": "ui/room"},
     {"file": "result-team-medallions-browser.test.cjs", "profiles": [], "subblock": "ui/results"},
@@ -76,6 +77,7 @@ module.exports = {
     {"file": "history-library-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/history"},
     {"file": "unified-game-screen-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
     {"file": "lobby-layout-browser.test.cjs", "profiles": ["smoke"], "subblock": "ui/room"},
+    {"file":"lobby-parameter-choices-browser.test.cjs","profiles":[],"subblock":"ui/room","types":["screen:phone:portrait","screen:phone:landscape"]},
   ]},
   storage: {label: "Сохранения и восстановление", cases: [
     {"file":"save-transfer.test.cjs","profiles":[],"subblock":"storage/transfer"},
