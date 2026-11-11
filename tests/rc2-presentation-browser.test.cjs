@@ -579,8 +579,8 @@ test('Durak stock and played cards share size with readable pairs in the reserve
 test('RC10 hidden domino tiles have distinct outlined backs and 4:7 proportions',async()=>fixture(async page=>{
  for(const theme of ['light','dark']){
   await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);await page.setViewportSize({width:390,height:844});await scene(page,'domino');
-  const backs=await page.locator('.opponent-hand .domino-back').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e),face=getComputedStyle(e.firstElementChild);return {ratio:r.width/r.height,edge:parseFloat(s.borderWidth),rim:s.backgroundColor,face:face.backgroundColor,text:e.textContent};}));
-  assert(backs.length>0);assert(backs.every(b=>Math.abs(b.ratio-4/7)<.02&&b.edge>=1&&b.rim!==b.face&&!b.text.trim()),JSON.stringify(backs));
+  const backs=await page.locator('.opponent-hand .domino-back').evaluateAll(els=>els.map(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e),face=getComputedStyle(e.firstElementChild);return {ratio:r.width/r.height,edge:parseFloat(s.borderWidth),shadow:s.boxShadow,art:e.firstElementChild?.matches('svg[data-piece-type=domino]'),rim:e.querySelector('svg rect:nth-child(2)')?.getAttribute('fill'),face:e.querySelector('svg rect:nth-child(3)')?.getAttribute('fill'),text:e.textContent};}));
+  assert(backs.length>0);assert(backs.every(b=>Math.abs(b.ratio-4/7)<.02&&b.edge===0&&b.shadow==='none'&&b.art&&b.rim!==b.face&&!b.text.trim()),JSON.stringify(backs));
   assert.equal(await page.locator('.opponent-hand .card-back').count(),0);
   await page.screenshot({path:path.join(shots,`rc10-domino-backs-${theme}.png`)});
  }
@@ -1922,3 +1922,11 @@ test('Mage planning remains confirmable and cancellable after returning from liv
  await page.locator('.mage-controls [data-action]').click();const cancel=page.locator('.mage-controls [data-action]');assert.equal(JSON.parse(await cancel.getAttribute('data-action')).type,'unready');await cancel.click();
  assert.notEqual(JSON.parse(await page.locator('.mage-controls [data-action]').getAttribute('data-action')).type,'unready','cancellation returned to selection');
 },{safeSupabase:true,settings:{sound:false,animationSpeed:'instant',tutorialsEnabled:false,autoPass:false,quickPlay:false}}));
+
+
+test('physical board insets survive shared field fitting and keep square native targets',{timeout:60000},()=>fixture(async page=>{
+ for(const [width,height]of [[390,844],[844,390]])for(const theme of ['light','dark']){await page.setViewportSize({width,height});await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);await scene(page,'checkers');
+  const m=await page.locator('.checker-board-wrap').evaluate(e=>{const outer=e.getBoundingClientRect(),board=e.querySelector('.checker-board').getBoundingClientRect(),frame=e.querySelector('.checker-board-frame').getBoundingClientRect();return{outer:outer.toJSON(),board:board.toJSON(),frame:frame.toJSON(),cells:e.querySelectorAll('[data-grid-cell]').length,pointer:getComputedStyle(e.querySelector('.checker-board-frame')).pointerEvents};});
+  assert(Math.abs(m.outer.width/m.outer.height-1)<.01);assert(Math.abs(m.board.width/m.outer.width-.94)<.002,JSON.stringify(m));assert(Math.abs((m.board.left-m.outer.left)/m.outer.width-.03)<.002,JSON.stringify(m));assert.equal(m.cells,64);assert.equal(m.pointer,'none');assert(Math.abs(m.frame.width-m.outer.width)<1);
+ }
+}));

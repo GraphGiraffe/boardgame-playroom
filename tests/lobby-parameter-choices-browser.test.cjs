@@ -167,3 +167,35 @@ test('prepared public panels instantiate unique help IDs and keep fresh saved va
  assert(await rules.locator('[data-rulebook-mode=full]').getAttribute('aria-selected')==='true');
  assert.equal(await page.evaluate(()=>PlayroomMessages.locale),'ru');
 }));
+
+
+test('physical assets keep their own scalable surface in parameters and every host context',{timeout:60000},()=>fixture(async page=>{
+ await startRoom(page,'klondike');await active(page).locator('[data-command=room-rules]').tap();const form=active(page).locator('form');await form.locator('[data-rule-field=draw] input[value="3"]').check();
+ const previews=form.locator('.rule-preview-cards .piece-back');assert.equal(await previews.count(),3);
+ await page.screenshot({path:path.join(out,'physical-parameters-phone.png')});
+ const metrics=await previews.evaluateAll(es=>es.map(e=>{const s=getComputedStyle(e);return{shadow:s.boxShadow,radius:s.borderTopLeftRadius,border:parseFloat(s.borderTopWidth),overflow:s.overflow,hasType:!!e.querySelector(':scope>svg[data-piece-type=card-deck]')};}));
+ assert(metrics.every(m=>m.hasType&&m.shadow==='none'&&m.border===0&&m.overflow==='visible'),JSON.stringify(metrics));
+ const result=await page.evaluate(()=>{const C=PlayroomGameComponents,H=PlayroomViews.helpers,P=C.createHelpers(H,()=>''),host=document.createElement('div');host.style.cssText='position:fixed;inset:0;background:var(--paper);z-index:9999;overflow:auto';host.dataset.scalingEvidence='';document.body.append(host);const contexts=['','game-scene','player-panel','action-reveal-art scene','playroom-motion-layer','rulebook-figure','rule-choice-preview-art'];
+  const items=[];for(const context of contexts)for(const size of [24,48,96]){const section=document.createElement('section');section.className=context;section.style.cssText='position:relative;inset:auto;display:flex;gap:8px;width:100%;max-width:none;transform:none;filter:none';section.innerHTML='<div class="mini-hand">'+H.back()+'</div><button class="shared-card">'+C.cardBack()+'</button><button class="shared-die">'+C.dieArt(3,{frame:'raised'})+'</button>'+P.cardSlot({suit:'♥',tag:'span'})+'<span data-size-role=checker>'+C.checkerArt(true,false)+'</span><span data-size-role=domino>'+C.dominoFace(2,5)+'</span>';host.append(section);for(const e of section.querySelectorAll('.piece-back,.shared-card,.shared-die,.shared-card-slot,[data-size-role=checker],[data-size-role=domino]')){e.style.setProperty('width',size+'px','important');e.style.setProperty('min-width','0','important');e.style.setProperty('height',(e.classList.contains('shared-die')?size:size*1.4)+'px','important');const s=getComputedStyle(e);items.push({context,size,kind:e.className,shadow:s.boxShadow,border:parseFloat(s.borderTopWidth),overflow:s.overflow,art:!!e.querySelector(':scope>svg')});}}
+  window.scaleEvidenceHost=host;return items;});
+ for(const m of result)assert(m.art&&m.shadow==='none'&&m.border===0&&m.overflow==='visible',JSON.stringify(m));
+ await page.screenshot({path:path.join(out,'all-context-physical-assets.png')});await page.evaluate(()=>scaleEvidenceHost.remove());
+}));
+
+test('every registered vector asset variant preserves its plane and material scale',{timeout:60000},()=>fixture(async page=>{
+ const report=await page.evaluate(()=>{const C=PlayroomGameComponents,current=PlayroomAssetResolver,host=document.createElement('div'),rows=[];host.style.cssText='position:fixed;inset:0;z-index:9999;overflow:auto;display:flex;flex-wrap:wrap;align-content:start;background:var(--paper);gap:8px';document.body.append(host);
+  const params={rank:'A',suit:'♥',value:4,count:4,label:'Счёт',a:2,b:5,size:3,king:true,columns:4,rows:4,head:'',body:'',foot:''};
+  for(const [family,spec]of Object.entries(current.catalog))for(const variant of spec.variants){const resolver=new C.AssetResolver({catalog:current.catalog,palette:current.palette,renderers:current.renderers,skins:{[family]:variant}}),raw=resolver.render(family,params),template=document.createElement('template');template.innerHTML=raw;const source=template.content.firstElementChild;if(source?.tagName.toLowerCase()!=='svg'){rows.push({family,variant,kind:'UI',scaledBy:'typography'});continue;}
+   for(const size of [24,48,96,144]){const svg=source.cloneNode(true),box=svg.viewBox.baseVal;svg.style.cssText='display:block;width:'+size+'px;height:'+(size*box.height/box.width)+'px;max-width:none;max-height:none;flex:none';host.append(svg);rows.push({family,variant,size,svg});}}
+  const result=rows.map(row=>{if(!row.svg)return row;const {svg,...meta}=row,rect=svg.getBoundingClientRect(),box=svg.viewBox.baseVal;return{...meta,width:rect.width,height:rect.height,ratio:box.width/box.height,align:svg.preserveAspectRatio.baseVal.align,meet:svg.preserveAspectRatio.baseVal.meetOrSlice,material:[...svg.querySelectorAll('.card-outline,.card-rim,.card-surface,.piece-contour')].map(e=>({effect:getComputedStyle(e).vectorEffect,scale:Math.hypot(e.getScreenCTM().a,e.getScreenCTM().b)/rect.width}))};});host.remove();return result;
+ });
+ const families=new Set(report.map(r=>r.family));assert(families.size>=12);for(const row of report.filter(r=>r.size)){assert(Math.abs(row.width-row.size)<.1,JSON.stringify(row));assert(Math.abs(row.width/row.height-row.ratio)<.01,JSON.stringify(row));assert.equal(row.align,6,row.family+' centered plane');assert.equal(row.meet,1,row.family+' never stretches');assert(row.material.every(m=>m.effect!=='non-scaling-stroke'),row.family+' physical rim scales with its plane');}
+ fs.writeFileSync(path.join(out,'all-asset-variants-scale.json'),JSON.stringify(report,null,2));
+}));
+
+
+test('reveal uses intrinsic portrait square die and domino planes without forced card ratio',{timeout:30000},()=>fixture(async page=>{
+ const rows=await page.evaluate(()=>{const C=PlayroomGameComponents,host=document.createElement('div');host.style.cssText='position:fixed;inset:0;z-index:9999';document.body.append(host);const samples=[['portrait',C.cardBack(),5/7],['square',C.cardFrame(C.dieArt(2),{shape:'square'}),1],['die',C.dieArt(6,{frame:'raised'}),1],['domino',C.dominoFace(2,5),4/7]];const rows=[];
+ for(const [kind,art,ratio]of samples){const section=document.createElement('div');section.className='action-reveal-art scene';section.style.cssText='position:relative;width:120px;max-width:none;filter:none';section.innerHTML=art;host.append(section);const rect=section.firstElementChild.getBoundingClientRect();rows.push({kind,ratio,width:rect.width,height:rect.height});}host.remove();return rows;});
+ for(const row of rows)assert(Math.abs(row.width/row.height-row.ratio)<.01,JSON.stringify(row));
+}));
