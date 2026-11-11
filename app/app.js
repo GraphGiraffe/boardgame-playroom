@@ -76,6 +76,30 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const randomBotName = () => {const used=new Set(room?.participants.filter(p=>p.bot).map(p=>p.nickname));const available=botNames.filter(name=>!used.has(name));return available[Math.floor(Math.random()*available.length)]||botNames[0];};
   const Tags=globalThis.PlayroomTags,hubFilters={type:'',mechanic:'',format:''};
   const catalog = globalThis.PlayroomCatalog || {};
+  // Public strings and scalar layout envelopes only: never retain live forms,
+  // projections, permissions or network operations in speculative preparation.
+  const panelPreparation=new PlayroomDOM.PreparationCache({limit:12,maxBytes:4*1024*1024});
+  const ruleLayoutPreparation=new PlayroomDOM.PreparationCache({limit:192,maxBytes:512*1024});
+  let panelAppearance=0;
+  const invalidatePanelPreparation=()=>{panelAppearance++;panelPreparation.clear();ruleLayoutPreparation.clear();};
+  document.addEventListener('playroom:appearance',invalidatePanelPreparation);
+  document.fonts?.addEventListener('loadingdone',invalidatePanelPreparation);
+  window.addEventListener('pagehide',invalidatePanelPreparation);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)invalidatePanelPreparation();});
+  const panelPackIdentities=new WeakMap();let panelPackSequence=0;
+  function publicPanelKey(kind,game,value){const manifest=catalog[game];if(manifest&&!panelPackIdentities.has(manifest))panelPackIdentities.set(manifest,++panelPackSequence);return JSON.stringify([kind,game,meta(game)?.version,manifest?.version,manifest?panelPackIdentities.get(manifest):0,globalThis.PlayroomMessages.locale,document.documentElement.lang,panelAppearance,value]);}
+  let preparedPanelSequence=0;
+  function instantiatePanelContent(content){
+    // Help popovers, tabs and SVG references belong to this opening, including
+    // when the same public prototype is used above a retained parent panel.
+    const suffix='-prepared-'+(++preparedPanelSequence),ids=new Map(),parts=typeof content==='string'?[content]:Object.values(content);
+    for(const html of parts)for(const match of html.matchAll(/\sid=(["'])(.*?)\1/g))if(!/^rulebook-(top|contents|options|section-\d+)$/.test(match[2]))ids.set(match[2],match[2]+suffix);
+    const rewrite=html=>html.replace(/(\s(?:id|for|list|form|popovertarget|aria-controls|aria-labelledby|aria-describedby)=)(["'])(.*?)\2/g,(_,attribute,quote,value)=>attribute+quote+value.split(' ').map(id=>ids.get(id)||id).join(' ')+quote).replace(/(\s(?:href|xlink:href)=)(["'])#(.*?)\2/g,(_,attribute,quote,id)=>attribute+quote+'#'+(ids.get(id)||id)+quote).replace(/url\(#([^)]*)\)/g,(_,id)=>'url(#'+(ids.get(id)||id)+')');
+    return typeof content==='string'?rewrite(content):Object.fromEntries(Object.entries(content).map(([key,html])=>[key,rewrite(html)]));
+  }
+  function preparedPanel(key,build){let content=panelPreparation.get(key);if(content===undefined){content=build();panelPreparation.set(key,content);}return instantiatePanelContent(content);}
+
+
   const animationPresets=Flow.presets;
   const settingsStore=new globalThis.PlayroomPlayerSettingsStore(()=>localStorage);
   let settings=globalThis.PlayroomPlayerSettings.defaults();
@@ -766,6 +790,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function showGameCard(gameId){
     const game=meta(gameId);if(!game)return;const back=captureModalReturn(),activeRoom=!!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.();
     const frame=openModal(`${modalHead(game.name)}<div class="choice021-game"><div class="choice021-art">${V.cover?.(gameId)||''}</div><div class="menu-list choice021-modes">${[['hotseat','На устройстве','С ботом или вместе','gamepad'],['online','Онлайн','Комната и приглашения','globe'],['network','Рядом','QR, звук или код','wifi']].map(([mode,label,subtitle,glyph])=>{const reason=activeRoom?'Сначала вернитесь в активную комнату.':mode!=='hotseat'&&game.max===1?'Эта игра доступна только на устройстве.':'';return `<button type="button" class="menu-row" data-game-mode="${mode}" ${reason?'disabled':''}><span><strong>${label}</strong><small>${reason||subtitle}</small></span>${icon(glyph)}</button>`;}).join('')}<button type="button" class="menu-row" data-game-card-rules><span>Как играть</span>${icon('rules')}</button></div></div>`,'game-card-modal choice021',{onBack:back});
+    prepareGamePanels(gameId,{valid:()=>frame.element.isConnected&&localModal.isActive(frame)});
     frame.element.querySelector('[data-game-card-rules]').onclick=()=>{const backToCard=captureModalReturn();showRules(gameId);modalBack=backToCard;};
     for(const button of frame.element.querySelectorAll('[data-game-mode]'))button.onclick=()=>{const mode=button.dataset.gameMode;const begin=()=>{if(globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.())return toast('Сначала вернитесь в активную комнату или закройте её.');setup(gameId);if(mode!=='hotseat')setRoomOption('transportMode',mode);};if(mode==='online'&&globalThis.PlayroomAccountUI.service.snapshot().kind!=='account')globalThis.PlayroomAccountUI.show({onReady:begin});else begin();};
   }
@@ -809,6 +834,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const state=room,isHost=state.ownerId===lobbyParticipantId;if(isHost)watchAutoStart(state);
     openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,completed,canStart:isHost&&roomService.canStart(state.id),startReason:isHost?roomService.startBlocker(state.id):'',countdown:lobbyCountdown??3}),'room-setup-modal');
     PlayroomLobbyView.notifyRulesChange(state,lobbyParticipantId,toast);
+    const preparedRoomId=state.id,preparedGameId=state.game.id,preparedRevision=state.rulesRevision,preparedActor=lobbyParticipantId;
+    const choicePlan=roomGameChoicePlan(state.transportMode);panelPreparation.prepare(choicePlan.key,choicePlan.build,{valid:()=>room?.id===preparedRoomId&&room.game.id===preparedGameId&&room.rulesRevision===preparedRevision&&lobbyParticipantId===preparedActor&&!!$('#modal-root>[data-surface-state=active] .lobby-shell')});
+    prepareGamePanels(preparedGameId,{state,readonly:!isHost||state.phase!=='lobby'||!!state.recovery,reason:!isHost||state.phase!=='lobby'||state.recovery?'Параметры можно менять до начала партии.':'',valid:()=>room?.id===preparedRoomId&&room.game.id===preparedGameId&&room.rulesRevision===preparedRevision&&lobbyParticipantId===preparedActor&&!!$('#modal-root>[data-surface-state=active] .lobby-shell')});
     const lobby=$('#modal-root>[data-surface-state=active] .lobby-shell'),roomId=state.id,actor=lobbyParticipantId;
     const current=()=>room?.id===roomId&&lobbyParticipantId===actor&&room.ownerId===actor&&room.phase==='lobby'&&!room.recovery;
     PlayroomLobbyView.bindFirst(lobby,id=>{if(!current()||id!==null&&room.firstPlayerMode==='assigned'&&room.firstParticipantId===id)return;room=roomService.configure(roomId,actor,{firstPlayerMode:id===null?'rules':'assigned',firstParticipantId:id});renderLobby();},{current,onError:error=>toast(globalThis.PlayroomMessages.error(error))});
@@ -934,10 +962,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }catch(error){if(error.code!=='cancelled'&&current())throw error;}
     }});
   }
+  function roomRulebookPanelContent(state){
+    const game=meta(state.game.id),rows=Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],false,catalog[state.game.id]?.presetSetting);
+    return globalThis.PlayroomMessages.text('ui.app.380e3dbd6730',{p0:String(PlayroomRulebookView.header()),p1:String(PlayroomLobbyView.rulesMarkup(state,rows,game,catalog[state.game.id]?.settings||[]))});
+  }
   function showRoomRules(){
-    const state=roomService.snapshot(room.id),game=meta(state.game.id);
-    const rows=Multiplayer.describeRules(state.rules,catalog[state.game.id]?.settings||[],false,catalog[state.game.id]?.presetSetting);
-    openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(PlayroomRulebookView.header()),p1:String(PlayroomLobbyView.rulesMarkup(state,rows,game,catalog[state.game.id]?.settings||[]))}),'rulebook-modal');modalBack ||= renderLobby;
+    const state=roomService.snapshot(room.id);
+    openModal(preparedPanel(publicPanelKey('room-rules',state.game.id,state.rules),()=>roomRulebookPanelContent(state)),'rulebook-modal');modalBack ||= renderLobby;
   }
   function showRoomHelp(){openModal(globalThis.PlayroomMessages.text("ui.app.380e3dbd6730",{p0:String(modalHead(globalThis.PlayroomMessages.text("ui.app.df2a5a208045"))),p1:String(PlayroomLobbyView.helpMarkup(roomService.snapshot(room.id)))}));modalBack ||= renderLobby;}
   // Range positions are UI indices; saved/domain values remain the pack's exact IDs.
@@ -1002,6 +1033,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return `<fieldset class="rules-v021-field rule-choice-field${mode?' is-mode-choice':''}${readonly?' is-readonly':''}${counter?' is-counter-choice':''}" data-rule-field="${esc(key)}" data-rule-schema="${esc(JSON.stringify(schema))}"><legend class="rule-choice-legend">${esc(field.label)}</legend><div class="rule-choice-heading">${settingTitle(field.label,field.help)}</div>${ruleChoicePreview({...field,readonly,game},options[index])}<div class="rule-choice-options" data-rule-option-count="${options.length}" data-rule-grid="${numericFour?'two':'flow'}" ${counter?'hidden':''}>${choices}</div>${stepper}</fieldset>`;
   }
   function syncRuleChoices(form){
+    const reserves=[];
     for(const field of form.querySelectorAll('.rule-choice-field')){
       const schema=JSON.parse(field.dataset.ruleSchema),radios=[...field.querySelectorAll('input[type=radio]')],index=radios.findIndex(radio=>radio.checked),option=schema.options[index];
       if(!option)continue;
@@ -1019,13 +1051,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         field.rulePreviewHTML=html;
       }
       const stepValue=field.querySelector('[data-rule-step-value]');if(stepValue)stepValue.textContent=option.label;
-      reserveRulePreview(field,schema,form);
+      reserves.push([field,schema]);
       field.querySelectorAll('[data-rule-step]').forEach(button=>button.disabled=field.classList.contains('is-readonly')||field.classList.contains('is-unavailable')||index+Number(button.dataset.ruleStep)<0||index+Number(button.dataset.ruleStep)>=radios.length);
     }
+    // Finish live writes before asking layout for any field's envelope.
+    for(const [field,schema]of reserves)reserveRulePreview(field,schema,form);
   }
   function reserveRulePreview(field,schema,form){
     const preview=field.querySelector('[data-rule-next]');if(!preview||!field.getClientRects().length)return;
     const signature=preview.clientWidth+':'+getComputedStyle(preview).font+':'+JSON.stringify([schema,schema.options.map(option=>rulePreviewCount(schema,option,form))]);if(field.ruleReserveKey===signature)return;
+    const cacheKey=publicPanelKey('preview-envelope',form.dataset.game,signature),cached=ruleLayoutPreparation.get(cacheKey);
+    if(cached!==undefined){preview.style.minBlockSize=cached+'px';field.ruleReserveKey=signature;field.dataset.ruleMeasureMs='0';return;}
     // Quantity art has a monotone height envelope at a fixed width. Measure
     // its largest count for each distinct caption, not every hidden label.
     const representatives=new Map();for(const [index,option]of schema.options.entries()){const descriptor={...(schema.preview||{}),...(option.preview||{})},count=rulePreviewCount(schema,option,form),quantity=['cards','dice','health','lives'].includes(descriptor.kind),detail=option.description||(descriptor.countFrom&&count!==null?option.label:'');const sampleKey=quantity?descriptor.kind+':'+detail:'option:'+index,previous=representatives.get(sampleKey);if(!previous||quantity&&count>previous.count)representatives.set(sampleKey,{option,count});}
@@ -1038,7 +1074,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(candidateDetail){if(!measuredDetail){measuredDetail=document.createElement('small');measuredDetail.dataset.rulePreviewDetail='';preview.append(measuredDetail);}measuredDetail.textContent=candidateDetail.textContent;}else if(measuredDetail)measuredDetail.textContent='';
       max=Math.max(max,preview.getBoundingClientRect().height);
     }}finally{art.replaceChildren(...originalArt);preview.className=originalClass;if(detail)detail.textContent=originalText;else measuredDetail?.remove();}
-    preview.style.flex=originalFlex;preview.style.minBlockSize=Math.ceil(max)+'px';field.ruleReserveKey=key;field.dataset.ruleMeasureMs=(performance.now()-started).toFixed(2);if(scrollport)scrollport.scrollTop=scrollTop;
+    preview.style.flex=originalFlex;ruleLayoutPreparation.set(cacheKey,Math.ceil(max));preview.style.minBlockSize=Math.ceil(max)+'px';field.ruleReserveKey=key;field.dataset.ruleMeasureMs=(performance.now()-started).toFixed(2);if(scrollport)scrollport.scrollTop=scrollTop;
   }
   function bindRuleChoices(form){
     let gesture=null,suppressClickUntil=0;
@@ -1062,12 +1098,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       choose(field,1,{wrap:true});
     });
   }
-  function showRoomRulesEditor({room:externalRoom=null}={}){
-    if(!externalRoom&&!room)return;
-    const state=externalRoom||roomService.snapshot(room.id),g=meta(state.game.id),manifest=catalog[state.game.id]||{},presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text("ui.app.a39ad47c9222")}],fields=manifest.settings||[],actor=externalRoom?null:lobbyParticipantId;
-    const readonly=!!externalRoom||state.ownerId!==actor||state.phase!=='lobby'||!!state.recovery;
-    const reason=externalRoom?'Параметры меняет ведущий комнаты.':readonly?'Параметры можно менять до начала партии.':'';
-    const valid=()=>{if(externalRoom){const current=globalThis.PlayroomNetworkLibrary?.inviteContext?.();return current?.room?.id===state.id&&current.room.game.id===state.game.id&&current.room.rulesRevision===state.rulesRevision;}if(room?.id!==state.id||lobbyParticipantId!==actor)return false;const current=roomService.snapshot(state.id);return current.ownerId===state.ownerId&&current.game.id===state.game.id&&current.phase===state.phase&&current.rulesRevision===state.rulesRevision;};
+  function roomRulePanelKey(state,readonly,reason){return publicPanelKey('parameters',state.game.id,[state.rules,state.firstPlayerMode,state.seatOrder,readonly,reason]);}
+  function roomRulePanelContent(state,readonly,reason){
+    const g=meta(state.game.id),manifest=catalog[state.game.id]||{},presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text('ui.app.a39ad47c9222')}],fields=manifest.settings||[];
     const presetSource=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))},preset={...presetSource,key:'preset',teamLayouts:manifest.teamLayouts,options:presetSource.options.map(option=>({...option,description:option.description||(presetSource.presentation==='mode'?presets.find(p=>p.id===option.value)?.description:undefined)}))};
     const controls=new Map(fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default,{readonly,game:state.game.id,mode:preset.presentation!=='mode'&&field.presentation==='mode'&&fields.find(item=>item.presentation==='mode')===field})]));
     const groups=manifest.ruleGroups||[{fields:fields.map(field=>field.key)}],endingKeys=new Set(groups.filter(group=>group.end).flatMap(group=>group.fields));
@@ -1084,8 +1117,17 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Места перемешиваются перед игрой.',preview:{kind:'symbol',icon:'shuffle'}}]]
     ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
     const header=modalHead('Параметры игры',{className:'rules-v021-header',actions:GameScreen.iconButton(`data-rules="${esc(state.game.id)}"`,'Как играть','help')});
+    return {header,body:`<section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly,game:state.game.id})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div>`};
+  }
+  function showRoomRulesEditor({room:externalRoom=null}={}){
+    if(!externalRoom&&!room)return;
+    const state=externalRoom||roomService.snapshot(room.id),actor=externalRoom?null:lobbyParticipantId;
+    const readonly=!!externalRoom||state.ownerId!==actor||state.phase!=='lobby'||!!state.recovery;
+    const reason=externalRoom?'Параметры меняет ведущий комнаты.':readonly?'Параметры можно менять до начала партии.':'';
+    const valid=()=>{if(externalRoom){const current=globalThis.PlayroomNetworkLibrary?.inviteContext?.();return current?.room?.id===state.id&&current.room.game.id===state.game.id&&current.room.rulesRevision===state.rulesRevision;}if(room?.id!==state.id||lobbyParticipantId!==actor)return false;const current=roomService.snapshot(state.id);return current.ownerId===state.ownerId&&current.game.id===state.game.id&&current.phase===state.phase&&current.rulesRevision===state.rulesRevision;};
+    const content=preparedPanel(roomRulePanelKey(state,readonly,reason),()=>roomRulePanelContent(state,readonly,reason));
     let disposeRuleLayout=()=>{};
-    const frame=openModal(`${header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}"><section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly,game:state.game.id})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div></form>`,'room-rules-modal',{valid,onBack:captureModalReturn(),onDispose:()=>disposeRuleLayout()});
+    const frame=openModal(`${content.header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}">${content.body}</form>`,'room-rules-modal',{valid,onBack:captureModalReturn(),onDispose:()=>disposeRuleLayout()});
     if(!frame)return;
     const form=frame.element.querySelector('#room-rules-form');form.ruleEditorCurrent=()=>valid()&&localModal.isActive(frame)&&!readonly;bindRuleChoices(form);syncRuleVisibility(form);let layoutFrame=0,retired=false;const dirty=new Set(),layoutCurrent=()=>!retired&&form.isConnected&&valid();
     const flushLayout=()=>{layoutFrame=0;if(!layoutCurrent()){disposeRuleLayout();return;}if(!localModal.isActive(frame))return;const fields=[...dirty];dirty.clear();syncRuleSummary(form);for(const field of fields)reserveRulePreview(field,JSON.parse(field.dataset.ruleSchema),form);};
@@ -1107,7 +1149,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const values=rules.display.map(row=>row.label+': '+row.value);summary.replaceChildren(...[g.name,...values.slice(0,2)].map(text=>{const item=document.createElement('span');item.textContent=text;return item;}));summary.title=[g.name,...values].join(' · ');
     // Reserve only this public summary's possible text height; no ghost DOM.
     const samples=new Set([summary.textContent]);for(const field of form.querySelectorAll('[data-rule-schema]')){const schema=JSON.parse(field.dataset.ruleSchema);for(const option of schema.options){if(samples.size>=64)break;const variant={...rules,options:{...rules.options}};if(schema.name.startsWith('option-'))variant.options[schema.name.slice(7)]=option.value;else variant[schema.name]=option.value;const display=Multiplayer.describeRules(variant,fields,false,manifest.presetSetting);samples.add([g.name,...display.slice(0,2).map(row=>row.label+': '+row.value)].join(' · '));}}
-    const key=summary.clientWidth+':'+getComputedStyle(summary).font+':'+[...samples].sort().join('|');if(form.ruleSummaryReserveKey!==key){const nodes=[...summary.childNodes],width=summary.clientWidth;let max=width===form.ruleSummaryReserveWidth?parseFloat(summary.style.minBlockSize)||0:0;summary.style.minBlockSize='0px';for(const sample of samples){summary.textContent=sample;max=Math.max(max,summary.getBoundingClientRect().height);}summary.replaceChildren(...nodes);summary.style.minBlockSize=Math.ceil(max)+'px';form.ruleSummaryReserveWidth=width;form.ruleSummaryReserveKey=key;}if(scrollport)scrollport.scrollTop=scrollTop;
+    const key=summary.clientWidth+':'+getComputedStyle(summary).font+':'+[...samples].sort().join('|');if(form.ruleSummaryReserveKey!==key){const cacheKey=publicPanelKey('summary-envelope',game,key),cached=ruleLayoutPreparation.get(cacheKey),nodes=[...summary.childNodes],width=summary.clientWidth;let max=cached??(width===form.ruleSummaryReserveWidth?parseFloat(summary.style.minBlockSize)||0:0);if(cached===undefined){summary.style.minBlockSize='0px';for(const sample of samples){summary.textContent=sample;max=Math.max(max,summary.getBoundingClientRect().height);}summary.replaceChildren(...nodes);ruleLayoutPreparation.set(cacheKey,Math.ceil(max));}summary.style.minBlockSize=Math.ceil(max)+'px';form.ruleSummaryReserveWidth=width;form.ruleSummaryReserveKey=key;}if(scrollport)scrollport.scrollTop=scrollTop;
 
   }
   function syncRuleVisibility(form){
@@ -1169,12 +1211,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
     return true;
   }
+  function roomGameChoicePlan(transportMode){
+    const preferences=globalThis.PlayroomPackManager?.displayPreferences()||{favorites:[]};
+    const available=orderedVisibleGames().filter(g=>(transportMode==='hotseat'||g.max>1)&&V.supports(g.id,'player')&&V.supports(g.id,'table')).sort((a,b)=>Number(preferences.favorites.includes(b.id))-Number(preferences.favorites.includes(a.id)));
+    return {available,key:publicPanelKey('game-choice','',[available.map(g=>publicPanelKey('installed-game',g.id,null)),preferences.favorites]),build:()=>`${modalHead(globalThis.PlayroomMessages.text("ui.app.3bba8537ff5d"))}<div class="room-choice-list">${available.map((g,i)=>`${i&&preferences.favorites.includes(available[i-1].id)&&!preferences.favorites.includes(g.id)?'<hr class="room-choice-divider">':''}${GameScreen.packRow({id:g.id,version:g.version||'',name:g.name,manifest:catalog[g.id]||g,selectable:true,attrs:`data-room-game="${esc(g.id)}"`})}`).join('')}</div>`};
+  }
   function showRoomGameEditor(){
     if(!room||roomService.snapshot(room.id).phase!=='lobby'||room.ownerId!==lobbyParticipantId)return;
-    const back=captureModalReturn(),preferences=globalThis.PlayroomPackManager?.displayPreferences()||{favorites:[]};
-    const available=orderedVisibleGames().filter(g=>(room.transportMode==='hotseat'||g.max>1)&&V.supports(g.id,'player')&&V.supports(g.id,'table')).sort((a,b)=>Number(preferences.favorites.includes(b.id))-Number(preferences.favorites.includes(a.id)));
-    if(!available.length)return toast(globalThis.PlayroomMessages.text("ui.app.631826417487"));
-    openModal(`${modalHead(globalThis.PlayroomMessages.text("ui.app.3bba8537ff5d"))}<div class="room-choice-list">${available.map((g,i)=>`${i&&preferences.favorites.includes(available[i-1].id)&&!preferences.favorites.includes(g.id)?'<hr class="room-choice-divider">':''}${GameScreen.packRow({id:g.id,version:g.version||'',name:g.name,manifest:catalog[g.id]||g,selectable:true,attrs:`data-room-game="${esc(g.id)}"`})}`).join('')}</div>`);modalBack=back;
+    const back=captureModalReturn(),plan=roomGameChoicePlan(room.transportMode);
+    if(!plan.available.length)return toast(globalThis.PlayroomMessages.text('ui.app.631826417487'));
+    openModal(preparedPanel(plan.key,plan.build));modalBack=back;
   }
   function updateRoomGame(form){
     try{
@@ -1209,12 +1255,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     openModal(`<header class="modal-head"><h2>Добро пожаловать в ХОД</h2></header><p class="lead">${globalThis.PlayroomMessages.text("ui.app.5418cf79756a")}</p><form id="profile-form"><div class="profile-identity-row">${globalThis.PlayroomAvatarPicker.button('',profileAvatar)}<label class="field"><span>${globalThis.PlayroomMessages.text("ui.app.f189892b63a9")}</span><input name="playerName" maxlength="24" autocomplete="nickname" placeholder="${globalThis.PlayroomMessages.text("ui.app.fec0b28c091d")}" required></label></div>${setup}<div class="profile-entry-actions">${globalThis.PlayroomAccountUI.markup({labelled:true})}<button class="btn" type="submit">${icon('play')} <span data-profile-play-label>${globalThis.PlayroomAccountUI.service.snapshot().kind==='account'?'Играть':'Играть без облака'}</span></button></div></form>`);
   }
   function savePlayerProfile(form){try{const installAll=form.elements.installAllGames?.checked===true;playerProfile=profileStore.save(form.elements.playerName.value,{avatar:profileAvatar});closeModal(true);render();window.dispatchEvent(new Event('playroom:profile-ready'));if(installAll)packUI?.open({installAll:true});}catch(error){toast(globalThis.PlayroomMessages.error(error));}}
+  function rulebookPanelContent(gameId,chosenRules){
+    const g=meta(gameId),manifest=catalog[gameId];
+    return `${PlayroomRulebookView.header()}${PlayroomLobbyView.gameRulesMarkup(g,manifest?.settings||[],{rules:chosenRules,presetSetting:manifest?.presetSetting,hasHands:!!manifest?.capabilities?.hands,firstPlayer:manifest?.capabilities?.firstPlayer!==false})}<p class="pack-line">${globalThis.PlayroomMessages.text("ui.app.a61be19c4d76")}${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} ${globalThis.PlayroomMessages.text("ui.app.71d648b599c5")}</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">${globalThis.PlayroomMessages.text("ui.app.e2ce86b38fd5")}</button>`;
+  }
+  function prepareGamePanels(gameId,{state=null,readonly=false,reason='',valid=()=>true}={}){
+    if(!meta(gameId))return;
+    const publicState=state?{game:{id:gameId},rules:structuredClone(state.rules),firstPlayerMode:state.firstPlayerMode,seatOrder:state.seatOrder}:null;
+    const rules=publicState?.rules||null;
+    panelPreparation.prepare(publicPanelKey('rules',gameId,rules),()=>rulebookPanelContent(gameId,rules),{valid});
+    if(publicState){panelPreparation.prepare(publicPanelKey('room-rules',gameId,rules),()=>roomRulebookPanelContent(publicState),{valid});panelPreparation.prepare(roomRulePanelKey(publicState,readonly,reason),()=>roomRulePanelContent(publicState,readonly,reason),{valid});}
+  }
   function showRules(gameId=($('#modal-root .room-setup-modal,#room-rules-form')?room?.game?.id:session?.game)) {
     const returnBack=modalBack,fromRoom=!!room&&(!!$('#modal-root .room-setup-modal,#room-rules-form')||modalBack===renderLobby);
     if(!gameId)return showHelp();const g=meta(gameId),manifest=catalog[gameId];
     const chosenRules=fromRoom&&room?.game?.id===gameId?room.rules:session?.game===gameId?
       (session.options.lobbyConfig?.rules||{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:session.options.openHands,firstPlayerMode:session.options.firstPlayerMode,seatOrder:session.options.seatOrder,options:Object.fromEntries((manifest?.settings||[]).filter(field=>session.options[field.key]!==undefined).map(field=>[field.key,session.options[field.key]]))}):null;
-    openModal(`${PlayroomRulebookView.header()}${PlayroomLobbyView.gameRulesMarkup(g,manifest?.settings||[],{rules:chosenRules,presetSetting:manifest?.presetSetting,hasHands:!!manifest?.capabilities?.hands,firstPlayer:manifest?.capabilities?.firstPlayer!==false})}<p class="pack-line">${globalThis.PlayroomMessages.text("ui.app.a61be19c4d76")}${esc(g.id)} · ${g.min===g.max?g.min:g.min+'–'+g.max} ${globalThis.PlayroomMessages.text("ui.app.71d648b599c5")}</p><button class="btn" data-command="close-modal" style="width:100%;margin-top:10px">${globalThis.PlayroomMessages.text("ui.app.e2ce86b38fd5")}</button>`,'rulebook-modal');
+    openModal(preparedPanel(publicPanelKey('rules',gameId,chosenRules),()=>rulebookPanelContent(gameId,chosenRules)),'rulebook-modal');
     if(!modalBack){if(returnBack)modalBack=returnBack;else if(fromRoom)modalBack=renderLobby;}
   }
   function showHelp() {

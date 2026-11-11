@@ -148,3 +148,22 @@ test('Mage parameter illustrations use the actual selected cards and action icon
  for(const [value,ids]of [['0',['setting-type-attack','setting-type-attack']],['1',['setting-type-movement','setting-type-attack']]]){await types.locator('input[value="'+value+'"]').check();assert.deepEqual(await types.locator('[data-rule-illustration]').evaluateAll(es=>es.map(e=>e.dataset.ruleIllustration)),ids);assert.equal(await types.locator('.rule-preview-illustrations>span>svg').count(),2);}
  await actions.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'mage-real-parameter-illustrations.png')});
 }));
+
+
+test('prepared public panels instantiate unique help IDs and keep fresh saved values',{timeout:60000},()=>fixture(async page=>{
+ await startRoom(page,'mage-brawl');
+ // Let the screen-owned idle jobs prepare their public strings before the tap.
+ await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,250)));
+ const helpIds=[];
+ for(let i=0;i<2;i++){
+  await active(page).locator('[data-command=room-rules]').tap();const form=active(page).locator('#room-rules-form');
+  const ids=await form.locator('.rule-help button').evaluateAll(buttons=>buttons.map(button=>{const id=button.getAttribute('popovertarget'),target=document.getElementById(id);if(!target||!button.closest('form').contains(target))throw Error('HELP_TARGET_OUTSIDE_CURRENT_FORM');return id;}));
+  assert(ids.length>0);assert(ids.every(id=>!helpIds.includes(id)),'each opening owns fresh Help IDs');helpIds.push(...ids);
+  if(i===0){await form.locator('input[name=option-actionsPerTurn][value="1"]').check();await active(page).locator('button[type=submit]').tap();}
+  else{assert.equal(await form.locator('input[name=option-actionsPerTurn]:checked').inputValue(),'1');await active(page).locator('.rules-v021-footer [data-command=close-modal]').tap();}
+ }
+ await active(page).locator('[data-command=room-rules-view]').tap();const rules=active(page).locator('.rulebook-modal');await rules.locator('[data-rulebook-mode=full]').tap();
+ await rules.locator('.rulebook-toc summary').tap();const link=rules.locator('[data-rulebook-jump]').first();await link.tap();
+ assert(await rules.locator('[data-rulebook-mode=full]').getAttribute('aria-selected')==='true');
+ assert.equal(await page.evaluate(()=>PlayroomMessages.locale),'ru');
+}));

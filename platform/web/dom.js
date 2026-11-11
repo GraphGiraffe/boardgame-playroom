@@ -276,6 +276,47 @@ function consumePointerReleaseClick(point,{document:doc=globalThis.document,time
  const click=event=>{if(event.detail===0)return;if(Math.abs(event.clientX-point.x)<8&&Math.abs(event.clientY-point.y)<8){event.preventDefault();event.stopImmediatePropagation();}clear();};
  win.addEventListener('click',click,true);win.addEventListener('pointerdown',clear,{capture:true,once:true});timer=win.setTimeout(clear,timeout);return clear;
 }
+// Screen-owned public presentation values only. Preparing never opens a surface.
+class PreparationCache {
+ constructor({window:win=globalThis,limit=64,maxBytes=1024*1024}={}){
+  if(!Number.isInteger(limit)||limit<1||!Number.isFinite(maxBytes)||maxBytes<1)throw new TypeError('PREPARATION_LIMIT_INVALID');
+  this.win=win;this.limit=limit;this.maxBytes=maxBytes;this.values=new Map();this.jobs=new Map();this.bytes=0;this.epoch=0;this.disposed=false;this.idle=null;this.counts={hits:0,misses:0,evictions:0,errors:0};
+ }
+ get stats(){return Object.freeze({...this.counts,size:this.values.size,bytes:this.bytes,pending:this.jobs.size,disposed:this.disposed});}
+ get(key){const item=this.values.get(key);if(!item||this.disposed){this.counts.misses++;return undefined;}this.counts.hits++;this.values.delete(key);this.values.set(key,item);return item.value;}
+ set(key,value,{bytes}={}){
+  if(this.disposed||typeof key!=='string'||!key.length||key.length*2>this.maxBytes)return false;
+  const seen=new Set();let nodes=0;
+  const plain=item=>{if(++nodes>10000)return false;if(item===null||typeof item==='string'||typeof item==='boolean')return true;if(typeof item==='number')return Number.isFinite(item);if(typeof item!=='object'||seen.has(item))return false;const proto=Object.getPrototypeOf(item);if(!Array.isArray(item)&&proto!==Object.prototype&&proto!==null)return false;seen.add(item);const valid=Object.values(Object.getOwnPropertyDescriptors(item)).every(descriptor=>'value'in descriptor&&plain(descriptor.value));seen.delete(item);return valid;};
+  if(!plain(value))return false;
+  const freeze=item=>{if(item&&typeof item==='object'&&!Object.isFrozen(item)){for(const child of Object.values(item))freeze(child);Object.freeze(item);}};freeze(value);
+  const text=JSON.stringify(value),actual=(key.length+text.length)*2;
+  if(bytes!==undefined&&(!Number.isFinite(bytes)||bytes<0))return false;
+  const size=Math.max(actual,bytes||0);if(size>this.maxBytes)return false;
+  const previous=this.values.get(key);if(previous){this.bytes-=previous.bytes;this.values.delete(key);}
+  while(this.values.size>=this.limit||this.bytes+size>this.maxBytes){const first=this.values.keys().next().value,item=this.values.get(first);this.values.delete(first);this.bytes-=item.bytes;this.counts.evictions++;}
+  this.values.set(key,{value,bytes:size});this.bytes+=size;return true;
+ }
+ prepare(key,factory,{valid=()=>true}={}){
+  if(this.disposed||typeof key!=='string'||!key||key.length*2>this.maxBytes||typeof factory!=='function'||typeof valid!=='function'||this.values.has(key)||this.jobs.has(key)||this.jobs.size>=this.limit)return false;
+  this.jobs.set(key,{factory,valid,epoch:this.epoch});this._schedule();return true;
+ }
+ _schedule(){
+  if(this.disposed||this.idle!==null||!this.jobs.size)return;
+  const epoch=this.epoch,native=typeof this.win.requestIdleCallback==='function'&&typeof this.win.cancelIdleCallback==='function';
+  const run=deadline=>{if(epoch!==this.epoch)return;this.idle=null;if(this.disposed||!this.jobs.size)return;
+   if(this.win.navigator?.scheduling?.isInputPending?.()||native&&deadline.timeRemaining()<4){this._schedule();return;}
+   const [key,job]=this.jobs.entries().next().value;this.jobs.delete(key);
+   const current=()=>!this.disposed&&job.epoch===this.epoch&&job.valid()!==false;
+   try{if(current()){const value=job.factory();if(value&&typeof value.then==='function'){Promise.resolve(value).catch(()=>{});this.counts.errors++;}else if(current())this.set(key,value);}}catch(_){this.counts.errors++;}
+   this._schedule();
+  };
+  const id=native?this.win.requestIdleCallback(run):this.win.setTimeout(run,50);this.idle={id,native};
+ }
+ clear(){this.epoch++;if(this.idle!==null){const {id,native}=this.idle;this.idle=null;if(native)this.win.cancelIdleCallback(id);else this.win.clearTimeout(id);}this.jobs.clear();this.values.clear();this.bytes=0;}
+ dispose(){this.clear();this.disposed=true;}
+}
+
 class ModalController {
  constructor({host,background,prepareSurface=null}){if(!host)throw Error('MODAL_HOST_REQUIRED');if(prepareSurface!==null&&typeof prepareSurface!=='function')throw Error('MODAL_PREPARATION_REQUIRED');this.host=host;this.background=background;this._state=modalState(host,background,prepareSurface);this._owned=null;}
  get owner(){return this._owned?.state!=='disposed'?this._owned?.element||null:null;}
@@ -326,5 +367,5 @@ class ModalController {
  dispose(){const index=this._state.frames.findIndex(record=>record.controller===this);if(index>=0)removeSurfaces(this._state,this._state.frames.slice(index),'dispose');this._owned=null;}
 }
 
-return Object.freeze({keyedFragments,fragmentTemplate,manageChildren,revealInScrollport,trackScrollportFocus,positionFixed,patchChildren,observePatches,ListController,ModalController,consumePointerReleaseClick,prepareVisualEntry,enterVisual,finishVisualEntry,retireVisual,clearVisualExits});
+return Object.freeze({keyedFragments,fragmentTemplate,manageChildren,revealInScrollport,trackScrollportFocus,positionFixed,patchChildren,observePatches,ListController,ModalController,PreparationCache,consumePointerReleaseClick,prepareVisualEntry,enterVisual,finishVisualEntry,retireVisual,clearVisualExits});
 });
