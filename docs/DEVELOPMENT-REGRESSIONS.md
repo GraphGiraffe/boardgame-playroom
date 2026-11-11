@@ -81,3 +81,10 @@ Within the same game/viewer/viewport, removing or emptying a local or opponent h
 ## Parameter measurement and WebKit
 
 Keep layout writes outside ResizeObserver delivery: coalesce through one owned animation frame and guard width before scheduling. Dispose observers/frames with the editor. Bounded public-preview/summary measurement must preserve the same owned scrollport: temporary min-height changes can clamp WebKit scrollTop even when final geometry is identical. Anchor parameter help to the ordinary title container, not the fieldset anonymous content box. Regressions assert actual hit-tested help, no ResizeObserver page errors, unchanged card/next-row coordinates, scroll, control identity and focus.
+
+
+## Parameter card headers (preview.69)
+
+A native rendered legend can sit above the fieldset background even when the fieldset has display:flex. Keep its accessible name in a visually hidden, absolutely positioned legend; render the visible title and Help in an ordinary .rule-choice-heading inside the painted content. Do not repair this with negative offsets or a duplicate background. Header/Help rectangles must be within card padding on Chromium and WebKit, including wrapping titles. Prior tests checked title origin but missed the native background edge.
+
+Compact option paint may be36px, but its radio label retains44px of native tap area. Preserve two-line labels, bottom alignment, Help44px, draft and stable card/scroll/focus across changes. Run the named painted-card header regression against the old exact artifact (red) and final artifact (green); do not infer physical-device acceptance from browser emulation.
