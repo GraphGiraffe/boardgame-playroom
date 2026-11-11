@@ -580,6 +580,11 @@ def two_modes(m):
  field(m)['presentation']='mode';m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':{'kind':'cards','count':7}}]})
 reject(two_modes)
 for preview in [{'kind':'declaration','actor':'other','label':'UNO!'},{'kind':'declaration','actor':'human','label':'x'*25},{'kind':'declaration','actor':'human'},{'kind':'symbol','icon':'not-a-ui-icon'},{'kind':'symbol','icon':'first','html':'<svg/>'}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
+for ids in [None,[],['ok']*5,[''],['x'*65],['https://example.test'],['<svg>'],[1],[True]]:reject(lambda m,ids=ids:option(m).__setitem__('preview',{'kind':'illustrations','ids':ids}))
+reject(lambda m:option(m).__setitem__('preview',{'kind':'illustrations','ids':['ok'],'html':'<svg>'}))
+def missing_illustration_feature(m):
+ option(m)['preview']={'kind':'illustrations','ids':['ok']};m['sdkFeatures'].remove('parameter-illustrations-v1')
+reject(missing_illustration_feature)
 for description in [None,False,[], '', 'x'*361]:reject(lambda m,d=description:option(m).__setitem__('description',d))
 for condition in [None,{},[],{'missing':'vegas'},{'actionsPerTurn':'unknown'},{'actionsPerTurn':2}]:
  def change(m,c=condition):field(m).update({'inactiveWhen':c,'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}})
@@ -602,7 +607,7 @@ value=copy.deepcopy(base);field(value)['presentation']='mode';ns['validate_manif
 value=copy.deepcopy(base);field(value).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}});ns['validate_manifest'](value,'valid-inactive-preview');valid.append(value)
 for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
-for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'}]:
+for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'},{'kind':'illustrations','ids':['setting-type-attack']},{'kind':'illustrations','ids':['same']*4}]:
  value=copy.deepcopy(base);option(value)['preview']=preview;ns['validate_manifest'](value,'valid-common-preview');valid.append(value)
 print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False))
 `;
@@ -610,8 +615,11 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  const Packs=require('../core/packs.js'),parse=manifest=>Packs.parse({format:'playroom-pack',formatVersion:1,manifest,files:{'rules.js':'fixture','view.js':'fixture','styles.css':'/* fixture */','sounds.js':'fixture'}});
  for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
- const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},manager=new Packs({engine:Engine,views:UI.createRegistry(),modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
+ const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
  for(const bundle of result.bundles){const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);assert.deepEqual(catalog[id].settings,bundle.manifest.settings);const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings);assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);}
+ for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),id==='mage-brawl','only author-supplied component illustrations require the new feature');
+ const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
+ const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
  const modes=[catalog.durak.presetSetting,...catalog.durak.settings].filter(f=>f.presentation==='mode');assert.equal(modes.length,1);assert.equal(modes[0].key,'variant');assert.deepEqual(modes[0].options.map(o=>o.value),['simple','throwin','transfer']);
  const fleet=require('../packs/battleship/domain/geometry.js').fleets;
