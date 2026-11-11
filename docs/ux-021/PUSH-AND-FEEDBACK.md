@@ -2,6 +2,8 @@
 
 Local source and isolated fixtures only, 2026-11-02. No provider delivery, important-update announcement, production DDL or deployment was performed.
 
+Каноническая актуальная [единая матрица событий, каналов, сроков и владельцев](FEEDBACK-MATRIX-1111.md) объединяет общие form/progress/connection/status-сценарии и социальные/Push-сценарии ниже. Следующая таблица сохранена как подробный Push-поднабор исходного отчёта; границы provider/device-приёмки указаны в канонической матрице.
+
 ## Event matrix
 
 | Event | Delivery and relevance | Foreground behavior |
