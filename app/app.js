@@ -227,9 +227,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   globalThis.PlayroomPWA?.setUpdateGuard(()=>updateIdle()&&(!$('#modal-root').children.length||!!$('#modal-root .updates-modal')));
   const unifiedCleanup=new globalThis.PlayroomPackUpdateCleanup({manager:packs,localReferences:(id,version)=>{if(library.list().some(row=>row.invalid))throw Error('SAVED_ARCHIVE_UNREADABLE');return library.references(id,version);},networkArchives:()=>globalThis.PlayroomNetworkLibrary.list({strict:true}),activeRoom:()=>!!room||!!globalThis.PlayroomNetworkLibrary.hasActiveRoom?.(),compare:globalThis.TabletopPacks.compareVersions});
   const unifiedUpdate=new globalThis.PlayroomUpdateAll({storage:localStorage,manager:packs,remote:globalThis.PlayroomRemotePacks,cleanup:unifiedCleanup,version:()=>appVersion,idle:()=>screen==='hub'&&!room&&!transition&&storageOK&&!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.(),settle:()=>globalThis.PlayroomData.queue,app:()=>globalThis.PlayroomPWA,progress:message=>{const status=$('[data-update-status]');if(status)status.textContent=message;}});
+  function releaseUnusedUpdateLobby(){
+    // A dismissed local setup has no game to save and no remote participants.
+    // Retire it only on the user's update action, never during an idle check.
+    if(screen!=='hub'||transition||!storageOK||globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.()||!room)return;
+    if($('#modal-root>[data-surface-state=active] .room-setup-modal,#modal-root>[data-surface-state=suspended] .room-setup-modal'))return;
+    const state=roomService.snapshot(room.id);
+    if(state.transportMode!=='hotseat'||state.phase!=='lobby'||state.recovery)return;
+    roomService.discardRecovery(state.id);autoStartUnsub?.();autoStartUnsub=null;autoStartRoom=null;
+    room=null;lobbyParticipantId=null;clearInterval(lobbyTimer);lobbyTimer=null;lobbyCountdown=null;
+    $('#app [data-command="room"]')?.remove();
+  }
   async function updateEverything(start=false){
     if(globalThis.PlayroomUnifiedUpdateBusy)return;globalThis.PlayroomUnifiedUpdateBusy=true;const button=$('[data-command="update-all"]');if(button)button.disabled=true;
-    try{const result=await unifiedUpdate.run(start);if(result&&!result.reloading){rememberInstalledState();if(afterUpdate){closeModal(true);await showAfterUpdate();}else{closeModal(true);renderHub();toast('Приложение и игры обновлены.',{polite:true});}}return result;}
+    try{if(start)releaseUnusedUpdateLobby();const result=await unifiedUpdate.run(start);if(result&&!result.reloading){rememberInstalledState();if(afterUpdate){closeModal(true);await showAfterUpdate();}else{closeModal(true);renderHub();toast('Приложение и игры обновлены.',{polite:true});}}return result;}
     catch(error){const message=globalThis.PlayroomMessages.error(error),status=$('[data-update-status]');if(status)status.textContent=message;else toast('Обновление приостановлено. '+message,{action:'show-updates',label:'Продолжить'});}
     finally{globalThis.PlayroomUnifiedUpdateBusy=false;if(button)button.disabled=false;}
   }
