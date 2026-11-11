@@ -211,3 +211,10 @@
 .rule-preview-illustrations>span>svg{width:1.75rem;height:1.75rem}
 
 .rule-preview-illustrations>span>svg[data-piece-type="card-deck"]{width:2.75rem;height:auto;max-block-size:4rem}
+
+/* Diagram planes share one size in all parameter cards and both states. */
+.rule-choice-preview-art svg[data-art-role="parameter-diagram"]{display:block;width:6.5rem;height:auto;max-width:100%;flex:none;pointer-events:none}
+/* Composite card diagrams use the available card width, including mode heroes. */
+.rule-preview-illustrations:has(svg[data-art-role="parameter-diagram"]),.rule-preview-illustrations>span:has(>svg[data-art-role="parameter-diagram"]){width:100%}
+.rule-preview-illustrations>span>svg[data-art-role="parameter-diagram"]{width:100%;max-width:12rem}
+.is-mode-choice .rule-preview-illustrations>span>svg[data-art-role="parameter-diagram"]{max-width:22rem}

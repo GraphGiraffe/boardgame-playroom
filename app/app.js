@@ -1011,7 +1011,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function ruleChoicePreview(field,option,form){
     const H=TabletopUI.helpers,C=H.components,preview={...(field.preview||{}),...(option.preview||{})},kind=preview.kind,count=rulePreviewCount(field,option,form);
-    let art='';
+    let art=PlayroomLobbyView.parameterArt(field.key||field.name,option.value);
+    if(!art){
     if(kind==='cards'&&count!==null){
       const shown=count<=10?count:3;
       art=`<span class="rule-preview-cards" style="--preview-cards:${Math.max(1,shown)}" data-preview-count="${count}">${Array.from({length:shown},(_,i)=>`<span style="--preview-index:${i}">${H.back()}</span>`).join('')}${count>10?`<span class="rule-preview-deck-count">${H.countBadge(count,'Карт',{hand:true})}</span>`:''}</span>`;
@@ -1031,6 +1032,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(kind==='declaration'&&['human','bot'].includes(preview.actor)&&typeof preview.label==='string'){
       art=`<span class="rule-preview-declaration">${H.button({label:preview.label,ariaLabel:preview.label,variant:'secondary',disabled:true,attrs:'inert tabindex="-1"'}).replace(/^<button\b/,'<span').replace(/<\/button>$/,'</span>')}<span class="rule-preview-actor">${H.icon(preview.actor==='human'?'player':'bot')}</span></span>`;
 
+    }
     }
     const automatic=!!preview.countFrom&&count!==null,label=String(automatic?count:option.label||option.value),detail=String(option.description||(automatic?option.label:''));
     return `<button type="button" data-rule-next data-surface-pull-through class="rule-choice-preview${art?' has-art':''}${art&&['cards','dice','health','lives','fleet','teams'].includes(kind)?' has-value-art':''}${label.length>12?' is-long-label':''}" data-rule-preview-kind="${esc(kind||'text')}" data-rule-preview-value="${esc(option.value)}" aria-label="${esc('Следующий вариант: '+(field.label||field.name||'параметр')+'. Сейчас: '+(automatic?option.label+', '+count:label))}" ${!art&&!detail?'tabindex="-1"':''} ${field.readonly?'disabled':''}><span class="rule-choice-preview-art" aria-hidden="true">${art}</span><output class="rule-choice-accessible-value" data-rule-preview-label aria-live="polite">${esc(label)}</output>${detail?`<small data-rule-preview-detail>${esc(detail)}</small>`:''}</button>`;
@@ -1120,12 +1122,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const parametersVisible=preset.options.length>1||fields.some(field=>!endingKeys.has(field.key)&&field.options.length>1),endingVisible=fields.some(field=>endingKeys.has(field.key)&&field.options.length>1);
     const common=g.max===1?'':`<section class="rules-v021-group" data-rule-section="order"><h3>Порядок игры</h3><div class="rules-v021-fields">${[
       ['firstPlayerMode','Первый ход',[
-        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока задают правила.',preview:{kind:'symbol',icon:'first'}},
-        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно.',preview:{kind:'dice',count:1}},
-        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Выберите первого игрока в лобби.',preview:{kind:'symbol',icon:'people'}}]],
-      ['seatOrder','Порядок мест',[
-        {value:'normal',label:'По местам',shortLabel:'Места',description:'Очередь по местам за столом.',preview:{kind:'symbol',icon:'people'}},
-        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Места перемешиваются перед игрой.',preview:{kind:'symbol',icon:'shuffle'}}]]
+        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока задают правила.'},
+        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно.'},
+        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Выберите первого игрока в лобби.'}]],
+      ['seatOrder','Места за столом',[
+        {value:'normal',label:'По порядку',shortLabel:'По порядку',description:'Очередь по местам за столом.'},
+        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Места перемешиваются перед игрой.'}]]
     ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
     const header=modalHead('Параметры игры',{className:'rules-v021-header',actions:GameScreen.iconButton(`data-rules="${esc(state.game.id)}"`,'Как играть','help')});
     return {header,body:`<section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly,game:state.game.id})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div>`};

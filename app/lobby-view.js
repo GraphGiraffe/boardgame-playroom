@@ -90,6 +90,40 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return `<form id="${client?'net-client-nickname':'lobby-nickname-form'}" class="lobby-profile" data-inline-actions>${(root.PlayroomAvatarPicker?.button(me?.nickname||'',me?.avatar)||'').replace('data-avatar-picker',client?'data-avatar-picker data-avatar-client':'data-avatar-picker')}<label class="field"><input aria-label="${esc(globalThis.PlayroomMessages.text("ui.lobby-view.82b5d2603d58"))}" name="nickname" maxlength="24" autocomplete="nickname" required value="${esc(me?.nickname||'')}" ${disabled?'disabled':''}></label></form>`;
   }
   const ruleText=key=>globalThis.PlayroomMessages.text('rules-help.'+key);
+  // Standard settings have one public illustration across every pack and role.
+  // No participant identity or rule execution is needed to draw these examples.
+  function parameterArt(name,value){
+    name=String(name||'').replace(/^option-/, '');value=String(value);
+    const H=root.TabletopUI.helpers,V=root.PlayroomGameComponents.vector;
+    const body=svg=>svg.replace(/^<svg\b[^>]*>/,'').replace(/<\/svg>$/,'');
+    const glyph=(key,x,y,size)=>`<g transform="translate(${x} ${y}) scale(${size/24})" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${body(H.icon(key))}</g>`;
+    const token=(x,y,size)=>`<g data-first-player-token transform="translate(${x} ${y}) scale(${size/100})" stroke="none">${body(H.roundTokenArt({value:1}))}</g>`;
+    let drawing='',id='';
+    if(name==='firstPlayerMode'){
+      id='first-'+value;
+      if(value==='rules')drawing='<g data-rule-book>'+glyph('rules',35,20,50)+'</g>'+token(48,0,24);
+      else if(value==='assigned')drawing=glyph('player',36,15,44)+token(70,3,31);
+      else if(value==='random'){
+        const cx=41,cy=29,r=21,point=(angle,radius)=>[cx+Math.cos(angle)*radius,cy+Math.sin(angle)*radius].map(n=>Number(n.toFixed(3)));
+        const sectors=Array.from({length:6},(_,i)=>{const a=point(i*Math.PI/3,r),b=point((i+1)*Math.PI/3,r);return `<path data-wheel-sector d="M${cx} ${cy}L${a.join(' ')}A${r} ${r} 0 0 1 ${b.join(' ')}Z" fill="currentColor" fill-opacity="${i%2?.12:.04}"/>`;}).join('');
+        const handles=Array.from({length:6},(_,i)=>{const p=point(i*Math.PI/3,r+3);return `<circle data-wheel-handle cx="${p[0]}" cy="${p[1]}" r="1.7" fill="currentColor" stroke="none"/>`;}).join('');
+        drawing=`<path data-wheel-stand d="M37 50 32 62H50L45 50M28 64H54"/>${sectors}<circle cx="${cx}" cy="${cy}" r="${r}"/>${handles}<circle data-wheel-axle cx="${cx}" cy="${cy}" r="2" fill="currentColor"/><path data-wheel-pointer d="M77 24 68 29 77 34Z" fill="currentColor" stroke="none"/>`+token(81,13,35);
+      }else return '';
+    }else if(name==='seatOrder'){
+      if(!['normal','random'].includes(value))return '';id='seats-'+value;
+      const chairs=[[18,35,14,14,25,42],[38,8,15,13,45.5,14.5],[67,8,15,13,74.5,14.5],[92,35,14,14,99,42]];
+      drawing='<circle data-round-table cx="60" cy="43" r="21" fill="currentColor" fill-opacity=".05"/><circle cx="60" cy="43" r="21"/>';
+      drawing+=chairs.map(([x,y,w,h,cx,cy],i)=>`<g data-table-chair="${i+1}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5" fill="currentColor" fill-opacity=".07"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5"/>${i===0?'<path d="M14 34V50"/>':i===3?'<path d="M110 34V50"/>':`<path d="M${x} ${y-4}H${x+w}"/>`}${value==='normal'?`<text data-seat-number x="${cx}" y="${cy+.5}" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-size="9" font-weight="700">${i+1}</text>`:''}</g>`).join('');
+      if(value==='random')drawing+=glyph('shuffle',48,31,24);
+    }else if(name==='endMode'){
+      id='ending-'+value;
+      if(value==='winner')drawing=glyph('trophy',38,12,44);
+      else if(value==='round')drawing='<g data-last-round-timer stroke-width="2"><path data-timer-speed d="M23 28H43M15 41H39M25 54H43"/><path d="M67 17V12H73V17M62 8H78M88 22l4-4m-6-2 8 8"/><circle cx="70" cy="41" r="22"/><path data-timer-remaining d="M70 41V23A18 18 0 0 1 82.73 28.27Z" fill="currentColor" stroke="none"/><path d="M70 41 82.73 28.27"/><circle cx="70" cy="41" r="1.6" fill="currentColor"/></g>';
+      else if(value==='last')drawing='<g data-previous-players fill="currentColor" stroke="none"><circle cx="20" cy="43" r="2.5"/><circle cx="33" cy="43" r="2.5"/><circle cx="46" cy="43" r="2.5"/></g>'+glyph('player',65,16,44);
+      else return '';
+    }else return '';
+    return V.viewport({width:120,height:72,className:'rule-preview-common-art',attrs:`data-art-role="parameter-diagram" data-common-parameter-art="${id}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content:drawing});
+  }
   let helpSequence=0;
   function fieldHelp(text,title=null){
     if(!text)return '';
@@ -183,5 +217,5 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }});
     record.cleanup=()=>{pointer.dispose();unwatch?.();if(host._lobbyBinding===record)delete host._lobbyBinding;};host._lobbyBinding=record;unwatch=watchLobby(host,record.cleanup);return record.cleanup;
   }
-  root.PlayroomLobbyView={notifyRulesChange,render,roomContextMarkup,nicknameMarkup,rulesMarkup,gameRulesMarkup,fieldHelp,ruleText,helpMarkup,bindDrag,bindFirst};
+  root.PlayroomLobbyView={notifyRulesChange,render,roomContextMarkup,nicknameMarkup,rulesMarkup,gameRulesMarkup,fieldHelp,ruleText,parameterArt,helpMarkup,bindDrag,bindFirst};
 })(globalThis);
