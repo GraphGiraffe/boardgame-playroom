@@ -56,6 +56,8 @@ module.exports = {
     {"file": "uno-social.test.cjs", "profiles": [], "subblock": "games/actions"},
   ]},
   ui: {label: "Экраны приложения", cases: [
+    {"file":"panel-pull-browser.test.cjs","profiles":[],"subblock":"ui/navigation","types":["screen:phone:portrait","screen:phone:landscape"]},
+    {"file":"lobby-summary-browser.test.cjs","profiles":[],"subblock":"ui/room","types":["screen:phone:portrait","screen:phone:landscape","screen:desktop"]},
     {"file":"room-pack-switch-browser.test.cjs","profiles":[],"subblock":"ui/room","types":["screen:phone:portrait"]},
     {"file":"library-filters-browser.test.cjs","profiles":[],"subblock":"ui/library-filters","types":["screen:phone:portrait","screen:phone:landscape","screen:desktop"]},
     {"file":"pawn-art-browser.test.cjs","profiles":[],"subblock":"ui/layout"},

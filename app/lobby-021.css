@@ -90,3 +90,22 @@
  .room-v021-invite>.btn{min-height:40px;padding:6px;font-size:12px}
  :is(#modal-root,[data-ui-surface-exit]) .room-setup-modal[data-ui-surface="screen"]>.room-v021-footer{padding-top:6px}
 }
+
+/* A native title label activates the same parameter button. Its own grid row
+   keeps Rules outside that button's hit area and gives long titles full width. */
+.room-v021-summary.room-v021-game-summary{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:3px 10px;min-height:0;padding:8px 0}
+.room-v021-summary.room-v021-game-summary>.room-v021-cover-choice{grid-column:1;grid-row:1/3;align-self:center;width:48px;height:48px;padding:5px;border-radius:12px}
+.room-v021-summary.room-v021-game-summary .room-v021-cover-choice .room-v021-art{width:36px;height:36px}
+.room-v021-game-summary .room-v021-cover-edit{width:19px;height:19px;right:-2px;bottom:-2px}.room-v021-game-summary .room-v021-cover-edit>svg{width:12px;height:12px}
+.room-v021-game-title{grid-column:2/4;grid-row:1;min-width:0;cursor:pointer;color:var(--ink)}
+.room-v021-game-title>strong{display:block;margin:0;font-size:1rem;line-height:1.3;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-v021-summary.room-v021-game-summary>.room-v021-game-context{grid-column:2;grid-row:2;display:flex;align-items:center;min-width:0;min-height:44px;margin:0;padding:0;font:inherit}
+.room-v021-game-summary .room-v021-game-copy{width:100%;min-width:0}
+.room-v021-game-summary .room-v021-game-copy>small:not(.room-v021-game-lock){margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.75rem;line-height:1.4}
+.room-v021-game-summary .room-v021-game-edit{font-size:.75rem;line-height:1.3;margin-top:3px}
+.room-v021-summary.room-v021-game-summary>.lobby-text-action{grid-column:3;grid-row:2;align-self:center;margin:0;min-height:44px;padding:8px 10px;font-size:.875rem;white-space:nowrap}
+@media(orientation:landscape) and (min-width:600px) and (max-height:600px){
+ .room-v021>.room-v021-content{grid-template-columns:minmax(0,2fr) minmax(144px,.8fr);gap:8px 12px}
+ .room-v021-content>.room-v021-overview{grid-column:1/-1}
+ .room-v021-summary.room-v021-game-summary{padding:4px 0}
+}

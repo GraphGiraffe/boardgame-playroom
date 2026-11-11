@@ -870,3 +870,17 @@ test('built PWA releases stalled install and update spinners and keeps retry usa
  if(process.env.PLAYROOM_STALLED_REPORT)fs.writeFileSync(process.env.PLAYROOM_STALLED_REPORT,JSON.stringify({failedAfterMs,packRetry:true,updateRetry:true,errors},null,2));
  }finally{await browser.close();fixture.pendingBody?.res.destroy();await new Promise(resolve=>fixture.server.close(resolve));}
 });
+
+test('remote SDK requirements reject before download and match the checked bundle',async()=>{
+ const crypto=require('node:crypto'),{RemoteCatalog,validate}=require('../app/remote-catalog.js'),Packs=require('../core/packs.js');
+ const manifest={id:'guarded',version:'1.0.0',stateVersion:1,engineApi:4,viewApi:3,sdkFeatures:['local-input-v1','parameter-previews-v2']},bundle={manifest},bytes=Buffer.from(JSON.stringify(bundle)),sha=crypto.createHash('sha256').update(bytes).digest('hex'),entry={...manifest,sha256:sha,url:`/api/packs/files/guarded/1.0.0/${sha}.playroom-pack.json`};
+ let downloads=0,parses=0,prepared=0;
+ const manager={constructor:{SDK_FEATURES:Packs.SDK_FEATURES},list:()=>[],parse:text=>{parses++;return JSON.parse(text);},prepare:b=>{prepared++;return b;}},remote=new RemoteCatalog({manager,crypto:crypto.webcrypto,storage:{getItem:()=>null,setItem(){}},fetcher:async()=>{downloads++;return new Response(bytes);}});
+ const catalog=item=>validate({format:'playroom-catalog',version:1,collection:'1.0.0',packs:[item]});
+ for(const requirements of [null,'feature',['x','x'],[''],Array(17).fill('x')])assert.throws(()=>catalog({...entry,sdkFeatures:requirements}));
+ remote.current=catalog({...entry,sdkFeatures:['not-supported-v1']});await assert.rejects(()=>remote.prepare('guarded'),e=>e.code==='PACK_SDK_UNSUPPORTED');assert.equal(downloads,0,'unsupported requirements never download pack bytes');
+ remote.current=catalog(entry);assert.deepEqual((await remote.prepare('guarded')).manifest,manifest);assert.equal(prepared,1);
+ remote.current=catalog({...entry,sdkFeatures:['local-input-v1']});await assert.rejects(()=>remote.prepare('guarded'));assert.equal(prepared,1,'catalog/bundle requirement mismatch is not prepared');
+ const oldEntry={...entry};delete oldEntry.sdkFeatures;remote.current=catalog(oldEntry);await remote.prepare('guarded');assert.equal(parses,3,'catalogs without SDK metadata still go through bundle parsing');assert.equal(prepared,2);
+ manager.parse=()=>{throw Error('full bundle validation rejected unsupported SDK');};await assert.rejects(()=>remote.prepare('guarded'),/full bundle validation/);assert.equal(prepared,2,'missing catalog SDK data never bypasses full importer validation');
+});

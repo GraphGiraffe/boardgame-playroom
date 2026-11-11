@@ -35,12 +35,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
-  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1']);
+  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2']);
   function validateParameterPreviews(m){
     const invalid=()=>{throw Object.assign(Error(globalThis.PlayroomMessages.text('ui.packs.aa1f11edec45')),{code:'PACK_PARAMETER_PREVIEW_INVALID'});};
     const settings=m.settings===undefined?[]:m.settings,preset=m.presetSetting===undefined?{}:m.presetSetting,quantities=['cards','dice','health','lives'];
     const symbols=['undo','first','people','shuffle','rules','player','bot','trophy','clock','eye','eye-off','hand','board','ship','cards','dice','check','close','play','pause','history','stop','grid','teams','shield','sword','refresh','star','pieces','solitaire','lock','unlock'];
     if(!Array.isArray(settings)||!record(preset))invalid();
+    if(settings.some(f=>record(f)&&(f.presentation==='mode'||Object.hasOwn(f,'inactiveWhen')||Object.hasOwn(f,'inactivePresentation')))&&!m.sdkFeatures?.includes?.('parameter-previews-v2'))invalid();
     const fields=new Map(settings.filter(record).filter(f=>typeof f.key==='string').map(f=>[f.key,f]));
     const count=n=>Number.isSafeInteger(n)&&n>=0&&n<=100;
     const text=(s,max)=>typeof s==='string'&&s.trim().length>0&&s.length<=max;
@@ -53,22 +54,28 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if((!partial||Object.hasOwn(v,'icon'))&&!symbols.includes(v.icon))invalid();
       }
     };
+    if([preset,...settings].filter(record).filter(f=>f.presentation==='mode').length>1)invalid();
     for(const field of [preset,...settings]){
-      if(!record(field)||field.presentation!==undefined&&(field!==preset||field.presentation!=='mode'))invalid();
+      if(!record(field)||field.presentation!==undefined&&field.presentation!=='mode')invalid();
       const parent=field.preview;
       if(parent!==undefined){if(!record(parent)||typeof parent.kind!=='string')invalid();if(['declaration','symbol'].includes(parent.kind))common(parent,{},true);else if(Object.keys(parent).length!==1||!quantities.includes(parent.kind))invalid();}
-      const options=field.options===undefined?[]:field.options;if(!Array.isArray(options))invalid();
+      let options=field.options===undefined?[]:field.options;if(!Array.isArray(options)||field.presentation==='mode'&&!options.length)invalid();
+      if(Object.hasOwn(field,'inactiveWhen')||Object.hasOwn(field,'inactivePresentation')){
+        const condition=field.inactiveWhen,inactive=field.inactivePresentation;
+        if(!record(condition)||!Object.keys(condition).length||Object.keys(condition).length>16||Object.entries(condition).some(([key,value])=>!fields.has(key)||typeof value!=='string'||!Array.isArray(fields.get(key).options)||!fields.get(key).options.filter(record).some(o=>String(o.value)===value))||!record(inactive)||Object.keys(inactive).length!==2||!Object.hasOwn(inactive,'preview')||!Object.hasOwn(inactive,'description'))invalid();
+        options=[...options,inactive];
+      }
       for(const option of options){
         if(!record(option)||option.description!==undefined&&!text(option.description,360))invalid();const p=option.preview;
-        if(p===undefined){if(field.presentation==='mode')invalid();if(['declaration','symbol'].includes(parent?.kind))common({},parent);continue;}
+        if(p===undefined){if(field.presentation==='mode'&&!parent)invalid();if(['declaration','symbol'].includes(parent?.kind))common({},parent);continue;}
         if(!record(p))invalid();const kind=Object.hasOwn(p,'kind')?p.kind:parent?.kind;
         if(['fleet','teams'].includes(kind)){
           const key=kind==='fleet'?'pieces':'teamSizes',values=p[key];
-          if(field!==preset||field.presentation!=='mode'||Object.keys(p).length!==2||!Object.hasOwn(p,'kind')||!Array.isArray(values)||values.length<1||values.length>(kind==='fleet'?16:8)||values.some(n=>!Number.isSafeInteger(n)||n<1||n>(kind==='fleet'?16:32))||values.reduce((a,b)=>a+b,0)>(kind==='fleet'?100:32))invalid();
+          if(field.presentation!=='mode'||Object.keys(p).length!==2||!Object.hasOwn(p,'kind')||!Array.isArray(values)||values.length<1||values.length>(kind==='fleet'?16:8)||values.some(n=>!Number.isSafeInteger(n)||n<1||n>(kind==='fleet'?16:32))||values.reduce((a,b)=>a+b,0)>(kind==='fleet'?100:32))invalid();
         }else if(['declaration','symbol'].includes(kind)){
-          if(field.presentation==='mode')invalid();common(p,parent);
+          common(p,parent);
         }else if(quantities.includes(kind)){
-          if(field.presentation==='mode'||Object.keys(p).some(k=>!['kind','count','countFrom'].includes(k))||Object.hasOwn(p,'count')&&Object.hasOwn(p,'countFrom')||Object.hasOwn(p,'count')&&!count(p.count))invalid();
+          if(Object.keys(p).some(k=>!['kind','count','countFrom'].includes(k))||Object.hasOwn(p,'count')&&Object.hasOwn(p,'countFrom')||Object.hasOwn(p,'count')&&!count(p.count))invalid();
           if(Object.hasOwn(p,'countFrom')){
             const s=p.countFrom;
             if(!record(s)||Object.keys(s).length!==2||typeof s.field!=='string'||!fields.has(s.field)||!record(s.values)||!Object.hasOwn(s,'values'))invalid();
@@ -93,7 +100,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(m.skinFamilies!==undefined&&(!Array.isArray(m.skinFamilies)||m.skinFamilies.length>32||m.skinFamilies.some(f=>typeof f!=='string'||!ID.test(f))||new Set(m.skinFamilies).size!==m.skinFamilies.length)||m.defaultSkins!==undefined&&(!record(m.defaultSkins)||Object.entries(m.defaultSkins).some(([family,variant])=>!m.skinFamilies?.includes(family)||typeof variant!=='string'||!ID.test(variant))))throw Error('PACK_SKINS_INVALID');
     if(m.viewApi!==3)throw Error(globalThis.PlayroomMessages.text("ui.packs.ad05493d1057"));
     if(m.engineApi!==4||!Number.isSafeInteger(m.stateVersion)||m.stateVersion<1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4cec05765e2b"));
-    if(m.sdkFeatures!==undefined&&(!Array.isArray(m.sdkFeatures)||m.sdkFeatures.length>16||new Set(m.sdkFeatures).size!==m.sdkFeatures.length||m.sdkFeatures.some(feature=>!SDK_FEATURES.includes(feature))))throw Error(globalThis.PlayroomMessages.text('ui.packs.4cec05765e2b'));
+    if(m.sdkFeatures!==undefined&&(!Array.isArray(m.sdkFeatures)||m.sdkFeatures.length>16||new Set(m.sdkFeatures).size!==m.sdkFeatures.length||m.sdkFeatures.some(feature=>!SDK_FEATURES.includes(feature))))throw Object.assign(Error(globalThis.PlayroomMessages.text('errors.PACK_SDK_UNSUPPORTED')),{code:'PACK_SDK_UNSUPPORTED'});
     if(typeof m.name!=='string'||!m.name.trim()||m.name.length>120)throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     if(m.shortName!==undefined&&(typeof m.shortName!=='string'||!m.shortName.trim()||m.shortName.length>60))throw Error(globalThis.PlayroomMessages.text("ui.packs.b082fee613b3"));
     const paths=Object.keys(bundle.files);if(paths.length>128)throw Error(globalThis.PlayroomMessages.text("ui.packs.a2c15b806ca4"));
@@ -282,6 +289,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return publish();
     }
   }
-  Packs.parse=parse;Packs.compareVersions=compare;Packs.STORAGE_KEY=STORAGE;
+  Packs.parse=parse;Packs.compareVersions=compare;Packs.STORAGE_KEY=STORAGE;Packs.SDK_FEATURES=SDK_FEATURES;
   return Packs;
 });

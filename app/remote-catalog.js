@@ -10,6 +10,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const seen=new Set();
     for(const item of input.packs){
       if(!item||!ID.test(item.id)||!SEMVER.test(item.version)||!Number.isSafeInteger(item.stateVersion)||item.stateVersion<1||item.engineApi!==4||item.viewApi!==3||!HEX.test(item.sha256)||item.url!==`/api/packs/files/${item.id}/${item.version}/${item.sha256}.playroom-pack.json`)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.bb5762ca842a"));
+      if(item.sdkFeatures!==undefined&&(!Array.isArray(item.sdkFeatures)||item.sdkFeatures.length>16||new Set(item.sdkFeatures).size!==item.sdkFeatures.length||item.sdkFeatures.some(f=>typeof f!=='string'||!ID.test(f))))throw Error('Invalid pack SDK requirements');
       if(item.releases!==undefined&&(!Array.isArray(item.releases)||item.releases.length>128||item.releases.some(release=>!release||!SEMVER.test(release.version)||!Array.isArray(release.changes)||release.changes.length>128||release.changes.some(line=>typeof line!=='string'||line.length>4000))))throw Error('Invalid pack release notes');
       if(['name','tagline'].some(key=>item[key]!==undefined&&(typeof item[key]!=='string'||item[key].length>2048))||item.byteSize!==undefined&&(!Number.isSafeInteger(item.byteSize)||item.byteSize<1||item.byteSize>4*1024*1024))throw Error('Invalid pack catalog metadata');
       if(seen.has(item.id))throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.dd2d739e7aa6"));seen.add(item.id);
@@ -49,6 +50,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       this.requireAvailable();
       const item=this.pending().find(entry=>entry.id===id);
       if(!item)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.3456539518cb"));
+      const supported=this.manager.constructor?.SDK_FEATURES||[];
+      if(item.sdkFeatures?.some(feature=>!supported.includes(feature)))throw Object.assign(Error(globalThis.PlayroomMessages.text('errors.PACK_SDK_UNSUPPORTED')),{code:'PACK_SDK_UNSUPPORTED'});
       if(!this.crypto?.subtle)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.b01d9b44b6a3"));
       const bytes=await Deadline.run(async(signal,touch)=>{const response=await this.fetcher(this.basePath+item.url.slice('/api/packs/'.length),{cache:'no-store',credentials:'same-origin',redirect:'error',signal});
       if(!response.ok||response.redirected)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.40a73e8f9f18",{p0:String(response.status)}));
@@ -58,6 +61,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const bundle=this.manager.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
       const manifest=bundle.manifest;
       if(manifest.id!==item.id||manifest.version!==item.version||manifest.stateVersion!==item.stateVersion||manifest.engineApi!==item.engineApi||manifest.viewApi!==item.viewApi)throw Error(globalThis.PlayroomMessages.text("ui.remote-catalog.75fccc8516b6"));
+      if(item.sdkFeatures!==undefined&&JSON.stringify([...item.sdkFeatures].sort())!==JSON.stringify([...(manifest.sdkFeatures||[])].sort()))throw Error(globalThis.PlayroomMessages.text('ui.remote-catalog.75fccc8516b6'));
       return this.manager.prepare(bundle);
     }
     async install(id,{activate=false}={}){return this.manager.install(await this.prepare(id),{activate});}

@@ -161,9 +161,7 @@ body.reduced-motion #app .hub-pages>.shared-page-panel{transition:none}
 #app .hub-shell-v021 .catalog-filter-count{position:absolute;top:2px;right:2px;display:grid;place-items:center;min-width:.875rem;height:.875rem;padding:0 .125rem;border-radius:999px;background:var(--green);color:var(--color-action-on-primary);font-size:.625rem;line-height:1}
 #app .hub-shell-v021:not([data-hub-editing="true"]) .catalog-toolbar>.library-heading{display:none}
 
-#app .hub-root-actions :is([data-saved-refresh],[data-community-refresh])[aria-busy="true"]{position:relative;opacity:1;cursor:progress}
-#app .hub-root-actions :is([data-saved-refresh],[data-community-refresh])[aria-busy="true"]>svg{visibility:hidden}
-#app .hub-root-actions :is([data-saved-refresh],[data-community-refresh])[aria-busy="true"]::after{content:"";position:absolute;left:50%;top:50%;translate:-50% -50%;width:20px;height:20px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;pointer-events:none}
+#app .hub-root-actions :is([data-saved-refresh],[data-community-refresh])[aria-busy="true"]{opacity:1;cursor:progress;background:color-mix(in srgb,var(--ink) 12%,var(--paper))}
 
 #app .hub-shell-v021 .catalog-card.is-editing .catalog-card-type{visibility:hidden}
 
