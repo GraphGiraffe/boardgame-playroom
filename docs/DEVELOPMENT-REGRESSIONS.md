@@ -88,3 +88,14 @@ Keep layout writes outside ResizeObserver delivery: coalesce through one owned a
 A native rendered legend can sit above the fieldset background even when the fieldset has display:flex. Keep its accessible name in a visually hidden, absolutely positioned legend; render the visible title and Help in an ordinary .rule-choice-heading inside the painted content. Do not repair this with negative offsets or a duplicate background. Header/Help rectangles must be within card padding on Chromium and WebKit, including wrapping titles. Prior tests checked title origin but missed the native background edge.
 
 Compact option paint may be36px, but its radio label retains44px of native tap area. Preserve two-line labels, bottom alignment, Help44px, draft and stable card/scroll/focus across changes. Run the named painted-card header regression against the old exact artifact (red) and final artifact (green); do not infer physical-device acceptance from browser emulation.
+
+
+## Preview.70 shared UI follow-up
+
+Parameter captions anchor8px above their own options/counters; flexible space belongs to artwork. Measure public alternatives with intrinsic flex during reservation, restore original nodes/styles/scroll; key caches before generating SVG, dedupe summary strings before live measurements. Counter paint36px inside44px hit area matches options. Help uses the same proportional corner spacing as a library favorite, independently of its44px hit area.
+
+A CSS entry animation may stay pending until the first rendering opportunity. Start fallback completion watchdog after owned animations.ready, not when DOM mounts; preparation longtasks must not consume motion duration. Keep reduced-motion/unmount/dispose cleanup. Overlay viewports clip X entry/exit projections while content scrollports retain their own measurable overflow. Test no-reduced-motion native entry, desktop classic scrollbars500/1366 and Back, not only static endpoints.
+
+Physical card/deck/slot/die radii belong to scalable piece geometry, not general UI control radius tokens. Canonical SVG owns its print/rim clip; avoid a second fixed-pixel wrapper crop. See packs shared/view-kit.css and35component/size regression; preserve square/portrait aspect and full outer rim at miniature size.
+
+Public parameter illustration IDs use the existing registered pack illustration callback, with no state, HTML or URLs from metadata. Generic1–4 IDs require parameter-illustrations-v1; only Mage currently declares it. Fields carry the owning game context from the host, never a manifest-selected foreign game.

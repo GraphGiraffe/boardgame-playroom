@@ -35,7 +35,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
-  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2']);
+  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1']);
   function validateParameterPreviews(m){
     const invalid=()=>{throw Object.assign(Error(globalThis.PlayroomMessages.text('ui.packs.aa1f11edec45')),{code:'PACK_PARAMETER_PREVIEW_INVALID'});};
     const settings=m.settings===undefined?[]:m.settings,preset=m.presetSetting===undefined?{}:m.presetSetting,quantities=['cards','dice','health','lives'];
@@ -46,10 +46,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const count=n=>Number.isSafeInteger(n)&&n>=0&&n<=100;
     const text=(s,max)=>typeof s==='string'&&s.trim().length>0&&s.length<=max;
     const common=(p,parent={},partial=false)=>{
-      const v={...parent,...p},allowed={declaration:['kind','actor','label'],symbol:['kind','icon']}[v.kind];
+      const v={...parent,...p},allowed={declaration:['kind','actor','label'],symbol:['kind','icon'],illustrations:['kind','ids']}[v.kind];
       if(Object.keys(p).some(k=>!allowed.includes(k)))invalid();
       if(v.kind==='declaration'){
         if((!partial||Object.hasOwn(v,'actor'))&&!['human','bot'].includes(v.actor)||(!partial||Object.hasOwn(v,'label'))&&!text(v.label,24))invalid();
+      }else if(v.kind==='illustrations'){
+        if(!m.sdkFeatures?.includes?.('parameter-illustrations-v1')||(!partial||Object.hasOwn(v,'ids'))&&(!Array.isArray(v.ids)||v.ids.length<1||v.ids.length>4||v.ids.some(id=>typeof id!=='string'||! /^[A-Za-z0-9._-]{1,64}$/.test(id))))invalid();
       }else if(v.kind==='symbol'){
         if((!partial||Object.hasOwn(v,'icon'))&&!symbols.includes(v.icon))invalid();
       }
@@ -58,7 +60,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const field of [preset,...settings]){
       if(!record(field)||field.presentation!==undefined&&field.presentation!=='mode')invalid();
       const parent=field.preview;
-      if(parent!==undefined){if(!record(parent)||typeof parent.kind!=='string')invalid();if(['declaration','symbol'].includes(parent.kind))common(parent,{},true);else if(Object.keys(parent).length!==1||!quantities.includes(parent.kind))invalid();}
+      if(parent!==undefined){if(!record(parent)||typeof parent.kind!=='string')invalid();if(['declaration','symbol','illustrations'].includes(parent.kind))common(parent,{},true);else if(Object.keys(parent).length!==1||!quantities.includes(parent.kind))invalid();}
       let options=field.options===undefined?[]:field.options;if(!Array.isArray(options)||field.presentation==='mode'&&!options.length)invalid();
       if(Object.hasOwn(field,'inactiveWhen')||Object.hasOwn(field,'inactivePresentation')){
         const condition=field.inactiveWhen,inactive=field.inactivePresentation;
@@ -67,12 +69,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       for(const option of options){
         if(!record(option)||option.description!==undefined&&!text(option.description,360))invalid();const p=option.preview;
-        if(p===undefined){if(field.presentation==='mode'&&!parent)invalid();if(['declaration','symbol'].includes(parent?.kind))common({},parent);continue;}
+        if(p===undefined){if(field.presentation==='mode'&&!parent)invalid();if(['declaration','symbol','illustrations'].includes(parent?.kind))common({},parent);continue;}
         if(!record(p))invalid();const kind=Object.hasOwn(p,'kind')?p.kind:parent?.kind;
         if(['fleet','teams'].includes(kind)){
           const key=kind==='fleet'?'pieces':'teamSizes',values=p[key];
           if(field.presentation!=='mode'||Object.keys(p).length!==2||!Object.hasOwn(p,'kind')||!Array.isArray(values)||values.length<1||values.length>(kind==='fleet'?16:8)||values.some(n=>!Number.isSafeInteger(n)||n<1||n>(kind==='fleet'?16:32))||values.reduce((a,b)=>a+b,0)>(kind==='fleet'?100:32))invalid();
-        }else if(['declaration','symbol'].includes(kind)){
+        }else if(['declaration','symbol','illustrations'].includes(kind)){
           common(p,parent);
         }else if(quantities.includes(kind)){
           if(Object.keys(p).some(k=>!['kind','count','countFrom'].includes(k))||Object.hasOwn(p,'count')&&Object.hasOwn(p,'countFrom')||Object.hasOwn(p,'count')&&!count(p.count))invalid();

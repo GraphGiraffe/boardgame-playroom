@@ -206,7 +206,11 @@ function prepareVisualEntry(element,{target=element,document:doc=element.ownerDo
   reduced?.addEventListener?.('change',motionChanged);doc.addEventListener('visibilitychange',visibilityChanged);
   if(win.MutationObserver){observer=new win.MutationObserver(records=>{if(!element.isConnected||element.hidden||element.dataset.uiMotion!=='enter'||doc.body.classList.contains('reduced-motion')||records.some(change=>change.target===doc.body&&String(change.oldValue||'').split(/\s+/).includes('reduced-motion')))finish();});observer.observe(doc.body,{attributes:true,attributeFilter:['class'],attributeOldValue:true});observer.observe(doc.documentElement,{childList:true,subtree:true});observer.observe(element,{attributes:true,attributeFilter:['data-ui-motion','hidden']});}
   const animations=target.getAnimations().filter(animation=>animation.animationName?.startsWith('ui-')&&animation.animationName.endsWith('-in'));if(!animations.length){finish();return;}
-  const duration=Math.max(...animations.map(animation=>Number(animation.effect?.getComputedTiming().endTime)||0));timer=win.setTimeout(finish,Math.min(1000,duration)+34);Promise.all(animations.map(animation=>animation.finished)).then(finish,finish);
+  const duration=Math.max(...animations.map(animation=>Number(animation.effect?.getComputedTiming().endTime)||0));
+  // Pending CSS animations start at the rendering opportunity, not at mount.
+  // Synchronous content preparation must not spend their watchdog budget.
+  Promise.all(animations.map(animation=>animation.ready)).then(()=>{if(!finished)timer=win.setTimeout(finish,Math.min(1000,duration)+34);},finish);
+  Promise.all(animations.map(animation=>animation.finished)).then(finish,finish);
  };
  const entry=Object.freeze({start,finish});visualEntries.set(element,entry);element.dataset.uiMotion='enter';return entry;
 }

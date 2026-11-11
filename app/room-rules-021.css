@@ -193,3 +193,21 @@
 /* Anchor Help to an ordinary header inside the painted card on every engine. */
 .rule-choice-field .setting-title{position:relative;min-height:44px;padding-right:44px}
 .rule-choice-field .setting-title>.rule-help>button{right:0;top:0;z-index:1}
+
+/* Captions stay directly above controls; artwork owns the flexible space. */
+.rule-choice-field .rule-choice-preview{flex:1 0 auto}
+.rule-choice-preview-art{flex:1 0 auto}
+.rule-choice-preview>[data-rule-preview-detail]{flex:none;align-self:stretch;display:flex;align-items:flex-end;justify-content:center;min-block-size:2.8em;margin-top:auto}
+/* Match option paint while retaining the same44px native button target. */
+.rule-choice-stepper>button{position:relative;isolation:isolate;min-height:44px;padding:0;border:0;background:transparent;font-size:1.25rem}
+.rule-choice-stepper>button::before{content:"";position:absolute;inset:4px 0;border:1px solid var(--line);border-radius:10px;background:var(--paper);z-index:-1;pointer-events:none}
+/* Same proportional corner inset as the library tile's favorite glyph. */
+.rule-choice-field .setting-title{position:static}
+.rule-choice-field .setting-title>.rule-help>button{right:max(0px,calc(100cqw * 9 / 176 - 10px));top:max(0px,calc(100cqw * 9 / 176 - 10px))}
+
+.rule-preview-illustrations{display:flex;align-items:center;justify-content:center;gap:.375rem;max-width:100%}
+.rule-preview-illustrations>span{display:flex;align-items:center;justify-content:center;min-width:0}
+.rule-preview-illustrations .piece{width:2.75rem;height:2.75rem;flex:none}
+.rule-preview-illustrations>span>svg{width:1.75rem;height:1.75rem}
+
+.rule-preview-illustrations>span>svg[data-piece-type="card-deck"]{width:2.75rem;height:auto;max-block-size:4rem}

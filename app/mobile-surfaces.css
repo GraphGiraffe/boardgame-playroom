@@ -1,6 +1,9 @@
 /* 0.21 mobile surface contract. Palette and game geometry remain semantic tokens. */
 [data-ui-surface="panel"]{--surface-dismiss-edge:bottom}
 :root{--surface-gap:12px;--surface-inset:12px;--surface-motion:180ms;--surface-focus-clearance:6px}
+/* Entry/exit projections stay inside the overlay viewport; content scrollports
+   retain their own overflow and remain independently measurable. */
+:is(#modal-root,[data-ui-surface-exit])>:is(.modal-backdrop,.shared-modal-backdrop){overflow-x:hidden}
 .connection-alternative{margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
 .connection-alternative>summary{min-height:44px;display:list-item;align-content:center;cursor:pointer;font-weight:650}
 .connection-alternative>p{color:var(--muted);font-size:14px;line-height:1.45}
