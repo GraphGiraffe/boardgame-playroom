@@ -1,6 +1,6 @@
 {
   "name": "boardgame-playroom",
-  "version": "0.21.0-preview.67",
+  "version": "0.21.0-preview.68",
   "private": true,
   "description": "Browser tabletop app and independent game-pack engine",
   "scripts": {

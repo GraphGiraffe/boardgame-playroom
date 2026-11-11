@@ -559,7 +559,7 @@ from pathlib import Path
 root=Path(sys.argv[1]);path=root/'shared/pack_compiler.py';ns={'__file__':str(path)};exec(compile(path.read_text(),str(path),'exec'),ns)
 bundles=[ns['build_pack'](root/'packs'/game) for game in ['battleship','ludo','mage-brawl','uno','gofish','durak','oldmaid','klondike','snakes']]
 for path in (root/'packs').glob('*/manifest.json'):ns['validate_manifest'](json.loads(path.read_text()),path.parent.name)
-base=copy.deepcopy(bundles[2]['manifest']);health=next(i for i,f in enumerate(base['settings']) if f['key']=='health')
+base=copy.deepcopy(bundles[2]['manifest']);base['sdkFeatures'].append('parameter-previews-v2');health=next(i for i,f in enumerate(base['settings']) if f['key']=='health')
 bad=[]
 def reject(change):
  value=copy.deepcopy(base);change(value);bad.append(value)
@@ -570,14 +570,36 @@ def field(m):return m['settings'][health]
 def option(m):return field(m)['options'][0]
 for preview in [None,[],{'kind':'html'},{'kind':'health','html':'<svg/>'},{'kind':{}}]:reject(lambda m,p=preview:field(m).__setitem__('preview',p))
 for preview in [None,[], {'kind':None}, {'kind':'html','html':'<svg/>'}, {'count':-1},{'count':101},{'count':True},{'count':1.5},{'count':'3'},{'count':4,'countFrom':{'field':'actionsPerTurn','values':{'1':3}}},{'countFrom':{'field':'missing','values':{'1':3}}},{'countFrom':{'field':'actionsPerTurn','values':{}}},{'countFrom':{'field':'actionsPerTurn','values':{'unknown':3}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':101}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':3},'html':'<img>'}}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
-for preview in [{'kind':'fleet','pieces':[0]},{'kind':'fleet','pieces':[17]},{'kind':'fleet','pieces':[1]*17},{'kind':'teams','teamSizes':[0]},{'kind':'teams','teamSizes':[32,1]},{'kind':'teams','teamSizes':[1]*9},{'kind':'fleet','pieces':[4],'html':'<svg>'},{'kind':'cards','count':7}]:
+for preview in [{'kind':'fleet','pieces':[0]},{'kind':'fleet','pieces':[17]},{'kind':'fleet','pieces':[1]*17},{'kind':'teams','teamSizes':[0]},{'kind':'teams','teamSizes':[32,1]},{'kind':'teams','teamSizes':[1]*9},{'kind':'fleet','pieces':[4],'html':'<svg>'}]:
  def change(m,p=preview):m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':p}]})
  reject(change)
 reject(lambda m:m['presetSetting'].__setitem__('presentation','large'))
-reject(lambda m:field(m).__setitem__('presentation','mode'))
+reject(lambda m:field(m).__setitem__('presentation','large'))
+reject(lambda m:m['presetSetting'].update({'presentation':'mode','options':[]}))
+def two_modes(m):
+ field(m)['presentation']='mode';m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':{'kind':'cards','count':7}}]})
+reject(two_modes)
 for preview in [{'kind':'declaration','actor':'other','label':'UNO!'},{'kind':'declaration','actor':'human','label':'x'*25},{'kind':'declaration','actor':'human'},{'kind':'symbol','icon':'not-a-ui-icon'},{'kind':'symbol','icon':'first','html':'<svg/>'}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
 for description in [None,False,[], '', 'x'*361]:reject(lambda m,d=description:option(m).__setitem__('description',d))
+for condition in [None,{},[],{'missing':'vegas'},{'actionsPerTurn':'unknown'},{'actionsPerTurn':2}]:
+ def change(m,c=condition):field(m).update({'inactiveWhen':c,'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}})
+ reject(change)
+for inactive in [None,{}, {'preview':{'kind':'html'},'description':'Text'},{'preview':{'kind':'symbol','icon':'refresh'},'description':'x'*361},{'preview':{'kind':'symbol','icon':'refresh'},'description':'Text','html':'<svg/>'}]:
+ def change(m,i=inactive):field(m).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':i})
+ reject(change)
+reject(lambda m:field(m).__setitem__('inactiveWhen',{'actionsPerTurn':'1'}))
+def missing_feature(m):
+ field(m)['presentation']='mode';m['sdkFeatures'].remove('parameter-previews-v2')
+reject(missing_feature)
+def missing_inactive_feature(m):
+ field(m).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'lock'},'description':'Mode-defined value'}});m['sdkFeatures'].remove('parameter-previews-v2')
+reject(missing_inactive_feature)
 valid=[]
+for preview in [{'kind':'cards','count':7},{'kind':'symbol','icon':'cards'},{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'dice','count':2},{'kind':'health','count':3},{'kind':'lives','count':2},{'kind':'fleet','pieces':[3,2]},{'kind':'teams','teamSizes':[2,2]}]:
+ for key in ['presetSetting','settings']:
+  value=copy.deepcopy(base);target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
+value=copy.deepcopy(base);field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
+value=copy.deepcopy(base);field(value).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}});ns['validate_manifest'](value,'valid-inactive-preview');valid.append(value)
 for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
 for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'}]:
@@ -590,6 +612,8 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
  const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},manager=new Packs({engine:Engine,views:UI.createRegistry(),modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
  for(const bundle of result.bundles){const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);assert.deepEqual(catalog[id].settings,bundle.manifest.settings);const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings);assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);}
+ for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
+ const modes=[catalog.durak.presetSetting,...catalog.durak.settings].filter(f=>f.presentation==='mode');assert.equal(modes.length,1);assert.equal(modes[0].key,'variant');assert.deepEqual(modes[0].options.map(o=>o.value),['simple','throwin','transfer']);
  const fleet=require('../packs/battleship/domain/geometry.js').fleets;
  for(const o of catalog.battleship.presetSetting.options)assert.deepEqual(o.preview.pieces,fleet[o.value]);
  for(const f of catalog['mage-brawl'].settings.filter(f=>['health','handLimit'].includes(f.key)))assert.deepEqual(f.options[0].preview.countFrom,{field:'actionsPerTurn',values:{'1':3,'2':4}});
@@ -600,6 +624,7 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  const board=require('../packs/ludo/domain/board.js'),teamSizes=Object.values(Array.from({length:4},(_,player)=>board.team(player)).reduce((groups,team)=>({...groups,[team]:(groups[team]||0)+1}),{}));assert.deepEqual(catalog.ludo.presetSetting.options.find(o=>o.value==='teams').preview.teamSizes,teamSizes,'team diagram agrees with actual partner grouping');
  for(const game of ['gofish','durak','oldmaid']){const field=catalog[game].settings.find(f=>f.key==='deck');for(const option of field.options){const state=Engine.createGame(game,{seed:17,deck:option.value,players:[{name:'A'},{name:'B'}]}),count=game==='oldmaid'?state.data.hands.flat().length+state.data.discard.length:state.data.deckSize;assert.equal(option.preview?.count??Number(option.value),count,game+' preview describes the actual card pool');}}
  for(const option of catalog.klondike.settings.find(f=>f.key==='draw').options){const state=Engine.createGame('klondike',{seed:17,draw:option.value,players:[{name:'A'}]});assert.equal(Number(option.value),state.data.config.draw,'draw preview agrees with actual solitaire configuration');}
+ const passes=catalog.klondike.settings.find(f=>f.key==='maxPasses');assert.deepEqual(passes.inactiveWhen,{scoring:'vegas'});assert.deepEqual(passes.inactivePresentation.preview,{kind:'symbol',icon:'lock'});for(const draw of ['1','3'])for(const selected of ['0','1','3']){const state=Engine.createGame('klondike',{seed:17,draw,scoring:'vegas',maxPasses:selected,players:[{name:'A'}]});assert.equal(state.data.config.maxPasses,draw==='1'?1:3,'Vegas domain overrides pass draft according to draw size');}
  const declaration=catalog.uno.settings.find(f=>f.key==='unoMode');assert.deepEqual(declaration.preview,{kind:'declaration',label:'UNO!'});assert.deepEqual(declaration.options.map(o=>o.preview.actor),['human','bot']);
  assert.equal(catalog.snakes.presetSetting.presentation,undefined,'dice-count choices remain compact');
  for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'dice');assert.equal(option.preview.count,Array.isArray(state.data.dice)?state.data.dice.length:1,'mode preview agrees with the actual initial dice');}

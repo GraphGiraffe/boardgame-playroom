@@ -68,3 +68,16 @@ Within the same game/viewer/viewport, removing or emptying a local or opponent h
 ## Рука в фазах без карт · preview.49
 
 Резерв должен существовать в авторской сцене с первого монтирования, а не зависеть от ранее измеренного DOM. В Mage Brawl возрождение и добыча используют inert геометрию панели управления и квадратной карты, без приватных карт/команд. Резерв остаётся внутри layout-self; fit поля учитывает его до закрепления tracks. Генерируемые action height/min/max-height освобождаются, если patcher изменил роль узла на hand. Регрессия `case/mage-brawl-browser --name "Mage respawn remount"` проверяет восемь игроков, fresh mount, portrait/landscape/return, исчезающую контекстную строку и добычу.
+
+## Панели: системный жест скрытия и чтение
+
+`PlayroomGameScreen.bindPanelGesture` — единый контроллер всех закрываемых typed-панелей, меню партии и чата; навигацией владеет переданный callback Back. CSS `--surface-dismiss-edge:bottom|right|left` определяет направление: вниз у нижней панели, наружу к соответствующему краю у боковой. Направление читается при начале жеста, смена placement/ориентации отменяет незавершённое вытягивание. Для чата и меню в landscape задан `right`, в portrait — `bottom`.
+
+При вертикальном чтении остаются нативные scroll и инерция. Нижняя панель принимает направленный вниз pull только от верхней границы; если браузер уже забрал native pan, следующий pull начинают от верхушки без ручной эмуляции прокрутки. Боковая принимает горизонтальный pull наружу, сохраняя вертикальное чтение на любой позиции. Короткий жест и отмена возвращают панель; pinch/выделение/активный ввод не закрывают её. Размер чата продолжает менять его прежний resize control, исключённый из dismiss-жеста вместе с slider/separator.
+
+Крупная кнопка-иллюстрация или строка действия может явно задать `data-surface-pull-through`: обычное нажатие сохраняет действие, соответствующий placement pull передаётся панели и поглощает завершающий click. Это opt-in кнопки, не разрешение перехватывать controls: вложенные ссылки, ввод, radio/range, редактор и горизонтальные scroller остаются защищены. Проверять реальный drag по illustration/caption/action row, а не только свободный текст. `tests/panel-pull-browser.test.cjs` проверяет native Chromium touch для bottom, marked preview и left/right; WebKit TouchEvent fixture — синтетическая проверка контроллера, не доказательство физического touchscreen. Native source-интеграция дополнительно проверяет настоящий чат/меню в portrait/landscape, чтение, resize, возврат draft и отсутствие action/Save при pull.
+
+
+## Parameter measurement and WebKit
+
+Keep layout writes outside ResizeObserver delivery: coalesce through one owned animation frame and guard width before scheduling. Dispose observers/frames with the editor. Bounded public-preview/summary measurement must preserve the same owned scrollport: temporary min-height changes can clamp WebKit scrollTop even when final geometry is identical. Anchor parameter help to the ordinary title container, not the fieldset anonymous content box. Regressions assert actual hit-tested help, no ResizeObserver page errors, unchanged card/next-row coordinates, scroll, control identity and focus.

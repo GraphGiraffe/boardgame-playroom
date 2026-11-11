@@ -169,19 +169,22 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
   }
   const surfaceDismissBindings=new WeakMap();
-  // Only short, explicitly dismissible panels get a working drag/tap handle.
+  // Explicitly dismissible panels share one owned drag/tap controller.
   // The caller owns navigation; this helper never removes another surface itself.
   function bindPanelGesture(panel,{isActive=()=>panel?.isConnected,onDismiss=()=>{},handle=null}={}){
-    const doc=panel.ownerDocument,win=doc.defaultView,events=new win.AbortController();let drag=null,disposed=false,returnTimer=null;
+    const doc=panel.ownerDocument,win=doc.defaultView,events=new win.AbortController();let drag=null,bodyDrag=null,disposed=false,returnTimer=null;
     const active=()=>!disposed&&panel.isConnected&&isActive()===true;
+    const placement=()=>{const edge=win.getComputedStyle(panel).getPropertyValue('--surface-dismiss-edge').trim();return {edge:['left','right'].includes(edge)?edge:'bottom',axis:['left','right'].includes(edge)?'x':'y',sign:edge==='left'?-1:1};};
+    const coordinate=(event,state)=>state.sign*(state.axis==='x'?event.clientX:event.clientY);
+    const samePlacement=state=>state.edge===placement().edge;
     const zoomed=()=>(win.visualViewport?.scale||1)>1.01;
     const release=()=>{const old=drag;drag=null;if(old)try{if(panel.hasPointerCapture(old.id))panel.releasePointerCapture(old.id);}catch(_){}return old;};
-    const reset=(animate=false)=>{release();win.clearTimeout(returnTimer);panel.style.removeProperty('--surface-pull-distance');if(animate){panel.dataset.surfacePulling='false';returnTimer=win.setTimeout(()=>panel.removeAttribute('data-surface-pulling'),180);}else panel.removeAttribute('data-surface-pulling');};
+    const reset=(animate=false)=>{bodyDrag=null;release();win.clearTimeout(returnTimer);for(const key of ['--surface-pull-distance','--surface-pull-x','--surface-pull-y'])panel.style.removeProperty(key);if(animate){panel.dataset.surfacePulling='false';returnTimer=win.setTimeout(()=>panel.removeAttribute('data-surface-pulling'),180);}else panel.removeAttribute('data-surface-pulling');};
     const selection=()=>!doc.getSelection()?.isCollapsed;
     const textAtPoint=event=>{let range=doc.caretRangeFromPoint?.(event.clientX,event.clientY);if(!range){const caret=doc.caretPositionFromPoint?.(event.clientX,event.clientY);if(caret){range=doc.createRange();range.setStart(caret.offsetNode,caret.offset);range.collapse(true);}}const text=range?.startContainer;if(text?.nodeType!==3||!text.textContent.trim())return false;const at=Math.min(range.startOffset,text.length-1);if(at<0||!text.textContent[at].trim())return false;range=range.cloneRange();range.setStart(text,at);range.setEnd(text,at+1);const box=range.getBoundingClientRect();return event.clientX>=box.left&&event.clientX<=box.right&&event.clientY>=box.top&&event.clientY<=box.bottom;};
     const eligible=target=>{
       if(handle?.contains(target))return true;
-      if(target.closest('button,a,input,textarea,select,label,summary,[contenteditable],[role="button"],[role="slider"],[draggable="true"],.chat-messages,.chat-message,.social-list,.chat-composer,.lobby-roster-scroll,[data-scene-scroll]'))return false;
+      if(target.closest('button,a,input,textarea,select,label,summary,[contenteditable],[role="button"],[role="slider"],[role="separator"],[draggable="true"],.chat-messages,.chat-message,.social-list,.chat-composer,.lobby-roster-scroll,[data-scene-scroll]'))return false;
       for(let node=target;node&&node!==panel;node=node.parentElement){const css=win.getComputedStyle(node);if(/auto|scroll/.test(css.overflowY)&&node.scrollHeight>node.clientHeight+1||/auto|scroll/.test(css.overflowX)&&node.scrollWidth>node.clientWidth+1)return false;}
       return true;
     };
@@ -206,16 +209,71 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     };
     doc.addEventListener('pointerup',event=>{if(finishTouch(event))return;const start=outside;outside=null;if(!start||event.pointerId!==start.id||!active()||!outsidePanel(event.target)||Math.hypot(event.clientX-start.x,event.clientY-start.y)>8)return;if(panel.getAttribute('aria-modal')!=='false'){event.preventDefault();event.stopImmediatePropagation();suppressReleaseClick({x:event.clientX,y:event.clientY});}onDismiss();},{capture:true,signal:events.signal});
     doc.addEventListener('pointercancel',event=>{finishTouch(event);outside=null;},{capture:true,signal:events.signal});
-    panel.addEventListener('pointerdown',event=>{if(multiTouch||zoomed())return;if(drag&&event.pointerId!==drag.id){reset(true);return;}if(event.button!==0||!active()||selection()||!eligible(event.target)||textAtPoint(event))return;reset();drag={id:event.pointerId,x:event.clientX,y:event.clientY,distance:0,moved:false};},{signal:events.signal});
-    panel.addEventListener('pointermove',event=>{
-      if(!drag||event.pointerId!==drag.id)return;if(!active()||selection()||zoomed()){reset(true);return;}
-      const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)<8)return;if(!drag.moved&&(Math.abs(dx)>Math.abs(dy)||dy<0)){reset();return;}
-      if(!drag.moved){const translate=win.getComputedStyle(panel).translate.split(/\s+/)[1]||'0';drag.base=translate.endsWith('%')?parseFloat(translate)*panel.offsetHeight/100:parseFloat(translate)||0;for(const animation of panel.getAnimations())if(animation.animationName?.startsWith('ui-panel-'))animation.cancel();try{panel.setPointerCapture(event.pointerId);}catch(_){}drag.moved=true;}
-      drag.distance=Math.max(0,dy);event.preventDefault();panel.dataset.surfacePulling='true';panel.style.setProperty('--surface-pull-distance',(drag.base+drag.distance)+'px');
+    // At the reading boundary, touch can pull the whole bottom sheet.
+    // Pointer events alone cannot do that: native pan-y cancels their stream.
+    const bodyTarget=target=>{
+      if(!body?.contains(target)&&!panel.querySelector(':scope>.modal-head')?.contains(target))return false;
+      const control=target.closest('button,a,input,textarea,select,label,summary,[contenteditable],[role="button"],[role="slider"],[role="separator"],[draggable="true"],.chat-composer,.lobby-roster-scroll,[data-scene-scroll]');
+      // Explicit opt-in preserves a button's tap while allowing vertical pull
+      // from its large illustrative surface. Nested controls stay protected.
+      if(control&&!(control.matches('button,[role="button"]')&&control.hasAttribute('data-surface-pull-through')))return false;
+      if(panel.contains(doc.activeElement)&&doc.activeElement.matches('input,textarea,select,[contenteditable]'))return false;
+      for(let node=target;node&&node!==panel;node=node.parentElement){const css=win.getComputedStyle(node);if(/auto|scroll/.test(css.overflowX)&&node.scrollWidth>node.clientWidth+1)return false;}
+      return true;
+    };
+    const preparePull=state=>{
+      const translate=win.getComputedStyle(panel).translate.split(/\s+/)[state.axis==='x'?0:1]||'0';state.base=state.sign*(translate.endsWith('%')?parseFloat(translate)*(state.axis==='x'?panel.offsetWidth:panel.offsetHeight)/100:parseFloat(translate)||0);
+      for(const animation of panel.getAnimations())if(animation.animationName?.startsWith('ui-panel-'))animation.cancel();
+      state.moved=true;
+    };
+    const showPull=state=>{const distance=state.base+state.distance;panel.dataset.surfacePulling='true';panel.style.setProperty('--surface-pull-distance',distance+'px');panel.style.setProperty('--surface-pull-x',(state.axis==='x'?state.sign*distance:0)+'px');panel.style.setProperty('--surface-pull-y',(state.axis==='y'?distance:0)+'px');};
+    const settlePull=(state,point)=>{
+      suppressReleaseClick(point);
+      if((state.distance>=64||state.distance>=28&&state.velocity>.65)&&active()){
+        if(onDismiss()===false&&active())reset(true);
+      }else reset(true);
+    };
+    panel.addEventListener('touchstart',event=>{
+      if(event.touches.length!==1||multiTouch||zoomed()||!active()||selection()||!bodyTarget(event.target)){bodyDrag=null;return;}
+      const touch=event.touches[0];reset();const direction=placement();bodyDrag={...direction,id:touch.identifier,x:touch.clientX,y:touch.clientY,last:coordinate(touch,direction),time:event.timeStamp,distance:0,velocity:0,moved:false,claimed:false,target:event.target};
+    },{passive:true,signal:events.signal});
+    panel.addEventListener('touchmove',event=>{
+      const state=bodyDrag;if(!state)return;
+      const touch=[...event.touches].find(t=>t.identifier===state.id);
+      if(!touch||event.touches.length!==1||!active()||zoomed()||selection()||!samePlacement(state)){reset(true);return;}
+      const dx=touch.clientX-state.x,dy=touch.clientY-state.y,delta=state.sign*(state.axis==='x'?dx:dy),cross=state.axis==='x'?dy:dx;
+      // Leave native reading and inertia alone above the top boundary. If the
+      // browser has already committed its pan, a fresh pull at top owns dismissal.
+      for(let node=state.target;node&&node!==panel;node=node.parentElement){
+        const css=win.getComputedStyle(node);if(state.axis==='y'&&/auto|scroll/.test(css.overflowY)&&node.scrollHeight>node.clientHeight+1&&node.scrollTop>1){state.y=touch.clientY;state.last=coordinate(touch,state);state.time=event.timeStamp;return;}
+      }
+      if(!state.claimed){if(Math.hypot(dx,dy)<8)return;if(Math.abs(cross)>Math.abs(delta)||delta<0){bodyDrag=null;return;}state.claimed=true;}
+      if(!event.cancelable){reset(true);return;}
+      event.preventDefault();const remaining=coordinate(touch,state)-state.last;
+      const elapsed=Math.max(1,event.timeStamp-state.time);state.velocity=remaining/elapsed;state.time=event.timeStamp;state.last=coordinate(touch,state);
+      if(!state.moved)preparePull(state);state.distance=Math.max(0,state.distance+remaining);
+      if(state.moved)showPull(state);
     },{passive:false,signal:events.signal});
-    panel.addEventListener('pointerup',event=>{if(!drag||event.pointerId!==drag.id)return;const old=release();if(!old.moved){reset();return;}event.preventDefault();event.stopImmediatePropagation();suppressReleaseClick({x:event.clientX,y:event.clientY});if(old.distance>=64&&active()){if(onDismiss()===false&&active())reset(true);}else reset(true);},{signal:events.signal});
+    panel.addEventListener('touchend',event=>{
+      const state=bodyDrag;if(!state||![...event.changedTouches].some(t=>t.identifier===state.id))return;bodyDrag=null;
+      if(!state.moved)return;
+      const touch=[...event.changedTouches].find(t=>t.identifier===state.id);if(event.cancelable)event.preventDefault();event.stopImmediatePropagation();
+      // A pause before release is not a flick.
+      if(event.timeStamp-state.time>100)state.velocity=0;
+      settlePull(state,{x:touch.clientX,y:touch.clientY});
+    },{passive:false,signal:events.signal});
+    panel.addEventListener('touchcancel',()=>reset(true),{passive:true,signal:events.signal});
+    panel.addEventListener('pointerdown',event=>{if(multiTouch||zoomed())return;if(drag&&event.pointerId!==drag.id){reset(true);return;}if(event.pointerType==='touch'&&bodyTarget(event.target))return;if(event.button!==0||!active()||selection()||!eligible(event.target)||textAtPoint(event))return;reset();drag={...placement(),id:event.pointerId,x:event.clientX,y:event.clientY,distance:0,velocity:0,moved:false};},{signal:events.signal});
+    panel.addEventListener('pointermove',event=>{
+      if(!drag||event.pointerId!==drag.id)return;if(!active()||selection()||zoomed()||!samePlacement(drag)){reset(true);return;}
+      const dx=event.clientX-drag.x,dy=event.clientY-drag.y,delta=drag.sign*(drag.axis==='x'?dx:dy),cross=drag.axis==='x'?dy:dx;if(!drag.moved&&Math.hypot(dx,dy)<8)return;if(!drag.moved&&(Math.abs(cross)>Math.abs(delta)||delta<0)){reset();return;}
+      if(!drag.moved){preparePull(drag);try{panel.setPointerCapture(event.pointerId);}catch(_){}}
+      drag.distance=Math.max(0,delta);event.preventDefault();showPull(drag);
+    },{passive:false,signal:events.signal});
+    panel.addEventListener('pointerup',event=>{if(!drag||event.pointerId!==drag.id)return;const old=release();if(!old.moved){reset();return;}event.preventDefault();event.stopImmediatePropagation();settlePull(old,{x:event.clientX,y:event.clientY});},{signal:events.signal});
     panel.addEventListener('pointercancel',()=>reset(true),{signal:events.signal});panel.addEventListener('lostpointercapture',event=>{if(event.target===panel&&drag)reset(true);},{signal:events.signal});
     if(handle)handle.addEventListener('click',event=>{if(!active())return;event.preventDefault();event.stopImmediatePropagation();onDismiss();},{signal:events.signal});
+    win.addEventListener('resize',()=>{if(drag||bodyDrag)reset(true);},{signal:events.signal});
     return()=>{if(disposed)return;disposed=true;events.abort();observer?.disconnect();reset();touches.clear();delete panel.dataset.panelScrollable;delete panel.dataset.surfaceZoomed;};
   }
   function bindSurfaceDismiss(element,{isActive=()=>element?.isConnected,onDismiss=()=>{}}={}){

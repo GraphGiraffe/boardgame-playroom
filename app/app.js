@@ -782,8 +782,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
     renderLobby();
   }
+  function ruleOptionAvailable(field,form){return (!field.visibleWhen||Object.entries(field.visibleWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value)))&&(!field.inactiveWhen||!Object.entries(field.inactiveWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value)));}
   function roomRulesFromForm(form){
-    const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).map(field=>[field.key,choiceValue(form.elements['option-'+field.key])]));
+    const game=form.dataset.game,packOptions=Object.fromEntries((catalog[game]?.settings||[]).filter(field=>ruleOptionAvailable(field,form)).map(field=>[field.key,choiceValue(form.elements['option-'+field.key])]));
     const rules={firstPlayerMode:(form.elements.firstPlayerMode?.value||'rules'),seatOrder:(form.elements.seatOrder?.value||'normal'),preset:choiceValue(form.elements.preset),presetLabel:Multiplayer.presetLabel(choiceValue(form.elements.preset),meta(game),catalog[game]?.presetSetting),openHands:false,options:packOptions};
     return {...rules,display:Multiplayer.describeRules(rules,catalog[game]?.settings||[],false,catalog[game]?.presetSetting)};
   }
@@ -988,34 +989,51 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 
     }
     const automatic=!!preview.countFrom&&count!==null,label=String(automatic?count:option.label||option.value),detail=String(option.description||(automatic?option.label:''));
-    return `<button type="button" data-rule-next class="rule-choice-preview${art?' has-art':''}${label.length>12?' is-long-label':''}" data-rule-preview-kind="${esc(kind||'text')}" data-rule-preview-value="${esc(option.value)}" aria-label="${esc('Следующий вариант: '+(field.label||field.name||'параметр')+'. Сейчас: '+(automatic?option.label+', '+count:label))}" ${field.readonly?'disabled':''}><span class="rule-choice-preview-art" aria-hidden="true">${art}</span><output data-rule-preview-label aria-live="polite">${esc(label)}</output>${detail?`<small data-rule-preview-detail>${esc(detail)}</small>`:''}</button>`;
+    return `<button type="button" data-rule-next data-surface-pull-through class="rule-choice-preview${art?' has-art':''}${art&&['cards','dice','health','lives','fleet','teams'].includes(kind)?' has-value-art':''}${label.length>12?' is-long-label':''}" data-rule-preview-kind="${esc(kind||'text')}" data-rule-preview-value="${esc(option.value)}" aria-label="${esc('Следующий вариант: '+(field.label||field.name||'параметр')+'. Сейчас: '+(automatic?option.label+', '+count:label))}" ${!art&&!detail?'tabindex="-1"':''} ${field.readonly?'disabled':''}><span class="rule-choice-preview-art" aria-hidden="true">${art}</span><output class="rule-choice-accessible-value" data-rule-preview-label aria-live="polite">${esc(label)}</output>${detail?`<small data-rule-preview-detail>${esc(detail)}</small>`:''}</button>`;
   }
   function ruleControl(field,name,value,{mode=false,readonly=false}={}){
     const options=field.options,index=Math.max(0,options.findIndex(option=>String(option.value)===String(value)));
     if(options.length===1)return `<input type="hidden" name="${esc(name)}" value="${esc(options[0].value)}">`;
-    const key=field.key||'preset',counter=!mode&&options.length>4&&options.every(option=>/^\d+$/.test(String(option.value))||option.preview?.countFrom),numericFour=options.length===4&&options.every(option=>/^(?:\d+(?:[.,]\d+)?|∞)$/.test(String(option.label))),schema={name,label:field.label,readonly,preview:field.preview,teamLayouts:field.teamLayouts,options:options.map(({value,label,description,preview})=>({value,label,description,preview}))};
+    const key=field.key||'preset',counter=!mode&&options.length>4&&options.every(option=>/^\d+$/.test(String(option.value))||option.preview?.countFrom),numericFour=options.length===4&&options.every(option=>/^(?:\d+(?:[.,]\d+)?|∞)$/.test(String(option.label))),schema={name,label:field.label,readonly,preview:field.preview,inactivePresentation:field.inactivePresentation,teamLayouts:field.teamLayouts,options:options.map(({value,label,description,preview})=>({value,label,description,preview}))};
     const choices=options.map((option,i)=>`<label class="rule-choice"><input type="radio" name="${esc(name)}" value="${esc(option.value)}" ${i===index?'checked':''} ${readonly?'disabled':''} aria-label="${esc(option.label)}" title="${esc(option.label)}"><span class="rule-choice-body" title="${esc(option.label)}">${esc(option.shortLabel||option.label)}</span></label>`).join('');
-    const stepper=counter?`<div class="rule-choice-stepper"><button type="button" data-rule-step="-1" aria-label="${esc('Уменьшить: '+field.label)}">−</button><button type="button" data-rule-step="1" aria-label="${esc('Увеличить: '+field.label)}">+</button></div>`:'';
+    const stepper=counter?`<div class="rule-choice-stepper"><button type="button" data-rule-step="-1" aria-label="${esc('Уменьшить: '+field.label)}">−</button><span data-rule-step-value aria-hidden="true">${esc(options[index].label)}</span><button type="button" data-rule-step="1" aria-label="${esc('Увеличить: '+field.label)}">+</button></div>`:'';
     return `<fieldset class="rules-v021-field rule-choice-field${mode?' is-mode-choice':''}${readonly?' is-readonly':''}${counter?' is-counter-choice':''}" data-rule-field="${esc(key)}" data-rule-schema="${esc(JSON.stringify(schema))}"><legend>${settingTitle(field.label,field.help)}</legend>${ruleChoicePreview({...field,readonly},options[index])}<div class="rule-choice-options" data-rule-option-count="${options.length}" data-rule-grid="${numericFour?'two':'flow'}" ${counter?'hidden':''}>${choices}</div>${stepper}</fieldset>`;
   }
   function syncRuleChoices(form){
     for(const field of form.querySelectorAll('.rule-choice-field')){
       const schema=JSON.parse(field.dataset.ruleSchema),radios=[...field.querySelectorAll('input[type=radio]')],index=radios.findIndex(radio=>radio.checked),option=schema.options[index];
       if(!option)continue;
-      const old=field.querySelector('.rule-choice-preview'),html=ruleChoicePreview(schema,option,form);
+      const inactive=field.classList.contains('is-unavailable')?schema.inactivePresentation:null,displayOption=inactive?{...option,preview:inactive.preview||option.preview,description:inactive.description||option.description,label:inactive.description||option.label}:option;
+      const old=field.querySelector('.rule-choice-preview'),html=ruleChoicePreview(schema,displayOption,form);
       // Only the miniature preview changes. Keep the actual controls, focus,
       // form, scroll position and the rest of the app screen intact.
       if(field.rulePreviewHTML!==html&&old){
         const template=document.createElement('template');template.innerHTML=html;const next=template.content.firstElementChild;
-        old.className=next.className;old.disabled=next.disabled;old.setAttribute('aria-label',next.getAttribute('aria-label'));old.dataset.rulePreviewKind=next.dataset.rulePreviewKind;old.dataset.rulePreviewValue=next.dataset.rulePreviewValue;
+        old.className=next.className;old.disabled=next.disabled||field.classList.contains('is-unavailable');old.setAttribute('aria-label',next.getAttribute('aria-label'));old.dataset.rulePreviewKind=next.dataset.rulePreviewKind;old.dataset.rulePreviewValue=next.dataset.rulePreviewValue;
         const art=old.querySelector('.rule-choice-preview-art'),nextArt=next.querySelector('.rule-choice-preview-art');art.replaceChildren(...nextArt.childNodes);
         old.querySelector('[data-rule-preview-label]').textContent=next.querySelector('[data-rule-preview-label]').textContent;
         const detail=old.querySelector('[data-rule-preview-detail]'),nextDetail=next.querySelector('[data-rule-preview-detail]');
         if(detail&&nextDetail)detail.textContent=nextDetail.textContent;else if(detail)detail.remove();else if(nextDetail)old.append(nextDetail);
         field.rulePreviewHTML=html;
       }
-      field.querySelectorAll('[data-rule-step]').forEach(button=>button.disabled=field.classList.contains('is-readonly')||index+Number(button.dataset.ruleStep)<0||index+Number(button.dataset.ruleStep)>=radios.length);
+      const stepValue=field.querySelector('[data-rule-step-value]');if(stepValue)stepValue.textContent=option.label;
+      reserveRulePreview(field,schema,form);
+      field.querySelectorAll('[data-rule-step]').forEach(button=>button.disabled=field.classList.contains('is-readonly')||field.classList.contains('is-unavailable')||index+Number(button.dataset.ruleStep)<0||index+Number(button.dataset.ruleStep)>=radios.length);
     }
+  }
+  function reserveRulePreview(field,schema,form){
+    const preview=field.querySelector('[data-rule-next]');if(!preview||!field.getClientRects().length)return;
+    const variants=schema.options.map(option=>ruleChoicePreview(schema,option,form));if(schema.inactivePresentation){const inactive=schema.inactivePresentation;variants.push(ruleChoicePreview(schema,{...schema.options[0],preview:inactive.preview,description:inactive.description,label:inactive.description},form));}const width=preview.clientWidth;
+    const key=width+':'+getComputedStyle(preview).font+':'+variants.join('');
+    if(field.ruleReserveKey===key)return;
+    const scrollport=preview.closest('.modal-body'),scrollTop=scrollport?.scrollTop;
+    const started=performance.now(),art=preview.querySelector('.rule-choice-preview-art'),originalArt=[...art.childNodes],detail=preview.querySelector('[data-rule-preview-detail]'),originalText=detail?.textContent,originalClass=preview.className;
+    let measuredDetail=detail,max=0;preview.style.minBlockSize='0px';
+    try{for(const html of variants){const template=document.createElement('template');template.innerHTML=html;const candidate=template.content.firstElementChild,candidateDetail=candidate.querySelector('[data-rule-preview-detail]');preview.classList.toggle('has-art',candidate.classList.contains('has-art'));art.replaceChildren(...candidate.querySelector('.rule-choice-preview-art').childNodes);
+      if(candidateDetail){if(!measuredDetail){measuredDetail=document.createElement('small');measuredDetail.dataset.rulePreviewDetail='';preview.append(measuredDetail);}measuredDetail.textContent=candidateDetail.textContent;}else if(measuredDetail)measuredDetail.textContent='';
+      max=Math.max(max,preview.getBoundingClientRect().height);
+    }}finally{art.replaceChildren(...originalArt);preview.className=originalClass;if(detail)detail.textContent=originalText;else measuredDetail?.remove();}
+    preview.style.minBlockSize=Math.ceil(max)+'px';field.ruleReserveKey=key;field.dataset.ruleMeasureMs=(performance.now()-started).toFixed(2);if(scrollport)scrollport.scrollTop=scrollTop;
   }
   function bindRuleChoices(form){
     let gesture=null,suppressClickUntil=0;
@@ -1023,7 +1041,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     form.addEventListener('pointermove',event=>{if(gesture?.id===event.pointerId&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>8)gesture.dragged=true;},{passive:true});
     for(const type of ['pointerup','pointercancel'])form.addEventListener(type,event=>{if(gesture?.id===event.pointerId){if(gesture.dragged||event.type==='pointercancel')suppressClickUntil=performance.now()+600;gesture=null;}},{passive:true});
     const choose=(field,offset,{wrap=false}={})=>{
-      if(!field||field.classList.contains('is-readonly')||field.closest('[hidden],[inert]')||!field.getClientRects().length||!form.ruleEditorCurrent?.())return;
+      if(!field||field.classList.contains('is-readonly')||field.classList.contains('is-unavailable')||field.closest('[hidden],[inert]')||!field.getClientRects().length||!form.ruleEditorCurrent?.())return;
       const radios=[...field.querySelectorAll('input[type=radio]')].filter(radio=>!radio.disabled);if(radios.length<2)return;
       const current=radios.findIndex(radio=>radio.checked),index=wrap?(current+offset+radios.length)%radios.length:current+offset,radio=radios[index];
       if(radio){radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));}
@@ -1046,38 +1064,52 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const reason=externalRoom?'Параметры меняет ведущий комнаты.':readonly?'Параметры можно менять до начала партии.':'';
     const valid=()=>{if(externalRoom){const current=globalThis.PlayroomNetworkLibrary?.inviteContext?.();return current?.room?.id===state.id&&current.room.game.id===state.game.id&&current.room.rulesRevision===state.rulesRevision;}if(room?.id!==state.id||lobbyParticipantId!==actor)return false;const current=roomService.snapshot(state.id);return current.ownerId===state.ownerId&&current.game.id===state.game.id&&current.phase===state.phase&&current.rulesRevision===state.rulesRevision;};
     const presetSource=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))},preset={...presetSource,key:'preset',teamLayouts:manifest.teamLayouts,options:presetSource.options.map(option=>({...option,description:option.description||(presetSource.presentation==='mode'?presets.find(p=>p.id===option.value)?.description:undefined)}))};
-    const controls=new Map(fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default,{readonly})]));
+    const controls=new Map(fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default,{readonly,mode:preset.presentation!=='mode'&&field.presentation==='mode'&&fields.find(item=>item.presentation==='mode')===field})]));
     const groups=manifest.ruleGroups||[{fields:fields.map(field=>field.key)}],endingKeys=new Set(groups.filter(group=>group.end).flatMap(group=>group.fields));
     const renderFields=group=>group.fields.filter(key=>controls.has(key)).map(key=>{const html=controls.get(key);controls.delete(key);return html;}).join('');
     const body=groups.filter(group=>!group.end).map(renderFields).join(''),ending=groups.filter(group=>group.end).map(renderFields).join(''),rest=[...controls.values()].join('');
     const parametersVisible=preset.options.length>1||fields.some(field=>!endingKeys.has(field.key)&&field.options.length>1),endingVisible=fields.some(field=>endingKeys.has(field.key)&&field.options.length>1);
     const common=g.max===1?'':`<section class="rules-v021-group" data-rule-section="order"><h3>Порядок игры</h3><div class="rules-v021-fields">${[
       ['firstPlayerMode','Первый ход',[
-        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока определяют правила игры.',preview:{kind:'symbol',icon:'first'}},
-        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно перед началом партии.',preview:{kind:'dice',count:1}},
-        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Назначьте первого игрока жетоном в лобби.',preview:{kind:'symbol',icon:'people'}}]],
+        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока задают правила.',preview:{kind:'symbol',icon:'first'}},
+        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно.',preview:{kind:'dice',count:1}},
+        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Выберите первого игрока в лобби.',preview:{kind:'symbol',icon:'people'}}]],
       ['seatOrder','Порядок мест',[
-        {value:'normal',label:'По местам',shortLabel:'Места',description:'Игроки ходят в порядке мест за столом.',preview:{kind:'symbol',icon:'people'}},
-        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Перед началом партии места перемешиваются.',preview:{kind:'symbol',icon:'shuffle'}}]]
+        {value:'normal',label:'По местам',shortLabel:'Места',description:'Очередь по местам за столом.',preview:{kind:'symbol',icon:'people'}},
+        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Места перемешиваются перед игрой.',preview:{kind:'symbol',icon:'shuffle'}}]]
     ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
     const header=modalHead('Параметры игры',{className:'rules-v021-header',actions:GameScreen.iconButton(`data-rules="${esc(state.game.id)}"`,'Как играть','help')});
-    const frame=openModal(`${header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}"><section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div></form>`,'room-rules-modal',{valid,onBack:captureModalReturn()});
+    let disposeRuleLayout=()=>{};
+    const frame=openModal(`${header}<form id="room-rules-form" class="rules-v021" data-game="${esc(state.game.id)}" data-room-id="${esc(state.id)}" data-room-actor="${esc(actor||'')}" data-readonly="${readonly}"><section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div></form>`,'room-rules-modal',{valid,onBack:captureModalReturn(),onDispose:()=>disposeRuleLayout()});
     if(!frame)return;
-    const form=frame.element.querySelector('#room-rules-form');form.ruleEditorCurrent=()=>valid()&&localModal.isActive(frame)&&!readonly;bindRuleChoices(form);syncRuleVisibility(form);
+    const form=frame.element.querySelector('#room-rules-form');form.ruleEditorCurrent=()=>valid()&&localModal.isActive(frame)&&!readonly;bindRuleChoices(form);syncRuleVisibility(form);let layoutFrame=0,retired=false;const dirty=new Set(),layoutCurrent=()=>!retired&&form.isConnected&&valid();
+    const flushLayout=()=>{layoutFrame=0;if(!layoutCurrent()){disposeRuleLayout();return;}if(!localModal.isActive(frame))return;const fields=[...dirty];dirty.clear();syncRuleSummary(form);for(const field of fields)reserveRulePreview(field,JSON.parse(field.dataset.ruleSchema),form);};
+    const queueLayout=()=>{if(!layoutFrame&&dirty.size)layoutFrame=requestAnimationFrame(flushLayout);};
+    // Delivery only reads sizes. Temporary measurements and min-size writes run
+    // in the next frame, outside ResizeObserver's delivery loop.
+    const resize=new ResizeObserver(entries=>{if(!layoutCurrent()){disposeRuleLayout();return;}for(const entry of entries){const field=entry.target,width=entry.borderBoxSize?.[0]?.inlineSize??field.getBoundingClientRect().width;if(width<=0||Math.abs(width-field.ruleObservedInlineSize)<.25)continue;field.ruleObservedInlineSize=width;dirty.add(field);}queueLayout();});
+    const activation=new MutationObserver(()=>{if(!layoutCurrent()){disposeRuleLayout();return;}if(localModal.isActive(frame))queueLayout();});activation.observe(frame.element,{attributes:true,attributeFilter:['data-surface-state']});
+    disposeRuleLayout=()=>{if(retired)return;retired=true;cancelAnimationFrame(layoutFrame);layoutFrame=0;dirty.clear();resize.disconnect();activation.disconnect();};
+    form.querySelectorAll('.rule-choice-field').forEach(field=>{field.ruleObservedInlineSize=field.getBoundingClientRect().width;resize.observe(field);});
     form.closest('.room-rules-modal').querySelector('[data-rules]').addEventListener('click',event=>{event.stopPropagation();const back=captureModalReturn();showRules(state.game.id);modalBack=back;});
   }
   function syncRuleSummary(form){
     const title=form.querySelector('[data-rule-summary-label]'),summary=form.querySelector('[data-rule-summary-text]');if(!title||!summary)return;
+    const scrollport=form.closest('.modal-body'),scrollTop=scrollport?.scrollTop;
     const game=form.dataset.game,g=meta(game),manifest=catalog[game]||{},rules=roomRulesFromForm(form),fields=manifest.settings||[];
-    const standard=rules.preset===(g.presets?.[0]?.id||'default')&&rules.firstPlayerMode==='rules'&&rules.seatOrder==='normal'&&!rules.openHands&&fields.every(field=>String(rules.options[field.key])===String(field.default??field.options?.[0]?.value));
+    const standard=rules.preset===(g.presets?.[0]?.id||'default')&&rules.firstPlayerMode==='rules'&&rules.seatOrder==='normal'&&!rules.openHands&&fields.filter(field=>ruleOptionAvailable(field,form)).every(field=>String(rules.options[field.key])===String(field.default??field.options?.[0]?.value));
     title.textContent=standard?'Стандартные правила':'Свои правила';
     const values=rules.display.map(row=>row.label+': '+row.value);summary.replaceChildren(...[g.name,...values.slice(0,2)].map(text=>{const item=document.createElement('span');item.textContent=text;return item;}));summary.title=[g.name,...values].join(' · ');
+    // Reserve only this public summary's possible text height; no ghost DOM.
+    const samples=[summary.textContent];for(const field of form.querySelectorAll('[data-rule-schema]')){const schema=JSON.parse(field.dataset.ruleSchema);for(const option of schema.options){if(samples.length>=64)break;const variant={...rules,options:{...rules.options}};if(schema.name.startsWith('option-'))variant.options[schema.name.slice(7)]=option.value;else variant[schema.name]=option.value;const display=Multiplayer.describeRules(variant,fields,false,manifest.presetSetting);samples.push([g.name,...display.slice(0,2).map(row=>row.label+': '+row.value)].join(' · '));}}
+    const key=summary.clientWidth+':'+getComputedStyle(summary).font+':'+samples.join('|');if(form.ruleSummaryReserveKey!==key){const nodes=[...summary.childNodes],width=summary.clientWidth;let max=width===form.ruleSummaryReserveWidth?parseFloat(summary.style.minBlockSize)||0:0;summary.style.minBlockSize='0px';for(const sample of samples){summary.textContent=sample;max=Math.max(max,summary.getBoundingClientRect().height);}summary.replaceChildren(...nodes);summary.style.minBlockSize=Math.ceil(max)+'px';form.ruleSummaryReserveWidth=width;form.ruleSummaryReserveKey=key;}if(scrollport)scrollport.scrollTop=scrollTop;
+
   }
   function syncRuleVisibility(form){
     if(!form)return;
     for(const field of catalog[form.dataset.game]?.settings||[]){
       const row=form.querySelector('[data-rule-field="'+field.key+'"]');
-      if(row)row.hidden=!!field.visibleWhen&&!Object.entries(field.visibleWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value));
+      if(row){const unavailable=!ruleOptionAvailable(field,form);row.hidden=false;row.classList.toggle('is-unavailable',unavailable);row.dataset.ruleUnavailable=String(unavailable);const readonly=row.classList.contains('is-readonly');row.querySelectorAll('input,[data-rule-next],[data-rule-step]').forEach(control=>control.disabled=readonly||unavailable);}
     }
     syncRuleChoices(form);syncRuleSummary(form);
   }
