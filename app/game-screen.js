@@ -180,7 +180,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const zoomed=()=>(win.visualViewport?.scale||1)>1.01;
     const release=()=>{const old=drag;drag=null;if(old)try{if(panel.hasPointerCapture(old.id))panel.releasePointerCapture(old.id);}catch(_){}return old;};
     const reset=(animate=false)=>{bodyDrag=null;release();win.clearTimeout(returnTimer);for(const key of ['--surface-pull-distance','--surface-pull-x','--surface-pull-y'])panel.style.removeProperty(key);if(animate){panel.dataset.surfacePulling='false';returnTimer=win.setTimeout(()=>panel.removeAttribute('data-surface-pulling'),180);}else panel.removeAttribute('data-surface-pulling');};
-    const selection=()=>!doc.getSelection()?.isCollapsed;
+    const selection=target=>{const selected=doc.getSelection();return !!selected&&!selected.isCollapsed&&(!target||selected.containsNode(target,true));};
     const textAtPoint=event=>{let range=doc.caretRangeFromPoint?.(event.clientX,event.clientY);if(!range){const caret=doc.caretPositionFromPoint?.(event.clientX,event.clientY);if(caret){range=doc.createRange();range.setStart(caret.offsetNode,caret.offset);range.collapse(true);}}const text=range?.startContainer;if(text?.nodeType!==3||!text.textContent.trim())return false;const at=Math.min(range.startOffset,text.length-1);if(at<0||!text.textContent[at].trim())return false;range=range.cloneRange();range.setStart(text,at);range.setEnd(text,at+1);const box=range.getBoundingClientRect();return event.clientX>=box.left&&event.clientX<=box.right&&event.clientY>=box.top&&event.clientY<=box.bottom;};
     const eligible=target=>{
       if(handle?.contains(target))return true;
@@ -217,12 +217,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // At the reading boundary, touch can pull the whole bottom sheet.
     // Pointer events alone cannot do that: native pan-y cancels their stream.
     const bodyTarget=target=>{
-      if(!body?.contains(target)&&!panel.querySelector(':scope>.modal-head')?.contains(target))return false;
-      const control=target.closest('button,a,input,textarea,select,label,summary,[contenteditable],[role="button"],[role="slider"],[role="separator"],[draggable="true"],.chat-composer,.lobby-roster-scroll,[data-scene-scroll]');
-      // Explicit opt-in preserves a button's tap while allowing vertical pull
-      // from its large illustrative surface. Nested controls stay protected.
-      if(control&&!(control.matches('button,[role="button"]')&&control.hasAttribute('data-surface-pull-through')))return false;
-      if(panel.contains(doc.activeElement)&&doc.activeElement.matches('input,textarea,select,[contenteditable]'))return false;
+      if(!panel.contains(target)||handle?.contains(target))return false;
+      // A tap stays a tap; only an actual outward drag claims buttons/labels.
+      // Protect direct editing/selection and sliders, not focus on a radio.
+      const protectedControl=target.closest('textarea,select,input:not([type="radio"]):not([type="checkbox"]):not([type="button"]):not([type="submit"]):not([type="reset"]),[contenteditable],[role="slider"],[role="separator"],[draggable="true"],.chat-composer,.lobby-roster-scroll,[data-scene-scroll]');
+      if(protectedControl)return false;
       for(let node=target;node&&node!==panel;node=node.parentElement){const css=win.getComputedStyle(node);if(/auto|scroll/.test(css.overflowX)&&node.scrollWidth>node.clientWidth+1)return false;}
       return true;
     };
@@ -239,13 +238,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }else reset(true);
     };
     panel.addEventListener('touchstart',event=>{
-      if(event.touches.length!==1||multiTouch||zoomed()||!active()||selection()||!bodyTarget(event.target)){bodyDrag=null;return;}
+      if(event.touches.length!==1||multiTouch||zoomed()||!active()||selection(event.target)||!bodyTarget(event.target)){bodyDrag=null;return;}
       const touch=event.touches[0];reset();const direction=placement();bodyDrag={...direction,id:touch.identifier,x:touch.clientX,y:touch.clientY,last:coordinate(touch,direction),time:event.timeStamp,distance:0,velocity:0,moved:false,claimed:false,target:event.target};
     },{passive:true,signal:events.signal});
     panel.addEventListener('touchmove',event=>{
       const state=bodyDrag;if(!state)return;
       const touch=[...event.touches].find(t=>t.identifier===state.id);
-      if(!touch||event.touches.length!==1||!active()||zoomed()||selection()||!samePlacement(state)){reset(true);return;}
+      if(!touch||event.touches.length!==1||!active()||zoomed()||selection(state.target)||!samePlacement(state)){reset(true);return;}
       const dx=touch.clientX-state.x,dy=touch.clientY-state.y,delta=state.sign*(state.axis==='x'?dx:dy),cross=state.axis==='x'?dy:dx;
       // Leave native reading and inertia alone above the top boundary. If the
       // browser has already committed its pan, a fresh pull at top owns dismissal.
@@ -268,9 +267,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       settlePull(state,{x:touch.clientX,y:touch.clientY});
     },{passive:false,signal:events.signal});
     panel.addEventListener('touchcancel',()=>reset(true),{passive:true,signal:events.signal});
-    panel.addEventListener('pointerdown',event=>{if(multiTouch||zoomed())return;if(drag&&event.pointerId!==drag.id){reset(true);return;}if(event.pointerType==='touch'&&bodyTarget(event.target))return;if(event.button!==0||!active()||selection()||!eligible(event.target)||textAtPoint(event))return;reset();drag={...placement(),id:event.pointerId,x:event.clientX,y:event.clientY,distance:0,velocity:0,moved:false};},{signal:events.signal});
+    panel.addEventListener('pointerdown',event=>{if(multiTouch||zoomed())return;if(drag&&event.pointerId!==drag.id){reset(true);return;}if(event.pointerType==='touch'&&bodyTarget(event.target))return;if(event.button!==0||!active()||selection(event.target)||!eligible(event.target)||textAtPoint(event))return;reset();drag={...placement(),id:event.pointerId,x:event.clientX,y:event.clientY,distance:0,velocity:0,moved:false,target:event.target};},{signal:events.signal});
     panel.addEventListener('pointermove',event=>{
-      if(!drag||event.pointerId!==drag.id)return;if(!active()||selection()||zoomed()||!samePlacement(drag)){reset(true);return;}
+      if(!drag||event.pointerId!==drag.id)return;if(!active()||selection(drag.target)||zoomed()||!samePlacement(drag)){reset(true);return;}
       const dx=event.clientX-drag.x,dy=event.clientY-drag.y,delta=drag.sign*(drag.axis==='x'?dx:dy),cross=drag.axis==='x'?dy:dx;if(!drag.moved&&Math.hypot(dx,dy)<8)return;if(!drag.moved&&(Math.abs(cross)>Math.abs(delta)||delta<0)){reset();return;}
       if(!drag.moved){preparePull(drag);try{panel.setPointerCapture(event.pointerId);}catch(_){}}
       drag.distance=Math.max(0,delta);event.preventDefault();showPull(drag);
