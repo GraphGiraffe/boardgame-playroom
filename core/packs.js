@@ -35,7 +35,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
-  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1']);
+  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1','standard-parameter-ui-v1']);
   function validateParameterPreviews(m){
     const invalid=()=>{throw Object.assign(Error(globalThis.PlayroomMessages.text('ui.packs.aa1f11edec45')),{code:'PACK_PARAMETER_PREVIEW_INVALID'});};
     const settings=m.settings===undefined?[]:m.settings,preset=m.presetSetting===undefined?{}:m.presetSetting,quantities=['cards','dice','health','lives'];
@@ -147,6 +147,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     prepare(value){
       const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
+      const standardRules=root.PlayroomRooms||(typeof require==='function'?require('../application/rooms.js'):null);
+      compiledCatalog.settings=(compiledCatalog.settings||[]).map(field=>standardRules.standardRule(field));
       const scope={PlayroomMessages:root.PlayroomMessages,PlayroomCatalog:{[m.id]:compiledCatalog},PlayroomPack:Object.freeze({asset:path=>asset(bundle,path),id:m.id,version:m.version,stateVersion:m.stateVersion,engineApi:m.engineApi,sdkFeatures:SDK_FEATURES,adaptModel:spec=>{
         if(m.engineApi!==4||typeof this.modelAdapter!=='function')throw Error(globalThis.PlayroomMessages.text("ui.packs.33a5bbc8c9da"));
         return this.modelAdapter(this.engine,spec);
@@ -164,7 +166,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!rules||!view||typeof rules.name!=='string'||!Number.isInteger(rules.min)||!Number.isInteger(rules.max)||rules.min<1||rules.max<rules.min||rules.max>32||!Array.isArray(rules.presets)||!rules.presets.length||!rules.presets.every(p=>p&&typeof p.id==='string')||!['create','legal','apply'].every(method=>typeof rules[method]==='function'))throw Error(globalThis.PlayroomMessages.text("ui.packs.7fc357d22602"));
       if((rules.version&&rules.version!==m.version)||(rules.stateVersion&&rules.stateVersion!==m.stateVersion))throw Error(globalThis.PlayroomMessages.text("ui.packs.5da21a35679c"));
       if(m.engineApi===4&&rules.modelContractVersion!==1)throw Error(globalThis.PlayroomMessages.text("ui.packs.4e3f1bcc4946"));
-      const compiled={byteSize:bytes(JSON.stringify(bundle)),bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:scope.PlayroomCatalog[m.id],styles:css};
+      const compiled={byteSize:bytes(JSON.stringify(bundle)),bundle,rules:{...rules,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:{...scope.PlayroomCatalog[m.id],settings:(scope.PlayroomCatalog[m.id].settings||[]).map(field=>standardRules.standardRule(field))},styles:css};
       if(!record(compiled.catalog))throw Error(globalThis.PlayroomMessages.text("ui.packs.f2a5b673a1e5"));
       const token=Object.freeze({id:m.id,version:m.version,manifest:clone(m)});prepared.set(token,{owner:this,compiled});return token;
     }

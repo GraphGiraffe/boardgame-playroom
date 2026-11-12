@@ -276,7 +276,21 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const index=Math.max(0,choices.findIndex(c=>c.value===value));
     return globalThis.PlayroomGameScreen.rangeSetting({id:'view-'+key,label,value:index,max:choices.length-1,display:choices[index].label,choices}).replace('<input ',`<input data-view-range="${esc(key)}" ${disabled?'disabled ':''}`);
   }
-  const helpers = {viewApi:3,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
+  // Shared public parameter diagram: fixed seats, no participant or game state.
+  function parameterTableArt({numbers=false,shuffle=false,sourceSeat=null,currentSeat=null}={}){
+    const V=GameComponents.vector,valid=seat=>Number.isInteger(seat)&&seat>=0&&seat<4;
+    const chairs=[[18,35,14,14,25,42],[38,8,15,13,45.5,14.5],[67,8,15,13,74.5,14.5],[92,35,14,14,99,42]];
+    let content='<circle data-round-table cx="60" cy="43" r="21" fill="currentColor" fill-opacity=".05"/><circle cx="60" cy="43" r="21"/>';
+    content+=chairs.map(([x,y,w,h,cx,cy],i)=>`<g data-table-chair="${i+1}"${sourceSeat===i?' data-source-seat':''}${currentSeat===i?' data-current-seat':''}><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5" fill="currentColor" fill-opacity="${sourceSeat===i?'.24':currentSeat===i?'.16':'.07'}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5"/>${i===0?'<path d="M14 34V50"/>':i===3?'<path d="M110 34V50"/>':`<path d="M${x} ${y-4}H${x+w}"/>`}${numbers?V.text(i+1,{x:cx,y:cy+.5,size:9,weight:700,attrs:'data-seat-number stroke="none"'}):''}</g>`).join('');
+    if(shuffle)content+=V.place(icon('shuffle'),{x:48,y:31,width:24,height:24});
+    if(valid(sourceSeat)&&valid(currentSeat)&&sourceSeat!==currentSeat){
+      const from=chairs[sourceSeat],to=chairs[currentSeat],dx=to[4]-from[4],dy=to[5]-from[5],length=Math.hypot(dx,dy),ux=dx/length,uy=dy/length,sx=from[4]+ux*10,sy=from[5]+uy*10,tx=to[4]-ux*12,ty=to[5]-uy*12;
+      content+=`<path data-card-transfer d="M${sx} ${sy}L${tx} ${ty}M${tx-ux*6-uy*4} ${ty-uy*6+ux*4}L${tx} ${ty}L${tx-ux*6+uy*4} ${ty-uy*6-ux*4}"/>`;
+    }
+    if(valid(currentSeat))content+=V.text('Вы',{x:chairs[currentSeat][4],y:65,size:9,weight:600,attrs:'stroke="none"'});
+    return V.viewport({width:120,height:72,attrs:'data-art-role="parameter-diagram" data-parameter-table fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"',content});
+  }
+  const helpers = {viewApi:3,parameterTableArt,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){

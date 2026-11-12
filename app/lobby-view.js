@@ -104,7 +104,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const H=root.TabletopUI.helpers,V=root.PlayroomGameComponents.vector;
     const body=svg=>svg.replace(/^<svg\b[^>]*>/,'').replace(/<\/svg>$/,'');
     const glyph=(key,x,y,size)=>`<g transform="translate(${x} ${y}) scale(${size/24})" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body(H.icon(key))}</g>`;
-    const token=(x,y,size)=>`<g data-first-player-token transform="translate(${x} ${y}) scale(${size/100})" stroke="none">${body(H.roundTokenArt({value:1}))}</g>`;
+    const token=(x,y,size)=>V.place(H.icon('first'),{x,y,width:size,height:size,attrs:'data-first-player-icon'});
     let drawing='',id='';
     if(name==='firstPlayerMode'){
       id='first-'+value;
@@ -118,10 +118,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }else return '';
     }else if(name==='seatOrder'){
       if(!['normal','random'].includes(value))return '';id='seats-'+value;
-      const chairs=[[18,35,14,14,25,42],[38,8,15,13,45.5,14.5],[67,8,15,13,74.5,14.5],[92,35,14,14,99,42]];
-      drawing='<circle data-round-table cx="60" cy="43" r="21" fill="currentColor" fill-opacity=".05"/><circle cx="60" cy="43" r="21"/>';
-      drawing+=chairs.map(([x,y,w,h,cx,cy],i)=>`<g data-table-chair="${i+1}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5" fill="currentColor" fill-opacity=".07"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5"/>${i===0?'<path d="M14 34V50"/>':i===3?'<path d="M110 34V50"/>':`<path d="M${x} ${y-4}H${x+w}"/>`}${value==='normal'?`<text data-seat-number x="${cx}" y="${cy+.5}" fill="currentColor" stroke="none" text-anchor="middle" dominant-baseline="central" font-family="system-ui,sans-serif" font-size="9" font-weight="700">${i+1}</text>`:''}</g>`).join('');
-      if(value==='random')drawing+=glyph('shuffle',48,31,24);
+      drawing=body(H.parameterTableArt({numbers:value==='normal',shuffle:value==='random'}));
     }else if(name==='endMode'){
       id='ending-'+value;
       if(value==='winner')drawing=body(parameterSymbolArt('trophy',value));
@@ -152,6 +149,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const selected=label=>chosen.find(row=>row.label===label)?.value;
     const note=value=>value===undefined||value===null?'':`<div class="rules-mode-note"><strong>${esc(ruleText('selected'))}</strong> ${esc(value)}</div>`;
     const option=(title,body,value)=>`<section class="rulebook-option"><h4>${esc(title)}</h4>${body}${note(value)}</section>`;
+    settings=settings.map(root.PlayroomMultiplayer.standardRule);
     const presets=presetSetting?.options||game.presets||[];
     const modeLabel=presetSetting?.label||ruleText('mode');
     const choices=labels=>`<p class="rulebook-choices">${esc(ruleText('choices'))} ${labels.map(esc).join(' · ')}</p>`;

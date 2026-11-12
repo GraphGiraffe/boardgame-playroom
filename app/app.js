@@ -1114,22 +1114,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function roomRulePanelKey(state,readonly,reason){return publicPanelKey('parameters',state.game.id,[state.rules,state.firstPlayerMode,state.seatOrder,readonly,reason]);}
   function roomRulePanelContent(state,readonly,reason){
-    const g=meta(state.game.id),manifest=catalog[state.game.id]||{},presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text('ui.app.a39ad47c9222')}],fields=manifest.settings||[];
+    const g=meta(state.game.id),manifest=catalog[state.game.id]||{},presets=g.presets?.length?g.presets:[{id:'default',label:globalThis.PlayroomMessages.text('ui.app.a39ad47c9222')}],fields=(manifest.settings||[]).map(PlayroomMultiplayer.standardRule);
     const presetSource=manifest.presetSetting||{label:globalThis.PlayroomMessages.text('ui.app.b5d827de5168'),options:presets.map(p=>({value:p.id,label:p.label||p.name||p.id}))},preset={...presetSource,key:'preset',teamLayouts:manifest.teamLayouts,options:presetSource.options.map(option=>({...option,description:option.description||(presetSource.presentation==='mode'?presets.find(p=>p.id===option.value)?.description:undefined)}))};
     const controls=new Map(fields.map(field=>[field.key,ruleControl(field,'option-'+field.key,state.rules.options?.[field.key]??field.default,{readonly,game:state.game.id,mode:preset.presentation!=='mode'&&field.presentation==='mode'&&fields.find(item=>item.presentation==='mode')===field})]));
     const groups=manifest.ruleGroups||[{fields:fields.map(field=>field.key)}],endingKeys=new Set(groups.filter(group=>group.end).flatMap(group=>group.fields));
     const renderFields=group=>group.fields.filter(key=>controls.has(key)).map(key=>{const html=controls.get(key);controls.delete(key);return html;}).join('');
     const body=groups.filter(group=>!group.end).map(renderFields).join(''),ending=groups.filter(group=>group.end).map(renderFields).join(''),rest=[...controls.values()].join('');
     const parametersVisible=preset.options.length>1||fields.some(field=>!endingKeys.has(field.key)&&field.options.length>1),endingVisible=fields.some(field=>endingKeys.has(field.key)&&field.options.length>1);
-    const common=g.max===1?'':`<section class="rules-v021-group" data-rule-section="order"><h3>Порядок игры</h3><div class="rules-v021-fields">${[
-      ['firstPlayerMode','Первый ход',[
-        {value:'rules',label:'По правилам',shortLabel:'Правила',description:'Первого игрока задают правила.'},
-        {value:'random',label:'Случайный игрок',shortLabel:'Случайно',description:'Первый игрок выбирается случайно.'},
-        {value:'assigned',label:'Выбранный игрок',shortLabel:'Назначить',description:'Выберите первого игрока в лобби.'}]],
-      ['seatOrder','Места за столом',[
-        {value:'normal',label:'По порядку',shortLabel:'По порядку',description:'Очередь по местам за столом.'},
-        {value:'random',label:'Случайный порядок',shortLabel:'Случайно',description:'Места перемешиваются перед игрой.'}]]
-    ].filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
+    const common=g.max===1?'':`<section class="rules-v021-group" data-rule-section="order"><h3>Порядок игры</h3><div class="rules-v021-fields">${['firstPlayerMode','seatOrder'].map(key=>{const field=PlayroomMultiplayer.standardRule({key});return [key,field.label,field.options];}).filter(([name])=>name!=='firstPlayerMode'||manifest.capabilities?.firstPlayer!==false).map(([name,label,options])=>ruleControl({key:name,label,help:PlayroomLobbyView.ruleText(name==='seatOrder'?'seatOrder':'firstPlayer'),options},name,state[name]||(name==='seatOrder'?'normal':'rules'),{readonly})).join('')}</div></section>`;
     const header=modalHead('Параметры игры',{className:'rules-v021-header',actions:GameScreen.iconButton(`data-rules="${esc(state.game.id)}"`,'Как играть','help')});
     return {header,body:`<section class="rules-v021-summary"><strong data-rule-summary-label>Правила партии</strong><p data-rule-summary-text></p>${readonly?`<p class="rule-choice-readonly" role="status">${esc(reason)}</p>`:`<button class="btn secondary rules-v021-reset" type="button" data-command="reset-rules" aria-label="Восстановить стандарт" title="Восстановить стандарт">${icon('history')}<span>Восстановить стандарт</span></button>`}</section><div class="rules-v021-parameters">${common}<section class="rules-v021-group" data-rule-section="parameters" ${parametersVisible?'':'hidden'}><h3>Параметры</h3><div class="rules-v021-fields"><div class="rules-v021-preset">${ruleControl(preset,'preset',state.rules.preset,{mode:preset.presentation==='mode',readonly,game:state.game.id})}</div>${body}${rest}</div></section><section class="rules-v021-group" data-rule-section="ending" ${endingVisible?'':'hidden'}><h3>Завершение</h3><div class="rules-v021-fields">${ending}</div></section></div><div class="rules-v021-footer" data-fixed-footer><button class="btn secondary" type="button" data-command="close-modal">${readonly?'Закрыть':'Отмена'}</button>${readonly?'':`<button class="btn" type="submit" form="room-rules-form">${icon('check')}<span>Сохранить</span></button>`}</div>`};
   }
@@ -1157,7 +1149,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function syncRuleSummary(form){
     const title=form.querySelector('[data-rule-summary-label]'),summary=form.querySelector('[data-rule-summary-text]');if(!title||!summary)return;
     const scrollport=form.closest('.modal-body'),scrollTop=scrollport?.scrollTop;
-    const game=form.dataset.game,g=meta(game),manifest=catalog[game]||{},rules=roomRulesFromForm(form),fields=manifest.settings||[];
+    const game=form.dataset.game,g=meta(game),manifest=catalog[game]||{},rules=roomRulesFromForm(form),fields=(manifest.settings||[]).map(PlayroomMultiplayer.standardRule);
     const standard=rules.preset===(g.presets?.[0]?.id||'default')&&rules.firstPlayerMode==='rules'&&rules.seatOrder==='normal'&&!rules.openHands&&fields.filter(field=>ruleOptionAvailable(field,form)).every(field=>String(rules.options[field.key])===String(field.default??field.options?.[0]?.value));
     title.textContent=standard?'Стандартные правила':'Свои правила';
     const values=rules.display.map(row=>row.label+': '+row.value);summary.replaceChildren(...[g.name,...values.slice(0,2)].map(text=>{const item=document.createElement('span');item.textContent=text;return item;}));summary.title=[g.name,...values].join(' · ');

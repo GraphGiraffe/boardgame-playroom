@@ -5,6 +5,16 @@ const normalizeAvatar=value=>typeof value==='string'&&/^(crescent|triangle|squar
 const resumeTokenValid=token=>typeof token==='string'&&/^[0-9a-f]{64}$/.test(token);
 const ROOM_CODE=/^\d{4}$/,NAME_MAX=24,ROOM_NAME_MAX=48;
 const clone=value=>JSON.parse(JSON.stringify(value));
+// Application-owned public wording for standard room/game policies. Packs only
+// declare supported values/defaults; they do not supply alternate descriptions.
+const STANDARD_RULE_VALUES=Object.freeze({firstPlayerMode:['rules','random','assigned'],seatOrder:['normal','random'],endMode:['winner','round','last']});
+function standardRule(field){
+ if(!field||!Object.hasOwn(STANDARD_RULE_VALUES,field.key))return field;
+ const prefix='rules-help.standard.'+field.key,text=suffix=>globalThis.PlayroomMessages.text(prefix+'.'+suffix);
+ const values=field.options||STANDARD_RULE_VALUES[field.key].map(value=>({value}));
+ return {...field,label:text('label'),help:text('help'),options:values.map(option=>({...option,label:text(option.value+'.label'),shortLabel:text(option.value+'.short'),description:text(option.value+'.description')}))};
+}
+
 const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.participants.find(p=>p.id===id),reset=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['new-match-lobby','game-started','replacement-lobby','participant-kicked','roster-changed'].includes(e.type));return JSON.stringify([room.id,room.game,room.rulesRevision,room.botSettingsRevision,room.rules,room.firstPlayerMode,room.firstParticipantId,room.seatOrder,ignoreReset?null:reset?.id,me?.seatId,me?.replacement]);};
   const text=(value,max,label)=>{
     const result=String(value??'').trim().replace(/\s+/g,' ');
@@ -15,8 +25,8 @@ const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.partic
   const normalizeName=value=>text(value,NAME_MAX,globalThis.PlayroomMessages.text("ui.rooms.f189892b63a9"));
   const normalizeRoomName=value=>text(value,ROOM_NAME_MAX,globalThis.PlayroomMessages.text("ui.rooms.555c0b3a7b3b"));
   const validateOrder=changes=>{
-    if(changes.seatOrder!==undefined&&!['normal','random'].includes(changes.seatOrder))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9557c33a923f"));
-    if(changes.firstPlayerMode!==undefined&&!['rules','random','assigned'].includes(changes.firstPlayerMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.564ac64ca8d0"));
+    if(changes.seatOrder!==undefined&&!STANDARD_RULE_VALUES.seatOrder.includes(changes.seatOrder))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9557c33a923f"));
+    if(changes.firstPlayerMode!==undefined&&!STANDARD_RULE_VALUES.firstPlayerMode.includes(changes.firstPlayerMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.564ac64ca8d0"));
   };
   // Validate declared configuration choices independently of the current roster.
   // A valid future team preset may still be unavailable for starting this room.
@@ -633,5 +643,5 @@ class SwitchableConnection{
     close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
 
-return Object.freeze({readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
+return Object.freeze({STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
 });
