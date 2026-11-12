@@ -28,7 +28,7 @@ function dominoState(hands, chain, stock = []) {
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
+  s.data = { variant:'throwin',endMode:'last',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};

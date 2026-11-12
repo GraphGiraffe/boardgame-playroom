@@ -1028,7 +1028,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(kind==='illustrations'&&Array.isArray(preview.ids)){
       art=`<span class="rule-preview-illustrations">${preview.ids.map(id=>`<span data-rule-illustration="${esc(id)}">${globalThis.PlayroomViews?.illustration(field.game||form?.dataset.game,id)||''}</span>`).join('')}</span>`;
     }else if(kind==='symbol'&&typeof preview.icon==='string'){
-      const glyph=H.icon(preview.icon);if(/<(?:path|circle|rect|g|ellipse|polygon)\b/.test(glyph))art=`<span class="rule-preview-symbol">${glyph}</span>`;
+      art=PlayroomLobbyView.parameterSymbolArt(preview.icon,option.value);
+      if(!art){const glyph=H.icon(preview.icon);if(/<(?:path|circle|rect|g|ellipse|polygon)\b/.test(glyph))art=`<span class="rule-preview-symbol">${glyph}</span>`;}
     }else if(kind==='declaration'&&['human','bot'].includes(preview.actor)&&typeof preview.label==='string'){
       art=`<span class="rule-preview-declaration">${H.button({label:preview.label,ariaLabel:preview.label,variant:'secondary',disabled:true,attrs:'inert tabindex="-1"'}).replace(/^<button\b/,'<span').replace(/<\/button>$/,'</span>')}<span class="rule-preview-actor">${H.icon(preview.actor==='human'?'player':'bot')}</span></span>`;
 

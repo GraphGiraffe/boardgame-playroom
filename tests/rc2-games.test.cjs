@@ -104,10 +104,10 @@ test('new pack actions have playable common sound cues and do not replay old eve
 });
 
 test('RC4 Durak variants and deck sizes finish with every supported roster',()=>{
- for(const variant of ['simple','throwin','transfer'])for(const deck of ['36','52','54'])for(const n of [2,4,6])for(const endCondition of ['firstout','lastfool']){
-  let s=E.createGame('durak',{players:Array.from({length:n},(_,i)=>({name:`P${i}`})),variant,deck,endCondition,seed:71}),steps=0;
+ for(const variant of ['simple','throwin','transfer'])for(const deck of ['36','52','54'])for(const n of [2,4,6])for(const endMode of ['winner','last']){
+  let s=E.createGame('durak',{players:Array.from({length:n},(_,i)=>({name:`P${i}`})),variant,deck,endMode,seed:71}),steps=0;
   while(s.status==='playing'&&steps++<5000){assert(E.validateState(s),`${variant}/${deck}/${n}`);s=play(s);}
-  assert.equal(s.status,'finished',`${variant}/${deck}/${n}/${endCondition}`);assert(E.validateState(s));
+  assert.equal(s.status,'finished',`${variant}/${deck}/${n}/${endMode}`);assert(E.validateState(s));
  }
 });
 test('RC4 Ludo multiple dice, guarantee, and independently consumed values',()=>{
@@ -482,4 +482,10 @@ test('Snakes ±1 zero stays put without retriggering cells, consuming a shield o
 test('Snakes ±1 leaves the automatic second die unchanged',()=>{
  let s=create('snakes',2,'plus');Object.assign(s.data,{phase:'move',dice:[6,2],adjusting:true});s.data.positions[0]=18;
  s=play(s,{type:'move',dieIndex:0,delta:1});assert.equal(s.data.positions[0],27);assert.equal(s.data.lastMove.roll,2,'second move uses the original other die');assert(E.validateState(s));
+});
+
+test('Durak uses the canonical endMode schema and state without host aliases',()=>{
+ const manifest=require('../packs/durak/manifest.json'),field=manifest.settings.find(f=>f.key==='endMode');
+ assert(field);assert.equal(manifest.stateVersion,4);assert(!manifest.settings.some(f=>f.key==='endCondition'));assert.deepEqual(field.options.map(o=>o.value),['winner','last']);
+ for(const endMode of ['winner','last']){const state=E.createGame('durak',{players:[{name:'A'},{name:'B'}],seed:71,endMode});assert.equal(state.data.endMode,endMode);assert(!Object.hasOwn(state.data,'endCondition'));assert(E.validateState(state));}
 });
