@@ -93,36 +93,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   // Standard settings have one public illustration across every pack and role.
   // No participant identity or rule execution is needed to draw these examples.
   // Parameter-only service drawings. Physical game components retain their own art.
+  const parameterPlayer=(x,y,size)=>root.PlayroomGameComponents.vector.place(root.TabletopUI.helpers.icon('player'),{x,y,width:size,height:size,attrs:'data-player-glyph="canonical"'});
   function parameterSymbolArt(name,value){
-    const shapes={
-      trophy:'<path d="M43 12H77V27C77 38 69 44 60 44S43 38 43 27ZM43 18H33V23C33 32 38 36 46 36M77 18H87V23C87 32 82 36 74 36M60 44V56M47 60H73M52 56H68"/><path d="M35 57C26 49 22 38 24 28M25 40l-7-5m8 11-8-1m12 8-8 2M85 57C94 49 98 38 96 28M95 40l7-5m-8 11 8-1m-12 8 8 2"/>',
-      close:'<circle cx="60" cy="36" r="25"/><path d="m49 25 22 22m0-22-22 22"/>',
-      cards:'<g transform="rotate(-10 51 37)"><rect x="31" y="15" width="34" height="47" rx="5"/><path d="M37 23H43M37 28H41"/></g><rect x="53" y="10" width="34" height="47" rx="5"/><path d="m70 24 8 10-8 10-8-10ZM59 17h5m12 33h5"/>',
-      undo:'<path d="M57 10H76L87 21V55H57ZM76 10V21H87M63 29H79M63 35H75"/><path d="M46 24 31 35 46 46M32 35H57C72 35 74 60 55 60H41"/>',
-      history:'<path d="M55 8H83V47M48 14H76V52M41 20H69V58H56M48 28H62M48 34H60"/><path d="M33 32 22 42 33 52M23 42H42C59 42 60 65 42 65H33"/>',
-      refresh:'<path d="M38 23A25 25 0 0 1 81 20M81 9V21H69M82 47A25 25 0 0 1 39 50M39 62V49H51"/><path d="M60 13v4M83 35H79M60 57V53M37 35H41"/><circle cx="60" cy="35" r="3"/>',
-      clock:String(value)==='0'?'<path d="M60 36C50 21 44 18 36 24 25 32 32 49 42 49S59 32 69 25 88 24 88 36 79 52 71 47 52 22 41 23"/><path d="M36 59H84M43 14H77"/>':'<circle cx="60" cy="37" r="25"/><path d="M60 12V7M53 7H67M60 17V21M80 37H76M60 57V53M40 37H44M60 24V37L71 44M78 14l5-5m-2-2 4 4"/>',
-      hand:'<rect x="60" y="9" width="24" height="33" rx="4" transform="rotate(9 72 25)"/><path d="m68 18 6 6-6 6-6-6ZM28 46l9-11c3-4 8 0 5 4l-3 5 15-18c3-4 8 0 5 4L49 43l16-10c5-3 9 2 5 5L57 49l17-5c5-1 7 5 2 7L59 60c-8 4-16 4-22-1L28 52ZM26 46l-7 8 10 10 7-7"/>',
-      bot:'<rect x="38" y="17" width="44" height="31" rx="8"/><path d="M60 17V10M32 28V38M88 28V38M45 41H65M33 63V59C33 52 40 49 47 49H58"/><circle cx="60" cy="7" r="3"/><circle cx="50" cy="29" r="3"/><circle cx="70" cy="29" r="3"/><rect x="65" y="48" width="21" height="21" rx="3"/><path d="m75.5 52 5 6-5 6-5-6Z"/>',
-      ship:'<path d="M24 45H96L85 59H37ZM41 45V27H76V45M48 27V18H68V27M58 18V7M58 9H77L70 15H58M30 65q8-5 16 0t16 0 16 0 16 0"/><path d="M48 34H53M62 34H67M44 51H49M58 51H63M72 51H77"/>',
-      'eye-off':'<path d="M24 36C43 9 77 9 96 36 77 63 43 63 24 36ZM30 10 90 62"/><path d="M50 27a13 13 0 0 0 18 18M70 28a13 13 0 0 0-18-3"/><path d="M20 23 15 19M100 23l5-4M60 11V6"/>',
-      lock:'<rect x="37" y="29" width="46" height="35" rx="6"/><path d="M46 29V20a14 14 0 0 1 28 0V29M51 29V20a9 9 0 0 1 18 0V29"/><circle cx="60" cy="43" r="4"/><path d="M60 47V54M44 57H49M71 57H76"/>',
-      people:'<circle cx="60" cy="20" r="10"/><path d="M42 62V51a18 18 0 0 1 36 0V62M49 49V62M71 49V62"/><circle cx="30" cy="29" r="7"/><path d="M16 62V54a14 14 0 0 1 23-11M23 55V62"/><circle cx="90" cy="29" r="7"/><path d="M104 62V54a14 14 0 0 0-23-11M97 55V62"/>'
-    };
-    if(!Object.hasOwn(shapes,name))return '';
-    return root.PlayroomGameComponents.vector.viewport({width:120,height:72,className:'rule-preview-parameter-symbol',attrs:`data-art-role="parameter-diagram" data-parameter-symbol="${esc(name)}" data-parameter-symbol-family="line-v1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content:shapes[name]});
+    const H=root.TabletopUI.helpers,V=root.PlayroomGameComponents.vector;
+    const content=name==='clock'&&String(value)==='0'?'<path d="M60 36C50 21 44 18 36 24 25 32 32 49 42 49S59 32 69 25 88 24 88 36 79 52 71 47 52 22 41 23"/>':V.place(H.icon(name),{x:38,y:14,width:44,height:44});
+    return V.viewport({width:120,height:72,className:'rule-preview-parameter-symbol',attrs:`data-art-role="parameter-diagram" data-parameter-symbol="${esc(name)}" data-parameter-symbol-family="standard" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content});
   }
   function parameterArt(name,value){
     name=String(name||'').replace(/^option-/, '');value=String(value);
     const H=root.TabletopUI.helpers,V=root.PlayroomGameComponents.vector;
     const body=svg=>svg.replace(/^<svg\b[^>]*>/,'').replace(/<\/svg>$/,'');
-    const glyph=(key,x,y,size)=>`<g transform="translate(${x} ${y}) scale(${size/24})" fill="none" stroke="currentColor" stroke-width="${38.4/size}" stroke-linecap="round" stroke-linejoin="round">${body(H.icon(key))}</g>`;
+    const glyph=(key,x,y,size)=>`<g transform="translate(${x} ${y}) scale(${size/24})" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body(H.icon(key))}</g>`;
     const token=(x,y,size)=>`<g data-first-player-token transform="translate(${x} ${y}) scale(${size/100})" stroke="none">${body(H.roundTokenArt({value:1}))}</g>`;
     let drawing='',id='';
     if(name==='firstPlayerMode'){
       id='first-'+value;
-      if(value==='rules')drawing='<g data-rule-book><path d="M34 29Q47 25 60 31Q73 25 86 29V63Q73 59 60 65Q47 59 34 63ZM60 31V65M40 36l13 2m-13 6 13 2m-13 6 13 2m14-16 13-2m-13 10 13-2m-13 10 13-2"/></g>'+token(48,0,24);
-      else if(value==='assigned')drawing='<circle cx="55" cy="31" r="8"/><path d="M40 63V52a15 15 0 0 1 30 0v11m-24-18 9 6 9-6"/>'+token(70,3,31);
+      if(value==='rules')drawing='<g data-rule-book>'+glyph('rules',35,23,50)+'</g>'+token(48,0,24);
+      else if(value==='assigned')drawing=parameterPlayer(31,13,48)+token(70,3,31);
       else if(value==='random'){
         const cx=41,cy=29,r=21,point=(angle,radius)=>[cx+Math.cos(angle)*radius,cy+Math.sin(angle)*radius].map(n=>Number(n.toFixed(3)));
         const sectors=Array.from({length:6},(_,i)=>{const a=point(i*Math.PI/3,r),b=point((i+1)*Math.PI/3,r);return `<path data-wheel-sector d="M${cx} ${cy}L${a.join(' ')}A${r} ${r} 0 0 1 ${b.join(' ')}Z" fill="currentColor" fill-opacity="${i%2?.12:.04}"/>`;}).join('');
@@ -138,11 +125,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(name==='endMode'){
       id='ending-'+value;
       if(value==='winner')drawing=body(parameterSymbolArt('trophy',value));
-      else if(value==='round')drawing='<g data-last-round-timer stroke-width="1.6"><path data-timer-speed d="M23 28H43M15 41H39M25 54H43"/><path d="M67 17V12H73V17M62 8H78M88 22l4-4m-6-2 8 8"/><circle cx="70" cy="41" r="22"/><path data-timer-remaining d="M70 41V23A18 18 0 0 1 82.73 28.27Z" fill="currentColor" stroke="none"/><path d="M70 41 82.73 28.27"/><circle cx="70" cy="41" r="1.6" fill="currentColor"/></g>';
-      else if(value==='last')drawing='<g data-previous-players fill="currentColor" stroke="none"><circle cx="20" cy="43" r="2.5"/><circle cx="33" cy="43" r="2.5"/><circle cx="46" cy="43" r="2.5"/></g>'+'<circle cx="87" cy="25" r="8"/><path d="M71 62V51a16 16 0 0 1 32 0v11m-25-19 9 6 9-6"/>';
+      else if(value==='round')drawing='<g data-last-round-timer stroke-width="3"><path data-timer-speed d="M23 28H43M15 41H39M25 54H43"/><path d="M67 17V12H73V17M62 8H78M88 22l4-4m-6-2 8 8"/><circle cx="70" cy="41" r="22"/><path data-timer-remaining d="M70 41V23A18 18 0 0 1 82.73 28.27Z" fill="currentColor" stroke="none"/><path d="M70 41 82.73 28.27"/><circle cx="70" cy="41" r="1.6" fill="currentColor"/></g>';
+      else if(value==='last')drawing='<g data-previous-players fill="currentColor" stroke="none"><circle cx="20" cy="43" r="2.5"/><circle cx="33" cy="43" r="2.5"/><circle cx="46" cy="43" r="2.5"/></g>'+parameterPlayer(63,13,48);
       else return '';
     }else return '';
-    return V.viewport({width:120,height:72,className:'rule-preview-common-art',attrs:`data-art-role="parameter-diagram" data-common-parameter-art="${id}" data-parameter-family="line-v1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content:drawing});
+    return V.viewport({width:120,height:72,className:'rule-preview-common-art',attrs:`data-art-role="parameter-diagram" data-common-parameter-art="${id}" data-parameter-family="standard" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content:drawing});
   }
   let helpSequence=0;
   function fieldHelp(text,title=null){

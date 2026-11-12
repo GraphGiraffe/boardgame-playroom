@@ -194,6 +194,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let outside=null,multiTouch=false;const touches=new Set();
     const syncZoom=()=>{if(zoomed()){panel.dataset.surfaceZoomed='true';outside=null;reset(true);}else delete panel.dataset.surfaceZoomed;};
     win.visualViewport?.addEventListener?.('resize',syncZoom,{signal:events.signal});syncZoom();
+    // Browser suspension can omit pointerup/cancel. Never retain an old pinch
+    // or capture owner when input resumes on the same still-open panel.
+    const resetInput=()=>{outside=null;touches.clear();multiTouch=false;reset();syncZoom();};
+    for(const type of ['blur','pagehide','pageshow'])win.addEventListener(type,resetInput,{signal:events.signal});
+    doc.addEventListener('visibilitychange',resetInput,{signal:events.signal});
     const outsidePanel=target=>!panel.contains(target)&&!target.closest?.('[popover],.quick-reaction-picker,[data-ui-surface-exit],button,a,input,textarea,select,label,[role="button"],[contenteditable],[data-command],[data-action],[data-select],[data-drop]');
     doc.addEventListener('pointerdown',event=>{
       if(event.pointerType==='touch'){touches.add(event.pointerId);if(touches.size>1){multiTouch=true;outside=null;reset(true);}}

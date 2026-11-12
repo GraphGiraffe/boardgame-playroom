@@ -112,4 +112,10 @@ A dismissed unused hotseat lobby is not an active game. On an explicit update-al
 
 Parameter composite examples must be inert SVG or noninteractive wrappers; never place a real button inside the cycling preview button. Use the parameter-diagram marker for one bounded viewBox, actual game components for pieces, and currentColor with a transparent background for service symbols. Native acceptance includes all declared variants, two-line captions and stable card geometry.
 
-Validate raw public parameter illustration callback strings for interactive tags before DOM parsing; invalid nested buttons may already have been reparented outside the card and evade a DOM-only assertion. Uniform parameter symbols use the shared line-v1 family, including disabled/inactive states.
+Validate raw public parameter illustration callback strings for interactive tags before DOM parsing; invalid nested buttons may already have been reparented outside the card and evade a DOM-only assertion. Uniform parameter symbols use the standard UI icon family, including disabled/inactive states.
+
+Player composites embed the complete canonical UI player SVG through vector.place. Do not redraw a torso, add clothing details, or normalize its stroke independently from its geometry. Review all parameter icons in context with two independent screenshot critics; SVG presence alone is not visual acceptance.
+
+Surface input ownership is discarded on blur, pagehide/pageshow and visibility changes. Interrupted pointer streams must not leave a permanent multi-touch guard. Keep native reading, pinch zoom, input editing and outward side-panel gestures protected. Regression covers abandoned touch ownership followed by native touch dismissal, including the actual parameter-art surface.
+
+SVG attribute filtering matches complete whitespace-delimited attribute names. Never strip width/height/x/y by suffix: stroke-width, opacity, data-family and data-entity must survive composition. Regression checks both raw output and actual nested glyph stroke in the browser.

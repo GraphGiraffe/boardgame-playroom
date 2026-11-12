@@ -5,8 +5,8 @@
       "source": "shared/components/vector-art.js",
       "target": "core/vector-art.js",
       "format": "text",
-      "sha256": "15815c78c8a7cd6a3580066a7079dcbbb549add473630456fa2d3fd562e1b775",
-      "renderedSha256": "15815c78c8a7cd6a3580066a7079dcbbb549add473630456fa2d3fd562e1b775"
+      "sha256": "7f846b94aaa5da5cfd358947ab203256bc5cf476ea4cd74fc395db632532444c",
+      "renderedSha256": "7f846b94aaa5da5cfd358947ab203256bc5cf476ea4cd74fc395db632532444c"
     },
     {
       "source": "shared/components/game-components.js",

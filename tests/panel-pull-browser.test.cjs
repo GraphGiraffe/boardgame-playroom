@@ -1,7 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),{chromium,executablePath}=require('../scripts/codex/browser.cjs'),engine=process.env.LAB_ENGINE||'chromium',out=path.resolve(root,'../tmp_files/panel-pull-1111');
-async function runPanelCase({marker=false,side=false}={}){
+async function runPanelCase({marker=false,side=false,resume=false}={}){
  fs.mkdirSync(out,{recursive:true});const browser=await(engine==='webkit'?require('playwright-core').webkit:chromium).launch(engine==='webkit'?{headless:true}:{headless:true,executablePath:executablePath(),args:['--no-sandbox']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:'reduce',playroomProfile:false}),page=await context.newPage(),errors=[],rows=[];let cdp;
  try{
  page.on('pageerror',e=>errors.push(e.message));await page.setContent('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="app">Background</main><div id="modal-root"></div></body></html>');
@@ -15,6 +15,10 @@ async function runPanelCase({marker=false,side=false}={}){
  const point=async()=>{const b=await body().boundingBox();return{x:b.x+70,y:b.y+24};};
  const touch=async(type,p)=>{if(cdp)await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'||type==='touchCancel'?[]:[{x:p.x,y:p.y,id:1}]});else await page.evaluate(({type,p})=>{const name={touchStart:'touchstart',touchMove:'touchmove',touchEnd:'touchend',touchCancel:'touchcancel'}[type],target=window.touchTarget||(window.touchTarget=document.elementFromPoint(p.x,p.y)),t={identifier:1,target,clientX:p.x,clientY:p.y},e=new Event(name,{bubbles:true,cancelable:true});Object.defineProperties(e,{touches:{value:type==='touchEnd'||type==='touchCancel'?[]:[t]},changedTouches:{value:[t]}});target.dispatchEvent(e);if(type==='touchEnd'||type==='touchCancel')delete window.touchTarget;},{type,p});};
  const drag=async(p,dy,{steps=5,end='touchEnd',pause=0,axis='y'}={})=>{await touch('touchStart',p);for(let i=1;i<=steps;i++){await page.waitForTimeout(24);await touch('touchMove',{x:p.x+(axis==='x'?dy*i/steps:0),y:p.y+(axis==='y'?dy*i/steps:0)});}if(pause)await page.waitForTimeout(pause);const during=await active().evaluate(el=>({pull:el.style.getPropertyValue('--surface-pull-distance'),y:el.getBoundingClientRect().y}));if(!rows.length)await page.screenshot({path:path.join(out,engine+'-body-follow.png')});await touch(end,{x:p.x+(axis==='x'?dy:0),y:p.y+(axis==='y'?dy:0)});await page.waitForTimeout(210);return during;};
+ if(resume){
+  for(const lifecycle of ['blur','pagehide','visibilitychange']){await open();const q=await point();await page.evaluate(({q,lifecycle})=>{const panel=document.querySelector('.pull-test');for(const id of [501,502])panel.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:id,isPrimary:id===501,clientX:q.x,clientY:q.y}));if(lifecycle==='visibilitychange'){Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event(lifecycle));delete document.hidden;document.dispatchEvent(new Event(lifecycle));}else window.dispatchEvent(new Event(lifecycle));},{q,lifecycle});await drag(q,110);assert.equal(await active().count(),0,'fresh native pull must work after abandoned touches and '+lifecycle);rows.push({resume:lifecycle,dismissed:true});}
+  return;
+ }
  if(side){
   for(const edge of ['right','left']){
    await open();await active().evaluate((el,edge)=>{el.style.cssText='position:fixed;top:0;bottom:0;height:100%;width:300px;max-height:none;'+(edge==='right'?'right:0;left:auto;':'left:0;right:auto;');el.style.setProperty('--surface-dismiss-edge',edge);},edge);
@@ -51,3 +55,5 @@ async function runPanelCase({marker=false,side=false}={}){
 test('bottom panel touch pull follows at top and preserves native reading and controls',{timeout:60000},()=>runPanelCase());
 test('marked panel preview preserves tap and hands vertical pull to the sheet',{timeout:30000},()=>runPanelCase({marker:true}));
 test('side panels use declared edge while preserving native vertical reading',{timeout:30000},()=>runPanelCase({side:true}));
+
+test('panel gestures recover after interrupted touches and browser suspension',{timeout:30000},()=>runPanelCase({resume:true}));
