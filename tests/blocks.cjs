@@ -7,6 +7,7 @@ module.exports = {
     {"file":"skin-preferences.test.cjs","profiles":[],"subblock":"core/appearance"},
     {"file":"test-selection.test.cjs","profiles":[],"subblock":"core/test-selection"},
     {"file":"pack-models.test.cjs","profiles":[],"subblock":"core/model"},
+    {"file":"vector-composition.test.cjs","profiles":[],"subblock":"core/packs"},
     {"file":"session-runtime.test.cjs","profiles":["app"],"subblock":"core/session-runtime"},
     {"file":"model-contract.test.cjs","profiles":[],"subblock":"core/model"},
     {"file": "appearance.test.cjs", "profiles": ["app"], "subblock": "core/appearance"},
@@ -36,6 +37,8 @@ module.exports = {
     {"file": "quick-play.test.cjs", "profiles": [], "subblock": "input/feedback"},
   ]},
   games: {label: "Правила и интерфейс игр", cases: [
+    {"file":"snakes-swaps.test.cjs","profiles":[],"subblock":"games/snakes"},
+    {"file":"yatzy-bot-tactics.test.cjs","profiles":[],"subblock":"games/yatzy"},
     {"file":"mage-brawl.test.cjs","profiles":[],"subblock":"games/mage-brawl"},
     {"file":"mage-brawl-browser.test.cjs","profiles":[],"subblock":"games/mage-brawl/screen"},
     {"file":"solitaire.test.cjs","profiles":[],"subblock":"games/solitaire"},
