@@ -407,7 +407,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       patchChildren(group.liveParent,after,{childNodes:before},change=>changes.push(change));
       group.parent.replaceWith(after);
     }
-    renderedFragments.set(host,next);updateGeometry(host,changes);restoreSceneScroll(scrollers);return true;
+    renderedFragments.set(host,next);placeSceneStatus(host,host.ownerDocument.defaultView);placeSceneStatus(renderedTrees.get(host),host.ownerDocument.defaultView);updateGeometry(host,changes);restoreSceneScroll(scrollers);return true;
   }
   function releaseActionGeometry(node){
     const lock=actionGeometryLocks.get(node);if(!lock)return;
@@ -465,7 +465,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
   }
   // Structural field grids share the scene lock. Store geometry only, never markup.
-  const gridStyles=new WeakMap();
+  const gridStyles=new WeakMap(), fieldLayouts=new WeakMap();
   const gridProperties=['grid-template-columns','grid-template-rows','grid-auto-columns','grid-auto-rows','grid-auto-flow','column-gap','row-gap','align-content','justify-content','align-items','justify-items'];
   function fieldGrids(stage){
     return [...stage.querySelectorAll('.game-field-groups,[data-layout-grid]')];
@@ -473,7 +473,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function restoreFieldGrids(stage){
     for(const node of fieldGrids(stage)){
       const saved=gridStyles.get(node);if(!saved)continue;
-      for(const [key,value,priority] of saved)if(value)node.style.setProperty(key,value,priority);else node.style.removeProperty(key);
+      for(const [key,value,priority] of saved.authored){
+        // An authored patch may already have replaced this property. Release
+        // only the geometry still owned by this lock.
+        if(node.style.getPropertyPriority(key)!=='important'||node.style.getPropertyValue(key)!==saved.geometry.get(key))continue;
+        if(value)node.style.setProperty(key,value,priority);else node.style.removeProperty(key);
+      }
       gridStyles.delete(node);
     }
   }
@@ -485,7 +490,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!['grid','inline-grid'].includes(css.display))continue;
       let geometry=locked.fieldGrids.get(key);
       if(!geometry){geometry=gridProperties.map(prop=>[prop,css.getPropertyValue(prop)]);locked.fieldGrids.set(key,geometry);}
-      gridStyles.set(node,gridProperties.map(prop=>[prop,node.style.getPropertyValue(prop),node.style.getPropertyPriority(prop)]));
+      gridStyles.set(node,{authored:gridProperties.map(prop=>[prop,node.style.getPropertyValue(prop),node.style.getPropertyPriority(prop)]),geometry:new Map(geometry)});
       for(const [prop,value] of geometry)node.style.setProperty(prop,value,'important');
     }
   }
@@ -511,6 +516,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!actions||!heading||!tools||header.classList.contains('game-frame-actions-wrapped'))return;
     const h=heading.getBoundingClientRect(),t=tools.getBoundingClientRect();
     if(t.top>=h.bottom-1)header.classList.add('game-frame-actions-wrapped');
+  }
+  function placeSceneStatus(tree,win){
+    if(!tree)return;
+    const home=tree.querySelector('[data-scene-status-home]'),bar=tree.querySelector('.table-status,.game-frame-status');
+    const content=home?.querySelector('[data-scene-status]')||bar?.querySelector('[data-scene-status]');
+    if(!content||!home||!bar)return;
+    const target=win.matchMedia('(orientation:portrait)').matches||content.dataset.sceneStatus==='always'?bar:home;
+    if(target===bar)for(const old of [...bar.querySelectorAll('[data-scene-status]')])if(old!==content)old.remove();
+    if(content.parentElement!==target)target.prepend(content);
   }
   // Pending input is an interaction state, not another scene revision.
   function interactionState(host,{pending=false,busy=pending}={}){
@@ -552,6 +566,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(resolveTemplate)for(const marker of template.content.querySelectorAll('template[data-scene-fragment]'))marker.replaceWith(resolveTemplate(marker));
     renderedTrees.set(host,template.content);renderedFragments.set(host,nextFragments);
     renderedSkeletons.set(host,{markup,identity:geometryIdentity(after),viewport:geometryViewport(host)});
+    placeSceneStatus(host,host.ownerDocument.defaultView);placeSceneStatus(template.content,host.ownerDocument.defaultView);
     if(!previous||changes.some(({node,parent})=>node?.closest?.('.game-frame-header')||parent?.closest?.('.game-frame-header')))fitHeaderActionRow(host);
     if(!previous)pendingScroll.set(host,scrollers);
     if(previous){updateGeometry(host,changes);root.PlayroomPublicSequence?.bind(host);restoreSceneScroll(scrollers);}else retireGeometry(host);
@@ -840,7 +855,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(stage.dataset.fieldSizing==='scroll'||field.querySelector('[data-card-count]')){field.style.width=width+'px';field.style.height=height+'px';field.style.zoom='1';field.style.setProperty('--field-scale','1');return;}
 
     if(stage.dataset.layoutFamily==='board'){
-      const aspect=Number(slot.style.getPropertyValue('--field-aspect'))||1;
+      const aspect=fieldLayouts.get(stage)?.fieldAspect??(Number(slot.style.getPropertyValue('--field-aspect'))||1);
       const availableWidth=Math.min(width,height*aspect),boardWidth=Math.max(1,Math.floor(availableWidth/4)*4),boardHeight=boardWidth/aspect;
       if(stage.dataset.fieldSizing!=='content'){
         slot.style.width=boardWidth+'px';slot.style.height=boardHeight+'px';
@@ -943,7 +958,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return corners.map((c,i)=>`${i?'L':'M'}${c.a.join(',')}Q${c.p.join(',')} ${c.b.join(',')}`).join(' ')+'Z';
   }
   const fullscreenZoneWidths=new WeakMap();
-  const geometryOwners=new WeakMap();
+  const geometryOwners=new WeakMap(), allocatingScenes=new WeakSet();
   const geometryRegions='.layout-field,.layout-hand,.player-hand,.mini-hand,.player-panel,.layout-actions,.game-frame-title,.game-frame-cover,.table-status,.game-frame-status';
   const paintClasses=new Set(['is-selected','is-playable','is-turn','is-ready','is-inactive','is-addressed','is-turn-skipped','is-participant-affected','is-public-playback']);
   function geometryIdentity(shell){const stage=shell?.querySelector('.app-game-layout');return shell?JSON.stringify([shell.dataset.geometryIdentity||shell.dataset.layoutIdentity,shell.dataset.reactionViewer,shell.dataset.reactionReplay,stage?.dataset.surface]):null;}
@@ -1053,6 +1068,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for(const {node}of changes)if(node?.nodeType===1&&actionGeometryLocks.has(node)&&!node.classList.contains('layout-actions'))releaseActionGeometry(node);
     const state=geometryOwners.get(host);if(!state)return;
     if(state.viewport!==geometryViewport(host)){layoutScene(host);return;}
+    const stage=host.querySelector('.app-game-layout'),lock=fixedLayouts.get(host);
+    if(stage){restoreFieldGrids(stage);if(lock){fieldLayouts.set(stage,lock);lockFieldGrids(stage,lock);}else fieldLayouts.delete(stage);}
     const field=host.querySelector('.layout-field');
     for(const change of changes){
       if(change.kind==='remove'&&change.node.nodeType===1)for(const node of scopedNodes(change.node,geometryRegions)){state.observer?.unobserve(node);state.observed.delete(node);state.observedRegions.delete(node);if(node.matches('.player-panel')){const index=node.dataset.playerIndex;state.groups.get(index)?.delete(node);state.primary.delete(index);state.paintGroups.add(index);}}
@@ -1064,9 +1081,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(defer&&state.dirty.size)queueGeometry(host,state);else flushGeometry(host,state);
   }
   function layoutScene(host,settled=false){
+    // Public-frame binding patches DOM during allocation. Its patch observer
+    // must not recursively allocate against the previous viewport owner.
+    if(allocatingScenes.has(host))return;
     const scene=host.querySelector('.scene'),state=geometryOwners.get(host);
-    if(!state||state.scene!==scene||state.viewport!==geometryViewport(host)||state.bounds!==geometryBounds(scene)){
-      allocateScene(host,settled);initializeGeometry(host);return;
+    if(!state||!fixedLayouts.has(host)||state.scene!==scene||state.viewport!==geometryViewport(host)||state.bounds!==geometryBounds(scene)){
+      allocatingScenes.add(host);
+      try{allocateScene(host,settled);initializeGeometry(host);}finally{allocatingScenes.delete(host);}
+      return;
     }
     flushGeometry(host,state);
   }
@@ -1084,22 +1106,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     placeSceneActions(renderedTrees.get(host),host.ownerDocument.defaultView);
     fitHeaderActionRow(host,{reset:true});
 
-    // A scene can reserve portrait status content without owning the host bar.
-    for(const tree of [host,renderedTrees.get(host)]){
-      if(!tree)continue;
-      const home=tree.querySelector('[data-scene-status-home]'),bar=tree.querySelector('.table-status,.game-frame-status');
-      const content=home?.querySelector('[data-scene-status]')||bar?.querySelector('[data-scene-status]');
-      if(!content||!home||!bar)continue;
-      const portrait=!host.ownerDocument.defaultView.matchMedia('(orientation:landscape)').matches,target=portrait||content.dataset.sceneStatus==='always'?bar:home;
-      if(target===bar)for(const old of [...bar.querySelectorAll('[data-scene-status]')])if(old!==content)old.remove();
-      if(content.parentElement!==target)target.prepend(content);
-    }
+    // A scene reserves the same status home after initial allocation and patches.
+    for(const tree of [host,renderedTrees.get(host)])placeSceneStatus(tree,host.ownerDocument.defaultView);
 
     if(stage)stage.dataset.threeOpponentLayout=root.PlayroomAppBridge?.gameOptions?.().splitThreeOpponents?'split':'row';
     const layoutKey=stage?JSON.stringify([host.ownerDocument.documentElement.dataset.assetGeometry,host.querySelector('.table-shell')?.dataset.layoutIdentity,scene.clientWidth,scene.clientHeight,stage.dataset.threeOpponentLayout,stage.dataset.surface,stage.dataset.preferredSeating||stage.dataset.seating]):null;
     if(stage)restoreFieldGrids(stage);
     let locked=fixedLayouts.get(host);if(locked?.key!==layoutKey){fixedLayouts.delete(host);locked=null;}
-    if(stage){if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
+    if(stage){if(locked)fieldLayouts.set(stage,locked);else fieldLayouts.delete(stage);if(locked){stage.dataset.hasHand=locked.hasHand;stage.dataset.opponentHands=locked.opponentHands;}stage.style.removeProperty('grid-template-rows');stage.style.removeProperty('grid-template-columns');
       if(!locked)for(const node of stage.querySelectorAll('.layout-actions'))releaseActionGeometry(node);
       for(const node of stage.querySelectorAll(':scope > .layout-self')){node.style.removeProperty('height');node.style.removeProperty('max-height');node.style.removeProperty('overflow');}
     }
@@ -1144,7 +1158,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       let ownZone=stage.querySelector('.layout-self')?(stage.dataset.hasHand==='false'?policy.ownNoHandPx:Math.min(hands?policy.ownHandFocusMaxPx:policy.ownDefaultMaxPx,Math.max(h<policy.ownCompactThresholdPx?policy.ownCompactMinPx:policy.ownMinPx,h*policy.ownFraction))):0;
       const own=stage.querySelector('.layout-self');if(own&&stage.dataset.hasHand==='true'){const natural=[...own.children].reduce((sum,node)=>sum+layoutRect(node).height,policy.ownNaturalPaddingPx);ownZone=Math.min(Math.max(policy.ownCompactMinPx,h*policy.ownMaxFraction),Math.max(ownZone,natural));}
       if(own&&anchoredNoHand&&portrait)ownZone=Math.max(ownZone,...[...own.children].map(node=>layoutRect(node).height+12));
-      stage.style.setProperty('--anchor-south-seat-height',Math.max(44,...[...stage.querySelectorAll('.seat-south-east,.seat-south-west')].map(node=>layoutRect(node).height))+'px');
+      const southSeats=[...stage.querySelectorAll('.seat-south-east,.seat-south-west')];
+      const southHeight=southSeats.length?Math.max(44,...southSeats.map(node=>layoutRect(node).height)):0;
+      stage.style.setProperty('--anchor-south-seat-height',southHeight+'px');
       stage.style.setProperty('--north-east-height',(stage.querySelector('.seat-north-east')&&layoutRect(stage.querySelector('.seat-north-east')).height||0)+'px');
       stage.style.setProperty('--corner-control-height',(((own?layoutRect(own).height:0))+12)+'px');
       const opponentHands=stage.dataset.opponentHands==='true',edge=stage.dataset.seatStyle==='edge';
@@ -1156,6 +1172,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       stage.style.setProperty('--seat-hand-width',Math.max(32,Math.min(78,seatWidth*.42,(seatHeight-48)/1.43))+'px');
       stage.style.setProperty('--own-zone',ownZone+'px');
       if(anchors){const fieldSize=compact?Math.min(w,h-ownZone-2*seatHeight-30):Math.min(w-2*seatWidth-12,h-(anchoredNoHand?12:ownZone+18));stage.style.setProperty('--anchor-field-size',Math.floor(Math.max(40,!portrait&&anchoredNoHand?Math.min(h-12,w*.55):fieldSize))+'px');}
+      // Corner seats and controls share the same vertical offset. Reserve the
+      // actual control height before centering, including multi-die toolbars.
+      if(anchoredNoHand&&!portrait&&own){
+        const controls=Math.max(0,...[...own.querySelectorAll('.layout-actions')].map(node=>layoutRect(node).height));
+        const south=southHeight;
+        const field=parseFloat(stage.style.getPropertyValue('--anchor-field-size'))||0;
+        stage.style.setProperty('--anchor-corner-offset',Math.min(field*.1,Math.max(0,h/2-south-controls-16))+'px');
+      }else stage.style.removeProperty('--anchor-corner-offset');
       stage.style.setProperty('--focus-own-card-width',Math.max(58,Math.min(125,(h*.32-70)/1.43))+'px');
       if(stage.dataset.surface==='player'){const count=stage.querySelectorAll('.layout-participants .player-panel').length,wide=scene.clientWidth>scene.clientHeight&&scene.clientWidth>=600;const available=stage.querySelector('.layout-participants')?.clientWidth||scene.clientWidth,columns=wide?Number(stage.dataset.landscapeRosterColumns)||1:Math.max(1,Math.min(count,Math.floor(available/155)));stage.style.setProperty('--player-columns',columns);stage.style.setProperty('--player-rows',Math.ceil(count/columns));const own=stage.querySelector('.layout-self'),height=own?.clientHeight||150;stage.style.setProperty('--focus-hand-width',Math.max(58,Math.min(125,(height-90)*.69))+'px');}fitHand(stage);root.PlayroomHandOverflow?.sync?.(host);fitField(stage);
       fitPlayerPanels(stage);
@@ -1190,7 +1214,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // History and large controls can consume the remaining player-only pane.
       // Bound its scroll viewport before freezing tracks, never clip the whole scene.
       if(own){const bounds=layoutRect(stage),box=layoutRect(own),inset=parseFloat(win.getComputedStyle(stage).paddingBottom)||0;own.style.maxHeight=Math.max(0,bounds.bottom-box.top-inset)+'px';}
-      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,rosterMinimum,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?layoutRect(own).height:0,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands,actions:[...stage.querySelectorAll('.layout-actions')].map(node=>layoutRect(node).height)};fixedLayouts.set(host,locked);}
+      if(!locked){const css=win.getComputedStyle(stage);locked={key:layoutKey,fieldAspect:Number(stage.querySelector('.layout-field')?.style.getPropertyValue('--field-aspect'))||1,rosterMinimum,rows:css.gridTemplateRows,columns:css.gridTemplateColumns,self:own?layoutRect(own).height:0,hasHand:stage.dataset.hasHand,opponentHands:stage.dataset.opponentHands,actions:[...stage.querySelectorAll('.layout-actions')].map(node=>layoutRect(node).height)};fixedLayouts.set(host,locked);}
+      fieldLayouts.set(stage,locked);
       stage.style.setProperty('grid-template-rows',locked.rows,'important');
       stage.style.setProperty('grid-template-columns',locked.columns,'important');
       for(const [index,node]of [...stage.querySelectorAll('.layout-actions')].entries())if(locked.actions?.[index]>0)lockActionGeometry(node,locked.actions[index]);

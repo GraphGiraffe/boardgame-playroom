@@ -60,7 +60,7 @@
 .room-v021-cover-edit>svg{width:15px;height:15px}
 .room-v021-summary>.room-v021-game-context{min-height:68px;padding:6px 0}
 .room-v021-summary>.room-v021-cover-choice:disabled{opacity:.55;cursor:default}
-:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]{width:min(760px,100%);max-height:calc(100dvh - 28px);margin-inline:auto;border-radius:22px 22px 0 0}
+:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]{width:min(760px,100%);max-height:calc(var(--ui-viewport-height,100dvh) - 28px);margin-inline:auto;border-radius:22px 22px 0 0}
 :is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]>.modal-body{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center;padding:0 0 12px;background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>strong{grid-column:1;grid-row:1}

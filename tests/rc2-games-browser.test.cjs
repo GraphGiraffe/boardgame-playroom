@@ -39,8 +39,8 @@ function sceneGeometryIssues(){
 test('layered model renders assigned marks, public Table controls and projected client history',{timeout:45000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
-  const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(fixture.url);
-  if(await page.locator('#profile-form').count()){await page.locator('#profile-form input').fill('Тест');await page.locator('#profile-form').evaluate(form=>form.requestSubmit());}
+  const page=await browser.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await require('./account-sync-fixture.cjs').installFetch(page.context(),async route=>route.fulfill({json:{}}));await page.goto(fixture.url);await require('./browser-origin.cjs').ready(page);
+  if(await page.locator('#profile-form').count()){await page.locator('#profile-form [name=playerName]').fill('Тест');await page.locator('#profile-form').evaluate(form=>form.requestSubmit());}
   const captures=path.join(root,'tmp_files/refactor-0.18-model');fs.mkdirSync(captures,{recursive:true});
   for(const [width,height]of [[320,640],[390,740],[740,390]])for(const theme of ['light','dark']){
    await page.setViewportSize({width,height});
@@ -94,7 +94,11 @@ test('new game scenes preserve proportions, reachable controls and hands before 
    },{game,progressed,width});
    await page.waitForTimeout(35);
    const result=await page.evaluate(sceneGeometryIssues);
-   if(result.length&&process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'failure.png')});
+   if(result.length&&process.env.PLAYROOM_QA_DIR){
+    const bounds=await page.evaluate(()=>Object.fromEntries(['.scene','.table-shell','.layout-actions','.layout-self','.layout-participants','.layout-field','.shared-action-row','.ludo-board'].map(selector=>{const node=document.querySelector(selector),css=node&&getComputedStyle(node);return [selector,node?{box:node.getBoundingClientRect().toJSON(),client:[node.clientWidth,node.clientHeight],scroll:[node.scrollWidth,node.scrollHeight],display:css.display,overflow:css.overflow,minHeight:css.minHeight,maxHeight:css.maxHeight,gridRows:css.gridTemplateRows,gridColumns:css.gridTemplateColumns}:null];})));
+    fs.writeFileSync(path.join(process.env.PLAYROOM_QA_DIR,'failure-bounds.json'),JSON.stringify({game,width,height,progressed,issues:result,bounds},null,2));
+    await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'failure.png')});
+   }
    assert.deepEqual(result,[],`${game} ${width}x${height} ${progressed?'after':'initial'}`);
    if(process.env.PLAYROOM_QA_DIR&&[390,740].includes(width)){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,`${game}-${width}-${progressed?'after':'initial'}.png`)});}
   }}

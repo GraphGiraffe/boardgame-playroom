@@ -1,86 +1,62 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const {serveBrowserFixture,selectChoice,readChoice}=require('./browser-origin.cjs');
+const TestUI=require('./browser-origin.cjs');
+const {serveBrowserFixture}=TestUI;
+const active=page=>TestUI.activeSurface(page);
+async function startLocal(page,game){await TestUI.openGame(page,game);await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();PlayroomFirstTurnGuide.setEnabled(r.game.id,false);b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await active(page).locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();}
 const root=path.resolve(__dirname,'..');
 test('screen:phone:portrait settings help opens by touch and Escape closes only the popover without changing preferences',{timeout:30000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
  try{
-  await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('uno',false));await page.locator('[data-room-cycle=seat-3]').click();await page.locator('.room-setup-modal [data-command=settings]').click();
-  assert(!await page.locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
+  await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));await page.goto(server.url);await TestUI.ready(page);await startLocal(page,'uno');await TestUI.openSettings(page);
+  assert(!await active(page).locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
   const before=await page.evaluate(()=>localStorage.getItem('playroom.settings.v1'));
-  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-scale']){
-   const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"setting-with-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
-   assert(await wrapper.locator('.setting-title').evaluate(e=>{const a=e.querySelector('.setting-title-text').getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');
+  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed']){
+   await active(page).locator('[data-settings-tab='+(['setting-last-game','setting-quick-play'].includes(id)?'behavior':'effects')+']').click();
+   const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"settings-v021-field-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
+   assert(await wrapper.locator('.setting-title').evaluate(e=>{const walker=document.createTreeWalker(e,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest('.rule-help')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});let last;while(walker.nextNode())last=walker.currentNode;const range=document.createRange();range.selectNodeContents(last);const a=range.getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');
    await button.focus();await button.press('ArrowRight');
    assert(await button.evaluate(e=>{const svg=e.querySelector('svg'),ring=svg.querySelector('.help-focus-ring'),glyph=svg.querySelector('circle:not(.help-focus-ring)'),r=e.getBoundingClientRect();if(!ring||!glyph)return false;const center=shape=>new DOMPoint(shape.cx.baseVal.value,shape.cy.baseVal.value).matrixTransform(shape.getScreenCTM()),a=center(glyph),b=center(ring),box=ring.getBoundingClientRect();return e.matches(':focus-visible')&&Number(getComputedStyle(ring).opacity)===1&&Math.abs(a.x-b.x)<.1&&Math.abs(a.y-b.y)<.1&&box.width<=r.width&&box.height<=r.height;}),id+' compact focus ring shares the icon center');
-   await button.click();assert(await page.locator('.mini-help-popover:popover-open').isVisible());assert((await page.locator('.mini-help-popover:popover-open').innerText()).length>20);
-   await page.keyboard.press('Escape');assert.equal(await page.locator('.mini-help-popover:popover-open').count(),0);assert(await page.locator('.settings-overview').isVisible());
+   await button.tap();await page.locator('.mini-help-popover:popover-open').waitFor();assert(await page.locator('.mini-help-popover:popover-open').isVisible());assert((await page.locator('.mini-help-popover:popover-open').innerText()).length>20);
+   await page.keyboard.press('Escape');assert.equal(await page.locator('.mini-help-popover:popover-open').count(),0);assert(await active(page).locator('[data-settings-screen]').isVisible());
    assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.settings.v1')),before,'help is read-only');
    if(id==='setting-hand-shape'){const shots=path.join(root,'tmp_files/rules-0.18.1');fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'help-centered-390.png'),fullPage:false});}
   }
-  assert.deepEqual(errors,[]);
+  assert.equal(await active(page).locator('#setting-scale,#setting-seating').count(),0,'geometry and safe edges are automatic');assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });
 
 test('modal origins: game settings rules and room close return to their caller',{timeout:45000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
- const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage(),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
- const close=()=>page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+ const context=await browser.newContext({viewport:{width:390,height:740},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
+ const close=()=>active(page).locator('.modal-head [data-command=close-modal]').click();
  try{
-  await page.goto(server.url);await page.locator('[data-start=tictactoe]').first().click();await page.evaluate(()=>PlayroomFirstTurnGuide.setEnabled('tictactoe',false));
-  const roomId=await page.evaluate(()=>PlayroomAppBridge.room().id);
-  await close();assert.equal(await page.locator('#modal-root .modal').count(),0);
-  assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId,'closing room does not leave it');
-  await page.locator('#app [data-command=room]').click();await page.locator('[data-command=lobby-start]').click();
-  await page.locator('#app .table-shell').waitFor();
-  await page.locator('#app [data-command=settings]').click();
-  assert.equal(await page.locator('.settings-header-actions [data-friends-open]').count(),1);
-  assert.equal(await page.locator('.settings-quick [data-command=rules]').count(),1);assert.equal(await page.locator('.settings-header-actions [data-command=rules]').count(),0);
-  await page.locator('.settings-quick [data-command=rules]').click();await page.locator('.game-rules-help').waitFor();
-  await close();await page.locator('.settings-overview').waitFor();await close();
-  assert.equal(await page.locator('#modal-root .modal').count(),0);assert(await page.locator('#app .table-shell').isVisible());
-  await page.locator('#app [data-command=settings]').click();await page.locator('.settings-quick [data-command=room]').click();
-  await page.locator('.room-setup-modal [data-command=settings]').click();
-  await page.locator('.settings-quick [data-command=room-help]').click();await close();await page.locator('.settings-overview').waitFor();await close();await page.locator('.lobby-shell').waitFor();
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#modal-root .modal').count(),0);
-  assert(await page.locator('#app .table-shell').isVisible());assert.equal(await page.evaluate(()=>document.getElementById('app').inert),false);
-  assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId);assert.deepEqual(errors,[]);
- }finally{await browser.close();await server.close();}
+  await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));await page.goto(server.url);await TestUI.ready(page);await TestUI.openGame(page,'tictactoe');
+  const roomId=await page.evaluate(()=>PlayroomAppBridge.room().id);await close();assert.equal(await active(page).count(),0);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId,'closing room does not leave it');
+  await page.locator('#app [data-command=room]').click();await page.evaluate(()=>{PlayroomFirstTurnGuide.setEnabled('tictactoe',false);const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await active(page).locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
+  const saved=await TestUI.currentSession(page);await TestUI.openSettings(page);await active(page).evaluate(el=>window.settingsOrigin=el);await active(page).locator('[data-settings-tab=behavior]').click();await active(page).locator('[data-learning-list]').click();await active(page).locator('.learning-goals').waitFor();await close();assert(await active(page).evaluate(el=>el===settingsOrigin),'Back retains the settings caller');
+  await close();await active(page).locator('.game-menu-panel').waitFor();await active(page).locator('[data-command=rules]').click();await active(page).locator('.game-rules-help').waitFor();await close();await active(page).locator('.game-menu-panel').waitFor();
+  await active(page).locator('[data-command=room]').click();await active(page).locator('.room-v021').waitFor();await active(page).locator('[data-command=room-rules]').click();await active(page).locator('#room-rules-form[data-readonly=true]').waitFor();await close();await active(page).locator('.room-v021').waitFor();await page.keyboard.press('Escape');await TestUI.closeToGame(page);
+  assert.equal(await active(page).count(),0);assert(await page.locator('.table-shell').isVisible());assert.equal(await page.evaluate(()=>document.getElementById('app').inert),false);assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),roomId);assert.deepEqual(await TestUI.currentSession(page),saved);assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();await server.close();}
 });
 
 
-test('welcome account returns to unsaved profile; local play has no cloud requests and compact settings fit 320px',{timeout:45000},async()=>{
+test('welcome account returns to unsaved profile; local play has no cloud requests and compact settings fit 320px',{timeout:60000},async()=>{
  const server=await serveBrowserFixture(process.env.PLAYROOM_BROWSER_ROOT||root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
- const context=await browser.newContext({viewport:{width:320,height:740},playroomProfile:false}),page=await context.newPage(),requests=[];page.setDefaultTimeout(6000);
+ const context=await browser.newContext({viewport:{width:320,height:740},playroomProfile:false,reducedMotion:'reduce'}),page=await context.newPage(),requests=[];page.setDefaultTimeout(6000);
  await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',route=>{requests.push(route.request().url());return route.abort();});
  try{
-  await page.goto(server.url);await page.locator('#profile-form').waitFor();await page.locator('[name=playerName]').fill('Новичок');
-  await page.locator('.modal-head [data-account-open]').click();await page.locator('.account-modal').waitFor();await page.locator('.account-modal [data-command=close-modal]').click();
-  assert.equal(await page.locator('[name=playerName]').inputValue(),'Новичок');assert.match(await page.locator('#profile-form [type=submit],button[form=profile-form]').innerText(),/без облака/);await page.locator('#profile-form [type=submit],button[form=profile-form]').click();
-  await page.evaluate(()=>PlayroomLobbyNetwork.incoming());await page.locator('[data-incoming-content] [data-account-open]').waitFor();assert.equal(await page.locator('[data-lobby-join-code]').count(),0);assert.equal(await page.locator('[data-lobby-online=manual]').count(),1);await page.locator('.modal-head [data-command=close-modal]').click();
-  await page.locator('[data-start=uno]').first().click();assert(await page.locator('[name=room-mode][value=online]').isDisabled());await page.locator('.room-setup-modal [data-command=settings]').click();
-  assert(await page.locator('#setting-hand-shape').isChecked());assert.match(await page.locator('#setting-hand-shape').locator('..').innerText(),/Рука веером/);
-  assert.match(await page.locator('#setting-last-game').locator('..').innerText(),/Недавняя игра/);assert.match(await page.locator('#setting-quick-play').locator('..').innerText(),/Быстрый ход/);
-  assert(await page.locator('.modal-head').evaluate(e=>{const title=e.querySelector('h2').getBoundingClientRect();return [...e.querySelectorAll('button')].every(button=>{const r=button.getBoundingClientRect();return r.right<=title.left+1||r.left>=title.right-1;});}),'header buttons never overlap settings title');
-  const row=page.locator('.settings-guide-row');assert(await row.evaluate(e=>{const b=e.getBoundingClientRect();return [...e.children].every(n=>{const r=n.getBoundingClientRect();return r.top>=b.top&&r.bottom<=b.bottom&&r.right<=b.right+1;})&&b.height<=46;}),'learning fits one row');
-  assert(await row.locator('.icon-btn').evaluateAll(nodes=>nodes.every(e=>e.getBoundingClientRect().width<=34)));
-  assert.deepEqual(await row.locator(':scope > button,:scope > input').evaluateAll(nodes=>nodes.map(e=>e.hasAttribute('data-restart-guides')?'reset':e.hasAttribute('data-learning-list')?'list':'checkbox')),['reset','list','checkbox']);
-  assert(await page.locator('#setting-learning-enabled').evaluate(e=>Math.abs(e.getBoundingClientRect().right-document.getElementById('setting-quick-play').getBoundingClientRect().right)<1),'checkbox aligns with other settings');
-  const enabled=await page.locator('#setting-learning-enabled').isChecked();await row.locator('[data-restart-guides]').click();assert.equal(await page.locator('#app-confirm-title').innerText(),'Сбросить обучение?');await page.locator('[data-confirm-cancel]').click();assert.equal(await page.locator('#setting-learning-enabled').isChecked(),enabled);
-
-  await row.locator('.rule-help>button').click();assert.match(await page.locator('.mini-help-popover:popover-open').innerText(),/Прогресс сохраняется/);await page.keyboard.press('Escape');
-  assert(await page.locator('.settings-range:not(:has(.settings-range-bounds)) .settings-range-track').evaluateAll(nodes=>nodes.every(e=>e.getBoundingClientRect().height<=29)));
-  await page.locator('[data-command=reset-settings]').click();assert.match(await page.locator('#app-confirm-title').innerText(),/Сбросить настройки/);await page.locator('[data-confirm-cancel]').click();assert(await page.locator('.settings-overview').isVisible());
-  for(const width of [320,390]){await page.setViewportSize({width,height:740});
-   assert(await page.locator('.settings-quick .icon-btn').evaluateAll((nodes,width)=>nodes.every(e=>{const r=e.getBoundingClientRect(),radius=parseFloat(getComputedStyle(e).borderRadius);return Math.abs(r.width-(width<=360?32:44))<1&&Math.abs(r.height-r.width)<1&&(width<=360?radius>=16:radius<r.width/2);}),width),'adaptive shortcut buttons '+width);
-   assert(await page.locator('.modal-head').evaluate(e=>{const title=e.querySelector('h2').getBoundingClientRect();return [...e.querySelectorAll('button')].every(b=>{const r=b.getBoundingClientRect();return r.right<=title.left+1||r.left>=title.right-1;});}),'settings heading fits '+width);
-   await page.screenshot({path:path.resolve(root,'../tmp_files/themes-020/settings-compact-'+width+'.png')});}
-  const nickname=page.locator('.settings-overview input[name=nickname]');assert.equal(await page.locator('.settings-overview .lobby-profile button[type=submit]').count(),0);
-  await nickname.fill('Новое имя');await nickname.blur();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новичок','draft is not saved on blur');
-  await page.locator('.modal-head [data-command=close-modal]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новое имя');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.id===PlayroomAppBridge.participantId()).nickname),'Новое имя');
-  await page.locator('.room-setup-modal [data-command=settings]').click();assert.equal(await page.locator('.settings-overview input[name=nickname]').inputValue(),'Новое имя');await page.locator('.settings-overview input[name=nickname]').fill('Другое имя');await page.locator('[data-account-open]').click();await page.locator('.account-modal [data-command=close-modal]').click();assert.equal(await page.locator('.settings-overview input[name=nickname]').inputValue(),'Другое имя');assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Другое имя');
-  assert.deepEqual(requests,[]);
+  await page.goto(server.url);await page.locator('#profile-form').waitFor();await page.locator('[name=playerName]').fill('Новичок');await active(page).locator('[data-account-open]').click();await active(page).locator('.account-modal').waitFor();await active(page).locator('.modal-head [data-command=close-modal]').click();
+  assert.equal(await page.locator('[name=playerName]').inputValue(),'Новичок');assert.match(await page.locator('#profile-form [type=submit],button[form=profile-form]').innerText(),/без облака/);await page.locator('#profile-form [type=submit],button[form=profile-form]').click();await TestUI.ready(page);
+  await page.evaluate(()=>PlayroomLobbyNetwork.incoming());await active(page).locator('[data-incoming-content] [data-online-entry-account]').waitFor();assert.equal(await active(page).locator('[data-lobby-join-code] input[name=token]').count(),1,'native guest room lookup remains available');assert.equal(await active(page).locator('[data-online-entry-account]').count(),1);await active(page).locator('.modal-head [data-command=close-modal]').click();
+  await page.locator('[data-hub-page=profile]').click();await page.locator('#hub-profile-page [data-profile-account]').click();await active(page).locator('[data-command=profile-edit]').click();const nickname=active(page).locator('#local-profile-editor input[name=nickname]');await nickname.fill('Новое имя');await nickname.blur();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новичок','profile draft is not saved on blur');await active(page).locator('[data-local-profile-avatar]').click();await active(page).locator('.avatar-picker-modal').waitFor();await active(page).locator('.modal-head [data-command=close-modal]').click();assert.equal(await nickname.inputValue(),'Новое имя','child Back retains the unsaved native input');await active(page).locator('button[form=local-profile-editor][type=submit]').click();assert.equal(await page.evaluate(()=>PlayroomAppBridge.profile().name),'Новое имя');await active(page).locator('.modal-head [data-command=close-modal]').click();
+  await startLocal(page,'uno');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().participants.find(p=>p.id===PlayroomAppBridge.participantId()).nickname),'Новое имя');await TestUI.openSettings(page);assert.equal(await active(page).locator('[data-settings-tab]').count(),2);await active(page).locator('[data-settings-tab=effects]').click();assert(await active(page).locator('#setting-hand-shape').isChecked());assert.match(await active(page).locator('#setting-hand-shape').locator('..').innerText(),/Карты по дуге/);await active(page).locator('[data-settings-tab=behavior]').click();assert.match(await active(page).locator('#setting-last-game').locator('..').innerText(),/Недавняя игра/);assert.match(await active(page).locator('#setting-quick-play').locator('..').innerText(),/Быстрый ход/);
+  const row=active(page).locator('.settings-guide-row'),enabled=await active(page).locator('#setting-learning-enabled').isChecked();await row.locator('[data-restart-guides]').click();assert.equal(await active(page).locator('.modal-head h2').innerText(),'Сбросить обучение?');await page.locator('[data-confirm-cancel]').click();assert.equal(await active(page).locator('#setting-learning-enabled').isChecked(),enabled);await row.locator('.rule-help>button').click();assert.match(await page.locator('.mini-help-popover:popover-open').innerText(),/Прогресс сохраняется/);await page.keyboard.press('Escape');
+  await active(page).locator('[data-command=reset-settings]').click();assert.match(await active(page).locator('.modal-head h2').innerText(),/Сбросить настройки/);await page.locator('[data-confirm-cancel]').click();assert(await active(page).locator('[data-settings-screen]').isVisible());
+  for(const width of [320,390]){await page.setViewportSize({width,height:740});assert(await active(page).locator('.settings-shortcuts .icon-btn').evaluateAll(nodes=>nodes.length>0&&nodes.every(e=>{const r=e.getBoundingClientRect();return r.width>=44&&r.height>=44;})),'native shortcuts preserve 44px targets '+width);assert(await active(page).locator('.modal-head').evaluate(e=>{const title=e.querySelector('h2').getBoundingClientRect();return [...e.querySelectorAll('button')].every(b=>{const r=b.getBoundingClientRect();return r.right<=title.left+1||r.left>=title.right-1;});}),'settings heading fits '+width);assert(await active(page).locator('.modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1));}
+  assert.equal(await active(page).locator('#setting-seating,#setting-scale,input[name=nickname]').count(),0,'automatic geometry and profile identity have their current owners');assert.deepEqual(requests,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });

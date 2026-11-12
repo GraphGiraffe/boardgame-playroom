@@ -25,7 +25,7 @@ test('hidden boards and hands remain private in projected state',()=>{
   s.openHands=openHands;const spectator=E.project(s,-1),table=E.projectTable(s,s.turn);
   assert.deepEqual(table.data,spectator.data);
   assert(table.data.ships.flat(2).every(cell=>cell===null),'both fleets stay hidden on Table');
-  assert.deepEqual(table.tableActions,E.legalActions(s).map(({type,cell})=>({type,cell})),'only public shots are granted');
+  assert.deepEqual(table.tableActions,E.legalActions(s).map(({type,cell,label,preserveSelection})=>({type,cell,label,preserveSelection})),'only public shots are granted');
  }
  s=create('pexeso',2,'easy','54');assert(E.project(s,0).data.board.every(c=>c.hidden));s=play(s,E.legalActions(s)[0]);assert.equal(E.project(s,1).data.board.filter(c=>!c.hidden).length,1);
  for(const id of ['gofish','oldmaid','durak']){s=create(id,2);const other=E.project(s,0).data.hands[1];assert(other.every(c=>c.hidden),id);assert(E.project(s,-1).data.hands.flat().every(c=>c.hidden),id);}

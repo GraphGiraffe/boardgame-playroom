@@ -2,12 +2,10 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
-const {serveBrowserFixture}=require('./browser-origin.cjs');
+const {serveBrowserFixture,ready,currentState,activeSurface,openSettings,resumeSaved}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
-const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
 
 function fixture(plusFour = false) {
   const saved = new Session(Core, 'uno', {seed: 17, mode: 'pass', preset: 'classic', openHands: true, unoMode: 'auto',
@@ -29,10 +27,10 @@ function fixture(plusFour = false) {
 }
 const card = (page, id) => page.locator(`.own-hand [data-hand-preview="${id}"]`);
 const drop = (page, id) => page.locator(`.uno-drop-target[data-drop-piece="${id}"][data-action]`);
-async function current(page) {return page.evaluate(() => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current);}
+const current = currentState;
 async function readyMove(page, move) {
-  await page.waitForFunction(n => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === n, move);
-  await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') !== 'true');
+  await page.waitForFunction(n => PlayroomAppBridge.saveLibrary.current()?.session.current.move === n, move);
+  await page.waitForFunction(() => ['.table-shell>.scene','.app-game-layout'].every(selector=>document.querySelector(selector)?.getAttribute('aria-busy')!=='true'));
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.equal((await current(page)).move, move, 'one physical gesture commits only one action');
 }
@@ -51,7 +49,7 @@ async function touch(cdp, type, p) {await cdp.send('Input.dispatchTouchEvent', {
 
 test('Optional UNO one-tap play with real mouse and native touch input', {timeout: 120000}, async t => {
   const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(path.resolve(__dirname,'..'));
-  const testUrl=fixtureServer?.url||url;
+  const testUrl=fixtureServer?.url||process.env.PLAYROOM_URL;
   const browser = await chromium.launch({headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking']});
   async function check(name, mobile, options, run) {
     await t.test(`${mobile ? 'Touch' : 'Mouse'}: ${name}`, async () => {
@@ -60,9 +58,11 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
       await context.addInitScript(saved => {
         if (sessionStorage.getItem('quick-play-test-seeded')) return;
         sessionStorage.setItem('quick-play-test-seeded', '1'); localStorage.clear();
-        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false}));
+        localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'quick-play-owner',name:'Аня',createdAt:1,updatedAt:1}));
+        localStorage.setItem('playroom.settings.v1', JSON.stringify({motion: false, sound: false, quickPlay:false, autoPass:false,tutorialsEnabled:false}));
         localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
       }, saved);
+      const net=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));
       const page = await context.newPage(), cdp = mobile ? await context.newCDPSession(page) : null, errors = [];
       page.setDefaultTimeout(4500); page.on('pageerror', e => errors.push(e.message));
       const press = async locator => {
@@ -71,32 +71,34 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
         else await page.mouse.click(p.x, p.y);
       };
       const settings = async () => {
-        if (await page.locator('.table-shell').count()) await press(page.locator('[data-command="home"]').first());
-        await press(page.locator('[data-command="settings"]').filter({visible: true}).first());
+        if(await page.locator('.table-shell').count()){await press(page.locator('.table-shell [data-game-menu]'));await press(activeSurface(page).locator('[data-game-menu-action][data-command=home]'));}
+        await openSettings(page);
+        await activeSurface(page).locator('[data-settings-tab=behavior]').click();
         await page.locator('#setting-quick-play').waitFor({state: 'visible'});
       };
+      const closeSettings=async()=>{await press(activeSurface(page).locator('.modal-head [data-command=close-modal]'));if(await activeSurface(page).locator('.game-menu-panel').count())await press(activeSurface(page).locator('.modal-head [data-game-menu-close]'));};
       const setQuick = async enabled => {
         await settings();
         const input = page.locator('#setting-quick-play');
         if (await input.isChecked() !== enabled) await press(input);
         await page.waitForFunction(enabled => JSON.parse(localStorage.getItem('playroom.settings.v1')).quickPlay === enabled, enabled);
-        await press(page.locator('.modal [data-command="close-modal"]').first());
+        await closeSettings();
       };
-      const resume = async () => {await press(page.locator('.resume-banner [data-command="resume"]')); await page.locator('.own-hand').waitFor({state: 'visible'});};
+      const resume = async () => {await resumeSaved(page);await page.locator('.own-hand').waitFor({state:'visible'});};
       try {
-        await page.goto(testUrl);
+        await page.goto(testUrl);await ready(page);
         if (options.enabled) await setQuick(true);
-        await resume(); await run({page, cdp, press, settings, setQuick, resume, saved}); assert.deepEqual(errors, []);
+        await resume(); await run({page, cdp, press, settings, setQuick, resume, closeSettings,saved}); assert.deepEqual(errors, []);assert.equal(net.nativeSupabaseRequests,0);
       } finally {await context.close();}
     });
   }
   try {
     for (const mobile of [false, true]) {
-      await check('default preview, persisted opt-in and switching back to preview', mobile, {}, async ({page, press, settings, setQuick, resume}) => {
+      await check('default preview, persisted opt-in and switching back to preview', mobile, {}, async ({page, press, settings, setQuick, resume,closeSettings}) => {
         assert.equal(await card(page, 'u1').getAttribute('data-action'), null);
         await press(card(page, 'u1')); await drop(page, 'u1').waitFor({state: 'visible'}); assert.equal((await current(page)).move, 0);
         await setQuick(true); await page.reload(); await settings(); assert.equal(await page.locator('#setting-quick-play').isChecked(), true);
-        await press(page.locator('.modal [data-command="close-modal"]').first()); await resume();
+        await closeSettings(); await resume();
         assert.equal(JSON.parse(await card(page, 'u1').getAttribute('data-action')).card, 'u1');
         await press(card(page, 'u1')); await readyMove(page, 1); assert.equal((await current(page)).data.discard.at(-1).id, 'u1');
         await setQuick(false); await resume(); assert.equal(await card(page, 'u5').getAttribute('data-action'), null);
@@ -124,7 +126,9 @@ test('Optional UNO one-tap play with real mouse and native touch input', {timeou
       await check('drag/drop remains one action with quick play enabled', mobile, {enabled: true}, async ({page, cdp, saved}) => {
         const p = await point(card(page, 'u1'));
         if (cdp) await touch(cdp, 'touchStart', p); else {await page.mouse.move(p.x, p.y); await page.mouse.down();}
-        await page.waitForTimeout(270); await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
+        await page.waitForTimeout(270);
+        if(cdp){assert.equal(await page.locator('.playroom-drag-ghost').count(),0,'a stationary held touch keeps its tap meaning');await touch(cdp,'touchMove',{x:p.x,y:p.y-14});}
+        await page.locator('.playroom-drag-ghost').waitFor({state: 'visible'});
         assert.equal((await current(page)).move, 0, 'picking up a quick-play card must not play it');
         const target = drop(page, 'u1'), q = await point(target), action = JSON.parse(await target.getAttribute('data-action'));
         if (cdp) {for (let step = 1; step <= 4; step++) await touch(cdp, 'touchMove', {x: p.x + (q.x - p.x) * step / 4, y: p.y + (q.y - p.y) * step / 4}); await touch(cdp, 'touchEnd');}

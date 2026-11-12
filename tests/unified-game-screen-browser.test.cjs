@@ -3,11 +3,12 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const Core=require('../core/engine.js'),Session=require('../core/session.js'),Authority=require('../core/authority.js');
 require('../packs/uno/rules.js');
+const TestUI=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
 const source=rel=>fs.readFileSync(path.join(root,rel),'utf8');
-async function ready(page,url){
+async function ready(page,url,{fixture=true}={}){
  await page.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'ui-fixture',name:'SDK',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',tutorialsEnabled:false}));});
- await page.goto(url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomAppBridge.closeModal?.(true));
+ if(fixture)await require('./account-sync-fixture.cjs').installFetch(page.context(),async route=>route.fulfill({json:{}}));await page.goto(url);await TestUI.ready(page);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomAppBridge.closeModal?.(true));
 }
 
 const compiled={};require('node:vm').runInNewContext(source('installed-packs.js'),compiled);
@@ -31,10 +32,10 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       const frames=session.states.map((_,i)=>audience.history(i)),snapshot=audience.snapshot();
       await page.evaluate(({snapshot,frames,def,readOnly})=>{
         def=PlayroomAppBridge.packs.exportView(snapshot.game,snapshot.packVersion);
-        window.qaAudio=[];window.qaFrames=frames;window.qaRequests=[];window.qaDelayed=false;
+        window.qaAudio=[];window.qaFrames=frames;window.qaRequests=[];window.qaDelayed=new Set();
         window.PlayroomAppBridge={...window.PlayroomAppBridge,toast(text){document.querySelector('#toast').textContent=text;},audio:{registerPack(){},play(...args){qaAudio.push(args);}}};
         const client={snapshot,pending:null,subscribe(){return()=>{};},send(){throw Error('History cannot send commands');},
-          history(index){if(!qaDelayed)return Promise.resolve(qaFrames[index]);return new Promise((resolve,reject)=>qaRequests.push({index,resolve,reject}));}};
+          history(index){if(!qaDelayed.delete(index))return Promise.resolve(qaFrames[index]);return new Promise((resolve,reject)=>qaRequests.push({index,resolve,reject}));}};
         window.qaClient=client;window.qaGame=PlayroomSharedViews.mount(client,def,{readOnly});qaGame.render();
       },{snapshot,frames,def,readOnly:width===740});
       await page.evaluate(()=>qaGame.openHistory(4));
@@ -57,7 +58,7 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       assert.equal(await page.evaluate(()=>qaSlider===document.querySelector('#replay-range')),true);
       if(touch)await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});else await page.mouse.up();
       await page.waitForFunction(()=>document.querySelector('.history-panel')?.getAttribute('aria-busy')==='false');
-      await page.evaluate(()=>{qaDelayed=true;qaSlider.value='1';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
+      await page.evaluate(()=>{qaDelayed=new Set([1,3]);qaSlider.value='1';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===1);
       await page.evaluate(()=>{qaSlider.value='3';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===2);
@@ -66,16 +67,16 @@ for(const [width,height,touch] of [[320,740,true],[390,740,false],[740,390,false
       await page.evaluate(()=>qaRequests[0].resolve(qaFrames[1]));
       assert.equal(await page.locator('.replay-badge').textContent(),'3 / 4','Late frame cannot roll the scene back');
       const lastScene=await page.locator('.scene').innerHTML();
-      await page.evaluate(()=>{qaSlider.value='2';qaSlider.dispatchEvent(new Event('change',{bubbles:true}));});
+      await page.evaluate(()=>{qaDelayed.add(2);qaSlider.value='2';qaSlider.dispatchEvent(new Event('change',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===3);
       await page.evaluate(()=>qaRequests[2].resolve({...qaFrames[2],viewer:1}));
       await page.waitForFunction(()=>document.querySelector('#toast')?.textContent==='Некорректная история.');
       assert.equal(await page.locator('.scene').innerHTML(),lastScene,'Wrong-viewer frames must never reach the scene');
       assert.equal(await page.locator('.scene [data-action]').count(),0);
-      assert.equal(await page.locator('.opponent-hand .uno-card[data-entity]').count(),0);
+      assert.equal(await page.locator('.opponent-hand [data-entity]').count(),0);
       assert.deepEqual(await page.evaluate(()=>qaAudio),[]);
       assert.equal(await page.evaluate(()=>qaClient.snapshot.revision),snapshot.revision);
-      await page.evaluate(()=>{qaSlider.value='1';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
+      await page.evaluate(()=>{qaDelayed.add(1);qaSlider.value='1';qaSlider.dispatchEvent(new Event('input',{bubbles:true}));});
       await page.waitForFunction(()=>qaRequests.length===4);
       await page.locator('[data-command=history-close]').click();
       await page.evaluate(()=>qaRequests[3].reject(Error('obsolete RPC')));
@@ -117,12 +118,12 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.deepEqual(commands.slice(-2),['fullscreen','menu'],'Fullscreen and the game menu retain the right edge');
     assert.equal(await shell.locator('.game-frame-tools button svg[data-ui-icon]').count(),commands.length);
 
-    assert.equal(await shell.locator('.player-panel .player-token').count(),2);
+    assert.equal(await shell.locator('.player-panel:not([data-seat-copy]) .player-avatar-wrap>.avatar').count(),2);
     assert.equal(await shell.locator('.scene .opponent-hand').count(),1);
     assert.equal(await shell.locator('.layout-participants').isVisible(),true,'Player details must be visible, not just in the DOM');
     assert.equal(await shell.locator('.scene .opponent-hand').isVisible(),true,'Opponent hand must be visible');
     assert.equal(await shell.locator('.scene .own-hand').count(),1);
-    assert.equal(await shell.locator('.scene .opponent-hand .uno-card[data-entity]').count(),0);
+    assert.equal(await shell.locator('.scene .opponent-hand [data-entity]').count(),0);
     assert.match(await page.evaluate(()=>PlayroomGameScreen.quickAccessMarkup()),/data-command="history"/);
     assert.equal(await shell.locator('.scene .uno-player-targets').count(),0,'No extra player-only accusation bar');
     const viewport=await page.evaluate(()=>({width:document.documentElement.scrollWidth,client:document.documentElement.clientWidth}));
@@ -136,7 +137,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.equal(await page.evaluate(()=>window.localClicks),0,'Network interactions must not reach the local Session click handler');
     assert.equal(await shell.locator('.history-panel').count(),0);
     await page.setViewportSize({width:740,height:390});
-    assert.equal(await shell.locator('.player-panel .player-token').count(),2);
+    assert.equal(await shell.locator('.player-panel:not([data-seat-copy]) .player-avatar-wrap>.avatar').count(),2);
     assert.equal(await shell.locator('.layout-actions').count(),1);
     await page.evaluate(()=>game.destroy());
     // Table mode is read-only and must not inherit a player's own hand.
@@ -148,7 +149,7 @@ test('the projected network game reuses the bot GameScreen, opponents and inline
     assert.equal(await page.locator('.network-game .scene .own-hand').count(),0);
     assert.equal(await page.locator('.network-game .scene [data-action]').count(),0);
     assert.equal(await page.locator('.network-game .scene .opponent-hand').count(),2);
-    assert.equal(await page.locator('.network-game .scene .uno-card[data-entity]').count(),1,'Only the public discard may show a card face');
+    assert.equal(await page.locator('.network-game .layout-field .uno-card[data-entity]').count(),1,'Only the public discard may show a card face');
     await page.evaluate(()=>publicGame.destroy());
   }finally{await page.close();await browser.close();await server.close();}
 });
@@ -179,7 +180,7 @@ test('personal network layout requires a Table, keeps equal opponent cards and r
    const boxes=await page.locator('.layout-participants .player-panel').evaluateAll(nodes=>nodes.map(node=>{const box=node.getBoundingClientRect();return {width:box.width,height:box.height};}));
    assert.equal(boxes.length,count-1);assert(boxes.every(box=>Math.abs(box.width-boxes[0].width)<1&&Math.abs(box.height-boxes[0].height)<1));
    assert.equal(await page.locator('.self-player').count(),1);
-   assert.equal(await page.locator('.layout-participants .public-card').count(),0,'Closed opponents remain private');
+   assert.equal(await page.locator('.layout-participants .shared-card:not(.shared-card-back)').count(),0,'Closed opponents remain private');
    const shortcuts=await page.evaluate(()=>PlayroomGameScreen.quickAccessMarkup());assert.match(shortcuts,/data-command="history"/);assert.match(shortcuts,/data-command="pause"/);assert.match(shortcuts,/data-command="toggle-field"/);
    await page.evaluate(()=>game.setConnected(false));
    assert.equal(await layout.getAttribute('data-surface'),'combined');assert.equal(await page.locator('[data-command="toggle-field"]').count(),0);
@@ -205,7 +206,7 @@ test('live completion 0.21: legal draw, bot defeat and teammate finish reach res
   const counts=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}})),page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));
   const entry={kind};report.cases.push(entry);
   try{
-   await ready(page,server.url);await page.locator('.game-tile').first().waitFor();
+   await ready(page,server.url,{fixture:false});await page.locator('.game-tile').first().waitFor();
    entry.prepared=await page.evaluate(async kind=>{
     const b=PlayroomAppBridge,E=TabletopCore,game=kind==='team-mate'?'ludo':'tictactoe';b.packs.activate(game);PlayroomFirstTurnGuide.setEnabled(game,false);
     const players=kind==='team-mate'?[{name:'Иван'},{name:'Красный бот',bot:true},{name:'Напарник',bot:true},{name:'Красный второй',bot:true}]:[{name:'Иван'},{name:kind==='draw'?'Друг':'Бот',bot:kind!=='draw'}];
@@ -223,7 +224,7 @@ test('live completion 0.21: legal draw, bot defeat and teammate finish reach res
     const id='completion-'+kind;await b.saveLibrary.activateAsync(session,id);b.showSessions();
     return {id,game,packVersion:session.packVersion,seed:session.options.seed,moves:session.current.move,finalActor,finalCommand,historyStates:session.states.length,mode:session.options.mode};
    },kind);
-   await page.locator('[data-resume-id="'+entry.prepared.id+'"]').first().click();
+   await TestUI.resumeSaved(page,entry.prepared.id);
    if(kind!=='team-mate'){await page.locator('.ttt-grid').waitFor();await page.locator('.ttt-cell').nth(8).click();}
    await page.locator('.result-modal .result-v021-summary h3').waitFor();
    entry.finished=await page.evaluate(()=>{const b=PlayroomAppBridge,{id,session}=b.saveLibrary.current(),state=session.current;return {id,status:state.status,winner:state.winner,winners:state.winners||(state.winner==null?[]:[state.winner]),move:state.move,board:state.data.board||null,players:state.players.map(p=>({name:p.name,bot:p.bot})),saved:b.saveLibrary.list().find(row=>row.id===id),historyStates:session.states.length,roomPhase:b.room()?.phase};});
@@ -232,14 +233,14 @@ test('live completion 0.21: legal draw, bot defeat and teammate finish reach res
    if(kind==='draw')assert.deepEqual(entry.finished.winners,[]);else if(kind==='bot-defeat'){assert.deepEqual(entry.finished.winners,[1]);assert.equal(entry.finished.board[5],1,'scheduled bot played its winning move');assert.equal(entry.finished.move,entry.prepared.moves+2);}else {assert.deepEqual(entry.finished.winners,[0,2]);assert.equal(entry.prepared.finalActor,2);assert.equal(entry.finished.players[0].bot,false);assert.equal(await page.locator('.result-awards .is-team').count(),4);}
    for(const viewport of [{width:390,height:844},{width:844,height:390}]){await page.setViewportSize(viewport);assert.equal(await page.locator('.result-modal').getAttribute('data-ui-surface'),'screen');assert(await page.locator('.result-v021-footer [data-command=rematch]').isVisible());assert(await page.locator('.result-v021-footer [data-command=rematch-start]').isVisible());assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await page.screenshot({path:path.join(out,engine+'-'+kind+'-result-'+viewport.width+'.png'),animations:'disabled'});}
    await page.locator('.result-v021-history').click();await page.locator('#replay-range').waitFor();entry.historyStart=await page.locator('#replay-range').evaluate(slider=>({index:Number(slider.value),minimum:Number(slider.min),maximum:Number(slider.max),badge:document.querySelector('.replay-badge').textContent}));assert.equal(entry.historyStart.maximum,entry.finished.move);assert.equal(entry.historyStart.minimum,0);assert.equal(entry.historyStart.badge,entry.historyStart.index+' / '+entry.finished.move,'history badge reports the actual frame, including public ready batches');await page.locator('#replay-range').focus();await page.keyboard.press('End');await page.waitForFunction(move=>document.querySelector('.replay-badge')?.textContent===move+' / '+move,entry.finished.move);assert.equal(await page.locator('.replay-badge').count(),1);
-   await page.keyboard.press('Escape');assert.equal(await page.locator('#replay-range').count(),0);await page.locator('[data-game-menu]').click();assert.equal(await page.locator('.game-menu-panel details').count(),0);await page.locator('[data-game-menu-action][data-command=result]').click();await page.locator('.result-modal').waitFor();
+   await page.keyboard.press('Escape');assert.equal(await page.locator('#replay-range').count(),0);await TestUI.activeSurface(page).locator('.result-modal').waitFor();await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-game-menu]').click();assert.equal(await page.locator('.game-menu-panel details').count(),0);await page.locator('[data-game-menu-action][data-command=result]').click();await page.locator('.result-modal').waitFor();
    if(kind==='bot-defeat'){
     await page.locator('.result-v021-footer [data-command=rematch-start]').click();await page.locator('.ttt-grid').waitFor();entry.rematch=await page.evaluate(()=>{const s=PlayroomAppBridge.saveLibrary.current();return {id:s.id,status:s.session.current.status,move:s.session.current.move};});assert.notEqual(entry.rematch.id,entry.finished.id);assert.equal(entry.rematch.status,'playing');assert.equal(await page.locator('.lobby-countdown').count(),0);
     await page.evaluate(()=>PlayroomAppBridge.parkLocalSession());
    }else {await page.locator('.result-v021-footer [data-command=rematch]').click();await page.locator('.room-v021').waitFor();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().phase),'lobby');assert.equal(await page.locator('.lobby-countdown').count(),0,'return never opens a zero countdown');await page.evaluate(()=>PlayroomAppBridge.parkLocalSession());}
    await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('[data-saved-status=active]').click();assert.equal(await page.locator('[data-resume-id="'+entry.finished.id+'"]').count(),0,'completed save is absent from active games');
    if(kind!=='bot-defeat')assert.equal(await page.locator('[data-hub-page=sessions] .active-games-badge').count(),0,'finished history has no active-party badge');
-   await page.locator('[data-saved-status=history]').click();await page.locator('[data-history-id="'+entry.finished.id+'"]').first().waitFor();await page.screenshot({path:path.join(out,engine+'-'+kind+'-history.png'),animations:'disabled'});
+   await page.locator('[data-saved-status=history]').click();await page.locator('.saved-game[data-session-id="'+entry.finished.id+'"]').click();await TestUI.activeSurface(page).locator('[data-history-id="'+entry.finished.id+'"]').waitFor();await page.screenshot({path:path.join(out,engine+'-'+kind+'-history.png'),animations:'disabled'});
    entry.nativeSupabaseRequests=counts.nativeSupabaseRequests;assert.equal(counts.nativeSupabaseRequests,0);
   }catch(error){entry.failure=String(error.stack);await page.screenshot({path:path.join(out,engine+'-'+kind+'-failure.png'),animations:'disabled'}).catch(()=>{});throw error;}finally{await context.close();}
  }}finally{fs.writeFileSync(path.join(out,engine+'-report.json'),JSON.stringify(report,null,2));await browser.close();await server.close();}
@@ -254,7 +255,7 @@ test('SDK interaction audit covers every installed pack and duplicate ACK delive
   await ready(page,server.url);await page.locator('.game-tile').first().waitFor();const ids=await page.evaluate(()=>PlayroomInstalledPacks.map(b=>b.manifest.id));const report=[];
   for(const id of ids){
    await page.evaluate(async id=>{const E=TabletopCore,b=PlayroomAppBridge.packs,manifest=PlayroomInstalledPacks.find(p=>p.manifest.id===id).manifest;b.activate(id,manifest.version);const game=E.get(id),session=new TabletopSession(E,id,{seed:17,preset:game.presets[0].id,firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:game.max},(_,i)=>({name:'P'+i,bot:false}))}),authority=new SessionAuthority(session),connection=authority.connect(0),client=new PlayroomSessionClient(PlayroomLocalTransport(connection));await client.refresh();document.querySelector('#app').innerHTML='';const mount=PlayroomSharedViews.mount(client,b.exportView(id,manifest.version));window.sdkAudit={session,authority,client,mount,before:JSON.stringify(session.current),beforeState:session.current,renders:0};const render=PlayroomViews.render;window.sdkRenderOriginal=render;PlayroomViews.render=function(...args){sdkAudit.renders++;return render.apply(this,args);};mount.render();sdkAudit.renders=0;},id);
-   const item=await page.evaluate(async()=>{const f=sdkAudit,action=f.client.snapshot.actions.find(a=>!a.disabled);if(!action)throw Error('No initial action '+f.session.game);const start=performance.now(),receipt=await f.client.send(action);return {game:f.session.game,action:action.type,ok:receipt.ok,dispatchMs:performance.now()-start};});assert(item.ok,JSON.stringify(item));
+   const item=await page.evaluate(async()=>{const f=sdkAudit,action=f.client.snapshot.actions.find(a=>!a.disabled);if(!action)throw Error('No initial action '+f.session.game);const start=performance.now();let receipt=await f.client.send(action);for(let step=0;f.client.localDraft.length&&step<16;step++){const frame=f.client.confirmedFrame,pack=TabletopCore.get(frame.game,frame.packVersion),spec=pack.draftSpec(PlayroomProtocol.projectedModel(frame));if(spec.mode==='coalesce')receipt=await f.client.flushLocalDraft();else{const next=f.client.snapshot.actions.find(a=>!a.disabled&&spec.commit.includes(a.type));if(!next)throw Error('No declared draft confirmation '+frame.game);receipt=await f.client.send(next);}if(!receipt?.ok)throw Error('Draft confirmation rejected');}if(f.client.localDraft.length)throw Error('Draft confirmation exceeded16steps');return {game:f.session.game,action:action.type,ok:receipt.ok,dispatchMs:performance.now()-start};});assert(item.ok,JSON.stringify(item));
    await page.waitForFunction(()=>document.querySelector('.app-game-layout')?.getAttribute('aria-busy')==='false',null,{timeout:10000});
    const summary=await page.evaluate(async()=>{const f=sdkAudit,before=f.renders;for(let i=0;i<3;i++)for(const listener of f.client.listeners)listener(f.client.snapshot);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const result={players:f.session.current.players.length,revision:f.session.current.move,history:f.client.snapshot.historyLength,priorUnchanged:JSON.stringify(f.beforeState)===f.before,renders:before,duplicateAckRenders:f.renders-before,domNodes:document.querySelectorAll('*').length};PlayroomViews.render=sdkRenderOriginal;f.mount.destroy();f.client.close();f.authority.dispose();return result;});Object.assign(item,summary);assert.equal(item.revision,1,id);assert.equal(item.history,2,id);assert(item.priorUnchanged,id+' input position stays immutable');assert.equal(item.duplicateAckRenders,0,id+' duplicate ACK does not render again');report.push(item);
   }

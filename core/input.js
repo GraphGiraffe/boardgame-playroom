@@ -272,6 +272,7 @@
       const scrollableX = !!scroll.x, scrollableY = !!scroll.y;
       if (scrollOnly && !scrollableX && !scrollableY) return;
       const s = { source, scrollOnly, drag: actionable && source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', immediate:source.dataset.dragStart==='immediate', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollX:scroll.x, scrollY:scroll.y, scrollableX, scrollableY, scrollAxis: null, scrollLeft: scroll.x?.scrollLeft || 0, scrollTop: scroll.y?.scrollTop || 0, timer: 0, ghost: null, hover: null };
+      if(s.immediate)s.selectedBefore=getSelected();
       active = s;
       // Touch Events stay bound to their original touchstart node even after
       // pointer capture moves to <html>. select() may detach that node; keep
@@ -293,6 +294,7 @@
       if (!s || event.pointerId !== s.id) return;
       s.x = event.clientX; s.y = event.clientY;
       const dx = s.x - s.startX, dy = s.y - s.startY;
+      if(Math.hypot(dx,dy)>=3)s.moved=true;
       if (s.phase === 'pending') {
         if(s.immediate&&s.drag&&Math.hypot(dx,dy)>=3)beginDrag(s);
         else if (!s.touch && Math.hypot(dx, dy) >= 5) beginDrag(s);
@@ -322,8 +324,9 @@
       const s = active;
       if (!s || event.pointerId !== s.id) { releaseSuppression(event);return; }
       s.x = event.clientX; s.y = event.clientY;
+      const immediateTap=s.phase==='dragging'&&s.immediate&&!s.moved&&Math.hypot(s.x-s.startX,s.y-s.startY)<3;
       let action = null, selection = null, playedFrom = null, commitSource = s.source;
-      if (s.phase === 'dragging') {
+      if (s.phase === 'dragging'&&!immediateTap) {
         paint(s);
         const target = s.hover;
         if (target?.isConnected) {
@@ -345,8 +348,11 @@
         if (!s.source.hasAttribute('data-swipe-action') && s.source.hasAttribute('data-swipe-select')) selection = s.source.dataset.swipeSelect;
       }
       if (s.phase !== 'pending') suppress = { id: s.id, x: s.x, y: s.y, until: performance.now() + (policy.dragClickSuppressionMs??700) };
-      const cancelled=s.phase==='dragging'&&!action&&selection===null;
+      const cancelled=s.phase==='dragging'&&!immediateTap&&!action&&selection===null;
       cleanup();
+      // Immediate pieces lift on press, but a stationary release is still a selection tap.
+      // Keep the press-time selection and suppress its compatibility click; a second tap toggles it off.
+      if(immediateTap){if(!canSelect(s.source)||s.selectedBefore!=null&&String(s.selectedBefore)===String(s.piece))select(null);return;}
       if(cancelled&&String(getSelected())===String(s.piece))select(null);
       // Let pointerup and its compatibility click finish against stable DOM.
       if (action || selection !== null) pendingCommit = root.requestAnimationFrame(() => {

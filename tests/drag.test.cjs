@@ -101,13 +101,15 @@ test('Pointer input preserves tap, touch scrolling and drag/drop across DOM repl
         await page.mouse.move(380,800);await page.mouse.up();assert.equal(await page.locator('.playroom-drag-ghost').count(),0);assert.equal(await page.evaluate(()=>trace.commits.length),0);
       }
     });
-    await check('Touch hold and vertical intention drop once, then the next real touch tap works', async(page,context)=>{
+    await check('Held touch movement drops once, then the next real touch tap works', async(page,context)=>{
       const cdp=await context.newCDPSession(page);
-      for(const mode of ['hold','vertical']){
-        const p=await center(page.locator('[data-drag-piece=p0]'));await touch(cdp,'touchStart',p);
-        if(mode==='hold')await page.waitForTimeout(260);else await touch(cdp,'touchMove',{x:p.x,y:p.y-18});
+      for(const mode of ['horizontal','vertical']){
+        const p=await center(page.locator('[data-drag-piece=p0]'));await touch(cdp,'touchStart',p);await page.waitForTimeout(260);
+        assert.equal(await page.locator('.playroom-drag-ghost').count(),0,'a stationary held touch stays a tap');
+        assert.equal(await page.evaluate(()=>trace.selects.length+trace.commits.length),mode==='horizontal'?0:2,'holding alone does not select or commit');
+        await touch(cdp,'touchMove',mode==='horizontal'?{x:p.x+14,y:p.y}:{x:p.x,y:p.y-18});
         assert.equal(await page.locator('.playroom-drag-ghost').count(),1);const target=await center(page.locator('.drop').first());await touch(cdp,'touchMove',target);await touch(cdp,'touchEnd',target);
-        await page.waitForFunction(n=>trace.commits.length===n,mode==='hold'?1:2);
+        await page.waitForFunction(n=>trace.commits.length===n,mode==='horizontal'?1:2);
         const tap=await center(page.locator('.other'));await touch(cdp,'touchStart',tap);await touch(cdp,'touchEnd',tap);
       }
       assert.equal(await page.evaluate(()=>trace.other),2,JSON.stringify(await page.evaluate(()=>inputEvents)));assert.equal(await page.evaluate(()=>trace.clicks),0);assert.equal(await page.locator('.playroom-drag-ghost').count(),0);
@@ -174,10 +176,12 @@ test('Pointer input preserves tap, touch scrolling and drag/drop across DOM repl
       }
       assert.equal(await page.evaluate(()=>trace.other),2);assert.equal(await page.evaluate(()=>trace.clicks),0);
     });
-    await check('Holding a landscape overflowing card still drags, cancels outside, and commits its legal target once',async(page,context)=>{
+    await check('Held movement of a landscape overflowing card drags, cancels outside, and commits its legal target once',async(page,context)=>{
       const point=await verticalHand(page),cdp=await context.newCDPSession(page);
       for(const legal of [false,true]){
         const p=await point(page.locator('[data-drag-piece=p0]'));await touch(cdp,'touchStart',p);await page.waitForTimeout(250);
+        assert.equal(await page.locator('.playroom-drag-ghost').count(),0,'holding does not steal a landscape scroll gesture');
+        await touch(cdp,'touchMove',{x:p.x+14,y:p.y});
         assert.equal(await page.locator('.playroom-drag-ghost').count(),1);
         const target=legal?await center(page.locator('.drop').first()):{x:800,y:365};await touch(cdp,'touchMove',target);await touch(cdp,'touchEnd',target);
         await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

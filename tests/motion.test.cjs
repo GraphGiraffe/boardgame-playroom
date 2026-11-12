@@ -1,3 +1,4 @@
+const TestUI=require('./browser-origin.cjs');
 'use strict';
 // Test actual app moves with motion enabled: settled screenshots cannot catch
 // transformed containers briefly expanding their parents' scrolling area.
@@ -7,6 +8,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const root = path.resolve(__dirname, '..');
+const {serveBrowserFixture,resumeSaved}=require('./browser-origin.cjs');
 const E = require(path.join(root, 'core/engine.js'));
 const Session = require(path.join(root, 'core/session.js'));
 const games = ['uno', 'domino', 'durak', 'checkers', 'snakes'];
@@ -24,6 +26,7 @@ function fixture(game, longHand = false) {
 }
 
 test('Motion never rotates/resizes the table or introduces temporary visible scrollbars', { timeout: 120000 }, async t => {
+  const server=await serveBrowserFixture(root);
   const browser = await chromium.launch({ headless: true, executablePath: executablePath(), args: ['--no-sandbox', '--disable-background-networking'] });
   const overflowByViewport = {};
   try {
@@ -36,12 +39,12 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
             await context.addInitScript(saved => {
               localStorage.clear();
               localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
-              localStorage.setItem('playroom.settings.v1', JSON.stringify({ motion: true, sound: false }));
+              localStorage.setItem('playroom.settings.v1', JSON.stringify({ motion: true, sound: false, tutorialsEnabled:false, autoPass:false }));
             }, fixture(id, longHand));
             const page = await context.newPage(), errors = [];
             page.on('pageerror', error => errors.push(error.message));
-            await page.goto(process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href);
-            await page.locator('.resume-banner [data-command=resume]').click();
+            await page.goto(process.env.PLAYROOM_URL || server.url);
+            await resumeSaved(page);
             for (let move = 0; move < 2; move++) {
               const pass=page.locator('[data-command="pass-device"]');
               if(await pass.count()&&await pass.isEnabled())await pass.click();
@@ -84,7 +87,7 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
                   }
                   snapshots.push({ time, elements });
                 }
-                const readMove = () => TabletopSession.restore(TabletopCore, JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move;
+                const readMove = () => PlayroomAppBridge.saveLibrary.current().session.current.move;
                 const beforeMove = readMove();
                 sample(-1); action.click(); sample(0);
                 const start = performance.now();
@@ -130,5 +133,5 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
       }
     }
     t.diagnostic(`Maximum scene overflow in pixels: ${JSON.stringify(overflowByViewport)}`);
-  } finally { await browser.close(); }
+  } finally { await browser.close();await server.close(); }
 });

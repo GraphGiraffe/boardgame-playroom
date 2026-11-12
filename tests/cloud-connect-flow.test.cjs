@@ -27,7 +27,7 @@ test('closed cloud room clears reconnect target and leaves only the matching roo
 
 
 test('new host closes transferred cloud room without opening invite settings first',async()=>{
- const calls=[],ctx={document:{addEventListener(){}},PlayroomNetworkLibrary:{inviteContext:()=>({room:{id:'local',ownerId:'me'},participantId:'me',cloudRoomId:'cloud'})},PlayroomAccountUI:{service:{snapshot:()=>({id:'account'})}},PlayroomSocialUI:{service:{perform:async(action,data)=>calls.push({action,data})}}};
+ const calls=[],ctx={document:{addEventListener(){}},PlayroomNetworkLibrary:{inviteContext:()=>({room:{id:'local',ownerId:'me'},participantId:'me',cloudRoomId:'cloud'})},PlayroomAccountUI:{service:{snapshot:()=>({id:'account'})}},PlayroomCommunityUI:{service:{generation:0}},PlayroomSocialUI:{service:{perform:async(action,data)=>calls.push({action,data})}}};
  vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/lobby-network.js'),'utf8'),ctx);await ctx.PlayroomLobbyNetwork.closeRoom('other');assert.equal(calls.length,0);await ctx.PlayroomLobbyNetwork.closeRoom('local');assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{action:'close',data:{roomId:'cloud'}}]);
 });
 

@@ -92,6 +92,10 @@
  function prepare(host,next){
   const state=hosts.get(host),node=next.querySelector('[data-public-sequence]');
   if(!node)return;
+  // The parent scene patch may rewrite mounted player children from its own
+  // baseline. Their next frame paint must compare against that actual DOM.
+  const mounted=host.querySelector('.app-game-layout');
+  if(mounted){delete mounted._publicPlayersMarkup;for(const panel of mounted.querySelectorAll('.player-panel[data-player-index]'))delete panel._publicPlayerTree;}
   const same=state?.id===node.dataset.publicSequence,set=frameSet(node,host),frames=set.frames,baseline=(modes.get(host)||'live')==='live'&&baselines.get(host)===node.dataset.publicSequence,index=baseline?frames.length-1:same?Math.min(state.index,frames.length-1):0,scene=node.closest('.app-game-layout');
   if(!set.lazy)frames.forEach((frame,i)=>{frame.hidden=i!==index;});
   scene?.classList.toggle('is-public-playback',index<frames.length-1);
@@ -144,7 +148,7 @@
    scene?.classList.toggle('is-public-playback',state.index<last);
    node.style.setProperty('--sequence-duration',duration()+'ms');scene?.style.setProperty('--sequence-duration',duration()+'ms');
    paintPlayers(scene,current);
-   const progress=host.querySelector('.turn-extra');if(progress&&frame.dataset.frameProgress)progress.textContent=frame.dataset.frameProgress;
+   const progress=host.querySelector('.game-frame-turn-extra');if(progress&&frame.dataset.frameProgress)progress.textContent=frame.dataset.frameProgress;
    const label=node.querySelector('[data-sequence-label]'),play=node.querySelector('[data-sequence-play]'),speed=node.querySelector('[data-sequence-speed]');
    if(label)label.textContent=frame.dataset.frameLabel;
    if(play)play.textContent=state.playing?'Ⅱ':'▶';

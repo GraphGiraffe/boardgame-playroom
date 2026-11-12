@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const W=require('../app/transports/webrtc.js');
+const W=require('../app/transports/webrtc.js'),Preview=require('../platform/web/realtime-peer.js');
 
 // Probe fixtures drive the status request; snapshots are now a separate resync.
 const probe=transport=>({status:()=>transport.snapshot(),snapshot:async()=>({})});
@@ -100,7 +100,7 @@ function fakePairingRTC(){
  class Channel extends EventTarget{constructor(){super();this.readyState='connecting';}close(){this.readyState='closed';this.dispatchEvent(new Event('close'));}}
  class PC extends EventTarget{
   constructor(){super();instances.push(this);this.iceGatheringState='complete';this.signalingState='stable';this.connectionState='new';this.remoteSets=0;}
-  createDataChannel(label,options){const channel=new Channel();channel.protocol=options?.protocol||'';if(channel.protocol==='playroom.preview.v2')this.previewChannel=channel;else this.channel=channel;return channel;}async createOffer(){return {type:'offer',sdp:'offer'};}async createAnswer(){return {type:'answer',sdp:'answer'};}
+  createDataChannel(label,options){const channel=new Channel();channel.protocol=options?.protocol||'';if(channel.protocol===Preview.PROTOCOL)this.previewChannel=channel;else this.channel=channel;return channel;}async createOffer(){return {type:'offer',sdp:'offer'};}async createAnswer(){return {type:'answer',sdp:'answer'};}
   async setLocalDescription(d){this.localDescription=d;this.signalingState=d.type==='offer'?'have-local-offer':'stable';}
   async setRemoteDescription(d){if(d.type==='answer'&&this.signalingState==='stable')throw Error('Called in wrong state: stable');this.remoteSets++;this.remoteDescription=d;this.signalingState=d.type==='answer'?'stable':'have-remote-offer';}
   close(){this.connectionState='closed';this.dispatchEvent(new Event('connectionstatechange'));}

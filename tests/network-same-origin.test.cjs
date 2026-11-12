@@ -10,7 +10,7 @@ function server(){
     res.writeHead(200,{'Content-Type':(types[path.extname(file)]||'application/octet-stream')+'; charset=utf-8','Cache-Control':'no-store'});res.end(fs.readFileSync(file));
   });return new Promise(resolve=>s.listen(0,'127.0.0.1',()=>resolve({s,url:'http://127.0.0.1:'+s.address().port+'/'})));
 }
-async function profile(page,name){await page.goto(page._url);await page.locator('#profile-form [name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
+async function profile(page,name){await require('./account-sync-fixture.cjs').installFetch(page.context(),async route=>route.fulfill({json:{}}));await page.context().route(/https:\/\/[^/]+\.supabase\.co\//,route=>route.abort());await page.goto(page._url);await page.locator('#profile-form [name=playerName]').fill(name);await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.locator('.game-grid').first().waitFor();}
 async function value(page,selector){return page.locator(selector).inputValue();}
 const active=page=>page.locator('#modal-root>[data-surface-state=active]');
 async function textReceive(page,form){
@@ -93,7 +93,7 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
       assert.equal(await client.locator('#network-pair-button').count(),0);
       await setHostInvitationPermission(host,true);await client.locator('#network-pair-button').waitFor();
       await client.locator('#network-pair-button').click();const delegated=await value(client,'#net-delegated-token');
-      const thirdContext=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});await thirdContext.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'third-client',name:'Приглашённый',createdAt:1,updatedAt:1})));const third=await thirdContext.newPage();third.on('pageerror',e=>errors.push('third: '+e.message));await third.goto(url);
+      const thirdContext=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}});await thirdContext.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'third-client',name:'Приглашённый',createdAt:1,updatedAt:1})));await require('./account-sync-fixture.cjs').installFetch(thirdContext,async route=>route.fulfill({json:{}}));await thirdContext.route(/https:\/\/[^/]+\.supabase\.co\//,route=>route.abort());const third=await thirdContext.newPage();third.on('pageerror',e=>errors.push('third: '+e.message));await third.goto(url);
       await third.locator('#network-join-button').click();await third.locator('[data-lobby-online=manual]').click();await textReceive(third,'#net-client-offer');await third.locator('#net-client-offer textarea[name=offer]').fill(delegated);await third.locator('#net-client-offer').evaluate(f=>f.requestSubmit());
       await third.locator('#net-client-token').waitFor({state:'attached'});const answer=await value(third,'#net-client-token');await textReceive(client,'[data-delegated-answer]');await client.locator('[data-delegated-answer] textarea').fill(answer);await client.locator('[data-delegated-answer]').evaluate(f=>f.requestSubmit());
       try{await third.locator('#net-client-join').waitFor({timeout:12000});}catch(e){throw Error(JSON.stringify(await Promise.all([host,client,third].map(p=>p.evaluate(()=>({toast:document.querySelector('#toast')?.textContent,debug:PlayroomNetworkDebug(),modal:document.querySelector('.modal')?.innerText}))))));}await third.locator('#net-client-join input[name=nickname]').fill('Приглашённый');await third.locator('#net-client-join').evaluate(f=>f.requestSubmit());await third.locator('.lobby-shell').waitFor();
@@ -111,7 +111,7 @@ for(const game of ['uno','domino','durak','checkers','snakes','oldmaid','ludo','
     const hostRow=host.locator(`.room-v021-row[data-participant-id="${hostIdentity}"]`);
     assert.equal(await hostRow.count(),1,'host identity has one participant row');
     assert.equal(await hostRow.locator('strong').innerText(),'Хост');
-    assert.match(await host.locator('.room-v021-game-copy').innerText(),/хост Хост/,'the current layout identifies the host in its room summary');
+    assert.match(await hostRow.locator('.room-v021-person').getAttribute('aria-label'),/Ведущий/,'the owner role is exposed by the native participant control');assert.match(await hostRow.locator('.room-v021-person-copy small').innerText(),/Ведущий/);assert.equal(await hostRow.locator('.is-host-avatar').count(),1,'the owner keeps the shared host avatar marker');
     assert.equal(await host.evaluate(id=>PlayroomAppBridge.room().participants.filter(p=>p.isHost&&p.id===id&&p.role==='player').length,hostIdentity),1,'host retains its player role');
     await client.locator(`[data-room-person="${identity}"] .room-v021-person-copy`).click();await active(client).locator('[data-net-action=table]').click();
     await client.waitForFunction(id=>PlayroomNetworkLibrary.inviteContext().room.participants.some(p=>p.id===id&&p.role==='table'),identity);

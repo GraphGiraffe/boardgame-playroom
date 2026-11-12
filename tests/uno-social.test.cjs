@@ -1,15 +1,13 @@
 'use strict';
-const {selectChoice,readChoice}=require('./browser-origin.cjs');
+const TestUI=require('./browser-origin.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 require('../packs/uno/rules.js');
-const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
 
 function fixture({counts = [2, 2], turn = 0, pending = null, declared = [], mode = 'pass', unoMode = 'manual'} = {}) {
   const options = {preset: 'classic', seed: 17, mode, openHands: false, unoMode,
@@ -35,25 +33,17 @@ function fixture({counts = [2, 2], turn = 0, pending = null, declared = [], mode
   Core.validateState(state);
   return saved;
 }
-async function read(page) {
-  return page.evaluate(() => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).export());
-}
+const read=TestUI.currentSession;
 async function state(page) { const raw=(await read(page)).states.at(-1);return {...raw,events:Core.project(raw,-1).events}; }
 async function ready(page) {
-  await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') === 'false');
+  await page.waitForFunction(() => document.querySelector('.table-shell>.scene')?.getAttribute('aria-busy') === 'false'&&document.querySelector('.app-game-layout')?.getAttribute('aria-busy')!=='true');
 }
 async function moved(page, move) {
-  await page.waitForFunction(move => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === move, move);
+  await page.waitForFunction(move => PlayroomAppBridge.saveLibrary.current().session.current.move === move, move);
   await ready(page);
   assert.equal((await state(page)).move, move);
 }
-async function resume(page) {
-  if(await page.locator('.resume-banner [data-command=resume]').count())await page.locator('.resume-banner [data-command=resume]').click();
-  if (await page.locator('.handoff').count()) await page.locator('[data-command=unlock]').click();
-  await ready(page);
-}
+async function resume(page){await TestUI.resumeSaved(page);await ready(page);}
 async function action(page, type, scope = '.scene', extra = {}) {
   const candidates = page.locator(`${scope} [data-action]`);
   for (let i = 0; i < await candidates.count(); i++) {
@@ -75,27 +65,27 @@ async function play(page, id, move) {
   await (await action(page, 'play', '.uno-discard', {card: id})).click();
   await moved(page, move);
 }
-async function accuse(page, target) {
+async function accuse(page, target, {neutral=false}={}) {
   // A human accusation is only actionable after the one-second protected window.
   await page.waitForTimeout(1100);
-  // GameScreen uses a common two-tap player target, not a legacy modal.
+  // The player action overlay owns its panel; cancel through its native keyboard route.
   const previous = (await state(page)).move;
   const token = page.locator(`.player-token[data-player-target="${target}"]`);
   const panel=page.locator(`.player-panel[data-player-index="${target}"]`);
-  await panel.locator(".mini-hand").click();
-  await panel.locator(".mini-hand").click();assert.equal(await page.locator('.player-target-menu').count(),0,'repeated hand tap closes player actions');
+  await panel.locator(".mini-hand").click();await page.locator('.player-target-menu').waitFor({state:'visible'});
+  await page.keyboard.press('Escape');await page.locator('.player-target-menu').waitFor({state:'hidden'});assert.equal((await state(page)).move,previous,'cancelling player actions never commits');
   await panel.locator(".mini-hand").click();
   assert.equal((await state(page)).move, previous, 'The first tap only selects a player');
   const button = page.locator('.player-target-menu button');
   await button.waitFor({state:'visible'});
-  assert.equal(await button.isEnabled(), true, 'Accusation is available even when it will be wrong');
+  assert.equal(await button.isEnabled(),!neutral,neutral?'A settled declaration disables a redundant accusation':'Accusation is available even when it will be wrong');
   assert.equal(await token.getAttribute('aria-expanded'),'true');
   const box=await button.boundingBox(),viewport=page.viewportSize();assert(box.x>=0&&box.y>=0&&box.x+box.width<=viewport.width+1&&box.y+box.height<=viewport.height+1,'player action popover stays within the viewport');
   const appearance = await button.evaluate(el => ({text: el.textContent.trim(), className: el.className,
     bg: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color}));
   assert.equal(appearance.text,'UNO!', 'The new prompt must remain short');
-  await button.click();
-  await page.locator('[data-command=confirm-action]').click();
+  if(neutral){await page.keyboard.press('Escape');assert.equal((await state(page)).move,previous,'a disabled redundant accusation never commits');}
+  else{await button.click();await page.waitForFunction(move=>PlayroomAppBridge.saveLibrary.current().session.current.move===move+1,previous);assert.equal(await page.locator('[data-command=confirm-action]').count(),0,'the selected target action commits directly');}
   assert.equal(await page.locator('.player-target-menu').count(),0);
   return appearance;
 }
@@ -106,7 +96,7 @@ async function visibleHandIds(page) {
 
 test('Manual UNO declarations, accusations and device handoff through the real application', {timeout: 120000}, async t => {
   const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(path.resolve(__dirname,'..'));
-  const testUrl=fixtureServer?.url||url;
+  const testUrl=fixtureServer?.url||process.env.PLAYROOM_URL;
   const browser = await chromium.launch({headless: true,
     executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
@@ -115,20 +105,23 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     await context.addInitScript(saved => {
       if (sessionStorage.getItem('uno-social-seeded')) return;
       sessionStorage.setItem('uno-social-seeded', '1'); localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant',quickPlay:false,autoPass:false}));
+      localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'uno-social-owner',name:'Аня',createdAt:1,updatedAt:1}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound: false, animationSpeed: 'instant',quickPlay:false,autoPass:false,tutorialsEnabled:false}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, saved);
+    const network=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));
     const page = await context.newPage(), errors = [];
     page.setDefaultTimeout(7000); page.on('pageerror', error => errors.push(error.message));
-    await page.goto(testUrl);
-    return {page, context, errors};
+    await page.goto(testUrl);await TestUI.ready(page);
+    return {page, context, errors,network};
   }
   async function check(name, run) {
+    if(process.env.PLAYROOM_SCENARIO&&!new RegExp(process.env.PLAYROOM_SCENARIO).test(name))return;
     await t.test(name, async () => {
       const environments = [];
       try {
         await run(async saved => { const env = await open(saved); environments.push(env); return env; });
-        for (const env of environments) assert.deepEqual(env.errors, [], 'No uncaught browser errors');
+        for (const env of environments){assert.deepEqual(env.errors, [], 'No uncaught browser errors');assert.equal(env.network.nativeSupabaseRequests,0);}
       } finally { for (const env of environments) await env.context.close(); }
     });
   }
@@ -136,11 +129,11 @@ test('Manual UNO declarations, accusations and device handoff through the real a
     await check('New games default to manual UNO, and manual/auto setup choices survive rules and player-count edits', async open => {
       for (const mode of ['manual', 'auto']) {
         const {page} = await open();
-        await page.locator('[data-start=uno]').click();
+        await TestUI.openGame(page,'uno');
         await page.locator('[data-command=room-rules]').click();
-        assert.equal(await readChoice(page.locator('[name=option-unoMode]')),'manual');await selectChoice(page.locator('[name=option-unoMode]'),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        assert.equal(await page.locator('input[name=option-unoMode]:checked').inputValue(),'manual');await page.locator('input[name=option-unoMode][value='+mode+']').check();await TestUI.activeSurface(page).locator('button[type=submit]').click();
         await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-2',{kind:'human',nickname:'Игрок'});b.renderLobby();});await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.setLocalSeat(r.id,r.ownerId,'seat-3',{kind:'human',nickname:'Игрок'});b.renderLobby();});
-        await page.locator('[data-command=room-rules]').click();assert.equal(await readChoice(page.locator('[name=option-unoMode]')),mode);await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+        await page.locator('[data-command=room-rules]').click();assert.equal(await page.locator('input[name=option-unoMode]:checked').inputValue(),mode);await TestUI.activeSurface(page).locator('button[type=submit]').click();
         await page.locator('[data-command=lobby-start]').click();
         const saved = await read(page);
         assert.equal(saved.options.unoMode, mode);
@@ -159,7 +152,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.deepEqual(after.data.hands.map(ids), saved.states[0].data.hands.map(ids));
       assert.equal(after.turn, 0); assert.equal(after.data.uno.declared[0], false);
       assert.match(after.events.at(-1).text, /UNO/i);
-      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.game-frame-event').innerText()).trim(), after.events.at(-1).text);
       assert.equal(await (await action(page, 'declare-uno')).getAttribute('class'), beforeClass);
       await play(page, saved.states[0].data.hands[0][0].id, 2);
       assert.equal((await state(page)).data.hands[0].length, 1);
@@ -205,7 +198,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal(after.turn, 1); assert.equal(after.data.uno.pending, null);
       assert.equal(after.data.drawPile.length, saved.states[0].data.drawPile.length - 2);
       assert.equal(await page.locator('.modal,.handoff').count(), 0);
-      assert.equal((await page.locator('.status-event').innerText()).trim(), after.events.at(-1).text);
+      assert.equal((await page.locator('.game-frame-event').innerText()).trim(), after.events.at(-1).text);
     });
 
     await check('Opponent menu permits a wrong accusation with no correctness hint and penalizes the caller', async open => {
@@ -237,10 +230,10 @@ test('Manual UNO declarations, accusations and device handoff through the real a
 
     await check('Repeated declarations and accusations after declared UNO are neutral', async open => {
       const {page}=await open(fixture({counts:[1,2],turn:1,declared:[true]}));await resume(page);
-      await accuse(page,0);await accuse(page,0);assert.equal((await state(page)).move,0);assert.equal((await state(page)).data.hands[1].length,2);
+      await accuse(page,0,{neutral:true});await accuse(page,0,{neutral:true});assert.equal((await state(page)).move,0);assert.equal((await state(page)).data.hands[1].length,2);
       const other=await open(fixture({counts:[1,2],turn:0,pending:0}));await resume(other.page);
       await (await action(other.page,'declare-uno')).click();await moved(other.page,1);
-      await (await action(other.page,'declare-uno')).click();assert.equal((await state(other.page)).move,1);
+      await other.page.locator('.uno-call').click();assert.equal((await state(other.page)).move,1,'the constant declaration button ignores a repeated settled call');
     });
 
     await check('Another player drawing preserves the original accusation window', async open => {
@@ -272,7 +265,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       await page.reload(); await resume(page);
       assert.deepEqual(await read(page), before);
       assert.equal((await state(page)).data.uno.declared[0], true);
-      await accuse(page, 0);
+      await accuse(page, 0,{neutral:true});
       assert.equal((await state(page)).move,2,'A late accusation does not append a move');
       assert.equal((await state(page)).data.hands[1].length, 2, 'Restored declaration neutralizes a late accusation');
     });
@@ -283,7 +276,7 @@ test('Manual UNO declarations, accusations and device handoff through the real a
       assert.equal((await state(page)).data.hands[0].length,1);
       await (await action(page,'declare-uno')).tap();
       await page.waitForFunction(()=>{
-        const s=TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current;
+        const s=PlayroomAppBridge.saveLibrary.current().session.current;
         return s.move>=5&&s.turn===0;
       });
       const current=await state(page);

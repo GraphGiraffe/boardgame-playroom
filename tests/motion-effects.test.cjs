@@ -33,7 +33,11 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       other.remove();
       const flip=PlayroomMotion.play({action:{type:'flip',index:1},entities:new Map(),flips:new Map()},{duration:300,effects:{flip:300,pair:200}});
       const sides=[...document.querySelectorAll('[data-motion-kind=flip]>div>* button')].map(n=>getComputedStyle(n).visibility);
-      PlayroomMotion.cancel();await flip;document.querySelector('.slot').remove();
+      PlayroomMotion.cancel();await flip;
+      const slot=document.querySelector('.slot'),face=slot.querySelector('[data-motion-face]'),back=slot.querySelector('[data-motion-back]');
+      const closing={faceInline:face.style.getPropertyValue('visibility'),backVisible:getComputedStyle(back).visibility,backTransform:getComputedStyle(back).transform};
+      back.remove();face.innerHTML='<button>Authored reopened face</button>';closing.reopened=getComputedStyle(face).visibility;
+      slot.remove();
       const shot=PlayroomMotion.capture({sceneModel:window.motionScene,actor:1,viewer:0,action:{type:'draw'}}),draw=PlayroomMotion.play(shot,{duration:500,draws:[{player:1,count:1,from:'stock'}]});
       const piece=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]'),samples=[];
       for(const fraction of [.05,.5,.95]){for(const a of document.getAnimations()){a.pause();a.currentTime=a.effect.getTiming().duration*fraction;}const r=piece.getBoundingClientRect();samples.push(r.width/r.height);}
@@ -47,11 +51,12 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       const simultaneous=document.querySelectorAll('.playroom-motion-layer').length;
       a.cancel();await pa;const surviving=document.querySelectorAll('.playroom-motion-layer').length;
       b.cancel();await pb;
-      return {copies,sides,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length,
+      return {copies,sides,closing,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length,
         surface:{delta:sb.stock.x-sa.stock.x,simultaneous,surviving,missing:missing.capture().entities.size}};
     });
     assert.deepEqual(result.copies,{flips:1,hands:0,sources:[1]});
     assert.deepEqual(result.sides,['visible','visible']);
+    assert.deepEqual(result.closing,{faceInline:'',backVisible:'visible',backTransform:'none',reopened:'visible'},'closing back remains opaque and retained face can be authored again');
     assert(result.samples.every(ratio=>Math.abs(ratio-result.sourceRatio)<.01),JSON.stringify(result));
     assert.equal(result.layers,0);
     assert.deepEqual(result.surface,{delta:100,simultaneous:2,surviving:1,missing:0});

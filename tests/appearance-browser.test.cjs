@@ -1,4 +1,5 @@
 'use strict';
+const TestUI=require('./browser-origin.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
@@ -21,17 +22,17 @@ async function fixture(run,{mobile=false,viewport={width:390,height:740},default
   await page.addLocatorHandler(page.locator('#modal-root>[data-surface-state=active] .updates-modal'),async modal=>{await modal.locator('.modal-head [data-command=close-modal]').click();});
   await page.addInitScript(()=>{
     localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'appearance-test',name:'Иван',createdAt:1,updatedAt:1}));
-    localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',autoPass:false}));
+    localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',autoPass:false,tutorialsEnabled:false}));
   });
   try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>{for(const id of Object.keys(PlayroomCatalog))PlayroomFirstTurnGuide.setEnabled(id,false);});if(defaultFont&&engine==='webkit')await page.evaluate(font=>document.documentElement.style.fontSize=font+'px',defaultFont);await run({page,context,net,errors});assert.deepEqual(errors,[]);assert.equal(nativeSupabaseRequests,0);assert.equal(net.nativeSupabaseRequests,0);}
   finally{await context.close();await browser.close();await server.close();}
 }
 async function choose(page,id) {
  const openedSettings=!(await page.locator('[data-theme-toggle]:visible').count());
- if(openedSettings)await page.locator('[data-command=settings]:visible').first().click();
+ if(openedSettings)await TestUI.openSettings(page);
  if(await page.locator('html').getAttribute('data-appearance-mode')!==id)await page.locator('[data-theme-toggle]').click();
  assert.equal(await page.locator('.appearance-editor,.appearance-picker').count(),0);
- if(openedSettings)await page.locator('#modal-root [data-command=close-modal]').first().click();
+ if(openedSettings){if(await page.locator('.table-shell').count())await TestUI.closeToGame(page);else await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();}
 }
 
 function contrast(foreground,background) {
@@ -80,14 +81,14 @@ test('switching preserves local table, scrolling, history slider and an already 
   });
   assert(contrast(colors.header,colors.face)>=4.5);assert(contrast(colors.hint,colors.canvas)>=4.5);
   await page.screenshot({path:path.join(captures,'dark-yatzy-390.png')});
-  await page.locator('.table-tools [data-command=settings]').click();
+  await TestUI.openSettings(page);
   await page.evaluate(()=>window.appearanceSettings=document.querySelector('#modal-root .modal'));
   await page.locator('[data-theme-toggle]').click();
   assert.equal(await page.evaluate(()=>document.querySelector('#modal-root .modal')===window.appearanceSettings),true);
   await choose(page,'light');
   assert.equal(await page.evaluate(()=>document.querySelector('#modal-root .modal')===window.appearanceSettings),true);
   await page.locator('#modal-root [data-command=close-modal]').click();
-  await page.locator('.table-tools [data-command=history]').click();await page.locator('#replay-range').waitFor();
+  await TestUI.openHistory(page);await page.locator('#replay-range').waitFor();
   await page.evaluate(()=>{window.appearanceRange=document.querySelector('#replay-range');window.appearanceRange.value='0';window.appearanceRange.dispatchEvent(new Event('input',{bubbles:true}));});
   await page.waitForTimeout(100);
   const value=await page.locator('#replay-range').inputValue();await choose(page,'dark');
@@ -96,7 +97,7 @@ test('switching preserves local table, scrolling, history slider and an already 
   assert.equal(await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1')),before.raw);
   await page.setViewportSize({width:320,height:640});
   assert.equal(await page.locator('.table-tools [data-appearance-picker]').count(),0);
-  await page.locator('.table-tools [data-command=settings]').click();
+  await TestUI.openSettings(page);
   await choose(page,'light');
   assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');
 }));
@@ -119,8 +120,15 @@ test('projected shared screen switches appearance without publishing a game comm
 
 test('appearance gallery previews named skins and applies or cancels a per-game choice',{timeout:45000},async()=>fixture(async({page})=>{
  await page.locator('[data-hub-page=profile]').click();await page.locator('[data-appearance-open]').click();
- await page.locator('[data-appearance-tab=deck]').click();const autoDeck=await page.locator('[data-appearance-game]').inputValue();assert(await page.locator('#skin-preferences [data-skin-family=card-face],#skin-preferences [data-skin-family=card-back]').count()>0,'first global Deck shows real alternatives');await page.locator('[data-appearance-tab=arts]').click();const hasArts=await page.evaluate(()=>Object.values(PlayroomCatalog).some(game=>game.skinFamilies?.some(family=>!['card-face','card-back'].includes(family)&&PlayroomAppearanceUI.runtime.assets[family]?.variants.length>1)));if(hasArts)assert(await page.locator('#skin-preferences [data-skin-family]:not([data-skin-family=card-face]):not([data-skin-family=card-back])').count()>0,'first global Arts shows existing alternatives');else assert(await page.locator('.appearance-empty').isVisible(),'no invented Arts choices when every family has one real variant');await page.locator('[data-appearance-cancel]').click();await page.locator('[data-appearance-open]').click();await page.locator('[data-appearance-tab=deck]').click();assert.equal(await page.locator('[data-appearance-game]').inputValue(),autoDeck,'automatic Arts choice does not become an explicit last game');
- const withoutDeck=await page.evaluate(()=>Object.entries(PlayroomCatalog).find(([,game])=>game.skinFamilies?.length&&!game.skinFamilies.some(family=>['card-face','card-back'].includes(family)&&PlayroomAppearanceUI.runtime.assets[family]?.variants.length>1))?.[0]);assert(withoutDeck,'fixture includes a game without deck variants');await page.selectOption('[data-appearance-game]',withoutDeck);await page.locator('[data-appearance-tab=arts]').click();await page.locator('[data-appearance-tab=deck]').click();assert.equal(await page.locator('[data-appearance-game]').inputValue(),withoutDeck,'explicit game is not overridden when switching categories');await page.locator('[data-appearance-cancel]').click();await page.locator('[data-appearance-open]').click();await page.locator('[data-appearance-tab=deck]').click();assert.equal(await page.locator('[data-appearance-game]').inputValue(),withoutDeck,'explicit game survives gallery reopen');await page.selectOption('[data-appearance-game]','klondike');
+ await page.locator('[data-appearance-tab=components]').click();const firstGame=await page.locator('[data-appearance-game]').inputValue();
+ assert(await page.locator('#skin-preferences [data-skin-family]').count()>0,'components show actual asset alternatives');
+ await page.selectOption('[data-appearance-game]','klondike');
+ await page.locator('[data-appearance-tab=theme]').click();await page.locator('[data-appearance-tab=components]').click();
+ assert.equal(await page.locator('[data-appearance-game]').inputValue(),'klondike','explicit game survives category changes');
+ await page.locator('.appearance-gallery-footer [data-appearance-cancel]').click();await page.locator('[data-appearance-open]').click();
+ await page.locator('[data-appearance-tab=components]').click();
+ assert.equal(await page.locator('[data-appearance-game]').inputValue(),'klondike','explicit game survives gallery reopen');
+ assert(firstGame,'automatic initial selection is a real game');
  assert.equal(await page.locator('#skin-preferences [data-skin-family=card-face]').count(),6);
  assert.equal(await page.locator('[data-skin-group=two-color] [data-skin-variant]').count(),3);
  assert.equal(await page.locator('[data-skin-group=four-color] [data-skin-variant]').count(),3);
@@ -130,7 +138,7 @@ test('appearance gallery previews named skins and applies or cancels a per-game 
  assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.skins.v1')),before,'choice is a draft until Apply');
  for(const width of [360,390]){await page.setViewportSize({width,height:740});assert(await page.locator('#skin-preferences').evaluate(e=>e.scrollWidth<=e.clientWidth+1));}
  await page.locator('[data-appearance-apply]').click();await page.locator('[data-appearance-open]').click();
- await page.locator('[data-appearance-tab=deck]').click();await page.selectOption('[data-appearance-game]','klondike');
+ await page.locator('[data-appearance-tab=components]').click();await page.selectOption('[data-appearance-game]','klondike');
  assert.equal(await page.locator('[data-skin-family=card-face][data-skin-variant=mini-split]').getAttribute('aria-pressed'),'true');
  const saved=await page.evaluate(()=>localStorage.getItem('playroom.skins.v1'));
  await page.locator('[data-skin-family=card-face][data-skin-variant=classic]').click();
@@ -141,13 +149,13 @@ test('appearance gallery previews named skins and applies or cancels a per-game 
 test('avatars always use characters, migrate old geometric preferences and keep source geometry outside runtime',{timeout:45000},async()=>fixture(async({page})=>{
  await page.evaluate(()=>localStorage.setItem('playroom.appearance.v1',JSON.stringify({formatVersion:1,activeId:'dark',presets:[],avatarStyle:'simple'})));await page.reload();await page.locator('.game-tile').first().waitFor();
  assert.equal(await page.locator('html').getAttribute('data-avatar-style'),'minimal');assert.deepEqual(await page.evaluate(()=>PlayroomAvatars.styles),['minimal']);assert.equal(await page.evaluate(()=>Object.hasOwn(PlayroomCharacterStyles.sets,'simple')),false);assert.equal(await page.evaluate(()=>PlayroomAvatars.source('circle-red','simple')===PlayroomAvatars.source('circle-red','minimal')),true);
- await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();await page.locator('.table-tools [data-command=settings]').click();assert.equal(await page.locator('[data-skin-family=character-face],[data-avatar-style-choice]').count(),0);await page.locator('#modal-root [data-command=close-modal]').click();
- await page.locator('.pexeso-grid [data-action]').first().click();await page.locator('.pexeso-character-card [data-character-style=minimal]').waitFor();assert((await page.locator('.pexeso-character-card image').first().getAttribute('href')).startsWith('data:image/svg+xml'));
+ await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();await TestUI.openSettings(page);assert.equal(await page.locator('[data-skin-family=character-face],[data-avatar-style-choice]').count(),0);await TestUI.closeToGame(page);
+ await page.locator('.pexeso-grid [data-action]').first().click();await page.locator('.pexeso-character-card svg[data-character-style=minimal]').first().waitFor();assert((await page.locator('.pexeso-character-card image').first().getAttribute('href')).startsWith('data:image/svg+xml'));
 }));
 
 for(const [name,key] of [['QuotaExceededError','ui.app.save-quota'],['SecurityError','ui.app.save-unavailable'],['Error','ui.app.save-failed']])test(`session save reports ${name} without blaming pack assets`,{timeout:45000},async()=>fixture(async({page})=>{
- assert.equal(await page.locator('[data-game=pexeso] [data-character-style=minimal]').count(),2,'cover uses minimal characters');
- await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();
+ assert.equal(await page.locator('[data-game=pexeso] [data-character-style=minimal]').count(),4,'both previews use the declared minimal character style');
+ await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('.pexeso-grid').waitFor();
  const raw=await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1'));assert(raw&&!raw.includes('data:image/')&&!raw.includes('renderer.js'));
  await page.evaluate(name=>{const original=PlayroomDataStorage.prototype.setItem;window.restoreSessionWrites=()=>PlayroomDataStorage.prototype.setItem=original;PlayroomDataStorage.prototype.setItem=function(key,value){if(key==='playroom.session.v1')throw new DOMException('test save failure',name);return original.call(this,key,value);};},name);
  await page.locator('.pexeso-grid [data-action]').first().click();
@@ -156,9 +164,9 @@ for(const [name,key] of [['QuotaExceededError','ui.app.save-quota'],['SecurityEr
 }));
 
 for(const failure of ['archive','active'])test(`failed local start (${failure}) preserves previous session and allows retry`,{timeout:45000},async()=>fixture(async({page})=>{
- await page.locator('[data-start=klondike]').first().click();await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();
+ await page.locator('[data-start=klondike]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('.solitaire-board').waitFor();
  const previous=await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1'));const id=JSON.parse(previous).libraryId;
- await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator('[data-start=pexeso]').first().click();
+ await page.evaluate(()=>PlayroomAppBridge.showHub());await page.locator('[data-start=pexeso]').first().click();await page.locator('[data-game-mode=hotseat]').click();
  await page.evaluate(failure=>{const original=PlayroomDataStorage.prototype.setItem;window.restoreSessionWrites=()=>PlayroomDataStorage.prototype.setItem=original;PlayroomDataStorage.prototype.setItem=function(key,value){if(failure==='archive'?key.startsWith('playroom.paused.v1.'):key==='playroom.session.v1'&&JSON.parse(value).game==='pexeso')throw new DOMException('test quota','QuotaExceededError');return original.call(this,key,value);};},failure);
  for(let attempt=0;attempt<2;attempt++){
   await page.locator('[data-command=lobby-start]').click();await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes(PlayroomMessages.text('ui.app.save-quota')));
@@ -189,7 +197,7 @@ test('web startup matches the saved light or dark canvas before appearance loads
 });
 
 test('dark domino interaction contours stay opaque and contrast with both board and pale pieces',{timeout:45000},async()=>fixture(async({page})=>{
- await page.locator('[data-start=domino]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await page.locator('.is-playable').first().waitFor();
+ await page.locator('[data-start=domino]').click();await page.locator('[data-game-mode=hotseat]').click();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await page.locator('[data-command=lobby-start]').click();await page.locator('.is-playable').first().waitFor();
  const before=await page.locator('.game-scene').boundingBox();await choose(page,'dark');
  const colors=await page.evaluate(()=>{const root=getComputedStyle(document.documentElement),scene=document.querySelector('.game-scene'),piece=scene.querySelector('.is-playable'),contour=piece.querySelector('.piece-contour,.card-outline');return {green:root.getPropertyValue('--color-interaction-available').trim(),keyline:getComputedStyle(scene).getPropertyValue('--piece-interaction-keyline').trim(),board:root.getPropertyValue('--color-surface-game').trim(),face:root.getPropertyValue('--color-material-domino-face').trim(),strength:getComputedStyle(scene).getPropertyValue('--piece-highlight-strength').trim(),stroke:contour?getComputedStyle(contour).stroke:null,opacity:contour?getComputedStyle(contour).strokeOpacity:null};});
  assert(contrast(colors.green,colors.board)>=3,JSON.stringify(colors));assert(contrast(colors.keyline,colors.face)>=3,JSON.stringify(colors));assert.equal(colors.green,'#ffe169');assert.equal(colors.strength,'100%');if(colors.opacity!==null)assert(['1','100%'].includes(colors.opacity),JSON.stringify(colors));assert.deepEqual(await page.locator('.game-scene').boundingBox(),before);
@@ -276,7 +284,7 @@ test('appearance native text preserves palette and component words with a readab
   const panel=frame.querySelector('.modal'),r=panel.getBoundingClientRect(),selectors=panel.classList.contains('select-choice-dialog')?'.modal-head h2,.pairing-choice-option>span':'.modal-head h2,.appearance-accent-colors>button>span:last-child,.appearance-theme-choice>span:not(.appearance-theme-preview):not(.appearance-choice-current),.appearance-skin-label>strong,.appearance-skin-label>small,legend,.appearance-game-picker>span,.appearance-gallery-footer button>span';
   const labels=[...panel.querySelectorAll(selectors)].filter(n=>n.getClientRects().length&&!n.closest('[hidden],[aria-hidden=true],svg')).map(n=>{const text=n.textContent.trim(),node=[...n.childNodes].find(n=>n.nodeType===Node.TEXT_NODE),b=n.getBoundingClientRect(),button=n.closest('button'),limit=(button||n).getBoundingClientRect();const words=node?[...new Intl.Segmenter('ru',{granularity:'word'}).segment(node.textContent)].filter(w=>w.isWordLike).map(w=>{const range=document.createRange();range.setStart(node,w.index);range.setEnd(node,w.index+w.segment.length);return {text:w.segment,rects:[...range.getClientRects()].filter(r=>r.width&&r.height).map(r=>({x:r.x,y:r.y,width:r.width,height:r.height}))};}):[];return {text,font:parseFloat(getComputedStyle(n).fontSize),rect:b.toJSON(),limit:limit.toJSON(),intrinsicFits:n.scrollWidth<=n.clientWidth+1&&n.scrollHeight<=n.clientHeight+1,words,wholeWords:words.every(w=>w.rects.length===1&&w.rects.every(q=>q.x>=limit.left-.5&&q.x+q.width<=limit.right+.5&&q.y>=limit.top-.5&&q.y+q.height<=limit.bottom+.5))};});
   const footer=panel.querySelector('.appearance-gallery-footer'),f=footer&&!footer.hidden?footer.getBoundingClientRect():null,picker=panel.querySelector('.appearance-game-picker'),p=picker?.getBoundingClientRect(),section=picker?.closest('[data-appearance-section]'),s=section?.getBoundingClientRect(),markers=[...panel.querySelectorAll('[aria-pressed=true] .appearance-choice-current')].filter(n=>n.getClientRects().length).map(n=>{const b=n.getBoundingClientRect(),a=(n.closest('.appearance-skin-art')||n.closest('button')).getBoundingClientRect();return {mark:b.toJSON(),sample:a.toJSON(),fits:b.left>=a.left&&b.right<=a.right+1&&b.top>=a.top&&b.bottom<=a.bottom+1};});
-  return {rootFont:parseFloat(getComputedStyle(document.documentElement).fontSize),panel:r.toJSON(),scopeOverflow:panel.scrollWidth>panel.clientWidth+1,labels,markers,footer:f?.toJSON(),footerFits:!f||f.top>=r.top&&f.bottom<=innerHeight+1&&[...footer.querySelectorAll('button')].every(n=>{const q=n.getBoundingClientRect();return q.width>=44&&q.height>=44;}),picker:p?.toJSON(),section:s?.toJSON(),pickerSticky:!p||getComputedStyle(picker).position==='sticky'&&p.top>=s.top-7&&p.bottom<=s.bottom+1};
+  return {rootFont:parseFloat(getComputedStyle(document.documentElement).fontSize),panel:r.toJSON(),scopeOverflow:panel.scrollWidth>panel.clientWidth+1,labels,markers,footer:f?.toJSON(),footerFits:!f||f.top>=r.top&&f.bottom<=innerHeight+1&&[...footer.querySelectorAll('button')].every(n=>{const q=n.getBoundingClientRect();return q.width>=44&&q.height>=44;}),picker:p?.toJSON(),section:s?.toJSON(),pickerSticky:!picker?.getClientRects().length||(matchMedia('(orientation:landscape) and (min-width:600px) and (max-height:600px)').matches?getComputedStyle(picker).position==='static':getComputedStyle(picker).position==='sticky'&&p.top>=s.top-7&&p.bottom<=s.bottom+1)};
  });const row={...state,...data};report.push(row);if(data.scopeOverflow||!data.footerFits||!data.pickerSticky||data.labels.some(l=>!l.intrinsicFits||!l.wholeWords)||data.markers.some(m=>!m.fits))violations.push(row);return row;};
  try{for(const font of [16,32])await fixture(async({page,net,errors})=>{
   const active=selector=>page.locator('#modal-root>[data-surface-state=active]').locator(selector);

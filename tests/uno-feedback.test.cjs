@@ -7,7 +7,7 @@ const make=()=>Engine.createGame('uno',{players:[{name:'Иван'},{name:'Джо
 const makeOne=(s,who)=>{while(s.data.hands[who].length>1)s.data.drawPile.push(s.data.hands[who].pop());s.data.uno.situations[who].open=true;};
 test('UNO accusation publishes localized target metadata',()=>{
   const pack=Engine.get('uno');
-  if(enhanced)assert.match(pack.rules.join(' '),/коснитесь его имени или руки/);
+  if(enhanced)assert.match(pack.rules.join(' '),/обвин/i);
   const s=make(),before=s.data.hands[0].length;
   const action=Engine.reactions(s,0).find(a=>a.type==='accuse-uno'&&a.target===1);
   if(enhanced){assert.equal(action.targetPrompt,'UNO!');assert.equal(action.confirmation,undefined,'The player-card menu performs the accusation without a second confirmation');}

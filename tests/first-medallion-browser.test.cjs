@@ -10,7 +10,7 @@ test('first-player token is a centered number on the same raised disc in lobby a
   const page=await context.newPage();
   try{
     await page.goto(server.url);
-    await page.locator('[data-start=checkers]').click();
+    await page.locator('[data-start=checkers]').click();await page.locator('[data-game-mode=hotseat]').click();
     await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});
     const inspect=selector=>page.locator(selector).evaluate(el=>{
       const svg=el.querySelector('.medallion-art'),disc=svg?.querySelectorAll('circle')[1],number=svg?.querySelector('text');
@@ -18,7 +18,7 @@ test('first-player token is a centered number on the same raised disc in lobby a
       return {fill:disc?getComputedStyle(disc).fill:null,width:rect.width,centerOffset:a&&b?Math.abs((a.left+a.right-b.left-b.right)/2):null,verticalOffset:a&&b?Math.abs((a.top+a.bottom-b.top-b.bottom)/2):null,number:!!number,withinFace:a&&b?b.left>a.left&&b.right<a.right&&b.top>a.top&&b.bottom<a.bottom:false,viewBox:svg?.getAttribute('viewBox')};
     });
     const button=await inspect('[data-first-token] .player-medallion');
-    const lobby=await inspect('.lobby-seat-row[data-participant-id] .player-medallion.is-first');
+    const lobby=await inspect('.room-v021-row[data-participant-id] .player-medallion.is-first');
     for(const mark of [button,lobby]){
       assert.equal(mark.fill,'rgb(234, 223, 192)');
       assert.equal(mark.viewBox,'0 0 100 100');
@@ -32,7 +32,8 @@ test('first-player token is a centered number on the same raised disc in lobby a
     await page.locator('[data-command=lobby-start]').click();
     const game=await inspect('.layout-self .player-medallion.is-first');
     assert.equal(game.fill,lobby.fill);
-    assert.equal(game.width,lobby.width);
+    // Transformed DOMRect values can differ by millionths of a CSS pixel.
+    assert(Math.abs(game.width-lobby.width)<.001,`disc width differs between lobby and game: ${lobby.width}px vs ${game.width}px`);
     assert(game.centerOffset<1.5);
     if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'first-medallion-game.png')});
     await page.setViewportSize({width:320,height:740});

@@ -21,7 +21,7 @@ function network(n=2){const session=new Session(E,'mage-brawl',{seed:12,actionsP
 test('Mage Brawl: hidden barrier, undo, no opponent plans/hands in every projection',()=>{
  let s=model.create({playerCount:3,preset:'classic',firstPlayer:0,rng:9,options:{actionsPerTurn:1}});const c=model.legalActions(s,2)[0];s=model.apply(s,2,c).position;
  assert.deepEqual(model.decisionWindow(s).ready,[2]);for(const viewer of [-1,0,1]){const p=model.project(s,viewer);assert.equal(p.data.players[2].hand,undefined);assert.equal(p.data.players[2].plan,undefined);assert.equal(p.data.seed,undefined);assert.equal(p.data.random,undefined);assert.equal(p.data.deck,undefined);assert.deepEqual(p.events,[]);}
- assert.equal(model.projectTable(s,0).actions.length,0);assert.deepEqual(model.project(s,2).data.players[2].plan,c);
+ assert.equal(model.projectTable(s,0).actions.length,0);assert.deepEqual(model.project(s,2).data.players[2].plan,{...c,element:s.data.players[2].hand.find(card=>card.id===c.cardId).element});
  s=model.apply(s,2,{type:'unready'}).position;assert.deepEqual(model.decisionWindow(s).ready,[]);assert.equal(model.decisionWindow(s).versions[2],2);
 });
 test('same-speed mutual damage is pooled before life rewards',()=>{

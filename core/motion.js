@@ -634,7 +634,9 @@
           }else{
             animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},...(close?[{transform:'rotateY(0deg)',offset:hold/total}]:[]),{transform:'rotateY(180deg)',offset:1}],{duration:total||flip,fill:'both',easing:'linear'}));
           }
-          if(close&&back)finishUpdates.push(()=>{face.style.setProperty('visibility','hidden');back.style.visibility='visible';back.style.transform='none';});
+          // The opaque closing back covers the restored face. Keep the face's
+          // original visibility so a retained wrapper survives the next authored patch.
+          if(close&&back)finishUpdates.push(()=>{back.style.visibility='visible';back.style.transform='none';});
         }
         // Start after clone preparation, so slow rendering cannot consume
         // the visible part of a fast flight before its first painted frame.

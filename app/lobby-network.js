@@ -10,7 +10,8 @@
  function row({room,isHost,locked=false}){
   if(!isHost&&!(room.transportMode!=='hotseat'&&room.allowPlayerInvites))return '';
   if(room.transportMode==='hotseat')return '';
-  return H().button({attrs:`id="network-pair-button" ${room.transportMode==='online'?'data-lobby-invite':''}`,label:'Пригласить',icon:'addPlayer',variant:'secondary',disabled:locked});
+  const reconnect=isHost&&room.transportMode==='network'&&room.phase==='playing'&&!room.recovery;
+  return H().button({attrs:`id="network-pair-button" ${room.transportMode==='online'?'data-lobby-invite':''}`,label:'Пригласить',icon:'addPlayer',variant:'secondary',disabled:locked&&!reconnect});
  }
  function inviteLink(){const base=root.PlayroomNetworkConfig?.appUrl||(['http:','https:'].includes(root.location.protocol)?root.location.origin+root.location.pathname:'https://graphgiraffe.github.io/playroom-hod-test/');const url=new URL(base);url.hash=new URLSearchParams({'playroom-room':onlineSettings.roomCode||active.id,...(onlineSettings.passwordEnabled===false?{}:{password:onlineSettings.password})}).toString();return url.href;}
  const tabs=['friends','groups','link'],tabLabels=['Друзья','Группы','Ссылка'];

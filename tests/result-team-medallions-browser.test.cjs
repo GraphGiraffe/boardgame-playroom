@@ -10,6 +10,7 @@ test('team result discs peek from under equal-sized medals on phone screens',{ti
   const page=await context.newPage();
   try{
     await page.goto(process.env.PLAYROOM_RESULT_ARTIFACT?'file://'+path.resolve(process.env.PLAYROOM_RESULT_ARTIFACT):server.url);
+    await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge?.saveLibrary);
     await page.evaluate(()=>{
       const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
       const teams=[{id:'blue',label:'синяя',color:'#668fad'},{id:'red',label:'красная',color:'#ce735d'}];const playerContent=state.players.map((_,index)=>({team:teams[index%2]}));

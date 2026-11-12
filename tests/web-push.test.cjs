@@ -23,13 +23,12 @@ test('push device messages preserve call order while worker registration is dela
 });
 
 test('game push monitor uses legal human actions, serializes retries and closes its authority binding',async()=>{
- const Monitor=require('../application/game-push-events.js');let listener,closed=0,revision=1,paused=false,active='b',attempts=0;
- const snapshot=id=>({sessionId:'session',revision,controlRevision:paused?1:2,paused,state:{status:'playing'},actions:!paused&&id===active?[{type:'play'}]:[],independentActions:[]});
- const observer={snapshot:()=>snapshot('spectator'),subscribe:fn=>{listener=fn;return()=>{listener=null;}},close:()=>closed++};
- const room={phase:'playing',transportMode:'online',ownerId:'a',participants:[{id:'a',role:'player'},{id:'b',role:'player'},{id:'bot',bot:true,role:'player'},{id:'spectator',role:'spectator'}]},sent=[];
- const monitor=new Monitor({authority:{connect:()=>observer},room:()=>room,access:{connect:(_a,_r,id)=>({snapshot:()=>snapshot(id),close(){}})},delay:async()=>{},send:async value=>{if(++attempts===1)throw Error('temporary');sent.push(value);}});
+ const Monitor=require('../application/game-push-events.js'),Access=require('../application/session-access.js');let listener,closed=0,revision=1,paused=false,active=1,attempts=0;
+ const authority={activity:()=>({sessionId:'session',revision,controlRevision:paused?1:2,state:paused?'paused':'playing',targets:paused?[]:[active]}),subscribeActivity:fn=>{listener=fn;return()=>{listener=null;closed++;};},connect:()=>assert.fail('push metadata must not open private projections')};
+ const room={phase:'playing',transportMode:'online',ownerId:'a',participants:[{id:'a',role:'player'},{id:'b',role:'player'},{id:'bot',bot:true,role:'player'},{id:'spectator',role:'spectator'}],seats:['a','b','bot'].map((participantId,index)=>({participantId,index}))},sent=[];
+ const monitor=new Monitor({authority,room:()=>room,access:Access,delay:async()=>{},send:async value=>{if(++attempts===1)throw Error('temporary');sent.push(value);}});
  await monitor.queue;assert.equal(attempts,2);assert.deepEqual(sent[0].players,['a','b']);assert.deepEqual(sent[0].targets,['b']);assert(!JSON.stringify(sent).includes('actions'));listener();await monitor.queue;assert.equal(sent.length,1);
- revision++;active='a';listener();paused=true;listener();await monitor.queue;assert.deepEqual(sent[1].targets,['a']);assert.equal(sent[2].state,'paused');assert.deepEqual(sent[2].targets,[]);monitor.close();assert.equal(closed,1);assert.equal(listener,null);
+ revision++;active=0;listener();paused=true;listener();await monitor.queue;assert.deepEqual(sent[1].targets,['a']);assert.equal(sent[2].state,'paused');assert.deepEqual(sent[2].targets,[]);const notify=listener;monitor.close();assert.equal(closed,1);assert.equal(listener,null);notify();await monitor.queue;assert.equal(sent.length,3,'closed activity binding cannot send again');
 });
 
 

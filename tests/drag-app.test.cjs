@@ -32,12 +32,10 @@ function fixture({longHand = false, empty = false} = {}) {
 }
 
 async function state(page) {
-  return page.evaluate(() => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).export().states.at(-1));
+  return page.evaluate(() => PlayroomAppBridge.saveLibrary.current().session.export().states.at(-1));
 }
 async function expectMove(page, expected) {
-  await page.waitForFunction(n => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === n, expected);
+  await page.waitForFunction(n => PlayroomAppBridge.saveLibrary.current().session.current.move === n, expected);
   await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') !== 'true');
   assert.equal((await state(page)).move, expected);
 }
