@@ -313,7 +313,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       };
       const from=refs(initial),to=refs(final);
       const independent=initial&&final&&!final.plan&&!item.reveal&&!item.diceRoll&&
-        !this.routePoints?.size&&item.snapshot&&
+        (!this.routePoints?.size||item.presentation?.sequence?.arrival==='after-departures')&&item.snapshot&&
         this.renderField&&this.motion?.withFieldTargets;
       if(!independent&&!item.scene)this.releaseField(item);
       if(!item.diceRoll){this.movedBoundaries??=new WeakSet();this.movedBoundaries.add(boundary);this.motion?.releaseStage?.();}

@@ -1,7 +1,7 @@
 /* In-app message banners. Web Push and room transport are separate concerns. */
 (function(root){
  'use strict';
- let account,service,store,identity='',cursor=null,groupCursor=null,timer=null,flight=null,generation=0,dismissTimer=null;
+ let account,service,store,identity='',cursor=null,groupCursor=null,timer=null,flight=null,generation=0,dismissTimer=null,lastRead=null;
  let friendTracker=null;const forcedFriends=new Set();
  const invitationChecks=new Map();
  const groupEpochs=new Map(),currentGroup=(id,epochs)=>(epochs.get(id)||0)===(groupEpochs.get(id)||0);
@@ -15,6 +15,7 @@
  function valid(){const state=account.snapshot();return state.kind==='account'&&!state.recovery&&!document.hidden;}
  async function poll(){
   if(!valid())return;if(flight)return flight;
+  lastRead=null;
   const ticket=generation,user=account.snapshot().id,roomId=root.PlayroomCloudNetwork?.roomId?.(),membership=new Map(groupEpochs);
   const run=(async()=>{
    let presentationChanged=false;
@@ -30,6 +31,9 @@
     for(const item of groupResult.items||[]){if(!currentGroup(item.group?.id,membership))continue;root.PlayroomUIFeedback?.emit(item.invitationState?'invitation':root.PlayroomQuickReactions?.valid(item.body)?'reaction':'message',{id:'group:'+item.id,quiet:item.group?.id===root.PlayroomRoomChatUI.currentGroupId()||!!item.invitationState&&item.invitationState!=='active'});const inList=root.PlayroomReactionUI.listMessage('group:'+item.group?.id,item.body);if(inList){presentationChanged=pending.delete(item.person.userId)||presentationChanged;continue;}if(item.invitationState&&item.invitationState!=='active')continue;if(item.group?.id===root.PlayroomRoomChatUI.currentGroupId())continue;pending.delete(item.person.userId);pending.set(item.person.userId,{...item,expiresAt:Date.now()+6000});while(pending.size>3)pending.delete(pending.keys().next().value);}}
     if(pending.size||presentationChanged)render();
     await refreshInvitations(ticket);
+    // Only lifecycle wake bursts may reuse this timestamp, never message data.
+    // Explicit reads, reconnects and changed room ownership still fetch fresh.
+    if(ticket===generation&&[counts,direct,groups].every(result=>result.status==='fulfilled'))lastRead={at:Date.now(),generation:ticket,roomId:roomId||null};
 
    }catch(_){/* Background failure keeps the last cursor; the next poll retries. */}
   })();flight=run;try{await run;}finally{if(flight===run)flight=null;}
@@ -40,8 +44,8 @@
   await Promise.allSettled(candidates.map(async item=>{const check={count:cache.count(item.key).invites||0,at:now},owner=cache.get(item.key);invitationChecks.set(item.key,check);try{const group=item.key.startsWith('group:'),id=item.key.slice(item.key.indexOf(':')+1),result=await service.call(group?'group-read':'chat',{[group?'groupId':'userId']:id,after:item.after,known:item.known});if(ticket===generation&&cache.get(item.key)===owner)cache.refreshInvitations(item.key,result.messages||[],{historyAfter:result.historyAfter});}catch{if(ticket===generation&&cache.get(item.key)===owner)invitationChecks.set(item.key,{...check,failed:true});}}));
  }
  function schedule(){clearTimeout(timer);timer=null;if(!valid())return;timer=setTimeout(async()=>{timer=null;await poll();schedule();},5000);}
- function sync(){const state=account.snapshot(),key=state.kind+':'+state.id+':'+state.recovery;if(key!==identity){identity=key;generation++;flight=null;forcedFriends.clear();friendTracker=state.kind==='account'?new root.PlayroomFriendNotifications({states:store.readFriends?.(state.id)||{},save:value=>store.writeFriends?.(state.id,value)}):null;cursor=state.kind==='account'?store.read(state.id):null;groupCursor=state.kind==='account'?store.read(state.id+':groups'):null;clear();invitationChecks.clear();groupEpochs.clear();void poll();}if(!timer)schedule();}
- function wake(){if(valid())void poll();schedule();}
+ function sync(){const state=account.snapshot(),key=state.kind+':'+state.id+':'+state.recovery;if(key!==identity){identity=key;generation++;flight=null;lastRead=null;forcedFriends.clear();friendTracker=state.kind==='account'?new root.PlayroomFriendNotifications({states:store.readFriends?.(state.id)||{},save:value=>store.writeFriends?.(state.id,value)}):null;cursor=state.kind==='account'?store.read(state.id):null;groupCursor=state.kind==='account'?store.read(state.id+':groups'):null;clear();invitationChecks.clear();groupEpochs.clear();void poll();}if(!timer)schedule();}
+ function wake(event){const roomId=root.PlayroomCloudNetwork?.roomId?.()||null;if(valid()&&(event?.type==='online'||!lastRead||lastRead.generation!==generation||lastRead.roomId!==roomId||Date.now()-lastRead.at>=1000))void poll();schedule();}
  function init(ports){({account,service,store}=ports);account.subscribe(sync);sync();document.addEventListener('visibilitychange',wake);root.addEventListener('focus',wake);root.addEventListener('pageshow',wake);root.addEventListener('online',wake);}
  document.addEventListener('click',event=>{
   if(event.target.closest('[data-ui-surface-exit]'))return;
@@ -52,6 +56,6 @@
  root.addEventListener('playroom:group-left',event=>{const id=event.detail?.groupId;if(typeof id!=='string'||!id)return;groupEpochs.set(id,(groupEpochs.get(id)||0)+1);const key='group:'+id;invitationChecks.delete(key);if(pending.delete(key))render();});
  root.addEventListener('playroom:group-chat-opened',event=>{if(pending.delete('group:'+event.detail.groupId))render();});
  root.addEventListener('playroom:chat-opened',event=>{if(pending.delete(event.detail.userId))render();});
- root.addEventListener('pagehide',()=>{generation++;flight=null;clearTimeout(timer);timer=null;clear();});
+ root.addEventListener('pagehide',()=>{generation++;flight=null;lastRead=null;clearTimeout(timer);timer=null;clear();});
  root.PlayroomChatNotifications=Object.freeze({friendEvent:event=>{forcedFriends.add(event);void poll();},init,poll});
 })(globalThis);

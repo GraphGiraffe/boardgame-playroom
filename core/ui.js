@@ -298,6 +298,10 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const anchor=point=>point&&typeof point==='object'&&typeof point.anchor==='string'&&/^[\w-]{1,80}$/.test(point.anchor)&&(point.label===undefined||typeof point.label==='string');
     if(!value||typeof value!=='object'||typeof value.trigger!=='string'||!value.entity||typeof value.entity!=='object'||!Number.isInteger(value.player)||value.player<0||typeof value.counter!=='string'||!anchor(value.origin)||!Array.isArray(value.steps)||value.steps.length>100||!value.steps.every(anchor)||(value.jump!==undefined&&!anchor(value.jump)))throw Error('Invalid motion sequence');
     GameComponents.entityKey(value.entity);
+    if(value.departures!==undefined||value.arrival==='after-departures'){
+      const ids=Array.isArray(value.departures)?value.departures.map(GameComponents.entityKey):[];
+      if(value.arrival!=='after-departures'||ids.length<1||ids.length>32||new Set(ids).size!==ids.length||ids.includes(GameComponents.entityKey(value.entity)))throw Error('Invalid motion departures');
+    }
     return ` data-motion-sequence="${esc(JSON.stringify(value))}"`;
   }
   // Public Table commands are supplied by the authority/model projection.

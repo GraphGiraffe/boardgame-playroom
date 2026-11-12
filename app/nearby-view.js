@@ -47,13 +47,15 @@
    for(const button of host.querySelectorAll('#net-host-acoustic-send,#net-client-acoustic-send'))button.disabled=!state.soundOut;
    for(const button of host.querySelectorAll('#net-host-acoustic-listen,#net-client-acoustic-listen'))button.disabled=!state.soundIn;
   }
-  function select(nextMode=mode,nextMethod=method){if(!allowed(nextMode)||!['qr','sound','text'].includes(nextMethod)||disposed||!valid())return;if(nextMode!==mode||nextMethod!==method){cancelIO();screen.dataset.nearbyRevision=String(++revision);}mode=nextMode;method=nextMethod;update();}
+  function cancel(){cancelIO();screen.dataset.nearbyRevision=String(++revision);}
+  function select(nextMode=mode,nextMethod=method){if(!allowed(nextMode)||!['qr','sound','text'].includes(nextMethod)||disposed||!valid())return;if(nextMode!==mode||nextMethod!==method){cancel();}mode=nextMode;method=nextMethod;update();}
   host.addEventListener('click',event=>{const direction=event.target.closest('[data-nearby-direction]'),tab=event.target.closest('button[data-nearby-method]');if(direction?.tagName==='BUTTON'){event.preventDefault();select(direction.dataset.nearbyDirection);return;}if(tab){event.preventDefault();select(mode,tab.dataset.nearbyMethod);}},{signal:events.signal});
   host.addEventListener('keydown',event=>{const tab=event.target.closest('[role=tab]');if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;const items=[...tab.parentElement.querySelectorAll('[role=tab]:not(:disabled)')];let index=items.indexOf(tab);index=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowRight'?1:-1)+items.length)%items.length;event.preventDefault();items[index].click();items[index].focus({preventScroll:true});},{signal:events.signal});
   host.addEventListener('input',()=>queueMicrotask(update),{signal:events.signal});host.addEventListener('change',()=>queueMicrotask(update),{signal:events.signal});
   const observer=new MutationObserver(()=>update());for(const select of screen.querySelectorAll('[data-pairing-network] select'))observer.observe(select,{childList:true});
-  let active=isActive();const stackObserver=new MutationObserver(()=>{const next=isActive();if(active&&!next)cancelIO();active=next;});const modalHost=document.getElementById('modal-root');if(modalHost)stackObserver.observe(modalHost,{childList:true});
-  const api={select,update,dispose(){if(disposed)return;disposed=true;events.abort();observer.disconnect();stackObserver.disconnect();cancelIO();instances.delete(host);}};instances.set(host,api);update();return api.dispose;
+  let active=isActive();const stackObserver=new MutationObserver(()=>{const next=isActive();if(active&&!next)cancel();active=next;});const modalHost=document.getElementById('modal-root');if(modalHost)stackObserver.observe(modalHost,{childList:true,subtree:true,attributes:true,attributeFilter:['data-surface-state','hidden','inert']});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')cancel();},{signal:events.signal});
+  const api={select,update,dispose(){if(disposed)return;disposed=true;events.abort();observer.disconnect();stackObserver.disconnect();cancel();instances.delete(host);}};instances.set(host,api);update();return api.dispose;
  }
  function select(host,mode,method){instances.get(host)?.select(mode,method);}
  root.PlayroomNearbyView=Object.freeze({markup,bind,select});

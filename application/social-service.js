@@ -16,9 +16,15 @@
    const ticket=this.generation,key=this.key();this.busy=true;this.error=null;this.emit();
    const current=()=>ticket===this.generation&&key===this.key();
    try{
-    const result=await this.remote.call(action,data,{userId:s.id});
+    const result=await this.remote.call(action,action==='search'?{...data,format:'page-v2'}:data,{userId:s.id});
     if(!current())throw fail('account-changed');
-    if(action==='search')return result;
+    if(action==='search'){
+     const legacy=Array.isArray(result),items=legacy?result:result?.items,query=String(data.username||'').trim().replace(/^@+/,'').toLowerCase();
+     if(!Array.isArray(items)||!legacy&&items.length>30||!legacy&&result.next!=null&&typeof result.next!=='string')throw fail('request');
+     const people=items.slice(0,30).filter(p=>p&&typeof p.id==='string'&&typeof p.username==='string'&&typeof p.nickname==='string'&&p.id!==s.id).map(({id,username,nickname})=>({id,username,nickname}));
+     people.sort((a,b)=>Number(b.username.toLowerCase()===query)-Number(a.username.toLowerCase()===query)||a.username.toLowerCase().localeCompare(b.username.toLowerCase()));
+     return {items:people,next:legacy?null:result.next||null,legacy};
+    }
     if(action==='room')this.room=result;
     else {const next=action==='list'?result:await this.remote.call('list',{}, {userId:s.id});if(!current())throw fail('account-changed');this.data=next;this.room=null;}
     return result;

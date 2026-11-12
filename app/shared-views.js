@@ -23,7 +23,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     root.PlayroomPublicSequence?.useExecutor(app,flow.executor);
     root.PlayroomPublicSequence?.setBaseline(app,client.snapshot?.state.scene?.plan?.id);
     let animationTicket=0,transitionActive=false,lastPresented=-1,lastReviewed=null;
-    let presentedWindow=null,renderedFrame=null,renderedLive=null,renderedDisplay=null,renderedInteractions=null;
+    let presentedWindow=null,renderedFrame=null,renderedLive=null,renderedDisplay=null,renderedInteractions=null,renderedFieldScene=null,renderedDisplayScene=null,renderedTransitionActive=null;
     const controller=new root.PlayroomGameScreenController({client,present:presentFrame,visible:()=>!document.hidden,report:error=>toast(globalThis.PlayroomMessages.error(error)),changed(){if(destroyed)return;settledRender();const status=controller.shown?.state.status||liveStatus;if(liveStatus==='playing'&&status==='finished')result(true);liveStatus=status;}});
     const stopMotion=()=>{feedback.clear();animationTicket++;transitionActive=false;controller.cancel();flow.cancel();};
     const audio=root.PlayroomAppBridge?.audio;audio?.registerPack?.(pack.manifest.id,pack.sounds);
@@ -65,7 +65,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // stays on its presentation boundary until the queued transition completes.
       feedback.renderField=scene=>V.renderField(s.state,s.viewer,scene,{renderOwner:controller,surface:actual,viewState,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer))});
       const regionSink=new Map();
-      const scene=V.render(s.state,s.viewer,commands,{renderOwner:controller,regionSink,displayScene:feedback.displayScene,fieldScene:feedback.fieldScene,selected,viewState,replay:historyOpen||readOnly,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer)),surface:actual,quickPlay:flow.quickPlay});
+      const displayScene=feedback.displayScene,fieldScene=feedback.fieldScene;
+      const scene=V.render(s.state,s.viewer,commands,{renderOwner:controller,regionSink,displayScene,fieldScene,selected,viewState,replay:historyOpen||readOnly,presentationTurn:transitionActive?presentationTurn:null,preferences:controller.preferences(H.viewPreferences(s.game,s.viewer)),surface:actual,quickPlay:flow.quickPlay});
       const historyHTML=historyOpen?GameScreen.historyMarkup({minimum:controller.history.minimum,index:controller.history.requested??controller.history.index??historyCount(),count:historyCount(),caption:eventText(s),playing:!!replayTimer,readOnly,newFrom:controller.history.boundary,turnStarts:live.state.timeline?.starts||[],roundStarts:(live.state.scene?.round?.starts||[]).map((revision,index)=>({revision,number:index+1}))}):'';
       const markup=GameScreen.render({
         fragmentSink:regionSink,layoutId:s.sessionId,fieldToggle:hasTable?{hidden:fieldHidden}:null,network:true,revision:s.revision,gameName:historyOpen||readOnly?'История партии':pack.manifest.name,subtitle:'',
@@ -86,6 +87,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       root.PlayroomPublicSequence?.useExecutor(app,flow.executor);if(!keptLayout)GameScreen.layoutScene(app);
       const shell=app.querySelector('.network-game');if(shell)shell.dataset.mode=historyOpen||readOnly?'history':'live';
       renderedRevision=s.revision;feedback.refresh();playerTargets?.refresh();
+      renderedFieldScene=fieldScene;renderedDisplayScene=displayScene;renderedTransitionActive=transitionActive;
       renderedFrame=source;renderedLive=live;renderedDisplay=s;renderedInteractions=source===live&&connected&&!readOnly&&!historyOpen&&!dialogOpen&&!live.paused;
       completeRender(s,live);
     }
@@ -93,7 +95,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     function settledRender(){
       if(destroyed)return;
       const frame=historyOpen&&controller.history.frame?controller.history.frame:controller.shown||client.snapshot;
-      if(renderedFrame===frame&&renderedLive===client.snapshot&&renderedDisplay&&renderedInteractions===(frame===client.snapshot&&connected&&!readOnly&&!historyOpen&&!dialogOpen&&!client.snapshot.paused))completeRender(renderedDisplay,client.snapshot);
+      // A checkpoint may have painted an inert field for the same revision.
+      // Its release and transition chrome must participate in cache identity.
+      if(renderedFrame===frame&&renderedLive===client.snapshot&&renderedDisplay&&renderedFieldScene===feedback.fieldScene&&renderedDisplayScene===feedback.displayScene&&renderedTransitionActive===transitionActive&&renderedInteractions===(frame===client.snapshot&&connected&&!readOnly&&!historyOpen&&!dialogOpen&&!client.snapshot.paused))completeRender(renderedDisplay,client.snapshot);
       else render();
     }
     function completeRender(s,live){

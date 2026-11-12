@@ -8,6 +8,20 @@
  let service,dialog=null,detailFrame=null,detailOpening=0,busy=false,message='',refreshJob=null,autoJob=null,pendingEntry=null;const pending=new Set(),localSizes=new Map();
  const savePlural=new Intl.PluralRules('ru'),saveCount=count=>count+' '+({one:'сохранение',few:'сохранения',many:'сохранений',other:'сохранения'}[savePlural.select(count)]);
  const size=value=>root.PlayroomStorageUsage?.format(value)||((value||0)/1048576).toFixed(2)+' МБ';
+ // A cloud upload timestamp is not the time the game was saved.
+ function savedTime(entry){
+  for(const value of [entry.summary?.updatedAt,entry.summary?.createdAt,entry.updatedAt,entry.createdAt,entry.updated_at,entry.created_at]){
+   const time=typeof value==='number'?value:typeof value==='string'?Date.parse(value):NaN;
+   if(Number.isFinite(time)&&time>0&&time<=8640000000000000)return time;
+  }
+  return 0;
+ }
+ function newestSaves(entries){return [...entries].sort((a,b)=>savedTime(b)-savedTime(a)||String(a.key||a.id||'').localeCompare(String(b.key||b.id||'')));}
+ function savedDate(entry){const time=savedTime(entry);return time?new Date(time).toLocaleString('ru-RU'):'Дата неизвестна';}
+ function saveLabel(entry,bytes){
+  const summary=entry.summary||entry,time=savedTime(entry),name=B().meta(summary.game)?.name||summary.game||'Партия',version=summary.packVersion?'v'+summary.packVersion:'Версия неизвестна';
+  return `<span class="data-save-label"><span class="data-save-title"><strong>${H().esc(name)}</strong><small>${Number.isFinite(bytes)?H().esc(size(bytes)):'Измеряем размер файла…'}</small></span><small class="data-save-meta"><span>${H().esc(version)}</span> · ${time?`<time datetime="${new Date(time).toISOString()}">${H().esc(savedDate(entry))}</time>`:'Дата неизвестна'}</small></span>`;
+ }
  function settings(){return `<label class="switch ui-switch"><span title="Отправлять по завершении партии и при выходе в главное меню">Автосохранение в облако</span><input type="checkbox" data-cloud-default ${service?.enabled?'checked':''} ${!service?.user?'disabled':''}></label>`;}
  function quotaValue(){return (service?.user&&(service.loaded||service.cachedUsage)?root.PlayroomStorageUsage.number(service.used/1048576):'—')+'/10 МБ';}
  function quotaLabel(){return H().icon('cloud')+'<b>'+H().esc(quotaValue())+'</b>';}
@@ -91,7 +105,7 @@
   if(!service?.user)return [];
   const linked=new Set(keys.map(key=>service.bindings[key]?.id));
   // Missing summaries stay available among active saves; invalid archives remain recoverable.
-  return service.entries.filter(entry=>!entry.deleted&&!linked.has(entry.id)&&(typeof finished!=='boolean'||!!entry.summary?.finished===finished));
+  return newestSaves(service.entries.filter(entry=>!entry.deleted&&!linked.has(entry.id)&&(typeof finished!=='boolean'||!!entry.summary?.finished===finished)));
  }
  function remoteCount(keys,options){return remoteEntries(keys,options).length;}
  async function removeAll(){
@@ -101,7 +115,7 @@
   try{const list=await entries();service.guard(ticket);await service.removeAll(list.map(entry=>entry.key));for(const entry of list)pending.delete(entry.key);finishOperation(origin,ticket);return true;}
   finally{busy=false;update();}
  }
- function remoteMarkup(keys,options){return remoteEntries(keys,options).map(e=>{const s=e.summary||{};return H().sessionCard({className:'saved-game cloud-only-game',attrs:`data-cloud-id="${H().esc(e.id)}"`,gameName:B().meta(s.game)?.name||s.game||'Партия',mode:'hotseat',status:H().icon('cloud-check'),badgeTitle:'В облаке',roomName:s.name||'',progress:'В облаке · '+size(e.bytes),actions:H().iconButton(`data-cloud-fetch="${H().esc(e.id)}"`,'Получить из облака','down'),details:`<p>${H().esc(s.packVersion||'')} · ${H().esc(new Date(e.updated_at).toLocaleString('ru-RU'))}</p>`,bottomAction:H().iconButton(`data-cloud-remove-remote="${H().esc(e.id)}"`,'Удалить из облака','trash',{className:'ui-action-danger'})});}).join('');}
+ function remoteMarkup(keys,options){return remoteEntries(keys,options).map(e=>{const s=e.summary||{};return H().sessionCard({className:'saved-game cloud-only-game',attrs:`data-cloud-id="${H().esc(e.id)}"`,gameName:B().meta(s.game)?.name||s.game||'Партия',mode:'hotseat',status:H().icon('cloud-check'),badgeTitle:'В облаке',roomName:s.name||'',progress:'В облаке · '+size(e.bytes),actions:H().iconButton(`data-cloud-fetch="${H().esc(e.id)}"`,'Получить из облака','down'),details:`<p>${H().esc(s.packVersion||'')} · ${H().esc(savedDate(e))}</p>`,bottomAction:H().iconButton(`data-cloud-remove-remote="${H().esc(e.id)}"`,'Удалить из облака','trash',{className:'ui-action-danger'})});}).join('');}
  // Each data screen owns its connected frame. Background updates may patch it,
  // but an old read must never target a later screen or another account's dialog.
  let dataTab='device',dataFrame=null,deviceEntries=[],dataLoading=false,dataError='',dataOpening=0,usage=null,usageLoading=false,usageError=false,usageDirty=false,deviceRead=0;
@@ -115,8 +129,8 @@
  }
  function localKeyFor(remoteId){return deviceEntries.find(entry=>service?.bindings[entry.key]?.id===remoteId)?.key;}
  function exportRows(){return deviceEntries.map(entry=>{const remote=service?.remoteFor(entry.key),linked=remote&&!remote.deleted,bytes=localSizes.get(entry.key),blocked=entry.invalid||entry.missingPack;
-  return `<div class="menu-row" data-entity="${H().esc(entry.key)}"><span><strong>${H().esc(B().meta(entry.game)?.name||entry.game||'Партия')}</strong><small>${H().esc(entry.name||entry.roomName||'Партия')} · ${Number.isFinite(bytes)?H().esc(size(bytes)):'Измеряем размер файла…'}</small></span><span class="data-entry-actions">${service?.user?H().iconButton(`data-cloud-transfer="${H().esc(entry.key)}"`,linked?'Синхронизировать':'Выгрузить в облако',linked?'cloud-sync':'cloud-upload',{disabled:busy||blocked}):''}${H().iconButton(`data-save-export="${H().esc(entry.exportId)}" ${entry.network?'data-save-network="true"':''}`,'Экспорт в файл','file-export',{disabled:blocked})}${H().iconButton(`data-device-remove="${H().esc(entry.key)}"`,'Удалить с устройства','trash',{disabled:busy,className:'ui-action-danger'})}</span></div>`;}).join('');}
- function cloudRows(){return remoteEntries([]).map(entry=>{const key=localKeyFor(entry.id);return `<div class="menu-row" data-entity="cloud:${H().esc(entry.id)}"><span><strong>${H().esc(B().meta(entry.summary?.game)?.name||entry.summary?.game||'Партия')}</strong><small>${H().esc(entry.summary?.name||'Партия')} · ${H().esc(size(entry.bytes))}</small></span><span class="data-entry-actions">${H().iconButton(key?`data-cloud-transfer="${H().esc(key)}"`:`data-cloud-fetch="${H().esc(entry.id)}"`,key?'Синхронизировать':'Получить на устройство',key?'cloud-sync':'cloud-download',{disabled:busy})}${H().iconButton(`data-cloud-remove-remote="${H().esc(entry.id)}"`,'Удалить из облака','trash',{disabled:busy,className:'ui-action-danger'})}</span></div>`;}).join('');}
+  return `<div class="menu-row" data-entity="${H().esc(entry.key)}">${saveLabel(entry,bytes)}<span class="data-entry-actions">${service?.user?H().iconButton(`data-cloud-transfer="${H().esc(entry.key)}"`,linked?'Синхронизировать':'Выгрузить в облако',linked?'cloud-sync':'cloud-upload',{disabled:busy||blocked}):''}${H().iconButton(`data-save-export="${H().esc(entry.exportId)}" ${entry.network?'data-save-network="true"':''}`,'Экспорт в файл','file-export',{disabled:blocked})}${H().iconButton(`data-device-remove="${H().esc(entry.key)}"`,'Удалить с устройства','trash',{disabled:busy,className:'ui-action-danger'})}</span></div>`;}).join('');}
+ function cloudRows(){return remoteEntries([]).map(entry=>{const key=localKeyFor(entry.id);return `<div class="menu-row" data-entity="cloud:${H().esc(entry.id)}">${saveLabel(entry,entry.bytes)}<span class="data-entry-actions">${H().iconButton(key?`data-cloud-transfer="${H().esc(key)}"`:`data-cloud-fetch="${H().esc(entry.id)}"`,key?'Синхронизировать':'Получить на устройство',key?'cloud-sync':'cloud-download',{disabled:busy})}${H().iconButton(`data-cloud-remove-remote="${H().esc(entry.id)}"`,'Удалить из облака','trash',{disabled:busy,className:'ui-action-danger'})}</span></div>`;}).join('');}
  const sizeStamps=new Map();
  async function measureFiles(ticket,read){for(const entry of deviceEntries){
   if(ticket!==dataOpening||read!==deviceRead||!dataNode())return;const stamp=JSON.stringify([entry.updatedAt,entry.move,entry.revision,entry.packVersion]);if(sizeStamps.get(entry.key)===stamp&&localSizes.has(entry.key))continue;
@@ -148,7 +162,7 @@
  }
  async function readDeviceEntries(ticket=dataOpening){
   const read=++deviceRead;
-  try{const local=B().saveLibrary.list().map(e=>({...e,key:'local:'+e.id,exportId:e.id})),network=await root.PlayroomNetworkLibrary.list();if(ticket!==dataOpening||read!==deviceRead||!dataNode())return;dataError='';deviceEntries=[...local,...network.map(e=>({...e,network:true,exportId:e.role==='client'?'client:'+e.id:e.sessionId,key:'network:'+(e.role==='client'?'client:'+e.id:e.sessionId)}))];}
+  try{const local=B().saveLibrary.list().map(e=>({...e,key:'local:'+e.id,exportId:e.id})),network=await root.PlayroomNetworkLibrary.list();if(ticket!==dataOpening||read!==deviceRead||!dataNode())return;dataError='';deviceEntries=newestSaves([...local,...network.map(e=>({...e,network:true,exportId:e.role==='client'?'client:'+e.id:e.sessionId,key:'network:'+(e.role==='client'?'client:'+e.id:e.sessionId)}))]);}
   catch(_){if(ticket===dataOpening&&read===deviceRead)dataError='Не удалось прочитать сохранения. Попробуйте открыть раздел ещё раз.';}
   finally{if(ticket===dataOpening&&read===deviceRead){dataLoading=false;renderData();void measureFiles(ticket,read);}}
  }

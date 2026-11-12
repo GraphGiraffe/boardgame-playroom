@@ -35,7 +35,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
-  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1','standard-parameter-ui-v1']);
+  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1','standard-parameter-ui-v1','arrival-departures-v1','concurrent-reactions-v1']);
   function validateParameterPreviews(m){
     const invalid=()=>{throw Object.assign(Error(globalThis.PlayroomMessages.text('ui.packs.aa1f11edec45')),{code:'PACK_PARAMETER_PREVIEW_INVALID'});};
     const settings=m.settings===undefined?[]:m.settings,preset=m.presetSetting===undefined?{}:m.presetSetting,quantities=['cards','dice','health','lives'];

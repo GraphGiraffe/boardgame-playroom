@@ -616,7 +616,19 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
  const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
- for(const bundle of result.bundles){const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);assert.deepEqual(catalog[id].settings,bundle.manifest.settings);const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings);assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);}
+ const Rooms=require('../application/rooms.js');
+ for(const bundle of result.bundles){
+  const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);
+  assert.deepEqual(catalog[id].settings,bundle.manifest.settings.map(Rooms.standardRule),'installed public standard wording is application-owned');
+  for(const raw of bundle.manifest.settings){
+   const installed=catalog[id].settings.find(field=>field.key===raw.key);assert.equal(installed.default,raw.default);assert.deepEqual(installed.options?.map(o=>o.value),raw.options?.map(o=>o.value),'wording normalization preserves supported option IDs');
+   if(Object.hasOwn(Rooms.STANDARD_RULE_VALUES,raw.key)){
+    const prefix='rules-help.standard.'+raw.key;assert.equal(installed.label,globalThis.PlayroomMessages.text(prefix+'.label'));assert.equal(installed.help,globalThis.PlayroomMessages.text(prefix+'.help'));
+    for(const option of installed.options)assert.equal(option.description,globalThis.PlayroomMessages.text(prefix+'.'+option.value+'.description'));
+   }
+  }
+  const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings,'immutable export preserves authored metadata');assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);
+ }
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),['mage-brawl','ludo','spider','durak','pexeso','snakes','yatzy','oldmaid','domino','checkers'].includes(id),'author-supplied component illustrations require the feature');
  const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
  const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);

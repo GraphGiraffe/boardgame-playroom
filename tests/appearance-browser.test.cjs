@@ -42,15 +42,18 @@ function contrast(foreground,background) {
   const a=luminance(foreground),b=luminance(background);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
 }
 
-test('settings toggle applies immediately, stays OLED black, remembers mode and has no theme dialog',{timeout:45000},async()=>fixture(async({page})=>{
- assert.equal(await page.locator('[data-appearance-editor],[data-appearance-picker],.hub-theme-tabs').count(),0);
- await page.locator('#app [data-command=settings]').first().click();assert.equal(await page.locator('[data-theme-toggle] [data-ui-icon=sun]').count(),1);await page.locator('[data-theme-toggle]').click();
- assert.equal(await page.locator('[data-theme-toggle] [data-ui-icon=moon]').count(),1);assert.equal(await page.locator('.appearance-editor,.appearance-picker').count(),0);
- const colors=await page.evaluate(()=>({html:getComputedStyle(document.documentElement).backgroundColor,body:getComputedStyle(document.body).backgroundColor,meta:document.querySelector('meta[name=color-scheme]').content}));assert.deepEqual(colors,{html:'rgb(0, 0, 0)',body:'rgb(0, 0, 0)',meta:'dark'});
- assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');await page.screenshot({path:path.join(captures,'settings-dark-390.png')});await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');
- for(const width of [320,390]){await page.setViewportSize({width,height:740});const size=await page.locator('.side-nav').evaluate(e=>({width:e.clientWidth,tabs:e.querySelector('.hub-page-tabs').getBoundingClientRect().width}));assert(Math.abs(size.width-size.tabs)<=2);assert.equal(await page.locator('.hub-page-tabs>.nav-item').count(),2);await page.screenshot({path:path.join(captures,'hub-dark-'+width+'.png')});}
- await choose(page,'light');assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');
-}));
+test('settings quick theme toggle uses canonical action from hub and live game without changing the session',{timeout:45000},async()=>fixture(async({page})=>{
+ const active=()=>page.locator('#modal-root>[data-surface-state=active]');
+ await page.locator('[data-hub-page=profile]').click();await page.locator('#hub-profile-page [data-command=settings]').click();
+ const shortcuts=()=>active().locator('.settings-shortcuts'),theme=()=>shortcuts().locator('[data-theme-toggle]');
+ assert.equal(await theme().count(),1);assert.equal(await theme().getAttribute('aria-pressed'),'false');assert.equal(await theme().getAttribute('aria-label'),'Включить тёмную тему');
+ const retained=await shortcuts().locator('[data-quick-shortcut]').count();assert.equal(await shortcuts().locator('button').count(),retained+1,'theme is appended to existing context controls');
+ await theme().tap();assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'dark');assert.equal(await theme().getAttribute('aria-label'),'Включить светлую тему');assert.equal(await theme().getAttribute('aria-pressed'),'true');assert.equal(await shortcuts().locator('[data-quick-shortcut]').count(),retained);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'dark');
+ await page.screenshot({path:path.join(captures,'settings-shortcuts-hub-dark.png')});await active().locator('[data-command=close-modal]').click();await page.locator('[data-hub-page=games]').click();await page.locator('[data-start=klondike]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('[data-game-menu]').waitFor();
+ await page.evaluate(()=>{window.themeLiveBoard=document.querySelector('#app .game-scene');if(!themeLiveBoard)throw Error('actual live board required');window.themeLiveState=JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export());});
+ await page.locator('[data-game-menu]').click();await active().locator('[data-game-menu-action][data-command=settings]').click();assert.equal(await theme().count(),1);assert(await shortcuts().locator('[data-quick-shortcut]').count()>0,'game shortcuts retained beside theme');assert.equal(await theme().getAttribute('aria-pressed'),'true');await theme().tap();assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.appearance.v1')).activeId),'light');await page.screenshot({path:path.join(captures,'settings-shortcuts-game-light.png')});
+ await active().locator('[data-command=close-modal]').click();assert(await page.evaluate(()=>themeLiveBoard===document.querySelector('#app .game-scene')&&themeLiveState===JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export())),'theme/return preserves actual live board and game state');assert(await page.locator('[data-game-menu]').isVisible());await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.appearanceMode==='light'&&!!globalThis.PlayroomAppearanceUI);assert.equal(await page.locator('html').getAttribute('data-appearance-mode'),'light');
+},{mobile:true,viewport:{width:390,height:844}}));
 
 test('switching preserves local table, scrolling, history slider and an already open settings dialog',{timeout:60000},async()=>fixture(async({page})=>{
   await page.evaluate(()=>{

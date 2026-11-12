@@ -279,7 +279,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return W.serve(peer.channel,served,{peer});
   }
   let nearbyView=null,nearbyAttempt=0;
-  function cancelNearbyIO(){stopHostAudio();stopClientAudio();for(const [id,controller]of pendingAudio)if(/^net-(host|client)-acoustic/.test(id)){controller.abort();pendingAudio.delete(id);}}
+  function cancelNearbyIO(){stopHostAudio();stopClientAudio();for(const [id,controller]of pendingAudio)if(/^net-(host|client)-acoustic/.test(id)){controller.abort();pendingAudio.delete(id);}for(const line of nearbyView?.host?.querySelectorAll('.pairing-progress')||[])line.remove();}
   function pairingCurrent(method){return !!nearbyView?.host?.isConnected&&(!nearbyView.frame||nearbyView.frame.state==='active')&&!nearbyView.disposed&&(!method||nearbyView.host.querySelector('[data-nearby-screen]')?.dataset.nearbyMethod===method);}
   function showNearby(options){
     const b=bridge(),previous=nearbyView,view={host:null,frame:null,disposed:false,cleanup:null,role:options.role},roomId=options.role==='host'?b.room()?.id:null;

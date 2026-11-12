@@ -288,6 +288,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   async function listen(onPacket,{signal}={}){
     if(typeof onPacket!=='function')throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.ae2b178ec705"));
     const issue=microphoneIssue();if(issue)throw Error(issue);
+    signal?.throwIfAborted();
     const context=audioContext(),loading=moduleInstance();
     let gg=null;
     let instance=null,stream=null,source=null,processor=null,closed=false;
@@ -298,12 +299,12 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(instance!==null)gg.free(instance);
       context.close().catch(()=>{});
     };
+    signal?.addEventListener('abort',stop,{once:true});
     try{
       await context.resume();gg=await loading;signal?.throwIfAborted();
       try{stream=await root.navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});}catch(error){throw explainMicrophoneError(error);}
       if(signal?.aborted){stream.getTracks().forEach(track=>track.stop());signal.throwIfAborted();}
       instance=setup(gg,context);
-      signal?.addEventListener('abort',stop,{once:true});
       if(!context.createScriptProcessor)throw Error(globalThis.PlayroomMessages.text("ui.acoustic-pairing.9ac4cb00c107"));
       source=context.createMediaStreamSource(stream);processor=context.createScriptProcessor(1024,1,1);
       processor.onaudioprocess=event=>{

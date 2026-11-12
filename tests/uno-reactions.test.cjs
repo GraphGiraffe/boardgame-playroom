@@ -164,12 +164,42 @@ test('disposed authority rejects late presentation readiness without reviving re
  }finally{authority.dispose();}
 });
 
-test('online grace starts after only the owning viewer finishes; early accusation is neutral and advance waits one second',()=>{
+test('generic protected advance keeps its deadline and repeated scheduling commits only once',()=>{
+  E.register({id:'protected-advance-fixture',name:'Protected advance',min:2,max:2,presets:[{id:'standard',label:'Standard'}],rules:[],
+    create:s=>{s.data={};},legal:()=>[{type:'next',label:'Next'}],
+    reactionWindows:s=>s.move===0?[{id:'protected-first',owner:0,revision:0,humanMs:10,botMs:30,fallbackMs:100}]:[],
+    reactionControl:()=>({kind:'advance'}),apply:s=>{s.turn=1;}});
+  const session=new Session(E,'protected-advance-fixture',{players:[{name:'Bot',bot:true},{name:'Human'}]}),clock=manualClock(),authority=new Authority(session,{clock});
+  try{
+    authority.scheduleBot({delay:5});clock.advance(0);authority.scheduleBot({delay:5});
+    clock.advance(29);assert.equal(authority.revision,0);
+    clock.advance(1);assert.equal(authority.revision,1);
+    clock.advance(100);assert.equal(authority.revision,1,'no duplicate action after deadline or timer replacement');
+  }finally{authority.dispose();assert.equal(clock.pending,0);}
+});
+test('UNO protection allows ordinary human and bot turns before accusation readiness',()=>{
+  for(const acknowledge of [false,true]){
+    const {clock,authority,clients,send,session}=onlineFixture({bots:[false,true,false]});try{
+      assert(send(0,'play').ok);
+      if(acknowledge)assert(clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot())).ok);
+      assert.equal(send(2,'accuse-uno',0).ignored,true);
+      assert(E.legalActions(session.current,1).some(a=>a.type==='play'||a.type==='draw'));
+      authority.scheduleBot({delay:10});clock.advance(10);
+      assert.equal(authority.revision,2,'bot takes its ordinary turn without waiting for UNO');
+      assert.equal(session.current.turn,2);assert.equal(session.current.data.hands[0].length,1);
+      assert.equal(send(2,'accuse-uno',0).ignored,true,'normal play does not remove protection');
+      assert(send(2,'draw').ok,'next human can draw during the same window');
+      assert(send(0,'declare-uno').ok,'owner can still answer out of turn');
+      assert.equal(send(2,'accuse-uno',0).ignored,true);
+    }finally{authority.dispose();}
+  }
+});
+test('online grace starts after only the owning viewer finishes; early accusation is neutral while ordinary turns stay available',()=>{
   const {clock,authority,clients,send}=onlineFixture();try{
     assert(send(0,'play').ok);assert.equal(authority.revision,1);const ready=Protocol.presentationReady(clients[0].snapshot());
     assert.equal(clients[1].presentationReady(ready).ignored,true);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,1);
-    clock.advance(2000);assert.equal(send(1,'draw').code,'REACTION_WAIT');assert(clients[0].presentationReady(ready).ok);
-    clock.advance(999);assert.equal(clients[1].snapshot().actions.some(a=>a.type==='draw'),false);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(send(1,'draw').code,'REACTION_WAIT');
+    clock.advance(2000);assert(clients[1].snapshot().actions.some(a=>a.type==='draw'));assert(clients[0].presentationReady(ready).ok);
+    clock.advance(999);assert(clients[1].snapshot().actions.some(a=>a.type==='draw'));assert.equal(send(1,'accuse-uno',0).ignored,true);
     clock.advance(1);assert.equal(send(1,'accuse-uno',0).ok,true);assert.equal(authority.revision,2);assert.equal(send(1,'accuse-uno',0).ignored,true);assert.equal(authority.revision,2);
   }finally{authority.dispose();}
 });
@@ -182,7 +212,7 @@ test('a timely declaration beats late/fresh accusations and protocol rejects for
   }finally{authority.dispose();}
 });
 test('bots wait three seconds after readiness and missing readiness has a bounded ten-second fallback',()=>{
-  for(const acknowledge of [true,false]){const {clock,authority,clients,send,session}=onlineFixture({bots:[false,true]});try{
+  for(const acknowledge of [true,false]){const {clock,authority,clients,send,session}=onlineFixture({bots:[false,false,true]});try{
     send(0,'play');authority.scheduleBot({delay:10});if(acknowledge)clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));
     clock.advance((acknowledge?3000:13000)-1);assert.equal(authority.revision,1);clock.advance(1);assert.equal(authority.revision,2);assert.equal(visible(session.current).at(-2).kind,'uno-caught');assert.equal(session.current.data.hands[0].length,3);
   }finally{authority.dispose();}}
@@ -220,7 +250,7 @@ test('pause freezes reaction protection and resuming requires a new presentation
 test('human deadline publishes permission changes without adding game or control revisions',async()=>{
   const {clock,authority,clients,send}=onlineFixture(),Client=require('../app/session-client.js'),client=new Client(clients[1]);
   try{await client.refresh();send(0,'play');const revision=authority.revision,control=client.snapshot.controlRevision;
-    assert.equal(client.snapshot.actions.some(a=>a.type==='draw'),false);
+    assert(client.snapshot.actions.some(a=>a.type==='draw'));
     clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));const readyRevision=client.snapshot.reactionRevision;
     clock.advance(1000);assert(client.snapshot.reactionRevision>readyRevision);assert(client.snapshot.actions.some(a=>a.type==='draw'));assert.equal(client.snapshot.reactionWindow.protected,false);
     assert.equal(client.snapshot.revision,revision);assert.equal(client.snapshot.controlRevision,control);
@@ -229,7 +259,7 @@ test('human deadline publishes permission changes without adding game or control
 
 
 test('disconnect suspends protected reactions and reconnect grants a fresh acknowledged window',()=>{
-  const {clock,authority,clients,send}=onlineFixture({bots:[false,true]});try{
+  const {clock,authority,clients,send}=onlineFixture({bots:[false,false,true]});try{
     send(0,'play');authority.scheduleBot({delay:10});clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot()));clock.advance(1500);
     authority.setViewerConnected(0,false);assert.equal(clients[1].snapshot().reactionWindow.suspended,true);clock.advance(30000);assert.equal(authority.revision,1);
     assert.equal(clients[0].presentationReady(Protocol.presentationReady(clients[0].snapshot())).ignored,true);
@@ -282,7 +312,7 @@ test('bot declaration choices are stable per episode and difficulty includes imm
  for(let n=2;n<=108&&examples.size<2;n++){
   if([5,7,9].includes(n))continue;
   const initial=fixture([['u1','u'+n],['u5','u7']]);initial.players[0].botSettings={difficulty:'medium'};
-  const state=play(initial,0,'u1');if(!E.botReaction(state,0))continue;
+  initial.players[1].bot=false;const state=play(initial,0,'u1');if(!E.botReaction(state,0))continue;
   const wait=E.botReactionDelay(state,0);examples.set(wait>0?'delayed':'immediate',{initial,state,wait});
  }
  assert.equal(examples.size,2);
@@ -326,8 +356,8 @@ test('unconfigured UNO bots use medium declaration errors and delays',()=>{
 test('bot owners keep protection and delayed answers outrun earlier-seat accusers',()=>{
  const cases=new Map();
  for(let n=2;n<=108&&cases.size<2;n++){
-  if([5,7,9].includes(n))continue;
-  const initial=fixture([['u5','u7'],['u1','u'+n]],{turn:1});
+  if([5,7,9,26,28].includes(n))continue;
+  const initial=fixture([['u5','u7'],['u1','u'+n],['u26','u28']],{turn:1});initial.players[2].bot=false;
   initial.players.forEach(p=>p.botSettings={difficulty:'medium'});
   const state=play(initial,1,'u1'),answer=E.botReaction(state,1),delay=E.botReactionDelay(state,1);
   if(!answer)cases.set('forgot',{initial,state});else if(delay>0)cases.set('delayed',{initial,state,delay});

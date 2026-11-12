@@ -554,3 +554,18 @@ Reference passing is already the default for object values in JavaScript. This
 visual ownership change does not replace immutable history snapshots or network
 serialization with shared mutable references. Disappearing piece transfers may
 still need a retained visual after the committed renderer removes the source.
+
+
+### Arrival after public departures
+
+The optional `arrival-departures-v1` SDK feature supports a route with
+`arrival: 'after-departures'` and `departures: EntityRef[]` (1–32 unique public
+board objects, excluding the arriving entity). The pack names already resolved
+public objects; it does not supply timers or recompute captures. The runtime first
+moves the arriving piece above the last route/jump anchor, then moves the named
+objects from their authorized previous positions to the final scene positions,
+and finally settles the arriving piece into its measured final slot. This supports
+both capture returns and exchanges; no destination is assumed to be a base.
+Other affected stack placements settle after the named departures. Routes without
+this opt-in retain their existing timing. Instant/reduced motion, interruption,
+resize and cleanup use the existing shared motion lifecycle.

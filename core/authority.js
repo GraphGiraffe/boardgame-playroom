@@ -364,24 +364,33 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     scheduleBot({delay=500,run,onError=()=>{}}={}){
       this.cancelBot();const r=records.get(this),s=r.session,st=s.current;r.botOptions={delay,run,onError};if(r.botBatch||r.disposed||r.stopRequested||r.controlPending||r.paused||st.status!=='playing')return;
-      const reactions=st.players.flatMap((p,i)=>{const action=this._botControlled(i)&&s.engine.botReaction?.(st,i);return action?[{actor:i,action,control:s.engine.reactionControl?.(st,i,action)}]:[];});
-      // An accusation waiting for protection must not occupy the timer ahead of the owner's answer.
-      const reacting=(reactions.find(r=>r.control?.kind==='answer')||reactions[0])?.actor??-1,window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>this._botControlled(i)&&!window.ready.includes(i)),actor=reacting>=0?reacting:planning??st.turn;if(!this._botControlled(actor))return;
-      const rosterState=s.playerMetadata?{...st,players:st.players.map((player,index)=>({...player,...s.playerMetadata(index)}))}:st;const action=s.engine.botReaction?.(rosterState,actor)||s.engine.botAction(rosterState,actor);if(!action)return;
-      const control=s.engine.reactionControl?.(st,actor,action),windows=this._syncReactionWindows().filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
-      if(windows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;
-      let wait=planning!==undefined&&actor===planning?0:Math.max(0,delay);
-      if(control?.kind==='answer'){
-        const reactionDelay=s.engine.botReactionDelay?.(st,actor);
-        if(reactionDelay!=null){
-          r.botReactionEpisodes??=new Map();const episode=action.episode??st.move;let timing=r.botReactionEpisodes.get(actor);
-          if(!timing||timing.episode!==episode){timing={episode,startedAt:this._now()};r.botReactionEpisodes.set(actor,timing);}
-          wait=Math.max(0,timing.startedAt+reactionDelay-this._now());
+      const window=s.engine.decisionWindow?.(st),planning=window?.participants.find(i=>this._botControlled(i)&&!window.ready.includes(i));
+      const rosterState=s.playerMetadata?{...st,players:st.players.map((player,index)=>({...player,...s.playerMetadata(index)}))}:st;
+      const windows=this._syncReactionWindows(),candidates=[];
+      const offer=(actor,action,reaction)=>{
+        if(!action||!this._botControlled(actor))return;
+        const control=s.engine.reactionControl?.(st,actor,action),protectedWindows=windows.filter(w=>control?.target===undefined||w.descriptor.owner===control.target);
+        if(control?.ignore||protectedWindows.some(w=>w.suspended)&&['challenge','advance'].includes(control?.kind))return;
+        let wait=planning!==undefined&&actor===planning?0:Math.max(0,delay);
+        if(control?.kind==='answer'){
+          const reactionDelay=s.engine.botReactionDelay?.(st,actor);
+          if(reactionDelay!=null){
+            r.botReactionEpisodes??=new Map();const episode=action.episode??st.move;let timing=r.botReactionEpisodes.get(actor);
+            if(!timing||timing.episode!==episode){timing={episode,startedAt:this._now()};r.botReactionEpisodes.set(actor,timing);}
+            wait=Math.max(0,timing.startedAt+reactionDelay-this._now());
+          }
         }
-      }
-      if(['challenge','advance'].includes(control?.kind))for(const window of windows)wait=Math.max(wait,(window.readyAt??window.createdAt+window.descriptor.fallbackMs)+window.descriptor.botMs-this._now());
+        if(['challenge','advance'].includes(control?.kind))for(const window of protectedWindows)wait=Math.max(wait,(window.readyAt??window.createdAt+window.descriptor.fallbackMs)+window.descriptor.botMs-this._now());
+        candidates.push({actor,action,reaction,control,wait});
+      };
+      st.players.forEach((_,actor)=>{if(this._botControlled(actor))offer(actor,s.engine.botReaction?.(rosterState,actor),true);});
+      const turnActor=planning??st.turn;if(this._botControlled(turnActor))offer(turnActor,s.engine.botAction(rosterState,turnActor),false);
+      // Protection delays a reaction, not an unrelated legal turn. Answers win equal deadlines.
+      candidates.sort((a,b)=>a.wait-b.wait||Number(b.control?.kind==='answer')-Number(a.control?.kind==='answer'));
+      const selected=candidates[0];if(!selected)return;
+      const {actor,wait}=selected;
       const revision=st.move;r.timer=r.clock.setTimeout(()=>{r.timer=null;if(r.disposed||r.paused||r.stopRequested||r.controlPending||!this._botControlled(actor)||s.current.move!==revision)return;
-        try{const current=s.engine.botReaction?.(s.current,actor)||s.engine.botAction(s.current,actor);if(!current)return;
+        try{const current=selected.reaction?s.engine.botReaction?.(s.current,actor):s.engine.botAction(s.current,actor);if(!current)return;
           if(this._reactionDecision(actor,current)){this.scheduleBot({delay,run,onError});return;}
           if(r.persistence&&planning!==undefined&&actor===planning&&window.participants.length>1){
             return this._drainDecisionBots(window).then(()=>this.scheduleBot({delay,onError})).catch(onError);

@@ -187,3 +187,28 @@ test('Data screen measures a native Mage archive without replay and remains navi
   await active.locator('[data-storage-tab=cloud]').click();await active.locator('[data-storage-account]').waitFor();await active.locator('[data-storage-tab=device]').click();await row.waitFor();await active.locator('.modal-head [data-command=close-modal]').click();await active.waitFor({state:'detached'});await page.evaluate(()=>clearInterval(dataTimer));assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);console.log(JSON.stringify({revision,...result}));
  }finally{await context.close();await browser.close();await fixture.close();}
 });
+test('storage device and cloud rows share game chronology and two-line pack metadata',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=process.env.LAB_ENGINE==='webkit'?await webkit.launch({headless:true}):await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,serviceWorkers:'block',reducedMotion:'reduce'}),errors=[];
+ const user={id:'00000000-0000-4000-8000-000000000099',email:'chronology@example.test'},times=[Date.UTC(2026,9,1,12),Date.UTC(2026,9,2,12),Date.UTC(2026,9,3,12)];
+ const rows=[{id:'cloud-old',summary:{game:'uno',packVersion:'0.1.0',updatedAt:times[0]},updated_at:'2026-11-12T12:00:00Z',bytes:1024},{id:'cloud-new',summary:{game:'uno',packVersion:'0.3.0',updatedAt:times[2]},updated_at:'2026-10-04T12:00:00Z',bytes:3072},{id:'cloud-middle',summary:{game:'uno',packVersion:'0.2.0'},updated_at:new Date(times[1]).toISOString(),bytes:2048}];
+ try{
+  await context.addInitScript(user=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'storage-chronology',name:'Тест'}));localStorage.setItem('playroom.cloud-auth.v1:https://geurlwivdiqboylciqhl.supabase.co',JSON.stringify({access_token:'fixture-only',refresh_token:'fixture-only',expires_at:Date.now()+3600000,user}));},user);
+  const net=await accountSyncRoute.installFetch(context,accountSyncRoute(route=>{const url=route.request().url();return route.fulfill({json:url.includes('/auth/')?user:url.endsWith('/playroom_cloud_saves_rpc')?{enabled:false,used:6144,limit:10485760,entries:rows}:url.endsWith('/playroom_push')?{ready:false}:{profile:null,friends:[],rooms:[],invitations:[],requests:[],messages:[],groups:[]}});}));
+  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(server.url);await page.waitForFunction(()=>PlayroomCloudSavesUI.service?.loaded&&!PlayroomCloudSavesUI.service.loading);
+  await page.evaluate(async times=>{
+   for(const [id,time] of [['local-old',times[0]],['local-new',times[2]]]){const session=new TabletopSession(TabletopCore,'uno',{seed:17,mode:'pass',players:[{name:'А'},{name:'Б'}]},{now:()=>time});await PlayroomAppBridge.saveLibrary.activateAsync(session,id);}
+   window.PlayroomNetworkLibrary={...PlayroomNetworkLibrary,list:async()=>[{id:'middle',sessionId:'middle',game:'uno',packVersion:'0.2.0',updatedAt:times[1],role:'client'}]};
+   await PlayroomCloudSavesUI.showData();
+  },times);
+  const active=page.locator('#modal-root>[data-surface-state=active]'),list=active.locator('.data-save-list');
+  await active.locator('[data-storage-tab=cloud]').tap();await page.waitForFunction(()=>!PlayroomCloudSavesUI.service.loading);
+  assert.deepEqual(await list.locator('[data-entity]').evaluateAll(es=>es.map(e=>e.dataset.entity)),['cloud:cloud-new','cloud:cloud-middle','cloud:cloud-old'],'game save date wins over inverse upload dates, with upload time only as missing-date fallback');
+  const checkRows=async expected=>{const details=await list.locator('.data-save-label').evaluateAll(es=>es.map(e=>({game:e.querySelector('.data-save-title strong')?.textContent,size:e.querySelector('.data-save-title small')?.textContent,meta:e.querySelector('.data-save-meta')?.textContent,datetime:e.querySelector('time')?.dateTime})));assert.equal(details.length,3);for(let i=0;i<3;i++){assert.equal(details[i].game,'UNO');assert(details[i].size);assert(details[i].meta.includes(expected[i]));assert.equal(details[i].datetime,new Date(times[2-i]).toISOString());}};
+  await checkRows(['0.3.0','0.2.0','0.1.0']);
+  await active.locator('[data-storage-tab=device]').tap();assert.deepEqual(await list.locator('[data-entity]').evaluateAll(es=>es.map(e=>e.dataset.entity)),['local:local-new','network:client:middle','local:local-old']);
+  const version=await page.evaluate(()=>TabletopCore.get('uno').version);await checkRows([version,'0.2.0',version]);
+  const report=path.resolve(__dirname,'../../tmp_files/storage-chronology-1112');fs.mkdirSync(report,{recursive:true});
+  for(const viewport of [{width:390,height:844},{width:844,height:390}]){await page.setViewportSize(viewport);for(const tab of ['device','cloud']){await active.locator('[data-storage-tab='+tab+']').tap();assert(await active.locator('.storage-data-modal').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(report,`${process.env.LAB_ENGINE||'chromium'}-${tab}-${viewport.width}.png`)});}}
+  assert.equal(net.nativeSupabaseRequests,0);assert.deepEqual(errors,[]);
+ }finally{await browser.close();await server.close();}
+});

@@ -48,3 +48,10 @@
 .storage-data-modal .data-summary>.data-total{display:flex;align-items:center;gap:5px;min-height:1.45em;color:var(--muted)}
 .storage-data-modal .data-total>svg,.storage-data-modal .data-total .storage-cloud-label svg{display:block;flex:none;width:18px;height:18px}
 .storage-data-modal .data-total .storage-cloud-label{color:inherit;font:inherit}
+
+/* Device and cloud archives share the same compact two-line label. */
+.storage-data-modal .data-save-label{flex:1;min-width:0}
+.storage-data-modal .data-save-title{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
+.storage-data-modal .data-save-title strong{font-weight:700;overflow-wrap:anywhere}
+.storage-data-modal .data-save-title small{color:var(--muted);font-weight:400}
+.storage-data-modal .data-save-meta{display:block;margin-top:3px;color:var(--muted);overflow-wrap:anywhere}
