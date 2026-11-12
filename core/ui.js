@@ -279,9 +279,9 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
   // Shared public parameter diagram: fixed seats, no participant or game state.
   function parameterTableArt({numbers=false,shuffle=false,sourceSeat=null,currentSeat=null}={}){
     const V=GameComponents.vector,valid=seat=>Number.isInteger(seat)&&seat>=0&&seat<4;
-    const chairs=[[18,35,14,14,25,42],[38,8,15,13,45.5,14.5],[67,8,15,13,74.5,14.5],[92,35,14,14,99,42]];
+    const chairs=[[18,35,14,14,25,42],[38,8,15,13,45.5,14.5],[67,8,15,13,74.5,14.5],[88,35,14,14,95,42]];
     let content='<circle data-round-table cx="60" cy="43" r="21" fill="currentColor" fill-opacity=".05"/><circle cx="60" cy="43" r="21"/>';
-    content+=chairs.map(([x,y,w,h,cx,cy],i)=>`<g data-table-chair="${i+1}"${sourceSeat===i?' data-source-seat':''}${currentSeat===i?' data-current-seat':''}><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5" fill="currentColor" fill-opacity="${sourceSeat===i?'.24':currentSeat===i?'.16':'.07'}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5"/>${i===0?'<path d="M14 34V50"/>':i===3?'<path d="M110 34V50"/>':`<path d="M${x} ${y-4}H${x+w}"/>`}${numbers?V.text(i+1,{x:cx,y:cy+.5,size:9,weight:700,attrs:'data-seat-number stroke="none"'}):''}</g>`).join('');
+    content+=chairs.map(([x,y,w,h,cx,cy],i)=>`<g data-table-chair="${i+1}"${sourceSeat===i?' data-source-seat':''}${currentSeat===i?' data-current-seat':''}><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5" fill="currentColor" fill-opacity="${sourceSeat===i?'.24':currentSeat===i?'.16':'.07'}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2.5"/>${i===0?'<path d="M14 34V50"/>':i===3?'<path d="M106 34V50"/>':`<path d="M${x} ${y-4}H${x+w}"/>`}${numbers?V.text(i+1,{x:cx,y:cy+.5,size:9,weight:700,attrs:'data-seat-number stroke="none"'}):''}</g>`).join('');
     if(shuffle)content+=V.place(icon('shuffle'),{x:48,y:31,width:24,height:24});
     if(valid(sourceSeat)&&valid(currentSeat)&&sourceSeat!==currentSeat){
       const from=chairs[sourceSeat],to=chairs[currentSeat],dx=to[4]-from[4],dy=to[5]-from[5],length=Math.hypot(dx,dy),ux=dx/length,uy=dy/length,sx=from[4]+ux*10,sy=from[5]+uy*10,tx=to[4]-ux*12,ty=to[5]-uy*12;

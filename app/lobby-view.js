@@ -96,7 +96,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const parameterPlayer=(x,y,size)=>root.PlayroomGameComponents.vector.place(root.TabletopUI.helpers.icon('player'),{x,y,width:size,height:size,attrs:'data-player-glyph="canonical"'});
   function parameterSymbolArt(name,value){
     const H=root.TabletopUI.helpers,V=root.PlayroomGameComponents.vector;
-    const content=name==='clock'&&String(value)==='0'?'<path d="M60 36C50 21 44 18 36 24 25 32 32 49 42 49S59 32 69 25 88 24 88 36 79 52 71 47 52 22 41 23"/>':V.place(H.icon(name),{x:38,y:14,width:44,height:44});
+    const content=name==='clock'&&String(value)==='0'?V.place(V.viewport({width:72,height:40,x:24,y:16,content:'<path d="M60 36C50 21 44 18 36 24 25 32 32 49 42 49S59 32 69 25 88 24 88 36 79 52 71 47 52 22 41 23"/>'}),{x:38,y:14,width:44,height:44}):V.place(H.icon(name),{x:38,y:14,width:44,height:44});
     return V.viewport({width:120,height:72,className:'rule-preview-parameter-symbol',attrs:`data-art-role="parameter-diagram" data-parameter-symbol="${esc(name)}" data-parameter-symbol-family="standard" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"`,content});
   }
   function parameterArt(name,value){
@@ -122,7 +122,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }else if(name==='endMode'){
       id='ending-'+value;
       if(value==='winner')drawing=body(parameterSymbolArt('trophy',value));
-      else if(value==='round')drawing='<g data-last-round-timer stroke-width="3"><path data-timer-speed d="M23 28H43M15 41H39M25 54H43"/><path d="M67 17V12H73V17M62 8H78M88 22l4-4m-6-2 8 8"/><circle cx="70" cy="41" r="22"/><path data-timer-remaining d="M70 41V23A18 18 0 0 1 82.73 28.27Z" fill="currentColor" stroke="none"/><path d="M70 41 82.73 28.27"/><circle cx="70" cy="41" r="1.6" fill="currentColor"/></g>';
+      else if(value==='round')drawing='<g data-last-round-timer stroke-width="3.6"><path data-timer-speed d="M35 26H48M28 36H46M35 46H48"/><circle data-timer-dial cx="70" cy="36" r="18"/><path data-timer-remaining d="M70 36V22A14 14 0 0 1 79.9 26.1Z" fill="currentColor" stroke="none"/></g>';
       else if(value==='last')drawing='<g data-previous-players fill="currentColor" stroke="none"><circle cx="20" cy="43" r="2.5"/><circle cx="33" cy="43" r="2.5"/><circle cx="46" cy="43" r="2.5"/></g>'+parameterPlayer(63,13,48);
       else return '';
     }else return '';

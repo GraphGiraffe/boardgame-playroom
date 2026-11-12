@@ -1071,22 +1071,37 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // Finish live writes before asking layout for any field's envelope.
     for(const [field,schema]of reserves)reserveRulePreview(field,schema,form);
   }
+  // Author units are CSS pixels: center the ink without zooming each variant.
+  function centerRulePreviewArt(preview){
+    for(const svg of preview.querySelectorAll('svg[data-art-role="parameter-diagram"]')){
+      if(svg.hasAttribute('data-rule-art-fitted')||svg.parentElement?.closest('svg[data-art-role="parameter-diagram"]'))continue;
+      try{
+        const plane=svg.viewBox.baseVal,box=svg.getBBox(),values=[plane.width,plane.height,box.x,box.y,box.width,box.height];
+        if(!values.every(Number.isFinite)||box.width<=0||box.height<=0)continue;
+        const width=Math.max(plane.width,box.width+8),height=Math.max(plane.height,box.height+8);
+        svg.setAttribute('viewBox',[box.x+box.width/2-width/2,box.y+box.height/2-height/2,width,height].join(' '));
+        svg.style.setProperty('--rule-art-inline',width+'px');
+        svg.setAttribute('data-rule-art-fitted','');
+      }catch(_){/* An unavailable graphic retains its authored viewport. */}
+    }
+  }
   function reserveRulePreview(field,schema,form){
     const preview=field.querySelector('[data-rule-next]');if(!preview||!field.getClientRects().length)return;
+    centerRulePreviewArt(preview);
     const signature=preview.clientWidth+':'+getComputedStyle(preview).font+':'+JSON.stringify([schema,schema.options.map(option=>rulePreviewCount(schema,option,form))]);if(field.ruleReserveKey===signature)return;
     const cacheKey=publicPanelKey('preview-envelope',form.dataset.game,signature),cached=ruleLayoutPreparation.get(cacheKey);
     if(cached!==undefined){preview.style.minBlockSize=cached+'px';field.ruleReserveKey=signature;field.dataset.ruleMeasureMs='0';return;}
     // Quantity art has a monotone height envelope at a fixed width. Measure
     // its largest count for each distinct caption, not every hidden label.
     const representatives=new Map();for(const [index,option]of schema.options.entries()){const descriptor={...(schema.preview||{}),...(option.preview||{})},count=rulePreviewCount(schema,option,form),quantity=['cards','dice','health','lives'].includes(descriptor.kind),detail=option.description||(descriptor.countFrom&&count!==null?option.label:'');const sampleKey=quantity?descriptor.kind+':'+detail:'option:'+index,previous=representatives.get(sampleKey);if(!previous||quantity&&count>previous.count)representatives.set(sampleKey,{option,count});}
-    const variants=[...representatives.values()].map(({option})=>ruleChoicePreview(schema,option,form));if(schema.inactivePresentation){const inactive=schema.inactivePresentation;variants.push(ruleChoicePreview(schema,{...schema.options[0],preview:inactive.preview,description:inactive.description,label:inactive.description},form));}const width=preview.clientWidth;
+    const variants=[...representatives.values()].map(({option})=>ruleChoicePreview(schema,option,form));if(schema.inactivePresentation){const inactive=schema.inactivePresentation;variants.push(ruleChoicePreview(schema,{...schema.options[0],preview:inactive.preview,description:inactive.description,label:inactive.description},form));}
     const key=signature;
     const scrollport=preview.closest('.modal-body'),scrollTop=scrollport?.scrollTop;
     const started=performance.now(),art=preview.querySelector('.rule-choice-preview-art'),originalArt=[...art.childNodes],detail=preview.querySelector('[data-rule-preview-detail]'),originalText=detail?.textContent,originalClass=preview.className;
     const originalFlex=preview.style.flex;let measuredDetail=detail,max=0;preview.style.flex='0 0 auto';preview.style.minBlockSize='0px';
     try{for(const html of variants){const template=document.createElement('template');template.innerHTML=html;const candidate=template.content.firstElementChild,candidateDetail=candidate.querySelector('[data-rule-preview-detail]');preview.classList.toggle('has-art',candidate.classList.contains('has-art'));art.replaceChildren(...candidate.querySelector('.rule-choice-preview-art').childNodes);
       if(candidateDetail){if(!measuredDetail){measuredDetail=document.createElement('small');measuredDetail.dataset.rulePreviewDetail='';preview.append(measuredDetail);}measuredDetail.textContent=candidateDetail.textContent;}else if(measuredDetail)measuredDetail.textContent='';
-      max=Math.max(max,preview.getBoundingClientRect().height);
+      centerRulePreviewArt(preview);max=Math.max(max,preview.getBoundingClientRect().height);
     }}finally{art.replaceChildren(...originalArt);preview.className=originalClass;if(detail)detail.textContent=originalText;else measuredDetail?.remove();}
     preview.style.flex=originalFlex;ruleLayoutPreparation.set(cacheKey,Math.ceil(max));preview.style.minBlockSize=Math.ceil(max)+'px';field.ruleReserveKey=key;field.dataset.ruleMeasureMs=(performance.now()-started).toFixed(2);if(scrollport)scrollport.scrollTop=scrollTop;
   }
