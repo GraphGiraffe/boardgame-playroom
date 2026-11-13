@@ -178,4 +178,4 @@ body.reduced-motion #app .player-panel[data-turn-preview]{animation:none}
 #app .app-game-layout .player-panel .player-status-badge{flex:none;}
 
 #app .app-game-layout .player-data:has(>.player-status){flex-wrap:wrap}
-#app .app-game-layout .player-status{display:inline-flex;align-items:center;min-width:0;flex:none}
+#app .app-game-layout .player-status{display:inline-flex;align-items:center;justify-content:flex-end;min-width:var(--player-status-min-width,24px);flex:1 1 0;margin-inline-start:auto;container:player-status / inline-size}
