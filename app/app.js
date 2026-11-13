@@ -836,6 +836,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(!state.autoStart||state.ownerId!==lobbyParticipantId||state.transportMode==='hotseat'||state.phase!=='lobby'||!roomService.canStart(state.id))return;
     autoStartQueued=true;queueMicrotask(()=>{autoStartQueued=false;if(!room||room.id!==state.id)return;const latest=roomService.snapshot(state.id);if(latest.autoStart&&latest.phase==='lobby'&&roomService.canStart(state.id))void startLobbyCountdown();});
   }
+  let dismissingLobby=null;
+  function dismissUnusedLobby(){
+    const roomId=room?.id;if(!roomId)return false;
+    const actor=lobbyParticipantId,current=()=>room?.id===roomId&&lobbyParticipantId===actor;
+    const eligible=()=>current()&&roomService.shouldCloseOnDismiss(roomId,actor);
+    if(!eligible())return false;
+    if(dismissingLobby===roomId)return true;
+    dismissingLobby=roomId;
+    const closingFrame=localModal.activeFrame()?.element;if(closingFrame){closingFrame.inert=true;closingFrame.setAttribute('aria-busy','true');}
+    void (async()=>{
+      try{
+        const closed=await globalThis.PlayroomLobbyNetwork.closeRoom(roomId,{shouldClose:eligible});
+        if(!current())return;
+        if(closed!==false)leaveLobby();
+        else{dismissingLobby=null;closeModal();}
+      }catch(error){if(current())toast(globalThis.PlayroomSocialUI.message(error));}
+      finally{if(dismissingLobby===roomId)dismissingLobby=null;if(closingFrame){closingFrame.inert=false;closingFrame.removeAttribute('aria-busy');}}
+    })();
+    return true;
+  }
   function renderLobby(){
     if(!room)return;
     const completed=completedRoom?.roomId===room.id&&completedRoom.session.current.status==='finished';
@@ -843,7 +863,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     room=roomService.snapshot(room.id);ensureRoomButton();
     if(screen==='lobby'){screen='hub';renderHub();}
     const state=room,isHost=state.ownerId===lobbyParticipantId;if(isHost)watchAutoStart(state);
-    openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,completed,canStart:isHost&&roomService.canStart(state.id),startReason:isHost?roomService.startBlocker(state.id):'',countdown:lobbyCountdown??3}),'room-setup-modal');
+    openModal(PlayroomLobbyView.render({room:state,participantId:lobbyParticipantId,isHost,completed,canStart:isHost&&roomService.canStart(state.id),startReason:isHost?roomService.startBlocker(state.id):'',countdown:lobbyCountdown??3}),'room-setup-modal',{beforeBack:dismissUnusedLobby});
     PlayroomLobbyView.notifyRulesChange(state,lobbyParticipantId,toast);
     const preparedRoomId=state.id,preparedGameId=state.game.id,preparedRevision=state.rulesRevision,preparedActor=lobbyParticipantId;
     const choicePlan=roomGameChoicePlan(state.transportMode);panelPreparation.prepare(choicePlan.key,choicePlan.build,{valid:()=>room?.id===preparedRoomId&&room.game.id===preparedGameId&&room.rulesRevision===preparedRevision&&lobbyParticipantId===preparedActor&&!!$('#modal-root>[data-surface-state=active] .lobby-shell')});

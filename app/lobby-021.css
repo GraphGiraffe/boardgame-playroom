@@ -114,3 +114,9 @@
 /* The lobby owns its compact space below the shared window header. */
 :is(#modal-root,[data-ui-surface-exit]) .modal.room-setup-modal[data-ui-surface="screen"]>.modal-head{margin-bottom:0}
 .room-v021>.room-v021-content{padding-block:0}
+
+/* Ready is a quiet card state, including bots, rather than another text row. */
+.room-v021-seat>.room-v021-person{position:relative;isolation:isolate;overflow:hidden}
+.room-v021-seat.is-ready>.room-v021-person{background:color-mix(in srgb,var(--green) 16%,var(--paper));border-color:color-mix(in srgb,var(--green) 45%,var(--line));border-inline-start-color:var(--room-seat-color)}
+.room-v021-ready-mark{position:absolute;inset-inline-end:16px;top:50%;transform:translateY(-50%);height:80%;aspect-ratio:1;max-width:60px;color:var(--green);opacity:.2;pointer-events:none;z-index:-1}
+.room-v021-ready-mark>svg{display:block;width:100%;height:100%}

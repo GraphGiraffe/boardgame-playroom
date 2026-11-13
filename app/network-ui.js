@@ -25,7 +25,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   let clientReactionUnsub=null,clientChatUnsub=null;
   const delegatedInvites=new root.PlayroomNetworkInvitations({
     authorize:id=>{const room=bridge().roomService.snapshot(hostRoomId);const person=participant(room,id);if(room.transportMode!=='network'||room.phase!=='lobby'||!room.allowPlayerInvites||!person?.connected)throw Error(root.PlayroomMessages.text('ui.social.error.invite-disabled'));},
-    create:async(inviter)=>{const room=bridge().room(),connection=bridge().roomService.connection(room.id),switchable=new M.SwitchableConnection(connection);let peer;try{peer=await W.createHostPeer();const admit=async()=>{if(!connection.participantId)delegatedInvites.authorize(inviter);};const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);return {peer,switchable,roomConnection:connection,serveClose,offer:peer.offer};}catch(e){peer?.close();switchable.close();throw e;}},
+    create:async(inviter)=>{const room=bridge().room(),connection=bridge().roomService.connection(room.id),switchable=new M.SwitchableConnection(connection);let peer;try{peer=await W.createHostPeer();bridge().roomService.markInvitationShared(room.id,room.ownerId);const admit=async()=>{if(!connection.participantId)delegatedInvites.authorize(inviter);};const serveClose=hostPeerServing(peer,switchable,connection,room.id,admit);return {peer,switchable,roomConnection:connection,serveClose,offer:peer.offer};}catch(e){peer?.close();switchable.close();throw e;}},
     accept:async(value,answer)=>{await value.peer.acceptAnswer(answer);connectedHostPeers.push(value);},
     dispose:value=>{value.serveClose?.();value.peer.close();value.switchable.close();}
   });
@@ -301,6 +301,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       localHostProgress=progress;hostPeer=pendingPeer;hostRoomConnection=pendingConnection;hostSwitch=pendingSwitch;hostServeClose=hostPeerServing(hostPeer,hostSwitch,hostRoomConnection,room.id);
       const network=initialNetworkChoice('host',hostPeer.offer);offerToken=network.token;
       const share='<button class="btn secondary" type="button" data-net-share="offer" '+(PWA?.canShare?.(offerToken)?'':'disabled')+'>'+root.PlayroomGameScreen.icon('share')+' Поделиться</button>';
+      b.roomService.markInvitationShared(room.id,actor);
       showNearby({stage:'host-offer',role:'host',network:network.html,permission:manualPermission(room),permissionSource:{roomId:room.id,actor,owner:room.ownerId},qr:pairingQr('net-host-token'),scan:scanControls('host'),outgoingText:pairingText(offerToken,'net-host-token'),share,
         sendSound:'<button class="btn" id="net-host-acoustic-send" type="button">'+root.PlayroomGameScreen.icon('sound')+' Передать приглашение</button>',
         receiveSound:'<button class="btn" id="net-host-acoustic-listen" type="button" '+captureDisabled()+'>'+root.PlayroomGameScreen.icon('mic')+' Слушать ответ</button>',soundSettings:soundSettings('host'),

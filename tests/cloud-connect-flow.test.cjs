@@ -78,3 +78,18 @@ test('invalid compact room response preserves the last valid room list',async()=
  const service=new Social({account:{snapshot:()=>({kind:'account',id:'account'}),subscribe(){}},remote:{call:async()=>response}});
  await service.refreshRooms();response={};await assert.rejects(service.refreshRooms(),e=>e.code==='request');assert.deepEqual(service.snapshot().rooms,[{id:'room'}]);
 });
+
+
+test('automatic cloud close rechecks room eligibility before retiring its exact row',async()=>{
+ const calls=[],ctx={document:{addEventListener(){}},PlayroomNetworkLibrary:{inviteContext:()=>({room:{id:'local',ownerId:'me'},participantId:'me',cloudRoomId:'cloud'})},PlayroomAccountUI:{service:{snapshot:()=>({id:'account'})}},PlayroomCommunityUI:{service:{generation:0}},PlayroomSocialUI:{service:{perform:async(action,data)=>calls.push({action,data})}}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/lobby-network.js'),'utf8'),ctx);assert.equal(await ctx.PlayroomLobbyNetwork.closeRoom('local',{shouldClose:()=>false}),false);assert.equal(calls.length,0);assert.equal(await ctx.PlayroomLobbyNetwork.closeRoom('local',{shouldClose:()=>true}),true);assert.deepEqual(JSON.parse(JSON.stringify(calls)),[{action:'close',data:{roomId:'cloud'}}]);
+});
+
+test('unused cloud room close waits for pending allocation and rechecks the live owner context',async()=>{
+ for(const scenario of ['created','settings-failed','guest-arrived']){
+  let resolveCreate,dispose,eligible=true;const calls=[],room={id:'local',ownerId:'me',transportMode:'online',phase:'lobby',name:'Тест',game:{name:'UNO'}};
+  const account={snapshot:()=>({id:'account',kind:'account'})},community={generation:0,call:async action=>{if(action==='settings'){if(scenario==='settings-failed')throw Error('settings unavailable');return {roomCode:'1234',invites:[],allowPlayerInvites:true};}return action==='group-list'?{groups:[]}:{friends:[]};}};
+  const ctx={document:{addEventListener(){},querySelector:()=>null},PlayroomGameScreen:{modalHead:()=>'',button:()=>''},PlayroomAppBridge:{room:()=>room,captureModalReturn:()=>()=>true,openModal:(_html,_kind,options)=>{dispose=options.onDispose;return {state:'active',element:{querySelector:()=>null}};},setOnlineRoomCode(){},setRoomInvitationPermission(){}},PlayroomNetworkLibrary:{inviteContext:()=>({room,participantId:'me',cloudRoomId:null})},PlayroomAccountUI:{service:account},PlayroomCommunityUI:{service:community,activate(){},presence:()=>({})},PlayroomCloudNetwork:{host:async()=>{}},PlayroomSocialUI:{syncNickname:async()=>{},message:e=>e.message,service:{perform:async(action,data)=>{calls.push({action,data});if(action==='lobby')return new Promise(resolve=>resolveCreate=resolve);return {};}}}};
+  vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/lobby-network.js'),'utf8'),ctx);ctx.PlayroomLobbyNetwork.showInvite();for(let i=0;i<5&&!resolveCreate;i++)await Promise.resolve();assert(resolveCreate);dispose();let done=false;const closing=ctx.PlayroomLobbyNetwork.closeRoom('local',{shouldClose:()=>eligible}).then(result=>{done=true;return result;});await Promise.resolve();assert.equal(done,false,'never abandon an allocated but unacknowledged cloud room');assert.equal(calls.filter(c=>c.action==='close').length,0);if(scenario==='guest-arrived')eligible=false;resolveCreate({id:'cloud-created'});const closed=await closing;assert.equal(closed,eligible);assert.equal(calls.filter(c=>c.action==='close').length,eligible?1:0);if(eligible)assert.equal(calls.at(-1).data.roomId,'cloud-created');
+ }
+});

@@ -631,3 +631,29 @@ test('game window restore opens a saved local match after reload without replayi
   await completeMenuFixtureRound(page);await page.waitForFunction(()=>PlayroomAppBridge.saveLibrary.open(PlayroomAppBridge.saveLibrary.currentId()).current.data.round>=2);await page.evaluate(()=>PlayroomAppBridge.showHub());await page.reload();await page.locator('.game-tile').first().waitFor();await traceRestoredPlan(page);await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator('.saved-game[data-saved-actions-toggle]').first().click();await page.locator('[data-resume-id]:visible').first().click();await page.locator('.table-shell .mage-grid').waitFor();await assertRestoredPlanFinal(page);
  },{mode:'hotseat',options:{actionsPerTurn:'1',health:'6',lives:'4'},preserveBoard:false});
 });
+
+test('unused lobby dismissal closes the room while invitations and live parties stay available',{timeout:90000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await quietContext(browser,{viewport:{width:390,height:844},hasTouch:true}),page=await context.newPage(),errors=[];
+ const net=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(7000);
+ try{
+  if(process.env.PLAYROOM_TEST_ARTIFACT)await page.route(server.url,route=>route.fulfill({contentType:'text/html',body:fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT)}));
+  await page.goto(server.url);
+  for(const mode of ['hotseat','network','online']){
+   await openGame(page,'uno',mode==='online'?'network':mode);
+   if(mode==='online')await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.configure(r.id,b.participantId(),{transportMode:'online'});b.renderLobby();});
+   const id=await page.evaluate(()=>PlayroomAppBridge.room().id);
+   await roomParameters(page);await backFrom(page,'.room-rules-modal');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),id,'return from a child panel keeps the room');
+   if(mode==='network')await page.keyboard.press('Escape');else await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();await page.waitForFunction(()=>PlayroomAppBridge.room()===null);
+   assert.equal(await page.evaluate(id=>{try{PlayroomAppBridge.roomService.snapshot(id);return true;}catch(_){return false;}},id),false,'discard the unused local room and recovery capabilities');assert.equal(await page.evaluate(()=>PlayroomNetworkLibrary.hasActiveRoom()),false,'no active transport room remains');
+  }
+  await openGame(page,'uno','network');await page.locator('[data-room-auto-start]').uncheck();
+  const host=await page.evaluate(()=>PlayroomAppBridge.participantId());assert.equal(await page.locator('.room-v021-seat.is-ready').count(),1,'bot is ready immediately');assert(!/не готов|готов/.test(await page.locator('.room-v021-person-copy small').allTextContents().then(a=>a.join(' '))));
+  await page.locator('[data-command=lobby-ready]').tap();assert(await page.locator(`[data-participant-id="${host}"]`).evaluate(n=>n.classList.contains('is-ready')));assert.equal(await page.locator('.room-v021-ready-mark').count(),2);await capture(page,'ready-lobby');
+  await page.locator('[data-command=lobby-ready]').tap();
+  await page.locator('#network-pair-button').tap();await page.locator('#net-host-token').waitFor({state:'attached'});assert((await page.locator('#net-host-token').inputValue()).length>0,'real usable pairing offer was generated');assert.equal(await page.locator('[data-nearby-screen]').getAttribute('data-nearby-method'),'qr');assert.equal(await page.locator('[data-nearby-screen]').getAttribute('data-nearby-direction'),'show');await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();
+  const invited=await page.evaluate(()=>PlayroomAppBridge.room().id);await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),invited,'published pairing invitation keeps room available');await page.evaluate(()=>PlayroomNetworkLibrary.openRoom());await closeRoom(page);
+  await openGame(page,'uno','network');await page.locator('[data-room-auto-start]').uncheck();await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();b.roomService.join(r.id,{id:'waiting-guest',nickname:'Ожидающий'});b.renderLobby();});const joined=await page.evaluate(()=>PlayroomAppBridge.room().id);await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),joined,'human spectators/players keep their room');await page.evaluate(()=>PlayroomNetworkLibrary.openRoom());await closeRoom(page);
+  await openGame(page,'uno');await page.locator('[data-command=lobby-start]').tap();await page.locator('.table-shell').waitFor();await page.evaluate(()=>PlayroomAppBridge.renderLobby());const playing=await page.evaluate(()=>PlayroomAppBridge.room().id);await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),playing,'returning from the live party lobby never closes its room');assert(await page.locator('.table-shell').isVisible());
+  assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+ }finally{await context.close();await browser.close();await server.close();}
+});

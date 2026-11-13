@@ -547,3 +547,14 @@ test('late network participant joins as spectator and leaves without changing pl
  const access=require('../application/session-access.js').resolve(joined.room,'late');assert.equal(access.role,'spectator');assert.equal(access.viewer,-1);const after=rooms.kick(room.id,'host','late');assert.equal(after.phase,'playing');assert.deepEqual(after.seats,before.seats);assert(after.participants.every(p=>p.id!=='late'));
  rooms.rooms.get(room.id).hostTransferPending=true;assert.throws(()=>rooms.join(room.id,{id:'blocked',nickname:'Зритель'}),/HOST_TRANSFER_BUSY/);
 });
+
+
+test('dismissal closes only unused owned lobbies and records invitation exposure once',()=>{
+ for(const mode of ['hotseat','network','online']){
+  const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:mode});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});
+  assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),true,mode+' bots are not remote guests');assert.equal(rooms.shouldCloseOnDismiss(room.id,'other'),false);
+  rooms.markInvitationShared(room.id,'host');const revision=rooms.snapshot(room.id).revision;rooms.markInvitationShared(room.id,'host');assert.equal(rooms.snapshot(room.id).revision,revision,'idempotent exposure');assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),mode==='hotseat');
+ }
+ const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'network'});rooms.join(room.id,{id:'viewer',nickname:'Зритель'});assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false);rooms.setConnected(room.id,'viewer',false);assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false,'disconnected humans retain resume rights');assert.throws(()=>rooms.markInvitationShared(room.id,'viewer'));
+ const local=createRoom();local.rooms.configure(local.room.id,'host',{transportMode:'hotseat'});local.rooms.setLocalSeat(local.room.id,'host','seat-2',{kind:'bot'});local.rooms.startHotSeat(local.room.id,'host');assert.equal(local.rooms.shouldCloseOnDismiss(local.room.id,'host'),false,'a live party is never an unused lobby');
+});

@@ -97,6 +97,16 @@ class RoomService{
       this._emit(room,'room-created',globalThis.PlayroomMessages.text("ui.rooms.a3264feefcc9"));
       this.rooms.set(id,room);return this.snapshot(id);
     }
+    markInvitationShared(roomId,hostId){
+      const room=this._room(roomId);this._host(room,hostId);
+      if(!room.invitationShared){room.invitationShared=true;this._touch(room);this._emit(room,'invitation-shared','');}
+      return this.snapshot(roomId);
+    }
+    shouldCloseOnDismiss(roomId,hostId){
+      const room=this._room(roomId);
+      if(room.ownerId!==hostId||room.phase!=='lobby'||room.recovery)return false;
+      return room.transportMode==='hotseat'||!room.invitationShared&&!room.participants.some(p=>p.id!==hostId&&!p.bot&&!p.local);
+    }
     prepareStart(roomId,hostId){
       const room=this._room(roomId);this._host(room,hostId);
       const blocker=this._startBlocker(room);if(blocker)throw Error(blocker);
