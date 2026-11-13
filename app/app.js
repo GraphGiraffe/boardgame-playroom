@@ -852,7 +852,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(closed!==false)leaveLobby();
         else{dismissingLobby=null;closeModal();}
       }catch(error){if(current())toast(globalThis.PlayroomSocialUI.message(error));}
-      finally{if(dismissingLobby===roomId)dismissingLobby=null;if(closingFrame){closingFrame.inert=false;closingFrame.removeAttribute('aria-busy');}}
+      finally{if(dismissingLobby===roomId)dismissingLobby=null;if(closingFrame){closingFrame.removeAttribute('aria-busy');if(closingFrame.dataset.surfaceState==='active')closingFrame.inert=false;}}
     })();
     return true;
   }
