@@ -174,3 +174,20 @@ test('UNO missed declaration deadlines continue under local Settings without a h
   assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
  }finally{fs.writeFileSync(path.join(out,engine+'-report.json'),JSON.stringify({...report,errors,nativeSupabaseRequests:network.nativeSupabaseRequests},null,2));await context.close();await browser.close();await server.close();}
 });
+
+test('UNO result UI orders remaining hands by points without leaking live totals',{timeout:30000},async()=>{
+ const server=await TestUI.serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const p=await browser.newPage({viewport:{width:390,height:844}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'uno-results',name:'Анна'})));
+  if(process.env.PLAYROOM_TEST_ARTIFACT){await p.route(server.url,r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT)}));}
+  await p.goto(server.url);await TestUI.ready(p);
+  const result=await p.evaluate(()=>{
+   const E=TabletopCore,s=E.createGame('uno',{seed:17,preset:'classic',unoMode:'auto',players:['Анна','Борис','Вера','Глеб','Дина'].map(name=>({name}))}),d=s.data,cards=[...d.hands.flat(),...d.drawPile,...d.discard];
+   const take=(color,value)=>{const i=cards.findIndex(c=>c.color===color&&c.value===value);if(i<0)throw Error('Missing fixture card');return cards.splice(i,1)[0];};
+   d.discard=[take('red','1')];d.color='red';d.hands=[[take('red','2')],[take('yellow','9'),take('blue','7')],[take('green','+2')],[take('wild','+4')],[take('wild','wild')]];d.drawPile=cards;s.turn=0;E.validateState(s);
+   const before=E.project(s,-1);if(before.data.finalHandPoints!==undefined||before.players.some(p=>p.score!==0))throw Error('Private live point total exposed');
+   const finished=E.applyAction(s,0,E.legalActions(s,0).find(c=>c.type==='play'&&c.card===d.hands[0][0].id)),state=E.project(finished,0);window.unoResultState=state;PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'UNO'}),'result-modal');return {status:finished.status,places:finished.result.places,metrics:finished.result.metrics};
+  });
+  assert.equal(result.status,'finished');assert.deepEqual(result.places,[1,2,3,4,4]);assert.deepEqual(result.metrics.find(m=>m.id==='points').values,[0,16,20,50,50]);await p.locator('.result-modal .result-person').nth(4).waitFor();assert.equal(await p.locator('.result-person').count(),5);assert.deepEqual((await p.locator('.result-core-counters [data-score-id=points]').allTextContents()).map(x=>x.trim()),['0','16','20','50','50']);assert.deepEqual(errors,[]);
+  const out=process.env.PLAYROOM_CAPTURE_DIR||path.join(__dirname,'../../tmp_files/mage-teams-1113/screenshots-final');fs.mkdirSync(out,{recursive:true});await p.screenshot({path:path.join(out,'uno-results.png')});
+ }finally{await browser.close();await server.close();}
+});

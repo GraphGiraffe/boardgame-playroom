@@ -5,13 +5,13 @@ const {GameModel}=require('../core/model-runtime.js'),D=require('../packs/mage-b
 require('../packs/mage-brawl/rules.js');const model=new GameModel(D);
 const framesData=d=>{const {frames,...rest}=d;return {...rest,frameSequence:require('../../playroom-paks/shared/domain/frame-sequence.js').encode(frames)};};
 const clone=x=>JSON.parse(JSON.stringify(x)),plan=(element,action='movement',direction=0)=>({type:'plan',element,action,direction});
-function fixture(spec,{size,board={},shrink=null}={}){
- const n=spec.length,s=clone(model.create({playerCount:n,preset:'classic',firstPlayer:0,rng:17,options:{actionsPerTurn:1}})),d=s.data;
+function fixture(spec,{size,board={},shrink=null,preset='classic',options={}}={}){
+ const n=spec.length,s=clone(model.create({playerCount:n,preset,firstPlayer:0,rng:17,options:{actionsPerTurn:1,shrinkMode:'players',...options}})),d=s.data;
  if(size&&size!==d.size)delete d.startingBases; // Synthetic smaller arena has no original spawn metadata.
  d.size=size||d.size;d.board=Array(d.size*d.size).fill('ground');d.board[0]='base';d.board[d.board.length-1]='base';
  for(const [key,value] of Object.entries(board)){const [y,x]=key.split(',').map(Number);d.board[y*d.size+x]=value;}
  d.deck=['air','earth','water','fire'].flatMap((element,e)=>Array.from({length:n+1},(_,i)=>({id:'card:'+(e*(n+1)+i),element})));d.discard=[];d.shrink=shrink;
- spec.forEach((v,i)=>{Object.assign(d.players[i],{pos:v.pos,health:3,lives:2,maxHand:Math.max(3,v.hand?.length||0),hand:[v.element||'earth'],ultimate:0},v);d.players[i].hand=d.players[i].hand.map(element=>{const j=d.deck.findIndex(c=>c.element===element);assert(j>=0);return d.deck.splice(j,1)[0];});});
+ spec.forEach((v,i)=>{Object.assign(d.players[i],{pos:v.pos,health:3,lives:d.config.teams?1:d.config.extraLives+1,maxHand:Math.max(3,v.hand?.length||0),hand:[v.element||'earth'],ultimate:0},v);d.players[i].hand=d.players[i].hand.map(element=>{const j=d.deck.findIndex(c=>c.element===element);assert(j>=0);return d.deck.splice(j,1)[0];});});
  assert(D.validate(s));return s;
 }
 function physicalPlan(s,id,c){if(c.type!=='plan'||c.cardId)return c;return {...c,cardId:s.data.players[id].hand.find(card=>card.element===c.element).id};}
@@ -248,8 +248,8 @@ test('loot authority hides remaining faces from Table and duplicate commands can
 
 test('independent slider rules and double defaults',()=>{
  for(const steps of [1,2]){
-  const s=model.create({playerCount:8,preset:'classic',rng:41,options:{actionsPerTurn:String(steps),health:'6',lives:'4',handLimit:'8'}});
-  assert(D.validate(s));assert(s.data.players.every(p=>p.health===6&&p.lives===4&&p.hand.length===8&&p.maxHand===8));
+  const s=model.create({playerCount:8,preset:'classic',rng:41,options:{actionsPerTurn:String(steps),health:'6',extraLives:'2',handLimit:'8'}});
+  assert(D.validate(s));assert(s.data.players.every(p=>p.health===6&&p.lives===3&&p.hand.length===8&&p.maxHand===8));
  }
  const s=model.create({playerCount:2,preset:'classic',rng:41,options:{actionsPerTurn:'2'}});assert.equal(s.data.config.health,4);assert.equal(s.data.config.handLimit,4);
  const bad=clone(s);bad.data.config.steps=3;assert.equal(D.validate(bad),false);
@@ -269,7 +269,7 @@ test('two actions: private first draft, distinct copies, reset and one final dra
  assert.deepEqual([...new Set(s.data.frames.filter(f=>f.phase.startsWith('attack')).map(f=>f.step))],[0,1]);assert(D.validate(s));
 });
 test('two-action bots finish games with legal private drafts and conserved cards',()=>{
- for(const n of [2,8]){let s=model.create({playerCount:n,preset:'classic',rng:12,options:{actionsPerTurn:'2',health:'2',lives:'2'}});
+ for(const n of [2,8]){let s=model.create({playerCount:n,preset:'classic',rng:12,options:{actionsPerTurn:'2',health:'2',extraLives:'1'}});
   for(let i=0;i<500&&s.status==='playing';i++){const w=model.decisionWindow(s),id=w.participants.find(id=>!w.ready.includes(id)),c=model.botAction(s,id);assert(c);s=model.apply(s,id,c).position;assert(D.validate(s));}
   assert.equal(s.status,'finished');
  }
@@ -539,4 +539,66 @@ test('Mage round presentation owns its audio while respawn retains ordinary feed
   if(command.type==='respawn'){respawn++;assert.deepEqual(cues.map(c=>c.id),['move']);}
  }
  assert.equal(resolved,2);assert(respawn>0);
+});
+
+
+test('final kill settles the first remaining card, conserves inventory and opens results without a loot decision',()=>{
+ const before=fixture([{pos:[1,1],hand:['earth','air','water']},{pos:[1,2],health:1,lives:1,hand:['fire','water','air']}]);
+ const first=before.data.players[1].hand[1];
+ const s=round(before,[plan('earth','attack',1),plan('fire','attack',2)]);
+ assert.equal(s.status,'finished');assert.deepEqual(s.winners,[0]);assert.equal(s.data.loot,undefined);assert.equal(s.data.phase,'planning');assert.equal(model.decisionWindow(s),null);assert.deepEqual(model.legalActions(s,0),[]);
+ assert(s.data.players[0].hand.some(c=>c.id===first.id));assert.equal(s.data.players[0].maxHand,4);assert(!s.events?.some(e=>e.type==='mage-brawl.loot'));assert(D.validate(s));assert.deepEqual(model.result(clone(s)),model.result(s));
+});
+test('additional lives are 0–2; team pools are equal even with odd seats and remain public without hands',()=>{
+ for(const n of [2,3,4,5,8])for(const extraLives of [0,1,2]){
+  const s=model.create({playerCount:n,preset:'teams',rng:21,options:{extraLives}});assert(D.validate(s));assert.deepEqual(s.data.teamLives,[Math.floor(n/2)*extraLives,Math.floor(n/2)*extraLives]);assert.deepEqual(s.data.players.map(p=>p.team),Array.from({length:n},(_,i)=>i%2));assert(s.data.players.every(p=>p.lives===1));
+  for(const viewer of [-1,0,n-1]){const p=model.project(s,viewer);assert.deepEqual(p.data.teamLives,s.data.teamLives);assert(p.data.players.every((v,i)=>i===viewer||v.hand===undefined));}
+ }
+ for(const value of [-1,3,1.5])assert.throws(()=>model.create({playerCount:3,preset:'classic',rng:1,options:{extraLives:value}}));
+ const s=model.create({playerCount:2,preset:'classic',rng:1,options:{extraLives:0}});assert(s.data.players.every(p=>p.lives===1));
+});
+test('friendly fire consumes a shared team token and exhausted teams lose collectively',()=>{
+ let s=round(fixture([{pos:[1,1]},{pos:[4,4]},{pos:[1,2],health:1},{pos:[4,1]}],{preset:'teams'}),[plan('earth','attack',1),plan('earth'),plan('earth','attack',2),plan('earth')]);
+ assert.deepEqual(s.data.teamLives,[1,2]);assert.equal(s.data.players[2].lives,1);assert.equal(s.data.players[2].pos,null);assert.equal(s.data.lostLives,1);assert.equal(s.status,'playing');assert(D.validate(s));
+ s=fixture([{pos:[1,1]},{pos:[1,2],health:1},{pos:[4,4]},{pos:null,health:0,lives:0,hand:[]}],{preset:'teams',options:{extraLives:0}});s.data.window.participants=[0,1,2];
+ s=round(s,[plan('earth','attack',1),plan('earth','attack',2),plan('earth')]);assert.equal(s.status,'finished');assert.deepEqual(s.winners,[0,2]);assert.deepEqual(model.result(s).places,[1,2,1,2]);assert(D.validate(s));
+});
+function shieldRound(s){
+ s=clone(s);
+ const d=s.data;assert(!d.loot);d.deck.push(...d.discard,...d.players.flatMap(p=>p.hand));d.discard=[];for(const p of d.players){p.hand=[];if(p.pos)p.hand.push(d.deck.splice(d.deck.findIndex(c=>c.element==='earth'),1)[0]);}
+ for(const id of [...s.data.window.participants])s=model.apply(s,id,physicalPlan(s,id,plan('earth'))).position;
+ return s;
+}
+test('life shrink carries overflow, gives a full warning round and removes at most one ring each round',()=>{
+ let s=model.create({playerCount:8,preset:'teams',rng:21,options:{actionsPerTurn:1,extraLives:1,shrinkMode:'lives'}});s=clone(s);s.data.board.fill('ground');s.data.board[44]='base';s.data.players.forEach((p,i)=>p.pos=[3+Math.floor(i/4),3+i%4]);s.data.lostLives=9;
+ s=shieldRound(s);assert.equal(s.data.inset,0);assert.equal(s.data.shrink,2);assert.deepEqual(model.project(s,0).data.shrinkCounter,{filled:4,capacity:4,scheduled:true,mode:'lives'});
+ s=shieldRound(s);assert.equal(s.data.inset,1);assert.equal(s.data.shrinkSpent,4);assert.equal(s.data.shrink,3);
+ s=shieldRound(s);assert.equal(s.data.inset,2);assert.equal(s.data.shrinkSpent,8);assert.equal(s.data.shrink,null);assert.deepEqual(model.project(s,0).data.shrinkCounter,{filled:1,capacity:4,scheduled:false,mode:'lives'});assert(D.validate(s));
+});
+test('odd life shrink starts half full; both final deaths and respawns count',()=>{
+ let s=model.create({playerCount:5,preset:'classic',rng:21,options:{actionsPerTurn:1,shrinkMode:'lives'}});assert.equal(model.project(s,0).data.shrinkCounter.filled,2);
+ s=round(fixture([{pos:[1,1],health:1,lives:1},{pos:[1,2],health:1},{pos:[4,4]}],{options:{shrinkMode:'lives'}}),[plan('earth','attack',1),plan('earth','attack',3),plan('earth')]);assert.equal(s.data.lostLives,2);assert.equal(model.project(s,2).data.shrinkCounter.filled,4);assert(D.validate(s));
+});
+
+
+test('life shrink defaults to 2/4/6 losses and odd counts begin half filled for every extra-life setting',()=>{
+ for(const extraLives of [0,1,2])for(const n of [5,6]){
+  let s=model.create({playerCount:n,preset:'classic',rng:21,options:{actionsPerTurn:1,extraLives}});assert.equal(s.data.config.shrinkMode,'lives');
+  const capacity=2*(extraLives+1),offset=n%2?capacity/2:0;assert.deepEqual(model.project(s,0).data.shrinkCounter,{capacity,filled:offset,scheduled:false,mode:'lives'});
+  s=clone(s);s.data.board.fill('ground');s.data.board[27]='base';s.data.players.forEach((p,i)=>p.pos=[2+Math.floor(i/3),2+i%3]);s.data.lostLives=capacity-offset-1;
+  s=shieldRound(s);assert.equal(s.data.shrink,null);s=clone(s);s.data.lostLives++;s=shieldRound(s);assert.equal(s.data.shrink,s.data.round);assert.equal(model.project(s,0).data.shrinkCounter.filled,capacity);assert(D.validate(s));
+ }
+});
+
+
+test('team bots finish odd and even games with shared respawns, deterministic restore and public projections',()=>{
+ for(const n of [3,4,5]){
+  let s=model.create({playerCount:n,preset:'teams',rng:31+n,options:{actionsPerTurn:1,health:1,extraLives:2,players:Array.from({length:n},()=>({botSettings:{difficulty:'hard',strategy:'fighter',errorRate:0}}))}});
+  for(let i=0;i<1000&&s.status==='playing';i++){
+   const w=model.decisionWindow(s),id=w.participants.find(id=>!w.ready.includes(id)),c=model.botAction(s,id);assert(c);
+   if(i%23===0){assert.deepEqual(model.apply(clone(s),id,c),model.apply(s,id,c));const p=model.project(s,-1);assert(p.data.players.every(v=>v.hand===undefined));}
+   s=model.apply(s,id,c).position;assert(D.validate(s));
+  }
+  assert.equal(s.status,'finished');assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);assert.deepEqual(model.result(clone(s)),model.result(s));
+ }
 });

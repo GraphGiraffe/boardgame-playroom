@@ -571,3 +571,31 @@ test('Mage respawn remount reserves the player hand before fitting the arena',{t
   assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });
+
+test('Mage team reserves and shrink indicator: one to four corners, warning glow and responsive cards',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const out=path.resolve(process.env.MAGE_EVIDENCE_DIR||path.join(root,'../tmp_files/mage-teams-1113/screenshots'));fs.mkdirSync(out,{recursive:true});
+ try{
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'no-preference'}),p=await context.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));p.setDefaultTimeout(7000);
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'shrink-ui',name:'Иван'}));localStorage.setItem('playroom.settings.v1',JSON.stringify({tutorialsEnabled:false,sound:false,animationSpeed:'fast'}));});
+  await openMageFixture(p,server.url);await TestUI.ready(p);await TestUI.openGame(p,'mage-brawl');await TestUI.activeSurface(p).locator('[data-command=lobby-start]').click();await p.locator('.mage-grid').waitFor();
+  await p.evaluate(()=>{
+   const E=TabletopCore;window.shrinkState=E.createGame('mage-brawl',{seed:17,preset:'teams',actionsPerTurn:'1',extraLives:'1',shrinkMode:'lives',players:Array.from({length:8},(_,i)=>({name:['Иван','Анна','Борис','Лена','Лев','Ника','Марк','Оля'][i],bot:i>0}))});
+   window.showShrink=(filled,scheduled=false,extraLives=1)=>{const s=E.clone(shrinkState);s.data.config.extraLives=extraLives;s.data.teamLives=[4*extraLives,4*extraLives];s.data.lostLives=filled;s.data.shrink=scheduled?s.data.round:null;const state=E.project(s,0),actions=E.legalActions(s,0),host=document.querySelector('#app');PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'shrink-evidence',gameName:'Стихийная потасовка',state,viewer:0,actions,scene:PlayroomViews.render(state,0,actions,{})}));PlayroomGameScreen.layoutScene(host);};
+  });
+  const records=[];
+  for(const filled of [1,2,3,4]){
+   await p.evaluate(n=>showShrink(n),filled);const own=p.locator('.self-player');await own.locator(`.mage-shrink-counter[data-shrink-filled="${filled}"]`).waitFor();
+   assert.equal(await own.locator('.mage-shrink-corner.is-filled').count(),filled);assert.equal(await own.locator('.mage-shrink-corner:not(.is-filled)').count(),4-filled);
+   assert.equal(await own.locator('.mage-team-lives .counter-token:not(.is-empty)').count(),8);assert.equal(await p.locator('.opponent-hand .mage-team-lives').count(),0);assert.equal(await p.locator('.player-panel .token-meeple').count(),0,'shared reserve is not repeated as personal lives');
+   await own.screenshot({path:path.join(out,`indicator-${filled}.png`)});if(filled===3)await p.screenshot({path:path.join(out,'team-game.png')});
+   records.push({filled,aria:await own.locator('.mage-shrink-counter').getAttribute('aria-label')});
+  }
+  await p.evaluate(()=>showShrink(4,true));const warning=p.locator('.self-player .mage-shrink-counter');
+  const glow=await warning.evaluate(e=>{const a=e.getAnimations()[0];if(!a)throw Error('Warning animation missing');a.pause();a.currentTime=1400;return {animation:getComputedStyle(e).animationName,filter:getComputedStyle(e).filter};});assert.equal(glow.animation,'mage-shrink-warning');assert.notEqual(glow.filter,'none');await p.locator('.self-player').screenshot({path:path.join(out,'indicator-warning.png')});
+  for(const extraLives of [0,2]){await p.evaluate(n=>showShrink(n+1,false,n),extraLives);const mark=p.locator('.self-player .mage-shrink-counter');assert.equal(await mark.getAttribute('data-shrink-capacity'),String(2*(extraLives+1)));assert.equal(await mark.locator('.mage-shrink-corner.is-filled').count(),extraLives+1);await p.locator('.self-player').screenshot({path:path.join(out,`indicator-capacity-${2*(extraLives+1)}.png`)});}
+  await p.evaluate(()=>showShrink(4,true));
+  for(const viewport of [{width:320,height:740},{width:844,height:390},{width:390,height:844}]){await p.setViewportSize(viewport);await p.evaluate(()=>PlayroomGameScreen.layoutScene(document.querySelector('#app')));const overflow=await p.locator('.player-status').evaluateAll(ns=>ns.filter(n=>{const card=n.closest('.player-panel').getBoundingClientRect(),r=n.getBoundingClientRect();return r.right>card.right+1||r.left<card.left-1;}).map(n=>n.outerHTML));assert.deepEqual(overflow,[],JSON.stringify(viewport));await p.screenshot({path:path.join(out,`team-${viewport.width}x${viewport.height}.png`)});}
+  await p.emulateMedia({reducedMotion:'reduce'});assert.equal(await warning.evaluate(e=>getComputedStyle(e).animationName),'none');assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({records,glow,errors,scope:'Native app boot and game launch; staged public match states for exact indicator coverage'},null,2));
+ }finally{await browser.close();await server.close();}
+});

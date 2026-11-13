@@ -27,6 +27,8 @@
 .settings-v021 .settings-diagnostics{min-width:0}
 .settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:600}
 
-.settings-v021-shortcuts{min-width:0}
-.settings-v021-shortcuts>h3{margin:0 0 8px;font-size:var(--ui-type-label,.875rem)}
-.settings-v021-shortcuts>.settings-shortcuts{display:flex;flex-wrap:wrap;margin:0;overflow:visible}
+
+@media(max-width:359px){
+ :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head{gap:4px}
+ :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head>.surface-head-actions{gap:4px}
+}

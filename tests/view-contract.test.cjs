@@ -22,9 +22,10 @@ test('public table strips player-target actions even when supplied by a caller',
 });
 
 test('player descriptors require matching indexes and valid public metadata',()=>{
+  assert(Packs.SDK_FEATURES.includes('player-status-v1'));const value=bundle();value.manifest.sdkFeatures=['player-status-v1'];assert.doesNotThrow(()=>env().manager.prepare(value));
   const state={players:[{name:'One'},{name:'Two'}]},scene={api:3,family:'cards',elements:{field:'Field'}};
-  for(const content of [[{}],[{},null],[{},[]],[{open:'yes'},{}],[{badges:[null]},{}],[{colorLabel:1},{}],[{countLabel:false},{}]])assert.throws(()=>UI.composeScene({...scene,playerContent:content},{state}));
-  assert.doesNotThrow(()=>UI.composeScene({...scene,playerContent:[{badges:['UNO!',{label:'Ready'}]},{}]},{state}));
+  for(const content of [[{}],[{},null],[{},[]],[{open:'yes'},{}],[{badges:[null]},{}],[{colorLabel:1},{}],[{countLabel:false},{}],[{statusHTML:1},{}]])assert.throws(()=>UI.composeScene({...scene,playerContent:content},{state}));
+  assert.doesNotThrow(()=>UI.composeScene({...scene,playerContent:[{badges:['UNO!',{label:'Ready'}],statusHTML:'<span>Public status</span>'},{}]},{state}));
 });
 
 test('pack assets survive export to a remote view without rules or external requests',()=>{

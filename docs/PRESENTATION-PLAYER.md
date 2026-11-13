@@ -569,3 +569,7 @@ both capture returns and exchanges; no destination is assumed to be a base.
 Other affected stack placements settle after the named departures. Routes without
 this opt-in retain their existing timing. Instant/reduced motion, interruption,
 resize and cleanup use the existing shared motion lifecycle.
+
+## Public player-card status
+
+Packs using this slot declare `sdkFeatures: ["player-status-v1"]`; older hosts reject the update instead of silently losing status information. A Web renderer may supply `playerContent[i].statusHTML` as a string of already authorized public status markup, like `handHTML`. The shared player card owns its `.player-status` slot and wrapping. Pack CSS styles only its own markup; it never positions `.player-data` or other application components. Public-frame player cards use the same slot, so indicators follow the displayed state rather than the final authority state.
