@@ -53,12 +53,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const guests=room.participants.filter(p=>!occupied.has(p.id)).map((p,index)=>personRow(p,{index})).join('');
     const firstSeat=seats.find(seat=>seat.participantId===room.firstParticipantId),firstLabel=room.firstPlayerMode==='assigned'&&firstSeat?'Первый ход · место '+(firstSeat.index+1):room.firstPlayerMode==='random'?'Первый ход · случайный игрок':'Первый ход · по правилам',canAssign=isHost&&!configLocked&&room.constraints.max>1&&root.PlayroomCatalog?.[room.game.id]?.capabilities?.firstPlayer!==false;
     const host=room.participants.find(p=>p.id===room.ownerId),mode=({hotseat:'На устройстве',online:'Онлайн',network:'Рядом'})[room.transportMode],code=room.transportMode==='online'&&room.onlineCodeAssigned?' · '+room.code:'';
-    const rulesSummary=root.PlayroomMultiplayer.describeRules(room.rules,root.PlayroomCatalog?.[room.game.id]?.settings||[],false,root.PlayroomCatalog?.[room.game.id]?.presetSetting).slice(0,3).map(row=>row.label+': '+row.value).join(' · ');
+    const summaryRows=root.PlayroomMultiplayer.describeRules(room.rules,root.PlayroomCatalog?.[room.game.id]?.settings||[],false,root.PlayroomCatalog?.[room.game.id]?.presetSetting).slice(0,3).map(row=>row.label+': '+row.value);
+    const rulesSummary=summaryRows.join(' · ');
+    const summaryItems=(summaryRows.length?summaryRows:[mode+code+' · хост '+(host?.nickname||'')]).map(text=>`<span class="room-v021-rule-item">${esc(text)}</span>`).join('');
     const gameLocked=configLocked?'Игру можно сменить до начала партии.':'';
     const gameArt=`<span class="pack-art room-v021-art">${root.PlayroomViews?.cover?.(room.game.id)||icon('board')}</span>`;
     const cover=isHost?`<button type="button" class="room-v021-cover-choice" data-command="room-change-game" aria-label="${esc('Сменить игру: '+room.game.name)}" ${gameLocked?`disabled title="${esc(gameLocked)}"`:''}>${gameArt}<span class="room-v021-cover-edit" aria-hidden="true">${icon('layers')}</span></button>`:`<span class="room-v021-cover-choice is-readonly">${gameArt}</span>`;
     const parametersId='room-game-parameters-'+encodeURIComponent(room.id)+'-'+encodeURIComponent(participantId);
-    const gameIdentity=`<span class="room-v021-game-copy"><strong class="room-v021-game-title" title="${esc(room.game.name)}">${esc(room.game.name)}</strong><small title="${esc(rulesSummary||mode+code)}">${esc(rulesSummary||mode+code+' · хост '+(host?.nickname||''))}</small><span class="room-v021-game-edit">Параметры игры ${icon(isHost?'edit':'chevron')}</span></span>`;
+    const gameIdentity=`<span class="room-v021-game-copy"><strong class="room-v021-game-title" title="${esc(room.game.name)}">${esc(room.game.name)}</strong><small title="${esc(rulesSummary||mode+code)}">${summaryItems}</small><span class="room-v021-game-edit">Параметры игры ${icon(isHost?'edit':'chevron')}</span></span>`;
     const gameContext=`${cover}<button type="button" id="${esc(parametersId)}" class="room-v021-game-context" ${action(isHost,'room-rules','parameters')} aria-label="${esc('Параметры игры: '+room.game.name)}">${gameIdentity}</button>`;
     const roomActions=(room.transportMode!=='hotseat'?textAction('data-room-chat-open','Чат комнаты','chat'):'')+(completed?textAction(room.transportMode==='hotseat'?'data-command="result"':'data-net-action="result"','Итог партии','trophy'):isHost&&room.phase==='playing'?textAction(room.transportMode!=='hotseat'?'data-net-action="stop-match"':'data-command="stop-local-match"','Остановить партию','stop',{danger:true}):'');
     const ready=me?.role==='player'&&room.transportMode!=='hotseat'?textAction(action(isHost,'lobby-ready','ready')+` aria-pressed="${!!me.ready}"`,me.ready?'Я не готов':'Готов к игре','check',{primary:true,disabled:locked||!!me.replacement&&!me.replacement.accepted}):'';
@@ -189,6 +191,29 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     lifetime.callbacks.add(cleanup);
     return ()=>{lifetime.callbacks.delete(cleanup);if(!lifetime.callbacks.size){lifetime.observer.disconnect();if(host._lobbyLifetime===lifetime)delete host._lobbyLifetime;}};
   }
+  function bindSummary(host){
+    const line=host.querySelector('.room-v021-game-copy>small'),old=host._summaryBinding;
+    if(old?.line===line){old.fit();return;}
+    old?.cleanup();if(!line)return;
+    let unwatch;
+    const fit=()=>{
+      if(!line.isConnected||!host.contains(line)||line.clientWidth<=0)return;
+      const items=[...line.children];
+      for(const item of items){item.hidden=false;item.style.whiteSpace='nowrap';item.style.maxWidth='none';}
+      const widths=items.map(item=>item.getBoundingClientRect().width),available=line.clientWidth;
+      let used=0;
+      for(let i=0;i<items.length;i++){
+        const next=used+widths[i],visible=i===0||next<=available;
+        items[i].hidden=!visible;
+        if(i===0&&widths[i]>available){items[i].style.whiteSpace='normal';items[i].style.maxWidth='100%';}
+        // Preserve the authored priority: a later item never skips a hidden one.
+        used=visible?next:Infinity;
+      }
+    };
+    const observer=new ResizeObserver(fit),record={line,fit,cleanup(){observer.disconnect();unwatch?.();if(host._summaryBinding===record)delete host._summaryBinding;}};
+    host._summaryBinding=record;observer.observe(line);unwatch=watchLobby(host,record.cleanup);fit();
+    host.ownerDocument.fonts?.ready.then(()=>{if(host._summaryBinding===record)fit();});
+  }
   const dragDelay=event=>event.pointerType==='touch'?350:0;
   const rosterScroll=host=>host.closest('.modal-body')||host.closest('.modal');
   function bindFirst(host,assign,{current=()=>true,onError=()=>{}}={}){
@@ -212,7 +237,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     host._firstBinding=record;unwatch=watchLobby(host,record.cleanup);arm(false);return record.cleanup;
   }
   function bindDrag(host,{move,onError=()=>{},canMove=()=>true,current=()=>true}={}){
-    if(!host)return;
+    if(!host)return;bindSummary(host);
     const roomId=host.dataset.roomId,actorId=host.dataset.roomActor,options={move,onError,canMove,current},old=host._lobbyBinding;
     if(old&&old.roomId===roomId&&old.actorId===actorId){old.options=options;return old.cleanup;}
     old?.cleanup();const record={roomId,actorId,options};let unwatch;
