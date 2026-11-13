@@ -26,12 +26,14 @@
      return {items:people,next:legacy?null:result.next||null,legacy};
     }
     if(action==='room')this.room=result;
+    else if(action==='rooms'){if(!Array.isArray(result)||result.length>32)throw fail('request');this.data={...this.data,rooms:result};}
     else {const next=action==='list'?result:await this.remote.call('list',{}, {userId:s.id});if(!current())throw fail('account-changed');this.data=next;this.room=null;}
     return result;
    }catch(error){if(current())this.error=error.code||'request';throw error;}
    finally{if(current()){this.busy=false;this.emit();}}
   }
   refresh(){return this.perform('list');}
+  refreshRooms(){return this.perform('rooms');}
   acceptSync(data,userId){if(this.account.snapshot().id!==userId||this.account.snapshot().kind!=='account'||this.busy)return;if(!data||!Array.isArray(data.friends)||!Array.isArray(data.rooms)||!Array.isArray(data.invitations))return;this.data=data;this.emit();}
  }
  return SocialService;

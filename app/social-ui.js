@@ -64,7 +64,7 @@
   if(account.snapshot().kind==='account')void execute(state,()=>syncNickname());
  }
  function init({account:accountService,remote}){
-  account=accountService;service=new root.PlayroomSocialService({account,remote});const ownedService=service;service.subscribe(()=>{if(service===ownedService)render();});
+  account=accountService;service=new root.PlayroomSocialService({account,remote});const ownedService=service;service.subscribe(()=>{if(service===ownedService){render();root.dispatchEvent(new CustomEvent('playroom:online-rooms-updated'));}});
   account.subscribe(()=>{
    if(service!==ownedService)return;const state=view;if(state&&!sameOwner(state)){
     if(state.awaitingAccount&&state.identity.kind!=='account'&&account.snapshot().kind==='account'&&!account.snapshot().recovery){state.identity=identity();state.results=null;state.error='';state.notice='';state.retry=null;state.operation=null;}

@@ -80,7 +80,16 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const fresh=rpc(a,false,'invite',{roomId:rid});rpc(a,false,'kick',{roomId:rid,userId:b});rpc(b,false,'room',{roomId:rid},false);rpc(b,false,'join',{token:directed.token,nickname:'Борис'},false);
   const removed=rpc(a,false,'invite',{roomId:rid,userId:b});rpc(b,false,'remove',{id:edge});rpc(b,false,'join',{token:removed.token,nickname:'Борис'},false);assert.equal(rpc(a,false,'list').friends.length,0);
   rpc(a,false,'leave',{roomId:rid},false);rpc(a,false,'close',{roomId:rid});rpc(g,true,'join',{token:fresh.token,nickname:'Гость'},false);assert.equal(rpc(a,false,'list').rooms.length,0);
+  // Seed the production-era schema and a real legacy identity before migration.
+  sql(`create table public.playroom_peer_bindings(room_id uuid not null references public.playroom_cloud_rooms(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,participant_id text not null default gen_random_uuid()::text,primary key(room_id,user_id),unique(room_id,participant_id));
+   create table public.playroom_signals(id uuid primary key default gen_random_uuid(),room_id uuid not null references public.playroom_cloud_rooms(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,epoch uuid not null,offer text,answer text,expires_at timestamptz not null default now()+interval '2 minutes',unique(room_id,user_id));
+   insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values('${rid}','${b}','legacy-preserved');
+   insert into public.playroom_signals(room_id,user_id,epoch) values('${rid}','${b}','00000000-0000-4000-8000-000000000099');`);
   const signaling=fs.readFileSync(path.join(__dirname,'../server/signaling.sql'),'utf8');sql(signaling);sql(signaling);
+  assert.equal(sql(`select participant_id||':'||device_id::text from public.playroom_peer_bindings where room_id='${rid}' and user_id='${b}'`),'legacy-preserved:00000000-0000-0000-0000-000000000000');
+  assert.equal(sql(`select count(*) from public.playroom_signals where room_id='${rid}' and user_id='${b}' and device_id='00000000-0000-0000-0000-000000000000'`),'1','legacy SDP row survives repeated migration');
+  sql(`delete from public.playroom_signals where room_id='${rid}';delete from public.playroom_peer_bindings where room_id='${rid}';`);
+
   const signal=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_signal('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   const cloud=rpc(a,false,'create',{name:'Соединение'}).id,ep='00000000-0000-4000-8000-000000000099',ep2='00000000-0000-4000-8000-000000000098';
   const link=rpc(a,false,'invite',{roomId:cloud});rpc(b,false,'join',{token:link.token,nickname:'Борис'});
@@ -605,6 +614,78 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const expiredHost={...hp,id:'92000000-0000-4000-8000-000000000003'};handoff(b,false,'offer',expiredHost);sql(`update public.playroom_host_transfers set expires_at=now()-interval '1 second' where id='${expiredHost.id}';`);assert.equal(claim().length,0,'expired offers are not delivered');
   const memberLeft={...hp,id:'92000000-0000-4000-8000-000000000004'};handoff(b,false,'offer',memberLeft);sql(`delete from public.playroom_room_members where room_id='${hroom}' and user_id='${a}';`);assert.equal(claim().length,0,'departed recipient cannot receive a handoff proposal');sql(`insert into public.playroom_room_members(room_id,user_id,nickname) values('${hroom}','${a}','A');`);handoff(b,false,'cancel',memberLeft);
   const committedHost={...hp,id:'92000000-0000-4000-8000-000000000005'};handoff(b,false,'offer',committedHost);handoff(a,false,'accept',committedHost);const hostSeal={...committedHost,digest:'sha256:'+'c'.repeat(64),revision:42};handoff(b,false,'seal',hostSeal);handoff(a,false,'ready',hostSeal);handoff(b,false,'commit',committedHost);handoff(b,false,'commit',committedHost);batch=claim();assert.equal(batch.length,2);assert(batch.every(row=>row.payload.activity==='host-transfer-complete'));assert.deepEqual(new Set(batch.map(row=>row.payload.recipient)),new Set([a,b]));
+  // Per-device RTC slots and participants coexist within the same account room.
+  const deviceOne='a1000000-0000-4000-8000-000000000001',deviceTwo='a1000000-0000-4000-8000-000000000002';
+  sql(`update public.playroom_cloud_rooms set host_until=null,created_at=now()-interval '1 day' where not closed;`);
+  const multiRoom=rpc(a,false,'create',{name:'Devices'}).id;signal(a,false,'host',{roomId:multiRoom,localRoomId:'device-local',epoch:ep});
+  const compactRooms=rpc(a,false,'rooms');assert.equal(compactRooms.filter(r=>r.id===multiRoom).length,1);assert(!JSON.stringify(compactRooms).includes('friends'));
+  const own1=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceOne});
+  const own2=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceTwo});
+  assert.notEqual(own1.id,own2.id,'same account has independent SDP slots');
+  const devices=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep});assert.equal(devices.length,2);
+  assert.equal(new Set(devices.map(x=>x.participantId)).size,2,'same account has distinct participants');
+  assert(devices.every(x=>x.userId===a));
+  const summary={game:'uno',packVersion:'0.6.8-preview.25',phase:'playing',revision:2,move:2,turn:0,firstPlayer:0,round:{number:1,kind:'round',secret:'PRIVATE-SHOULD-NOT-PERSIST'},turnNumber:1,
+   players:[{id:'public-person',nickname:'Алиса',role:'player',playerIndex:0,avatar:'circle-blue',hands:['PRIVATE-SHOULD-NOT-PERSIST']}],scene:{hands:['PRIVATE-SHOULD-NOT-PERSIST']},resumeToken:'PRIVATE-SHOULD-NOT-PERSIST'};
+  signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep,summary});
+  const publishedRoom=rpc(a,false,'rooms').find(r=>r.id===multiRoom);assert.equal(publishedRoom.summary.players[0].nickname,'Алиса');assert.equal(publishedRoom.summary.move,2);assert(publishedRoom.updatedAt);
+  assert(!JSON.stringify(publishedRoom).includes('PRIVATE-SHOULD-NOT-PERSIST'),'room cards persist only whitelisted public metadata');
+  signal(b,false,'poll-host',{roomId:multiRoom,epoch:ep,summary},false);
+
+  signal(a,false,'poll',{roomId:multiRoom,id:own1.id,deviceId:deviceTwo},false);
+  signal(b,false,'request',{roomId:multiRoom,deviceId:deviceOne},false);
+  const firstParticipant=devices.find(x=>x.id===own1.id).participantId;
+  const ownRetry=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceOne});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).find(x=>x.id===ownRetry.id).participantId,firstParticipant,'reconnect retains its participant');
+  const peers=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).map(x=>({id:x.id,userId:x.userId,participantId:x.participantId}));
+  const syncDevices=JSON.parse(sql(as(a,false,`select public.playroom_signal_sync('poll-host','${JSON.stringify({roomId:multiRoom,epoch:ep,peers})}'::jsonb);`)).split('\n').at(-1));
+  assert.equal(syncDevices.peers.length,2);assert(syncDevices.peers.every(x=>x.allowed),'sync grants do not duplicate or conflate account devices');
+  rpc(a,false,'create',{id:'a2000000-0000-4000-8000-000000000002',name:'Other online room'},false);
+  signal(a,false,'leave',{roomId:multiRoom,deviceId:deviceOne});
+  assert.equal(sql(`select closed from public.playroom_cloud_rooms where id='${multiRoom}'`),'f');
+  signal(a,false,'poll',{roomId:multiRoom,id:own2.id,deviceId:deviceTwo});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).length,1,'leaving one device preserves host and sibling');
+  const devicesAfter=JSON.parse(sql(as(a,false,`select public.playroom_signal_sync('poll-host','${JSON.stringify({roomId:multiRoom,epoch:ep,peers})}'::jsonb);`)).split('\n').at(-1));
+  assert.equal(devicesAfter.peers.find(x=>x.id===ownRetry.id).allowed,false);
+  assert.equal(devicesAfter.peers.find(x=>x.id===own2.id).allowed,true);
+  signal(b,false,'kick',{roomId:multiRoom,participantId:devices.find(x=>x.id===own2.id).participantId},false);
+  signal(a,false,'kick',{roomId:multiRoom,participantId:devices.find(x=>x.id===own2.id).participantId});
+  assert.equal(sql(`select closed from public.playroom_cloud_rooms where id='${multiRoom}'`),'f','kicking another device of owner does not close room');
+  signal(a,false,'poll',{roomId:multiRoom,id:own2.id,deviceId:deviceTwo},false);
+  // Host transfer back to a participant with an existing device-scoped binding
+  // must not insert a duplicate legacy binding or overwrite the sibling device.
+  sql(`insert into public.playroom_room_members(room_id,user_id,nickname) values('${multiRoom}','${b}','Борис');`);
+  const legacyDeviceParticipant='a5000000-0000-4000-8000-000000000001';
+  sql(`insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values('${multiRoom}','${b}','${legacyDeviceParticipant}');`);
+  const upgradedDevice=signal(b,false,'request',{roomId:multiRoom,deviceId:deviceOne,resumeParticipantId:legacyDeviceParticipant});signal(b,false,'request',{roomId:multiRoom,deviceId:deviceTwo});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).find(p=>p.id===upgradedDevice.id).participantId,legacyDeviceParticipant,'device upgrade preserves its authenticated legacy participant');
+  const transferPeers=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).filter(p=>p.userId===b),nextHost=transferPeers[0].participantId;
+  const transferOne={id:'a4000000-0000-4000-8000-000000000001',roomId:multiRoom,source:'original-host',target:nextHost};
+  handoff(a,false,'offer',transferOne);handoff(b,false,'accept',transferOne);
+  const transferSeal={...transferOne,digest:'sha256:'+'d'.repeat(64),revision:2};handoff(a,false,'seal',transferSeal);handoff(b,false,'ready',transferSeal);handoff(a,false,'commit',transferOne);
+  signal(b,false,'host',{roomId:multiRoom,localRoomId:'device-local',epoch:ep2});
+  const transferBack={id:'a4000000-0000-4000-8000-000000000002',roomId:multiRoom,source:nextHost,target:'original-host'};
+  handoff(b,false,'offer',transferBack);assert.equal(sql(`select count(*) from public.playroom_peer_bindings where room_id='${multiRoom}' and user_id='${b}'`),'2','host handoff preserves both device bindings');handoff(b,false,'cancel',transferBack);
+  rpc(b,false,'close',{roomId:multiRoom});
+  assert.equal(sql(`select count(*) from public.playroom_peer_bindings where room_id='${multiRoom}'`),'0');
+  assert(!rpc(a,false,'rooms').some(r=>r.id===multiRoom),'closed rooms disappear from compact discovery');
+  assert.equal(sql(`select room_summary::text||':'||(summary_updated_at is null)::text from public.playroom_cloud_rooms where id='${multiRoom}'`),'{}:true','closed room retains no remote card metadata');
+  // Two devices of one account get distinct Push deliveries but share read state.
+  sql('delete from public.playroom_push_deliveries');
+  const accountDevices=['same-account-device-one','same-account-device-two'].map(name=>({...subscription,endpoint:'https://fcm.googleapis.com/fcm/send/'+name}));
+  for(const sub of accountDevices)push(b,false,'subscribe',{subscription:sub});
+  // Earlier scenarios sent a full rate-limit window; age only local fixture traffic.
+  sql(`update public.playroom_messages set created_at=now()-interval '2 minutes' where sender='${a}' and kind='message' and created_at>now()-interval '1 minute';`);
+  const crossDeviceBody='Read once across both devices';
+  const crossDeviceMessage=online(a,false,'send-message',{userId:b,body:crossDeviceBody,nonce:'93000000-0000-4000-8000-000000000001'}).messages.find(m=>m.body===crossDeviceBody);
+  assert(crossDeviceMessage);
+  const deviceBatch=claim().filter(row=>accountDevices.some(sub=>sub.endpoint===row.subscription.endpoint));
+  assert.equal(deviceBatch.length,2,'one account queues one delivery per subscribed device');
+  assert.equal(new Set(deviceBatch.map(row=>row.subscription.endpoint)).size,2);
+  assert(deviceBatch.every(row=>row.payload.recipient===b&&row.payload.event==='dm:'+crossDeviceMessage.id));
+  online(b,false,'read-messages',{userId:a,through:crossDeviceMessage.id});
+  assert.equal(sql(`select count(*) from public.playroom_push_deliveries d join public.playroom_push_subscriptions sub on sub.id=d.subscription_id where sub.user_id='${b}' and d.ref='${crossDeviceMessage.id}' and public.playroom_push_pending(d,sub.user_id)`),'0','read suppresses pending Push on every device');
+  assert(!claim().some(row=>row.payload.event==='dm:'+crossDeviceMessage.id),'read event removed before delayed claim');
  }finally{if(started)exec('pg_ctl',['-D',data,'-m','fast','-w','stop']);fs.rmSync(dir,{recursive:true,force:true});}
 });
 test('friend search migration uses canonical profile schema and authenticated public keyset pages',{timeout:30000},()=>{

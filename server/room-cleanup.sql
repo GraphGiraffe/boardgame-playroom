@@ -5,7 +5,7 @@ create index if not exists playroom_push_room_reads_room on public.playroom_push
 create or replace function public.playroom_cleanup_closed_room() returns trigger
 language plpgsql security definer set search_path=pg_catalog,public as $$
 begin
- new.host_until:=null;new.host_epoch:=null;
+ new.host_until:=null;new.host_epoch:=null;new.room_summary:='{}'::jsonb;new.summary_updated_at:=null;
  update public.playroom_room_invites set revoked=true,expires_at=least(expires_at,now()) where room_id=new.id;
  delete from public.playroom_push_deliveries d where
   (d.payload->>'type'='room' and d.payload->>'id'=new.id::text)
@@ -27,7 +27,7 @@ create trigger playroom_room_closed_cleanup before update of closed on public.pl
 -- Older closed rooms predate the trigger. Reuse the same atomic cleanup only
 -- for rooms with transient state; keep room/invitation tombstones and chat.
 update public.playroom_cloud_rooms r set closed=true
- where r.closed and (r.host_until is not null or r.host_epoch is not null
+ where r.closed and (r.host_until is not null or r.host_epoch is not null or r.room_summary<>'{}'::jsonb or r.summary_updated_at is not null
   or exists(select 1 from public.playroom_signals x where x.room_id=r.id)
   or exists(select 1 from public.playroom_peer_bindings x where x.room_id=r.id)
   or exists(select 1 from public.playroom_room_members x where x.room_id=r.id)

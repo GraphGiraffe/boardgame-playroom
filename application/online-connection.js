@@ -25,9 +25,10 @@
       account = service;
       ports.ice?.init(service);
       driver = new ports.Signaling({
-        remote: (action, data) => remote.call(action, data, { userId: expectedId }),
+        remote: (action, data) => remote.call(action, {...data,...(ports.deviceId?.()?{deviceId:ports.deviceId()}:{})}, { userId: expectedId }),
         idFactory: () => ports.id(),
         peers: {
+          summary: () => ports.network.publicRoomSummary?.(),
           prepare: (roomId) => ports.ice?.credentials(roomId),
           host: async (options) => {
             const progress = ports.progress?.create({ roomId: hosting?.cloud, role: 'host' });
@@ -126,7 +127,7 @@
               if (network.chatContext?.()?.connected)
                 (network.enterActiveRoom || network.openRoom)();
             });
-      const ticket = ++connectSequence;
+      const ticket = ++connectSequence, identity=expectedId;
       attempt?.cancel();
       attempt = ports.progress?.create({ roomId, visible: !background });
       if (!background && attempt)
@@ -143,7 +144,7 @@
         let timer;
         try {
           await Promise.race([
-            driver.connect(roomId, { background }),
+            network.cloudResumeParticipantId?Promise.resolve(network.cloudResumeParticipantId(roomId)).then(resumeParticipantId=>{check(ticket,identity);return driver.connect(roomId,{background,resumeParticipantId});}):driver.connect(roomId,{background}),
             new Promise((_, reject) => {
               timer = ports.setTimeout(
                 () =>
@@ -218,6 +219,8 @@
       iceConfiguration: (roomId) =>
         ports.ice?.configuration(roomId) || Promise.resolve({ iceServers: [] }),
       reconnect,
+      kickParticipant: async (roomId,participantId) => {ready();await driver.remote('kick',{roomId,participantId});},
+      leave: async (roomId) => {ready();const remote=driver.remote;stop();await remote('leave',{roomId});},
       roomClosed,
       isHosting: () => driver?.mode === 'host',
       active: () => !!driver?.mode,
@@ -237,7 +240,7 @@
         if (driver?.mode === 'host') stop();
       },
       stopClient: () => {
-        if (driver?.mode === 'client') stop();
+        if (driver?.mode !== 'host' && (target || connecting || driver?.mode === 'client')) stop();
       },
     });
   }

@@ -8,11 +8,11 @@ test('connecting elsewhere preserves an already active room',()=>{const {api,ctx
 test('connection deadline closes the unfinished peer and allows retry',async()=>{const {api,ctx,gates}=fixture();let deadline;ctx.setTimeout=fn=>{deadline=fn;return 1;};ctx.clearTimeout=()=>{};const pending=api.connect('slow');deadline();await assert.rejects(pending,error=>error.code==='connection-timeout');assert.equal(gates.length,0);const retry=api.connect('slow');gates[0].resolve();await retry;});
 
 test('invitation to the current room opens its lobby without connecting to the host again',async()=>{
- let opened=0,sessions=0,toasts=0,cloud='room',room={id:'local'};
- const ctx={document:{addEventListener(){}},PlayroomNetworkLibrary:{inviteContext:()=>({room}),openRoom:()=>opened++},PlayroomCloudNetwork:{roomId:()=>cloud},PlayroomAccountUI:{service:{snapshot:()=>({id:'owner'})}},PlayroomAppBridge:{toast:()=>toasts++,showSessions:()=>sessions++}};
+ let opened=0,sessions=0,toasts=0,joined=0,cloud='room',room={id:'local'};
+ const ctx={document:{addEventListener(){}},PlayroomChatUI:{captureReturn:()=>null},PlayroomRoomChatUI:{captureReturn:()=>null},PlayroomConnectionProgress:{markup:()=>''},PlayroomSocialUI:{service:{perform:async()=>({id:'room'})}},PlayroomNetworkLibrary:{inviteContext:()=>({room}),openRoom:()=>opened++,cancelJoin(){}},PlayroomCloudNetwork:{roomId:()=>cloud,connect:async()=>joined++,stopClient(){}},PlayroomAccountUI:{service:{snapshot:()=>({kind:'account',id:'owner'})}},PlayroomAppBridge:{toast:()=>toasts++,showSessions:()=>sessions++,profile:()=>({name:'Owner'}),captureModalReturn:()=>null,openModal:()=>({state:'active'})}};
  vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/lobby-network.js'),'utf8'),ctx);
  assert.equal(await ctx.PlayroomLobbyNetwork.joinInvitation('invite',{roomId:'room',ownerId:'owner'}),true);assert.equal(opened,1);assert.equal(sessions,0);
- cloud=null;room=null;assert.equal(await ctx.PlayroomLobbyNetwork.joinInvitation('invite',{roomId:'room',ownerId:'owner'}),false);assert.equal(opened,1);assert.equal(sessions,1);assert.equal(toasts,1);
+ cloud=null;room=null;assert.equal(await ctx.PlayroomLobbyNetwork.joinInvitation('invite',{roomId:'room',ownerId:'owner'}),true);assert.equal(joined,1);assert.equal(opened,1);assert.equal(sessions,0);assert.equal(toasts,0);
 });
 
 
@@ -47,4 +47,34 @@ test('account replacement fences a pending peer preparation',async()=>{
  const pending=callbacks.peers.client('offer');id='b';changed();
  // No active attempt means no credentials await; the microtask still must be fenced.
  await assert.rejects(pending,e=>e.code==='cancelled');assert.equal(created,0);
+});
+
+test('Online RPC binds each device, preserves resume identity and leaves only that device',async()=>{
+ const {create}=require('../application/online-connection.js');const calls=[];let callbacks,stopped=0,options;
+ const device='a1000000-0000-4000-8000-000000000001';
+ const api=create({Signaling:class{constructor(p){callbacks=p;this.remote=p.remote;}stop(){stopped++;}connect(room,o){options=o;return this.remote('request',{roomId:room,...(o.resumeParticipantId?{resumeParticipantId:o.resumeParticipantId}:{})});}},deviceId:()=>device,id:()=> 'id',network:{cloudResumeParticipantId:async()=> 'saved-participant'},report(){},rtc:{},setTimeout,clearTimeout});
+ api.init({account:{snapshot:()=>({id:'account',configured:true,kind:'account'}),subscribe(){}},remote:{call:async(...args)=>{calls.push(args);return {};}}});
+ await api.connect('room');assert.equal(options.resumeParticipantId,'saved-participant');
+ assert.deepEqual(calls[0],['request',{roomId:'room',resumeParticipantId:'saved-participant',deviceId:device},{userId:'account'}]);
+ await api.kickParticipant('room','other-participant');assert.equal(calls[1][0],'kick');assert.equal(calls[1][1].participantId,'other-participant');
+ await api.leave('room');assert.equal(calls[2][0],'leave');assert.equal(calls[2][1].deviceId,device);assert(stopped>0);assert.equal(api.roomId(),null);
+});
+
+
+test('compact room refresh keeps account profile and friendship state',async()=>{
+ const Social=require('../application/social-service.js');const calls=[];
+ const service=new Social({account:{snapshot:()=>({kind:'account',id:'account'}),subscribe(){}},remote:{call:async action=>{calls.push(action);return action==='rooms'?[{id:'room',available:true}]:{profile:{id:'account'},friends:[{userId:'friend'}],rooms:[],invitations:[]};}}});
+ await service.refresh();await service.refreshRooms();assert.deepEqual(calls,['list','rooms']);const state=service.snapshot();assert.equal(state.profile.id,'account');assert.equal(state.friends[0].userId,'friend');assert.equal(state.rooms[0].id,'room');
+});
+
+
+test('Back after failed connection clears the remote target even after driver stopped',async()=>{
+ const {api,gates}=fixture();const pending=api.connect('room');gates[0].reject(Object.assign(Error('network'),{code:'network'}));await assert.rejects(pending,e=>e.code==='network');api.stopClient();assert.equal(api.roomId(),null);assert.equal(api.active(),false);
+});
+
+
+test('invalid compact room response preserves the last valid room list',async()=>{
+ const Social=require('../application/social-service.js');let response=[{id:'room'}];
+ const service=new Social({account:{snapshot:()=>({kind:'account',id:'account'}),subscribe(){}},remote:{call:async()=>response}});
+ await service.refreshRooms();response={};await assert.rejects(service.refreshRooms(),e=>e.code==='request');assert.deepEqual(service.snapshot().rooms,[{id:'room'}]);
 });

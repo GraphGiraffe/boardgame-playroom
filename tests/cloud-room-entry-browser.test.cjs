@@ -151,3 +151,64 @@ test('participant profile resolves all actions before opening and keeps button p
   await page.locator('.friend-profile-modal').screenshot({path:path.join(captures,'participant-profile-ready.png')});assert.equal(provider.nativeSupabaseRequests,0);
  }finally{await browser.close();await server.close();}
 });
+
+
+test('remote Online game reuses detailed saved and home cards with a short device badge',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{
+  const page=await profile(browser,server.url,'Иван');
+  await page.evaluate(()=>{
+   const me='00000000-0000-4000-8000-000000000001';window.joinedRemoteRoom=null;window.remoteRoom={id:'00000000-0000-4000-8000-000000000002',ownerId:me,name:'Комната Иван',gameName:'Стихийная потасовка',roomCode:'1234',available:true,hostUntil:new Date(Date.now()+60000).toISOString(),updatedAt:new Date().toISOString(),summary:{game:'mage-brawl',packVersion:'0.2.7-preview.31',phase:'playing',move:2,turnNumber:1,turn:0,firstPlayer:0,round:{kind:'round',number:1},players:[{id:me,nickname:'Иван',avatar:'circle-blue',role:'player',isHost:true,connected:true,playerIndex:0},{id:'bot',nickname:'Тео',avatar:'triangle-red',role:'player',bot:true,connected:true,playerIndex:1}]}};
+   window.PlayroomAccountUI={...PlayroomAccountUI,service:{snapshot:()=>({kind:'account',id:me})}};
+   window.PlayroomSocialUI={...PlayroomSocialUI,service:{snapshot:()=>({rooms:[remoteRoom]}),refreshRooms:async()=>{}}};
+   window.PlayroomCloudNetwork={...PlayroomCloudNetwork,roomId:()=>null,connect:async id=>{joinedRemoteRoom=id;}};
+  });
+  await page.locator('[data-hub-page=sessions]').click();const card=page.locator('#saved-games-panel [data-remote-online-room]');await card.waitFor();
+  assert(await card.evaluate(e=>e.classList.contains('saved021-card')));assert.match(await card.locator('.saved021-summary').innerText(),/Другое устройство/);
+  for(const word of ['Иван','Тео','Раунд 1','Ход 1','2 действия','0.2.7-preview.31'])assert((await card.innerText()).includes(word),word);
+  for(const [width,height] of [[320,740],[390,844],[844,390]]){await page.setViewportSize({width,height});assert(await card.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(captures,`remote-saved-${width}.png`),animations:'disabled'});}
+  await card.click();assert.equal(await activeSurface(page).locator('[data-online-join-room]').innerText(),'Присоединиться');await activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+  await page.locator('[data-hub-page=games]').click();const main=page.locator('[data-remote-online-main] .resume-banner');await main.waitFor();
+  assert.equal(await main.locator('[data-remote-room-badge]').innerText(),'Другое устройство');assert((await main.innerText()).includes('Тео'));assert.equal(await main.locator('[data-online-join-room]').getAttribute('aria-label'),'Присоединиться');assert.equal(await main.locator('[data-net-action=leave-active]').count(),0);
+  for(const [width,height] of [[320,740],[390,844],[844,390]]){await page.setViewportSize({width,height});assert(await main.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(captures,`remote-home-${width}.png`),animations:'disabled'});}
+  await main.locator('[data-online-join-room]').click();await page.waitForFunction(()=>joinedRemoteRoom===remoteRoom.id);await activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+  await page.evaluate(()=>{remoteRoom.hostUntil=new Date(Date.now()-1).toISOString();dispatchEvent(new CustomEvent('playroom:online-rooms-updated'));});await page.waitForFunction(()=>!document.querySelector('[data-remote-online-main] [data-remote-online-room]'));
+  await page.locator('[data-hub-page=sessions]').click();assert.equal(await page.locator('#saved-games-panel [data-remote-online-room]').count(),0);
+ }finally{await browser.close();await server.close();}
+});
+
+test('one account has three independent players over RTC and one guest can leave',{timeout:90000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{
+  const pages=[];for(const name of ['Иван','Иван 2','Иван 3','Иван 4'])pages.push(await profile(browser,server.url,name));
+  const [host,one,two,late]=pages,account='c1000000-0000-4000-8000-000000000001',ids=['c2000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000002','c2000000-0000-4000-8000-000000000003'];
+  for(const p of pages)await p.evaluate(account=>{window.PlayroomAccountUI={...PlayroomAccountUI,service:{snapshot:()=>({kind:'account',configured:true,id:account})}};window.PlayroomCloudNetwork={...PlayroomCloudNetwork,host:async()=>{},roomId:()=> 'test-cloud',leave:async()=>{window.deviceLeft=true;}};const mount=PlayroomSharedViews.mount;PlayroomSharedViews.mount=function(c,...a){window.deviceClient=c;return mount(c,...a);};},account);
+  await openGame(host,'uno','online');await host.locator('[data-room-auto-start]').uncheck();
+  while(await host.locator('[data-bot-settings]').count()){await host.locator('[data-bot-settings]').first().click();await activeSurface(host).locator('[data-kick-participant]').click();await activeSurface(host).locator('[data-command=confirm-operation]').click();}
+  const localRoom=await host.evaluate(()=>PlayroomAppBridge.room().id);
+  async function attach(p,index){
+   const offer=await host.evaluate(async({account,id,index})=>{window.devicePeers??=[];devicePeers[index]=await PlayroomNetworkLibrary.cloudHostPeer({identity:{userId:account,participantId:id},check:async()=>{}});return devicePeers[index].offer;},{account,id:ids[index],index});
+   const answer=await p.evaluate(async offer=>{window.devicePeer=await PlayroomWebRTCTransport.createClientPeer(offer);return devicePeer.answer;},offer);
+   await host.evaluate(({answer,index})=>devicePeers[index].accept(answer),{answer,index});await p.evaluate(room=>PlayroomNetworkLibrary.cloudAttachClient(devicePeer,room),localRoom);await p.locator('.lobby-shell,.network-game').first().waitFor();
+  }
+  await attach(one,0);await attach(two,1);
+  assert((await host.evaluate(()=>PlayroomNetworkLibrary.transferContext().peers)).every(p=>p.sameAccount),'same-account connections are identified without changing the single-host policy');
+  await one.locator('[data-net-seat=seat-2]').click();await host.waitForFunction(id=>PlayroomAppBridge.room().seats.find(s=>s.id==='seat-2').participantId===id,ids[0]);
+  await two.locator('[data-net-seat=seat-3]').click();await host.waitForFunction(id=>PlayroomAppBridge.room().seats.find(s=>s.id==='seat-3').participantId===id,ids[1]);
+  const participants=await host.evaluate(()=>PlayroomAppBridge.room().participants.filter(p=>!p.bot));assert.equal(participants.length,3);assert.equal(new Set(participants.map(p=>p.id)).size,3);
+  fs.writeFileSync(path.join(captures,'device-lobby-before-start.json'),JSON.stringify({participants,one:await one.locator('body').innerText(),two:await two.locator('body').innerText()},null,2));
+  await one.screenshot({path:path.join(captures,'device-one-before-start.png')});
+  await host.locator('[data-command=lobby-ready]').click();for(const p of [one,two])await p.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();
+  await Promise.all([host,one,two].map(p=>p.locator('.network-game').waitFor()));
+  const frames=await Promise.all([host,one,two].map(p=>p.evaluate(()=>({sessionId:deviceClient.snapshot.sessionId,viewer:deviceClient.snapshot.viewer,role:deviceClient.snapshot.role,state:deviceClient.snapshot.state}))));assert.equal(new Set(frames.map(f=>f.viewer)).size,3);assert(frames.every(f=>f.role==='player'));for(const f of frames){const hands=f.state.scene.players;assert(hands.find(p=>p.player===f.viewer).hand.every(c=>!c.hidden&&c.id!=null));assert(hands.filter(p=>p.player!==f.viewer).every(p=>p.hand.every(c=>c.hidden&&!c.id)),'other same-account hands stay hidden');}
+  const publicSummary=await host.evaluate(()=>PlayroomNetworkLibrary.publicRoomSummary());assert.equal(publicSummary.game,'uno');assert(publicSummary.packVersion);assert.equal(publicSummary.players.length,3);assert(!JSON.stringify(publicSummary).includes('hands'));
+  await attach(late,2);await late.locator('.network-game').waitFor();const lateFrame=await late.evaluate(()=>deviceClient.snapshot);assert.equal(lateFrame.viewer,-1);assert(lateFrame.state.scene.players.every(p=>p.hand.every(c=>c.hidden&&!c.id)));
+  await late.locator('[data-game-menu]').click();await activeSurface(late).locator('[data-game-menu-action][data-command=home]').click();await late.locator('[data-net-action=leave-active]').click();await activeSurface(late).locator('[data-command=confirm-operation]').click();await late.waitForFunction(()=>globalThis.deviceLeft===true);assert.equal(await host.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id).phase),'playing','spectator exit does not stop the match');
+  const before=await two.evaluate(()=>PlayroomNetworkLibrary.transferClient().id);await two.evaluate(()=>devicePeer.close());await two.waitForFunction(()=>!PlayroomNetworkLibrary.chatContext()?.connected);await attach(two,1);await two.locator('.network-game').waitFor();assert.equal(await two.evaluate(()=>PlayroomNetworkLibrary.transferClient().id),before,'same device resumes its player');
+  await one.locator('[data-game-menu]').click();await activeSurface(one).locator('[data-game-menu-action][data-command=home]').click();await one.locator('[data-net-action=leave-active]').click();await activeSurface(one).locator('[data-command=confirm-operation]').click();await one.waitForFunction(()=>globalThis.deviceLeft===true);
+  const survivingRoom=await host.evaluate(()=>PlayroomAppBridge.room());assert.equal(survivingRoom.id,localRoom);assert(survivingRoom.participants.some(p=>p.id===ids[1]&&p.connected));
+  if(survivingRoom.phase==='lobby')assert.equal(survivingRoom.recovery.sessionId,frames[0].sessionId,'explicit player leave uses the existing roster-recovery lobby for this match');else assert.equal(survivingRoom.phase,'playing');
+  assert.equal(await two.evaluate(()=>PlayroomNetworkLibrary.chatContext().connected),true);
+  fs.writeFileSync(path.join(captures,'same-account-rtc.json'),JSON.stringify({players:3,oneAccount:true,realRTC:true,independentViewers:frames.map(f=>f.viewer),sameDeviceResume:true,leavePreservesOtherDevice:true,afterLeave:survivingRoom.phase,backend:'fixture identities; actual server isolation tested separately in PostgreSQL'},null,2));
+ }finally{await browser.close();await server.close();}
+});

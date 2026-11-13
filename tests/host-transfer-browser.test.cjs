@@ -112,7 +112,7 @@ test('online handoff changes server owner, preserves bound participant identity 
    await context.route('https://geurlwivdiqboylciqhl.supabase.co/**',accountSyncRoute(async route=>{
     const req=route.request(),url=req.url(),d=req.postDataJSON()?.p_data||{},action=req.postDataJSON()?.p_action;let result={};
     if(url.includes('/auth/')){const user={id:uid,email:uid+'@example.test',is_anonymous:false};result=url.endsWith('/user')?user:{user,access_token:'access-'+uid,refresh_token:'refresh-'+uid,expires_in:3600};}
-    else if(url.endsWith('/playroom_social'))result=action==='list'?{profile:{id:uid,nickname:name},friends:[],rooms:[],invitations:[]}:{id:uid,nickname:name};
+    else if(url.endsWith('/playroom_social'))result=action==='rooms'?[]:action==='list'?{profile:{id:uid,nickname:name},friends:[],rooms:[],invitations:[]}:{id:uid,nickname:name};
     else if(url.endsWith('/playroom_cloud_saves_rpc'))result={enabled:false,items:[],revision:0,usedBytes:0,quota:10485760};
     else if(url.endsWith('/playroom_push'))result=action==='config'?{ready:false,publicKey:null}:{};
     else if(url.endsWith('/playroom_online'))result=action==='hub'?{friends:[],conversations:[],rooms:[],invitations:[]}:action==='group-list'?{groups:[]}:action==='unread'?{chats:[]}:action==='inbox'||action==='group-inbox'?{cursor:'0',items:[]}:{};

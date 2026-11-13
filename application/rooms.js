@@ -219,7 +219,7 @@ class RoomService{
     }
     preview(roomId){const room=this._room(roomId);return {id:room.id,code:room.code,name:room.name,game:clone(room.game),rules:clone(room.rules),rulesRevision:room.rulesRevision,hostMode:room.hostMode,phase:room.phase,players:room.participants.filter(p=>p.role==='player').length,constraints:clone(room.constraints)};}
     join(roomId,{id=this.idFactory(),nickname,avatar}={}){
-      const room=this._room(roomId);this._lobby(room);
+      const room=this._room(roomId);if(room.phase==='playing'&&room.transportMode!=='hotseat'){if(room.hostTransferPending)throw Error('HOST_TRANSFER_BUSY');}else this._lobby(room);
       if(room.participants.some(item=>item.id===id))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9eeb6440db29"));
       // Credentials belong to the host's private map, never to room snapshots.
       const token=this.tokenFactory();
@@ -355,7 +355,8 @@ class RoomService{
       return this.snapshot(roomId);
     }
     kick(roomId,participantId,targetId){
-      const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
+      const room=this._room(roomId);this._host(room,participantId);
+      const leaving=this._participant(room,targetId);if(room.phase==='playing'&&['spectator','table'].includes(leaving.role)){if(room.hostTransferPending)throw Error('HOST_TRANSFER_BUSY');}else this._lobby(room);
       if(targetId===room.ownerId)throw Error(globalThis.PlayroomMessages.text("ui.rooms.bf317a0beea4"));
       const target=this._participant(room,targetId);
       for(const seat of room.seats)if(seat.participantId===targetId){if(room.recovery)seat.previousParticipant={id:target.id,nickname:target.nickname};seat.participantId=null;}

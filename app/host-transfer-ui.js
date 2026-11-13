@@ -617,7 +617,7 @@
     const ctx = N().transferContext();
     if (!ctx || (ctx.room.phase === 'lobby' && ctx.room.recovery)) return;
     const rows = ctx.peers.filter((p) =>
-      ctx.room.participants.some(
+      !p.sameAccount && ctx.room.participants.some(
         (v) => v.id === p.id && !v.bot && ['player', 'spectator', 'table'].includes(v.role),
       ),
     );

@@ -12,12 +12,15 @@
    this.stop();const ticket=this.generation,epoch=this.idFactory();await this.remote('host',{roomId,localRoomId,epoch});
    if(ticket!==this.generation)throw fail('cancelled');this.mode='host';
    const loop=async()=>{
+    let publishedSummary=null;
     while(ticket===this.generation){
      let joining=false;
      try{
       const known=[...this.handles].filter(([,item])=>item.accepted&&!item.closed?.()).map(([id])=>id);
       const peers=[...this.handles].filter(([,item])=>item.accepted&&!item.closed?.()&&(!item.active||item.active())).map(([id])=>({id,...this.grants.get(id).identity}));
-      const batch=await this.remote('poll-host',{roomId,epoch,known,peers});
+      const summary=this.peers.summary?.(),summaryKey=summary?JSON.stringify(summary):null;
+      const batch=await this.remote('poll-host',{roomId,epoch,known,peers,...(summary&&summaryKey!==publishedSummary?{summary}:{})});
+      publishedSummary=summaryKey;
       if(ticket!==this.generation)return;
       if(!batch||batch.contract!==1||!Array.isArray(batch.signals)||batch.signals.length>32||!Array.isArray(batch.peers)||batch.peers.length!==peers.length||new Set(batch.peers.map(p=>p.id)).size!==peers.length||batch.peers.some(p=>typeof p.allowed!=='boolean'||!peers.some(sent=>sent.id===p.id)))throw fail('signaling-contract');
       const rows=batch.signals;
@@ -62,9 +65,9 @@
     catch(error){if(ticket!==this.generation)throw fail('cancelled');if(attempt>=3||!(error.code==='network'||error.status>=500))throw error;await this.wait([500,1000,2000][attempt]);}
    }
   }
-  async connect(roomId,{background=false}={}){
+  async connect(roomId,{background=false,resumeParticipantId}={}){
    this.stop();const ticket=this.generation;this.mode='client';
-   const slot=await this.signal('request',{roomId},ticket);
+   const slot=await this.signal('request',{roomId,...(resumeParticipantId?{resumeParticipantId}:{})},ticket);
    const preparation=this.peers.prepare?.(roomId);preparation?.catch(()=>{});
    for(let attempts=0;attempts<60&&ticket===this.generation;attempts++){
     const result=await this.signal('poll',{roomId,id:slot.id},ticket);

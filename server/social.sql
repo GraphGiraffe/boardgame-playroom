@@ -88,6 +88,12 @@ begin
   exception when unique_violation then raise exception 'social:username-taken'; end;
   update public.playroom_room_members set nickname=nick where user_id=me;
   return jsonb_build_object('id',me,'nickname',nick,'username',handle);
+ elsif p_action='rooms' then
+  -- Compact discovery for My Games; no friendship/message/profile payload.
+  return coalesce((select jsonb_agg(jsonb_build_object('id',q.id,'name',q.name,'ownerId',q.owner_id,
+   'gameName',to_jsonb(q)->>'game_name','roomCode',to_jsonb(q)->>'room_code','available',true,'hostUntil',to_jsonb(q)->>'host_until','summary',coalesce(to_jsonb(q)->'room_summary','{}'::jsonb),'updatedAt',to_jsonb(q)->>'summary_updated_at') order by q.created_at,q.id)
+   from public.playroom_cloud_rooms q join public.playroom_room_members m on m.room_id=q.id
+   where m.user_id=me and not q.closed and (to_jsonb(q)->>'host_until')::timestamptz>now()),'[]'::jsonb);
  elsif p_action='list' then
   select jsonb_build_object(
    'profile',(select jsonb_build_object('id',id,'nickname',nickname,'username',username) from public.playroom_profiles where id=me and not guest),
