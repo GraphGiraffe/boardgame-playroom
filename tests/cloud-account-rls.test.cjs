@@ -281,6 +281,9 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const readable=online(a,false,'chat',{userId:b}).messages.find(m=>m.body===msg.body);assert.equal(readable.read,false);
   online(g,false,'read-messages',{userId:a,through:readable.id},false);online(a,false,'read-messages',{userId:b,through:readable.id},false);
   online(b,false,'read-messages',{userId:a,through:readable.id});assert.equal(online(a,false,'chat',{userId:b}).messages.find(m=>m.id===readable.id).read,true);
+  const readInbox=online(b,false,'inbox',{after:inboxCursor});
+  assert(!readInbox.items.some(m=>m.id===readable.id),'relogin with an old notification cursor must not notify already-read direct messages');
+  assert.equal(readInbox.cursor,notification.cursor,'read messages still advance the notification cursor');
   const privateDelta=online(a,false,'chat',{userId:b,after:readable.id,known:[readable.id]});
   assert.equal(privateDelta.messages.find(m=>m.id===readable.id).body,undefined,'cached text is not downloaded again');
   assert.equal(privateDelta.messages.find(m=>m.id===readable.id).read,true,'receipts update independently');
@@ -348,11 +351,15 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   online(a,false,'group-send',groupBody);online(a,false,'group-send',groupBody);let messages=online(b,false,'group-read',{groupId}).messages;assert.equal(messages.length,1);
   assert.equal(online(b,false,'unread').chats.find(c=>c.key==='group:'+groupId).unread,1);
   assert.equal(online(b,false,'group-read',{groupId,after:messages[0].id}).messages.length,0);
+  assert.equal(online(b,false,'group-inbox',{after:'0'}).items.length,1,'unread group message still notifies');
   online(b,false,'group-seen',{groupId,through:messages[0].seq});assert.equal(online(a,false,'group-read',{groupId}).messages[0].read,true);
   const groupDelta=online(a,false,'group-read',{groupId,after:messages[0].id,known:[messages[0].id]});
   assert.equal(groupDelta.messages[0].body,undefined);assert.equal(groupDelta.messages[0].read,true);
   assert.equal(online(b,false,'unread').chats.find(c=>c.key==='group:'+groupId).unread,0);
-  assert.equal(online(b,false,'group-inbox',{after:'0'}).items.length,1);assert.equal(online(g,false,'group-inbox',{after:'0'}).items.length,0);
+  const readGroupInbox=online(b,false,'group-inbox',{after:'0'});
+  assert.equal(readGroupInbox.items.length,0,'relogin must not notify already-read group messages');
+  assert.equal(readGroupInbox.cursor,messages[0].id,'group cursor advances past read messages');
+  assert.equal(online(g,false,'group-inbox',{after:'0'}).items.length,0);
   const thirdInvite=online(b,false,'group-invite',{groupId,userId:g});online(g,false,'group-accept',{inviteId:thirdInvite.id});
   assert.equal(online(g,false,'group-read',{groupId}).messages.length,1,'history visible to new members by default');
   const hiddenId='00000000-0000-4000-8000-000000000162';online(b,false,'group-create',{id:hiddenId,name:'Без истории'});
@@ -448,13 +455,23 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql(`insert into public.playroom_signals(room_id,user_id,epoch) values('${pushRoom}','${b}','${ep}');
    insert into public.playroom_host_transfers(id,room_id,source,target,source_participant,target_participant,epoch,state) values('99999999-9999-4999-8999-999999999901','${pushRoom}','${a}','${b}','a','b','${ep}','ready');
    insert into public.playroom_push_games(room_id,session_id,revision,control_revision,signature,state,targets) values('${pushRoom}','closed-test',1,0,'closed-test','playing','[]');`);
+  push(b,false,'room-seen',{roomId:pushRoom,events:[roomPush.eventId]});
+  assert.equal(sql(`select count(*) from public.playroom_push_room_reads where room_id='${pushRoom}'`),'1');
   const messagesBeforeClose=sql('select count(*) from public.playroom_messages');
   assert.equal(online(b,false,'unread',{roomId:pushRoom}).roomUnavailable,false);
   rpc(b,false,'close',{roomId:pushRoom},false);
   assert.equal(sql(`select count(*) from public.playroom_room_members where room_id='${pushRoom}'`),'2','nonowner cannot clean another room');
   rpc(a,false,'close',{roomId:pushRoom});rpc(a,false,'close',{roomId:pushRoom});
-  for(const table of ['playroom_room_members','playroom_peer_bindings','playroom_signals','playroom_host_transfers','playroom_push_games','playroom_push_room_events'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0',table+' cleaned atomically');
+  for(const table of ['playroom_room_members','playroom_peer_bindings','playroom_signals','playroom_host_transfers','playroom_push_games','playroom_push_room_events','playroom_push_room_reads'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0',table+' cleaned atomically');
   assert.equal(sql(`select host_until is null and host_epoch is null and closed from public.playroom_cloud_rooms where id='${pushRoom}'`),'t');
+
+  // Existing closed rows from before cleanup was installed must be repaired too.
+  sql(`update public.playroom_cloud_rooms set host_epoch='${ep}',host_until=now()+interval '1 minute' where id='${pushRoom}';
+   insert into public.playroom_push_games(room_id,session_id,revision,control_revision,signature,state,targets) values('${pushRoom}','legacy-closed',1,0,'legacy','playing','[]');
+   insert into public.playroom_push_room_reads(user_id,room_id,event_key) values('${b}','${pushRoom}','room:${roomPush.eventId}');`);
+  sql(cleanupSQL);sql(cleanupSQL);
+  assert.equal(sql(`select host_until is null and host_epoch is null and closed from public.playroom_cloud_rooms where id='${pushRoom}'`),'t');
+  for(const table of ['playroom_push_games','playroom_push_room_reads'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0','legacy '+table+' repaired idempotently');
   assert.equal(sql('select count(*) from public.playroom_messages'),messagesBeforeClose,'chat tombstones preserved');
   assert.equal(sql(`select count(*) from public.playroom_push_deliveries d where d.ref='${pushRoom}' or d.ref in(select id::text from public.playroom_room_invites where room_id='${pushRoom}')`),'0','pending room and invitation Push deleted immediately');
   assert.equal(online(b,false,'unread',{roomId:pushRoom}).roomUnavailable,true);

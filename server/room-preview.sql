@@ -91,6 +91,7 @@ begin
   on conflict(reader,peer) do update set through_id=greatest(playroom_chat_reads.through_id,excluded.through_id);
   return '{}'::jsonb;
  end if;
+ -- Advance delivery cursors over the whole batch, but notify only server-unread messages.
  if p_action='inbox' then
   if guest then raise exception 'social:account-required'; end if;
   if not p_data ? 'after' then return jsonb_build_object('cursor',coalesce((select max(id) from public.playroom_messages where recipient=me),0)::text,'items','[]'::jsonb); end if;
@@ -100,8 +101,8 @@ begin
    select jsonb_build_object('cursor',coalesce(max(m.id),after_id)::text,'items',coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'body',m.body,'kind',m.kind,'gameName',m.game_name,'at',m.created_at,
     'invitationState',case when m.kind='invitation' then public.playroom_invitation_state(m.invitation_id,me) when m.kind='group-invitation' then (select case when gi.accepted_at is not null then 'joined' when gi.declined_at is not null then 'declined' when gi.expires_at<=now() then 'expired' else 'active' end from public.playroom_group_invites gi where gi.id=m.group_invitation_id) else null end,
     'person',jsonb_build_object('id',f.id,'userId',p.id,'nickname',p.nickname,'username',p.username,'avatar',p.avatar,'accepted',coalesce(f.accepted,false),'requested',f.id is not null,'incoming',coalesce(f.recipient=me,false),
-     'online',coalesce(f.accepted and p.last_seen>now()-interval '75 seconds',false),'game',case when f.accepted and p.last_seen>now()-interval '75 seconds' then p.activity_game else null end)) order by m.id),'[]'::jsonb))
-   from batch m join public.playroom_profiles p on p.id=m.sender left join public.playroom_friendships f on (f.sender=me and f.recipient=p.id) or (f.recipient=me and f.sender=p.id));
+     'online',coalesce(f.accepted and p.last_seen>now()-interval '75 seconds',false),'game',case when f.accepted and p.last_seen>now()-interval '75 seconds' then p.activity_game else null end)) order by m.id) filter(where m.id>coalesce(cr.through_id,0)),'[]'::jsonb))
+   from batch m join public.playroom_profiles p on p.id=m.sender left join public.playroom_chat_reads cr on cr.reader=me and cr.peer=m.sender left join public.playroom_friendships f on (f.sender=me and f.recipient=p.id) or (f.recipient=me and f.sender=p.id));
  end if;
  if p_action in ('presence','hub') then
   if guest then raise exception 'social:account-required'; end if;

@@ -65,12 +65,13 @@ begin
  if p_action='list' then
   return jsonb_build_object('groups',coalesce((select jsonb_agg(jsonb_build_object('id',g.id,'name',g.name,'showHistory',g.show_history,'count',(select count(*) from public.playroom_group_members m where m.group_id=g.id and m.left_at is null)) order by g.created_at desc,g.id) from public.playroom_groups g join public.playroom_group_members m on m.group_id=g.id and m.user_id=me and m.left_at is null and g.closed_at is null),'[]'::jsonb));
  end if;
+ -- Advance delivery cursors over the whole batch, but notify only server-unread messages.
  if p_action='inbox' then
   if not p_data ? 'after' then return jsonb_build_object('cursor',coalesce((select max(msg.id) from public.playroom_group_messages msg join public.playroom_group_members mem on mem.group_id=msg.group_id and mem.user_id=me and mem.left_at is null where msg.id>mem.history_after and msg.sender<>me),0)::text,'items','[]'::jsonb); end if;
   if coalesce(p_data->>'after','') !~ '^[0-9]{1,19}$' then raise exception 'social:invalid'; end if;
   through_id:=(p_data->>'after')::bigint;
-  return (with batch as (select msg.* from public.playroom_group_messages msg join public.playroom_group_members mem on mem.group_id=msg.group_id and mem.user_id=me and mem.left_at is null where msg.id>mem.history_after and msg.sender<>me and msg.id>through_id order by msg.id limit 30)
-   select jsonb_build_object('cursor',coalesce(max(m.id),through_id)::text,'items',coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'body',p.nickname||': '||case when m.kind='invitation' then 'Приглашение в комнату · '||coalesce(m.game_name,'')||' · '||m.body else m.body end,'kind','group-message','invitationState',case when m.kind='invitation' then public.playroom_invitation_state((select id from public.playroom_room_invites where group_message_id=m.id and target_id=me),me) else null end,'group',jsonb_build_object('id',g.id,'name',g.name),'person',jsonb_build_object('userId','group:'||g.id::text,'nickname',g.name,'avatar',null)) order by m.id),'[]'::jsonb)) from batch m join public.playroom_groups g on g.id=m.group_id join public.playroom_profiles p on p.id=m.sender);
+  return (with batch as (select msg.*,mem.read_through from public.playroom_group_messages msg join public.playroom_group_members mem on mem.group_id=msg.group_id and mem.user_id=me and mem.left_at is null where msg.id>mem.history_after and msg.sender<>me and msg.id>through_id order by msg.id limit 30)
+   select jsonb_build_object('cursor',coalesce(max(m.id),through_id)::text,'items',coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'body',p.nickname||': '||case when m.kind='invitation' then 'Приглашение в комнату · '||coalesce(m.game_name,'')||' · '||m.body else m.body end,'kind','group-message','invitationState',case when m.kind='invitation' then public.playroom_invitation_state((select id from public.playroom_room_invites where group_message_id=m.id and target_id=me),me) else null end,'group',jsonb_build_object('id',g.id,'name',g.name),'person',jsonb_build_object('userId','group:'||g.id::text,'nickname',g.name,'avatar',null)) order by m.id) filter(where m.id>m.read_through),'[]'::jsonb)) from batch m join public.playroom_groups g on g.id=m.group_id join public.playroom_profiles p on p.id=m.sender);
  end if;
  if p_action='create' then
   gid:=(p_data->>'id')::uuid; title:=trim(p_data->>'name');
@@ -217,6 +218,7 @@ begin
   on conflict(reader,peer) do update set through_id=greatest(playroom_chat_reads.through_id,excluded.through_id);
   return '{}'::jsonb;
  end if;
+ -- Advance delivery cursors over the whole batch, but notify only server-unread messages.
  if p_action='inbox' then
   if guest then raise exception 'social:account-required'; end if;
   if not p_data ? 'after' then return jsonb_build_object('cursor',coalesce((select max(id) from public.playroom_messages where recipient=me),0)::text,'items','[]'::jsonb); end if;
@@ -226,8 +228,8 @@ begin
    select jsonb_build_object('cursor',coalesce(max(m.id),after_id)::text,'items',coalesce(jsonb_agg(jsonb_build_object('id',m.id::text,'body',m.body,'kind',m.kind,'gameName',m.game_name,'at',m.created_at,
     'invitationState',case when m.kind='invitation' then public.playroom_invitation_state(m.invitation_id,me) when m.kind='group-invitation' then (select case when gi.accepted_at is not null then 'joined' when gi.declined_at is not null then 'declined' when gi.expires_at<=now() then 'expired' else 'active' end from public.playroom_group_invites gi where gi.id=m.group_invitation_id) else null end,
     'person',jsonb_build_object('id',f.id,'userId',p.id,'nickname',p.nickname,'username',p.username,'avatar',p.avatar,'accepted',coalesce(f.accepted,false),'requested',f.id is not null,'incoming',coalesce(f.recipient=me,false),
-     'online',coalesce(f.accepted and p.last_seen>now()-interval '75 seconds',false),'game',case when f.accepted and p.last_seen>now()-interval '75 seconds' then p.activity_game else null end)) order by m.id),'[]'::jsonb))
-   from batch m join public.playroom_profiles p on p.id=m.sender left join public.playroom_friendships f on (f.sender=me and f.recipient=p.id) or (f.recipient=me and f.sender=p.id));
+     'online',coalesce(f.accepted and p.last_seen>now()-interval '75 seconds',false),'game',case when f.accepted and p.last_seen>now()-interval '75 seconds' then p.activity_game else null end)) order by m.id) filter(where m.id>coalesce(cr.through_id,0)),'[]'::jsonb))
+   from batch m join public.playroom_profiles p on p.id=m.sender left join public.playroom_chat_reads cr on cr.reader=me and cr.peer=m.sender left join public.playroom_friendships f on (f.sender=me and f.recipient=p.id) or (f.recipient=me and f.sender=p.id));
  end if;
  if p_action in ('presence','hub') then
   if guest then raise exception 'social:account-required'; end if;
