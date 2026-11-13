@@ -23,7 +23,7 @@ test('Mage Brawl WebRTC: concurrent private plans, bot settings and public Table
   await host.locator('[data-command=lobby-ready]').click();await phone.locator('[data-net-action=ready]').click();await host.locator('[data-command=lobby-start]:not([disabled])').click();
   await phone.locator('.network-game .mage-grid').waitFor();await table.locator('.network-game[data-viewer="-1"] .mage-grid').waitFor();
   assert.equal(await table.locator('.mage-card').count(),0);assert.equal(await table.locator('.mage-controls [data-action]').count(),0);
-  for(const page of [host,phone]){assert.equal(await page.locator('.self-player .mage-team-lives').count(),1);assert.equal(await page.locator('.self-player [data-shrink-capacity="4"]').count(),1);}assert.equal(await table.locator('.mage-team-lives').count(),0);
+  for(const page of [host,phone]){assert.equal(await page.locator('.self-player .mage-team-lives').count(),1);assert.equal(await page.locator('.self-player [data-shrink-capacity="4"]').count(),1);}assert.equal(await table.locator('.mage-team-lives').count(),0);assert.equal(await table.locator('.mage-shrink-counter').count(),0);
   await host.locator('.mage-controls [data-action]').click();await host.waitForFunction(()=>[...document.querySelectorAll('.mage-controls [data-action]')].some(b=>b.getAttribute('aria-label')==='Изменить план'));
   assert.equal(await phone.locator('.mage-controls [data-action]').getAttribute('aria-label'),'Готово');assert.equal(await table.locator('.mage-revealed').count(),0,'public Table has no concealed plans');
   // Observe all screens before submission: a short public reveal may finish

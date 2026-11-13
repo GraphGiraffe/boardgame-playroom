@@ -587,7 +587,7 @@ test('Mage team reserves and shrink indicator: one to four corners, warning glow
   for(const filled of [1,2,3,4]){
    await p.evaluate(n=>showShrink(n),filled);const own=p.locator('.self-player');await own.locator(`.mage-shrink-counter[data-shrink-filled="${filled}"]`).waitFor();
    assert.equal(await own.locator('.mage-shrink-corner.is-filled').count(),filled);assert.equal(await own.locator('.mage-shrink-corner:not(.is-filled)').count(),4-filled);
-   assert.equal(await own.locator('.mage-team-full .counter-token:not(.is-empty)').count(),8);assert.equal(await p.locator('.opponent-hand .mage-team-lives').count(),0);assert.equal(await p.locator('.player-panel .token-meeple').count(),0,'shared reserve is not repeated as personal lives');
+   assert.equal(await own.locator('.mage-team-full .counter-token:not(.is-empty)').count(),8);assert.equal(await p.locator('.opponent-hand .mage-team-lives').count(),0);assert.equal(await p.locator('.opponent-hand .mage-shrink-counter').count(),0);assert.equal(await p.locator('.player-panel .token-meeple').count(),0,'shared reserve is not repeated as personal lives');
    await own.screenshot({path:path.join(out,`indicator-${filled}.png`)});if(filled===3)await p.screenshot({path:path.join(out,'team-game.png')});
    records.push({filled,aria:await own.locator('.mage-shrink-counter').getAttribute('aria-label')});
   }
