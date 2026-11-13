@@ -870,6 +870,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     prepareGamePanels(preparedGameId,{state,readonly:!isHost||state.phase!=='lobby'||!!state.recovery,reason:!isHost||state.phase!=='lobby'||state.recovery?'Параметры можно менять до начала партии.':'',valid:()=>room?.id===preparedRoomId&&room.game.id===preparedGameId&&room.rulesRevision===preparedRevision&&lobbyParticipantId===preparedActor&&!!$('#modal-root>[data-surface-state=active] .lobby-shell')});
     const lobby=$('#modal-root>[data-surface-state=active] .lobby-shell'),roomId=state.id,actor=lobbyParticipantId;
     const current=()=>room?.id===roomId&&lobbyParticipantId===actor&&room.ownerId===actor&&room.phase==='lobby'&&!room.recovery;
+    PlayroomLobbyView.bindSummary(lobby);
     PlayroomLobbyView.bindFirst(lobby,id=>{if(!current()||id!==null&&room.firstPlayerMode==='assigned'&&room.firstParticipantId===id)return;room=roomService.configure(roomId,actor,{firstPlayerMode:id===null?'rules':'assigned',firstParticipantId:id});renderLobby();},{current,onError:error=>toast(globalThis.PlayroomMessages.error(error))});
     PlayroomLobbyView.bindDrag(lobby,{current,canMove:id=>current()&&room.participants.some(person=>person.id===id&&(person.bot||person.id===actor&&!person.ready)),move(id,slot){if(!current())return;room=roomService.moveParticipant(roomId,actor,id,slot);renderLobby();},onError:error=>toast(globalThis.PlayroomMessages.error(error))});
   }

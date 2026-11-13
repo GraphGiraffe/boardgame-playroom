@@ -265,12 +265,16 @@
   const account=A(),social=S(),community=C(),revision=accountRevision(),generation=roomGeneration,identity=viewKey(),key=account.snapshot().id+':'+localId;
   const initial=context(),knownCloudId=active?.key===key?active.id:initial?.room?.id===localId&&initial.room.ownerId===initial.participantId?initial.cloudRoomId:null;
   const flight=!knownCloudId&&pending?.identity===identity?pending.promise:null;
+  let preparationError=null;
   // An in-flight create may have allocated its cloud row before its ACK arrives.
   // Keep the local context alive until it settles, then retire that exact row.
-  if(flight){try{await flight;}catch(_){}if(A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity)throw Object.assign(Error('cancelled'),{code:'cancelled'});}
+  if(flight){
+   try{await flight;}catch(error){preparationError=error;}
+   if(A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity)throw Object.assign(Error('cancelled'),{code:'cancelled'});
+  }
   if(!shouldClose())return false;
   const ctx=context(),cloudId=knownCloudId||(active?.key===key?active.id:ctx?.room?.id===localId&&ctx.room.ownerId===ctx.participantId?ctx.cloudRoomId:null);
-  if(!cloudId)return true;
+  if(!cloudId){if(preparationError)throw preparationError;return true;}
   await social.perform('close',{roomId:cloudId});
   if(generation!==roomGeneration||A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity||active&&(active.key!==key||active.id!==cloudId))return true;
   reset();return true;

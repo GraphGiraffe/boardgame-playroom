@@ -568,6 +568,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     bridge().openModal(PlayroomLobbyView.render({room,participantId:clientParticipantId,waiting:clientWaitingForLobby}),'room-setup-modal');
     PlayroomLobbyView.notifyRulesChange(room,clientParticipantId,toast);
     const actor=clientParticipantId,roomId=room.id,current=()=>clientRoom?.id===roomId&&clientParticipantId===actor&&clientRoom.phase==='lobby'&&!clientRoom.recovery;
+    PlayroomLobbyView.bindSummary(activeLobby());
     PlayroomLobbyView.bindDrag(activeLobby(),{current,canMove:id=>current()&&id===actor&&!participant(clientRoom,id)?.ready,move:(id,slot)=>{if(current())return roomCommand({type:'claim-seat',seatId:slot});},onError:error=>toast(globalThis.PlayroomMessages.error(error))});
     if(room.phase==='starting')startClientCountdown();
   }
