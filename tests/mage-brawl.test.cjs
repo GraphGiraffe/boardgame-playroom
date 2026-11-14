@@ -635,3 +635,48 @@ test('three and four team bots complete games with restored deterministic author
   assert.equal(s.status,'finished');assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);assert.equal(new Set(model.result(s).playerOrder).size,n);
  }
 });
+
+test('team bots avoid friendly fire and harmful push chains even at maximum error rate',()=>{
+ const names=['aggressor','fighter','mind','tactician','defender','random'];
+ for(const preset of ['teams','teams3','teams4']){
+  const s=fixture([{pos:[2,1],hand:['earth','fire','water','air'],ultimate:1},{pos:[1,1]},{pos:[2,2],health:1},{pos:[4,4]},{pos:[1,4]},{pos:[3,4]},{pos:[4,1]},{pos:[4,2]}],{preset,size:6,board:{'2,3':'spikes'}});
+  const p=model.project(s,0),push=D.actions(s,0).map(choice=>choice.command).find(c=>c.element==='water'&&c.action==='movement'&&c.direction===1);
+  assert.equal(D.rules.forecast(p.data,0,[push]).players[2].pos,null,'fixture includes lethal water push on teammate');
+  for(const name of names)for(const errorRate of [0,100]){
+   Object.assign(s.data.players[0].bot,{resolvedStrategy:name,errorRate});const before=JSON.stringify(s),command=model.botAction(s,0),after=D.rules.forecast(model.project(s,0).data,0,[model.commandFor(s,0,command)]);
+   for(const [i,player] of s.data.players.entries())if(i!==0&&player.team===s.data.players[0].team){assert.equal(after.players[i].health,player.health,preset+'/'+name);assert(after.players[i].pos,preset+'/'+name+' keeps teammate alive');assert.equal(after.players[i].lives,player.lives,preset+'/'+name);}
+   assert.deepEqual(model.botAction(s,0),command);assert.equal(JSON.stringify(s),before);
+  }
+ }
+});
+
+test('public bot forecasts match authoritative damage, push and scheduled shrink resolution',()=>{
+ for(const element of ['air','earth','water','fire']){
+  const s=fixture([{pos:[2,1],hand:[element]},{pos:[2,2],health:1},{pos:[4,4]},{pos:[4,1]}],{preset:'teams',size:6,board:{'2,3':'spikes'}});
+  s.data.window.participants=[0];s.data.window.versions={0:0};
+  const command=D.actions(s,0).map(choice=>choice.command).find(c=>c.action==='attack'&&c.direction===1),forecast=D.rules.forecast(model.project(s,0).data,0,[command]),actual=model.apply(s,0,command).position.data;
+  assert.deepEqual(forecast.players.map(p=>[p.pos,p.health,p.lives]),actual.players.map(p=>[p.pos,p.health,p.lives]),element);assert.deepEqual(forecast.teamLives,actual.teamLives);
+ }
+ const s=fixture([{pos:[0,1],hand:['earth','water']},{pos:[2,2]}],{size:6,shrink:1});s.data.window.participants=[0];s.data.window.versions={0:0};
+ const command=D.actions(s,0).map(choice=>choice.command).find(c=>c.element==='earth'&&c.action==='movement'),forecast=D.rules.forecast(model.project(s,0).data,0,[command]),actual=model.apply(s,0,command).position.data;
+ assert.deepEqual(forecast.players.map(p=>[p.pos,p.health,p.lives]),actual.players.map(p=>[p.pos,p.health,p.lives]));assert.equal(forecast.inset,actual.inset);assert.deepEqual(forecast.board,actual.board);
+});
+
+test('two-card bots plan move then attack from the resulting square without private opponent plans',()=>{
+ let s=fixture([{pos:[2,0],hand:['fire','earth']},{pos:[2,3],health:2,hand:['earth','water']}],{size:6,options:{extraLives:0}});s.data.config.steps=2;
+ Object.assign(s.data.players[0].bot,{resolvedStrategy:'fighter',difficulty:'hard',errorRate:0});const before=JSON.stringify(s),first=model.commandFor(s,0,model.botAction(s,0));
+ assert.equal(first.element,'fire');assert.equal(first.action,'movement');assert.equal(first.direction,1);assert.equal(JSON.stringify(s),before);
+ const hidden=clone(s);hidden.data.players[1].hand.reverse();hidden.data.drafts[1]=D.actions(hidden,1).map(choice=>choice.command).find(c=>c.element==='water'&&c.action==='attack');assert.deepEqual(model.botAction(hidden,0),model.intent(first),'opponent private draft and card order are unavailable');
+ s=model.apply(s,0,first).position;const second=model.commandFor(s,0,model.botAction(s,0));assert.equal(second.element,'earth');assert.equal(second.action,'attack');assert.equal(second.direction,1);
+ const forecast=D.rules.forecast(model.project(s,0).data,0,[first,second]);assert.deepEqual(forecast.players[0].pos,[2,2]);assert.equal(forecast.players[1].lives,0);
+ s=model.apply(s,0,second).position;for(const c of [plan('earth','movement',0),plan('water','attack',0)])s=model.apply(s,1,D.actions(s,1).map(choice=>choice.command).find(a=>a.element===c.element&&a.action===c.action&&a.direction===c.direction)).position;
+ assert.equal(s.status,'finished');assert.deepEqual(s.winners,[0]);assert(D.validate(s));
+});
+
+test('two-card team bots complete all team modes with legal deterministic private planning',t=>{
+ for(const preset of ['teams','teams3','teams4']){
+  let s=model.create({playerCount:8,preset,rng:63,options:{actionsPerTurn:2,health:1,extraLives:1,players:Array.from({length:8},(_,i)=>({botSettings:{strategy:i%2?'fighter':'mind',difficulty:'hard'}}))}}),actions=0;const started=performance.now();
+  while(s.status==='playing'&&actions<1600){const w=model.decisionWindow(s),actor=w.participants.find(i=>!w.ready.includes(i)),command=model.botAction(s,actor);assert(command);if(actions%41===0)assert.deepEqual(model.botAction(clone(s),actor),command);s=model.apply(s,actor,command).position;assert(D.validate(s));assert.equal(model.project(s,-1).data.players.some(p=>p.hand||p.draft||p.plan),false);actions++;}
+  assert.equal(s.status,'finished',preset);assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);t.diagnostic(JSON.stringify({preset,actions,round:s.data.round,ms:Math.round(performance.now()-started)}));
+ }
+});

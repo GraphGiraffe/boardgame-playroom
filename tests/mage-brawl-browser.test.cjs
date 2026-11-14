@@ -635,3 +635,29 @@ test('Mage team reserves and shrink indicator: clockwise 4x4 cells, edge warning
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({records,segmentGeometry,warningFrames,medallions,ludoBadges,errors,scope:'Native app boot and game launch; staged public match states for exact indicator coverage'},null,2));
  }finally{await browser.close();await server.close();}
 });
+
+test('Mage team bots submit two-card plans and a native eight-player round advances',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));await context.route('https://*.supabase.co/**',route=>route.abort());
+ try{
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'team-planner-native',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,animationSpeed:'fast'}));});
+  await openMageFixture(page,server.url);await page.locator('.game-tile').first().waitFor();await TestUI.openGame(page,'mage-brawl');const active=TestUI.activeSurface;
+  await active(page).locator('[data-command=room-rules]').click();await TestUI.selectChoice(page.locator('#room-rules-form [name=preset]'),'teams4');await page.locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+  for(const seat of ['seat-3','seat-4','seat-5','seat-6','seat-7','seat-8']){await active(page).locator('[data-room-cycle="'+seat+'"]').click();await active(page).locator('[data-seat-choice=bot]').click();}
+  await active(page).locator('[data-command=lobby-start]').click();await page.locator('.mage-grid').waitFor();
+  await page.waitForFunction(()=>{const s=PlayroomAppBridge.saveLibrary.current()?.session.current;return s?.data.config.steps===2&&Object.values(s.data.window.plans).filter(p=>p.steps?.length===2).length===7;});
+  const raw=await TestUI.currentState(page);assert.equal(raw.data.config.teamCount,4);assert.equal(raw.data.config.steps,2);
+  const first=await page.evaluate(raw=>TabletopCore.botAction(raw,0),raw);
+  // This read-only forecast chooses valid UI inputs; both actual commits below
+  // still pass through card, action, rotation and ready controls.
+  const second=await page.evaluate(({raw,first})=>TabletopCore.botAction(TabletopCore.applyAction(raw,0,first),0),{raw,first});
+  for(const [index,command] of [first,second].entries()){
+   const card=page.locator('.mage-card[data-view-value="'+command.cardId+'"]');await card.click();await page.locator('[data-view-key=mageAction][data-view-value="'+command.action+'"]').click();
+   for(let turns=0;turns<4;turns++){const angle=await card.evaluate(n=>((parseFloat(n.style.getPropertyValue('--mage-direction'))%360)+360)%360);if(angle===command.direction*90)break;await page.locator('.mage-rotate').last().click();}
+   assert.equal(await card.evaluate(n=>((parseFloat(n.style.getPropertyValue('--mage-direction'))%360)+360)%360),command.direction*90);await page.locator('.mage-ready:not(:disabled)').click();if(index===0)await page.locator('.mage-plan-locked').waitFor();
+  }
+  await page.waitForFunction(round=>{const s=PlayroomAppBridge.saveLibrary.current()?.session.current;return s?.data.round>round||s?.status==='finished';},raw.data.round);await page.waitForFunction(()=>!document.querySelector('.is-public-playback'));
+  const current=await TestUI.currentState(page);assert(current.data.round>raw.data.round||current.status==='finished');assert.deepEqual(errors,[]);
+  if(process.env.MAGE_EVIDENCE_DIR){await page.screenshot({path:mageEvidence('team-two-card-native.png')});fs.writeFileSync(mageEvidence('team-two-card-native.json'),JSON.stringify({players:8,teams:4,botPlans:7,steps:2,first,second,roundBefore:raw.data.round,roundAfter:current.data.round,errors},null,2));}
+ }finally{await context.close();await browser.close();await server.close();}
+});
