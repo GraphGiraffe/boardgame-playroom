@@ -20,7 +20,7 @@ test('support report: phone form, actual screenshot compression, log review, pri
   await UI.openSettings(page);let active=()=>UI.activeSurface(page);
   await active().locator('[data-settings-tab=behavior]').click();await active().locator('.settings-diagnostics>summary').click();await active().locator('#setting-diagnostics').check();
   const snapshot=await page.screenshot();
-  await active().locator('[data-bug-report-open]').click();await active().locator('[data-bug-report]').waitFor();
+  assert.equal(await active().locator('[data-bug-report-open]').innerText(),'Обратная связь');await active().locator('[data-bug-report-open]').click();await active().locator('[data-bug-report]').waitFor();assert.equal(await active().locator('.modal-head h2').innerText(),'Обратная связь');assert.match(await active().locator('textarea').getAttribute('placeholder'),/предложите улучшение/);
   const form=()=>active().locator('[data-bug-report]');
   await form().locator('textarea').fill('После смены темы исчезли точки здоровья на фишках.');
   await form().locator('[name=includeLog]').waitFor({state:'visible'});assert.deepEqual(pageErrors,[]);await active().locator('[data-bug-send]').waitFor();await active().locator('[data-bug-send]').evaluate(button=>{if(!button.form)throw Error('Submit lost form owner');});await page.waitForFunction(()=>document.querySelector('[data-bug-send]')?.disabled===false);
@@ -33,6 +33,9 @@ test('support report: phone form, actual screenshot compression, log review, pri
   await page.screenshot({path:path.join(evidence,prefix+'form-phone.png'),fullPage:true});
   await active().locator('[data-bug-send]').click();await page.waitForFunction(()=>document.querySelector('[data-bug-status]')?.textContent.includes('Нет связи'));
   fail=false;await active().locator('[data-bug-send]').click();await active().getByText('Спасибо! Сообщение отправлено.').waitFor();
+  const number=active().locator('[data-bug-number]');await number.click();assert.deepEqual(await number.evaluate(input=>[input.selectionStart,input.selectionEnd]),[0,8]);assert.equal(await number.inputValue(),requests[1].id.slice(0,8));
+  await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:new URL(process.env.SITE_URL||server.url).origin});await active().locator('[data-bug-copy]').click();await active().getByText('Номер скопирован.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),requests[1].id.slice(0,8));
+  await page.screenshot({path:path.join(evidence,prefix+'receipt-copy.png'),fullPage:true});
   assert.equal(requests.length,2);assert.equal(requests[0].id,requests[1].id);assert.equal(requests[1].screenshots.length,2);assert(requests[1].log);
   for(const screenshot of requests[1].screenshots){assert.equal(screenshot.mime,'image/webp');assert(Buffer.from(screenshot.data,'base64').length<=144*1024);assert(screenshot.width<=1280&&screenshot.height<=1280);}
   const log=JSON.parse(zlib.gunzipSync(Buffer.from(requests[1].log,'base64')));assert(log.events.length>0);assert(log.events.some(e=>e.kind==='input'));assert(!JSON.stringify(requests[1]).includes('fixture-only'));assert(!JSON.stringify(requests[1]).includes('fixture@example.test'));assert.equal(log.game,undefined);

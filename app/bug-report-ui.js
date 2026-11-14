@@ -28,12 +28,12 @@
   let owner=user?.kind==='account'&&!user.recovery?user.id:null,unsubscribe=()=>{};
   let screenshots=[],trace=null,context=environment(),id=root.crypto.randomUUID(),busy=false,preparing=false,revision=0,closed=false,invalidated=false,abort;
   const hasLog=!!root.PlayroomDiagnostics?.count,esc=H().esc;
-  frame=B().openModal(`${H().modalHead('Сообщить об ошибке')}<form class="bug-report-form" data-bug-report>
-   <label class="field"><span>Что произошло?</span><textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Что вы делали и что пошло не так?"></textarea></label>
+  frame=B().openModal(`${H().modalHead('Обратная связь')}<form class="bug-report-form" data-bug-report>
+   <label class="field"><span>Ваше сообщение</span><textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Расскажите об ошибке, предложите улучшение или оставьте замечание."></textarea></label>
    <p class="muted">До трёх скриншотов. Проверьте, нет ли на них личной информации.</p>
    <label class="btn secondary bug-report-add">Добавить скриншоты<input type="file" aria-label="Добавить скриншоты" accept="image/png,image/jpeg,image/webp" multiple data-bug-files></label>
    <div class="bug-report-images" data-bug-images></div>
-   ${hasLog?'<label class="switch"><span>Приложить записанный лог</span><input type="checkbox" name="includeLog" checked disabled></label><p class="muted" data-bug-log-status>Сжимаем записанный лог…</p>':'<p class="muted">Лог не записывался. Его запись можно включить в разделе «Диагностика» перед повторением ошибки.</p>'}
+   ${hasLog?'<label class="switch"><span>Приложить записанный лог</span><input type="checkbox" name="includeLog" checked disabled></label><p class="muted" data-bug-log-status>Сжимаем записанный лог…</p>':'<p class="muted">Лог не записывался. При сообщении об ошибке можно включить его запись в разделе «Диагностика».</p>'}
    <details class="bug-report-info"><summary>Что будет отправлено</summary><p class="muted">Описание, выбранные скриншоты и технические сведения ниже. Без переписки, паролей и сохранения партии. Отчёт доступен разработчику и хранится до 30 дней.</p><pre data-bug-context></pre><details data-bug-log-preview hidden><summary>Записанный лог</summary><pre></pre></details></details>
    <p role="status" aria-live="polite" data-bug-status>${owner?'':esc(errors['account-required'])}</p>
    ${owner?'':'<button type="button" class="btn secondary" data-bug-login>Войти в аккаунт</button>'}
@@ -71,7 +71,11 @@
     const result=await remote.call('submit',payload,{userId:owner,signal:abort.signal});
     if(result?.accepted!==true||result.id!==id)throw Error('response');if(closed||invalidated)return;
     screenshots=[];trace=null;form.reset();form.querySelector('[data-bug-images]').replaceChildren();form.querySelector('[data-bug-log-preview] pre').textContent='';form.querySelector('[data-bug-context]').textContent='';
-    send.remove();form.innerHTML=`<p role="status">Спасибо! Сообщение отправлено.</p><p>Номер: <strong>${esc(result.id.slice(0,8))}</strong></p><p class="muted">Скриншоты и лог не сохранены в файлах приложения.</p>`;
+    const number=result.id.slice(0,8);
+    send.remove();form.innerHTML=`<p role="status">Спасибо! Сообщение отправлено.</p><div class="bug-report-receipt"><label>Номер: <input type="text" data-bug-number readonly value="${esc(number)}" aria-label="Номер сообщения" spellcheck="false"></label><button type="button" class="text-btn" data-bug-copy>Копировать</button></div><p role="status" aria-live="polite" data-bug-copy-status></p><p class="muted">Скриншоты и лог не сохранены в файлах приложения.</p>`;
+    const numberField=form.querySelector('[data-bug-number]'),copy=form.querySelector('[data-bug-copy]'),copyStatus=form.querySelector('[data-bug-copy-status]');
+    const selectNumber=()=>numberField.select();numberField.addEventListener('focus',selectNumber);numberField.addEventListener('click',selectNumber);
+    copy.onclick=async()=>{copy.disabled=true;try{await root.navigator.clipboard.writeText(number);if(!closed)copyStatus.textContent='Номер скопирован.';}catch(_){if(!closed){numberField.focus();numberField.select();copyStatus.textContent='Не удалось скопировать. Номер выделен — скопируйте его вручную.';}}finally{if(!closed)copy.disabled=false;}};
    }catch(error){if(!closed&&!invalidated){busy=false;status.textContent=errors[error.code]||'Не удалось отправить сообщение. Попробуйте ещё раз.';update();}}
   };
   unsubscribe=account?.subscribe(state=>{if(closed||invalidated||!form.querySelector('[data-bug-status]'))return;if(!owner&&state.kind==='account'&&!state.recovery){owner=state.id;status.textContent='';form.querySelector('[data-bug-login]')?.remove();update();}else if(owner&&(state.id!==owner||state.kind!=='account'||state.recovery)){invalidated=true;revision++;abort?.abort();owner=null;screenshots=[];trace=null;form.reset();renderImages();status.textContent=errors['account-changed'];}})||(()=>{});
