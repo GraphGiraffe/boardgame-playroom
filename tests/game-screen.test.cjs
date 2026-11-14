@@ -52,7 +52,7 @@ test('team results place the shared team disc behind each medal while solo resul
 test('results reuse the first-player disc, under a medal when one is awarded',()=>{
   const state={...projected,status:'finished',winner:0,firstPlayer:0,result:{places:[1,4],values:[10,4]},players:[{name:'Первый'},{name:'Второй'}]};
   const solo=Screen.resultMarkup({state,viewer:0,gameName:'Шашки'});
-  assert.match(solo,/<span class="result-awards"><span class="player-medallion is-place place-1"[^>]*>.*?<span class="player-medallion is-first"[^>]*aria-label="Первый ход"/);
+  assert(solo.indexOf('result-avatar-wrap')<solo.indexOf('player-medallion is-first'));assert.match(solo,/aria-label="Первый ход"/);
   assert.equal((solo.match(/player-medallion is-first/g)||[]).length,1);
   const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
   assert.match(noMedal,/class="result-awards"><span class="player-medallion is-place place-4 is-minor"/);

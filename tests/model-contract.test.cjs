@@ -419,7 +419,8 @@ test('all installed pack scenes obey participant and metric contracts for every 
     require(path.join(packs,'packs',id,'rules.js'));
     const game=E.get(id);
     for(const preset of game.presets){
-      const count=preset.id==='teams'?4:game.min;
+      const manifest=JSON.parse(fs.readFileSync(path.join(packs,'packs',id,'manifest.json'),'utf8')),declared=manifest.playModes?.find(mode=>mode.id===preset.id);
+      const count=declared?.players?.[0]??game.min;
       const state=E.createGame(id,{players:Array.from({length:count},(_,i)=>({name:'P'+i,bot:true})),preset:preset.id,seed:17});
       for(let viewer=-1;viewer<count;viewer++){
         const projected=E.project(state,viewer);
@@ -602,8 +603,10 @@ reject(missing_inactive_feature)
 valid=[]
 for preview in [{'kind':'cards','count':7},{'kind':'symbol','icon':'cards'},{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'dice','count':2},{'kind':'health','count':3},{'kind':'lives','count':2},{'kind':'fleet','pieces':[3,2]},{'kind':'teams','teamSizes':[2,2]}]:
  for key in ['presetSetting','settings']:
-  value=copy.deepcopy(base);target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
-value=copy.deepcopy(base);field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
+  value=copy.deepcopy(base);
+  if key=='settings':value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]}
+  target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
+value=copy.deepcopy(base);value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]};field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
 value=copy.deepcopy(base);field(value).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}});ns['validate_manifest'](value,'valid-inactive-preview');valid.append(value)
 for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
@@ -648,4 +651,16 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  const declaration=catalog.uno.settings.find(f=>f.key==='unoMode');assert.deepEqual(declaration.preview,{kind:'declaration',label:'UNO!'});assert.deepEqual(declaration.options.map(o=>o.preview.actor),['human','bot']);
  assert.equal(catalog.snakes.presetSetting.presentation,undefined,'dice-count choices remain compact');
  for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'illustrations');assert.deepEqual(option.preview.ids,['setting-mode-'+option.value]);assert.equal(Array.isArray(state.data.dice)?state.data.dice.length:1,option.value==='plus'?2:1,'illustrated mode agrees with actual initial dice');}
+});
+
+
+test('result playerOrder is an optional complete permutation, separate from score direction',()=>{
+ const model=new GameModel(definition);let s=model.create({playerCount:2,firstPlayer:0,preset:'classic'});
+ for(const cell of [0,3,1,4,2])s=model.apply(s,s.turn,{type:'place',cell}).position;
+ assert.equal(s.status,'finished');
+ for(const playerOrder of [[1,0],[],[0],[0,0],[0,2],[0,1,2],'desc']){
+  const candidate=new GameModel({...definition,result:p=>({...definition.result(p),playerOrder})});
+  if(Array.isArray(playerOrder)&&playerOrder.length===2&&playerOrder[0]===1)assert.deepEqual(candidate.result(s).playerOrder,[1,0]);
+  else assert.throws(()=>candidate.result(s),/RESULT_INVALID/);
+ }
 });

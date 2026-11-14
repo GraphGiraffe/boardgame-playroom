@@ -179,13 +179,16 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     const label=counter.label||(counter.kind==='wins'?globalThis.PlayroomMessages.text("ui.ui.8e5f4bb5654f"):counter.kind==='pieces'?globalThis.PlayroomMessages.text("ui.ui.24b775243171"):globalThis.PlayroomMessages.text("ui.ui.6cc0ad965516"));
     return assetArt('counter',{style:'score',...counter,label},params=>GameComponents.pieceTypes.badge.render(params,{roundTokenArt:Components.roundTokenArt}));
   }
+  const teamPalette=Object.freeze(['blue','red','cyan','brown'].map((id,index)=>Object.freeze({id,color:['#668fad','#ce735d','#729d98','#aa844b'][index],colorRole:'team.'+id})));
+  const standardTeam=team=>{const standard=teamPalette.find(value=>value.id===team?.id);return standard?{...team,color:standard.color,colorRole:standard.colorRole}:team;};
   function teamFor(layouts,preset,seat){
     const layout=layouts?.[preset];
     if(!layout||!Array.isArray(layout.seatTeams)||layout.seatTeams.length>32||!Array.isArray(layout.teams)||layout.teams.length>16||!Number.isInteger(seat)||seat<0)return null;
     const team=layout.teams.find(team=>team&&typeof team.id==='string'&&team.id===layout.seatTeams[seat]);
-    return team&&typeof team.label==='string'&&(typeof team.color==='string'||typeof team.colorRole==='string')?team:null;
+    return team&&typeof team.label==='string'&&(typeof team.color==='string'||typeof team.colorRole==='string')?standardTeam(team):null;
   }
   function playerMedallion({first=false,team=null,place=null,last=false,layout=null}={}) {
+    team=standardTeam(team);
     if(!first&&!team&&place==null&&!last)return '';
     const label=last?globalThis.PlayroomMessages.text("ui.ui.last-player"):team?(first?globalThis.PlayroomMessages.text("ui.ui.5a0a57b96032",{p0:String(team.label)}):globalThis.PlayroomMessages.text("ui.ui.a0547497e28d",{p0:String(team.label)})):first?globalThis.PlayroomMessages.text("ui.ui.374e683d6421"):globalThis.PlayroomMessages.text("ui.ui.5e20b8d4db80",{p0:String(place)});
     const tone=last?'last':team?'team':place!=null?'place':'first';
@@ -290,7 +293,7 @@ addPlayer:'<circle cx="9" cy="7" r="4"/><path d="M2 22v-3a7 7 0 0 1 14 0v3M19 7v
     if(valid(currentSeat))content+=V.text('Вы',{x:chairs[currentSeat][4],y:65,size:9,weight:600,attrs:'stroke="none"'});
     return V.viewport({width:120,height:72,attrs:'data-art-role="parameter-diagram" data-parameter-table fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"',content});
   }
-  const helpers = {viewApi:3,parameterTableArt,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
+  const helpers = {viewApi:3,parameterTableArt,choiceSlider,playerOrderPosition,playerColor,tokenLayout,assetArt,assetLayout,assetVariant,components:GameComponents,translator,teamPalette,teamFor,seatOrder,viewPreferences,indicators,avatar,playerMedallion,roundTokenArt,numberPath,numberMark,icon,button,actionGroups,art,esc,actionAttr,actionButton,actionBar,back,countBadge,participantIcon,scoreBadge,playerContent,playerPanel,hand,source,target,boardTarget,routeDot,cardAttrs,svg};
   function selectLayout(width,height){if(width>height&&height<=550)return 'phone-landscape';if(width<=760)return 'phone-portrait';return width>=1100?'desktop':'tablet';}
   const elementNames=Object.freeze(['participants','status','field','actions','hand','auxiliary','shared']);
   function motionSequence(value){

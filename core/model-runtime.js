@@ -244,6 +244,7 @@
         new Set(result.metrics.map(metric => metric.id)).size === result.metrics.length &&
         result.metrics.every(metric => identifier(metric.id) && Array.isArray(metric.values) &&
           metric.values.length === position.playerCount && metric.values.every(Number.isFinite)), 'RESULT_INVALID');
+      check(result.playerOrder===undefined||Array.isArray(result.playerOrder)&&result.playerOrder.length===position.playerCount&&new Set(result.playerOrder).size===position.playerCount&&result.playerOrder.every(player=>integer(player,0,position.playerCount-1)),'RESULT_INVALID');
       check(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(player=>integer(player,0,position.playerCount-1)&&!result.winners.includes(player)),'RESULT_INVALID');
       check(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(exit=>exit.player)).size===result.exits.length&&result.exits.every(exit=>record(exit)&&integer(exit.player,0,position.playerCount-1)&&['cards','domino','finished'].includes(exit.kind)&&(integer(exit.round,1,Number.MAX_SAFE_INTEGER)||integer(exit.turn,1,Number.MAX_SAFE_INTEGER))),'RESULT_INVALID');
       return snapshot(result);

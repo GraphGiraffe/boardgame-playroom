@@ -1,60 +1,26 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const {serveBrowserFixture}=require('./browser-origin.cjs');
+const {serveBrowserFixture,activeSurface}=require('./browser-origin.cjs');
 
-test('team result discs peek from under equal-sized medals on phone screens',{timeout:30000},async()=>{
-  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
-  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
-  const context=await browser.newContext({viewport:{width:390,height:740},hasTouch:true,isMobile:true});
-  const page=await context.newPage();
-  try{
-    await page.goto(process.env.PLAYROOM_RESULT_ARTIFACT?'file://'+path.resolve(process.env.PLAYROOM_RESULT_ARTIFACT):server.url);
-    await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge?.saveLibrary);
-    await page.evaluate(()=>{
-      const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{label:'Фишек команды дома',detailLabel:'Свои фишки дома',places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};
-      const teams=[{id:'blue',label:'синяя',color:'#668fad'},{id:'red',label:'красная',color:'#ce735d'}];const playerContent=state.players.map((_,index)=>({team:teams[index%2]}));
-      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent}),'result-modal');
-    });
-    const badges=await page.locator('.result-awards').evaluateAll(wrappers=>wrappers.map(wrapper=>{
-      const medal=wrapper.querySelector('.is-place'),team=wrapper.querySelector('.is-team'),m=medal.getBoundingClientRect(),t=team.getBoundingClientRect(),symbol=team.querySelector('svg')?.getBoundingClientRect(),disc=team.querySelectorAll('circle')[1];
-      return {medal:m.width,team:t.width,exposedRight:t.right-m.right,exposedBottom:t.bottom-m.bottom,color:getComputedStyle(disc).fill,medalLayer:getComputedStyle(medal).zIndex,teamLayer:getComputedStyle(team).zIndex,symbolWidth:symbol?.width,symbolOffset:symbol?Math.hypot((symbol.left+symbol.width/2)-(t.left+t.width/2),(symbol.top+symbol.height/2)-(t.top+t.height/2)):null};
-    }));
-    assert.equal(badges.length,4);
-    assert.deepEqual(badges.map(b=>b.color),['rgb(102, 143, 173)','rgb(102, 143, 173)','rgb(206, 115, 93)','rgb(206, 115, 93)']);
-    assert.equal(await page.locator('.result-awards .player-medallion.is-team[aria-label="Команда синяя · первый ход"]').count(),1);
-    assert(badges[0].symbolOffset<1,'first-player symbol stays centered on its team disc');
-    assert.equal(badges[0].symbolWidth,22,'first-player artwork scales with the disc');
-    assert(badges.every(b=>b.medal===22&&b.team===22&&b.exposedRight>=4&&b.exposedRight<=6&&b.exposedBottom>=2&&b.exposedBottom<=4&&Number(b.medalLayer)>Number(b.teamLayer)),'team color must peek uniformly from below the medal: '+JSON.stringify(badges));
-    const colors=()=>page.locator('.result-awards .is-place').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node.querySelectorAll('circle')[1]).fill));
-    const lightMedals=await colors();
-    assert.equal(new Set(lightMedals).size,2,'gold and silver keep distinct material colors');
-    for(const id of ['dark','light']){
-      await page.evaluate(id=>PlayroomAppearanceUI.runtime.service.select(id),id);
-      assert.deepEqual(await colors(),lightMedals,'theme switching preserves canonical medal colors');
-    }
-    if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-390.png')});}
-    await page.setViewportSize({width:320,height:740});
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
-    assert.equal(await page.locator('.result-awards').count(),4);
-    await page.evaluate(()=>{
-      const state={status:'finished',winner:0,firstPlayer:0,move:20,players:[{name:'Иван'},{name:'Тео'}],result:{places:[1,4],values:[10,4]}};
-      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Шашки'}),'result-modal');
-    });
-    assert.equal(await page.locator('.result-awards .player-medallion.is-first').count(),1);
-    const first=await page.locator('.result-awards').first().evaluate(el=>{const disc=el.querySelector('.is-first').getBoundingClientRect(),medal=el.querySelector('.is-place').getBoundingClientRect(),symbol=el.querySelector('.is-first svg').getBoundingClientRect();return {disc:disc.width,medal:medal.width,exposed:disc.right-medal.right,symbolOffset:Math.hypot((symbol.left+symbol.width/2)-(disc.left+disc.width/2),(symbol.top+symbol.height/2)-(disc.top+disc.height/2))};});
-    assert.equal(first.disc,first.medal);assert(first.exposed>=4&&first.exposed<=6);assert(first.symbolOffset<1);
-    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-320.png')});
-    await page.evaluate(()=>{
-      const state={status:'finished',winner:0,winners:[0],move:20,players:Array.from({length:6},(_,i)=>({name:'Игрок '+(i+1)})),result:{places:[1,2,3,4,5,6],values:[0,0,0,0,0,1],lastPlayers:[5],exits:[{player:3,kind:'cards',round:5}]}};
-      PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Дурак'}),'result-modal');
-    });
-    assert.equal(await page.locator('.result-awards .is-minor').count(),2);
-    assert.equal(await page.locator('.result-awards .is-last').count(),1);
-    const sizes=await page.locator('.result-awards .player-medallion').evaluateAll(nodes=>nodes.map(n=>({width:n.getBoundingClientRect().width,color:getComputedStyle(n.querySelectorAll('circle')[1]).fill})));
-    assert(sizes[3].width<sizes[0].width);assert.equal(sizes[3].color,'rgb(255, 255, 255)');
-    assert.match(await page.locator('.result-modal').innerText(),/Сбросил карты.*Раунд 5/);
-    if(process.env.PLAYROOM_QA_DIR)await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'finish-results-320.png')});
-
-  }finally{await context.close();await browser.close();await server.close();}
+test('results keep place medals separate and attach standard team or first tokens to avatars',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
+ try{
+  await context.route('https://*.supabase.co/**',route=>route.abort());
+  if(process.env.PLAYROOM_RESULT_ARTIFACT)await context.route(server.url,route=>route.fulfill({path:path.resolve(process.env.PLAYROOM_RESULT_ARTIFACT),contentType:'text/html'}));
+  await page.goto(server.url);await page.waitForFunction(()=>!!globalThis.PlayroomAppBridge?.saveLibrary);
+  for(const viewport of [{width:390,height:844},{width:320,height:740},{width:844,height:390}]){
+   await page.setViewportSize(viewport);
+   await page.evaluate(()=>{const state={game:'ludo',preset:'teams',status:'finished',winner:0,winners:[0,2],firstPlayer:0,move:482,players:[{name:'Иван'},{name:'Тео'},{name:'Луна'},{name:'Сэм'}],result:{places:[1,2,1,2],values:[8,5,8,5],details:[4,2,4,3]}};const teams=[{id:'blue',label:'синяя'},{id:'red',label:'красная'}];PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Лудо',playerContent:state.players.map((_,i)=>({team:teams[i%2]}))}),'result-modal');});
+   const panel=activeSurface(page);assert.equal(await panel.locator('.result-awards .is-team,.result-awards .is-first').count(),0);assert.equal(await panel.locator('.result-avatar-wrap .is-team').count(),4);assert.equal(await panel.locator('.result-awards .is-place').count(),4);
+   const geometry=await panel.locator('.result-person').evaluateAll(rows=>rows.map(row=>{const wrap=row.querySelector('.result-avatar-wrap').getBoundingClientRect(),mark=row.querySelector('.result-avatar-wrap .player-medallion').getBoundingClientRect(),name=row.querySelector('.result-nickname').getBoundingClientRect(),medal=row.querySelector('.result-awards .player-medallion').getBoundingClientRect();return {avatar:wrap.width,mark:mark.width,medal:medal.width,gap:name.left-mark.right,offsetRight:mark.right-wrap.right,offsetTop:wrap.top-mark.top};}));
+   assert(geometry.every(g=>g.mark===13&&g.medal===22&&g.offsetRight===6&&g.offsetTop===6&&g.gap>=.5),JSON.stringify(geometry));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+   if(process.env.PLAYROOM_QA_DIR){fs.mkdirSync(process.env.PLAYROOM_QA_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_QA_DIR,'team-results-'+viewport.width+'.png')});}
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>{const state={status:'finished',winner:0,firstPlayer:0,move:20,players:[{name:'Иван'},{name:'Тео'}],result:{places:[1,4],values:[10,4]}};PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Шашки'}),'result-modal');});
+  assert.equal(await activeSurface(page).locator('.result-avatar-wrap .is-first').count(),1);assert.equal(await activeSurface(page).locator('.result-awards .is-first').count(),0);
+  await page.evaluate(()=>{const state={status:'finished',winner:0,winners:[0],move:20,players:Array.from({length:6},(_,i)=>({name:'Игрок '+(i+1)})),result:{places:[1,2,3,4,5,6],values:[0,0,0,0,0,1],lastPlayers:[5],exits:[{player:3,kind:'cards',round:5}]}};PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'Дурак'}),'result-modal');});
+  assert.equal(await activeSurface(page).locator('.result-awards .is-minor').count(),2);assert.equal(await activeSurface(page).locator('.result-awards .is-last').count(),1);assert.match(await activeSurface(page).innerText(),/Сбросил карты.*Раунд 5/);
+ }finally{await context.close();await browser.close();await server.close();}
 });

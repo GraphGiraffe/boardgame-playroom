@@ -15,6 +15,8 @@ function standardRule(field){
  return {...field,label:text('label'),help:text('help'),options:values.map(option=>({...option,label:text(option.value+'.label'),shortLabel:text(option.value+'.short'),description:text(option.value+'.description')}))};
 }
 
+function sessionSetup(room){const seats=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);return {seatIndices:seats.map(seat=>seat.index),players:seats.map(seat=>{const person=room.participants.find(p=>p.id===seat.participantId);if(!person)throw Error('ROOM_PARTICIPANT_MISSING');return {name:person.nickname,bot:!!person.bot,...(person.botSettings?{botSettings:person.botSettings}:{}),...(person.avatar?{avatar:person.avatar}:{})};})};}
+
 const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.participants.find(p=>p.id===id),reset=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['new-match-lobby','game-started','replacement-lobby','participant-kicked','roster-changed'].includes(e.type));return JSON.stringify([room.id,room.game,room.rulesRevision,room.botSettingsRevision,room.rules,room.firstPlayerMode,room.firstParticipantId,room.seatOrder,ignoreReset?null:reset?.id,me?.seatId,me?.replacement]);};
   const text=(value,max,label)=>{
     const result=String(value??'').trim().replace(/\s+/g,' ');
@@ -654,5 +656,5 @@ class SwitchableConnection{
     close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
 
-return Object.freeze({STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
+return Object.freeze({sessionSetup,STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
 });

@@ -18,8 +18,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   },validateStart:state=>{
     try{
       const seats=state.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index);
-      const players=seats.map(seat=>{const p=state.participants.find(p=>p.id===seat.participantId);return {name:p.nickname,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),...(p.avatar?{avatar:p.avatar}:{})};});
-      E.validateState(E.createGame(state.game.id,{...(state.rules.options||{}),players,packVersion:state.game.version,preset:state.rules.preset,openHands:false,seed:1,firstPlayerMode:'assigned',firstPlayer:state.firstPlayerMode==='assigned'?seats.findIndex(s=>s.participantId===state.firstParticipantId):0}));
+      const {players,seatIndices}=PlayroomRooms.sessionSetup(state);
+      E.validateState(E.createGame(state.game.id,{...(state.rules.options||{}),players,seatIndices,packVersion:state.game.version,preset:state.rules.preset,openHands:false,seed:1,firstPlayerMode:'assigned',firstPlayer:state.firstPlayerMode==='assigned'?seats.findIndex(s=>s.participantId===state.firstParticipantId):0}));
       return null;
     }catch(_){return globalThis.PlayroomMessages.text('ui.rooms.roster-invalid');}
   }});
@@ -942,11 +942,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   async function startHotSeat(){
     room=roomService.prepareStart(room.id,lobbyParticipantId);dismissNotice();
-    const seats=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),players=seats.map(s=>{const p=room.participants.find(p=>p.id===s.participantId);return {name:p.nickname,bot:!!p.bot,...(p.botSettings?{botSettings:p.botSettings}:{}),...(p.avatar?{avatar:p.avatar}:{})};});
+    const seats=room.seats.filter(s=>s.participantId).sort((a,b)=>a.index-b.index),{players,seatIndices}=PlayroomRooms.sessionSetup(room);
     if(!players.some(p=>!p.bot))throw Error(globalThis.PlayroomMessages.text("ui.app.dc875925c351"));
     if(room.firstPlayerMode==='assigned'&&!seats.some(s=>s.participantId===room.firstParticipantId))throw Error(globalThis.PlayroomMessages.text("ui.app.467f6abb2682"));
     activatePack(room.game.id,room.game.version);
-    const mode=players.filter(p=>!p.bot).length>1?'pass':'solo',next=new Session(E,room.game.id,{players,mode,lobbyConfig:roomService.snapshot(room.id),preset:room.rules.preset,presetLabel:room.rules.presetLabel,firstPlayerMode:room.firstPlayerMode||'rules',firstPlayer:seats.findIndex(s=>s.participantId===room.firstParticipantId),...(room.rules.options||{}),openHands:false});
+    const mode=players.filter(p=>!p.bot).length>1?'pass':'solo',next=new Session(E,room.game.id,{players,seatIndices,mode,lobbyConfig:roomService.snapshot(room.id),preset:room.rules.preset,presetLabel:room.rules.presetLabel,firstPlayerMode:room.firstPlayerMode||'rules',firstPlayer:seats.findIndex(s=>s.participantId===room.firstParticipantId),...(room.rules.options||{}),openHands:false});
     if(!await save())return;
     const nextId=library.newId();
     try{await library.activateAsync(next,nextId);}catch(error){reportSaveFailure(error);return;}

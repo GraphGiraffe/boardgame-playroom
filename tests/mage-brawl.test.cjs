@@ -549,9 +549,9 @@ test('final kill settles the first remaining card, conserves inventory and opens
  assert.equal(s.status,'finished');assert.deepEqual(s.winners,[0]);assert.equal(s.data.loot,undefined);assert.equal(s.data.phase,'planning');assert.equal(model.decisionWindow(s),null);assert.deepEqual(model.legalActions(s,0),[]);
  assert(s.data.players[0].hand.some(c=>c.id===first.id));assert.equal(s.data.players[0].maxHand,4);assert(!s.events?.some(e=>e.type==='mage-brawl.loot'));assert(D.validate(s));assert.deepEqual(model.result(clone(s)),model.result(s));
 });
-test('additional lives are 0–2; team pools are equal even with odd seats and remain public without hands',()=>{
+test('additional lives are 0–2; unique team sizes receive reversed reserves and stay public',()=>{
  for(const n of [2,3,4,5,8])for(const extraLives of [0,1,2]){
-  const s=model.create({playerCount:n,preset:'teams',rng:21,options:{extraLives}});assert(D.validate(s));assert.deepEqual(s.data.teamLives,[Math.floor(n/2)*extraLives,Math.floor(n/2)*extraLives]);assert.deepEqual(s.data.players.map(p=>p.team),Array.from({length:n},(_,i)=>i%2));assert(s.data.players.every(p=>p.lives===1));
+  const s=model.create({playerCount:n,preset:'teams',rng:21,options:{extraLives}});assert(D.validate(s));assert.deepEqual(s.data.teamLives,[Math.floor(n/2)*extraLives,Math.ceil(n/2)*extraLives]);assert.deepEqual(s.data.players.map(p=>p.team),Array.from({length:n},(_,i)=>i%2));assert(s.data.players.every(p=>p.lives===1));
   for(const viewer of [-1,0,n-1]){const p=model.project(s,viewer);assert.deepEqual(p.data.teamLives,s.data.teamLives);assert(p.data.players.every((v,i)=>i===viewer||v.hand===undefined));}
  }
  for(const value of [-1,3,1.5])assert.throws(()=>model.create({playerCount:3,preset:'classic',rng:1,options:{extraLives:value}}));
@@ -600,5 +600,32 @@ test('team bots finish odd and even games with shared respawns, deterministic re
    s=model.apply(s,id,c).position;assert(D.validate(s));
   }
   assert.equal(s.status,'finished');assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);assert.deepEqual(model.result(clone(s)),model.result(s));
+ }
+});
+
+
+test('2/3/4-team setup reverses distinct pool sizes and respects physical room seats',()=>{
+ const cases=[{preset:'teams',seats:[0,1,2,4,6],expected:[1,4]},{preset:'teams3',seats:[0,1,2,3,4,6],expected:[1,2,3]},{preset:'teams4',seats:[0,1,2,4],expected:[1,2,2,0]},{preset:'teams4',seats:[0,1,2,3,4,5,6,7],expected:[2,2,2,2]}];
+ for(const {preset,seats,expected} of cases)for(const extraLives of [0,1,2]){
+  const s=model.create({playerCount:seats.length,preset,rng:13,options:{extraLives,seatIndices:seats}}),count=s.data.config.teamCount;
+  assert.deepEqual(s.data.teamLives,expected.map(n=>n*extraLives));assert.deepEqual(s.data.players.map(p=>p.team),seats.map(n=>n%count));assert(D.validate(s));
+  for(const viewer of [-1,0,seats.length-1]){const p=model.project(s,viewer);assert.deepEqual(p.data.teamLives,s.data.teamLives);assert(p.data.players.every((v,i)=>i===viewer||v.hand===undefined));}
+  const bad=clone(s);bad.data.teamLives[0]=Math.max(...s.data.teamLives)+1;assert.equal(D.validate(bad),false);
+ }
+ assert.throws(()=>model.create({playerCount:3,preset:'teams3',rng:1,options:{seatIndices:[0,3,6]}}));
+ assert.throws(()=>model.create({playerCount:4,preset:'teams4',rng:1,options:{seatIndices:[0,1,1,3]}}));
+});
+
+test('multi-team results keep team places and order teammates by personal survival',()=>{
+ const s=fixture([{pos:null,health:0,lives:0,hand:[],eliminatedRound:5},{pos:null,health:0,lives:0,hand:[],eliminatedRound:3},{pos:null,health:0,lives:0,hand:[],eliminatedRound:9},{pos:null,health:0,lives:0,hand:[],eliminatedRound:7},{pos:[3,3],health:3,lives:1},{pos:null,health:0,lives:0,hand:[],eliminatedRound:8}],{preset:'teams3',options:{extraLives:0}});
+ s.data.round=10;s.status='finished';s.winners=[1,4];const result=model.result(s);
+ assert.deepEqual(result.places,[3,1,2,3,1,2]);assert.deepEqual(result.playerOrder,[4,1,2,5,3,0]);
+});
+
+test('three and four team bots complete games with restored deterministic authority',()=>{
+ for(const count of [3,4])for(const n of [count,8]){
+  let s=model.create({playerCount:n,preset:'teams'+count,rng:71+n,options:{actionsPerTurn:1,health:1,extraLives:1,players:Array.from({length:n},()=>({botSettings:{difficulty:'hard',strategy:'fighter',errorRate:0}}))}});
+  for(let i=0;i<2400&&s.status==='playing';i++){const w=model.decisionWindow(s),id=w.participants.find(id=>!w.ready.includes(id)),command=model.botAction(s,id);assert(command);if(i%31===0)assert.deepEqual(model.apply(clone(s),id,command),model.apply(s,id,command));s=model.apply(s,id,command).position;assert(D.validate(s));}
+  assert.equal(s.status,'finished');assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);assert.equal(new Set(model.result(s).playerOrder).size,n);
  }
 });

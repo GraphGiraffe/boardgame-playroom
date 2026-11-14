@@ -558,3 +558,10 @@ test('dismissal closes only unused owned lobbies and records invitation exposure
  const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'network'});rooms.join(room.id,{id:'viewer',nickname:'Зритель'});assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false);rooms.setConnected(room.id,'viewer',false);assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false,'disconnected humans retain resume rights');assert.throws(()=>rooms.markInvitationShared(room.id,'viewer'));
  const local=createRoom();local.rooms.configure(local.room.id,'host',{transportMode:'hotseat'});local.rooms.setLocalSeat(local.room.id,'host','seat-2',{kind:'bot'});local.rooms.startHotSeat(local.room.id,'host');assert.equal(local.rooms.shouldCloseOnDismiss(local.room.id,'host'),false,'a live party is never an unused lobby');
 });
+
+
+test('session players preserve physical seats without copying connection or account secrets',()=>{
+ const setup=require('../application/rooms.js').sessionSetup({seats:[{index:6,participantId:'b'},{index:1,participantId:'a'}],participants:[{id:'a',nickname:'А',bot:false,resumeToken:'secret'},{id:'b',nickname:'Б',bot:true,accountId:'private',botSettings:{difficulty:'hard'}}]});
+ assert.deepEqual(setup,{players:[{name:'А',bot:false},{name:'Б',bot:true,botSettings:{difficulty:'hard'}}],seatIndices:[1,6]});
+ assert(!JSON.stringify(setup).includes('secret'));assert(!JSON.stringify(setup).includes('private'));
+});
