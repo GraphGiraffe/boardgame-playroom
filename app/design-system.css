@@ -356,9 +356,11 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 
 
+.player-panel{--player-medallion-overhang:6px}
 .player-avatar-wrap{position:relative;display:inline-flex;flex:none;vertical-align:middle;overflow:visible;}
 
-.player-medallion{position:absolute;z-index:2;top:-6px;right:-6px;display:block;width:13px;height:13px;--round-token-fill:var(--color-token-face,#eadfc0);--round-token-side:var(--color-token-side,#ac9b72);--round-token-mark:var(--color-token-mark,#283c30);color:var(--color-text-primary,#283c30);pointer-events:none}
+.player-panel .player-info:has(.player-medallion){--player-medallion-reserve:var(--player-medallion-overhang)}
+.player-medallion{position:absolute;z-index:2;top:calc(-1*var(--player-medallion-overhang,6px));right:calc(-1*var(--player-medallion-overhang,6px));display:block;width:13px;height:13px;--round-token-fill:var(--color-token-face,#eadfc0);--round-token-side:var(--color-token-side,#ac9b72);--round-token-mark:var(--color-token-mark,#283c30);color:var(--color-text-primary,#283c30);pointer-events:none}
 .player-medallion.is-team{--round-token-fill:var(--medallion-color);--round-token-side:color-mix(in srgb,var(--medallion-color) 63%,#233c30);--round-token-mark:#fffdf4;color:var(--color-action-on-primary,#fffdf4)}
 .player-medallion.is-place{--round-token-fill:#e0bc59;--round-token-side:#a27f30}.player-medallion.place-2{--round-token-fill:#c3c8c7;--round-token-side:#858e8b}.player-medallion.place-3{--round-token-fill:#b78b66;--round-token-side:#805b40}
 .player-medallion .medallion-art{display:block;width:100%;height:100%;overflow:visible}
