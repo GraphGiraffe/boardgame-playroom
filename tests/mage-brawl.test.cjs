@@ -606,18 +606,24 @@ test('team bots finish odd and even games with shared respawns, deterministic re
 
 test('2/3/4-team setup reverses distinct pool sizes and respects physical room seats',()=>{
  const cases=[{preset:'teams',seats:[0,1,2,4,6],expected:[1,4]},{preset:'teams3',seats:[0,1,2,3,4,6],expected:[1,2,3]},{preset:'teams4',seats:[0,1,2,4],expected:[1,2,2,0]},{preset:'teams4',seats:[0,1,2,3,4,5,6,7],expected:[2,2,2,2]}];
+ const layouts={teams:[0,1,0,1,0,1,0,1],teams3:[0,1,0,1,0,1,2,2,2],teams4:[0,1,0,1,2,3,2,3]};
+ const manifest=require('../packs/mage-brawl/manifest.json');
+ for(const [preset,layout] of Object.entries(layouts)){
+  assert.deepEqual(manifest.teamLayouts[preset].seatTeams,layout.map(i=>['blue','red','cyan','brown'][i]));
+  const full=model.create({playerCount:8,preset,rng:1,options:{extraLives:1}});assert.deepEqual(full.data.players.map(p=>p.team),layout.slice(0,8));assert(D.validate(full));
+ }
  for(const {preset,seats,expected} of cases)for(const extraLives of [0,1,2]){
   const s=model.create({playerCount:seats.length,preset,rng:13,options:{extraLives,seatIndices:seats}}),count=s.data.config.teamCount;
-  assert.deepEqual(s.data.teamLives,expected.map(n=>n*extraLives));assert.deepEqual(s.data.players.map(p=>p.team),seats.map(n=>n%count));assert(D.validate(s));
+  assert.deepEqual(s.data.teamLives,expected.map(n=>n*extraLives));assert.deepEqual(s.data.players.map(p=>p.team),seats.map(n=>layouts[preset][n]));assert(D.validate(s));
   for(const viewer of [-1,0,seats.length-1]){const p=model.project(s,viewer);assert.deepEqual(p.data.teamLives,s.data.teamLives);assert(p.data.players.every((v,i)=>i===viewer||v.hand===undefined));}
   const bad=clone(s);bad.data.teamLives[0]=Math.max(...s.data.teamLives)+1;assert.equal(D.validate(bad),false);
  }
- assert.throws(()=>model.create({playerCount:3,preset:'teams3',rng:1,options:{seatIndices:[0,3,6]}}));
+ assert.throws(()=>model.create({playerCount:3,preset:'teams3',rng:1,options:{seatIndices:[0,2,4]}}));
  assert.throws(()=>model.create({playerCount:4,preset:'teams4',rng:1,options:{seatIndices:[0,1,1,3]}}));
 });
 
 test('multi-team results keep team places and order teammates by personal survival',()=>{
- const s=fixture([{pos:null,health:0,lives:0,hand:[],eliminatedRound:5},{pos:null,health:0,lives:0,hand:[],eliminatedRound:3},{pos:null,health:0,lives:0,hand:[],eliminatedRound:9},{pos:null,health:0,lives:0,hand:[],eliminatedRound:7},{pos:[3,3],health:3,lives:1},{pos:null,health:0,lives:0,hand:[],eliminatedRound:8}],{preset:'teams3',options:{extraLives:0}});
+ const s=fixture([{pos:null,health:0,lives:0,hand:[],eliminatedRound:5},{pos:null,health:0,lives:0,hand:[],eliminatedRound:3},{pos:null,health:0,lives:0,hand:[],eliminatedRound:9},{pos:null,health:0,lives:0,hand:[],eliminatedRound:7},{pos:[3,3],health:3,lives:1},{pos:null,health:0,lives:0,hand:[],eliminatedRound:8}],{preset:'teams3',options:{extraLives:0,seatIndices:[0,1,6,2,3,7]}});
  s.data.round=10;s.status='finished';s.winners=[1,4];const result=model.result(s);
  assert.deepEqual(result.places,[3,1,2,3,1,2]);assert.deepEqual(result.playerOrder,[4,1,2,5,3,0]);
 });
