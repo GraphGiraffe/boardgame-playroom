@@ -33,7 +33,7 @@ test('support report: phone form, actual screenshot compression, log review, pri
   await page.screenshot({path:path.join(evidence,prefix+'form-phone.png'),fullPage:true});
   await active().locator('[data-bug-send]').click();await page.waitForFunction(()=>document.querySelector('[data-bug-status]')?.textContent.includes('Нет связи'));
   fail=false;await active().locator('[data-bug-send]').click();await active().getByText('Спасибо! Сообщение отправлено.').waitFor();
-  const number=active().locator('[data-bug-number]');await number.click();assert.deepEqual(await number.evaluate(input=>[input.selectionStart,input.selectionEnd]),[0,8]);assert.equal(await number.inputValue(),requests[1].id.slice(0,8));
+  const number=active().locator('[data-bug-number]');assert(await number.getAttribute('readonly')!==null);assert.equal(await active().locator('[data-bug-copy]').innerText(),'⧉');assert.equal(await active().locator('[data-bug-copy]').getAttribute('aria-label'),'Скопировать номер');await number.click();assert.deepEqual(await number.evaluate(input=>[input.selectionStart,input.selectionEnd]),[0,8]);assert.equal(await number.inputValue(),requests[1].id.slice(0,8));
   await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:new URL(process.env.SITE_URL||server.url).origin});await active().locator('[data-bug-copy]').click();await active().getByText('Номер скопирован.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),requests[1].id.slice(0,8));
   await page.screenshot({path:path.join(evidence,prefix+'receipt-copy.png'),fullPage:true});
   assert.equal(requests.length,2);assert.equal(requests[0].id,requests[1].id);assert.equal(requests[1].screenshots.length,2);assert(requests[1].log);

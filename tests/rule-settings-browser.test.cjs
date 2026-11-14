@@ -3,6 +3,27 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture,selectChoice,readChoice}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+test('feedback regression: read-only parameters retain contrast and separate the explanation from the summary',{timeout:60000},async()=>{
+ const UI=require('./browser-origin.cjs'),server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),page=await context.newPage(),active=()=>UI.activeSurface(page);
+ try{
+  await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));await page.goto(server.url);await UI.ready(page);await UI.openGame(page,'mage-brawl');await active().locator('[data-command=room-rules]').click();
+  await selectChoice(active().locator('[name=preset]'),'teams');
+  const selected=form=>form.locator('[data-rule-field=seatOrder] .rule-choice:has(input:checked)').evaluate(label=>{const body=label.querySelector('.rule-choice-body'),s=getComputedStyle(body);return {opacity:getComputedStyle(label).opacity,background:s.backgroundColor,border:s.borderColor};});
+  const editable=await selected(active());await active().getByRole('button',{name:'Сохранить',exact:true}).click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();PlayroomFirstTurnGuide.setEnabled(r.game.id,false);b.roomService.configure(r.id,r.ownerId,{firstPlayerMode:'assigned',firstParticipantId:r.ownerId});b.renderLobby();});await active().locator('[data-command=lobby-start]').click();await page.locator('.table-shell').waitFor();if(await page.locator('.handoff [data-command=unlock]').count())await page.locator('.handoff [data-command=unlock]').click();
+  await page.locator('.table-shell [data-game-menu]').click();await active().locator('[data-command=room]').click();await active().locator('[data-command=room-rules]').click();await active().locator('#room-rules-form[data-readonly=true]').waitFor();
+  await page.screenshot({path:path.resolve(root,'../tmp_files/feedback-267fdc89-1115/readonly-portrait.png'),fullPage:true});assert.deepEqual(await selected(active()),editable);
+  for(const viewport of [{width:390,height:844},{width:740,height:390}]){await page.setViewportSize(viewport);const geometry=await active().locator('.rules-v021-summary').evaluate(section=>{const a=section.querySelector('[data-rule-summary-text]').getBoundingClientRect(),b=section.querySelector('.rule-choice-readonly').getBoundingClientRect();return {summaryHeight:a.height,summaryBottom:a.bottom,noteTop:b.top};});if(geometry.summaryHeight>0)assert(geometry.noteTop>=geometry.summaryBottom,'readonly note must not overlap rule summary');}
+  const controls=await active().locator('#room-rules-form input:not([type=hidden])').evaluateAll(nodes=>nodes.map(n=>n.disabled));assert(controls.length&&controls.every(Boolean));
+ }finally{await context.close();await browser.close();await server.close();}
+});
+test('feedback regression: every installed pack summary omits the game title',{timeout:90000},async()=>{
+ const UI=require('./browser-origin.cjs'),server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),page=await context.newPage(),active=()=>UI.activeSurface(page);
+ try{
+  await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));await page.goto(server.url);await UI.ready(page);const ids=await page.evaluate(()=>PlayroomInstalledPacks.map(p=>p.manifest.id));assert(ids.length);
+  for(const id of ids){await UI.openGame(page,id);const name=await page.evaluate(()=>PlayroomAppBridge.room().game.name);await active().locator('[data-command=room-rules]').click();const parts=await active().locator('[data-rule-summary-text]>span').allTextContents();assert(!parts.includes(name),id+' must not repeat its title');assert(!(await active().locator('[data-rule-summary-text]').getAttribute('title')).startsWith(name+' · '),id+' tooltip');await active().locator('.modal-head [data-command=close-modal]').click();await active().locator('.modal-head [data-command=close-modal]').click();}
+ }finally{await context.close();await browser.close();await server.close();}
+});
 test('A08 invalid settings are rejected atomically by the production host service and guest authority',{timeout:60000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
  const provider=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({status:503,json:{message:'Local A08 fixture: no provider'}}));page.on('pageerror',error=>errors.push(error.message));
