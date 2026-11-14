@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"bug-report-attachments.test.cjs","profiles":[],"subblock":"core/support-reports"},
     {"file":"update-all.test.cjs","profiles":[],"subblock":"core/updates"},
     {"file":"action-history.test.cjs","profiles":[],"subblock":"core/session-runtime"},
     {"file":"skin-preferences.test.cjs","profiles":[],"subblock":"core/appearance"},
@@ -68,6 +69,7 @@ module.exports = {
     {"file":"rule-settings-browser.test.cjs","profiles":[],"subblock":"ui/rules","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"settings-layout-browser.test.cjs","profiles":[],"subblock":"ui/settings","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"settings-help-browser.test.cjs","profiles":[],"subblock":"ui/settings-help","types":["screen:phone:portrait"]},
+    {"file":"bug-report-browser.test.cjs","profiles":[],"subblock":"ui/support-reports","types":["screen:phone:portrait","screen:phone:landscape"]},
     {"file":"interface-scale.test.cjs","profiles":[],"subblock":"ui/appearance"},
     {"file": "appearance-browser.test.cjs", "profiles": [], "subblock": "ui/appearance"},
     {"file": "ui.test.cjs", "profiles": ["smoke"], "subblock": "ui/navigation"},
@@ -117,6 +119,7 @@ module.exports = {
     {"file":"web-push.test.cjs","profiles":[],"subblock":"network/push"},
     {"file":"web-push-browser.test.cjs","profiles":[],"subblock":"network/push"},
     {"file":"cloud-account-rls.test.cjs","profiles":[],"subblock":"network/cloud"},
+    {"file":"bug-report-rls.test.cjs","profiles":[],"subblock":"network/support-reports"},
     {"file":"account-sync.test.cjs","profiles":[],"subblock":"network/cloud"},
     {"file":"network-learning-browser.test.cjs","profiles":[],"subblock":"network/learning"},
     {"file":"mage-brawl-network-browser.test.cjs","profiles":[],"subblock":"network/mage-brawl"},

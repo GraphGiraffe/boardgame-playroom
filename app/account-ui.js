@@ -116,6 +116,7 @@
   root.PlayroomCommunityUI.init({account:service,remote:remote('playroom_online')});
   root.PlayroomPushUI.init({account:service,remote:remote('playroom_push')});
   root.PlayroomCloudSavesUI.init({account:service,remote:remote('playroom_cloud_saves_rpc')});
+  root.PlayroomBugReportUI.init({account:service,remote:remote('playroom_bug_report')});
   root.PlayroomHostTransferUI.init({account:service,remote:auth?new root.PlayroomSupabaseSocial({auth,rpc:'playroom_host_transfer'}):null});
   root.PlayroomLobbyNetwork.init();
   if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal_sync'})});

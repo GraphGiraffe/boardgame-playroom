@@ -32,3 +32,16 @@
  :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head{gap:4px}
  :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head>.surface-head-actions{gap:4px}
 }
+
+.bug-report-form{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bug-report-form textarea{width:100%;min-height:100px;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--paper);color:inherit;font:inherit}
+.bug-report-add{align-self:flex-start;cursor:pointer}
+.bug-report-add{position:relative}
+.bug-report-add input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.bug-report-add:focus-within{outline:2px solid var(--green);outline-offset:3px}
+.bug-report-images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bug-report-images figure{margin:0;min-width:0}
+.bug-report-images img{display:block;width:100%;height:110px;object-fit:contain;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.bug-report-images figcaption{font-size:var(--ui-type-caption,.8125rem);display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.bug-report-info summary{min-height:44px;display:list-item;padding-block:12px;cursor:pointer}
+.bug-report-info pre{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.75rem}

@@ -41,7 +41,7 @@
    this.observe('event',e=>this.record('interaction',{event:e.name,interactionId:e.interactionId,start:e.startTime,inputDelay:e.processingStart-e.startTime,processing:e.processingEnd-e.processingStart,duration:e.duration}),{durationThreshold:16});
    this.observe('long-animation-frame',e=>this.record('long-frame',{start:e.startTime,duration:e.duration,blocking:e.blockingDuration,renderStart:e.renderStart,styleAndLayoutStart:e.styleAndLayoutStart,scripts:[...(e.scripts||[])].sort((a,b)=>b.duration-a.duration).slice(0,5).map(s=>({duration:s.duration,layout:s.forcedStyleAndLayoutDuration,function:s.sourceFunctionName,line:s.sourceCharPosition,invokerType:s.invokerType,file:(()=>{try{return new URL(s.sourceURL).pathname.split('/').at(-1);}catch(_){return null;}})()}))}));
    this.observe('resource',e=>this.record('resource',{type:e.initiatorType,duration:e.duration,transferBytes:e.transferSize,bodyBytes:e.decodedBodySize}));
-   this.listen('error',e=>this.record('error',{name:e.error?.name||'Error'}));this.listen('unhandledrejection',e=>this.record('rejection',{name:e.reason?.name||'Error'}));
+   this.listen('error',e=>{let file=null;try{file=new URL(e.filename).pathname.split('/').at(-1);}catch(_){}this.record('error',{name:e.error?.name||'Error',file,line:e.lineno||null,column:e.colno||null});});this.listen('unhandledrejection',e=>this.record('rejection',{name:e.reason?.name||'Error'}));
    this.listen('visibilitychange',()=>{this.lastFrame=null;this.record('visibility',{hidden:!!root.document?.hidden});});
    for(const type of ['pagehide','pageshow','online','offline'])this.listen(type,e=>this.record('lifecycle',{event:type,persisted:!!e.persisted}));
    this.listen('pointerdown',e=>this.record('input',{type:e.pointerType||'unknown',tag:e.target?.tagName||''}));
@@ -49,6 +49,18 @@
   }
   stop(){if(!this.enabled)return;this.sample();this.record('capture.stop');this.enabled=false;this.restoreAnimations?.();this.restoreAnimations=null;root.clearInterval(this.timer);if(this.raf!==null)root.cancelAnimationFrame?.(this.raf);this.timer=null;this.raf=null;for(const observer of this.observers)observer.disconnect();this.observers=[];for(const [type,listener]of this.listeners)root.removeEventListener?.(type,listener);this.listeners=[];}
   setEnabled(value){value?this.start():this.stop();try{root.localStorage?.setItem(KEY,value?'1':'0');}catch(_){} }
+  trace(){
+   if(this.enabled)this.sample();
+   const scrub=(value,key='',depth=0)=>{
+    if(depth>7)return null;
+    if(value===null||typeof value==='boolean'||typeof value==='number')return value;
+    if(typeof value==='string')return /^(format|kind|scope|type|status|name|event|tag|game|appVersion|packVersion|animationSpeed|screen|audioState|file|function|invokerType|startedAt|exportedAt|collectorRevision)$/.test(key)?value.slice(0,160):'[omitted]';
+    if(Array.isArray(value))return value.slice(0,LIMIT).map(item=>scrub(item,key,depth+1));
+    if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([k])=>!/(token|secret|password|cookie|authorization|url|message|email|nickname|payload|save|hand|card)/i.test(k)).map(([k,v])=>[k,scrub(v,k,depth+1)]));
+    return null;
+   };
+   return scrub({format:'playroom-support-trace',version:1,collectorRevision:'2026-11-14.1',startedAt:this.startedAt,exportedAt:new Date().toISOString(),enabled:this.enabled,capacity:LIMIT,dropped:Math.max(0,this.written-LIMIT),context:this.commonContext,baseline:this.baseline.slice(),events:Array.from({length:this.count},(_,i)=>this.buffer[(this.written-this.count+i)%LIMIT])});
+  }
   async report(){if(this.enabled)this.sample();const events=Array.from({length:this.count},(_,i)=>this.buffer[(this.written-this.count+i)%LIMIT]);let game={status:'unavailable'};try{const value=await this.save();if(value)game={status:'included',value};}catch(error){game={status:'failed',error:error.name||'Error'};}
    return {format:'playroom-diagnostics',version:2,collectorRevision:'2026-11-04.2',startedAt:this.startedAt,exportedAt:new Date().toISOString(),timeOrigin:root.performance?.timeOrigin??null,enabled:this.enabled,capacity:LIMIT,dropped:Math.max(0,this.written-LIMIT),environment:{userAgent:root.navigator?.userAgent||'',deviceMemoryGiB:root.navigator?.deviceMemory??null,logicalProcessors:root.navigator?.hardwareConcurrency??null,viewport:{width:root.innerWidth??null,height:root.innerHeight??null,dpr:root.devicePixelRatio??null},supportedEntryTypes:[...(root.PerformanceObserver?.supportedEntryTypes||[])],jsHeapAvailable:!!root.performance?.memory},context:this.commonContext,baseline:this.written>LIMIT?this.baseline.slice():[],limitations:['No total device/process RAM, CPU percentage, memory addresses/accesses, GPU memory, GC events or native heap from ordinary browser APIs.','Frame gaps, timer lag and long tasks are main-thread/visibility indicators, not CPU usage percentage.','JS heap readings may be approximate. Collector adds overhead; collector.sample records its sampling duration.','Trace is bounded and remains in this page until reload; game save is captured at export.'],events,game};
   }
