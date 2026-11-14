@@ -554,3 +554,24 @@ Reference passing is already the default for object values in JavaScript. This
 visual ownership change does not replace immutable history snapshots or network
 serialization with shared mutable references. Disappearing piece transfers may
 still need a retained visual after the committed renderer removes the source.
+
+
+### Arrival after public departures
+
+The optional `arrival-departures-v1` SDK feature supports a route with
+`arrival: 'after-departures'` and `departures: EntityRef[]` (1–32 unique public
+board objects, excluding the arriving entity). The pack names already resolved
+public objects; it does not supply timers or recompute captures. The runtime first
+moves the arriving piece above the last route/jump anchor, then moves the named
+objects from their authorized previous positions to the final scene positions,
+and finally settles the arriving piece into its measured final slot. This supports
+both capture returns and exchanges; no destination is assumed to be a base.
+Other affected stack placements settle after the named departures. Routes without
+this opt-in retain their existing timing. Instant/reduced motion, interruption,
+resize and cleanup use the existing shared motion lifecycle.
+
+## Public player-card status
+
+Packs using this slot declare `sdkFeatures: ["player-status-v1"]`; older hosts reject the update instead of silently losing status information. A Web renderer may supply `playerContent[i].statusHTML` as a string of already authorized public status markup, like `handHTML`. The shared player card owns its right-aligned `.player-status` slot, wrapping and named `player-status` inline-size container. Pack content can use container queries for compact variants. Pack CSS styles only its own markup; it never positions `.player-data` or other application components. Public-frame player cards use the same slot, so indicators follow the displayed state rather than the final authority state.
+
+`statusMinWidth` optionally declares the smallest useful width (integer 24–320px, default24). The shared card wraps the whole status slot before shrinking it below this width; its container lets the renderer switch between full and compact contents without moving the card.

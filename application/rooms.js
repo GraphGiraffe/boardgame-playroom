@@ -5,6 +5,18 @@ const normalizeAvatar=value=>typeof value==='string'&&/^(crescent|triangle|squar
 const resumeTokenValid=token=>typeof token==='string'&&/^[0-9a-f]{64}$/.test(token);
 const ROOM_CODE=/^\d{4}$/,NAME_MAX=24,ROOM_NAME_MAX=48;
 const clone=value=>JSON.parse(JSON.stringify(value));
+// Application-owned public wording for standard room/game policies. Packs only
+// declare supported values/defaults; they do not supply alternate descriptions.
+const STANDARD_RULE_VALUES=Object.freeze({firstPlayerMode:['rules','random','assigned'],seatOrder:['normal','random'],endMode:['winner','round','last']});
+function standardRule(field){
+ if(!field||!Object.hasOwn(STANDARD_RULE_VALUES,field.key))return field;
+ const prefix='rules-help.standard.'+field.key,text=suffix=>globalThis.PlayroomMessages.text(prefix+'.'+suffix);
+ const values=field.options||STANDARD_RULE_VALUES[field.key].map(value=>({value}));
+ return {...field,label:text('label'),help:text('help'),options:values.map(option=>({...option,label:text(option.value+'.label'),shortLabel:text(option.value+'.short'),description:text(option.value+'.description')}))};
+}
+
+function sessionSetup(room){const seats=room.seats.filter(seat=>seat.participantId).sort((a,b)=>a.index-b.index);return {seatIndices:seats.map(seat=>seat.index),players:seats.map(seat=>{const person=room.participants.find(p=>p.id===seat.participantId);if(!person)throw Error('ROOM_PARTICIPANT_MISSING');return {name:person.nickname,bot:!!person.bot,...(person.botSettings?{botSettings:person.botSettings}:{}),...(person.avatar?{avatar:person.avatar}:{})};})};}
+
 const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.participants.find(p=>p.id===id),reset=[...(room.events||[])].reverse().find(e=>e.requiresReady!==false&&['new-match-lobby','game-started','replacement-lobby','participant-kicked','roster-changed'].includes(e.type));return JSON.stringify([room.id,room.game,room.rulesRevision,room.botSettingsRevision,room.rules,room.firstPlayerMode,room.firstParticipantId,room.seatOrder,ignoreReset?null:reset?.id,me?.seatId,me?.replacement]);};
   const text=(value,max,label)=>{
     const result=String(value??'').trim().replace(/\s+/g,' ');
@@ -15,8 +27,8 @@ const readyConfiguration=(room,id,{ignoreReset=false}={})=>{const me=room.partic
   const normalizeName=value=>text(value,NAME_MAX,globalThis.PlayroomMessages.text("ui.rooms.f189892b63a9"));
   const normalizeRoomName=value=>text(value,ROOM_NAME_MAX,globalThis.PlayroomMessages.text("ui.rooms.555c0b3a7b3b"));
   const validateOrder=changes=>{
-    if(changes.seatOrder!==undefined&&!['normal','random'].includes(changes.seatOrder))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9557c33a923f"));
-    if(changes.firstPlayerMode!==undefined&&!['rules','random','assigned'].includes(changes.firstPlayerMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.564ac64ca8d0"));
+    if(changes.seatOrder!==undefined&&!STANDARD_RULE_VALUES.seatOrder.includes(changes.seatOrder))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9557c33a923f"));
+    if(changes.firstPlayerMode!==undefined&&!STANDARD_RULE_VALUES.firstPlayerMode.includes(changes.firstPlayerMode))throw Error(globalThis.PlayroomMessages.text("ui.rooms.564ac64ca8d0"));
   };
   // Validate declared configuration choices independently of the current roster.
   // A valid future team preset may still be unavailable for starting this room.
@@ -86,6 +98,16 @@ class RoomService{
       if(hostMode==='player'){room.seats[0].participantId=host.id;room.participants[0].seatId=room.seats[0].id;}
       this._emit(room,'room-created',globalThis.PlayroomMessages.text("ui.rooms.a3264feefcc9"));
       this.rooms.set(id,room);return this.snapshot(id);
+    }
+    markInvitationShared(roomId,hostId){
+      const room=this._room(roomId);this._host(room,hostId);
+      if(!room.invitationShared){room.invitationShared=true;this._touch(room);this._emit(room,'invitation-shared','');}
+      return this.snapshot(roomId);
+    }
+    shouldCloseOnDismiss(roomId,hostId){
+      const room=this._room(roomId);
+      if(room.ownerId!==hostId||room.phase!=='lobby'||room.recovery)return false;
+      return room.transportMode==='hotseat'||!room.invitationShared&&!room.participants.some(p=>p.id!==hostId&&!p.bot&&!p.local);
     }
     prepareStart(roomId,hostId){
       const room=this._room(roomId);this._host(room,hostId);
@@ -209,7 +231,7 @@ class RoomService{
     }
     preview(roomId){const room=this._room(roomId);return {id:room.id,code:room.code,name:room.name,game:clone(room.game),rules:clone(room.rules),rulesRevision:room.rulesRevision,hostMode:room.hostMode,phase:room.phase,players:room.participants.filter(p=>p.role==='player').length,constraints:clone(room.constraints)};}
     join(roomId,{id=this.idFactory(),nickname,avatar}={}){
-      const room=this._room(roomId);this._lobby(room);
+      const room=this._room(roomId);if(room.phase==='playing'&&room.transportMode!=='hotseat'){if(room.hostTransferPending)throw Error('HOST_TRANSFER_BUSY');}else this._lobby(room);
       if(room.participants.some(item=>item.id===id))throw Error(globalThis.PlayroomMessages.text("ui.rooms.9eeb6440db29"));
       // Credentials belong to the host's private map, never to room snapshots.
       const token=this.tokenFactory();
@@ -345,7 +367,8 @@ class RoomService{
       return this.snapshot(roomId);
     }
     kick(roomId,participantId,targetId){
-      const room=this._room(roomId);this._lobby(room);this._host(room,participantId);
+      const room=this._room(roomId);this._host(room,participantId);
+      const leaving=this._participant(room,targetId);if(room.phase==='playing'&&['spectator','table'].includes(leaving.role)){if(room.hostTransferPending)throw Error('HOST_TRANSFER_BUSY');}else this._lobby(room);
       if(targetId===room.ownerId)throw Error(globalThis.PlayroomMessages.text("ui.rooms.bf317a0beea4"));
       const target=this._participant(room,targetId);
       for(const seat of room.seats)if(seat.participantId===targetId){if(room.recovery)seat.previousParticipant={id:target.id,nickname:target.nickname};seat.participantId=null;}
@@ -633,5 +656,5 @@ class SwitchableConnection{
     close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
 
-return Object.freeze({readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
+return Object.freeze({sessionSetup,STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});
 });

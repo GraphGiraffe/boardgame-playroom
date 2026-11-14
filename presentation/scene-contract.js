@@ -12,6 +12,11 @@
   function sequence(value){
     V.check(V.record(value)&&Array.isArray(value.steps),'SCENE_SEQUENCE_INVALID');
     entity(value.entity);
+    if(value.departures!==undefined||value.arrival==='after-departures'){
+      V.check(value.arrival==='after-departures'&&Array.isArray(value.departures)&&value.departures.length>0&&value.departures.length<=32,'SCENE_DEPARTURES_INVALID');
+      const ids=value.departures.map(entity);
+      V.check(new Set(ids).size===ids.length&&!ids.includes(entity(value.entity)),'SCENE_DEPARTURES_INVALID');
+    }
     for(const point of [value.origin,...value.steps,...(value.jump?[value.jump]:[])])
       V.check(V.record(point)&&typeof point.anchor==='string'&&point.anchor.length>0,'SCENE_ANCHOR_INVALID');
     return value;
@@ -78,6 +83,11 @@
     }
     if(scene.geometry!==undefined)geometry(scene,playerCount);
     if(scene.sequence!==undefined)sequence(scene.sequence);
+    if(scene.motionSequence!==undefined)sequence(scene.motionSequence);
+    for(const route of [scene.sequence,scene.motionSequence].filter(Boolean))if(route.departures){
+      const available=new Set((scene.objects||[]).map(object=>entity(object.ref)));
+      V.check(route.departures.every(ref=>available.has(entity(ref))),'SCENE_DEPARTURE_UNKNOWN');
+    }
     return scene;
   }
   return Object.freeze({validate,metric,entity,sequence,event,geometry});

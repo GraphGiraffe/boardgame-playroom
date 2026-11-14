@@ -26,3 +26,25 @@ test('conversation search batches bounded requests without caching private resul
  const again=service.call('chat-search',{userId:'bob',query:'%_literal',before:'9007199254740994'});f.callbacks.shift()();await again;assert.equal(f.calls.length,2,'search is not retained in the account read cache');
  let finish;f.remote.call=()=>new Promise(resolve=>finish=resolve);const pending=service.call('group-search',{groupId:'group',query:'private'}),rejected=assert.rejects(pending,/account-changed/);f.callbacks.shift()();f.account.set('bob');finish({results:[{id:'r4',data:{messages:[{body:'private'}]}}]});await rejected;
 });
+
+test('notification lifecycle wakes reuse a just completed read without caching private responses or delaying explicit polls',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),events=new Map(),timers=new Map(),calls=[];let now=1000,hidden=false,roomId=null,serial=0,failUnread=false;
+ const f=fixture();f.sync.schedule=fn=>queueMicrotask(fn);f.remote.call=async(action,data)=>{const response={results:data.requests.map(r=>failUnread&&r.action==='unread'?{id:r.id,error:{code:'request'}}:({id:r.id,data:r.action==='unread'?{chats:[],friends:[]}:{cursor:'1',items:[]}}))};calls.push({action,requests:data.requests.length,requestBytes:Buffer.byteLength(JSON.stringify(data)),responseBytes:Buffer.byteLength(JSON.stringify(response))});return response;};
+ const ctx={Date:{now:()=>now},setTimeout:(fn,ms)=>{timers.set(++serial,{fn,ms});return serial;},clearTimeout:id=>timers.delete(id),document:{get hidden(){return hidden;},addEventListener:(name,fn)=>events.set(name,fn),querySelector:()=>null},addEventListener:(name,fn)=>events.set(name,fn),PlayroomDOM:{clearVisualExits(){}},PlayroomFriendNotifications:class{update(){return[];}},PlayroomCloudNetwork:{roomId:()=>roomId},PlayroomChatState:{summary(){},invitationChats:()=>[]},PlayroomCommunityUI:{acceptInbox(){}}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../app/chat-notifications.js'),'utf8'),ctx);
+ const settle=()=>new Promise(resolve=>setImmediate(resolve));const wake=async(name,ms=50)=>{now+=ms;events.get(name)({type:name});await settle();};
+ ctx.PlayroomChatNotifications.init({account:f.account,service:{call:(action,data)=>f.sync.request('playroom_online',action,data)},store:{read:()=> '1',write(){}}});await settle();assert.equal(calls.length,1);
+ for(const name of ['pageshow','focus','visibilitychange'])await wake(name);
+ const burst={http:calls.length,rpc:calls.reduce((n,x)=>n+x.requests,0),requestBytes:calls.reduce((n,x)=>n+x.requestBytes,0),responseBytes:calls.reduce((n,x)=>n+x.responseBytes,0)};
+ if(process.env.PLAYROOM_READ_AUDIT_REPORT)fs.writeFileSync(process.env.PLAYROOM_READ_AUDIT_REPORT,JSON.stringify({fixture:'empty unchanged notification inboxes; actual AccountSync batching; 3 sequential lifecycle wakes after completed startup read',burst},null,2)+'\n');
+ assert.equal(calls.length,1,'pageshow/focus/visibility burst after a completed read must not repeat identical HTTP/RPC bodies');
+ await ctx.PlayroomChatNotifications.poll();assert.equal(calls.length,2,'explicit notification refresh bypasses wake dedup');
+ await wake('online');assert.equal(calls.length,3,'connectivity recovery bypasses wake dedup');
+ roomId='new-room';await wake('focus');assert.equal(calls.length,4,'new room membership is checked without delay');
+ await wake('focus',1001);assert.equal(calls.length,5,'normal wake after one second fetches fresh data');
+ hidden=true;await wake('visibilitychange');assert.equal(calls.length,5);hidden=false;await wake('visibilitychange',1001);assert.equal(calls.length,6);
+ const scheduled=[...timers.values()].find(t=>t.ms===5000);assert(scheduled,'five-second notification schedule is retained');now+=5000;await scheduled.fn();await settle();assert.equal(calls.length,7,'normal periodic poll still runs');
+ events.get('pagehide')({type:'pagehide'});await wake('pageshow',1);assert.equal(calls.length,8,'persisted-page return checks fresh after lifecycle retirement');
+ failUnread=true;await ctx.PlayroomChatNotifications.poll();assert.equal(calls.length,9);await wake('focus');assert.equal(calls.length,10,'partial failure is retried even within the wake window');failUnread=false;
+ f.account.set('bob');await settle();assert.equal(calls.length,11,'account replacement always fetches its own unread state');
+});

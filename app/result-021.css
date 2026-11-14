@@ -7,9 +7,12 @@
 .result-v021-summary h3{margin:8px 0;font-size:24px;line-height:1.3}
 .result-v021-summary p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
 .result-v021 .result-scores{display:flex;flex-direction:column;gap:10px;margin:0}
-.result-v021 .result-person{display:grid;grid-template-columns:27px 32px minmax(0,1fr) minmax(0,42%);align-items:center;gap:6px;min-width:0;min-height:64px;padding:10px 8px;border:1px solid var(--line);border-radius:12px;background:transparent;text-align:left;font-size:13px}
-.result-v021 .result-person>.avatar{width:32px;height:32px;min-width:32px;flex:none}
-.result-v021 .result-name{white-space:normal;overflow-wrap:anywhere}
+.result-v021 .result-person{display:grid;grid-template-columns:27px calc(var(--result-avatar-size,32px) + var(--result-avatar-reserve,0px)) minmax(0,1fr) minmax(0,42%);align-items:center;gap:6px;min-width:0;min-height:64px;padding:10px 8px;border:1px solid var(--line);border-radius:12px;background:transparent;text-align:left;font-size:13px}
+.result-v021 .result-person:has(.result-avatar-wrap .player-medallion){--result-avatar-reserve:var(--player-medallion-overhang)}
+.result-v021 .result-avatar-wrap{width:var(--result-avatar-size,32px);height:var(--result-avatar-size,32px);flex:none}
+.result-v021 .result-avatar-wrap>.avatar{width:100%;height:100%;min-width:0}
+.result-v021 .result-name{display:flex;flex-direction:column;align-items:flex-start;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.result-v021 .result-name .result-bot-settings{display:block;margin-top:3px;max-width:100%;line-height:1.3;font-size:11px}
 .result-v021 .result-nickname{min-width:0;overflow-wrap:anywhere}
 .result-v021 .result-exit{grid-column:3/-1;color:var(--muted);font-size:11px;line-height:1.4}
 .result-v021-history{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:48px;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;text-align:left;font:inherit;font-size:14px}
@@ -26,8 +29,8 @@
  .result-v021-summary{grid-column:1;grid-row:1;padding:0;text-align:left}.result-v021-marker{width:32px;height:32px}.result-v021-marker svg{width:26px;height:26px}
  .result-v021-summary h3{font-size:20px;margin:4px 0}.result-v021-summary p{font-size:11px}
  .result-v021 .result-scores{grid-column:2;grid-row:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;align-content:start}
- .result-v021 .result-person{grid-template-columns:25px 24px minmax(0,1fr) auto;min-height:44px;padding:4px;gap:4px;font-size:12px}
- .result-v021 .result-person>.avatar{width:24px;height:24px;min-width:24px}.result-v021 .result-stat{min-width:0}.result-v021 .result-exit{font-size:10px}
+ .result-v021 .result-person{--result-avatar-size:24px;grid-template-columns:25px calc(var(--result-avatar-size) + var(--result-avatar-reserve,0px)) minmax(0,1fr) auto;min-height:44px;padding:4px;gap:4px;font-size:12px}
+ .result-v021 .result-person>.result-avatar-wrap{width:24px;height:24px;min-width:24px}.result-v021 .result-stat{min-width:0}.result-v021 .result-exit{font-size:10px}
  .result-v021-history{grid-column:1;grid-row:2;align-self:start;min-height:40px;padding:6px 0;font-size:13px}
  :is(#modal-root,[data-ui-surface-exit]) .result-modal[data-ui-surface="screen"]>.result-v021-footer{padding-top:6px}.result-v021-footer>.btn{min-height:40px;padding:6px 12px}
 }

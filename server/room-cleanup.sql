@@ -1,10 +1,11 @@
 -- Apply after all Online room/signaling/transfer/push migrations.
 -- Keep room/invitation tombstones and chat/history; remove only transient capabilities.
 begin;
+create index if not exists playroom_push_room_reads_room on public.playroom_push_room_reads(room_id);
 create or replace function public.playroom_cleanup_closed_room() returns trigger
 language plpgsql security definer set search_path=pg_catalog,public as $$
 begin
- new.host_until:=null;new.host_epoch:=null;
+ new.host_until:=null;new.host_epoch:=null;new.room_summary:='{}'::jsonb;new.summary_updated_at:=null;
  update public.playroom_room_invites set revoked=true,expires_at=least(expires_at,now()) where room_id=new.id;
  delete from public.playroom_push_deliveries d where
   (d.payload->>'type'='room' and d.payload->>'id'=new.id::text)
@@ -16,10 +17,23 @@ begin
  delete from public.playroom_host_transfers where room_id=new.id;
  delete from public.playroom_push_games where room_id=new.id;
  delete from public.playroom_push_room_events where room_id=new.id;
+ delete from public.playroom_push_room_reads where room_id=new.id;
  return new;
 end;$$;
 revoke all on function public.playroom_cleanup_closed_room() from public,anon,authenticated;
 drop trigger if exists playroom_room_closed_cleanup on public.playroom_cloud_rooms;
 create trigger playroom_room_closed_cleanup before update of closed on public.playroom_cloud_rooms
  for each row when (new.closed) execute function public.playroom_cleanup_closed_room();
+-- Older closed rooms predate the trigger. Reuse the same atomic cleanup only
+-- for rooms with transient state; keep room/invitation tombstones and chat.
+update public.playroom_cloud_rooms r set closed=true
+ where r.closed and (r.host_until is not null or r.host_epoch is not null or r.room_summary<>'{}'::jsonb or r.summary_updated_at is not null
+  or exists(select 1 from public.playroom_signals x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_peer_bindings x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_room_members x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_host_transfers x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_push_games x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_push_room_events x where x.room_id=r.id)
+  or exists(select 1 from public.playroom_push_room_reads x where x.room_id=r.id)
+ );
 commit;

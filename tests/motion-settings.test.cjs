@@ -1,17 +1,15 @@
 'use strict';
 
-async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
+async function setRange(page,id,value){const input=page.locator('#'+id);await input.focus();await input.press('Home');for(let i=0;i<value;i++)await input.press('ArrowRight');}
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
-const {serveBrowserFixture}=require('./browser-origin.cjs');
+const {serveBrowserFixture,ready:appReady,currentState,activeSurface,openSettings,resumeSaved}=require('./browser-origin.cjs');
 const root = path.resolve(__dirname, '..');
 const Core = require('../core/engine.js');
 const Session = require('../core/session.js');
 for(const game of ['uno','checkers','snakes','durak','domino','ludo'])require('../packs/'+game+'/rules.js');
-const url = process.env.PLAYROOM_URL || pathToFileURL(path.join(root, 'index.html')).href;
 const FLIGHT = '.playroom-motion-piece[data-motion-kind="play"], .action-reveal-art.is-flying';
 
 function fixture({mode = 'pass', turn = 0, players = 2, openHands = false} = {}) {
@@ -48,27 +46,35 @@ function plusFourFixture() {
   return saved;
 }
 async function ready(page) {
-  await page.waitForFunction(() => document.querySelector('.scene')?.getAttribute('aria-busy') !== 'true');
+  await page.waitForFunction(() => ['.table-shell>.scene','.app-game-layout'].every(selector=>document.querySelector(selector)?.getAttribute('aria-busy')!=='true'));
 }
-async function currentMove(page) {
-  return page.evaluate(() => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move);
-}
+async function currentMove(page) { return (await currentState(page)).move; }
 async function waitMove(page, move) {
-  await page.waitForFunction(value => TabletopSession.restore(TabletopCore,
-    JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move === value, move);
+  await page.waitForFunction(value => PlayroomAppBridge.saveLibrary.current()?.session.current.move === value, move);
 }
-async function resume(page) {
-  const resumeButton=page.locator('.resume-banner [data-command=resume]');
-  assert.equal(await resumeButton.count(),1,
-    'Resume missing: '+JSON.stringify(await page.evaluate(()=>({
-      app:document.getElementById('app')?.innerText.slice(0,280),
-      packs:globalThis.PlayroomPacks?.list?.().map(x=>x.id+'@'+x.version),
-      saved:!!localStorage.getItem('playroom.session.v1'),
-      warning:globalThis.PlayroomPackLoadError
-    }))));
-  await resumeButton.click();
-  if (await page.locator('.handoff').count()) await page.locator('[data-command=unlock]').click();
+const resume=resumeSaved;
+async function settingsPage(page,category='effects'){
+  await openSettings(page);await activeSurface(page).locator('[data-settings-tab='+category+']').click();
+}
+async function closeSettings(page){
+  await activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+  if(await activeSurface(page).locator('.game-menu-panel').count())await activeSurface(page).locator('.modal-head [data-game-menu-close]').click();
+}
+async function clickExposed(locator){
+  await locator.scrollIntoViewIfNeeded();
+  const position=await locator.evaluate(el=>{const r=el.getBoundingClientRect();for(const fy of [.5,.12,.88])for(const fx of [.5,.12,.88]){const x=r.x+r.width*fx,y=r.y+r.height*fy,hit=document.elementFromPoint(x,y);if(hit===el||el.contains(hit))return {x:x-r.x,y:y-r.y};}throw Error('No exposed action point');});
+  await locator.click({position});
+}
+async function executeRenderedAction(page,game,action){
+  const controls=page.locator('.table-shell [data-action]');
+  const find=()=>controls.evaluateAll((nodes,action)=>nodes.findIndex(node=>{if(!node.checkVisibility()||node.disabled||node.closest('[inert]'))return false;try{const candidate=JSON.parse(node.dataset.action);return Object.entries(action).every(([key,value])=>key==='label'||candidate[key]===value);}catch(_){return false;}}),action);
+  let index=await find();
+  if(index<0){
+    const piece=action.card??action.from;
+    const source=game==='ludo'?page.locator('[data-view-key=pawn][data-view-value="'+action.owner+':'+action.pawn+'"]'):page.locator('[data-select="'+piece+'"],[data-cell="'+piece+'"]').first();
+    await clickExposed(source);index=await find();
+  }
+  assert(index>=0,game+' renders the exact legal action: '+JSON.stringify(action));await clickExposed(controls.nth(index));
 }
 async function playHumanCard(page, saved) {
   const id = saved.states[0].data.hands[0][0].id;
@@ -91,26 +97,26 @@ async function playHumanCard(page, saved) {
 async function observe(page) {
   await page.evaluate(selector => {
     const trace = window.motionSettingsTrace = {samples: [], moves: [], drawsSeen: [], resumeAt: null, raw: null, move: 0, stopped: false};
-    const knownDraws = new WeakSet();
+    const knownDraws = new WeakSet(),flightIds=new WeakMap();let nextFlightId=0;
     document.addEventListener('click', event => {
-      if (event.target.closest('[data-command="resume"]')) trace.resumeAt = performance.now();
+      if (event.target.closest('[data-resume-id],[data-command="resume"]')) trace.resumeAt = performance.now();
     }, {capture: true});
     const record = () => {
       if (trace.stopped) return;
-      const t = performance.now(), raw = localStorage.getItem('playroom.session.v1');
+      const t = performance.now(), raw = PlayroomAppBridge.saveLibrary.storage().getItem('playroom.session.v1');
       if (raw && raw !== trace.raw) {
-        const state = TabletopSession.restore(TabletopCore, JSON.parse(raw)).current;
+        const state = PlayroomAppBridge.saveLibrary.current().session.current;
         trace.raw = raw; trace.move = state.move;
         trace.moves.push({t, move: state.move, turn: state.turn});
       }
       const pieces = [...document.querySelectorAll(selector)].map(el => {
-        const r = el.getBoundingClientRect();
-        return {x: r.x, y: r.y, width: r.width, height: r.height,
-          face: el.querySelector('.face-value')?.textContent?.trim() || ''};
+        const r = el.getBoundingClientRect();if(!flightIds.has(el))flightIds.set(el,++nextFlightId);
+        return {x: r.x, y: r.y, width: r.width, height: r.height,flight:flightIds.get(el),
+          face: el.querySelector('.uno-print-face text')?.textContent?.trim() || ''};
       });
       const draws = [...document.querySelectorAll('.playroom-motion-piece[data-motion-kind="draw"]')].map(el => {
         const mover = el.closest('.playroom-motion-flight'), r = el.getBoundingClientRect();
-        const item = {player: Number(el.dataset.motionPlayer), face: !!el.querySelector('.face-value'),
+        const item = {player: Number(el.dataset.motionPlayer), face: !!el.querySelector('.uno-print-face text'),
           visible: Number(getComputedStyle(mover || el).opacity) > .05,
           x: r.x, y: r.y, width: r.width, height: r.height};
         if (!knownDraws.has(el)) { knownDraws.add(el); trace.drawsSeen.push({...item, t}); }
@@ -137,25 +143,27 @@ const playedFrames = (trace, move = 1) => trace.samples.filter(sample => sample.
 
 test('Animation presets persist and stage real card flights before the next actor', {timeout: 120000}, async t => {
   const fixtureServer=process.env.PLAYROOM_URL?.startsWith('http')?null:await serveBrowserFixture(root);
-  const testUrl=fixtureServer?.url||url;
+  const testUrl=fixtureServer?.url||process.env.PLAYROOM_URL;
   const browser = await chromium.launch({headless: true,
     executablePath: executablePath(),
     args: ['--no-sandbox', '--disable-background-networking']});
   async function open({settings = {}, saved = null, reducedMotion = 'no-preference'} = {}) {
     const context = await browser.newContext({viewport: {width: 390, height: 844}, hasTouch: true,
       isMobile: true, reducedMotion});
+    const net=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));
     const page = await context.newPage(), errors = [];
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(testUrl);
+    await page.goto(testUrl);await appReady(page);
     // Seed once; a reload must read the user's current storage without reseeding.
     await page.evaluate(({settings, saved}) => {
       localStorage.clear();
-      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,...settings}));
+      localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'motion-settings-owner',name:'Аня',createdAt:1,updatedAt:1}));
+      localStorage.setItem('playroom.settings.v1', JSON.stringify({sound:false,quickPlay:false,tutorialsEnabled:false,...settings}));
       if (saved) localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
     }, {settings, saved});
-    await page.reload();
-    return {page, context, errors};
+    await page.reload();await appReady(page);
+    return {page, context, errors,net};
   }
   async function check(name, fn) {
     if(process.env.PLAYROOM_SCENARIO&&!new RegExp(process.env.PLAYROOM_SCENARIO).test(name))return;
@@ -163,7 +171,7 @@ test('Animation presets persist and stage real card flights before the next acto
       const environments = [];
       try {
         await fn(async options => { const env = await open(options); environments.push(env); return env; });
-        for (const env of environments) assert.deepEqual(env.errors, [], 'No uncaught browser errors');
+        for (const env of environments){assert.deepEqual(env.errors, [], 'No uncaught browser errors');assert.equal(env.net.nativeSupabaseRequests,0);}
       } finally { for (const env of environments) await env.context.close(); }
     });
   }
@@ -171,17 +179,17 @@ test('Animation presets persist and stage real card flights before the next acto
     await check('All four preset choices persist through reload and replace the old checkbox', async open => {
       const {page} = await open();
       for (const speed of ['instant', 'fast', 'normal', 'slow']) {
-        await page.locator('[data-command=settings]').click();
+        await settingsPage(page);
         assert.equal(await page.locator('#setting-motion').count(), 0);
         assert.equal(await page.locator('#setting-speed').getAttribute('type'),'range');
-        assert.equal(await page.locator('#setting-speed').locator('..').locator('[data-range-stop]').count(),4);
+        assert.deepEqual(await page.locator('#setting-speed').evaluate(input=>[input.min,input.max,input.step]),['0','3','1'],'the native range exposes exactly four preset values');
         await setRange(page,'setting-speed',['instant','fast','normal','slow'].indexOf(speed));
         assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('playroom.settings.v1')).animationSpeed), speed);
         await page.evaluate(() => sessionStorage.clear());
         await page.reload();
-        await page.locator('[data-command=settings]').click();
+        await settingsPage(page);
         assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(speed)));
-        await page.locator('.modal [data-command=close-modal]').click();
+        await closeSettings(page);
       }
     });
 
@@ -199,7 +207,7 @@ test('Animation presets persist and stage real card flights before the next acto
           const saved=candidate.export(),before=saved.states.at(-1),{page}=await open({saved,settings:{animationSpeed:game==='ludo'&&!automatic?'fast':'instant',autoPass:automatic,hotseatAutoPass:{[saved.createdAt+':'+before.turn]:automatic}}});
           await resume(page);
           if(game==='ludo'&&!automatic)await page.evaluate(()=>{window.handoffFrames=[];window.watchHandoff=true;const watch=()=>{if(!window.watchHandoff)return;const el=document.querySelector('[data-command=pass-device]'),r=el?.getBoundingClientRect();handoffFrames.push({exists:!!el,visible:!!r&&r.width>0&&r.height>0,disabled:el?.disabled,x:r?.x,y:r?.y});requestAnimationFrame(watch);};watch();});
-          await page.evaluate(action=>{const button=document.createElement('button');button.dataset.action=JSON.stringify(action);document.querySelector('.scene').append(button);button.click();button.remove();},action);
+          await executeRenderedAction(page,game,action);
           await waitMove(page,before.move+1);await ready(page);
           if(!automatic){
             await page.locator('[data-command=pass-device]:not(:disabled)').waitFor();
@@ -217,12 +225,12 @@ test('Animation presets persist and stage real card flights before the next acto
         }
       }
       const saved=fixture(),{page}=await open({saved,settings:{autoPass:false}});await resume(page);
-      await page.locator('[data-command=settings]').click();await page.locator('#setting-auto-pass').check();
+      await settingsPage(page,'behavior');await page.locator('#setting-auto-pass').check();
       const prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));assert.equal(prefs.autoPass,true);assert.equal(prefs.hotseatAutoPass[saved.createdAt+':0'],undefined);assert.equal(prefs.hotseatAutoPass[saved.createdAt+':1'],undefined);
-      await page.locator('.modal [data-command=close-modal]').click();assert.equal(await page.locator('[data-command=pass-device]').count(),0);
+      await closeSettings(page);assert.equal(await page.locator('[data-command=pass-device]').count(),0);
       await playHumanCard(page,saved);await waitMove(page,1);await ready(page);await page.locator('.handoff').waitFor();await page.locator('[data-command=unlock]').click();
-      await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'second player keeps manual handoff');
-      await page.reload();if(await page.locator('.resume-banner [data-command=resume]').count())await resume(page);else if(await page.locator('[data-command=unlock]').count())await page.locator('[data-command=unlock]').click();await page.locator('[data-command=settings]').click();assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);
+      await settingsPage(page);assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'second player keeps manual handoff');
+      await page.reload();await appReady(page);await resume(page);await settingsPage(page,'behavior');assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);
     });
 
     await check('Hotseat preferences follow the owner across games and guests only within their lobby', async open => {
@@ -234,7 +242,7 @@ test('Animation presets persist and stage real card flights before the next acto
         if(swap)lobby=service.moveParticipant(lobby.id,'primary','primary',lobby.seats[1].id);
         saved.options.lobbyConfig=lobby;return saved;
       }
-      async function setting(saved,settings){const env=await open({saved,settings});await resume(env.page);await env.page.locator('[data-command=settings]').click();return env.page;}
+      async function setting(saved,settings){const env=await open({saved,settings});await resume(env.page);await settingsPage(env.page,'behavior');return env.page;}
       let first=lobbySave('same',0),page=await setting(first,{});assert.equal(await page.locator('#setting-auto-pass').isChecked(),false);await page.locator('#setting-auto-pass').check();let prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));assert.equal(prefs.autoPass,true);
       page=await setting(lobbySave('same',1),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),false,'guest does not inherit owner preference');await page.locator('#setting-auto-pass').check();prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')));
       page=await setting(lobbySave('same',1),prefs);assert.equal(await page.locator('#setting-auto-pass').isChecked(),true,'same guest in next match keeps preference');
@@ -268,7 +276,7 @@ test('Animation presets persist and stage real card flights before the next acto
         [{animationSpeed: 'invalid', motion: false}, 'normal']
       ]) {
         const {page} = await open({settings});
-        await page.locator('[data-command=settings]').click();
+        await settingsPage(page);
         assert.equal(await page.locator('#setting-speed').inputValue(), String(['instant','fast','normal','slow'].indexOf(expected)));
       }
     });
@@ -328,12 +336,14 @@ test('Animation presets persist and stage real card flights before the next acto
       await page.locator(FLIGHT).waitFor({state: 'visible'});
       const destination = await page.locator('.uno-discard > .uno-card').boundingBox();
       await waitMove(page, 2);
-      const trace = await stopTrace(page), frames = playedFrames(trace);
+      const trace = await stopTrace(page),first=trace.samples.find(sample=>sample.pieces.length)?.pieces[0];assert(first,'the first bot renders a physical flight');
+      // Durable storage may settle a frame after the next flight begins; group by the actual flight node.
+      const frames=trace.samples.map(sample=>({...sample,pieces:sample.pieces.filter(piece=>piece.flight===first.flight)})).filter(sample=>sample.pieces.length);
       assert(frames.length >= 10);
       assert(frames.some(frame => frame.pieces[0].face === '9'), 'Bot flight must show the card it actually played');
       const origin=await page.locator('.player-panel[data-player-index="1"] .mini-hand').boundingBox();
       assert(distance(center(frames[0].pieces[0]),center(origin))<65,'Bot card must start at its actual edge seat');
-      assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45);
+      assert(distance(center(frames.at(-1).pieces[0]), center(destination)) < 45,'Bot flight arrives at discard: '+JSON.stringify({last:frames.at(-1).pieces,destination}));
       assert(frames.every(frame => frame.busy));
       const next = trace.moves.find(move => move.move === 2);
       const settled=trace.samples.find(sample=>sample.move===1&&!sample.busy&&sample.t>=frames.at(-1).t);
@@ -385,8 +395,7 @@ test('Animation presets persist and stage real card flights before the next acto
       assert(trace.drawsSeen.every(draw => draw.player === 1 && !draw.face), 'All penalty cards travel as backs to the opponent');
       assert(drawing[0].t >= played.at(-1).t - 20, 'Penalty draws start only after the played +4 arrives');
       assert(trace.samples.filter(sample => sample.move === 1 && sample.layer).every(sample => sample.busy && !sample.gate));
-      const latest = await page.evaluate(() => TabletopSession.restore(TabletopCore,
-        JSON.parse(localStorage.getItem('playroom.session.v1'))).current);
+      const latest = await currentState(page);
       assert.equal(latest.data.hands[1].length, saved.states[0].data.hands[1].length + 4);
       assert.equal(latest.turn, 0, 'Two-player +4 skips the opponent after the visible penalty');
       assert.equal(latest.move, 1, 'Presentation never applies extra rule actions');
@@ -401,7 +410,7 @@ test('Animation presets persist and stage real card flights before the next acto
       const text = await page.locator('.card-help-list').innerText();
       for (const description of expected) assert(text.includes(description));
       assert.equal(await currentMove(page), 0);
-      await page.locator('.modal [data-command=close-modal]').click();
+      await closeSettings(page);
       assert.equal(await page.locator('.modal').count(), 0);
       assert(await page.locator('.own-hand .uno-card').count() > 0);
     });
@@ -410,7 +419,7 @@ test('Animation presets persist and stage real card flights before the next acto
       const saved = fixture(), {page} = await open({saved, settings: {animationSpeed: 'slow'}});
       await resume(page); await playHumanCard(page, saved);
       await page.locator(FLIGHT).waitFor({state: 'visible'});
-      await page.locator('.table-heading [data-command=home]').click();
+      await page.locator('.table-shell [data-game-menu]').click();await activeSurface(page).locator('[data-game-menu-action][data-command=home]').click();
       assert.equal(await page.locator('.game-tile').count(),await page.evaluate(()=>TabletopCore.GAMES.length));
       assert.equal(await page.locator('.playroom-motion-layer').count(), 0);
       await page.waitForTimeout(1850);

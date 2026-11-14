@@ -410,6 +410,7 @@
       const to=rectOf(routeEntity),origin=anchorRect(sequence.origin),from=entities.get(entityKey(sequence.entity))?.rect||{x:origin.x+(origin.width-to.width)/2,y:origin.y+(origin.height-to.height)/2,width:to.width,height:to.height};
       flights.push({el:routeEntity,from,to,kind:'route',sequence,duration:duration+sequence.steps.length*duration*(policy.routeStepFactor??.25)+(sequence.jump?settle+duration:0)});used.add(routeEntity);
     }else sequence=null;
+    const departureKeys=new Set(sequence?.arrival==='after-departures'?(sequence.departures||[]).map(entityKey):[]);
     const card = snapshot.action?.card,autoCards=!snapshot.transferOnly&&!!scene.querySelector('[data-motion-layout="cards"]');
     if(autoCards){let reveals=0;
       for(const el of current.filter(publicEntity)){
@@ -449,7 +450,7 @@
       if (from && to) { flights.push({ el, from, to, kind: 'play' }); used.add(el); }
     }
     for (const el of current) {
-      if (snapshot.routeOnly||snapshot.transferOnly||used.has(el)) continue;
+      if ((snapshot.routeOnly&&!departureKeys.has(el.dataset.entity))||snapshot.transferOnly||used.has(el)) continue;
       const before = entities.get(el.dataset.entity), to = rectOf(el);
       if (!to) continue;
       if (before?.public && publicEntity(el) && before.board && Math.hypot(before.rect.x - to.x, before.rect.y - to.y) > 2) flights.push({ el, from: snapshot.playedFrom && Number(el.dataset.boardCell)===snapshot.action?.to ? snapshot.playedFrom : before.rect, to, kind: 'move' });
@@ -492,6 +493,16 @@
       }
       cueDelay+=flightDuration+Math.max(0,cue.count-1)*stagger;
     }
+    // A public arrival may wait for named occupants to leave its destination.
+    // Destinations come from the final scene, so this also supports exchanges.
+    const arriving=flights.find(flight=>flight.kind==='route'&&flight.sequence.arrival==='after-departures');
+    const departing=arriving?flights.filter(flight=>departureKeys.has(flight.el?.dataset.entity)):[];
+    if(departing.length){
+      const approach=arriving.duration,clearance=Math.max(...departing.map(flight=>flight.duration??duration));
+      arriving.approachDuration=approach;arriving.clearanceDuration=clearance;
+      arriving.duration=approach+clearance+Math.max(60,settle);
+      for(const flight of flights)if(flight!==arriving)flight.delay=(flight.delay||0)+(departureKeys.has(flight.el?.dataset.entity)?approach:approach+clearance);
+    }
     const dice = (snapshot.routeOnly||snapshot.transferOnly||snapshot.skipDice?[]:[...scene.querySelectorAll('[data-motion-lead]')]).filter(el=>el.dataset.motionLead===snapshot.action?.type&&rectOf(el));
     const effects=(snapshot.diceOnly||snapshot.transferOnly?[]:[...scene.querySelectorAll('[data-motion-effect]')]).filter(el=>el.dataset.motionTrigger===snapshot.action?.type&&(!el.dataset.motionKey||String(snapshot.action?.[el.dataset.motionKey])===el.dataset.motionValue)&&rectOf(el));
     const closing=snapshot.action?.type==='flip'?[...scene.querySelectorAll('[data-motion-close]')]:[];
@@ -512,8 +523,9 @@
       root.addEventListener('resize',onResize);
       running = run;context?.cleanup(run.finish);
       try {
-        for (const { el, art, from, to, kind, back, player, sequence:route, delay = 0, duration: flightDuration = duration } of flights) {
+        for (const { el, art, from, to, kind, back, player, sequence:route, approachDuration, clearanceDuration, delay = 0, duration: flightDuration = duration } of flights) {
           const mover = doc.createElement('div'); mover.className = 'playroom-motion-flight'; mover.dataset.motionKind = kind;
+          if(approachDuration)mover.style.zIndex='2';else if(arriving&&departing.length)mover.style.zIndex='1';
           mover.style.width = `${to.width}px`; mover.style.height = `${to.height}px`;
           let clone;
           if (back) {
@@ -551,14 +563,26 @@
           let routeFrames;
           if(route){
             routeFrames=()=>{
+              // Route-only playback holds the real piece at the previous
+              // checkpoint with CSS translate. Measure its final authored slot.
+              const heldTranslate=snapshot.routeOnly&&approachDuration?el.style.translate:null;
+              if(heldTranslate!==null)el.style.translate='none';
               const box=rectOf(el)||to;
+              if(heldTranslate!==null)el.style.translate=heldTranslate;
               mover.style.width=`${box.width}px`;mover.style.height=`${box.height}px`;
               // All cells use their live centres, including after a resize.
               const at=point=>{const r=anchorRect(point)||box;return transform(r.x+(r.width-box.width)/2,r.y+(r.height-box.height)/2,1,1);};
-              const result=[{transform:at(route.origin),offset:0},...(route.entry==='lift'?[{transform:at(route.origin)+' translateY(-10px) scale(1.1)',offset:duration/flightDuration*.5}]:[]),{transform:at(route.origin),offset:duration/flightDuration}];
-              route.steps.forEach((point,index)=>result.push({transform:!snapshot.routeOnly&&!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/flightDuration}));
-              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(flightDuration-duration)/flightDuration});result.push({transform:snapshot.routeOnly?at(route.jump):transform(box.x,box.y,1,1),offset:1});}
-              if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
+              const travelDuration=approachDuration||flightDuration;
+              const result=[{transform:at(route.origin),offset:0},...(route.entry==='lift'?[{transform:at(route.origin)+' translateY(-10px) scale(1.1)',offset:duration/travelDuration*.5}]:[]),{transform:at(route.origin),offset:duration/travelDuration}];
+              route.steps.forEach((point,index)=>result.push({transform:!snapshot.routeOnly&&!route.jump&&index===route.steps.length-1?transform(box.x,box.y,1,1):at(point),offset:(duration+(index+1)*duration/4)/travelDuration}));
+              if(route.jump){result.push({transform:at(route.steps.at(-1)||route.origin),offset:(travelDuration-duration)/travelDuration});result.push({transform:snapshot.routeOnly?at(route.jump):transform(box.x,box.y,1,1),offset:1});}
+              if(approachDuration){
+                const destination=route.jump||route.steps.at(-1)||route.origin;
+                const hover=at(destination)+` translateY(-${Math.max(8,box.height*.7)}px)`;
+                for(const frame of result)frame.offset*=approachDuration/flightDuration;
+                result.at(-1).transform=hover;
+                result.push({transform:hover,offset:(approachDuration+clearanceDuration)/flightDuration},{transform:transform(box.x,box.y,1,1),offset:1});
+              }else if(route.arrival==='settle'){for(const frame of result)frame.offset*=.82;result.push({transform:transform(box.x,box.y,1.12,1.12),offset:.92},{transform:transform(box.x,box.y,1,1),offset:1});}return result;
             };
             frames=routeFrames();
             const panel=[...scene.querySelectorAll('[data-player-index]')].find(node=>node.dataset.turnPrimary!=='false'&&Number(node.dataset.playerIndex)===route.player);
@@ -610,7 +634,9 @@
           }else{
             animations.push(rotor.animate([{transform:'rotateY(0deg)',offset:0},...(close?[{transform:'rotateY(0deg)',offset:hold/total}]:[]),{transform:'rotateY(180deg)',offset:1}],{duration:total||flip,fill:'both',easing:'linear'}));
           }
-          if(close&&back)finishUpdates.push(()=>{face.style.setProperty('visibility','hidden');back.style.visibility='visible';back.style.transform='none';});
+          // The opaque closing back covers the restored face. Keep the face's
+          // original visibility so a retained wrapper survives the next authored patch.
+          if(close&&back)finishUpdates.push(()=>{back.style.visibility='visible';back.style.transform='none';});
         }
         // Start after clone preparation, so slow rendering cannot consume
         // the visible part of a fast flight before its first painted frame.

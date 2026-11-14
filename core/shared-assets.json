@@ -5,15 +5,15 @@
       "source": "shared/components/vector-art.js",
       "target": "core/vector-art.js",
       "format": "text",
-      "sha256": "15815c78c8a7cd6a3580066a7079dcbbb549add473630456fa2d3fd562e1b775",
-      "renderedSha256": "15815c78c8a7cd6a3580066a7079dcbbb549add473630456fa2d3fd562e1b775"
+      "sha256": "7f846b94aaa5da5cfd358947ab203256bc5cf476ea4cd74fc395db632532444c",
+      "renderedSha256": "7f846b94aaa5da5cfd358947ab203256bc5cf476ea4cd74fc395db632532444c"
     },
     {
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "4e4befa18c8884c3ec0e15b371d937c751c61aa64d9bec46df88ffbe659e8559",
-      "renderedSha256": "4e4befa18c8884c3ec0e15b371d937c751c61aa64d9bec46df88ffbe659e8559"
+      "sha256": "bba3cb005ce694d30b4530d02bfcd14b4c544b702e3b1bb91c7a76b9ca968f9a",
+      "renderedSha256": "bba3cb005ce694d30b4530d02bfcd14b4c544b702e3b1bb91c7a76b9ca968f9a"
     },
     {
       "source": "shared/components/game-components.css",
@@ -55,8 +55,8 @@
       "source": "shared/asset-packs/mini-split-deck/renderer.js",
       "target": "core/mini-split-deck.js",
       "format": "text",
-      "sha256": "e3e63b75e21587ce207b68f3c130cc80c05f727a3862a7eac98e06a746963b70",
-      "renderedSha256": "e3e63b75e21587ce207b68f3c130cc80c05f727a3862a7eac98e06a746963b70"
+      "sha256": "f4c9be9a38ec4ec5d5f988b1790aee2cd5beddd243c5da8128919daca3ac3592",
+      "renderedSha256": "f4c9be9a38ec4ec5d5f988b1790aee2cd5beddd243c5da8128919daca3ac3592"
     },
     {
       "source": "shared/asset-packs/character-styles/catalog.json",

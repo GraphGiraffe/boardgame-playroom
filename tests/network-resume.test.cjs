@@ -92,7 +92,15 @@ test('cloud-bound RTC identity resumes only its own participant, never another m
  const bob=rooms.connection(room.id,{boundParticipantId:'cloud-bob'});
  assert.throws(()=>bob.dispatch({type:'resume',participantId:'cloud-alice',resumeToken:alice.resumeToken}),/ROOM_IDENTITY_MISMATCH/);
  const second=rooms.connection(room.id,{boundParticipantId:'cloud-alice'});
- assert.throws(()=>second.dispatch({type:'join',nickname:'Дубликат'}));
- const resumed=second.dispatch({type:'resume',participantId:'cloud-alice',resumeToken:alice.resumeToken});
+ const resumed=second.dispatch({type:'join',nickname:'Новый никнейм'});
+ assert.equal(resumed.ok,true);assert.equal(resumed.resumed,true);
  assert.equal(resumed.snapshot.participantId,'cloud-alice');assert.equal(rooms.snapshot(room.id).participants.length,2);assert.equal(rooms.snapshot(room.id).seats[1].participantId,'cloud-alice');assert.notEqual(resumed.resumeToken,alice.resumeToken);
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='cloud-alice').nickname,'Алиса','authenticated recovery preserves the reserved participant');
+ assert(!JSON.stringify(resumed.snapshot).includes(resumed.resumeToken),'rotated secret stays out of the room projection');
+ assert.throws(()=>rooms.connection(room.id,{boundParticipantId:'cloud-alice'}).dispatch({type:'join',nickname:'Дубликат'}),'an active identity cannot join twice');
+ assert.throws(()=>rooms.connection(room.id,{boundParticipantId:'cloud-alice'}).dispatch({type:'resume',participantId:'cloud-alice',resumeToken:alice.resumeToken}),/недействительно/i);
+ const replacement=rooms.connection(room.id,{boundParticipantId:'cloud-alice'}),next=replacement.dispatch({type:'resume',participantId:'cloud-alice',resumeToken:resumed.resumeToken});
+ assert.equal(next.resumed,true);assert.notEqual(next.resumeToken,resumed.resumeToken);
+ assert.throws(()=>second.dispatch({type:'ready',ready:true}),/заменено/i);second.close();
+ assert.equal(rooms.snapshot(room.id).participants.find(p=>p.id==='cloud-alice').connected,true,'closing a replaced lease cannot disconnect its successor');
 });

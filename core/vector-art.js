@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/vector-art.js; sha256=15815c78c8a7cd6a3580066a7079dcbbb549add473630456fa2d3fd562e1b775
+// Vendored from playroom-paks/shared/components/vector-art.js; sha256=7f846b94aaa5da5cfd358947ab203256bc5cf476ea4cd74fc395db632532444c
 // One coordinate plane for scalable artwork; no browser-dependent geometry.
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomVectorArt=api;})(globalThis,function(){
  'use strict';
@@ -22,13 +22,13 @@
  function normalize(markup){
   if(typeof markup!=='string')throw Error('ART_SVG_REQUIRED');const m=/^<svg\b([^>]*)>([\s\S]*)<\/svg>$/.exec(markup);if(!m)throw Error('ART_SVG_REQUIRED');
   const b=/\bviewBox="([^"]+)"/.exec(m[1]);if(!b)throw Error('ART_BOX_REQUIRED');const values=b[1].trim().split(/[\s,]+/).map(Number);const r=box(values);
-  let attrs=m[1].replace(/\s*(?:xmlns|viewBox|preserveAspectRatio|data-art-plane)="[^"]*"/g,'');
+  let attrs=m[1].replace(/\s+(?:xmlns|viewBox|preserveAspectRatio|data-art-plane)="[^"]*"/g,'');
   return viewport({x:r.x,y:r.y,width:r.width,height:r.height,content:m[2],attrs:attrs.trim()});
  }
  const render=fn=>(...args)=>normalize(fn(...args));
  function place(markup,{x,y,width,height,className='',attrs=''}={}){
   const normalized=normalize(markup),m=/^<svg\b([^>]*)>([\s\S]*)<\/svg>$/.exec(normalized),source=/viewBox="([^"]+)"/.exec(m[1])[1].split(/\s+/).map(Number),f=fit(source,[x,y,width,height]);
-  const inherited=m[1].replace(/\s*(?:xmlns|viewBox|preserveAspectRatio|width|height|x|y)="[^"]*"/g,'').trim();
+  const inherited=m[1].replace(/\s+(?:xmlns|viewBox|preserveAspectRatio|width|height|x|y)="[^"]*"/g,'').trim();
   return `<g data-art-slot="${x} ${y} ${width} ${height}" transform="translate(${f.x} ${f.y}) scale(${f.scale})" ${attrs}><g ${inherited}${className?` class="${esc(className)}"`:''}>${m[2]}</g></g>`;
  }
  return Object.freeze({box,fit,viewport,text,normalize,render,place});

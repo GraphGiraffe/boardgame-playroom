@@ -41,7 +41,7 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   assert.equal(rpc(a,false,'list').profile.username,'alice');
   rpc(b,false,'profile',{nickname:'Борис',username:'ALICE'},false);rpc(a,false,'profile',{nickname:'Алиса',username:'a b'},false);
   assert.equal(rpc(b,false,'search',{username:'@ALICE'})[0].nickname,'Алиса');
-  rpc(a,false,'profile',{nickname:'Алиса',username:'alice_new'});assert.equal(rpc(b,false,'search',{username:'alice'}).length,0);
+  rpc(a,false,'profile',{nickname:'Алиса',username:'alice_new'});assert.equal(rpc(b,false,'search',{username:'alice'})[0].id,a);
   assert.equal(rpc(b,false,'search',{username:'alice_new'})[0].id,a);
   assert(!JSON.stringify(rpc(b,false,'search',{username:'alice_new'})).includes('email'));
   rpc(g,true,'search',{username:'alice_new'},false);
@@ -80,7 +80,16 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const fresh=rpc(a,false,'invite',{roomId:rid});rpc(a,false,'kick',{roomId:rid,userId:b});rpc(b,false,'room',{roomId:rid},false);rpc(b,false,'join',{token:directed.token,nickname:'Борис'},false);
   const removed=rpc(a,false,'invite',{roomId:rid,userId:b});rpc(b,false,'remove',{id:edge});rpc(b,false,'join',{token:removed.token,nickname:'Борис'},false);assert.equal(rpc(a,false,'list').friends.length,0);
   rpc(a,false,'leave',{roomId:rid},false);rpc(a,false,'close',{roomId:rid});rpc(g,true,'join',{token:fresh.token,nickname:'Гость'},false);assert.equal(rpc(a,false,'list').rooms.length,0);
+  // Seed the production-era schema and a real legacy identity before migration.
+  sql(`create table public.playroom_peer_bindings(room_id uuid not null references public.playroom_cloud_rooms(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,participant_id text not null default gen_random_uuid()::text,primary key(room_id,user_id),unique(room_id,participant_id));
+   create table public.playroom_signals(id uuid primary key default gen_random_uuid(),room_id uuid not null references public.playroom_cloud_rooms(id) on delete cascade,user_id uuid not null references auth.users(id) on delete cascade,epoch uuid not null,offer text,answer text,expires_at timestamptz not null default now()+interval '2 minutes',unique(room_id,user_id));
+   insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values('${rid}','${b}','legacy-preserved');
+   insert into public.playroom_signals(room_id,user_id,epoch) values('${rid}','${b}','00000000-0000-4000-8000-000000000099');`);
   const signaling=fs.readFileSync(path.join(__dirname,'../server/signaling.sql'),'utf8');sql(signaling);sql(signaling);
+  assert.equal(sql(`select participant_id||':'||device_id::text from public.playroom_peer_bindings where room_id='${rid}' and user_id='${b}'`),'legacy-preserved:00000000-0000-0000-0000-000000000000');
+  assert.equal(sql(`select count(*) from public.playroom_signals where room_id='${rid}' and user_id='${b}' and device_id='00000000-0000-0000-0000-000000000000'`),'1','legacy SDP row survives repeated migration');
+  sql(`delete from public.playroom_signals where room_id='${rid}';delete from public.playroom_peer_bindings where room_id='${rid}';`);
+
   const signal=(who,guest,action,data={},ok=true)=>{const out=sql(as(who,guest,`select public.playroom_signal('${action}','${JSON.stringify(data)}'::jsonb);`),ok);return ok?JSON.parse(out.split('\n').at(-1)):null;};
   const cloud=rpc(a,false,'create',{name:'Соединение'}).id,ep='00000000-0000-4000-8000-000000000099',ep2='00000000-0000-4000-8000-000000000098';
   const link=rpc(a,false,'invite',{roomId:cloud});rpc(b,false,'join',{token:link.token,nickname:'Борис'});
@@ -169,12 +178,12 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const accountRequest=(user,anonymous,requests,ok=true)=>{const raw=sql(as(user,anonymous,`select public.playroom_account_sync('sync','${JSON.stringify({requests}).replace(/'/g,"''")}'::jsonb);`),ok);return ok?JSON.parse(raw.split('\n').at(-1)):null;};
   const combined=accountRequest(a,false,[{id:'profile',rpc:'playroom_social',action:'list',data:{}},{id:'messages',rpc:'playroom_online',action:'inbox',data:{after:'0'}},{id:'unread',rpc:'playroom_online',action:'unread',data:{}},{id:'saves',rpc:'playroom_cloud_saves_rpc',action:'list',data:{}},{id:'write',rpc:'playroom_cloud_saves_rpc',action:'put',data:{}}]);
   assert.equal(combined.results.find(r=>r.id==='profile').data.profile.id,a);assert.equal(combined.results.find(r=>r.id==='saves').data.limit,10485760);assert.equal(combined.results.find(r=>r.id==='write').error.code,'invalid');assert(combined.results.find(r=>r.id==='messages').data.items.every(m=>m.person.userId!==a));assert(JSON.stringify(combined).length<65536,'metadata aggregation does not include cloud file bodies');accountRequest(g,true,[{id:'x',rpc:'playroom_social',action:'list',data:{}}],false);
-  const assembled=spawnSync('python3',['-c','import json;from pathlib import Path;from tooling.supabase_setup import render;print(json.dumps(render(Path.cwd())))'],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
+  const assembled=spawnSync('python3',['-c','import json;from pathlib import Path;from tooling.supabase_setup import render,RPCS;print(json.dumps({**render(Path.cwd()),"rpcNames":list(RPCS)}))'],{cwd:path.join(__dirname,'..'),encoding:'utf8'});
   assert.equal(assembled.status,0,assembled.stderr);const setup=JSON.parse(assembled.stdout);
   assert(setup['setup-supabase.sql'].indexOf('-- Source: server/host-transfer-push.sql')>setup['setup-supabase.sql'].indexOf('-- Source: server/push.sql'),'host Push extension follows its authority and receipt prerequisites');
   sql('update public.playroom_connection_config set diagnostics_enabled=false;');sql(setup['setup-supabase.sql']);sql(setup['setup-supabase.sql']);
   assert.equal(sql('select diagnostics_enabled from public.playroom_connection_config;'),'f','assembled setup preserves disabled diagnostics');
-  const verified=sql(setup['check-supabase.sql']).split('\n');assert.equal(verified.length,19);assert(verified.some(row=>row.startsWith('playroom_signup_name_available|')));assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC/helper fingerprints and the host Push trigger match installed schema');
+  const verified=sql(setup['check-supabase.sql']).split('\n');assert.deepEqual(verified.map(row=>row.split('|')[0]).sort(),[...setup.rpcNames,'playroom_push_host_transfer_trigger'].sort());assert(verified.some(row=>row.startsWith('playroom_signup_name_available|')));assert(verified.every(row=>row.split('|')[1]==='t'&&row.endsWith('|t')),'all generated RPC/helper fingerprints and the host Push trigger match installed schema');
   const alteredCheck=change=>sql('begin;'+change+setup['check-supabase.sql']+'rollback;').split('\n');
   assert(alteredCheck('alter table public.playroom_host_transfers disable trigger playroom_push_host_transfer;').some(row=>row.startsWith('playroom_push_host_transfer_trigger|t|')&&row.endsWith('|f')),'check rejects a disabled transition trigger');
   assert(alteredCheck('create or replace function public.playroom_push_host_pending(d public.playroom_push_deliveries,who uuid) returns boolean language sql as $$select true$$;').some(row=>row.startsWith('playroom_push_host_pending|t|')&&row.endsWith('|f')),'check rejects a changed private relevance helper');
@@ -281,6 +290,9 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const readable=online(a,false,'chat',{userId:b}).messages.find(m=>m.body===msg.body);assert.equal(readable.read,false);
   online(g,false,'read-messages',{userId:a,through:readable.id},false);online(a,false,'read-messages',{userId:b,through:readable.id},false);
   online(b,false,'read-messages',{userId:a,through:readable.id});assert.equal(online(a,false,'chat',{userId:b}).messages.find(m=>m.id===readable.id).read,true);
+  const readInbox=online(b,false,'inbox',{after:inboxCursor});
+  assert(!readInbox.items.some(m=>m.id===readable.id),'relogin with an old notification cursor must not notify already-read direct messages');
+  assert.equal(readInbox.cursor,notification.cursor,'read messages still advance the notification cursor');
   const privateDelta=online(a,false,'chat',{userId:b,after:readable.id,known:[readable.id]});
   assert.equal(privateDelta.messages.find(m=>m.id===readable.id).body,undefined,'cached text is not downloaded again');
   assert.equal(privateDelta.messages.find(m=>m.id===readable.id).read,true,'receipts update independently');
@@ -348,11 +360,15 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   online(a,false,'group-send',groupBody);online(a,false,'group-send',groupBody);let messages=online(b,false,'group-read',{groupId}).messages;assert.equal(messages.length,1);
   assert.equal(online(b,false,'unread').chats.find(c=>c.key==='group:'+groupId).unread,1);
   assert.equal(online(b,false,'group-read',{groupId,after:messages[0].id}).messages.length,0);
+  assert.equal(online(b,false,'group-inbox',{after:'0'}).items.length,1,'unread group message still notifies');
   online(b,false,'group-seen',{groupId,through:messages[0].seq});assert.equal(online(a,false,'group-read',{groupId}).messages[0].read,true);
   const groupDelta=online(a,false,'group-read',{groupId,after:messages[0].id,known:[messages[0].id]});
   assert.equal(groupDelta.messages[0].body,undefined);assert.equal(groupDelta.messages[0].read,true);
   assert.equal(online(b,false,'unread').chats.find(c=>c.key==='group:'+groupId).unread,0);
-  assert.equal(online(b,false,'group-inbox',{after:'0'}).items.length,1);assert.equal(online(g,false,'group-inbox',{after:'0'}).items.length,0);
+  const readGroupInbox=online(b,false,'group-inbox',{after:'0'});
+  assert.equal(readGroupInbox.items.length,0,'relogin must not notify already-read group messages');
+  assert.equal(readGroupInbox.cursor,messages[0].id,'group cursor advances past read messages');
+  assert.equal(online(g,false,'group-inbox',{after:'0'}).items.length,0);
   const thirdInvite=online(b,false,'group-invite',{groupId,userId:g});online(g,false,'group-accept',{inviteId:thirdInvite.id});
   assert.equal(online(g,false,'group-read',{groupId}).messages.length,1,'history visible to new members by default');
   const hiddenId='00000000-0000-4000-8000-000000000162';online(b,false,'group-create',{id:hiddenId,name:'Без истории'});
@@ -448,13 +464,23 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql(`insert into public.playroom_signals(room_id,user_id,epoch) values('${pushRoom}','${b}','${ep}');
    insert into public.playroom_host_transfers(id,room_id,source,target,source_participant,target_participant,epoch,state) values('99999999-9999-4999-8999-999999999901','${pushRoom}','${a}','${b}','a','b','${ep}','ready');
    insert into public.playroom_push_games(room_id,session_id,revision,control_revision,signature,state,targets) values('${pushRoom}','closed-test',1,0,'closed-test','playing','[]');`);
+  push(b,false,'room-seen',{roomId:pushRoom,events:[roomPush.eventId]});
+  assert.equal(sql(`select count(*) from public.playroom_push_room_reads where room_id='${pushRoom}'`),'1');
   const messagesBeforeClose=sql('select count(*) from public.playroom_messages');
   assert.equal(online(b,false,'unread',{roomId:pushRoom}).roomUnavailable,false);
   rpc(b,false,'close',{roomId:pushRoom},false);
   assert.equal(sql(`select count(*) from public.playroom_room_members where room_id='${pushRoom}'`),'2','nonowner cannot clean another room');
   rpc(a,false,'close',{roomId:pushRoom});rpc(a,false,'close',{roomId:pushRoom});
-  for(const table of ['playroom_room_members','playroom_peer_bindings','playroom_signals','playroom_host_transfers','playroom_push_games','playroom_push_room_events'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0',table+' cleaned atomically');
+  for(const table of ['playroom_room_members','playroom_peer_bindings','playroom_signals','playroom_host_transfers','playroom_push_games','playroom_push_room_events','playroom_push_room_reads'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0',table+' cleaned atomically');
   assert.equal(sql(`select host_until is null and host_epoch is null and closed from public.playroom_cloud_rooms where id='${pushRoom}'`),'t');
+
+  // Existing closed rows from before cleanup was installed must be repaired too.
+  sql(`update public.playroom_cloud_rooms set host_epoch='${ep}',host_until=now()+interval '1 minute' where id='${pushRoom}';
+   insert into public.playroom_push_games(room_id,session_id,revision,control_revision,signature,state,targets) values('${pushRoom}','legacy-closed',1,0,'legacy','playing','[]');
+   insert into public.playroom_push_room_reads(user_id,room_id,event_key) values('${b}','${pushRoom}','room:${roomPush.eventId}');`);
+  sql(cleanupSQL);sql(cleanupSQL);
+  assert.equal(sql(`select host_until is null and host_epoch is null and closed from public.playroom_cloud_rooms where id='${pushRoom}'`),'t');
+  for(const table of ['playroom_push_games','playroom_push_room_reads'])assert.equal(sql(`select count(*) from public.${table} where room_id='${pushRoom}'`),'0','legacy '+table+' repaired idempotently');
   assert.equal(sql('select count(*) from public.playroom_messages'),messagesBeforeClose,'chat tombstones preserved');
   assert.equal(sql(`select count(*) from public.playroom_push_deliveries d where d.ref='${pushRoom}' or d.ref in(select id::text from public.playroom_room_invites where room_id='${pushRoom}')`),'0','pending room and invitation Push deleted immediately');
   assert.equal(online(b,false,'unread',{roomId:pushRoom}).roomUnavailable,true);
@@ -588,5 +614,96 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   const expiredHost={...hp,id:'92000000-0000-4000-8000-000000000003'};handoff(b,false,'offer',expiredHost);sql(`update public.playroom_host_transfers set expires_at=now()-interval '1 second' where id='${expiredHost.id}';`);assert.equal(claim().length,0,'expired offers are not delivered');
   const memberLeft={...hp,id:'92000000-0000-4000-8000-000000000004'};handoff(b,false,'offer',memberLeft);sql(`delete from public.playroom_room_members where room_id='${hroom}' and user_id='${a}';`);assert.equal(claim().length,0,'departed recipient cannot receive a handoff proposal');sql(`insert into public.playroom_room_members(room_id,user_id,nickname) values('${hroom}','${a}','A');`);handoff(b,false,'cancel',memberLeft);
   const committedHost={...hp,id:'92000000-0000-4000-8000-000000000005'};handoff(b,false,'offer',committedHost);handoff(a,false,'accept',committedHost);const hostSeal={...committedHost,digest:'sha256:'+'c'.repeat(64),revision:42};handoff(b,false,'seal',hostSeal);handoff(a,false,'ready',hostSeal);handoff(b,false,'commit',committedHost);handoff(b,false,'commit',committedHost);batch=claim();assert.equal(batch.length,2);assert(batch.every(row=>row.payload.activity==='host-transfer-complete'));assert.deepEqual(new Set(batch.map(row=>row.payload.recipient)),new Set([a,b]));
+  // Per-device RTC slots and participants coexist within the same account room.
+  const deviceOne='a1000000-0000-4000-8000-000000000001',deviceTwo='a1000000-0000-4000-8000-000000000002';
+  sql(`update public.playroom_cloud_rooms set host_until=null,created_at=now()-interval '1 day' where not closed;`);
+  const multiRoom=rpc(a,false,'create',{name:'Devices'}).id;signal(a,false,'host',{roomId:multiRoom,localRoomId:'device-local',epoch:ep});
+  const compactRooms=rpc(a,false,'rooms');assert.equal(compactRooms.filter(r=>r.id===multiRoom).length,1);assert(!JSON.stringify(compactRooms).includes('friends'));
+  const own1=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceOne});
+  const own2=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceTwo});
+  assert.notEqual(own1.id,own2.id,'same account has independent SDP slots');
+  const devices=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep});assert.equal(devices.length,2);
+  assert.equal(new Set(devices.map(x=>x.participantId)).size,2,'same account has distinct participants');
+  assert(devices.every(x=>x.userId===a));
+  const summary={game:'uno',packVersion:'0.6.8-preview.25',phase:'playing',revision:2,move:2,turn:0,firstPlayer:0,round:{number:1,kind:'round',secret:'PRIVATE-SHOULD-NOT-PERSIST'},turnNumber:1,
+   players:[{id:'public-person',nickname:'Алиса',role:'player',playerIndex:0,avatar:'circle-blue',hands:['PRIVATE-SHOULD-NOT-PERSIST']}],scene:{hands:['PRIVATE-SHOULD-NOT-PERSIST']},resumeToken:'PRIVATE-SHOULD-NOT-PERSIST'};
+  signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep,summary});
+  const publishedRoom=rpc(a,false,'rooms').find(r=>r.id===multiRoom);assert.equal(publishedRoom.summary.players[0].nickname,'Алиса');assert.equal(publishedRoom.summary.move,2);assert(publishedRoom.updatedAt);
+  assert(!JSON.stringify(publishedRoom).includes('PRIVATE-SHOULD-NOT-PERSIST'),'room cards persist only whitelisted public metadata');
+  signal(b,false,'poll-host',{roomId:multiRoom,epoch:ep,summary},false);
+
+  signal(a,false,'poll',{roomId:multiRoom,id:own1.id,deviceId:deviceTwo},false);
+  signal(b,false,'request',{roomId:multiRoom,deviceId:deviceOne},false);
+  const firstParticipant=devices.find(x=>x.id===own1.id).participantId;
+  const ownRetry=signal(a,false,'request',{roomId:multiRoom,deviceId:deviceOne});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).find(x=>x.id===ownRetry.id).participantId,firstParticipant,'reconnect retains its participant');
+  const peers=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).map(x=>({id:x.id,userId:x.userId,participantId:x.participantId}));
+  const syncDevices=JSON.parse(sql(as(a,false,`select public.playroom_signal_sync('poll-host','${JSON.stringify({roomId:multiRoom,epoch:ep,peers})}'::jsonb);`)).split('\n').at(-1));
+  assert.equal(syncDevices.peers.length,2);assert(syncDevices.peers.every(x=>x.allowed),'sync grants do not duplicate or conflate account devices');
+  rpc(a,false,'create',{id:'a2000000-0000-4000-8000-000000000002',name:'Other online room'},false);
+  signal(a,false,'leave',{roomId:multiRoom,deviceId:deviceOne});
+  assert.equal(sql(`select closed from public.playroom_cloud_rooms where id='${multiRoom}'`),'f');
+  signal(a,false,'poll',{roomId:multiRoom,id:own2.id,deviceId:deviceTwo});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).length,1,'leaving one device preserves host and sibling');
+  const devicesAfter=JSON.parse(sql(as(a,false,`select public.playroom_signal_sync('poll-host','${JSON.stringify({roomId:multiRoom,epoch:ep,peers})}'::jsonb);`)).split('\n').at(-1));
+  assert.equal(devicesAfter.peers.find(x=>x.id===ownRetry.id).allowed,false);
+  assert.equal(devicesAfter.peers.find(x=>x.id===own2.id).allowed,true);
+  signal(b,false,'kick',{roomId:multiRoom,participantId:devices.find(x=>x.id===own2.id).participantId},false);
+  signal(a,false,'kick',{roomId:multiRoom,participantId:devices.find(x=>x.id===own2.id).participantId});
+  assert.equal(sql(`select closed from public.playroom_cloud_rooms where id='${multiRoom}'`),'f','kicking another device of owner does not close room');
+  signal(a,false,'poll',{roomId:multiRoom,id:own2.id,deviceId:deviceTwo},false);
+  // Host transfer back to a participant with an existing device-scoped binding
+  // must not insert a duplicate legacy binding or overwrite the sibling device.
+  sql(`insert into public.playroom_room_members(room_id,user_id,nickname) values('${multiRoom}','${b}','Борис');`);
+  const legacyDeviceParticipant='a5000000-0000-4000-8000-000000000001';
+  sql(`insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values('${multiRoom}','${b}','${legacyDeviceParticipant}');`);
+  const upgradedDevice=signal(b,false,'request',{roomId:multiRoom,deviceId:deviceOne,resumeParticipantId:legacyDeviceParticipant});signal(b,false,'request',{roomId:multiRoom,deviceId:deviceTwo});
+  assert.equal(signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).find(p=>p.id===upgradedDevice.id).participantId,legacyDeviceParticipant,'device upgrade preserves its authenticated legacy participant');
+  const transferPeers=signal(a,false,'poll-host',{roomId:multiRoom,epoch:ep}).filter(p=>p.userId===b),nextHost=transferPeers[0].participantId;
+  const transferOne={id:'a4000000-0000-4000-8000-000000000001',roomId:multiRoom,source:'original-host',target:nextHost};
+  handoff(a,false,'offer',transferOne);handoff(b,false,'accept',transferOne);
+  const transferSeal={...transferOne,digest:'sha256:'+'d'.repeat(64),revision:2};handoff(a,false,'seal',transferSeal);handoff(b,false,'ready',transferSeal);handoff(a,false,'commit',transferOne);
+  signal(b,false,'host',{roomId:multiRoom,localRoomId:'device-local',epoch:ep2});
+  const transferBack={id:'a4000000-0000-4000-8000-000000000002',roomId:multiRoom,source:nextHost,target:'original-host'};
+  handoff(b,false,'offer',transferBack);assert.equal(sql(`select count(*) from public.playroom_peer_bindings where room_id='${multiRoom}' and user_id='${b}'`),'2','host handoff preserves both device bindings');handoff(b,false,'cancel',transferBack);
+  rpc(b,false,'close',{roomId:multiRoom});
+  assert.equal(sql(`select count(*) from public.playroom_peer_bindings where room_id='${multiRoom}'`),'0');
+  assert(!rpc(a,false,'rooms').some(r=>r.id===multiRoom),'closed rooms disappear from compact discovery');
+  assert.equal(sql(`select room_summary::text||':'||(summary_updated_at is null)::text from public.playroom_cloud_rooms where id='${multiRoom}'`),'{}:true','closed room retains no remote card metadata');
+  // Two devices of one account get distinct Push deliveries but share read state.
+  sql('delete from public.playroom_push_deliveries');
+  const accountDevices=['same-account-device-one','same-account-device-two'].map(name=>({...subscription,endpoint:'https://fcm.googleapis.com/fcm/send/'+name}));
+  for(const sub of accountDevices)push(b,false,'subscribe',{subscription:sub});
+  // Earlier scenarios sent a full rate-limit window; age only local fixture traffic.
+  sql(`update public.playroom_messages set created_at=now()-interval '2 minutes' where sender='${a}' and kind='message' and created_at>now()-interval '1 minute';`);
+  const crossDeviceBody='Read once across both devices';
+  const crossDeviceMessage=online(a,false,'send-message',{userId:b,body:crossDeviceBody,nonce:'93000000-0000-4000-8000-000000000001'}).messages.find(m=>m.body===crossDeviceBody);
+  assert(crossDeviceMessage);
+  const deviceBatch=claim().filter(row=>accountDevices.some(sub=>sub.endpoint===row.subscription.endpoint));
+  assert.equal(deviceBatch.length,2,'one account queues one delivery per subscribed device');
+  assert.equal(new Set(deviceBatch.map(row=>row.subscription.endpoint)).size,2);
+  assert(deviceBatch.every(row=>row.payload.recipient===b&&row.payload.event==='dm:'+crossDeviceMessage.id));
+  online(b,false,'read-messages',{userId:a,through:crossDeviceMessage.id});
+  assert.equal(sql(`select count(*) from public.playroom_push_deliveries d join public.playroom_push_subscriptions sub on sub.id=d.subscription_id where sub.user_id='${b}' and d.ref='${crossDeviceMessage.id}' and public.playroom_push_pending(d,sub.user_id)`),'0','read suppresses pending Push on every device');
+  assert(!claim().some(row=>row.payload.event==='dm:'+crossDeviceMessage.id),'read event removed before delayed claim');
+ }finally{if(started)exec('pg_ctl',['-D',data,'-m','fast','-w','stop']);fs.rmSync(dir,{recursive:true,force:true});}
+});
+test('friend search migration uses canonical profile schema and authenticated public keyset pages',{timeout:30000},()=>{
+ const bin=process.env.PLAYROOM_PG_BIN||'/usr/lib/postgresql/18/bin',dir=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-friend-search-pg-')),data=path.join(dir,'data');let started=false;
+ const exec=(program,args)=>{const r=spawnSync(path.join(bin,program),args,{encoding:'utf8',timeout:15000});if(r.status!==0)throw Error(program+': '+(r.stderr||r.error||r.stdout));return r.stdout;};
+ const sql=(query,ok=true)=>{const r=spawnSync(path.join(bin,'psql'),['-h',dir,'-U',os.userInfo().username,'-d','postgres','-X','-tA','-v','ON_ERROR_STOP=1','-f','-'],{input:query,encoding:'utf8',timeout:10000});if(ok&&r.status!==0)throw Error(r.stderr);if(!ok)assert.notEqual(r.status,0);return r.stdout.trim();};
+ const me='00000000-0000-4000-8000-000000000099',as=query=>`set role authenticated;set request.jwt.claims='{"sub":"${me}","is_anonymous":false}';${query}`,rpc=data=>JSON.parse(sql(as(`select public.playroom_social('search','${JSON.stringify(data)}');`)).split('\n').at(-1));
+ try{
+  exec('initdb',['-D',data,'-A','trust','--no-locale','--encoding=UTF8']);exec('pg_ctl',['-D',data,'-l',path.join(dir,'postgres.log'),'-o',`-h '' -k ${dir}`,'-w','start']);started=true;
+  sql(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,is_anonymous boolean default false);create function auth.uid() returns uuid language sql stable as $$select (current_setting('request.jwt.claims',true)::jsonb->>'sub')::uuid$$;create function auth.jwt() returns jsonb language sql stable as $$select current_setting('request.jwt.claims',true)::jsonb$$;grant usage on schema auth to authenticated;`);
+  sql(fs.readFileSync(path.join(__dirname,'../server/supabase.sql'),'utf8'));
+  const migration=fs.readFileSync(path.join(__dirname,'../server/friend-search-v2.sql'),'utf8'),old=migration.split('$old$')[1],updated=migration.split('$new$')[1],canonical=fs.readFileSync(path.join(__dirname,'../server/social.sql'),'utf8');assert(canonical.includes(updated));sql(canonical.replace(updated,()=>old));
+  sql(`insert into auth.users select ('00000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,i=41 from generate_series(1,99)i;insert into public.playroom_profiles(id,nickname,username) select id,'Fixture',case when right(id::text,12)::int<=35 then 'afoo'||lpad(right(id::text,12)::int::text,2,'0') when right(id::text,12)::int=40 then 'foo' when right(id::text,12)::int=41 then 'foo_guest' when right(id::text,12)::int=42 then 'x_ab' when right(id::text,12)::int=43 then 'xzab' when right(id::text,12)::int=44 then 'x123' when right(id::text,12)::int=99 then 'foo_owner' else 'other'||right(id::text,12)::int::text end from auth.users;`);
+  assert.equal(rpc({username:'foo'}).length,1,'original exact-only branch reproduced');sql(migration);const hash=()=>sql("select md5(pg_get_functiondef('public.playroom_social(text,jsonb)'::regprocedure));"),firstHash=hash();sql(migration);assert.equal(hash(),firstHash,'idempotent migration');
+  const legacy=rpc({username:'FoO'});assert(Array.isArray(legacy),'old clients receive a map-safe array by default');assert.equal(legacy.length,30);assert.equal(legacy.map(p=>p.username)[0],'foo');const first=rpc({username:'FoO',format:'page-v2'});assert.equal(first.items.length,30);assert.equal(first.items[0].username,'foo');assert(first.next);const second=rpc({username:'foo',after:first.next,format:'page-v2'});assert.equal(second.items.length,6);assert.equal(second.next,null);const all=[...first.items,...second.items];assert.equal(new Set(all.map(p=>p.id)).size,36);for(const person of all)assert.deepEqual(Object.keys(person).sort(),['id','nickname','username']);assert(!all.some(p=>['foo_guest','foo_owner'].includes(p.username)));
+  assert.deepEqual(rpc({username:'_ab',format:'page-v2'}).items.map(p=>p.username),['x_ab']);assert.deepEqual(rpc({username:'123',format:'page-v2'}).items.map(p=>p.username),['x123']);sql(as(`select public.playroom_social('search','{"username":"fo"}');`),false);
+  sql(`set role anon;select public.playroom_social('search','{"username":"foo"}');`,false);sql(`set role authenticated;set request.jwt.claims='{"sub":"${me}","is_anonymous":true}';select public.playroom_social('search','{"username":"foo"}');`,false);
+  assert(sql(as("select public.playroom_social('list')->'profile'->>'username';")).endsWith('foo_owner'),'unrelated RPC list branch remains functional');
+  assert(sql(fs.readFileSync(path.join(__dirname,'../server/friend-search-preflight.sql'),'utf8')).endsWith('|t|f|t'));
  }finally{if(started)exec('pg_ctl',['-D',data,'-m','fast','-w','stop']);fs.rmSync(dir,{recursive:true,force:true});}
 });

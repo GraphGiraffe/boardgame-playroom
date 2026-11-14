@@ -26,6 +26,7 @@
       return root.PlayroomHostTransferUI;
     },
     id: () => root.crypto.randomUUID(),
+    deviceId: () => B().profile()?.id,
     setTimeout: (...args) => root.setTimeout(...args),
     clearTimeout: (id) => root.clearTimeout(id),
     report(state) {

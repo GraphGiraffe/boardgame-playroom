@@ -56,19 +56,22 @@
 #app .app-game-layout>.layout-self>.layout-status{order:0;flex:none;position:static;}
 #app .table-shell:has(.scene-header-actions)>.game-frame-header{position:static;pointer-events:auto;}
 #app .table-shell:has(.scene-header-actions)>.game-frame-header>.scene-header-actions{flex:1;min-width:0;}
+/* Authored corner seats reserve the same centered square as the board. */
+#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-field{grid-area:auto!important;position:absolute;inset:0;margin:auto;width:var(--anchor-field-size)!important;height:var(--anchor-field-size)!important;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] .seat-group{width:calc((100% - var(--anchor-field-size))/2 - 12px);max-width:none;}
-#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] :is(.seat-north-west,.seat-north-east){top:auto;bottom:calc(50% + var(--anchor-field-size)*.1);}
-#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] :is(.seat-south-west,.seat-south-east){top:calc(50% + var(--anchor-field-size)*.1);bottom:auto;}
+#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] :is(.seat-north-west,.seat-north-east){top:auto;bottom:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)));}
+#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] :is(.seat-south-west,.seat-south-east){top:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)));bottom:auto;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"] [data-portrait-copy="true"]{display:flex!important;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self>.player-panel{display:none!important;}
-#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self{top:calc(50% + var(--anchor-field-size)*.1 + var(--anchor-south-seat-height,46px) + 4px);bottom:6px;height:auto!important;padding:0!important;align-self:stretch!important;justify-content:center;align-items:center;}
+#app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self{top:calc(50% + var(--anchor-corner-offset,calc(var(--anchor-field-size)*.1)) + var(--anchor-south-seat-height,46px) + 4px);bottom:6px;height:auto!important;padding:0!important;align-self:stretch!important;justify-content:center;align-items:center;}
 #app .app-game-layout[data-seat-anchors="true"][data-has-hand="false"]>.layout-self>.layout-actions{flex:none;width:100%;margin:0;}
 #app .table-shell:has([data-field-columns="3"])>.scene{height:100%;flex:1;}
 #app .app-game-layout[data-opponents-align="end"]>.layout-participants{align-self:end;grid-row:2/-1;}
 #app .app-game-layout[data-player-indicators="below-avatar"] .player-indicators{margin:0;align-items:flex-start;}
 #app .app-game-layout[data-player-indicators="below-avatar"][data-mirror-indicators="true"] .opponent-hand .player-data,#app .app-game-layout[data-player-indicators="below-avatar"][data-mirror-indicators="true"] .opponent-hand .player-indicators{align-items:flex-end;}
 }
-#app .app-game-layout .player-panel .player-info{display:grid!important;grid-template-columns:30px minmax(0,1fr)!important;grid-template-rows:max(16px,1rem) 20px!important;column-gap:4px;row-gap:0;align-items:start!important;padding:3px!important;min-height:46px!important;grid-template-areas:none!important;}
+#app .app-game-layout .player-panel .player-info{display:grid!important;grid-template-columns:30px minmax(0,1fr)!important;grid-template-rows:max(16px,1rem) 20px!important;column-gap:calc(4px + var(--player-medallion-reserve,0px));row-gap:0;align-items:start!important;padding:3px!important;min-height:46px!important;grid-template-areas:none!important;}
+#app .app-game-layout .player-panel .player-info:has(.player-status){grid-template-rows:max(16px,1rem) minmax(20px,auto)!important;}
 #app .app-game-layout .player-panel .player-info>.player-avatar-wrap{grid-column:1!important;grid-row:1/3!important;width:30px!important;height:30px!important;min-width:30px!important;align-self:center;}
 #app .app-game-layout .player-panel .player-info>.player-details{display:contents!important;}
 #app .app-game-layout .player-panel .player-heading{grid-column:2;grid-row:1;align-items:flex-end!important;min-height:max(13px,.85rem)!important;height:max(13px,.85rem);align-self:start;line-height:16px!important;display:flex;gap:4px;min-width:0;width:100%;padding-right:18px;}
@@ -115,9 +118,9 @@
 #app .app-game-layout .player-panel .player-scores>.player-score.is-pieces>svg{width:22px!important;height:22px!important;max-width:none!important;max-height:none!important}
 @media(orientation:landscape) and (min-width:600px){
  #app .app-game-layout[data-landscape-roster-columns][data-opponents-align="end"]>.layout-participants{align-self:end;align-content:end}
- #app .app-game-layout[data-player-indicators="below-avatar"] .player-indicators{display:flex;flex-direction:column;gap:2px;width:100%}
- #app .app-game-layout[data-player-indicators="below-avatar"] .player-indicator{min-height:22px;padding:2px 6px}
- #app .app-game-layout[data-player-indicators="below-avatar"] .player-indicator>svg{height:16px;width:auto}
+ #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicators{display:flex;flex-direction:column;gap:2px;width:100%}
+ #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicator{min-height:22px;padding:2px 6px}
+ #app .app-game-layout[data-player-indicators="below-avatar"] .player-panel .player-indicator>svg{height:16px;width:auto}
 }
 #app .app-game-layout .player-panel .player-info{width:100%;min-width:0;box-sizing:border-box}
 
@@ -167,3 +170,13 @@ body.reduced-motion #app .player-panel[data-turn-preview]{animation:none}
 /* A compact side-by-side hand must expose at least one complete card width. */
 @media(orientation:landscape){#app .app-game-layout .player-panel.opponent-hand .mini-hand{min-width:calc(var(--opponent-card-width,40px) + 8px)}}
 #app .game-frame-identity{min-height:max(24px,1rem)}
+
+/* A scroll viewport fits its reserved field; physical content may scroll inside. */
+#app .app-game-layout .layout-field [data-scene-scroll]{min-inline-size:0;max-inline-size:100%;}
+/* Deferred status badges keep the identity's fixed metadata row. */
+#app .app-game-layout .player-panel .player-data:not(:has(.player-indicators:not(:empty))){overflow-x:auto;overflow-y:hidden;scrollbar-width:none;touch-action:pan-x;}
+#app .app-game-layout .player-panel .player-badges{flex-wrap:nowrap;flex:none;}
+#app .app-game-layout .player-panel .player-status-badge{flex:none;}
+
+#app .app-game-layout .player-data:has(>.player-status){flex-wrap:wrap}
+#app .app-game-layout .player-status{display:inline-flex;align-items:center;justify-content:flex-end;min-width:var(--player-status-min-width,24px);flex:1 1 0;margin-inline-start:auto;container:player-status / inline-size}

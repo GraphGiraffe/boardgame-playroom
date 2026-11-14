@@ -3,6 +3,13 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),E=require
 for(const id of ['mage-brawl','yatzy'])require('../../playroom-paks/packs/'+id+'/rules.js');
 function fixture(id,viewer=0,options={}){const session=new Session(E,id,{seed:17,players:[{name:'A'},{name:'B'}],firstPlayerMode:'assigned',firstPlayer:0,actionsPerTurn:'2'}),authority=new Authority(session),binding=authority.connect(viewer),base=Local(binding),sent=[],client=new Client({...base,dispatch:command=>{sent.push(command);return base.dispatch(command);}},{draftStorage:{load(){},save(){},remove(){}},...options});return {session,authority,client,sent,close(){client.close();authority.dispose();}};}
 const plan=client=>client.snapshot.actions.find(a=>a.type==='plan');
+test('closing a draft client can detach without closing its shared room transport',()=>{
+ let closes=0,unsubscribes=0;const transport={subscribe:()=>()=>unsubscribes++,close:()=>closes++},storage={load(){},save(){},remove(){}};
+ const game=new Client(transport,{draftStorage:storage});game.close({keepTransport:true});
+ assert.equal(game.closed,true);assert.equal(game.drafts.closed,true);assert.equal(unsubscribes,1);assert.equal(closes,0,'returning to the lobby keeps the shared RTC channel open');
+ const room=new Client(transport,{draftStorage:storage});room.close();
+ assert.equal(room.closed,true);assert.equal(room.drafts.closed,true);assert.equal(unsubscribes,2);assert.equal(closes,1,'ordinary close still owns transport teardown');
+});
 test('two-step planning is private locally; cancel sends nothing and confirmation is one durable command',async()=>{
  const f=fixture('mage-brawl');try{await f.client.refresh();const first=plan(f.client);assert((await f.client.send(first)).local);assert.equal(f.session.current.move,0);assert.equal(f.sent.length,0);assert(f.client.snapshot.localDraft);assert(P.projectedModel(f.client.snapshot).data.players[0].draft);
   const history=new History({read:i=>f.client.history(i)});history.receive(f.client.snapshot);assert(!history.live.localDraft);assert(!P.projectedModel(history.live).data.players[0].draft);assert(!(await f.client.history(0)).localDraft);

@@ -41,10 +41,10 @@
  .account-form input,.account-form button[type="submit"]{min-height:44px}
  :is(#modal-root,[data-ui-surface-exit]) .notification-settings-modal>.modal-body{max-width:none}
  .notification-settings-v021{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:8px 16px}
- .notification-settings-v021>.menu-row{min-width:0;min-height:104px;height:100%;padding:8px 0;font-size:.875rem;align-items:start;align-content:start}
- .notification-settings-v021>button.menu-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:10px}
- .notification-settings-v021>button.menu-row>svg{justify-self:end;align-self:start;margin:10px 10px 0 0}
- :is(#modal-root,[data-ui-surface-exit]) .modal.local-profile-modal[data-ui-surface="panel"]{width:min(100%,40rem);max-width:40rem;max-height:calc(100dvh - 8px);margin-inline:auto}
+ .notification-settings-v021 .menu-row{min-width:0;min-height:104px;height:100%;padding:8px 0;font-size:.875rem;align-items:start;align-content:start}
+ .notification-settings-v021 button.menu-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:10px}
+ .notification-settings-v021 button.menu-row>svg{justify-self:end;align-self:start;margin:10px 10px 0 0}
+ :is(#modal-root,[data-ui-surface-exit]) .modal.local-profile-modal[data-ui-surface="panel"]{width:min(100%,40rem);max-width:40rem;max-height:calc(var(--ui-viewport-height,100dvh) - 8px);margin-inline:auto}
  .local-profile-modal .surface-panel-handle{min-height:24px;height:24px}
  #local-profile-editor{max-width:38rem;width:100%;margin-inline:auto}
  #local-profile-editor .field{margin:0;gap:4px}

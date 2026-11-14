@@ -539,3 +539,29 @@ test('lobby drag uses existing host, actor, occupied, closed and assigned-first 
  rooms.setReady(room.id,'guest',true);assert.throws(()=>rooms.claimSeat(room.id,'guest','seat-1'),/готовность/);rooms.setReady(room.id,'guest',false);
  rooms.configure(room.id,'host',{firstPlayerMode:'assigned',firstParticipantId:'guest'});const swapped=rooms.moveParticipant(room.id,'host',bot,'seat-1');assert.equal(swapped.seats[0].participantId,bot);assert.equal(swapped.seats[1].participantId,'host');assert.equal(swapped.firstParticipantId,'guest');assert.deepEqual(swapped.seats.map(s=>[s.id,s.index,s.sideId]),before.seats.map(s=>[s.id,s.index,s.sideId]));assert.equal(swapped.participants.length,before.participants.length);assert.throws(()=>rooms.moveParticipant(room.id,'host',bot,'seat-4'),/закрыт/);assert.throws(()=>rooms.configure(room.id,'host',{firstParticipantId:'missing'}));
 });
+
+
+test('late network participant joins as spectator and leaves without changing playing seats',()=>{
+ const {rooms,room}=createRoom(),player=rooms.join(room.id,{id:'player-two',nickname:'Игрок'});rooms.claimSeat(room.id,player.participantId,'seat-2');rooms.setReady(room.id,'host',true);rooms.setReady(room.id,player.participantId,true);rooms.beginCountdown(room.id,'host',{seconds:1});rooms.rooms.get(room.id).countdownEndsAt=0;rooms.tick(room.id);
+ const before=rooms.snapshot(room.id);assert.equal(before.phase,'playing');const joined=rooms.join(room.id,{id:'late',nickname:'Зритель'});assert.equal(joined.room.phase,'playing');assert.equal(joined.room.participants.find(p=>p.id==='late').role,'spectator');assert.deepEqual(joined.room.seats,before.seats);assert.throws(()=>rooms.claimSeat(room.id,'late','seat-3'));
+ const access=require('../application/session-access.js').resolve(joined.room,'late');assert.equal(access.role,'spectator');assert.equal(access.viewer,-1);const after=rooms.kick(room.id,'host','late');assert.equal(after.phase,'playing');assert.deepEqual(after.seats,before.seats);assert(after.participants.every(p=>p.id!=='late'));
+ rooms.rooms.get(room.id).hostTransferPending=true;assert.throws(()=>rooms.join(room.id,{id:'blocked',nickname:'Зритель'}),/HOST_TRANSFER_BUSY/);
+});
+
+
+test('dismissal closes only unused owned lobbies and records invitation exposure once',()=>{
+ for(const mode of ['hotseat','network','online']){
+  const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:mode});rooms.setLocalSeat(room.id,'host','seat-2',{kind:'bot'});
+  assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),true,mode+' bots are not remote guests');assert.equal(rooms.shouldCloseOnDismiss(room.id,'other'),false);
+  rooms.markInvitationShared(room.id,'host');const revision=rooms.snapshot(room.id).revision;rooms.markInvitationShared(room.id,'host');assert.equal(rooms.snapshot(room.id).revision,revision,'idempotent exposure');assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),mode==='hotseat');
+ }
+ const {rooms,room}=createRoom();rooms.configure(room.id,'host',{transportMode:'network'});rooms.join(room.id,{id:'viewer',nickname:'Зритель'});assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false);rooms.setConnected(room.id,'viewer',false);assert.equal(rooms.shouldCloseOnDismiss(room.id,'host'),false,'disconnected humans retain resume rights');assert.throws(()=>rooms.markInvitationShared(room.id,'viewer'));
+ const local=createRoom();local.rooms.configure(local.room.id,'host',{transportMode:'hotseat'});local.rooms.setLocalSeat(local.room.id,'host','seat-2',{kind:'bot'});local.rooms.startHotSeat(local.room.id,'host');assert.equal(local.rooms.shouldCloseOnDismiss(local.room.id,'host'),false,'a live party is never an unused lobby');
+});
+
+
+test('session players preserve physical seats without copying connection or account secrets',()=>{
+ const setup=require('../application/rooms.js').sessionSetup({seats:[{index:6,participantId:'b'},{index:1,participantId:'a'}],participants:[{id:'a',nickname:'А',bot:false,resumeToken:'secret'},{id:'b',nickname:'Б',bot:true,accountId:'private',botSettings:{difficulty:'hard'}}]});
+ assert.deepEqual(setup,{players:[{name:'А',bot:false},{name:'Б',bot:true,botSettings:{difficulty:'hard'}}],seatIndices:[1,6]});
+ assert(!JSON.stringify(setup).includes('secret'));assert(!JSON.stringify(setup).includes('private'));
+});

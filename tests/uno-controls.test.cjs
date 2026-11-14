@@ -1,13 +1,12 @@
 'use strict';
+const TestUI=require('./browser-origin.cjs');
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
-const {pathToFileURL} = require('node:url');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
 const Core = require('../core/engine.js'), Session = require('../core/session.js');
 require('../packs/uno/rules.js');
-const url = process.env.PLAYROOM_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href;
 const shots = process.env.PLAYROOM_CAPTURE_DIR || '/tmp/playroom-qa/uno-controls';
 function fixture(players = 2) {
   const saved = new Session(Core, 'uno', {seed:17, mode:'pass', preset:'classic', openHands:true, unoMode:'manual',
@@ -62,7 +61,7 @@ async function layout(page,{handCount=7}={}) {
     if(getComputedStyle(track).overflowX!=='auto')errors.push('hand scroll disabled');
     if(track.querySelectorAll('.hand-fan-row').length!==1)errors.push('hand wrapped into more than one row');
     for(const card of cards){
-      const b=r(card),corner=r(card.querySelector('.card-corner'));
+      const b=r(card),corner=r(card.querySelector('[data-card-index=top] text'));
       if(b.width<54||b.height<77)errors.push('own cards became too small');
       if(b.top<r(scene).top||b.bottom>r(scene).bottom)errors.push('hand card clipped vertically');
       if(handCount<=7&&!inside(r(scene),corner))errors.push('card corner outside scene');
@@ -86,16 +85,17 @@ async function showVariant(page,state,variant,handCount){
     if(variant==='wild')selected='u100';
     if(variant==='declared')s.data.uno.declared[0]=true;
     TabletopCore.validateState(s);
-    const projected=TabletopCore.project(s,0),actions=variant==='paused'?[]:TabletopCore.legalActions(s,0),template=document.createElement('template');
+    const projected=TabletopCore.project(s,0),actions=variant==='paused'?[]:TabletopCore.legalActions(s,0);
     // Keep application-owned Hotseat controls in every pack-state variant.
     // A raw pack render omits that reserved row and is not the live layout.
-    template.innerHTML=PlayroomGameScreen.render({gameName:'UNO',state:projected,viewer:0,actions,
+    const markup=PlayroomGameScreen.render({layoutId:'uno-controls-fixture',gameName:'UNO',state:projected,viewer:0,actions,
       scene:PlayroomViews.render(projected,0,actions,{selected,quickPlay:false}),
       beforeFooter:document.querySelector('.pass-device-button')?.outerHTML||''});
-    document.querySelector('.scene').innerHTML=template.content.querySelector('.scene').innerHTML;PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+    const host=document.querySelector('#app');PlayroomGameScreen.update(host,markup);PlayroomGameScreen.layoutScene(host);
   },{state,variant,handCount});
 }
 test('Responsive UNO utilities, turn direction and cropped opponent hands stay stable',{timeout:120000},async t=>{
+  const server=process.env.PLAYROOM_URL?.startsWith('http')?null:await TestUI.serveBrowserFixture(path.resolve(__dirname,'..'));
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
   const screens=[{width:320,height:640},{width:390,height:740},{width:1280,height:900},{width:1226,height:825},{width:817,height:550,scale:1.5}];
   try{
@@ -103,10 +103,12 @@ test('Responsive UNO utilities, turn direction and cropped opponent hands stay s
       const viewport={width:screen.width,height:screen.height};
       await t.test(`${players} players, ${viewport.width}×${viewport.height}@${screen.scale||1}: hands 1/7/8/12, actions and wild`,async()=>{
         const context=await browser.newContext({viewport,deviceScaleFactor:screen.scale||1,isMobile:viewport.width<500,hasTouch:viewport.width<500,reducedMotion:'reduce'}),saved=fixture(players);
-        await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,quickPlay:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+        await context.addInitScript(saved=>{localStorage.clear();localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'uno-controls-owner',name:'Аня',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({motion:false,sound:false,quickPlay:false,tutorialsEnabled:false}));localStorage.setItem('playroom.session.v1',JSON.stringify(saved));},saved);
+        const network=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({json:{}}));
         const page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
         try{
-          await page.goto(url);await page.locator('.resume-banner [data-command=resume]').click();await page.locator('.uno-call').waitFor({state:'visible'});
+          await page.goto(server?.url||process.env.PLAYROOM_URL);await TestUI.resumeSaved(page);await page.locator('.uno-call').waitFor({state:'visible'});
+          await layout(page);await showVariant(page,saved.states[0],'ordinary',7);
           const initial=await bounds(page),baselines={open:initial},order=await page.locator('.opponent-hand[data-player-index]').evaluateAll(els=>els.map(el=>el.dataset.playerIndex));await layout(page);
           for(const handCount of [1,7,8,12])for(const variant of ['ordinary','out-of-turn','wild','closed','reverse','paused',...(handCount===1?['declared']:[])]){
             await showVariant(page,saved.states[0],variant,handCount);
@@ -132,24 +134,24 @@ test('Responsive UNO utilities, turn direction and cropped opponent hands stay s
               const pool=[...d.hands.flat(),...d.drawPile];
               d.hands=[pool.splice(0,1),pool.splice(0,100),pool.splice(0,1),pool.splice(0,1)];d.drawPile=pool;
               TabletopCore.validateState(s);
-              document.querySelector('.scene').innerHTML=PlayroomViews.render(TabletopCore.project(s,0),0,TabletopCore.legalActions(s,0),{selected:null,quickPlay:false});PlayroomGameScreen.layoutScene(document.querySelector('#app'));
+              const projected=TabletopCore.project(s,0),actions=TabletopCore.legalActions(s,0),host=document.querySelector('#app');PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'uno-controls-fixture',gameName:'UNO',state:projected,viewer:0,actions,scene:PlayroomViews.render(projected,0,actions,{selected:null,quickPlay:false})}));PlayroomGameScreen.layoutScene(host);
             },saved.states[0]);
             const publicHands=await page.evaluate(()=>{
               const band=document.querySelector('.opponent-hands'),slot=band.closest('.layout-participants'),minis=[...document.querySelectorAll('.mini-hand.is-open')],scene=document.querySelector('.scene'),cards=[...band.querySelectorAll('.public-card')],r=el=>el.getBoundingClientRect(),b=r(band),s=r(scene),failures=[];
               for(const card of cards){
                 card.scrollIntoView({block:'nearest',inline:'nearest'});const c=r(card),m=r(card.closest('.mini-hand'));if(c.left<m.left-1||c.right>m.right+1)failures.push('card outside public band');
-                const visible=card.querySelector('.card-corner:not(.bottom)').getBoundingClientRect();if(visible.left<m.left-1||visible.right>m.right+1)failures.push('covered public corner '+card.dataset.publicCardIndex);
+                const visible=card.querySelector('[data-card-index=top] text').getBoundingClientRect();if(visible.left<m.left-1||visible.right>m.right+1)failures.push('covered public corner '+card.dataset.publicCardIndex);
               }
               return {counts:minis.map(mini=>mini.querySelectorAll('.public-card').length),rows:new Set(cards.map(c=>r(c).y)).size,scroll:Math.max(...minis.map(mini=>mini.scrollWidth-mini.clientWidth)),failures};
             });
             assert.deepEqual(publicHands.counts,[100,1,1]);assert(publicHands.rows>=1);assert(publicHands.scroll>1);assert.deepEqual(publicHands.failures,[]);
             if(viewport.width===320||viewport.width===390||viewport.width===1226){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`playroom-v0.7-uno-open-100-allplayers-${viewport.width}.png`)});}
           }
-          assert.deepEqual(errors,[]);
+          assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
         }finally{await context.close();}
       });
     }
-  }finally{await browser.close();}
+  }finally{await browser.close();await server?.close();}
 });
 
 test('UNO missed declaration deadlines continue under local Settings without a human accusation',{timeout:30000},async()=>{
@@ -171,4 +173,21 @@ test('UNO missed declaration deadlines continue under local Settings without a h
   const oldEpisode=accusations[0].action.episode;assert.equal(report.continuation.commits.filter(c=>c.action.type==='accuse-uno'&&c.action.target===1&&c.action.episode===oldEpisode).length,1,'continuation never repeats the resolved old penalty');assert.equal(await page.locator('#app').evaluate(app=>app.inert),false);assert.equal(await page.locator('#modal-root>[data-surface-state=active]').count(),0);
   assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
  }finally{fs.writeFileSync(path.join(out,engine+'-report.json'),JSON.stringify({...report,errors,nativeSupabaseRequests:network.nativeSupabaseRequests},null,2));await context.close();await browser.close();await server.close();}
+});
+
+test('UNO result UI orders remaining hands by points without leaking live totals',{timeout:30000},async()=>{
+ const server=await TestUI.serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const p=await browser.newPage({viewport:{width:390,height:844}}),errors=[];p.on('pageerror',e=>errors.push(e.message));await p.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'uno-results',name:'Анна'})));
+  if(process.env.PLAYROOM_TEST_ARTIFACT){await p.route(server.url,r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT)}));}
+  await p.goto(server.url);await TestUI.ready(p);
+  const result=await p.evaluate(()=>{
+   const E=TabletopCore,s=E.createGame('uno',{seed:17,preset:'classic',unoMode:'auto',players:['Анна','Борис','Вера','Глеб','Дина'].map(name=>({name}))}),d=s.data,cards=[...d.hands.flat(),...d.drawPile,...d.discard];
+   const take=(color,value)=>{const i=cards.findIndex(c=>c.color===color&&c.value===value);if(i<0)throw Error('Missing fixture card');return cards.splice(i,1)[0];};
+   d.discard=[take('red','1')];d.color='red';d.hands=[[take('red','2')],[take('yellow','9'),take('blue','7')],[take('green','+2')],[take('wild','+4')],[take('wild','wild')]];d.drawPile=cards;s.turn=0;E.validateState(s);
+   const before=E.project(s,-1);if(before.data.finalHandPoints!==undefined||before.players.some(p=>p.score!==0))throw Error('Private live point total exposed');
+   const finished=E.applyAction(s,0,E.legalActions(s,0).find(c=>c.type==='play'&&c.card===d.hands[0][0].id)),state=E.project(finished,0);window.unoResultState=state;PlayroomAppBridge.openModal(PlayroomGameScreen.resultMarkup({state,viewer:0,gameName:'UNO'}),'result-modal');return {status:finished.status,places:finished.result.places,metrics:finished.result.metrics};
+  });
+  assert.equal(result.status,'finished');assert.deepEqual(result.places,[1,2,3,4,4]);assert.deepEqual(result.metrics.find(m=>m.id==='points').values,[0,16,20,50,50]);await p.locator('.result-modal .result-person').nth(4).waitFor();assert.equal(await p.locator('.result-person').count(),5);assert.deepEqual((await p.locator('.result-core-counters [data-score-id=points]').allTextContents()).map(x=>x.trim()),['0','16','20','50','50']);assert.deepEqual(errors,[]);
+  const out=process.env.PLAYROOM_CAPTURE_DIR||path.join(__dirname,'../../tmp_files/mage-teams-1113/screenshots-final');fs.mkdirSync(out,{recursive:true});await p.screenshot({path:path.join(out,'uno-results.png')});
+ }finally{await browser.close();await server.close();}
 });

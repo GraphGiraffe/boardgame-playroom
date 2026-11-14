@@ -8,7 +8,7 @@ test('A08 invalid settings are rejected atomically by the production host servic
  const provider=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({status:503,json:{message:'Local A08 fixture: no provider'}}));page.on('pageerror',error=>errors.push(error.message));
  const evidence=path.resolve(root,'../tmp_files/ux-021/a08-followup-1103');fs.mkdirSync(evidence,{recursive:true});const engine=process.env.PLAYWRIGHT_MODULE?'webkit':'chromium',active=()=>page.locator('#modal-root>[data-surface-state=active]');
  try{
-  await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-game-context]').click();await active().locator('[data-command=room-rules]').click();await page.locator('#room-rules-form').waitFor();
+  await page.goto(server.url);await page.locator('[data-start=uno]').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-rules]').click();await page.locator('#room-rules-form').waitFor();
   const invalid=await page.evaluate(()=>{
    const b=PlayroomAppBridge,s=b.roomService,r=b.room();s.setAutoStart(r.id,r.ownerId,false);s.setReady(r.id,r.ownerId,true);const results=[];
    for(const patch of [{preset:'missing-preset'},{options:{...r.rules.options,unoMode:'invalid'}},{options:{...r.rules.options,endMode:'invalid'}},{options:{...r.rules.options,unknownSetting:'unexpected'}}]){
@@ -20,7 +20,7 @@ test('A08 invalid settings are rejected atomically by the production host servic
   for(const result of invalid){assert(result.error,'invalid host input is rejected before the rules commit: '+JSON.stringify(result.patch));assert.deepEqual(result.after,result.before,'rules/readiness/revisions/events remain identical');}
   const submission=await page.evaluate(()=>{
    const b=PlayroomAppBridge,r=b.room(),s=b.roomService,form=document.querySelector('#room-rules-form'),input=form.elements['option-unoMode'],before=s.snapshot(r.id),remembered=localStorage.getItem('playroom.last-rules.v1');
-   input.add(new Option('Invalid fixture value','invalid'));input.value='invalid';form.requestSubmit();return {before,after:s.snapshot(r.id),remembered,rememberedAfter:localStorage.getItem('playroom.last-rules.v1'),editorRetained:form.isConnected};
+   const invalid=document.createElement('input');invalid.type='radio';invalid.name='option-unoMode';invalid.value='invalid';form.append(invalid);invalid.checked=true;form.requestSubmit();return {before,after:s.snapshot(r.id),remembered,rememberedAfter:localStorage.getItem('playroom.last-rules.v1'),editorRetained:form.isConnected};
   });assert.deepEqual(submission.after,submission.before);assert.equal(submission.rememberedAfter,submission.remembered);assert(submission.editorRetained,'invalid submit keeps the editor available for correction');await page.locator('#toast.show').filter({hasText:/Объявление UNO.*Повторите выбор/}).waitFor();assert(!await page.locator('#toast').innerText().then(text=>text.includes('ROOM_RULES_INVALID')),'the feedback uses the field label and localized retry instruction');
   await active().locator('.modal-head [data-command=close-modal]').click();await active().locator('.modal-head [data-command=close-modal]').click();
   const authority=await page.evaluate(()=>{
@@ -52,7 +52,7 @@ test('A08 future Ludo teams save independently of start roster and reject undecl
  try{
   if(process.env.PLAYROOM_TEST_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT);await page.route('**/*',route=>route.abort());await page.route(server.url,route=>route.fulfill({status:200,contentType:'text/html',body}));}
   const response=await page.goto(server.url);if(process.env.PLAYROOM_TEST_ARTIFACT){const hash=b=>require('node:crypto').createHash('sha256').update(b).digest('hex');assert.equal(hash(await response.body()),hash(fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT)));}
-await page.locator('[data-start=ludo]').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-game-context]').click();await active().locator('[data-command=room-rules]').click();
+await page.locator('[data-start=ludo]').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-rules]').click();
   const summaryLayout=[];
   for(const width of [360,390,740]){
    await page.setViewportSize({width,height:844});
@@ -61,11 +61,10 @@ await page.locator('[data-start=ludo]').first().click();await active().locator('
   }
   await page.setViewportSize({width:390,height:844});
   const beforeChoice=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.room().rules)),choiceReport=[];
-  for(const [name,title]of [['seatOrder','Порядок'],['firstPlayerMode','Игрок №1'],['option-guaranteedExit','Выход после 3 неудач']]){
-   const control=page.locator('#room-rules-form [name="'+name+'"]'),value=await control.inputValue(),help=control.locator('..').locator('.rule-help [popover]'),helpText=await help.textContent();await control.click();
-   const picker=active().locator('.select-choice-dialog');await picker.waitFor();assert.equal(await picker.locator('.modal-head h2').innerText(),title);assert.equal(await picker.locator('.pairing-choice-list').getAttribute('aria-label'),title);assert(await picker.locator('.modal-head h2').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'short field heading fits the panel');
-   if(process.env.PLAYROOM_RULE_CHOICE_EVIDENCE_DIR){fs.mkdirSync(process.env.PLAYROOM_RULE_CHOICE_EVIDENCE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_RULE_CHOICE_EVIDENCE_DIR,name+'.png')});}
-   await picker.locator('[data-choice][aria-pressed="true"]').click();await picker.waitFor({state:'detached'});assert.equal(await control.inputValue(),value);assert.equal(await help.textContent(),helpText);choiceReport.push({name,title,helpPreserved:true,value});
+  for(const [name,title]of [['seatOrder','Места за столом'],['firstPlayerMode','Первый ход'],['option-guaranteedExit','Выход после 3 неудач']]){
+   const control=page.locator('#room-rules-form [name="'+name+'"]'),field=control.first().locator('xpath=ancestor::fieldset[1]'),value=await readChoice(control),help=field.locator('.rule-help [popover]'),helpText=await help.textContent();
+   assert.equal(await field.locator('legend').innerText(),title);await control.and(page.locator(':checked')).check();
+   assert.equal(await readChoice(control),value);assert.equal(await help.textContent(),helpText);choiceReport.push({name,title,helpPreserved:true,value});
   }
   assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.room().rules)),beforeChoice,'opening or accepting the current option does not save rule changes');
   if(process.env.PLAYROOM_RULE_CHOICE_EVIDENCE_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_RULE_CHOICE_EVIDENCE_DIR,'choices.json'),JSON.stringify({engine:browser.browserType().name(),version:browser.version(),choices:choiceReport},null,2));
@@ -83,7 +82,7 @@ test('A08 ownership handoff retires an open rules editor and preserves the succe
   const [host,next]=pages,active=page=>page.locator('#modal-root>[data-surface-state=active]');
   await host.locator('[data-start=uno]').first().click();await active(host).locator('[data-game-mode=hotseat]').click();
   await host.evaluate(()=>{const b=PlayroomAppBridge,s=b.roomService,r=b.room();s.setAutoStart(r.id,r.ownerId,false);s.configure(r.id,r.ownerId,{transportMode:'network'});for(const seat of s.snapshot(r.id).seats)if(seat.participantId&&seat.participantId!==r.ownerId)s.setLocalSeat(r.id,r.ownerId,seat.id,{kind:'empty'});b.renderLobby();});
-  await active(host).locator('[data-command=room-game-context]').click();await active(host).locator('[data-command=room-rules]').click();await selectChoice(host.locator('#room-rules-form [name=option-endMode]'),'last');
+  await active(host).locator('[data-command=room-rules]').click();await selectChoice(host.locator('#room-rules-form [name=option-endMode]'),'last');
   await host.exposeFunction('__a08PromoteLocal',payload=>next.evaluate(async value=>{await PlayroomNetworkLibrary.transferPromoteLobby({payload:value,peers:new Map()});return {room:PlayroomAppBridge.room(),actor:PlayroomAppBridge.participantId()};},payload));
   const prepared=await host.evaluate(()=>{
    const b=PlayroomAppBridge,s=b.roomService,r=b.room(),connection=s.connection(r.id),joined=connection.dispatch({type:'join',nickname:'Следующий хост'}),target=joined.snapshot.participantId;
@@ -114,7 +113,7 @@ test('A08 ownership handoff retires an open rules editor and preserves the succe
   });assert(prepared.oldEditor);await host.locator('#room-rules-form').waitFor({state:'detached'});assert.equal(await host.evaluate(()=>PlayroomHostTransferUI.senderState().stage),'consent','the actual offer retires the editor before awaiting peer consent');
   await host.evaluate(async()=>{a08Handoff.accept();a08Handoff.result=await a08Handoff.job;window.PlayroomNetworkLibrary=a08Handoff.network;window.PlayroomHostTransferWire=a08Handoff.wire;});
   const promoted=await next.evaluate(()=>({room:PlayroomAppBridge.room(),actor:PlayroomAppBridge.participantId(),defaults:localStorage.getItem('playroom.last-rules.v1')}));assert.equal(promoted.actor,prepared.target);assert.equal(promoted.room.ownerId,prepared.target);assert.equal(promoted.room.id,prepared.before.id);assert.deepEqual(promoted.room.rules,prepared.before.rules);assert(promoted.room.participants.filter(person=>!person.bot).every(person=>!person.ready));
-  await active(next).locator('[data-command=room-game-context]').click();await next.evaluate(()=>window.a08GameContext=document.querySelector('#modal-root>[data-surface-state=active]'));await active(next).locator('[data-command=room-rules]').click();await selectChoice(next.locator('#room-rules-form [name=preset]'),'quick');await active(next).locator('.modal-head [data-command=close-modal]').click();
+  await next.evaluate(()=>window.a08GameContext=document.querySelector('#modal-root>[data-surface-state=active]'));await active(next).locator('[data-command=room-rules]').click();await selectChoice(next.locator('#room-rules-form [name=preset]'),'quick');await active(next).locator('.modal-head [data-command=close-modal]').click();
   assert(await next.evaluate(()=>a08GameContext===document.querySelector('#modal-root>[data-surface-state=active]')),'Back restores the exact successor game context');assert.deepEqual(await next.evaluate(()=>PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id)),promoted.room,'successor Back cancels only its draft');assert.equal(await next.evaluate(()=>localStorage.getItem('playroom.last-rules.v1')),promoted.defaults);
   await active(next).locator('[data-command=room-rules]').click();assert.equal(await readChoice(next.locator('#room-rules-form [name=preset]')),'classic');await selectChoice(next.locator('#room-rules-form [name=preset]'),'quick');await next.locator('#room-rules-form').evaluate(form=>form.requestSubmit());
   const accepted=await next.evaluate(()=>({room:PlayroomAppBridge.roomService.snapshot(PlayroomAppBridge.room().id),defaults:localStorage.getItem('playroom.last-rules.v1')}));assert.equal(accepted.room.rules.preset,'quick');assert.equal(accepted.room.rules.options.endMode,'winner');assert.equal(JSON.parse(accepted.defaults).uno.preset,'quick');
@@ -128,19 +127,19 @@ for(const [width,height] of [[320,740],[390,740],[740,390]])test(`screen:phone:$
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width,height},hasTouch:true,isMobile:true}),page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
  const provider=await require('./account-sync-fixture.cjs').installFetch(context,route=>route.fulfill({status:503,json:{message:'Local rules fixture: no provider'}}));
  const shots=path.resolve(root,'../tmp_files/ux-021/rules-buckets');fs.mkdirSync(shots,{recursive:true});const engine=process.env.PLAYWRIGHT_MODULE?'webkit':'chromium',active=()=>page.locator('#modal-root>[data-surface-state=active]');
- const openRules=async id=>{await page.locator('[data-start='+id+']').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-game-context]').click();await active().locator('[data-command=room-rules]').click();await page.locator('#room-rules-form').waitFor();};
+ const openRules=async id=>{await page.locator('[data-start='+id+']').first().click();await active().locator('[data-game-mode=hotseat]').click();await active().locator('[data-command=room-rules]').click();await page.locator('#room-rules-form').waitFor();};
  const leave=async()=>{if(await active().locator('#room-rules-form').count())await active().locator('.modal-head [data-command=close-modal]').click();if(await active().locator('.room-game-context-modal').count())await active().locator('.modal-head [data-command=close-modal]').click();await active().locator('[data-room-context]').click();await active().locator('[data-command=lobby-leave]').click();if(await active().locator('[data-confirm-accept]').count())await active().locator('[data-confirm-accept]').click();await page.locator('.room-v021').waitFor({state:'detached'});};
  try{await page.goto(server.url);
   for(const id of ['pexeso','uno','durak','gofish','oldmaid','domino','ludo','snakes','yatzy','checkers','battleship','tictactoe']){
    await openRules(id);const form=page.locator('#room-rules-form');assert(await form.evaluate(node=>node.scrollWidth<=node.clientWidth+1),id+' form fits '+width);assert.equal(await form.locator('details').count(),0,id+' does not hide all parameters in a disclosure');
    const groups=await form.locator('[data-rule-section]:visible').evaluateAll(nodes=>nodes.map(node=>({id:node.dataset.ruleSection,label:node.querySelector('h3').textContent}))),expected=['order','parameters','ending'];assert.deepEqual(groups.map(group=>group.id),expected.filter(key=>groups.some(group=>group.id===key)),id+' sections follow order/parameters/ending');assert.deepEqual(groups.map(group=>group.label),groups.map(group=>({order:'Порядок игры',parameters:'Параметры',ending:'Завершение'}[group.id])));assert.equal(groups[0].id,'order',id+' multiplayer order is first');
    const placement=await form.evaluate(node=>{const spec=PlayroomCatalog[node.dataset.game],end=new Set((spec.ruleGroups||[]).filter(group=>group.end).flatMap(group=>group.fields));return (spec.settings||[]).map(field=>({key:field.key,expected:end.has(field.key)?'ending':'parameters',actual:node.querySelector('[data-rule-field="'+field.key+'"]')?.closest('[data-rule-section]')?.dataset.ruleSection}));});assert(placement.every(field=>field.actual===field.expected),id+' each actual schema field belongs to its semantic section');
-   assert(await form.locator('.rules-v021-fields:visible').evaluateAll((nodes,width)=>nodes.every(node=>getComputedStyle(node).gridTemplateColumns.split(' ').length===(width>=360?2:1)),width),id+' uses compact columns where the viewport allows');
-   const controls=await form.evaluate(node=>{const spec=PlayroomCatalog[node.dataset.game];return (spec.settings||[]).map(field=>{const input=node.elements['option-'+field.key],range=field.options.length>1&&field.control==='slider'&&field.options.every(option=>typeof option.value==='number'&&Number.isFinite(option.value));return {key:field.key,tag:input.tagName,type:input.type,expected:field.options.length===1?'hidden':range?'range':'select-one'};});});assert(controls.every(control=>control.type===control.expected),id+' preserves declared numeric ranges and native categorical IDs');
-   assert(await form.locator('.rules-v021-field:visible .setting-title').evaluateAll(nodes=>nodes.every(node=>{const title=node.querySelector('.setting-title-text'),button=node.querySelector('.rule-help>button');if(!button)return true;const a=title.getBoundingClientRect(),b=button.getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;})),id+' contextual help stays beside its title');
-   if(['gofish','oldmaid'].includes(id)){assert.deepEqual(await form.locator('[name=option-deck] option').evaluateAll(nodes=>nodes.map(node=>node.value)),['36','52']);if(id==='oldmaid')assert.deepEqual(await form.locator('[name=option-deck] option').allTextContents(),['35 карт','51 карта']);}
-   if(['ludo','snakes'].includes(id)){const rail=form.locator('[name=option-maxRounds]');await rail.focus();await rail.press('End');assert.equal(await readChoice(rail),'0');if(await rail.evaluate(node=>node.type)==='range'){assert.equal(await rail.getAttribute('aria-valuetext'),'Без ограничения');assert.equal(await form.locator('#rule-option-maxRounds-value').innerText(),'∞');}else assert.equal(await rail.locator('option:checked').innerText(),'∞','native limit select preserves the unlimited label');}
-   if(id==='durak'){assert.equal(await form.locator('[name=option-deck]').inputValue(),'54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());await form.locator('[name=option-deck]').selectOption('36');assert.equal(await form.locator('[data-rule-field=jokerMode]').isVisible(),false);await form.locator('[name=option-deck]').selectOption('54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());}
+   assert(await form.locator('.rules-v021-fields:visible').evaluateAll((nodes,width)=>nodes.every(node=>getComputedStyle(node).gridTemplateColumns.split(' ').length===2),width),id+' uses compact columns where the viewport allows');
+   const controls=await form.evaluate(node=>{const spec=PlayroomCatalog[node.dataset.game];return (spec.settings||[]).map(field=>({key:field.key,actual:[...node.querySelectorAll('[name="option-'+field.key+'"]')].map(n=>n.value),expected:field.options.map(o=>String(o.value))}));});for(const control of controls)assert.deepEqual(control.actual,control.expected,id+' exact declared options for '+control.key);
+   assert(await form.locator('.rules-v021-field:visible').evaluateAll(fields=>fields.every(field=>{const title=field.querySelector('.setting-title-text'),button=field.querySelector('.rule-choice-heading .rule-help>button');if(!button)return true;const f=field.getBoundingClientRect(),b=button.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(title);const overlap=[...range.getClientRects()].some(r=>Math.min(r.right,b.right)-Math.max(r.left,b.left)>1&&Math.min(r.bottom,b.bottom)-Math.max(r.top,b.top)>1);return !overlap&&b.left>=f.left&&b.right<=f.right+1&&b.top>=f.top&&b.bottom<=f.bottom+1&&b.width>=20&&b.height>=20;})),id+' contextual help remains reachable inside its card without covering title ink');
+   if(['gofish','oldmaid'].includes(id))assert.deepEqual(await form.locator('[name=option-deck]').evaluateAll(nodes=>nodes.map(n=>n.value)),['36','52']);
+   if(['ludo','snakes'].includes(id)){const rail=form.locator('[name=option-maxRounds]');await selectChoice(rail,'0');assert.equal(await readChoice(rail),'0');assert.equal(await form.locator('[data-rule-field=maxRounds] [data-rule-step-value]').innerText(),'∞');}
+   if(id==='durak'){await selectChoice(form.locator('[name=option-deck]'),'54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());await selectChoice(form.locator('[name=option-deck]'),'36');assert.equal(await form.locator('[data-rule-field=jokerMode]').isVisible(),true);assert(await form.locator('[name=option-jokerMode]').evaluateAll(nodes=>nodes.every(n=>n.disabled)),'inactive joker choices keep their place and cannot be chosen');await selectChoice(form.locator('[name=option-deck]'),'54');assert(await form.locator('[data-rule-field=jokerMode]').isVisible());}
    if(id==='uno'){const before=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.room().rules));await selectChoice(form.locator('[name=preset]'),'quick');assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.room().rules)),before,'editing has no accepted-state side effects');const help=form.locator('[data-rule-field=preset] .rule-help>button');await help.click();await page.locator('.mini-help-popover:popover-open').waitFor();await page.keyboard.press('Escape');assert(await form.isVisible(),'Escape closes help without discarding the editor');await page.screenshot({path:path.join(shots,engine+'-uno-'+width+'.png')});}
    if(id==='ludo')await page.screenshot({path:path.join(shots,engine+'-ludo-'+width+'.png')});await leave();
   }
@@ -152,33 +151,31 @@ test('rulebooks: all games explain play before settings and show the current mat
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:740}}),page=await context.newPage(),errors=[];
  page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
- const close=()=>page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+ await context.route(/https:\/\/[^/]+\.supabase\.co\//,route=>route.abort());await context.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({...JSON.parse(localStorage.getItem('playroom.settings.v1')||'{}'),sound:false,tutorialsEnabled:false})));
+ const active=selector=>page.locator('#modal-root>[data-surface-state=active]').locator(selector);
+ const close=()=>page.locator('#modal-root>[data-surface-state=active] .modal-head [data-command=close-modal]').click();
  const shots=path.resolve(root,'../tmp_files/player-rulebooks/screenshots');fs.mkdirSync(shots,{recursive:true});
  try{
   await page.goto(process.env.PLAYROOM_URL||server.url);
   for(const id of ['mage-brawl','uno','durak','gofish','oldmaid','domino','battleship','checkers','ludo','snakes','pexeso','klondike','spider','tictactoe','yatzy']){
-   await page.locator('[data-start="'+id+'"]').first().click();await page.locator('[data-command=room-rules-view]').click();
-   const book=page.locator('.game-rules-help');assert(await book.locator('.rulebook-section').count()>=3,id+' has a full rulebook');
-   assert(await book.evaluate(e=>e.firstElementChild.classList.contains('rules-selected-settings')&&e.children[1].classList.contains('rulebook-contents')&&e.children[2].classList.contains('rulebook-main')&&e.children[3].tagName==='HR'&&e.lastElementChild.classList.contains('rulebook-config')),id+' reading order');
-   assert.equal(await page.locator('.rulebook-head h2').innerText(),'Правила',id+' concise title');
-   assert.equal(await page.locator('.rulebook-toolbar button').count(),3,id+' three navigation actions');
+   await page.locator('[data-start="'+id+'"]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=room-rules-view]').click();await page.locator('[data-rulebook-mode=full]').click();
+   const book=page.locator('#modal-root>[data-surface-state=active] [data-rulebook-full]');assert(await book.locator('.rulebook-section').count()>=3,id+' has a full rulebook');
+   assert(await book.evaluate(e=>e.firstElementChild.classList.contains('rules-selected-settings')&&e.children[1].classList.contains('rulebook-toc')&&!!e.children[1].querySelector('.rulebook-contents')&&e.children[2].classList.contains('rulebook-main')&&e.children[3].tagName==='HR'&&e.lastElementChild.classList.contains('rulebook-config')),id+' reading order');
+   assert.equal(await active('.rulebook-head h2').innerText(),'Правила',id+' concise title');
+   assert.equal(await book.locator('.rulebook-toc>summary').count(),1,id+' one native contents disclosure');
    assert(await book.locator('.rulebook-option').evaluateAll(nodes=>nodes.every(node=>node.querySelectorAll('.rulebook-choices').length===1)),id+' consistent choices for every setting');
    const helps=book.locator('.rules-selected-settings dt .rule-help>button');
    assert.equal(await helps.count(),await book.locator('.rules-selected-settings dt').count(),id+' every selected parameter has help');
    for(let i=0;i<await helps.count();i++){
-    await helps.nth(i).click();assert(await page.locator('.mini-help-popover:popover-open').isVisible(),id+' parameter help');
+    await helps.nth(i).click();await page.locator('.mini-help-popover:popover-open').waitFor({state:'visible'});
     assert((await page.locator('.mini-help-popover:popover-open').innerText()).trim().length>0);await page.keyboard.press('Escape');
     assert(await book.isVisible(),id+' Escape keeps rules open');
    }
-   assert(await page.locator('.rulebook-toolbar [data-rulebook-jump=rulebook-options]').evaluate(e=>!e.innerHTML.includes('M4 7h16M4 17h16')),id+' parameter explanations do not use settings icon');
    const originalUrl=page.url();
-   await page.locator('.rulebook-toolbar [data-rulebook-jump=rulebook-options]').click();
-   await page.waitForFunction(()=>{const e=document.getElementById('rulebook-options'),b=e.closest('.modal-body');return Math.abs(e.getBoundingClientRect().top-b.getBoundingClientRect().top)<3;});
-   await page.locator('.rulebook-toolbar [data-rulebook-jump=rulebook-contents]').click();
-   await book.locator('.rulebook-contents a').first().click();
+   await book.locator('.rulebook-toc>summary').click();await book.locator('.rulebook-contents [data-rulebook-jump=rulebook-options]').click();
+   await page.waitForFunction(()=>document.activeElement?.id==='rulebook-options');
+   await book.locator('.rulebook-toc>summary').click();await book.locator('.rulebook-contents a').first().click();
    await page.waitForFunction(()=>document.activeElement?.id==='rulebook-section-0');
-   await page.locator('.rulebook-toolbar [data-rulebook-jump=rulebook-top]').click();
-   await page.waitForFunction(()=>document.querySelector('.modal-body').scrollTop<2);
    assert.equal(page.url(),originalUrl,id+' navigation does not change URL/back stack');
    const text=await book.innerText();assert(!/поезд|пакетный урон|Windows XP|Доступные действия подсвечиваются|[a-z-]+\.(?:rules\.\d|book\.)/.test(text),id+' no obsolete text or unresolved keys');
    assert(await book.locator('.rulebook-config .rules-mode-note').count()>0,id+' selected values');
@@ -188,7 +185,7 @@ test('rulebooks: all games explain play before settings and show the current mat
     assert.equal(await book.locator('.rule-art [data-action]').count(),0,id+' examples cannot dispatch game commands');
    }
    for(const viewport of [{width:320,height:740},{width:390,height:740},{width:740,height:390}]){
-    await page.setViewportSize(viewport);assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' fits '+viewport.width);assert(await page.locator('.rulebook-head').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' header fits '+viewport.width);
+    await page.setViewportSize(viewport);assert(await active('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' fits '+viewport.width);assert(await active('.rulebook-head').evaluate(e=>e.scrollWidth<=e.clientWidth+1),id+' header fits '+viewport.width);
     assert(await book.locator('.rule-art [data-size-role=card]').evaluateAll(cards=>cards.every(card=>{const b=card.getBoundingClientRect();return b.width>=30&&b.width<=61&&b.height<=90;})),id+' example cards stay compact');
     assert(await book.locator('.rule-art-row').evaluateAll(rows=>rows.every(row=>{const cards=[...row.querySelectorAll('[data-size-role=card]')].map(c=>c.getBoundingClientRect());return cards.length<2||cards.every(c=>Math.abs(c.top+c.height/2-cards[0].top-cards[0].height/2)<1);})),id+' cards in one example step stay on one row');
    }
@@ -215,18 +212,17 @@ test('rulebooks: all games explain play before settings and show the current mat
     await page.screenshot({path:path.join(shots,'mage-rulebook-start.png')});
     await book.locator('.rulebook-config').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(shots,'mage-rulebook-settings.png')});
    }
-   await close();await page.locator('[data-command=lobby-leave]').click();await page.locator('[data-confirm-accept]').click();
+   await close();await page.locator('#modal-root>[data-surface-state=active] [data-room-context]').click();await active('[data-command=lobby-leave]').click();const confirm=active('[data-confirm-accept],[data-command=confirm-operation]');if(await confirm.count())await confirm.click();
   }
-  await page.locator('[data-start="mage-brawl"]').first().click();await page.locator('[data-command=room-rules]').click();
+  await page.locator('[data-start="mage-brawl"]').first().click();await page.locator('[data-game-mode=hotseat]').click();await page.locator('[data-command=room-rules]').click();
   await selectChoice(page.locator('[name=option-health]'),'6');await page.locator('#room-rules-form').evaluate(e=>e.requestSubmit());
   await page.locator('[data-command=lobby-start]').click();await page.locator('#app .table-shell').waitFor();
-  await page.locator('[data-learning-choice=no]').click();
-  await page.locator('#app [data-command=settings]').click();await page.locator('.settings-quick [data-command=rules]').click();
+  await page.locator('[data-game-menu]').click();await page.locator('#modal-root>[data-surface-state=active] [data-game-menu-action][data-command=rules]').click();await page.locator('[data-rulebook-mode=full]').click();
   const health=page.locator('.rulebook-option').filter({has:page.getByRole('heading',{name:'Здоровье',exact:true})});
   assert.equal((await health.locator('.rules-mode-note').innerText()).trim(),'В этой партии: 6','live match uses saved rules, not defaults');
   assert.equal(await page.locator('.rulebook-config h4').filter({hasText:'Первый игрок'}).count(),0,'simultaneous game does not offer a nonexistent setting');
   assert.equal(await page.evaluate(()=>{const e=document.createElement('div');e.innerHTML=PlayroomLobbyView.gameRulesMarkup({rules:['<b>Title</b>\n<script>bad()</script>','Legacy line'],presets:[]});return e.querySelectorAll('script,b').length;}),0,'rule text is escaped, old single-line rules supported');
-  await close();await page.locator('.settings-overview').waitFor();await close();assert(await page.locator('#app .table-shell').isVisible());
+  await close();await page.locator('#modal-root>[data-surface-state=active] .game-menu-panel').waitFor();await page.locator('#modal-root>[data-surface-state=active] .modal-head [data-game-menu-close]').click();assert(await page.locator('#app .table-shell').isVisible());
   assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
 });
@@ -235,39 +231,47 @@ test('illustrated rules: offline digital faces, network view and colored help in
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(6000);
- const out=path.resolve(root,'../tmp_files/illustrated-rules/screenshots');fs.mkdirSync(out,{recursive:true});
+ const active=selector=>page.locator('#modal-root>[data-surface-state=active]').locator(selector),out=path.resolve(root,'../tmp_files/illustrated-rules/screenshots');fs.mkdirSync(out,{recursive:true});
+ const offlineFile=path.resolve(process.env.PLAYROOM_OFFLINE_HTML||path.join(root,'dist/playroom-all-games.html'));
+ await context.addInitScript(()=>localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false})));
+ await context.route(/^https?:\/\//,route=>route.abort());await context.setOffline(true);
  try{
-  await page.goto(require('node:url').pathToFileURL(path.join(root,'dist/playroom-all-games.html')).href);
-  await page.locator('[data-start=mage-brawl]').first().click();await page.locator('[data-command=room-rules-view]').click();
+  await page.goto(require('node:url').pathToFileURL(offlineFile).href);
+  await page.locator('[data-start=mage-brawl]').first().click();await active('[data-game-mode=hotseat]').click();await active('[data-command=room-rules-view]').click();await active('[data-rulebook-mode=full]').click();
+  const book=active('[data-rulebook-full]');assert(await book.isVisible());
   for(const theme of ['light','dark']){
    await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
    for(const name of ['Движения','Тайлы']){
-    const section=page.locator('.rulebook-section').filter({has:page.getByRole('heading',{name,exact:true})});await section.scrollIntoViewIfNeeded();
-    assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    const section=book.locator('.rulebook-section').filter({has:page.getByRole('heading',{name,exact:true})});await section.scrollIntoViewIfNeeded();
+    assert(await active('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
     if(name==='Тайлы')assert(await section.locator('.is-list .rulebook-figure').evaluateAll(nodes=>nodes.length===9&&nodes.every(n=>{const a=n.querySelector('.rulebook-illustration').getBoundingClientRect(),t=n.querySelector('figcaption').getBoundingClientRect();return a.right<=t.left&&t.width>0;})),'tile descriptions sit beside their artwork');
     await page.screenshot({path:path.join(out,`${theme}-${name==='Движения'?'movement':'tiles'}.png`)});
    }
   }
-  assert.equal(await page.locator('.rulebook-table').count(),4,'effect comparisons use tables');
-  assert(await page.locator('.rulebook-section ol').count()>0,'planning and reward steps use numbered lists');
-  assert.equal(await page.evaluate(()=>{
-   const definition=PlayroomAppBridge.packs.exportView('mage-brawl');const view=PlayroomSharedViews.install(definition);
-   const host=document.createElement('div');host.innerHTML=PlayroomLobbyView.gameRulesMarkup({id:view.manifest.id,rules:view.rules,rulebook:view.rulebook});
-   return host.querySelectorAll('.rulebook-figure').length;
-  }),23,'a view-only network client can render illustrated rules without rules code');
-  await page.locator('#modal-root .modal-head [data-command=close-modal]').click();
-  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(let i=2;i<8;i++)b.roomService.setLocalSeat(r.id,r.ownerId,'seat-'+(i+1),{kind:'bot',nickname:'Бот '+i});b.renderLobby();});
-  await page.locator('[data-command=lobby-start]').click();await page.locator('[data-learning-choice=no]').click();
-  // Card skins can render main/compact variants; check each card instead of counting printed variants.
+  assert.equal(await book.locator('.rulebook-table').count(),4,'effect comparisons use tables');
+  assert(await book.locator('.rulebook-section ol').count()>0,'planning and reward steps use numbered lists');
+  assert.deepEqual(await page.evaluate(()=>{
+   const definition=PlayroomAppBridge.packs.exportView('mage-brawl'),view=PlayroomSharedViews.install(definition),host=document.createElement('div');host.innerHTML=PlayroomLobbyView.gameRulesMarkup({id:view.manifest.id,rules:view.rules,rulebook:view.rulebook});
+   const full=host.querySelector('[data-rulebook-full]');return {figures:full.querySelectorAll('.rulebook-figure').length,commands:full.querySelectorAll('.rulebook-figure [data-action]').length};
+  }),{figures:23,commands:0},'a view-only network client renders all full illustrations without actionable rule examples');
+  await active('.modal-head [data-command=close-modal]').click();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();PlayroomFirstTurnGuide.setEnabled('mage-brawl',false);for(let i=1;i<8;i++)b.roomService.setLocalSeat(r.id,r.ownerId,'seat-'+(i+1),{kind:'human',nickname:'Игрок '+i});b.renderLobby();});
+  await active('[data-command=lobby-start]').click();await page.locator('.handoff [data-command=unlock]').click();await page.locator('.mage-card:visible').first().waitFor();
+  // Each current hand card keeps its real square digital face and printed border.
   assert(await page.locator('.mage-card:visible').evaluateAll(cards=>cards.length===4&&cards.every(card=>card.querySelector('.mage-spell-art rect[stroke]'))));
+  const beforeMemo=await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.export());let memoSignature;
   for(let direction=0;direction<4;direction++){
    if(direction)await page.locator('[data-view-key=mageDirection]').last().click();
-   await page.locator('[data-command=card-help]').click();
-   assert(await page.locator('.card-help-list .mage-action-diagram>g[style*=color]').count()>0,'help uses elemental colors');
-   assert(await page.locator('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+   assert(await page.locator('.mage-card:visible').evaluateAll((cards,direction)=>cards.every(card=>card.style.getPropertyValue('--mage-direction')===direction*90+'deg'),direction),'real hand cards follow the selected orientation');
+   await page.locator('.mage-hand [data-command=card-help]').click();
+   assert.equal(await active('.mage-memo-table tbody tr').count(),4,'shared memo always includes all four elements');assert.equal(await active('.mage-memo-table .mage-action-diagram').count(),12,'shared memo includes each of the three actions for every element');assert.equal(await active('.mage-memo-order svg').count(),1);
+   assert(await active('.mage-memo-table tbody td').evaluateAll(cells=>cells.every(cell=>cell.getAttribute('aria-label')&&!/action-help\./.test(cell.getAttribute('aria-label'))&&getComputedStyle(cell.querySelector('svg')).color===getComputedStyle(cell).color)),'memo diagrams retain accessible public explanations and elemental colors');
+   const signature=await active('.mage-memo-table').evaluate(table=>({rows:[...table.querySelectorAll('tbody th')].map(th=>({name:th.textContent.trim(),color:getComputedStyle(th).color})),actions:[...table.querySelectorAll('tbody td')].map(td=>({label:td.getAttribute('aria-label'),art:td.querySelector('svg').innerHTML}))}));assert.equal(new Set(signature.rows.map(row=>row.color)).size,4,'all four elemental colors remain distinct');if(!memoSignature)memoSignature=signature;else assert.deepEqual(signature,memoSignature,'the shared four-element reference stays independent of the selected hand orientation');
+   assert.equal(await active('.mage-memo button,.mage-memo input,.mage-memo [data-action]').count(),0,'reference diagrams never dispatch game commands');assert(await active('.modal-body').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
    if(direction===1)await page.screenshot({path:path.join(out,'dark-hand-help.png')});
-   await page.locator('#modal-root .modal-head [data-command=close-modal]').click();
+   await active('.modal-head [data-command=close-modal]').click();
   }
+  assert.deepEqual(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.export()),beforeMemo,'opening and rotating the reference never alters the saved match');
   for(const viewport of [{width:844,height:390},{width:390,height:844}]){await page.setViewportSize(viewport);assert(await page.locator('.table-shell').evaluate(e=>e.scrollWidth<=e.clientWidth+1));}
   assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();}
@@ -275,7 +279,7 @@ test('illustrated rules: offline digital faces, network view and colored help in
 
 test('rule changes show localized before and after values above the screen',{timeout:25000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
- try{const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),page=await context.newPage();await page.goto(server.url);await page.locator('#profile-form input').fill('Игрок');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.evaluate(()=>{
+ try{const context=await browser.newContext({playroomProfile:false,viewport:{width:390,height:740}}),page=await context.newPage();await page.goto(server.url);await page.locator('#profile-form [name=playerName]').fill('Игрок');await page.locator('#profile-form').evaluate(f=>f.requestSubmit());await page.evaluate(()=>{
   PlayroomCatalog.fixture={settings:[{key:'announce',label:'Объявление о потоплении',options:[{value:false,label:'Нет'},{value:true,label:'Да'}]}],presetSetting:{label:'Режим',options:[{value:'classic',label:'Классический'},{value:'russian',label:'Русский'}]}};
   const room={id:'change-fixture',game:{id:'fixture'},transportMode:'online',phase:'lobby',rulesRevision:1,previousRules:{preset:'classic',options:{announce:false}},rules:{preset:'russian',options:{announce:true}},participants:[{id:'guest',rulesNotice:true}]};window.rulesNotifications=[];PlayroomLobbyView.notifyRulesChange(room,'guest',m=>{rulesNotifications.push(m);PlayroomAppBridge.toast(m);});PlayroomLobbyView.notifyRulesChange(room,'guest',m=>rulesNotifications.push(m));
  });assert.deepEqual(await page.evaluate(()=>rulesNotifications),['Режим: Классический → Русский\nОбъявление о потоплении: Нет → Да']);assert.equal(await page.locator('#toast').getAttribute('class'),'toast show');await page.waitForFunction(()=>document.querySelector('#toast').getBoundingClientRect().top<20&&Number(getComputedStyle(document.querySelector('#toast')).opacity)>.99);const box=await page.locator('#toast').boundingBox();assert(box.y<20&&box.x>=0&&box.x+box.width<=390);await page.screenshot({path:path.resolve(root,'../tmp_files/push-events-020/rules-changed.png')});
@@ -337,4 +341,16 @@ test('diagram rule grids keep two compact columns on phones with readable large-
  for(const width of [360,390,780]){await page.setViewportSize({width,height:width===780?360:844});const boxes=await grid.locator(':scope>.rulebook-figure').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect(),svg=e.querySelector('svg'),s=svg.getBoundingClientRect(),v=svg.viewBox.baseVal;return{x:r.x,y:r.y,w:r.width,h:r.height,ratio:s.width/s.height,natural:v.width/v.height,overflow:e.scrollWidth>e.clientWidth+1}}));assert.equal(boxes.length,4);assert(Math.abs(boxes[0].y-boxes[1].y)<1,'first two diagrams share a row at '+width);assert(boxes[2].y>boxes[0].y&&Math.abs(boxes[2].y-boxes[3].y)<1,'last two diagrams share second row');assert(boxes.every(b=>!b.overflow&&Math.abs(b.ratio-b.natural)<.04));await grid.scrollIntoViewIfNeeded();if(process.env.PLAYROOM_RULE_GRID_SHOTS){fs.mkdirSync(process.env.PLAYROOM_RULE_GRID_SHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_RULE_GRID_SHOTS,'grid-'+width+'.png')});}}
  await page.setViewportSize({width:320,height:720});await page.addStyleTag({content:'html{font-size:32px}'});if(process.env.PLAYROOM_RULE_GRID_SHOTS){await page.screenshot({path:path.join(process.env.PLAYROOM_RULE_GRID_SHOTS,'grid-large-text.png')});fs.writeFileSync(path.join(process.env.PLAYROOM_RULE_GRID_SHOTS,'large-text-prose.json'),JSON.stringify(await book.locator('.modal-body').evaluate(n=>({width:n.clientWidth,scrollWidth:n.scrollWidth,overflow:[...n.querySelectorAll('p,td,th,h3')].filter(e=>e.scrollWidth>e.clientWidth+1).map(e=>({tag:e.tagName,class:e.className,text:e.textContent.slice(0,100),width:e.clientWidth,scrollWidth:e.scrollWidth}))})),null,2));}assert(await grid.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'diagram grid fits large text');assert(await book.locator('.modal-body').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'short configuration heading and tables fit 320px/large font');assert(await grid.locator(':scope>.rulebook-figure').evaluateAll(es=>es.every(e=>e.scrollWidth<=e.clientWidth+1)));await book.locator('[data-rulebook-mode=brief]').click();assert(await book.locator('.modal-body').evaluate(n=>n.scrollWidth<=n.clientWidth+1));assert.deepEqual(errors,[]);
  }finally{await context.close();await browser.close();await server.close();}
+});
+
+
+test('Mage settings expose extra lives 0–2 and default life-based shrink in native room UI',{timeout:45000},async()=>{
+ const T=require('./browser-origin.cjs'),server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'mage-options',name:'Проверка'})));
+  if(process.env.PLAYROOM_TEST_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_TEST_ARTIFACT);await page.route('**/*',r=>r.abort());await page.route(server.url,r=>r.fulfill({contentType:'text/html',body}));}
+  await page.goto(server.url);await T.openGame(page,'mage-brawl');const active=()=>T.activeSurface(page);await active().locator('[data-command=room-rules]').click();
+  const extra=active().locator('[name=option-extraLives]'),shrink=active().locator('[name=option-shrinkMode]'),extraField=extra.first().locator('xpath=ancestor::fieldset[1]');assert.match(await extraField.locator('legend').innerText(),/Дополнительные жизни/);assert.deepEqual(await extra.evaluateAll(ns=>ns.map(n=>n.value)),['0','1','2']);assert.equal(await readChoice(shrink),'lives');
+  await selectChoice(extra,'0');assert.equal(await extraField.locator('[data-preview-count="0"] .is-empty').count(),1);await selectChoice(extra,'2');await selectChoice(active().locator('[name=preset]'),'teams');await active().locator('#room-rules-form').evaluate(f=>f.requestSubmit());
+  const rules=await page.evaluate(()=>PlayroomAppBridge.room().rules);assert.equal(rules.preset,'teams');assert.equal(rules.options.extraLives,'2');assert.equal(rules.options.shrinkMode,'lives');await active().locator('[data-command=room-rules-view]').click();await active().locator('[data-rulebook-mode=full]').click();assert.match(await active().innerText(),/2 × \(дополнительные жизни \+ 1\)/);assert.match(await active().innerText(),/Синие/);assert.deepEqual(errors,[]);
+ }finally{await browser.close();await server.close();}
 });

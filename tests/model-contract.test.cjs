@@ -419,7 +419,8 @@ test('all installed pack scenes obey participant and metric contracts for every 
     require(path.join(packs,'packs',id,'rules.js'));
     const game=E.get(id);
     for(const preset of game.presets){
-      const count=preset.id==='teams'?4:game.min;
+      const manifest=JSON.parse(fs.readFileSync(path.join(packs,'packs',id,'manifest.json'),'utf8')),declared=manifest.playModes?.find(mode=>mode.id===preset.id);
+      const count=declared?.players?.[0]??game.min;
       const state=E.createGame(id,{players:Array.from({length:count},(_,i)=>({name:'P'+i,bot:true})),preset:preset.id,seed:17});
       for(let viewer=-1;viewer<count;viewer++){
         const projected=E.project(state,viewer);
@@ -602,8 +603,10 @@ reject(missing_inactive_feature)
 valid=[]
 for preview in [{'kind':'cards','count':7},{'kind':'symbol','icon':'cards'},{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'dice','count':2},{'kind':'health','count':3},{'kind':'lives','count':2},{'kind':'fleet','pieces':[3,2]},{'kind':'teams','teamSizes':[2,2]}]:
  for key in ['presetSetting','settings']:
-  value=copy.deepcopy(base);target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
-value=copy.deepcopy(base);field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
+  value=copy.deepcopy(base);
+  if key=='settings':value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]}
+  target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
+value=copy.deepcopy(base);value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]};field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
 value=copy.deepcopy(base);field(value).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}});ns['validate_manifest'](value,'valid-inactive-preview');valid.append(value)
 for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
@@ -616,8 +619,20 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
  const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
- for(const bundle of result.bundles){const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);assert.deepEqual(catalog[id].settings,bundle.manifest.settings);const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings);assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);}
- for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),id==='mage-brawl','only author-supplied component illustrations require the new feature');
+ const Rooms=require('../application/rooms.js');
+ for(const bundle of result.bundles){
+  const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);
+  assert.deepEqual(catalog[id].settings,bundle.manifest.settings.map(Rooms.standardRule),'installed public standard wording is application-owned');
+  for(const raw of bundle.manifest.settings){
+   const installed=catalog[id].settings.find(field=>field.key===raw.key);assert.equal(installed.default,raw.default);assert.deepEqual(installed.options?.map(o=>o.value),raw.options?.map(o=>o.value),'wording normalization preserves supported option IDs');
+   if(Object.hasOwn(Rooms.STANDARD_RULE_VALUES,raw.key)){
+    const prefix='rules-help.standard.'+raw.key;assert.equal(installed.label,globalThis.PlayroomMessages.text(prefix+'.label'));assert.equal(installed.help,globalThis.PlayroomMessages.text(prefix+'.help'));
+    for(const option of installed.options)assert.equal(option.description,globalThis.PlayroomMessages.text(prefix+'.'+option.value+'.description'));
+   }
+  }
+  const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings,'immutable export preserves authored metadata');assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);
+ }
+ for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),['mage-brawl','ludo','spider','durak','pexeso','snakes','yatzy','oldmaid','domino','checkers'].includes(id),'author-supplied component illustrations require the feature');
  const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
  const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
@@ -635,5 +650,17 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  const passes=catalog.klondike.settings.find(f=>f.key==='maxPasses');assert.deepEqual(passes.inactiveWhen,{scoring:'vegas'});assert.deepEqual(passes.inactivePresentation.preview,{kind:'symbol',icon:'lock'});for(const draw of ['1','3'])for(const selected of ['0','1','3']){const state=Engine.createGame('klondike',{seed:17,draw,scoring:'vegas',maxPasses:selected,players:[{name:'A'}]});assert.equal(state.data.config.maxPasses,draw==='1'?1:3,'Vegas domain overrides pass draft according to draw size');}
  const declaration=catalog.uno.settings.find(f=>f.key==='unoMode');assert.deepEqual(declaration.preview,{kind:'declaration',label:'UNO!'});assert.deepEqual(declaration.options.map(o=>o.preview.actor),['human','bot']);
  assert.equal(catalog.snakes.presetSetting.presentation,undefined,'dice-count choices remain compact');
- for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'dice');assert.equal(option.preview.count,Array.isArray(state.data.dice)?state.data.dice.length:1,'mode preview agrees with the actual initial dice');}
+ for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'illustrations');assert.deepEqual(option.preview.ids,['setting-mode-'+option.value]);assert.equal(Array.isArray(state.data.dice)?state.data.dice.length:1,option.value==='plus'?2:1,'illustrated mode agrees with actual initial dice');}
+});
+
+
+test('result playerOrder is an optional complete permutation, separate from score direction',()=>{
+ const model=new GameModel(definition);let s=model.create({playerCount:2,firstPlayer:0,preset:'classic'});
+ for(const cell of [0,3,1,4,2])s=model.apply(s,s.turn,{type:'place',cell}).position;
+ assert.equal(s.status,'finished');
+ for(const playerOrder of [[1,0],[],[0],[0,0],[0,2],[0,1,2],'desc']){
+  const candidate=new GameModel({...definition,result:p=>({...definition.result(p),playerOrder})});
+  if(Array.isArray(playerOrder)&&playerOrder.length===2&&playerOrder[0]===1)assert.deepEqual(candidate.result(s).playerOrder,[1,0]);
+  else assert.throws(()=>candidate.result(s),/RESULT_INVALID/);
+ }
 });

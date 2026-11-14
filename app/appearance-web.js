@@ -60,7 +60,20 @@
       let layoutChanged=false;
       const geometry=new Map();
       const recordGeometry=(family,params={})=>{const value=root.PlayroomAssetResolver.resolve(family,params);geometry.set(JSON.stringify([family,params.packId||null]),[value.variant,value.stacking,value.ratio]);};
-      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){const template=document.createElement('template');template.innerHTML=root.PlayroomAssetResolver.render(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));const fresh=template.content.firstElementChild;if(fresh&&fresh.tagName===node.tagName){recordGeometry(node.dataset.assetFamily,JSON.parse(node.dataset.assetParams));if(fresh.dataset.cardStacking!==node.dataset.cardStacking)layoutChanged=true;for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);}}
+      for(const node of document.querySelectorAll('[data-asset-family][data-asset-params]')){
+        const template=document.createElement('template'),params=JSON.parse(node.dataset.assetParams),port=node.parentElement?.hasAttribute('data-asset-placement')?node.parentElement:null;
+        const drawing=root.PlayroomAssetResolver.render(node.dataset.assetFamily,params);
+        template.innerHTML=port?'<svg>'+root.PlayroomGameComponents.vector.place(drawing,JSON.parse(port.dataset.assetPlacement))+'</svg>':drawing;
+        const placed=port?template.content.firstElementChild.firstElementChild:null,fresh=placed?placed.firstElementChild:template.content.firstElementChild;
+        if(fresh&&fresh.tagName===node.tagName){
+          recordGeometry(node.dataset.assetFamily,params);
+          if(fresh.dataset.cardStacking!==node.dataset.cardStacking)layoutChanged=true;
+          // The source plane may change between skins; refit inside the same box.
+          if(placed)for(const attribute of placed.attributes)port.setAttribute(attribute.name,attribute.value);
+          for(const attribute of fresh.attributes)if(!attribute.name.startsWith('data-asset-'))node.setAttribute(attribute.name,attribute.value);
+          if(node.tagName!=='TABLE')node.replaceChildren(...fresh.childNodes);
+        }
+      }
       // Stack geometry is part of the asset preview, independent of game actions.
       for(const node of document.querySelectorAll('[data-asset-stack-family]')){
         const packId=node.closest('[data-appearance-pack]')?.dataset.appearancePack;

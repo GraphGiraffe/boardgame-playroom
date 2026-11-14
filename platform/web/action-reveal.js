@@ -10,7 +10,11 @@
       const width=root.innerWidth||rect.right,height=root.innerHeight||rect.bottom;
       const left=Math.max(0,rect.left),top=Math.max(0,rect.top),right=Math.min(width,rect.right),bottom=Math.min(height,rect.bottom);
       const box=right>left&&bottom>top?{left,top,width:right-left,height:bottom-top}:{left:0,top:0,width,height};
-      Object.assign(this.host.style,{inset:'auto',left:box.left+'px',top:box.top+'px',width:box.width+'px',height:box.height+'px'});
+      Object.assign(this.host.style,{inset:'auto',left:'0px',top:'0px',width:box.width+'px',height:box.height+'px'});
+      // Stable scrollbar gutters can offset the fixed containing block from
+      // viewport coordinates. Measure that origin instead of assuming zero.
+      const origin=this.host.getBoundingClientRect();
+      Object.assign(this.host.style,{left:(box.left-origin.left)+'px',top:(box.top-origin.top)+'px'});
       this.host.style.setProperty('--reveal-x',box.width/2+'px');this.host.style.setProperty('--reveal-y',box.height/2+'px');
     }
     target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>this.value?.entity&&el.dataset.entity===root.PlayroomGameComponents.entityKey(this.value.entity)&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'))||(this.value?.kind==='cards'?this.mount()?.querySelector('[data-motion-table]'):null);}

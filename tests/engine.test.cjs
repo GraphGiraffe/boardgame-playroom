@@ -28,7 +28,7 @@ function dominoState(hands, chain, stock = []) {
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
+  s.data = { variant:'throwin',endMode:'last',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};
@@ -266,7 +266,8 @@ test('checkers wins by blocked opponent and draws by repetition or quiet-king li
 test('snakes exact finish, reflected overshoot, one link per turn and no extra six', () => {
   for(const boardSize of [64,100]) {
     const preset='classic';
-    let s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
+    // This checks immediate finish; the current default waits until the round ends.
+    let s=create('snakes',2,preset,23,{boardSize,endMode:'winner'}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
     s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
     s=create('snakes',2,preset,23,{boardSize}); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
     s=create('snakes',2,preset,23,{boardSize}); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
@@ -377,7 +378,7 @@ test('standalone audio library registers scoped pack overrides without a browser
 // separate core so version switching cannot affect the built-in game tests.
 function packEnvironment(storage, viewsOverride) {
   const vm = require('node:vm'), fs = require('node:fs');
-  const sandbox = {module:{exports:{}},PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
+  const sandbox = {module:{exports:{}},PlayroomModelValues:require('../core/model-values.js'),PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/random.js'), 'utf8'), sandbox);
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/engine.js'), 'utf8'), sandbox);
   const core = sandbox.module.exports, views = viewsOverride || require('../core/ui.js').createRegistry(), catalog = {};
@@ -498,6 +499,7 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   const passed=E.applyAction(domino,0,{type:'pass'});
   assert.deepEqual(E.project(passed,-1).events.at(-1).feedback,{kind:'skip',player:0});
   assert.deepEqual(E.soundCues(passed,-1,domino.events.at(-1).id).map(c=>c.id),['attack.skip']);
+
   const special=uno('red','+2'),s=unoState([[special,uno('green','3')],[uno('blue','1')]],uno('red','5'),[uno('blue','2'),uno('green','2')]);
   const n=act(s,{type:'play',card:special.id});
   const cues=E.soundCues(n,1,s.events.at(-1).id);assert(cues.some(c=>c.id==='attack.light'));assert.equal(new Set(cues.map(c=>c.eventId)).size,cues.length,'one cue per distinct logical event');assert(cues.every((c,i)=>!i||c.eventId>cues[i-1].eventId),'consequences follow event order');
@@ -508,7 +510,8 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   s.data.ending.groups=[[2]];
   const n=act(s,{type:'play',card:reverse.id});
   assert.equal(n.turn,0);assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.played'),n.players).feedback,{kind:'skip',player:1});
-  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip']);
+  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip','uno.call']); // The fixture uses automatic UNO declaration.
+
  });
 
 test('fractional result details survive validation and reject nonfinite values',()=>{

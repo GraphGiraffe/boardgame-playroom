@@ -158,7 +158,7 @@
       result(state) {
         const summary = model.result(position(state));
         const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
-        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',places:summary.places,exits:summary.exits||[],lastPlayers:summary.lastPlayers||[],metrics,
+        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',...(summary.playerOrder?{playerOrder:summary.playerOrder}:{}),places:summary.places,exits:summary.exits||[],lastPlayers:summary.lastPlayers||[],metrics,
           ...(metrics[1]?{detailLabel:metrics[1].label,detailMetricId:metrics[1].id,details:metrics[1].values}:{})};
       }
     };

@@ -26,3 +26,9 @@
 
 .settings-v021 .settings-diagnostics{min-width:0}
 .settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:600}
+
+
+@media(max-width:359px){
+ :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head{gap:4px}
+ :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head>.surface-head-actions{gap:4px}
+}

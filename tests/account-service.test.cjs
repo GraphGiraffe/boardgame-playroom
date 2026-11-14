@@ -226,3 +226,10 @@ test('cloud rendezvous silently retries transient signaling failures without rec
  try{await driver.connect('room');assert.equal(peers,1);assert.equal(attached,1);assert.deepEqual(calls,['request','request','poll','poll','answer','answer']);assert.deepEqual(delays,[500,500,500]);}finally{driver.stop();}
  let denied=0;const blocked=new CloudSignaling({idFactory:()=> 'epoch',remote:async()=>{denied++;throw Object.assign(Error('forbidden'),{code:'forbidden'});},peers:{}});await assert.rejects(blocked.connect('room'),e=>e.code==='forbidden');assert.equal(denied,1);blocked.stop();
 });
+
+test('host heartbeat publishes public card metadata only when it changes',async()=>{
+ const polls=[];let wake,move=0;
+ const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:fn=>{wake=fn;return 1;},clearTimeout(){}},peers:{summary:()=>({game:'uno',move})},remote:async(action,data)=>{if(action==='poll-host'){polls.push(data);return {contract:1,signals:[],peers:[]};}return {};}});
+ await driver.host('room','local');await new Promise(setImmediate);wake();await new Promise(setImmediate);move=1;wake();await new Promise(setImmediate);driver.stop();await driver.running;
+ assert.equal(polls.length,3);assert.equal(polls[0].summary.move,0);assert.equal(Object.hasOwn(polls[1],'summary'),false,'idle heartbeat does not resend roster metadata');assert.equal(polls[2].summary.move,1);
+});

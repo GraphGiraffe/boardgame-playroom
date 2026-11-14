@@ -261,3 +261,34 @@ test('hub refresh keeps its original icon and shades only the busy button backgr
  }if(process.env.PLAYROOM_REFRESH_CAPTURE_DIR)fs.writeFileSync(path.join(process.env.PLAYROOM_REFRESH_CAPTURE_DIR,engine+'.json'),JSON.stringify(rows,null,2));
  }finally{await browser.close();await server.close();}
 });
+test('friend substring search starts at three characters, ranks exact names and pages without stale results',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(path.resolve(__dirname,'..')),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:'reduce'}),errors=[],calls=[];
+ const user={id:'00000000-0000-4000-8000-000000000099',email:'fixture@example.test'},person=username=>({id:'peer-'+username,nickname:'Игрок '+username,username,email:'private@example.test'});let release,entered;
+ const started=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
+ try{
+  await context.addInitScript(user=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'search-local',name:'Тест'}));localStorage.setItem('playroom.cloud-auth.v1:https://geurlwivdiqboylciqhl.supabase.co',JSON.stringify({access_token:'fixture-only',refresh_token:'fixture-only',expires_at:Date.now()+3600000,user}));},user);
+  const fixture=require('./account-sync-fixture.cjs'),net=await fixture.installFetch(context,fixture(async route=>{
+   const url=route.request().url(),{p_action:action,p_data:data={}}=route.request().postDataJSON()||{};let result={profile:{id:user.id,nickname:'Тест',username:'owner'},friends:[],conversations:[],rooms:[],invitations:[],requests:[],messages:[],groups:[]};
+   if(url.includes('/auth/'))result=user;
+   else if(action==='search'){
+    assert.equal(data.format,'page-v2','new client explicitly opts into the paginated response');calls.push(data);const q=data.username.toLowerCase();
+    if(q==='slow'){entered();await gate;result={items:[person('slow')],next:null};}
+    else if(q==='legacy')result=[person('legacy')];
+    else if(q==='abc')result=data.after?{items:[person('zabc'),person('zzabc')],next:null}:{items:[person('zabc'),person('ABC'),person('aabc')],next:'zabc'};
+    else result={items:[person('x'+q)],next:null};
+   }else if(url.endsWith('/playroom_cloud_saves_rpc'))result={enabled:false,entries:[],used:0,limit:10485760};else if(action==='group-list')result={groups:[]};else if(['inbox','group-inbox'].includes(action))result={cursor:'0',items:[]};else if(action==='unread')result={chats:[],friends:[]};
+   await route.fulfill({json:result});
+  }));
+  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(server.url);await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomSocialUI.showAdd());
+  const active=page.locator('#modal-root>[data-surface-state=active]'),input=active.locator('[data-friend-search] input'),submit=active.locator('[data-friend-search] button[type=submit]'),people=active.locator('[data-friend-person]');
+  await input.fill('ab');assert(await submit.isDisabled());assert.equal(calls.length,0);
+  const search=async query=>{await input.fill(query);await submit.click();await page.waitForFunction(()=>!PlayroomSocialUI.service.busy&&!document.querySelector('.friend-search-results[aria-busy=true]'));};
+  await search('aBc');assert.deepEqual(await people.evaluateAll(es=>es.map(e=>e.dataset.friendPerson)),['peer-ABC','peer-aabc','peer-zabc']);
+  await active.locator('[data-friend-action=more]').click();await people.filter({hasText:'zzabc'}).waitFor();assert.equal(await people.count(),4);assert.equal(await people.first().getAttribute('data-friend-person'),'peer-ABC');assert.equal(calls.at(-1).after,'zabc');assert.equal(await active.locator('[data-friend-action=more]').count(),0);assert(!await active.innerText().then(text=>text.includes('private@example.test')));
+  const projected=await page.evaluate(()=>PlayroomSocialUI.service.perform('search',{username:'abc'}));assert.deepEqual(Object.keys(projected.items[0]).sort(),['id','nickname','username']);
+  for(const query of ['_ab','123']){await search(query);assert.equal(calls.at(-1).username,query);assert.equal(await people.count(),1);}
+  await input.fill('slow');await submit.click();await started;await input.fill('new');release();await page.waitForFunction(()=>!PlayroomSocialUI.service.busy);assert.equal(await people.count(),0,'retired response cannot populate the edited query');
+  await search('legacy');assert.equal(await people.count(),1);assert.match(await active.locator('[data-friend-message]').innerText(),/только поиск по точному имени/);
+  await search('abc');const fs=require('node:fs'),out=path.resolve(__dirname,'../../tmp_files/friend-search-1112');fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,'search-390.png')});await page.setViewportSize({width:844,height:390});assert(await active.locator('[data-friends-dialog]').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(out,'search-844.png')});assert.equal(net.nativeSupabaseRequests,0);assert.deepEqual(errors,[]);
+ }finally{release();await browser.close();await server.close();}
+});

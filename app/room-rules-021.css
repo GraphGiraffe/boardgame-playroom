@@ -53,14 +53,10 @@
 .game-rules-help .rule-art-sequence .rule-art-row{flex-wrap:nowrap;gap:6px}
 .game-rules-help .rule-art-or{flex:none;font-size:22px;line-height:1}
 
-/* Lobby direct actions and compact, host-owned parameter cards. */
-.room-v021-summary>.room-v021-cover-choice{position:relative;display:grid;place-items:center;flex:none;width:68px;height:68px;padding:8px;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised,var(--paper));color:var(--green);box-shadow:none}
-.room-v021-summary .room-v021-cover-choice .room-v021-art{width:48px;height:48px;margin:0}
-.room-v021-cover-edit{position:absolute;right:-3px;bottom:-3px;display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--line);border-radius:50%;background:var(--paper)}
-.room-v021-cover-edit>svg{width:15px;height:15px}
-.room-v021-summary>.room-v021-game-context{min-height:68px;padding:6px 0}
+/* Compact, host-owned parameter cards. */
+
 .room-v021-summary>.room-v021-cover-choice:disabled{opacity:.55;cursor:default}
-:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]{width:min(760px,100%);max-height:calc(100dvh - 28px);margin-inline:auto;border-radius:22px 22px 0 0}
+:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]{width:min(760px,100%);max-height:calc(var(--ui-viewport-height,100dvh) - 28px);margin-inline:auto;border-radius:22px 22px 0 0}
 :is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]>.modal-body{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center;padding:0 0 12px;background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>strong{grid-column:1;grid-row:1}
@@ -71,11 +67,11 @@
    last card; rem-based minima reflow to one column when text needs the width. */
 .room-rules-modal[data-ui-surface=panel] .rules-v021-parameters{display:flex;flex-direction:column;gap:1rem}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-group:not([hidden]){display:block}
-.room-rules-modal[data-ui-surface=panel] .rules-v021-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,max(10rem,calc(50% - 6px))),1fr));gap:12px;align-items:stretch}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,max(8rem,calc(50% - 6px))),1fr));gap:12px;align-items:start}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-preset:not(:has(>input[type=hidden])){display:contents}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-group>h3{display:block;margin:0 0 .5rem;font-size:.8125rem;line-height:1.4;color:var(--muted)}
 .room-rules-modal[data-ui-surface=panel] .rules-v021-fields>.rules-v021-field:only-child,.room-rules-modal[data-ui-surface=panel] .rules-v021-field{grid-column:auto}
-.rule-choice-field{min-inline-size:0;min-width:0;margin:0;padding:.625rem;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised,var(--paper));container-type:inline-size;container-name:rule-card}
+.rule-choice-field{min-inline-size:0;min-width:0;margin:0;padding:.5rem;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised,var(--paper));container-type:inline-size;container-name:rule-card}
 .rule-choice-heading{min-width:0;margin:0 0 .25rem;font-size:.75rem;line-height:1.4;font-weight:600}
 /* Keep the native group name without the special rendered-legend paint box. */
 .rule-choice-field>.rule-choice-legend{position:absolute;width:1px;height:1px;min-height:0;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
@@ -85,7 +81,7 @@
 .rule-choice-preview:disabled{opacity:1;cursor:default}
 .rule-choice-preview:focus-visible{outline:3px solid var(--ui-focus);outline-offset:3px}
 .rule-choice-preview [inert]{pointer-events:none}
-.rule-choice-preview-art{display:flex;align-items:center;justify-content:center;max-width:100%;min-height:0;color:var(--green)}
+.rule-choice-preview-art{display:flex;align-items:center;justify-content:center;width:100%;max-width:100%;height:6rem;min-height:6rem;color:var(--green)}
 .rule-choice-preview-art:empty{display:none}
 .rule-choice-preview>output{display:block;max-width:100%;font-size:1.375rem;line-height:1.2;font-weight:750;overflow-wrap:normal}
 .rule-choice-preview.is-long-label>output{font-size:1rem;line-height:1.3}
@@ -93,8 +89,7 @@
 /* Text labels never wrap or shrink. Flex moves a whole choice to another row;
    four numerical choices have a deliberately stable 2-by-2 arrangement. */
 .rule-choice-options{display:flex;flex-wrap:wrap;gap:4px 8px}
-.rule-choice-options>.rule-choice{flex:1 1 calc(50% - 4px);min-width:max-content;max-width:100%}
-.rule-choice-options[data-rule-option-count="3"]>.rule-choice:last-child{flex-basis:100%}
+.rule-choice-options>.rule-choice{flex:1 0 auto;min-width:44px;max-width:100%}
 .rule-choice-options[data-rule-grid="two"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 .rule-choice-options[data-rule-grid="two"]>.rule-choice{min-width:0}
 .rule-choice{position:relative;display:flex;align-items:center;min-height:44px;margin:0;cursor:pointer}
@@ -106,46 +101,35 @@
 .rule-choice-stepper{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .rule-choice-stepper>button{display:grid;place-items:center;min-width:0;min-height:2.75rem;margin:0;padding:.375rem;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--green);box-shadow:none;font:600 1.5rem/1 system-ui}
 .rule-choice-stepper>button:disabled{opacity:.35}
-.rule-preview-cards{position:relative;display:block;width:calc(1.75rem + (var(--preview-cards) - 1)*.75rem);height:2.625rem;max-width:100%}
-.rule-preview-cards>span:not(.rule-preview-deck-count){position:absolute;top:0;left:calc(var(--preview-index)*.75rem);display:block;width:1.75rem;height:2.5rem}
+.rule-preview-cards{--preview-step:min(.875rem,calc((100cqw - 1rem - 2.25rem)/max(1,var(--preview-cards) - 1)));position:relative;display:block;width:calc(2.25rem + (var(--preview-cards) - 1)*var(--preview-step));height:3.275rem;max-width:100%}
+.rule-preview-cards>span:not(.rule-preview-deck-count){position:absolute;top:0;left:calc(var(--preview-index)*var(--preview-step));display:block;width:2.25rem;height:3.15rem}
 .rule-preview-cards .piece-back,.rule-preview-cards .piece-back>svg{display:block;width:100%;height:100%}
 .rule-preview-deck-count{position:absolute;right:-12px;bottom:-3px;z-index:2;display:block}
 .rule-preview-deck-count .count-badge{font-size:.75rem}
-.rule-preview-dice{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;max-width:7.8125rem}
-.rule-preview-dice>svg{width:2rem;height:2rem}
+.rule-preview-dice{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;max-width:100%}
+.rule-preview-dice>svg{width:2.5rem;height:2.5rem}
 .rule-preview-tokens{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px;max-width:8.25rem}
 .rule-preview-tokens>.counter-token,.rule-preview-team>.counter-token{width:1.25rem;height:1.5rem;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1;stroke-linejoin:round}
 .rule-preview-fleet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));justify-items:center;align-items:center;gap:.25rem .5rem;max-width:15rem}
 .rule-preview-fleet>span{display:flex;justify-content:center;align-items:center}
-.rule-preview-fleet svg{display:block;width:auto;height:1rem;max-width:100%}
+.rule-preview-fleet svg{display:block;width:auto;height:1.375rem;max-width:100%}
 .rule-preview-teams{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;max-width:16.25rem}
 .rule-preview-team{display:flex;gap:3px;align-items:center;justify-content:center;padding:8px;border:1px solid currentColor;border-radius:12px}
-.rule-preview-symbol{display:block;width:2.25rem;height:2.25rem}
+.rule-preview-symbol{display:block;width:2.75rem;height:2.75rem}
 .rule-preview-symbol>svg{display:block;width:100%;height:100%}
 .rule-preview-declaration{position:relative;display:flex;align-items:center;gap:.25rem;padding-right:1.125rem}
 .rule-preview-declaration>.ui-button{display:inline-flex;min-height:2.25rem;padding:.25rem .5rem;margin:0;opacity:1;font-size:1rem;box-shadow:none;pointer-events:none}
 .rule-preview-actor{position:absolute;right:0;bottom:-.125rem;display:block;width:1.375rem;height:1.375rem;padding:2px;border:1px solid var(--line);border-radius:50%;background:var(--paper)}
 .rule-preview-actor>svg{display:block;width:100%;height:100%}
 /* This is the only optional wide card, explicitly declared by pack metadata. */
-.room-rules-modal[data-ui-surface=panel] .rule-choice-field.is-mode-choice{grid-column:1/-1;padding:.875rem}
+.room-rules-modal[data-ui-surface=panel] .rule-choice-field.is-mode-choice{grid-column:1/-1;padding:.625rem}
 .is-mode-choice>.rule-choice-heading{font-size:.875rem}
-.is-mode-choice .rule-choice-preview{gap:.5rem;margin-bottom:.75rem}
+.is-mode-choice .rule-choice-preview{gap:.375rem;margin-bottom:.5rem}
 .is-mode-choice .rule-choice-preview>output{font-size:1.5rem}
 .is-mode-choice .rule-choice-preview>small{max-width:48ch;font-size:.75rem;line-height:1.4}
 .is-mode-choice .rule-choice-body{font-size:.875rem}
 .is-mode-choice .rule-preview-team>.counter-token{width:1.625rem;height:1.875rem}
 .rule-choice-readonly{font-size:.8125rem;line-height:1.4;color:var(--muted)}
-/* Large enough cards can lay out their miniature and choices side by side.
-   A large text setting naturally falls back to vertical composition. */
-@media(orientation:landscape){@container rule-card (min-width:20rem){
- .rule-choice-field>.rule-choice-preview{float:left;width:40%;margin:0}
- .rule-choice-options,.rule-choice-stepper{float:right;width:56%;margin:0}
- .is-mode-choice .rule-choice-preview{gap:.25rem}
- .is-mode-choice .rule-choice-preview>output{font-size:1.25rem}
- .is-mode-choice .rule-preview-fleet{grid-template-columns:repeat(4,minmax(0,1fr));gap:.2rem .35rem}
- .is-mode-choice .rule-preview-fleet svg{height:.875rem}
- .is-mode-choice .rule-preview-team>.counter-token{width:1.25rem;height:1.5rem}
-}}
 /* One reset control changes visual position, never duplicate DOM or a second
    scroll area. The summary is redundant on short landscape panels. */
 @media(orientation:landscape) and (min-width:700px){
@@ -155,7 +139,7 @@
  .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>.rules-v021-reset{position:absolute;top:44px;right:116px;z-index:2}
  .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>.rule-choice-readonly{display:block;font-size:.75rem}
 }
-@media(max-width:600px) and (orientation:landscape){.room-v021-summary{flex-direction:row;flex-wrap:wrap}.room-v021-summary>.room-v021-game-context{flex:1 1 140px}.room-v021-summary>.lobby-text-action{margin-left:auto}}
+@media(max-width:600px) and (orientation:landscape){.room-v021-summary{flex-direction:row;flex-wrap:wrap}}
 
 /* A declared diagram grid keeps comparisons together; larger text can reflow. */
 .game-rules-help .rulebook-figures.is-grid:has(>.is-diagram:nth-child(2)){
@@ -177,8 +161,9 @@
 .rule-choice-field.is-unavailable :is(.rule-choice-preview,.rule-choice-options,.rule-choice-stepper){opacity:.5}
 .rule-choice>input:disabled{opacity:0}
 .game-rules-help .rulebook-figures.is-grid:has(>.is-diagram:nth-child(2))>.is-diagram{max-width:min(100%,calc(var(--rulebook-art-width,300px) + 14px));justify-self:center}
-.is-mode-choice .rule-choice-preview-art{width:100%}
-.is-mode-choice .rule-preview-fleet{width:100%;max-width:28rem;grid-template-columns:repeat(5,minmax(0,1fr));gap:.2rem .35rem}
+.is-mode-choice .rule-choice-preview-art{width:100%;height:10rem;min-height:10rem}
+.is-mode-choice .rule-choice-preview-art:has(.rule-preview-fleet,.rule-preview-teams){height:auto;min-height:6rem}
+.is-mode-choice .rule-preview-fleet{display:flex;flex-wrap:wrap;justify-content:center;width:100%;max-width:28rem;gap:.375rem .75rem}
 .is-mode-choice .rule-preview-teams{width:100%;justify-content:space-evenly;max-width:28rem}
 .game-rules-help .rulebook-figures.is-list{max-inline-size:30rem;margin-inline:auto}
 
@@ -191,12 +176,12 @@
 .rule-choice-field:not(:has(.rule-choice-preview.has-value-art))>.rule-choice-stepper{grid-template-columns:minmax(44px,1fr) minmax(2ch,auto) minmax(44px,1fr);gap:6px}
 .rule-choice-field:not(:has(.rule-choice-preview.has-value-art))>.rule-choice-stepper>[data-rule-step-value]{display:flex}
 /* Anchor Help to an ordinary header inside the painted card on every engine. */
-.rule-choice-field .setting-title{position:relative;min-height:44px;padding-right:44px}
+.rule-choice-field .setting-title{position:relative;min-height:2rem;padding-right:44px}
 .rule-choice-field .setting-title>.rule-help>button{right:0;top:0;z-index:1}
 
-/* Captions stay directly above controls; artwork owns the flexible space. */
+/* Art starts below its heading; the reserved caption stays above controls. */
 .rule-choice-field .rule-choice-preview{flex:1 0 auto}
-.rule-choice-preview-art{flex:1 0 auto}
+.rule-choice-preview-art{flex:none}
 .rule-choice-preview>[data-rule-preview-detail]{flex:none;align-self:stretch;display:flex;align-items:flex-end;justify-content:center;min-block-size:2.8em;margin-top:auto}
 /* Match option paint while retaining the same44px native button target. */
 .rule-choice-stepper>button{position:relative;isolation:isolate;min-height:44px;padding:0;border:0;background:transparent;font-size:1.25rem}
@@ -207,7 +192,13 @@
 
 .rule-preview-illustrations{display:flex;align-items:center;justify-content:center;gap:.375rem;max-width:100%}
 .rule-preview-illustrations>span{display:flex;align-items:center;justify-content:center;min-width:0}
-.rule-preview-illustrations .piece{width:2.75rem;height:2.75rem;flex:none}
-.rule-preview-illustrations>span>svg{width:1.75rem;height:1.75rem}
+.rule-preview-illustrations .piece{width:3.25rem;height:3.25rem;flex:none}
+.rule-preview-illustrations>span>svg{width:3rem;height:3rem}
 
-.rule-preview-illustrations>span>svg[data-piece-type="card-deck"]{width:2.75rem;height:auto;max-block-size:4rem}
+.rule-preview-illustrations>span>svg[data-piece-type="card-deck"]{width:3.25rem;height:auto;max-block-size:4.75rem}
+
+/* The slot is stable; authored units never grow to fill its available space. */
+.rule-preview-illustrations:has(svg[data-art-role="parameter-diagram"]),.rule-preview-illustrations>span:has(>svg[data-art-role="parameter-diagram"]){width:100%}
+.rule-choice-preview-art svg[data-art-role="parameter-diagram"]{display:block;width:var(--rule-art-inline,120px);height:auto;max-inline-size:100%;max-block-size:6rem;flex:none;pointer-events:none}
+.is-mode-choice .rule-choice-preview-art svg[data-art-role="parameter-diagram"]{max-block-size:10rem}
+.is-mode-choice .rule-preview-fleet>span{flex:none;max-width:100%}

@@ -25,6 +25,6 @@
   }
   flushLocalDraft(){return this.drafts.flush(this.confirmedFrame);}
   get localDraft(){return this.drafts?.record?.actions||[];}
-  close(){this.drafts?.close();return super.close();}
+  close(options){this.drafts?.close();return super.close(options);}
  };
 });

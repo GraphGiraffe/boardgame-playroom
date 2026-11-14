@@ -20,7 +20,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(snapshot.playerControlRevision!==undefined&&(!Number.isSafeInteger(snapshot.playerControlRevision)||snapshot.playerControlRevision<0||!Array.isArray(snapshot.playerControls)||snapshot.playerControls.length!==snapshot.state?.players?.length||snapshot.playerControls.some(v=>!v||typeof v.away!=='boolean'||typeof v.bot!=='boolean')))return false;
       const initial=!this.snapshot;
       if(!initial&&snapshot.revision===this.snapshot.revision&&(snapshot.playerControlRevision||0)<=(this.snapshot.playerControlRevision||0)&&(snapshot.controlRevision||0)<=(this.snapshot.controlRevision||0)&&(snapshot.reactionRevision||0)<=(this.snapshot.reactionRevision||0)&&(snapshot.rosterRevision||0)<=(this.snapshot.rosterRevision||0))return false;
-      this.epoch=snapshot.authorityEpoch;this.confirmedFrame=P.immutable(snapshot);this._rememberHistory(this.confirmedFrame);this.snapshot=this.presentSnapshot(this.confirmedFrame);
+      this.epoch=snapshot.authorityEpoch;this.confirmedFrame=P.immutable(snapshot);this._rememberHistory(this.confirmedFrame,this.confirmedFrame);this.snapshot=this.presentSnapshot(this.confirmedFrame);
       if(!initial&&!this.recovering){
         for(const cue of snapshot.cues||[])if(cue.eventId>this.lastEvent)this.onEffect({type:'sound',...cue});
         for(const effect of snapshot.effects||[])if(effect.revision>this.lastEffectRevision)this.onEffect({type:'transfer',...effect});
@@ -90,15 +90,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         ['sessionId','authorityEpoch','game','packVersion'].some(key=>frame[key]!==scope?.[key])||!P.sameAudience(frame,scope))return null;
       return frame;
     }
-    _rememberHistory(frame){
-      const valid=this._historyFrame(frame,frame.revision);if(!valid)return null;
-      const history=P.freeze({...P.immutable(valid),protocolVersion:3,kind:'history',...(this.snapshot.role?{role:this.snapshot.role}:{}),actions:[],independentActions:[],cues:valid.cues||[],effects:valid.effects||[],reactionWindow:null,reactionWindows:[]});
+    _rememberHistory(frame,scope=this.snapshot){
+      const valid=this._historyFrame(frame,frame.revision,scope);if(!valid)return null;
+      const history=P.freeze({...P.immutable(valid),protocolVersion:3,kind:'history',...(scope.role?{role:scope.role}:{}),actions:[],independentActions:[],cues:valid.cues||[],effects:valid.effects||[],reactionWindow:null,reactionWindows:[]});
       this.historyBytes-=this.historySizes.get(frame.revision)||0;
       const size=new TextEncoder().encode(JSON.stringify(history)).byteLength;
       this.historySizes.set(frame.revision,size);this.historyBytes+=size;
       this.historyFrames.delete(frame.revision);this.historyFrames.set(frame.revision,history);
       while(this.historyFrames.size>1&&(this.historyFrames.size>128||this.historyBytes>this.historyBudget)){
-        const key=[...this.historyFrames.keys()].find(key=>key!==this.snapshot.revision);
+        const key=[...this.historyFrames.keys()].find(key=>key!==scope.revision);
         if(key===undefined)break;this.historyFrames.delete(key);this.historyBytes-=this.historySizes.get(key)||0;this.historySizes.delete(key);
       }
       return history;

@@ -49,7 +49,7 @@ test('Table public commands survive IndexedDB reload with player receipts and pu
    const receipt=await table.dispatch(command);sessionStorage.setItem('table-test-command',JSON.stringify(command));
    const out={ok:receipt.ok,revision:authority.revision,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role,explicitCommits};authority.dispose();IDBTransaction.prototype.commit=commit;return out;
   });
-  assert.deepEqual(before,{ok:true,revision:1,viewer:-1,role:'table',explicitCommits:1});await page.reload();
+  assert.deepEqual(before,{ok:true,revision:1,viewer:-1,role:'table',explicitCommits:1});await page.reload();await require('./browser-origin.cjs').ready(page);
   const after=await page.evaluate(async()=>{
    const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'}),saved=await store.load('table-browser',TabletopCore,TabletopSession);
    const authority=new SessionAuthority(saved.session,{sessionId:saved.sessionId,authorityEpoch:'after-reload',restoredReceipts:saved.receipts,persistence:{commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)}});

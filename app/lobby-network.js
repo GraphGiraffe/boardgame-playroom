@@ -7,10 +7,15 @@
  const C=()=>root.PlayroomCommunityUI.service;
  const context=()=>root.PlayroomNetworkLibrary.inviteContext();
  const button=(action,label,attrs='')=>H().button({attrs:`type="button" data-lobby-online="${action}" ${attrs}`,label:t(label),variant:'secondary'});
+ function markInvitationShared(){
+  const ctx=context(),local=B().room?.();
+  if(local&&local.id===ctx.room?.id&&local.ownerId===ctx.participantId)B().roomService.markInvitationShared(local.id,ctx.participantId);
+ }
  function row({room,isHost,locked=false}){
   if(!isHost&&!(room.transportMode!=='hotseat'&&room.allowPlayerInvites))return '';
   if(room.transportMode==='hotseat')return '';
-  return H().button({attrs:`id="network-pair-button" ${room.transportMode==='online'?'data-lobby-invite':''}`,label:'Пригласить',icon:'addPlayer',variant:'secondary',disabled:locked});
+  const reconnect=isHost&&room.transportMode==='network'&&room.phase==='playing'&&!room.recovery;
+  return H().button({attrs:`id="network-pair-button" ${room.transportMode==='online'?'data-lobby-invite':''}`,label:'Пригласить',icon:'addPlayer',variant:'secondary',disabled:locked&&!reconnect});
  }
  function inviteLink(){const base=root.PlayroomNetworkConfig?.appUrl||(['http:','https:'].includes(root.location.protocol)?root.location.origin+root.location.pathname:'https://graphgiraffe.github.io/playroom-hod-test/');const url=new URL(base);url.hash=new URLSearchParams({'playroom-room':onlineSettings.roomCode||active.id,...(onlineSettings.passwordEnabled===false?{}:{password:onlineSettings.password})}).toString();return url.href;}
  const tabs=['friends','groups','link'],tabLabels=['Друзья','Группы','Ссылка'];
@@ -44,7 +49,7 @@
   const selected=[...view.selected],assert=()=>{if(!currentView(view))throw Object.assign(Error('account-changed'),{code:'account-changed'});};
   await ensure();assert();let sent=0;
   for(const [key,target]of selected){
-   assert();try{await C().call(target.kind==='group'?'group-invite-room':'invite',target.kind==='group'?{groupId:target.id,roomId:active.id,id:target.nonce}:{roomId:active.id,userId:target.id});assert();view.selected.delete(key);if(target.kind==='group')view.sentGroups.add(target.id);sent++;render();}
+   assert();try{markInvitationShared();await C().call(target.kind==='group'?'group-invite-room':'invite',target.kind==='group'?{groupId:target.id,roomId:active.id,id:target.nonce}:{roomId:active.id,userId:target.id});assert();view.selected.delete(key);if(target.kind==='group')view.sentGroups.add(target.id);sent++;render();}
    catch(failure){view.retry=true;throw Object.assign(Error(`Не удалось отправить приглашение «${target.name}». ${root.PlayroomSocialUI.message(failure)}${sent?' Уже отправлено: '+sent+'.':''}`),{code:'invite-send'});}
   }
   assert();const settings=await C().call('settings',{roomId:active.id});assert();adoptSettings(settings);view.sent=true;view.retry=false;notice='Приглашения отправлены: '+sent+'.';loadedAt=Date.now();
@@ -55,6 +60,7 @@
  function adoptSettings(value){
   if(!/^\d{4}$/.test(value?.roomCode||''))throw Object.assign(Error('setup'),{code:'setup'});
   onlineSettings=value;
+  if(value.invites?.length||inviteView?.tab==='link'&&currentView(inviteView))markInvitationShared();
   const ctx=context();if(ctx.room?.ownerId===ctx.participantId&&ctx.room?.transportMode==='online'){
    B().setOnlineRoomCode(value.roomCode);B().setRoomInvitationPermission(!!value.allowPlayerInvites);
   }
@@ -110,15 +116,37 @@
   view.frame=B().openModal(`${H().modalHead('Вход в комнату')}<div class="incoming-v021" data-incoming-content></div>`,'lobby-incoming-modal',{valid:()=>incomingView===view,onDispose:()=>{if(incomingView===view){incomingView=null;incomingTicket++;view.findTicket++;clearTimeout(incomingTimer);}}});
   renderIncoming();void refreshIncoming();if(lookup&&incomingAccount())void findIncoming(view,lookup);
  }
+ function availableRemoteRooms(exclude=[]){
+  if(!incomingAccount())return [];
+  const current=root.PlayroomCloudNetwork.roomId();
+  return (S().snapshot().rooms||[]).filter(r=>r.id!==current&&!exclude.includes(r.id)&&!r.closed&&r.available===true&&r.hostUntil&&Date.parse(r.hostUntil)>Date.now());
+ }
+ function roomRow(r,{remote=false}={}){const esc=H().esc;return `<li data-entity="room:${esc(r.id)}"><button type="button" class="menu-row" data-online-preview-room="${esc(r.id)}"><span><strong>${esc(r.name||'Комната')}</strong><small>${esc([r.gameName,r.roomCode?'#'+r.roomCode:r.ownerName].filter(Boolean).join(' · '))}</small>${remote?'<small class="muted" data-remote-room-badge>Другое устройство</small><small data-remote-room-action>Присоединиться</small>':''}</span><span aria-hidden="true">›</span></button></li>`;}
+ function remoteRoomCard(room,{home=false}={}){
+  const esc=H().esc,s=room.summary||{},people=(s.players||[]).filter(p=>p.role==='player').sort((a,b)=>a.playerIndex-b.playerIndex),catalog=root.PlayroomCatalog?.[s.game];
+  const state={game:s.game,status:s.phase==='finished'?'finished':'playing',players:people.map(p=>({...p,name:p.nickname})),turn:s.turn,firstPlayer:s.firstPlayer,preset:s.preset,
+    move:s.move,timeline:{turn:s.turnNumber},scene:{round:s.round,players:[]}},teamLayouts=catalog?.teamLayouts||{};
+  const action=`data-online-join-room="${esc(room.id)}"`,attrs=`data-entity="remote-online:${esc(room.id)}" data-remote-online-room="${esc(room.id)}"`;
+  const label='Другое устройство',name=room.gameName||catalog?.name||s.game||'Игра';
+  if(home)return H().resumeCard({attrs,state,roomName:room.name,gameName:name,network:true,transportMode:'online',connected:true,participants:s.players||[],teamLayouts,action,actionLabel:'Присоединиться',details:`<small class="muted" data-remote-room-badge>${label}</small>`});
+  const progress=[H().roundText(s.round),s.turnNumber?root.PlayroomMessages.text('progress.turn',{number:s.turnNumber}):'',Number.isFinite(s.move)?root.PlayroomMessages.text('ui.app.action-count',{count:s.move}):''].filter(Boolean).join(' · ');
+  const details=[s.packVersion,room.updatedAt?new Date(room.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''].filter(Boolean).map(esc).join(' · ');
+  return H().sessionCard({className:'saved-game',attrs,gameName:name,mode:'online',badgeTitle:'Онлайн',summary:'Онлайн · '+label,roomName:room.name,
+    participants:H().participantsMarkup(state,{network:true,participants:s.players||[],teamLayouts}),progress,details:details?`<p class="saved-version">${details}</p>`:'',actions:H().iconButton(action,'Присоединиться','play',{className:'saved-continue'})});
+ }
+ function remoteRooms(exclude=[]){return availableRemoteRooms(exclude);}
+ function remoteRoomsMarkup(exclude=[],options={}){return availableRemoteRooms(exclude).map(r=>remoteRoomCard(r,options)).join('');}
+
  function renderIncoming(){
   const view=incomingView,el=incomingRoot(view);if(!el)return;const esc=H().esc,account=incomingAccount();
   const room=view.preview,password=label=>root.PlayroomRoomPassword.markup(label);
-  const rooms=new Map();if(account)for(const r of [...(S().snapshot().rooms||[]),...incomingRooms])if(r.ownerId!==account&&!r.closed&&r.available!==false&&(!r.hostUntil||Date.parse(r.hostUntil)>Date.now()))rooms.set(r.id,r);
+  const rooms=new Map();if(account)for(const r of [...(S().snapshot().rooms||[]),...incomingRooms])if(r.id!==root.PlayroomCloudNetwork.roomId()&&!r.closed&&r.available!==false&&(!r.hostUntil||Date.parse(r.hostUntil)>Date.now()))rooms.set(r.id,r);
   const open=el.querySelector('[data-incoming-discover]')?.open||false,lookupOpen=el.querySelector('[data-incoming-password-options]')?.open||!!view.lookupPassword;
-  const card=room?`<section class="incoming-v021-preview" data-entity="preview:${esc(room.id)}" aria-label="Найденная комната"><strong>${esc(room.gameName||'Игра')} · ${esc(room.name||'Комната')}</strong><p>${room.ownerName?'Хост: '+esc(room.ownerName)+' · ':''}#${esc(room.roomCode)}</p><form data-online-preview-join><p class="muted">${room.hasPassword?'Для входа нужен пароль комнаты.':'Комната найдена. Подключение начнётся после нажатия «Войти в комнату».'}</p>${room.hasPassword?`<label class="field"><span>Пароль комнаты</span>${password('Пароль комнаты')}</label>`:''}${H().button({type:'submit',attrs:'data-online-preview-enter',label:'Войти в комнату',icon:'play'})}</form></section>`:'';
+  const card=room?`<section class="incoming-v021-preview" data-entity="preview:${esc(room.id)}" aria-label="Найденная комната"><strong>${esc(room.gameName||'Игра')} · ${esc(room.name||'Комната')}</strong><p>${room.ownerName?'Хост: '+esc(room.ownerName)+' · ':''}#${esc(room.roomCode)}</p><form data-online-preview-join><p class="muted">${room.hasPassword?'Для входа нужен пароль комнаты.':'Комната найдена. Подключение начнётся после нажатия «Войти в комнату».'}</p>${room.hasPassword?`<label class="field"><span>Пароль комнаты</span>${password('Пароль комнаты')}</label>`:''}${H().button({type:'submit',attrs:'data-online-preview-enter',label:'Присоединиться',icon:'play'})}</form></section>`:'';
   const guest=account?'':`<section class="incoming-v021-account"><p>Для онлайн-игры нужен аккаунт. Войдите, чтобы найти комнату или открыть приглашение.</p><button type="button" class="menu-row" data-online-entry-account><span>Войти или создать аккаунт</span><span aria-hidden="true">›</span></button></section>`;
-  const list=[...rooms.values()].map(r=>`<li data-entity="room:${esc(r.id)}"><button type="button" class="menu-row" data-online-preview-room="${esc(r.id)}"><span><strong>${esc(r.name||'Комната')}</strong><small>${esc([r.gameName,r.roomCode?'#'+r.roomCode:r.ownerName].filter(Boolean).join(' · '))}</small></span><span aria-hidden="true">›</span></button></li>`).join('');
-  const markup=`${guest}<form data-lobby-join-code data-inline-actions><label class="field"><span>Номер комнаты или ссылка</span><input name="token" type="text" inputmode="text" required maxlength="2048" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="4821" value="${esc(view.query)}" ${!account?'disabled':''}></label>${account?`<details data-incoming-password-options ${lookupOpen?'open':''}><summary>Есть пароль приглашения?</summary><label class="field"><span>Пароль, если комната скрыта</span>${password('Пароль приглашения').replace('name="password"','name="lookupPassword"').replace(' required','')}</label></details>`:''}${H().button({type:'submit',attrs:'data-online-find',label:view.finding?'Ищем комнату…':'Найти комнату',icon:'search',disabled:!account||view.finding})}</form><p data-incoming-message role="${view.error?'alert':'status'}" aria-live="polite">${esc(view.error)}</p>${card}${account?`<details data-incoming-discover ${open?'open':''}><summary>Открытые комнаты</summary>${view.roomsError?`<p role="alert">${esc(view.roomsError)}</p><button type="button" class="menu-row" data-online-discover-retry><span>Повторить загрузку</span><span aria-hidden="true">›</span></button>`:view.roomsLoading?'<p role="status">Загружаем комнаты…</p>':`<ul class="incoming-v021-rooms">${list||'<li class="muted">Сейчас нет открытых комнат. Используйте номер или ссылку приглашения.</li>'}</ul>`}</details>`:''}<button type="button" class="menu-row incoming-v021-nearby" data-lobby-online="manual"><span><strong>Рядом · без интернета</strong><small>QR-код, звук или код подключения</small></span><span aria-hidden="true">›</span></button>`;
+  const memberRooms=new Set(availableRemoteRooms().map(r=>r.id));
+  const list=[...rooms.values()].map(r=>roomRow(r,{remote:memberRooms.has(r.id)})).join('');
+  const markup=`${guest}<form data-lobby-join-code data-inline-actions><label class="field"><span>Номер комнаты или ссылка</span><input name="token" type="text" inputmode="text" required maxlength="2048" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="1234" value="${esc(view.query)}" ${!account?'disabled':''}></label>${account?`<details data-incoming-password-options ${lookupOpen?'open':''}><summary>Есть пароль приглашения?</summary><label class="field"><span>Пароль, если комната скрыта</span>${password('Пароль приглашения').replace('name="password"','name="lookupPassword"').replace(' required','')}</label></details>`:''}${H().button({type:'submit',attrs:'data-online-find',label:view.finding?'Ищем комнату…':'Найти комнату',icon:'search',disabled:!account||view.finding})}</form><p data-incoming-message role="${view.error?'alert':'status'}" aria-live="polite">${esc(view.error)}</p>${card}${account?`<details data-incoming-discover ${open?'open':''}><summary>Открытые комнаты</summary>${view.roomsError?`<p role="alert">${esc(view.roomsError)}</p><button type="button" class="menu-row" data-online-discover-retry><span>Повторить загрузку</span><span aria-hidden="true">›</span></button>`:view.roomsLoading?'<p role="status">Загружаем комнаты…</p>':`<ul class="incoming-v021-rooms">${list||'<li class="muted">Сейчас нет открытых комнат. Используйте номер или ссылку приглашения.</li>'}</ul>`}</details>`:''}<button type="button" class="menu-row incoming-v021-nearby" data-lobby-online="manual"><span><strong>Рядом · без интернета</strong><small>QR-код, звук или код подключения</small></span><span aria-hidden="true">›</span></button>`;
   root.PlayroomDOM.ListController.update(el,markup);
   const lookup=el.querySelector('[name=lookupPassword]'),join=el.querySelector('[data-online-preview-join] [name=password]');
   if(lookup){if(lookup.value!==view.lookupPassword)lookup.value=view.lookupPassword;root.PlayroomRoomPassword.sync(lookup);}if(join){if(join.value!==view.joinPassword)join.value=view.joinPassword;root.PlayroomRoomPassword.sync(join);}
@@ -162,10 +190,11 @@
   const entry=incomingView,entryRoot=incomingRoot(entry),entryActive=entry?.frame?.state==='active'&&entryRoot?.contains(event.target);
   if(entryActive&&event.target.closest('[data-online-entry-account]')){entry.awaitingAccount=true;root.PlayroomAccountUI.show({onReady:()=>{if(incomingRoot(entry)){renderIncoming();entry.frame.element.querySelector('[name=token]')?.focus();}}});return;}
   if(entryActive&&event.target.closest('[data-online-discover-retry]')){void refreshIncoming();return;}
-  const preview=event.target.closest('[data-online-preview-room]');if(entryActive&&preview){void findIncoming(entry,{id:preview.dataset.onlinePreviewRoom});return;}
+  const remote=event.target.closest('[data-online-join-room]');if(remote){void connect({roomId:remote.dataset.onlineJoinRoom});return;}
+  const preview=event.target.closest('[data-online-preview-room]');if(preview){if(entryActive)void findIncoming(entry,{id:preview.dataset.onlinePreviewRoom});return;}
   if(event.target.closest('[data-room-online-access]')){showAccess();return;}
   const invite=viewRoot(inviteView,'[data-invite-content]'),withinInvite=invite?.contains(event.target)&&inviteView.frame.state==='active';
-  const tab=event.target.closest('[data-invite-tab]');if(tab&&withinInvite&&!busy){inviteView.tab=tab.dataset.inviteTab;render();return;}
+  const tab=event.target.closest('[data-invite-tab]');if(tab&&withinInvite&&!busy){inviteView.tab=tab.dataset.inviteTab;if(inviteView.tab==='link'&&onlineSettings)markInvitationShared();render();return;}
   const selection=event.target.closest('[data-invite-select]');if(selection&&withinInvite&&!busy&&!selection.disabled){const key=selection.dataset.inviteSelect,[kind,id]=key.split(':');if(inviteView.selected.has(key))inviteView.selected.delete(key);else{const item=kind==='group'?onlineGroups.find(g=>g.id===id):onlineFriends.find(f=>f.userId===id&&f.accepted);if(!item)return;inviteView.selected.set(key,{kind,id,name:item.name||item.nickname,nonce:crypto.randomUUID()});}inviteView.sent=false;error='';notice='';render();return;}
   if(event.target.closest('[data-lobby-retry-join]')){void joinRetry?.();return;}
   const friend=event.target.closest('[data-online-chat]');if(friend){const person=onlineFriends.find(f=>f.userId===friend.dataset.onlineChat);if(person)root.PlayroomChatUI.show(person,{onBack:B().captureModalReturn()});return;}
@@ -179,7 +208,7 @@
    if(!source||!currentView(source)||busy)return;actionView=source;
   }
   if(action==='send-selected'){const view=inviteView;if(busy||!view)return;view.sending=true;void execute(async()=>{try{await sendSelected(view);}finally{view.sending=false;}});return;}
-  if(action==='share-link'){if(!root.navigator.share||!onlineSettings)return;const link=inviteLink(),room=context().room,view=actionView;void execute(async()=>{try{await root.navigator.share({title:room.game.name+' · '+room.name,text:'Приглашение в '+room.game.name,url:link});if(currentView(view))notice='Приглашение передано в выбранное приложение.';}catch(failure){if(failure.name!=='AbortError')throw failure;}});return;}
+  if(action==='share-link'){markInvitationShared();if(!root.navigator.share||!onlineSettings)return;const link=inviteLink(),room=context().room,view=actionView;void execute(async()=>{try{await root.navigator.share({title:room.game.name+' · '+room.name,text:'Приглашение в '+room.game.name,url:link});if(currentView(view))notice='Приглашение передано в выбранное приложение.';}catch(failure){if(failure.name!=='AbortError')throw failure;}});return;}
 
   if(action==='retry'){loadedAt=0;void execute(()=>ensure());return;}
   if(action==='friends'){root.PlayroomSocialUI.show({onBack:document.querySelector('.lobby-invites-modal')?()=>showInvite():()=>incoming()});return;}
@@ -187,7 +216,7 @@
   if(action==='accept-invite'){void connect({inviteId:btn.dataset.id});return;}
   if(action==='connect'){void connect({roomId:btn.dataset.room});return;}
   if(['copy-link','copy-code','copy-password'].includes(action)){
-   if(!onlineSettings)return;const value=action==='copy-link'?inviteLink():action==='copy-code'?onlineSettings.roomCode:onlineSettings.password;
+   if(!onlineSettings)return;markInvitationShared();const value=action==='copy-link'?inviteLink():action==='copy-code'?onlineSettings.roomCode:onlineSettings.password;
    const view=actionView;void execute(async()=>{if(root.navigator.clipboard?.writeText){await root.navigator.clipboard.writeText(value);if(currentView(view))notice='Скопировано.';}else{const node=document.querySelector(action==='copy-link'?'[data-online-link]':action==='copy-code'?'[data-online-room-code]':'#online-room-password');if(node?.select){node.focus();node.select();}else if(node){const range=document.createRange();range.selectNodeContents(node);const selection=root.getSelection();selection.removeAllRanges();selection.addRange(range);}notice='Текст выделен. Скопируйте его средствами браузера.';}});return;
   }
   const view=actionView;if(!view)return;
@@ -231,18 +260,27 @@
   const value=input.type==='checkbox'?input.checked:input.value,action=input.matches('[data-online-permission]')?'permission':input.matches('[data-online-password-enabled]')?'password-enabled':'visibility';
   void execute(async()=>{await ensure();if(!currentView(view)||!onlineSettings.canManage)throw Object.assign(Error('forbidden'),{code:'forbidden'});const result=await C().call(action,{roomId:active.id,...(action==='permission'?{allowPlayerInvites:value}:action==='password-enabled'?{enabled:value}:{visibility:value})});if(!currentView(view))return;adoptSettings(result);loadedAt=Date.now();});
  });
- async function inviteUser(userId,{nickname}={}){if(!canInvite())return false;const owner=viewKey(),identity=A().snapshot().id,name=nickname||onlineFriends.find(f=>f.userId===userId)?.nickname||t('guest-name');if(!await H().confirmDialog(root.PlayroomMessages.text('ui.community.invite-confirm',{name})))return false;if(A().snapshot().id!==identity||viewKey()!==owner||!canInvite())throw Object.assign(Error('account-changed'),{code:'account-changed'});await ensure();if(viewKey()!==owner||!canInvite())return false;await C().call('invite',{roomId:active.id,userId});return true;}
- async function closeRoom(localId){
-  const account=A(),social=S(),community=C(),revision=accountRevision(),generation=roomGeneration,identity=viewKey(),key=account.snapshot().id+':'+localId,ctx=context(),cloudId=active?.key===key?active.id:ctx?.room?.id===localId&&ctx.room.ownerId===ctx.participantId?ctx.cloudRoomId:null;
-  if(!cloudId)return;
+ async function inviteUser(userId,{nickname}={}){if(!canInvite())return false;const owner=viewKey(),identity=A().snapshot().id,name=nickname||onlineFriends.find(f=>f.userId===userId)?.nickname||t('guest-name');if(!await H().confirmDialog(root.PlayroomMessages.text('ui.community.invite-confirm',{name})))return false;if(A().snapshot().id!==identity||viewKey()!==owner||!canInvite())throw Object.assign(Error('account-changed'),{code:'account-changed'});await ensure();if(viewKey()!==owner||!canInvite())return false;markInvitationShared();await C().call('invite',{roomId:active.id,userId});return true;}
+ async function closeRoom(localId,{shouldClose=()=>true}={}){
+  const account=A(),social=S(),community=C(),revision=accountRevision(),generation=roomGeneration,identity=viewKey(),key=account.snapshot().id+':'+localId;
+  const initial=context(),knownCloudId=active?.key===key?active.id:initial?.room?.id===localId&&initial.room.ownerId===initial.participantId?initial.cloudRoomId:null;
+  const flight=!knownCloudId&&pending?.identity===identity?pending.promise:null;
+  let preparationError=null;
+  // An in-flight create may have allocated its cloud row before its ACK arrives.
+  // Keep the local context alive until it settles, then retire that exact row.
+  if(flight){
+   try{await flight;}catch(error){preparationError=error;}
+   if(A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity)throw Object.assign(Error('cancelled'),{code:'cancelled'});
+  }
+  if(!shouldClose())return false;
+  const ctx=context(),cloudId=knownCloudId||(active?.key===key?active.id:ctx?.room?.id===localId&&ctx.room.ownerId===ctx.participantId?ctx.cloudRoomId:null);
+  if(!cloudId){if(preparationError)throw preparationError;return true;}
   await social.perform('close',{roomId:cloudId});
-  // A successful old close retires only the cache it captured. Another room or
-  // account may already own the invitation/access UI while that ACK was held.
-  if(generation!==roomGeneration||A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity||active&&(active.key!==key||active.id!==cloudId))return;
-  reset();
+  if(generation!==roomGeneration||A()!==account||S()!==social||C()!==community||accountRevision()!==revision||viewKey()!==identity||active&&(active.key!==key||active.id!==cloudId))return true;
+  reset();return true;
  }
- async function inviteGroup(group,{id=crypto.randomUUID()}={}){if(!canInvite())return false;const owner=viewKey(),identity=A().snapshot().id;if(!await H().confirmDialog(`Пригласить группу «${group.name}» в комнату?`))return false;if(A().snapshot().id!==identity||viewKey()!==owner||!canInvite())throw Object.assign(Error('account-changed'),{code:'account-changed'});await ensure();if(viewKey()!==owner||!canInvite())return false;await C().call('group-invite-room',{groupId:group.id,roomId:active.id,id});return true;}
- function joinInvitation(inviteId,{roomId,ownerId}={}){const ctx=context();if(roomId&&root.PlayroomCloudNetwork.roomId()===roomId&&ctx.room){root.PlayroomNetworkLibrary.openRoom();return Promise.resolve(true);}if(ownerId&&ownerId===A().snapshot().id){B().toast('Ваша комната не открыта на этом устройстве. Откройте её через «Мои партии».');B().showSessions();return Promise.resolve(false);}return connect({inviteId});}
+ async function inviteGroup(group,{id=crypto.randomUUID()}={}){if(!canInvite())return false;const owner=viewKey(),identity=A().snapshot().id;if(!await H().confirmDialog(`Пригласить группу «${group.name}» в комнату?`))return false;if(A().snapshot().id!==identity||viewKey()!==owner||!canInvite())throw Object.assign(Error('account-changed'),{code:'account-changed'});await ensure();if(viewKey()!==owner||!canInvite())return false;markInvitationShared();await C().call('group-invite-room',{groupId:group.id,roomId:active.id,id});return true;}
+ function joinInvitation(inviteId,{roomId,ownerId}={}){const ctx=context();if(roomId&&root.PlayroomCloudNetwork.roomId()===roomId&&ctx.room){root.PlayroomNetworkLibrary.openRoom();return Promise.resolve(true);}return connect({inviteId});}
  function init(){
   root.addEventListener('playroom:groups-updated',event=>{if(event.detail?.accountId===A().snapshot().id){onlineGroups=event.detail.groups;onlineGroupsError='';render();}});
   root.addEventListener('playroom:modal-restored',()=>{if(incomingView?.frame?.state==='active')void refreshIncoming();});
@@ -252,5 +290,5 @@
   const source=root.location.href,link=parseLink(source);if(!link)return;const clean=new URL(source);clean.hash='';root.history.replaceState(root.history.state,'',clean.href);
   const run=()=>incoming({query:source,lookup:link});if(B().profile()?.name)queueMicrotask(run);else root.addEventListener('playroom:profile-ready',run,{once:true});
  }
- root.PlayroomLobbyNetwork=Object.freeze({row,showInvite,incoming,render,init,inviteUser,inviteGroup,joinInvitation,reconnectRoom:roomId=>connect({roomId}),closeRoom,get active(){return active;}});
+ root.PlayroomLobbyNetwork=Object.freeze({row,remoteRooms,remoteRoomsMarkup,showInvite,incoming,render,init,inviteUser,inviteGroup,joinInvitation,reconnectRoom:roomId=>connect({roomId}),closeRoom,get active(){return active;}});
 })(globalThis);

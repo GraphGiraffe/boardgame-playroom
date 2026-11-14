@@ -2,6 +2,15 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Client=require('../app/session-client.js');
 const frame=(revision,extra={})=>({protocolVersion:3,kind:'snapshot',sessionId:'s',authorityEpoch:'e',game:'uno',packVersion:'1',viewer:0,role:'player',revision,historyLength:revision+1,state:{move:revision,game:'uno',packVersion:'1',scene:{players:[]}},events:[{id:revision,text:'seen '+revision}],actions:[{type:'play'}],...extra});
+test('first received frame stays local and the current live revision survives cache eviction',async()=>{
+ let calls=0;const client=new Client({history:async i=>{calls++;return frame(i);}},{historyBudget:1});
+ client.accept(frame(4));const first=client.snapshot;
+ assert.equal((await client.history(4)).state,first.state);assert.equal(calls,0);
+ client.accept(frame(5));const live=client.snapshot;
+ assert.deepEqual([...client.historyFrames.keys()],[5]);
+ await client.history(0);assert.deepEqual([...client.historyFrames.keys()],[5]);
+ assert.equal((await client.history(5)).state,live.state);assert.equal(calls,1);assert.equal(client.snapshot,live);client.close();
+});
 test('received frames replay locally with stable state references and no extra host traffic',async()=>{
  let calls=0;const client=new Client({history(){calls++;throw Error('offline');}});
  for(let i=0;i<5;i++)client.accept(frame(i));

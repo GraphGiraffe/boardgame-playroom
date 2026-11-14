@@ -356,9 +356,11 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 
 
 
+:root{--player-medallion-overhang:6px}
 .player-avatar-wrap{position:relative;display:inline-flex;flex:none;vertical-align:middle;overflow:visible;}
 
-.player-medallion{position:absolute;z-index:2;top:-6px;right:-6px;display:block;width:13px;height:13px;--round-token-fill:var(--color-token-face,#eadfc0);--round-token-side:var(--color-token-side,#ac9b72);--round-token-mark:var(--color-token-mark,#283c30);color:var(--color-text-primary,#283c30);pointer-events:none}
+.player-panel .player-info:has(.player-medallion){--player-medallion-reserve:var(--player-medallion-overhang)}
+.player-medallion{position:absolute;z-index:2;top:calc(-1*var(--player-medallion-overhang,6px));right:calc(-1*var(--player-medallion-overhang,6px));display:block;width:13px;height:13px;--round-token-fill:var(--color-token-face,#eadfc0);--round-token-side:var(--color-token-side,#ac9b72);--round-token-mark:var(--color-token-mark,#283c30);color:var(--color-text-primary,#283c30);pointer-events:none}
 .player-medallion.is-team{--round-token-fill:var(--medallion-color);--round-token-side:color-mix(in srgb,var(--medallion-color) 63%,#233c30);--round-token-mark:#fffdf4;color:var(--color-action-on-primary,#fffdf4)}
 .player-medallion.is-place{--round-token-fill:#e0bc59;--round-token-side:#a27f30}.player-medallion.place-2{--round-token-fill:#c3c8c7;--round-token-side:#858e8b}.player-medallion.place-3{--round-token-fill:#b78b66;--round-token-side:#805b40}
 .player-medallion .medallion-art{display:block;width:100%;height:100%;overflow:visible}
@@ -373,7 +375,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 .result-scores .result-name{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:4px;row-gap:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
 .result-scores .result-name .participant-role{flex:none}
 .result-scores .result-name strong{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis}
-.result-scores .player-medallion{position:static;flex:none;width:22px;height:22px}
+.result-scores .result-awards .player-medallion{position:static;flex:none;width:22px;height:22px}
 .result-scores .result-awards{position:relative;display:block;flex:none;width:27px;height:25px}
 .result-scores .result-awards .player-medallion{position:absolute;top:0;left:0}
 .result-scores .result-awards .player-medallion.is-place{z-index:2}
@@ -984,3 +986,6 @@ body.reduced-motion :is(#app,:is(#modal-root,[data-ui-surface-exit])) .app-page-
 .action-reveal-title{max-width:100%;box-sizing:border-box;}
 .action-reveal-art.is-dice{flex-wrap:wrap;max-width:100%;}
 .action-reveal-die{flex:none;}
+
+/* Ordered system teams; independent of player-seat colours and saved theme schemas. */
+:root{--color-team-blue:var(--color-side-blue,#668fad);--color-team-red:var(--color-side-red,#ce735d);--color-team-cyan:#729d98;--color-team-brown:#aa844b}
