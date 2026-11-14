@@ -356,7 +356,7 @@ test('Mage Brawl elemental effects: routes, attacks, damage, death, fall and kil
   await p.evaluate(()=>{
    window.PlayroomAppBridge={...PlayroomAppBridge,audio:{batch:()=>Promise.resolve(),play:()=>Promise.resolve()}};
    window.showMageEffect=(kind,element='air')=>{
-    const E=TabletopCore,players=[{name:'A'},{name:'B'}];let s=E.createGame('mage-brawl',{seed:17,actionsPerTurn:'1',players}),d=s.data;
+    const E=TabletopCore,players=[{name:'A'},{name:'B'}];let s=E.createGame('mage-brawl',{seed:17,actionsPerTurn:'1',shrinkMode:'players',players}),d=s.data;
     d.board=Array(16).fill('ground');d.board[0]=d.board[15]='base';d.shrink=kind==='shrink'?1:null;
     let a=[1,1],b=[1,2],action=kind==='move'?'movement':'attack',direction=1;
     if(kind==='move'){a=[2,0];b=[0,3];}if(kind==='fall'){a=[1,2];b=[1,3];}if(kind==='shrink'){a=[2,2];b=[0,2];element='earth';action='movement';}
@@ -659,5 +659,16 @@ test('Mage team bots submit two-card plans and a native eight-player round advan
   await page.waitForFunction(round=>{const s=PlayroomAppBridge.saveLibrary.current()?.session.current;return s?.data.round>round||s?.status==='finished';},raw.data.round);await page.waitForFunction(()=>!document.querySelector('.is-public-playback'));
   const current=await TestUI.currentState(page);assert(current.data.round>raw.data.round||current.status==='finished');assert.deepEqual(errors,[]);
   if(process.env.MAGE_EVIDENCE_DIR){await page.screenshot({path:mageEvidence('team-two-card-native.png')});fs.writeFileSync(mageEvidence('team-two-card-native.json'),JSON.stringify({players:8,teams:4,botPlans:7,steps:2,first,second,roundBefore:raw.data.round,roundAfter:current.data.round,errors},null,2));}
+ }finally{await context.close();await browser.close();await server.close();}
+});
+
+test('Mage pawn health survives repeated theme changes without remounting the field',{timeout:30000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'}),p=await context.newPage();
+ try{
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'health-theme',name:'Иван'}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false}));});await openMageFixture(p,server.url);await p.locator('.game-tile').first().waitFor();await TestUI.openGame(p,'mage-brawl');await TestUI.activeSurface(p).locator('[data-command=lobby-start]').click();await p.locator('.mage-grid').waitFor();
+  await p.evaluate(()=>{const E=TabletopCore,raw=E.createGame('mage-brawl',{seed:17,health:6,players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))});raw.data.players.forEach((v,i)=>v.health=1+i%6);const s=E.project(raw,0),actions=E.legalActions(raw,0),host=document.querySelector('#app');PlayroomGameScreen.update(host,PlayroomGameScreen.render({layoutId:'health-theme',gameName:'Стихийная потасовка',state:s,viewer:0,actions,scene:PlayroomViews.render(s,0,actions,{})}));PlayroomGameScreen.layoutScene(host);window.healthField=document.querySelector('.mage-grid');});
+  const read=()=>p.locator('.mage-piece').evaluateAll(nodes=>nodes.map(n=>({id:n.dataset.magePlayer,total:n.querySelectorAll('[data-mage-token-health] .piece-indicator').length,filled:n.querySelectorAll('[data-mage-token-health] .piece-indicator:not(.is-empty)').length})));
+  const before=await read();assert.equal(before.length,8);assert(before.every(row=>row.total>0));
+  for(const theme of ['dark','light','dark','light']){await p.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);if(process.env.MAGE_EVIDENCE_DIR)await p.screenshot({path:mageEvidence('health-'+theme+'.png')});assert.deepEqual(await read(),before,theme);assert(await p.evaluate(()=>document.querySelector('.mage-grid')===healthField));}
  }finally{await context.close();await browser.close();await server.close();}
 });
