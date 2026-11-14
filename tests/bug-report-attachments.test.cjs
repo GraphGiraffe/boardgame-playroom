@@ -21,3 +21,18 @@ test('support log: ring capacity, worst-case size, explicit truncation and empty
  assert.equal(trace.omitted,result.omitted);assert.equal(trace.events.length+trace.omitted,5000);assert.equal(trace.baseline.length,64);
  console.log(JSON.stringify({scenario:'saturated-6200',rawBytes:result.rawBytes,gzipBytes:result.bytes,kept:result.events,omitted:result.omitted,ringDropped:trace.dropped}));
 });
+test('support recorder: hover noise and fast audio are summarized; interactions, errors and slow operations survive',()=>{
+ const recorder=new Recorder();recorder.enabled=true;
+ for(let i=0;i<1000;i++)recorder.interaction({name:i%2?'pointerenter':'pointerleave',interactionId:0,startTime:i,processingStart:i+1,processingEnd:i+2,duration:64});
+ for(let id=1;id<=26;id++)for(const name of ['pointerdown','pointerup','click'])recorder.interaction({name,interactionId:id,startTime:id*100,processingStart:id*100+5,processingEnd:id*100+8,duration:name==='click'?112:32});
+ for(let i=0;i<119;i++)recorder.record('audio.unlock',{status:'complete',duration:.2});
+ recorder.record('audio.unlock',{status:'failed',duration:1});recorder.record('audio.unlock',{status:'complete',duration:80});recorder.record('error',{name:'TypeError',file:'app.js',line:12});recorder.sample();
+ const trace=recorder.trace(),interactions=trace.events.filter(e=>e.kind==='interaction');assert.equal(interactions.length,26);assert(interactions.every(e=>e.phases===3&&e.event==='click'&&e.duration===112&&e.inputDelay===5));
+ const sample=trace.events.find(e=>e.kind==='sample');assert.equal(sample.activity.hoverEvents,1000);assert.equal(sample.activity.quickAudioUnlocks,119);assert.equal(trace.events.filter(e=>e.kind==='audio.unlock').length,2);assert(trace.events.some(e=>e.kind==='error'));assert(!trace.events.some(e=>e.kind==='collector.sample'));recorder.stop();
+});
+test('support recorder: clearing stops capture, removes all buffers and does not cancel game timers',async()=>{
+ const recorder=new Recorder();recorder.enabled=true;recorder.record('action',{type:'move'});let fired=false;recorder.clock('game').setTimeout(()=>{fired=true;},10);
+ recorder.interaction({name:'click',interactionId:1,startTime:0,processingStart:1,processingEnd:2,duration:20});recorder.clear();
+ assert.equal(recorder.enabled,false);assert.equal(recorder.count,0);assert.equal(recorder.written,0);assert.equal(recorder.interactions.size,0);assert.equal(recorder.timerHandles.size,0);assert.deepEqual(recorder.trace().events,[]);assert.deepEqual(recorder.trace().baseline,[]);assert.equal(recorder.trace().context,null);
+ await new Promise(resolve=>setTimeout(resolve,25));assert.equal(fired,true);assert.equal(recorder.count,0);
+});

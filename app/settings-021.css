@@ -49,3 +49,5 @@
 .bug-report-receipt label{display:flex;align-items:center;gap:4px}
 .bug-report-receipt input{width:9ch;min-width:0;min-height:44px;padding:0 4px;border:0;background:transparent;color:inherit;font:inherit;font-weight:700;user-select:text;-webkit-user-select:text;cursor:text}
 .bug-report-receipt button{min-height:44px}
+
+.settings-diagnostics-actions{display:flex;flex-wrap:wrap;gap:8px}
