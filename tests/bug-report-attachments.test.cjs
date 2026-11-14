@@ -36,3 +36,8 @@ test('support recorder: clearing stops capture, removes all buffers and does not
  assert.equal(recorder.enabled,false);assert.equal(recorder.count,0);assert.equal(recorder.written,0);assert.equal(recorder.interactions.size,0);assert.equal(recorder.timerHandles.size,0);assert.deepEqual(recorder.trace().events,[]);assert.deepEqual(recorder.trace().baseline,[]);assert.equal(recorder.trace().context,null);
  await new Promise(resolve=>setTimeout(resolve,25));assert.equal(fired,true);assert.equal(recorder.count,0);
 });
+
+test('support summary: final size only and passive trace does not add samples',()=>{
+ const recorder=new Recorder();recorder.enabled=true;let samples=0;recorder.sample=()=>{samples++;};recorder.record('action',{type:'move'});const written=recorder.written;recorder.trace({sample:false});assert.equal(samples,0);assert.equal(recorder.written,written);recorder.trace();assert.equal(samples,1);
+ assert.equal(A.formatLog({events:48,bytes:2355,rawBytes:31130}),'48 записей · 2.3 КБ.');assert.equal(A.formatLog(null),'0 записей · 0.0 КБ.');assert.equal(A.formatLog({events:1,bytes:1024}),'1 запись · 1.0 КБ.');
+});

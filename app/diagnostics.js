@@ -59,8 +59,8 @@
   stop(){if(!this.enabled)return;this.sample();this.record('capture.stop');this.enabled=false;this.restoreAnimations?.();this.restoreAnimations=null;root.clearInterval(this.timer);if(this.raf!==null)root.cancelAnimationFrame?.(this.raf);this.timer=null;this.raf=null;for(const observer of this.observers)observer.disconnect();this.observers=[];for(const [type,listener]of this.listeners)root.removeEventListener?.(type,listener);this.listeners=[];}
   setEnabled(value){value?this.start():this.stop();try{root.localStorage?.setItem(KEY,value?'1':'0');}catch(_){} }
   clear(){this.setEnabled(false);this.buffer=new Array(LIMIT);this.baseline=[];this.count=0;this.written=0;this.interactions.clear();this.timerHandles.clear();this.quietCounts={hoverEvents:0,quickAudioUnlocks:0};this.commonContext=null;this.commonSignature=null;this.lastActionAt=null;this.frames=0;this.maxFrame=0;this.slowFrames=0;this.longTaskMs=0;this.lastFrame=null;this.lastSample=now();this.startedAt=new Date().toISOString();}
-  trace(){
-   if(this.enabled)this.sample();
+  trace({sample=true}={}){
+   if(this.enabled&&sample)this.sample();
    const scrub=(value,key='',depth=0)=>{
     if(depth>7)return null;
     if(value===null||typeof value==='boolean'||typeof value==='number')return value;

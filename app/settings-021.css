@@ -34,6 +34,10 @@
 }
 
 .bug-report-form{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bug-report-form>.field{margin:0}
+.bug-report-attach-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.bug-report-attach-row>.bug-report-add{min-width:0;margin:0}
+.bug-report-attach-limit{flex:none;white-space:nowrap;font-size:var(--ui-type-caption,.8125rem)}
 .bug-report-form textarea{width:100%;min-height:100px;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--paper);color:inherit;font:inherit}
 .bug-report-add{align-self:flex-start;cursor:pointer}
 .bug-report-add{position:relative}
@@ -50,4 +54,5 @@
 .bug-report-receipt input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:inherit;font:inherit;font-weight:700;user-select:text;-webkit-user-select:text;cursor:text}
 .bug-report-receipt button{width:44px;min-height:44px;margin:0;padding:0;font-size:1.4rem;line-height:1}
 
-.settings-diagnostics-actions{display:flex;flex-wrap:wrap;gap:8px}
+.settings-diagnostics-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.settings-diagnostics-actions>.btn{width:100%;min-width:0;margin:0}

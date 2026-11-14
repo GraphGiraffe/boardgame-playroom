@@ -34,5 +34,6 @@
    throw fail('image-too-large');
   }finally{bitmap.close();}
  }
- return Object.freeze({image,log,IMAGE_LIMIT,LOG_LIMIT,RAW_LOG_LIMIT});
+ function formatLog(value){const count=value?.events||0,label={one:'запись',few:'записи',many:'записей',other:'записи'}[new Intl.PluralRules('ru').select(count)],number=value?.omitted?count+'/'+(count+value.omitted):count;return `${number} ${label} · ${((value?.bytes||0)/1024).toFixed(1)} КБ.`;}
+ return Object.freeze({image,log,formatLog,IMAGE_LIMIT,LOG_LIMIT,RAW_LOG_LIMIT});
 });

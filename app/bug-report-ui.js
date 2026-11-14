@@ -30,10 +30,9 @@
   const hasLog=!!root.PlayroomDiagnostics?.count,esc=H().esc;
   frame=B().openModal(`${H().modalHead('Обратная связь')}<form class="bug-report-form" data-bug-report>
    <label class="field"><span>Ваше сообщение</span><textarea name="description" required minlength="10" maxlength="3000" rows="4" placeholder="Расскажите об ошибке, предложите улучшение или оставьте замечание."></textarea></label>
-   <p class="muted">До трёх скриншотов. Проверьте, нет ли на них личной информации.</p>
-   <label class="btn secondary bug-report-add">Добавить скриншоты<input type="file" aria-label="Добавить скриншоты" accept="image/png,image/jpeg,image/webp" multiple data-bug-files></label>
+   <div class="bug-report-attach-row"><label class="btn secondary bug-report-add">Добавить скриншоты<input type="file" aria-label="Добавить скриншоты, максимум 3" accept="image/png,image/jpeg,image/webp" multiple data-bug-files></label><span class="muted bug-report-attach-limit">Макс.: 3</span></div>
    <div class="bug-report-images" data-bug-images></div>
-   ${hasLog?'<label class="switch"><span>Приложить записанный лог</span><input type="checkbox" name="includeLog" checked disabled></label><p class="muted" data-bug-log-status>Сжимаем записанный лог…</p>':'<p class="muted">Лог не записывался. При сообщении об ошибке можно включить его запись в разделе «Диагностика».</p>'}
+   ${hasLog?'<label class="switch"><span>Приложить записанный лог</span><input type="checkbox" name="includeLog" checked disabled></label><p class="muted" data-bug-log-status>Считаем размер лога…</p>':`<p class="muted">${A().formatLog(null)}</p>`}
    <details class="bug-report-info"><summary>Что будет отправлено</summary><p class="muted">Описание, выбранные скриншоты и технические сведения ниже. Без переписки, паролей и сохранения партии. Отчёт доступен разработчику и хранится до 30 дней.</p><pre data-bug-context></pre><details data-bug-log-preview hidden><summary>Записанный лог</summary><pre></pre></details></details>
    <p role="status" aria-live="polite" data-bug-status>${owner?'':esc(errors['account-required'])}</p>
    ${owner?'':'<button type="button" class="btn secondary" data-bug-login>Войти в аккаунт</button>'}
@@ -43,7 +42,7 @@
   function update(){
    if(closed)return;
    const attach=!!form.elements.includeLog?.checked&&!!trace;
-   form.querySelector('[data-bug-context]').textContent=JSON.stringify({...context,attachments:{screenshots:screenshots.map(({width,height,bytes})=>({width,height,bytes})),log:attach?{events:trace.events,omitted:trace.omitted,rawBytes:trace.rawBytes,gzipBytes:trace.bytes}:null}},null,2);
+   form.querySelector('[data-bug-context]').textContent=JSON.stringify({...context,attachments:{screenshots:screenshots.map(({width,height,bytes})=>({width,height,bytes})),log:attach?{events:trace.events,omitted:trace.omitted,bytes:trace.bytes}:null}},null,2);
    const preview=form.querySelector('[data-bug-log-preview]');preview.hidden=!attach;preview.querySelector('pre').textContent=attach?JSON.stringify(trace.preview,null,2):'';
    send.disabled=!owner||busy||preparing;files.disabled=invalidated||busy||preparing||screenshots.length>=3;
    for(const control of form.querySelectorAll('[data-bug-remove],textarea,[name=includeLog]'))control.disabled=invalidated||busy||preparing||control.name==='includeLog'&&!trace;
@@ -72,16 +71,16 @@
     if(result?.accepted!==true||result.id!==id)throw Error('response');if(closed||invalidated)return;
     screenshots=[];trace=null;form.reset();form.querySelector('[data-bug-images]').replaceChildren();form.querySelector('[data-bug-log-preview] pre').textContent='';form.querySelector('[data-bug-context]').textContent='';
     const number=result.id.slice(0,8);
-    send.remove();form.innerHTML=`<p role="status">Спасибо! Сообщение отправлено.</p><div class="bug-report-receipt"><label class="field"><span>Номер сообщения</span><input type="text" data-bug-number readonly value="${esc(number)}" aria-label="Номер сообщения" spellcheck="false"></label><button type="button" class="btn secondary" data-bug-copy aria-label="Скопировать номер" title="Скопировать номер"><span aria-hidden="true">⧉</span></button></div><p role="status" aria-live="polite" data-bug-copy-status></p><p class="muted">Скриншоты и лог не сохранены в файлах приложения.</p>`;
+    send.remove();form.innerHTML=`<p role="status">Спасибо! Сообщение отправлено.</p><div class="bug-report-receipt"><label class="field"><span>Номер сообщения</span><input type="text" data-bug-number readonly value="${esc(number)}" aria-label="Номер сообщения" spellcheck="false"></label><button type="button" class="btn secondary" data-bug-copy aria-label="Скопировать номер" title="Скопировать номер"><span aria-hidden="true">⧉</span></button></div><p role="status" aria-live="polite" data-bug-copy-status hidden></p><p class="muted">Скриншоты и лог не сохранены в файлах приложения.</p>`;
     const numberField=form.querySelector('[data-bug-number]'),copy=form.querySelector('[data-bug-copy]'),copyStatus=form.querySelector('[data-bug-copy-status]');
     const selectNumber=()=>numberField.select();numberField.addEventListener('focus',selectNumber);numberField.addEventListener('click',selectNumber);
-    copy.onclick=async()=>{copy.disabled=true;try{await root.navigator.clipboard.writeText(number);if(!closed)copyStatus.textContent='Номер скопирован.';}catch(_){if(!closed){numberField.focus();numberField.select();copyStatus.textContent='Не удалось скопировать. Номер выделен — скопируйте его вручную.';}}finally{if(!closed)copy.disabled=false;}};
+    copy.onclick=async()=>{copy.disabled=true;copyStatus.hidden=true;copyStatus.textContent='';try{await root.navigator.clipboard.writeText(number);}catch(_){if(!closed){numberField.focus();numberField.select();copyStatus.textContent='Не удалось скопировать. Номер выделен — скопируйте его вручную.';copyStatus.hidden=false;}}finally{if(!closed)copy.disabled=false;}};
    }catch(error){if(!closed&&!invalidated){busy=false;status.textContent=errors[error.code]||'Не удалось отправить сообщение. Попробуйте ещё раз.';update();}}
   };
   unsubscribe=account?.subscribe(state=>{if(closed||invalidated||!form.querySelector('[data-bug-status]'))return;if(!owner&&state.kind==='account'&&!state.recovery){owner=state.id;status.textContent='';form.querySelector('[data-bug-login]')?.remove();update();}else if(owner&&(state.id!==owner||state.kind!=='account'||state.recovery)){invalidated=true;revision++;abort?.abort();owner=null;screenshots=[];trace=null;form.reset();renderImages();status.textContent=errors['account-changed'];}})||(()=>{});
   update();
   if(hasLog){
-   preparing=true;update();void A().log(root.PlayroomDiagnostics).then(value=>{if(closed||invalidated)return;trace=value;form.querySelector('[data-bug-log-status]').textContent=trace?`${trace.events} записей · ${size(trace.rawBytes)} → ${size(trace.bytes)}${trace.omitted?' · не вошло старых записей: '+trace.omitted:''}.`:'Лог пуст.';}).catch(error=>{if(!closed&&!invalidated){form.elements.includeLog.checked=false;form.querySelector('[data-bug-log-status]').textContent=errors[error.code]||'Не удалось подготовить лог. Можно отправить сообщение без него.';}}).finally(()=>{if(!closed){preparing=false;update();}});
+   preparing=true;update();void A().log(root.PlayroomDiagnostics).then(value=>{if(closed||invalidated)return;trace=value;form.querySelector('[data-bug-log-status]').textContent=A().formatLog(trace);}).catch(error=>{if(!closed&&!invalidated){form.elements.includeLog.checked=false;form.querySelector('[data-bug-log-status]').textContent=errors[error.code]||'Не удалось подготовить лог. Можно отправить сообщение без него.';}}).finally(()=>{if(!closed){preparing=false;update();}});
   }
  }
  root.PlayroomBugReportUI=Object.freeze({init,show});
