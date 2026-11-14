@@ -1,13 +1,13 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
-const root=path.resolve(__dirname,'..');
+const root=path.resolve(__dirname,'..');const {serveBrowserFixture}=require('./browser-origin.cjs');
 test('raised game pawns share top rims and dark sides across games, themes and orientations',{timeout:60000},async()=>{
- const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ const fixture=await serveBrowserFixture(root);const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),errors=[];
  page.on('pageerror',e=>errors.push(e.message));const out=path.resolve(root,'../tmp_files/pawn-design/screenshots');fs.mkdirSync(out,{recursive:true});
  try{for(const game of ['ludo','snakes','mage-brawl']){
-  await page.goto(require('node:url').pathToFileURL(path.join(root,'dist/playroom-all-games.html')).href);
+  await page.goto(process.env.PLAYROOM_PAWN_ARTIFACT?require('node:url').pathToFileURL(path.resolve(process.env.PLAYROOM_PAWN_ARTIFACT)).href:fixture.url);
   await page.locator('[data-start="'+game+'"]').first().waitFor();
   await page.evaluate(game=>{
    const E=TabletopCore,s=E.createGame(game,{seed:17,players:Array.from({length:game==='mage-brawl'?2:4},(_,i)=>({name:'Игрок '+(i+1)}))});
@@ -25,11 +25,11 @@ test('raised game pawns share top rims and dark sides across games, themes and o
     try{return [{value:0},{value:4},{value:12},{value:1000},{first:true}].every(params=>{
      host.innerHTML=TabletopUI.helpers.roundTokenArt({...params,profile:'pawn'});const art=host.firstElementChild,face=art.querySelector('.pawn-token-face'),fm=face.getScreenCTM(),centre=new DOMPoint(50,45).matrixTransform(fm);
      const number=art.querySelector(':scope > text');
-     if(number){const b=number.getBBox();return Math.abs(b.x+b.width/2-50)<1&&Math.abs(b.y+b.height/2-42)<1&&b.width<65&&b.height<75;}
+     if(number){const b=number.getBBox();return Math.abs(b.x+b.width/2-50)<1&&Math.abs(b.y+b.height/2-Number(face.getAttribute('cy')))<1&&b.width<65&&b.height<75;}
      const glyph=art.querySelector(':scope > svg circle'),gm=glyph.getScreenCTM(),point=new DOMPoint(+glyph.getAttribute('cx'),+glyph.getAttribute('cy')).matrixTransform(gm);
      return Math.hypot(point.x-centre.x,point.y-centre.y)<.1;
     });}finally{host.remove();}
-   }),'numbers are slightly raised and larger, while symbols stay centred on the top face');
+   }),'numbers and symbols stay centered on the shared top face');
    const pawns=page.locator('.app-game-layout .pawn-token-art');assert(await pawns.count()>0,game+' uses the shared pawn profile');
    const painted=await pawns.evaluateAll(nodes=>nodes.map(node=>{const side=node.querySelector('.pawn-token-side'),face=node.querySelector('.pawn-token-face'),inset=node.querySelector('.pawn-token-inset');return {side:getComputedStyle(side).fill,face:getComputedStyle(face).fill,body:getComputedStyle(inset).fill,rim:getComputedStyle(face).stroke,wallStroke:getComputedStyle(side).stroke,box:node.getAttribute('viewBox')};}));
    assert(painted.every(p=>p.side!==p.body&&p.rim!==p.side&&p.wallStroke==='none'&&p.box==='0 0 100 100'),game+' preserves a separate dark wall and top rim');
@@ -76,5 +76,5 @@ test('raised game pawns share top rims and dark sides across games, themes and o
   }
  }
  assert.deepEqual(errors,[]);
- }finally{await context.close();await browser.close();}
+ }finally{await context.close();await browser.close();await fixture.close();}
 });

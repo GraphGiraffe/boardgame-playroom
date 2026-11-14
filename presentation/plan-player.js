@@ -116,6 +116,7 @@
     resume(){const run=this.run;if(!run||run.done||!run.paused)return;run.paused=false;run.context.resume();if(run.prepared){const start=run.prepared;run.prepared=null;start();}else{this.arm(run);this.next(run);}}
     setRate(rate){
       if(!Number.isFinite(rate)||rate<=0||rate>16)throw Error('PRESENTATION_RATE_INVALID');
+      if(rate===this.rate)return;
       const run=this.run;if(run&&!run.done){this.stopTimer(run);run.context.pause();}this.rate=rate;
       if(run&&!run.done){run.context.rate(rate);if(!run.paused)run.context.resume();this.arm(run);}
     }

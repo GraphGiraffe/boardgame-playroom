@@ -5620,6 +5620,9 @@
     },
     "geometry": {
       "sceneInsetPx": 12,
+      "landscapePlayerMinWidthPx": 144,
+      "landscapeSelfMinWidthPx": 240,
+      "landscapeFieldMinWidthPx": 200,
       "compactWidthPx": 640,
       "denseRosterHeightPx": 430,
       "circleMinWidthPx": 280,

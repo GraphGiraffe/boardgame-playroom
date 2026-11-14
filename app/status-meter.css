@@ -1,0 +1,41 @@
+/* One measured-indicator family; semantic data owns the fill, never a timer. */
+.status-meter-card{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-selected,var(--paper));color:var(--ink)}
+.status-meter-card>strong{display:block;font-size:15px;font-weight:650;line-height:1.4}
+.status-meter-card>p{margin:4px 0 8px;font-size:14px;line-height:1.4;color:var(--ink)}
+.status-meter-track{position:relative;display:block;width:100%;height:6px;min-height:6px;overflow:hidden;border:0;border-radius:999px;background:var(--line)}
+.status-meter-fill{display:block;width:calc(100% * var(--meter-ratio,0));height:100%;border-radius:inherit;background:var(--green);transform-origin:left center}
+.status-meter-track[data-indeterminate="true"]>.status-meter-fill{width:32%}
+.status-meter-track[data-meter-state="error"]>.status-meter-fill{background:var(--color-feedback-error,var(--green))}
+.status-meter-track[data-meter-state="paused"]>.status-meter-fill{background:var(--muted)}
+.status-meter-caption{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:13px;line-height:1.4;flex-wrap:wrap}
+@media(prefers-reduced-motion:no-preference){.status-meter-track[data-indeterminate="true"][data-meter-state="busy"]>.status-meter-fill{animation:status-meter-pending 1.6s ease-in-out infinite alternate}@keyframes status-meter-pending{from{translate:0 0}to{translate:212% 0}}}
+@media(prefers-reduced-motion:reduce){.status-meter-track>.status-meter-fill{animation:none;transition:none}}
+.status-meter-composition{display:flex;gap:0}
+.status-meter-segment{height:100%;min-width:0;background:var(--green)}
+.status-meter-segment[data-meter-category="packs"]{background:var(--color-side-blue,#668fad)}
+.status-meter-segment[data-meter-category="saves"]{background:var(--color-side-yellow,#d6aa36)}
+/* Approved update-page composition: summary, explicit state, one main operation. */
+.update-v021{display:flex;flex-direction:column;gap:12px;min-width:0}
+.update-v021-summary>h3{margin:0;font-size:15px;font-weight:650;line-height:1.4;letter-spacing:0}
+.update-v021-summary>p{margin:4px 0 8px;font-size:15px;line-height:1.4}
+.update-v021-summary details{border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.update-v021-summary summary{min-height:44px;padding:12px 0;cursor:pointer;font-size:14px;font-weight:600}
+.update-v021-summary details section>h3{font-size:14px;margin:8px 0 4px}
+.update-v021-summary details ul{padding-left:20px;font-size:14px;line-height:1.45}
+.update-v021-state{padding:12px 0;background:transparent;color:var(--ink)}
+.update-v021-state>[data-update-status]{margin:0;font-size:17px;font-weight:650;line-height:1.4;text-align:center}
+.update-v021-state .update-download{margin-top:12px}
+.update-v021-actions{display:flex;flex-direction:column;gap:8px}
+.update-v021-actions>.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;box-shadow:none;border-radius:12px;font-size:15px;line-height:1.3}
+:is(#modal-root,[data-ui-surface-exit]) .updates-modal[data-ui-surface="screen"]>.update-v021-header{display:flex;align-items:center;gap:8px;min-height:52px;margin:0 0 12px;padding:0 0 10px;border-bottom:1px solid var(--line)}
+:is(#modal-root,[data-ui-surface-exit]) .update-v021-header>h2{flex:1;min-width:0;margin:0;font-size:20px;line-height:1.3;letter-spacing:0;font-weight:700}
+.update-v021-header>.icon-btn{width:44px;min-width:44px;height:44px;border-radius:12px}
+:is(#modal-root,[data-ui-surface-exit]) .updates-modal[data-ui-surface="screen"]>.modal-body{padding:0}
+.status-meter-track[data-indeterminate="true"]:is([data-meter-state="error"],[data-meter-state="paused"])>.status-meter-fill{width:0;animation:none}
+
+.update-v021-footer{display:grid;gap:8px;min-width:0}
+.update-v021-footer>[data-update-check-status]{margin:0;font-size:14px;line-height:1.4}
+.update-v021-footer>[data-update-check-status]:empty{display:none}
+
+.update-v021-summary{background:transparent;color:var(--ink)}
+.update-v021-summary .update-changes{font-size:14px;line-height:1.45}

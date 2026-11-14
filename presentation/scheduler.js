@@ -10,18 +10,20 @@
     clearTimeout:id=>globalThis.clearTimeout(id),
     now:()=>globalThis.performance?.now?.()??Date.now()
   });
+  let diagnosticSequence=0;
   return class PresentationScheduler {
     static clock=browserClock;
     #children=new Map(); #scheduled=new Map(); #plans=new Map();
-    #clock; #active=null;
-    constructor(clock=browserClock){
+    #clock; #active=null; #diagnostics;
+    constructor(clock=browserClock,{diagnostics=null}={}){
       if(!clock||typeof clock.setTimeout!=='function'||typeof clock.clearTimeout!=='function')throw Error('PRESENTATION_CLOCK_REQUIRED');
-      this.#clock=clock;
+      this.#clock=clock;this.#diagnostics=diagnostics;
     }
     now(){return this.#clock.now?.()??browserClock.now();}
+    metrics(){const out={scheduled:this.#scheduled.size,activeRuns:this.#active?1:0,planTracks:this.#plans.size,lanes:this.#children.size};for(const child of this.#children.values()){const item=child.metrics();for(const key of Object.keys(out))out[key]+=item[key];}return out;}
     lane(name){
       if(typeof name!=='string'||!name)throw Error('PRESENTATION_LANE_INVALID');
-      if(!this.#children.has(name))this.#children.set(name,new PresentationScheduler(this.#clock));
+      if(!this.#children.has(name))this.#children.set(name,new PresentationScheduler(this.#clock,{diagnostics:this.#diagnostics}));
       return this.#children.get(name);
     }
     track(name){
@@ -30,13 +32,14 @@
     }
     schedule(effect,delay=0){
       if(typeof effect!=='function'||!Number.isFinite(delay)||delay<0||delay>60000)throw Error('PRESENTATION_DELAY_INVALID');
-      const token={};
-      const timer=this.#clock.setTimeout(()=>{if(!this.#scheduled.has(token))return;this.#scheduled.delete(token);effect();},delay);
+      const token=this.#diagnostics?.enabled?{diagnosticId:++diagnosticSequence,armedAt:this.now(),delay}:{};
+      if(token.diagnosticId)this.#diagnostics.record('timer.arm',{scope:'presentation',id:token.diagnosticId,delay,queued:this.#scheduled.size+1});
+      const timer=this.#clock.setTimeout(()=>{if(!this.#scheduled.has(token))return;this.#scheduled.delete(token);if(token.diagnosticId)this.#diagnostics.record('timer.fire',{scope:'presentation',id:token.diagnosticId,delay,actualDelay:this.now()-token.armedAt,late:Math.max(0,this.now()-token.armedAt-delay),queued:this.#scheduled.size});effect();},delay);
       this.#scheduled.set(token,timer);return token;
     }
     unschedule(token){
       if(!this.#scheduled.has(token))return;
-      this.#clock.clearTimeout(this.#scheduled.get(token));this.#scheduled.delete(token);
+      this.#clock.clearTimeout(this.#scheduled.get(token));this.#scheduled.delete(token);if(token.diagnosticId)this.#diagnostics.record('timer.cancel',{scope:'presentation',id:token.diagnosticId,elapsed:this.now()-token.armedAt,queued:this.#scheduled.size});
     }
     play(effect,minimumVisibleMs=0){
       this.cancel();

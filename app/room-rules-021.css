@@ -1,0 +1,204 @@
+/* A08 owner revision: visible order, parameters and ending; one fixed commit. */
+.rules-v021{display:flex;flex-direction:column;gap:12px;width:100%;min-width:0}
+:is(#modal-root,[data-ui-surface-exit]) .room-rules-modal[data-ui-surface="screen"]>.modal-body{padding-block:0}
+.rules-v021 [hidden]{display:none}
+.rules-v021-summary{min-width:0;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised)}
+.rules-v021-summary>strong{display:block;font-size:15px;line-height:1.4;font-weight:700}
+.rules-v021-summary>p{margin:2px 0 8px;color:var(--muted);font-size:14px;line-height:1.4;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;column-gap:1em;overflow:hidden}
+.rules-v021-summary>p>span{position:relative;flex:none;max-width:100%}
+.rules-v021-summary>p>span::before{content:"·";position:absolute;right:calc(100% + .35em)}
+.rules-v021-preset:has(>input[type=hidden]),.rules-v021-preset:empty{display:none}
+.rules-v021-reset{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;margin:8px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);box-shadow:none;font-size:14px;font-weight:500}
+.rules-v021-reset svg{width:20px;height:20px;flex:none}
+.rules-v021-parameters{display:flex;flex-direction:column;gap:16px;min-width:0;padding:2px 0 10px}
+.rules-v021-group{min-width:0;margin:0;padding:0}
+.rules-v021-group>h3{margin:0 0 8px;font-size:12px;line-height:1.4;font-weight:650;color:var(--muted)}
+.rules-v021-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0}
+.rules-v021-preset{min-width:0}
+.rules-v021-field-wide,.rules-v021-fields>:only-child{grid-column:1/-1}
+@media(min-width:360px){.rules-v021-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.rules-v021-field{min-width:0}
+.rules-v021-field>.field,.rules-v021-field>.settings-range{min-width:0;width:100%;margin:0;padding:0}
+.rules-v021-field .field>span,.rules-v021-select>.setting-title{font-size:13px;line-height:1.4;font-weight:600}
+.rules-v021-field .settings-range-heading{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:8px;min-height:32px;padding:0;font-size:13px}
+.rules-v021-field .settings-range-heading output{flex:none;min-width:0;margin:0;font-size:13px;line-height:1.4}
+.rules-v021-select{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:14px}
+.rules-v021-select select,.rules-v021-field select{width:100%;min-width:0;min-height:48px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);font:inherit}
+.rules-v021-switch{position:relative;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.rules-v021-switch input[type=checkbox]{position:absolute;right:0;width:42px;height:24px;min-height:24px;margin:0;opacity:0;cursor:pointer}
+.rules-v021-toggle{pointer-events:none;position:relative;display:block;flex:none;width:42px;height:24px;border-radius:999px;background:var(--muted)}
+.rules-v021-toggle>span{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--paper)}
+.rules-v021-switch:has(input:checked) .rules-v021-toggle{background:var(--green)}
+.rules-v021-switch:has(input:checked) .rules-v021-toggle>span{transform:translateX(18px)}
+:where(:root:not([data-input-modality="touch"])) .rules-v021-switch:has(input:focus-visible) .rules-v021-toggle{outline:3px solid var(--ui-focus);outline-offset:3px}
+:is(#modal-root,[data-ui-surface-exit]) .room-rules-modal>.rules-v021-footer{display:flex;flex:none;gap:8px;margin:0 calc(-1 * max(12px,var(--app-safe-right,0px))) calc(-1 * max(12px,var(--app-safe-bottom,0px))) calc(-1 * max(12px,var(--app-safe-left,0px)));padding:10px max(12px,var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) max(12px,var(--app-safe-left,0px));border-top:1px solid var(--line);background:var(--paper)}
+.rules-v021-footer>.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-width:0;min-height:44px;margin:0;padding:10px 12px;border:0;border-radius:12px;box-shadow:none;font-size:15px;line-height:1.3}
+.rules-v021-footer svg{width:20px;height:20px}
+@media(prefers-reduced-motion:no-preference){.rules-v021-toggle>span{transition:transform 160ms ease}}
+
+/* Brief is a separately authored introduction, never a clipped full rulebook. */
+.game-rules-help :is(.rulebook-brief-short,.rulebook-main){display:grid;gap:18px;padding-top:12px}
+.game-rules-help .rulebook-brief-short[hidden]{display:none}
+.game-rules-help :is(.rulebook-brief-short,.rulebook-main) .rulebook-section{margin:0;padding:0}
+.game-rules-help :is(.rulebook-brief-short,.rulebook-main) h3{font-size:17px;margin:0 0 6px}
+.game-rules-help :is(.rulebook-brief-short,.rulebook-main) .rulebook-section p{margin:0 0 8px;line-height:1.5}
+.game-rules-help :is(.rulebook-brief-short,.rulebook-main) .rulebook-section p:last-child{margin-bottom:0}
+.game-rules-help .rulebook-figures{margin:8px 0 0;gap:8px}
+.game-rules-help .rulebook-figure{padding:8px;border-radius:12px}
+.game-rules-help .rule-art{gap:6px}
+.game-rules-help figcaption{font-size:12px;margin-top:4px}
+
+/* Alternatives and button sequences stay together, even before any game view is loaded. */
+.game-rules-help .rulebook-figures .rulebook-figure:has(.rule-art-sequence){grid-column:1/-1;max-width:none;flex:1 1 100%}
+.game-rules-help .rule-art-sequence .rule-art-row{flex-wrap:nowrap;gap:6px}
+.game-rules-help .rule-art-or{flex:none;font-size:22px;line-height:1}
+
+/* Compact, host-owned parameter cards. */
+
+.room-v021-summary>.room-v021-cover-choice:disabled{opacity:.55;cursor:default}
+:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]{width:min(760px,100%);max-height:calc(var(--ui-viewport-height,100dvh) - 28px);margin-inline:auto;border-radius:22px 22px 0 0}
+:is(#modal-root,[data-ui-surface-exit]) :is(.room-rules-modal,.rulebook-modal)[data-ui-surface=panel]>.modal-body{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center;padding:0 0 12px;background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-summary>strong{grid-column:1;grid-row:1}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-summary>p{grid-column:1;grid-row:2;margin:0;font-size:.75rem}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-reset{grid-column:2;grid-row:1/3;width:44px;height:44px;min-height:44px;padding:10px;margin:0}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-reset>span{display:none}
+/* Sections read in one body scroll. auto-fill preserves a compact half-width
+   last card; rem-based minima reflow to one column when text needs the width. */
+.room-rules-modal[data-ui-surface=panel] .rules-v021-parameters{display:flex;flex-direction:column;gap:1rem}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-group:not([hidden]){display:block}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,max(8rem,calc(50% - 6px))),1fr));gap:12px;align-items:start}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-preset:not(:has(>input[type=hidden])){display:contents}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-group>h3{display:block;margin:0 0 .5rem;font-size:.8125rem;line-height:1.4;color:var(--muted)}
+.room-rules-modal[data-ui-surface=panel] .rules-v021-fields>.rules-v021-field:only-child,.room-rules-modal[data-ui-surface=panel] .rules-v021-field{grid-column:auto}
+.rule-choice-field{min-inline-size:0;min-width:0;margin:0;padding:.5rem;border:1px solid var(--line);border-radius:16px;background:var(--color-surface-raised,var(--paper));container-type:inline-size;container-name:rule-card}
+.rule-choice-heading{min-width:0;margin:0 0 .25rem;font-size:.75rem;line-height:1.4;font-weight:600}
+/* Keep the native group name without the special rendered-legend paint box. */
+.rule-choice-field>.rule-choice-legend{position:absolute;width:1px;height:1px;min-height:0;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.rule-choice-field .setting-title{display:flex;align-items:flex-start;gap:4px;white-space:normal}
+.rule-choice-field .setting-title-text{min-width:0;overflow-wrap:normal}
+.rule-choice-preview{clear:both;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.375rem;width:100%;min-width:0;min-height:0;height:auto;margin:0 0 .5rem;padding:0;border:0;border-radius:10px;background:transparent;color:var(--ink);box-shadow:none;font:inherit;text-align:center;cursor:pointer}
+.rule-choice-preview:disabled{opacity:1;cursor:default}
+.rule-choice-preview:focus-visible{outline:3px solid var(--ui-focus);outline-offset:3px}
+.rule-choice-preview [inert]{pointer-events:none}
+.rule-choice-preview-art{display:flex;align-items:center;justify-content:center;width:100%;max-width:100%;height:6rem;min-height:6rem;color:var(--green)}
+.rule-choice-preview-art:empty{display:none}
+.rule-choice-preview>output{display:block;max-width:100%;font-size:1.375rem;line-height:1.2;font-weight:750;overflow-wrap:normal}
+.rule-choice-preview.is-long-label>output{font-size:1rem;line-height:1.3}
+.rule-choice-preview>small{font-size:.75rem;line-height:1.4;color:var(--muted)}
+/* Text labels never wrap or shrink. Flex moves a whole choice to another row;
+   four numerical choices have a deliberately stable 2-by-2 arrangement. */
+.rule-choice-options{display:flex;flex-wrap:wrap;gap:4px 8px}
+.rule-choice-options>.rule-choice{flex:1 0 auto;min-width:44px;max-width:100%}
+.rule-choice-options[data-rule-grid="two"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.rule-choice-options[data-rule-grid="two"]>.rule-choice{min-width:0}
+.rule-choice{position:relative;display:flex;align-items:center;min-height:44px;margin:0;cursor:pointer}
+.rule-choice>input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:inherit}
+.rule-choice-body{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-height:36px;padding:3px 4px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:.75rem;font-weight:600;line-height:1.3;text-align:center;white-space:nowrap;overflow-wrap:normal;pointer-events:none}
+.rule-choice>input:checked+.rule-choice-body{border-color:var(--green);background:var(--color-surface-selected,#e0e8cb);box-shadow:inset 0 0 0 1px var(--green)}
+.rule-choice>input:focus-visible+.rule-choice-body{outline:3px solid var(--ui-focus);outline-offset:3px}
+.rule-choice-field.is-readonly .rule-choice{opacity:.7;cursor:default}
+.rule-choice-stepper{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.rule-choice-stepper>button{display:grid;place-items:center;min-width:0;min-height:2.75rem;margin:0;padding:.375rem;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--green);box-shadow:none;font:600 1.5rem/1 system-ui}
+.rule-choice-stepper>button:disabled{opacity:.35}
+.rule-preview-cards{--preview-step:min(.875rem,calc((100cqw - 1rem - 2.25rem)/max(1,var(--preview-cards) - 1)));position:relative;display:block;width:calc(2.25rem + (var(--preview-cards) - 1)*var(--preview-step));height:3.275rem;max-width:100%}
+.rule-preview-cards>span:not(.rule-preview-deck-count){position:absolute;top:0;left:calc(var(--preview-index)*var(--preview-step));display:block;width:2.25rem;height:3.15rem}
+.rule-preview-cards .piece-back,.rule-preview-cards .piece-back>svg{display:block;width:100%;height:100%}
+.rule-preview-deck-count{position:absolute;right:-12px;bottom:-3px;z-index:2;display:block}
+.rule-preview-deck-count .count-badge{font-size:.75rem}
+.rule-preview-dice{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap;max-width:100%}
+.rule-preview-dice>svg{width:2.5rem;height:2.5rem}
+.rule-preview-tokens{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2px;max-width:8.25rem}
+.rule-preview-tokens>.counter-token,.rule-preview-team>.counter-token{width:1.25rem;height:1.5rem;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1;stroke-linejoin:round}
+.rule-preview-fleet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));justify-items:center;align-items:center;gap:.25rem .5rem;max-width:15rem}
+.rule-preview-fleet>span{display:flex;justify-content:center;align-items:center}
+.rule-preview-fleet svg{display:block;width:auto;height:1.375rem;max-width:100%}
+.rule-preview-teams{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;max-width:16.25rem}
+.rule-preview-team{display:flex;gap:3px;align-items:center;justify-content:center;padding:8px;border:1px solid currentColor;border-radius:12px}
+.rule-preview-symbol{display:block;width:2.75rem;height:2.75rem}
+.rule-preview-symbol>svg{display:block;width:100%;height:100%}
+.rule-preview-declaration{position:relative;display:flex;align-items:center;gap:.25rem;padding-right:1.125rem}
+.rule-preview-declaration>.ui-button{display:inline-flex;min-height:2.25rem;padding:.25rem .5rem;margin:0;opacity:1;font-size:1rem;box-shadow:none;pointer-events:none}
+.rule-preview-actor{position:absolute;right:0;bottom:-.125rem;display:block;width:1.375rem;height:1.375rem;padding:2px;border:1px solid var(--line);border-radius:50%;background:var(--paper)}
+.rule-preview-actor>svg{display:block;width:100%;height:100%}
+/* This is the only optional wide card, explicitly declared by pack metadata. */
+.room-rules-modal[data-ui-surface=panel] .rule-choice-field.is-mode-choice{grid-column:1/-1;padding:.625rem}
+.is-mode-choice>.rule-choice-heading{font-size:.875rem}
+.is-mode-choice .rule-choice-preview{gap:.375rem;margin-bottom:.5rem}
+.is-mode-choice .rule-choice-preview>output{font-size:1.5rem}
+.is-mode-choice .rule-choice-preview>small{max-width:48ch;font-size:.75rem;line-height:1.4}
+.is-mode-choice .rule-choice-body{font-size:.875rem}
+.is-mode-choice .rule-preview-team>.counter-token{width:1.625rem;height:1.875rem}
+.rule-choice-readonly{font-size:.8125rem;line-height:1.4;color:var(--muted)}
+/* One reset control changes visual position, never duplicate DOM or a second
+   scroll area. The summary is redundant on short landscape panels. */
+@media(orientation:landscape) and (min-width:700px){
+ .room-rules-modal[data-ui-surface=panel]{position:relative}
+ .room-rules-modal[data-ui-surface=panel] .rules-v021-summary{display:contents}
+ .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>:is(strong,p){display:none}
+ .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>.rules-v021-reset{position:absolute;top:44px;right:116px;z-index:2}
+ .room-rules-modal[data-ui-surface=panel] .rules-v021-summary>.rule-choice-readonly{display:block;font-size:.75rem}
+}
+@media(max-width:600px) and (orientation:landscape){.room-v021-summary{flex-direction:row;flex-wrap:wrap}}
+
+/* A declared diagram grid keeps comparisons together; larger text can reflow. */
+.game-rules-help .rulebook-figures.is-grid:has(>.is-diagram:nth-child(2)){
+ display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,max(8rem,calc(50% - 4px))),1fr));gap:8px;
+}
+.game-rules-help .rulebook-figures.is-grid:has(>.is-diagram:nth-child(2))>.is-diagram{
+ width:auto;max-width:100%;min-width:0;padding:6px;
+}
+
+/* Selected chips carry the visible value; the live output remains available to AT. */
+.rule-choice-preview>.rule-choice-accessible-value{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.rule-choice-preview:not(.has-art):not(:has([data-rule-preview-detail])){position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%)}
+.room-rules-modal[data-ui-surface=panel] .rule-choice-field{position:relative;display:flex;flex-direction:column}
+.rule-choice-field .setting-title>.rule-help>button{position:absolute;right:4px;top:0;width:44px;height:44px;min-height:44px}
+.rule-choice-field .setting-title>.rule-help{position:static}
+.rule-choice-field .rule-choice-preview{float:none;width:100%;margin-bottom:8px;justify-content:flex-start}
+.rule-choice-field>.rule-choice-options,.rule-choice-field>.rule-choice-stepper{margin-top:auto}
+.rule-choice-field.is-unavailable{background:var(--paper)}
+.rule-choice-field.is-unavailable :is(.rule-choice-preview,.rule-choice-options,.rule-choice-stepper){opacity:.5}
+.rule-choice>input:disabled{opacity:0}
+.game-rules-help .rulebook-figures.is-grid:has(>.is-diagram:nth-child(2))>.is-diagram{max-width:min(100%,calc(var(--rulebook-art-width,300px) + 14px));justify-self:center}
+.is-mode-choice .rule-choice-preview-art{width:100%;height:10rem;min-height:10rem}
+.is-mode-choice .rule-choice-preview-art:has(.rule-preview-fleet,.rule-preview-teams){height:auto;min-height:6rem}
+.is-mode-choice .rule-preview-fleet{display:flex;flex-wrap:wrap;justify-content:center;width:100%;max-width:28rem;gap:.375rem .75rem}
+.is-mode-choice .rule-preview-teams{width:100%;justify-content:space-evenly;max-width:28rem}
+.game-rules-help .rulebook-figures.is-list{max-inline-size:30rem;margin-inline:auto}
+
+/* Give real words their intrinsic width instead of a fixed 29% first column. */
+.game-rules-help .rulebook-table{table-layout:auto}
+.game-rules-help .rulebook-table :is(th,td){overflow-wrap:normal;word-break:normal;hyphens:auto}
+.game-rules-help .rulebook-table :is(th,td):first-child{width:auto}
+/* The sole numeric readout belongs inside a text-only counter, never under art. */
+.rule-choice-stepper>[data-rule-step-value]{display:none;align-items:center;justify-content:center;min-width:2ch;font-size:.875rem;font-weight:700;line-height:1.3}
+.rule-choice-field:not(:has(.rule-choice-preview.has-value-art))>.rule-choice-stepper{grid-template-columns:minmax(44px,1fr) minmax(2ch,auto) minmax(44px,1fr);gap:6px}
+.rule-choice-field:not(:has(.rule-choice-preview.has-value-art))>.rule-choice-stepper>[data-rule-step-value]{display:flex}
+/* Anchor Help to an ordinary header inside the painted card on every engine. */
+.rule-choice-field .setting-title{position:relative;min-height:2rem;padding-right:44px}
+.rule-choice-field .setting-title>.rule-help>button{right:0;top:0;z-index:1}
+
+/* Art starts below its heading; the reserved caption stays above controls. */
+.rule-choice-field .rule-choice-preview{flex:1 0 auto}
+.rule-choice-preview-art{flex:none}
+.rule-choice-preview>[data-rule-preview-detail]{flex:none;align-self:stretch;display:flex;align-items:flex-end;justify-content:center;min-block-size:2.8em;margin-top:auto}
+/* Match option paint while retaining the same44px native button target. */
+.rule-choice-stepper>button{position:relative;isolation:isolate;min-height:44px;padding:0;border:0;background:transparent;font-size:1.25rem}
+.rule-choice-stepper>button::before{content:"";position:absolute;inset:4px 0;border:1px solid var(--line);border-radius:10px;background:var(--paper);z-index:-1;pointer-events:none}
+/* Same proportional corner inset as the library tile's favorite glyph. */
+.rule-choice-field .setting-title{position:static}
+.rule-choice-field .setting-title>.rule-help>button{right:max(0px,calc(100cqw * 9 / 176 - 10px));top:max(0px,calc(100cqw * 9 / 176 - 10px))}
+
+.rule-preview-illustrations{display:flex;align-items:center;justify-content:center;gap:.375rem;max-width:100%}
+.rule-preview-illustrations>span{display:flex;align-items:center;justify-content:center;min-width:0}
+.rule-preview-illustrations .piece{width:3.25rem;height:3.25rem;flex:none}
+.rule-preview-illustrations>span>svg{width:3rem;height:3rem}
+
+.rule-preview-illustrations>span>svg[data-piece-type="card-deck"]{width:3.25rem;height:auto;max-block-size:4.75rem}
+
+/* The slot is stable; authored units never grow to fill its available space. */
+.rule-preview-illustrations:has(svg[data-art-role="parameter-diagram"]),.rule-preview-illustrations>span:has(>svg[data-art-role="parameter-diagram"]){width:100%}
+.rule-choice-preview-art svg[data-art-role="parameter-diagram"]{display:block;width:var(--rule-art-inline,120px);height:auto;max-inline-size:100%;max-block-size:6rem;flex:none;pointer-events:none}
+.is-mode-choice .rule-choice-preview-art svg[data-art-role="parameter-diagram"]{max-block-size:10rem}
+.is-mode-choice .rule-preview-fleet>span{flex:none;max-width:100%}

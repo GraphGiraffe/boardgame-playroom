@@ -1,9 +1,13 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
+  {paths:['application/update-all.js'],select:['case/update-all','case/pack-update-notice-browser']},
+  {paths:['application/local-input-draft.js','platform/web/input-draft-store.js'],select:['case/local-input-drafts','case/local-choices','case/network-projection','case/mage-brawl-browser']},
+  {paths:['application/wire-codec.js'],select:['case/wire-codec','case/reliable-channel','case/webrtc-browser','case/realtime','case/realtime-browser']},
+  {paths:['platform/web/realtime-peer.js','application/realtime-session.js'],select:['case/realtime','case/realtime-browser']},
   {paths:['application/host-transfer.js','platform/web/host-transfer-wire.js','app/host-transfer-ui.js','server/host-transfer.sql'],select:['network/host-transfer','case/cloud-account-rls','case/network-host-recovery-browser','case/network-session-store-browser']},
   {paths:['app/push-ui.js','application/game-push-events.js','platform/web/push-device.js','platform/web/push-worker.js','server/push.sql','server/push/','supabase/'],select:['network/push','case/cloud-account-rls','case/pwa']},
-  {paths:['platform/web/data-storage.js','platform/web/storage-usage.js'],select:['storage/local','case/recovery-warning']},
+  {paths:['platform/web/data-storage.js','platform/web/storage-usage.js','platform/web/pack-storage.js'],select:['storage/local','case/recovery-warning','case/packs-reconcile']},
   {paths:['application/tutorial-controller.js','application/player-settings.js','platform/web/guide-preferences.js','platform/web/player-settings-store.js','app/first-turn-guide.js','app/tutorial-settings.js'],select:['case/domain-foundation','case/rc2-presentation-browser','case/settings-help-browser','case/motion-settings']},
   {paths:['core/messages.js','application/session-access.js'],select:['network/table','case/network-main-app']},
   {paths:['core/messages.js','core/model-values.js','core/events.js','core/bot-difficulty.js','core/model-runtime.js','presentation/scene-contract.js','core/model-registration.js'],select:['core/messages.js','core/model','core/session-runtime','case/rc2-games','case/session','case/authority','case/rc2-games-browser']},
@@ -20,10 +24,11 @@ module.exports = [
   {paths:['core/messages.js','app/lobby-view.js','app/lobby.css'],select:['ui/room','ui/navigation','network/authority']},
   {paths:['app/saved-games.css','app/library.js','application/library.js'],select:['core/messages.js','core/state','ui/history','ui/navigation','storage']},
   {paths:["core/messages.js","platform/web/pack-loader.js","app/shared-views.js"],select:['core/messages.js','core/screen','ui','network/resume','storage/history','input/feedback']},
-  {paths:['core/messages.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-ui.js'],select:['network','pairing','storage','ui']},
+  {paths:['application/connection-attempt.js','application/online-connection.js','application/transfer-peer.js','app/cloud-network.js','app/connection-progress.js','core/messages.js','application/history-sync-service.js','application/host-session-service.js','app/pairing-presenter.js','app/network-social.js','app/network-presence.js','app/network-ui.js'],select:['network','pairing','storage','ui']},
   {paths:['core/messages.js','app/pairing.js','app/qr.js','app/qr-scanner.js'],select:['pairing/codes','network/resume']},
   {paths:['core/messages.js','app/acoustic-pairing.js'],select:['pairing/audio','pairing/codes']},
   {paths:['core/messages.js','application/pwa-update-coordinator.js','app/pwa.js','sw.js','manifest.webmanifest'],select:['pairing/pwa','network/resume']},
+  {paths:['application/command-wire.js','presentation/projection-sync.js'],select:['case/command-wire','case/projection-sync','case/network-projection','case/network-performance','case/network-stage-one','case/webrtc-transport','case/webrtc-browser']},
   {paths:['core/messages.js','app/transports/','application/client-connection-service.js','app/session-client.js'],select:['network','storage']},
   {paths:['core/messages.js','application/host-recovery.js','platform/web/session-store.js','app/network-client-history.js'],select:['storage','network/resume','ui/history']},
   {paths:['core/messages.js','core/input.js','core/input.css','core/player-target.js'],select:['input/gestures','games/actions']},

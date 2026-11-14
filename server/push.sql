@@ -91,13 +91,23 @@ begin
 end;$$;
 revoke all on function public.playroom_push_game(jsonb) from public,anon,authenticated;
 
+-- Per-recipient metadata prevents delayed room Push after RTC read acknowledgements.
+create table if not exists public.playroom_push_room_reads (
+ user_id uuid not null references auth.users(id) on delete cascade,
+ room_id uuid not null references public.playroom_cloud_rooms(id) on delete cascade,
+ event_key text not null check(event_key ~ '^room:[0-9a-f-]{36}$'),
+ created_at timestamptz not null default now(),primary key(user_id,room_id,event_key)
+);
+create index if not exists playroom_push_room_reads_expiry on public.playroom_push_room_reads(created_at);
+alter table public.playroom_push_room_reads enable row level security;
+revoke all on public.playroom_push_room_reads from public,anon,authenticated;
 create or replace function public.playroom_push(p_action text,p_data jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare me uuid:=auth.uid(); sub jsonb:=p_data->'subscription'; ep text:=coalesce(sub->>'endpoint',p_data->>'endpoint'); key_text text; room public.playroom_cloud_rooms%rowtype; target_user uuid; author_user uuid; new_event_id uuid;
 begin
  if me is null or coalesce((auth.jwt()->>'is_anonymous')::boolean,false) then raise exception 'social:account-required'; end if;
  if p_action='config' then
-  return (select jsonb_build_object('publicKey',case when enabled then public_key else null end,'ready',enabled and public_key is not null) from public.playroom_push_config where singleton);
+  return (select jsonb_build_object('publicKey',case when enabled then public_key else null end,'ready',enabled and public_key is not null,'capabilities',jsonb_build_object('roomRead',true)) from public.playroom_push_config where singleton);
  elsif p_action='remove' then
   delete from public.playroom_push_subscriptions where user_id=me and endpoint=ep;return '{}'::jsonb;
  elsif p_action='subscribe' then
@@ -109,6 +119,14 @@ begin
   if not exists(select 1 from public.playroom_push_subscriptions where endpoint=ep) and (select count(*) from public.playroom_push_subscriptions where user_id=me)>=8 then raise exception 'social:limit'; end if;
   insert into public.playroom_push_subscriptions(user_id,endpoint,p256dh,auth) values(me,ep,sub#>>'{keys,p256dh}',sub#>>'{keys,auth}')
    on conflict(endpoint) do update set p256dh=excluded.p256dh,auth=excluded.auth,updated_at=now();
+  return '{}'::jsonb;
+ elsif p_action='room-seen' then
+  if jsonb_typeof(p_data->'events') is distinct from 'array' or jsonb_array_length(p_data->'events')>80 or exists(select 1 from jsonb_array_elements_text(p_data->'events') e where e !~ '^[0-9a-f]{8}-[0-9a-f-]{27}$') or not exists(select 1 from public.playroom_cloud_rooms r join public.playroom_room_members m on m.room_id=r.id and m.user_id=me where r.id=(p_data->>'roomId')::uuid and not r.closed) then raise exception 'social:forbidden';end if;
+  perform pg_advisory_xact_lock(hashtextextended(me::text,14));
+  if (select count(*) from public.playroom_push_room_reads where user_id=me and created_at>now()-interval '1 minute')>=600 then raise exception 'social:rate-limit';end if;
+  delete from public.playroom_push_room_reads where created_at<now()-interval '2 hours';
+  insert into public.playroom_push_room_reads(user_id,room_id,event_key) select me,(p_data->>'roomId')::uuid,'room:'||e from jsonb_array_elements_text(p_data->'events') e on conflict do nothing;
+  delete from public.playroom_push_deliveries d using public.playroom_push_subscriptions sub where d.subscription_id=sub.id and sub.user_id=me and d.kind='room' and d.ref=p_data->>'roomId' and d.event_key in(select 'room:'||e from jsonb_array_elements_text(p_data->'events') e);
   return '{}'::jsonb;
  elsif p_action='game-state' then
   return public.playroom_push_game(p_data);
@@ -268,8 +286,14 @@ revoke all on function public.playroom_push_announce_update(uuid,text,text,text)
 grant execute on function public.playroom_push_announce_update(uuid,text,text,text) to service_role;
 
 create or replace function public.playroom_push_pending(d public.playroom_push_deliveries,who uuid) returns boolean
-language sql stable security definer set search_path=public,pg_temp as $$
- select d.expires_at>now() and case d.kind
+language plpgsql stable security definer set search_path=public,pg_temp as $$
+declare allowed boolean;
+begin
+ if d.kind='host-transfer' then
+  if to_regprocedure('public.playroom_push_host_pending(public.playroom_push_deliveries,uuid)') is null then return false;end if;
+  execute 'select public.playroom_push_host_pending($1,$2)' into allowed using d,who;return d.expires_at>now() and coalesce(allowed,false);
+ end if;
+ return d.expires_at>now() and case d.kind
  when 'update' then exists(select 1 from public.playroom_push_updates u where u.id=d.ref::uuid and u.expires_at>now())
  when 'friend-request' then exists(select 1 from public.playroom_friendships f where f.id=d.ref::uuid and f.recipient=who and not f.accepted)
  when 'friend-accepted' then exists(select 1 from public.playroom_friendships f where f.id=d.ref::uuid and f.sender=who and f.accepted)
@@ -280,10 +304,10 @@ language sql stable security definer set search_path=public,pg_temp as $$
  when 'dm' then exists(select 1 from public.playroom_messages m left join public.playroom_chat_reads r on r.reader=who and r.peer=m.sender where m.id=d.ref::bigint and m.recipient=who and m.id>coalesce(r.through_id,0))
  when 'group-invitation' then exists(select 1 from public.playroom_messages m join public.playroom_group_invites i on i.id=m.group_invitation_id join public.playroom_groups g on g.id=i.group_id where m.id=d.ref::bigint and i.target=who and i.accepted_at is null and i.declined_at is null and i.expires_at>now() and g.closed_at is null)
  when 'group' then exists(select 1 from public.playroom_group_messages m join public.playroom_group_members mem on mem.group_id=m.group_id and mem.user_id=who and mem.left_at is null join public.playroom_groups g on g.id=m.group_id where m.id=d.ref::bigint and m.id>mem.read_through and g.closed_at is null)
- when 'room' then exists(select 1 from public.playroom_cloud_rooms r join public.playroom_room_members m on m.room_id=r.id and m.user_id=who where r.id=d.ref::uuid and not r.closed)
+ when 'room' then exists(select 1 from public.playroom_cloud_rooms r join public.playroom_room_members m on m.room_id=r.id and m.user_id=who where r.id=d.ref::uuid and not r.closed) and not exists(select 1 from public.playroom_push_room_reads rr where rr.user_id=who and rr.room_id=d.ref::uuid and rr.event_key=d.event_key)
  when 'invitation' then public.playroom_invitation_state(d.ref::uuid,who) in ('active','offline') and exists(select 1 from public.playroom_room_invites i where i.id=d.ref::uuid and i.used_by is null)
  else false end;
-$$;
+end;$$;
 create or replace function public.playroom_push_claim() returns jsonb
 language plpgsql security definer set search_path=public,pg_temp as $$
 declare rows jsonb;

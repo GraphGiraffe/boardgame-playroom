@@ -64,7 +64,7 @@
     function clearPreview() { preview?.classList.remove('is-hand-preview'); preview = null; }
     function previewDown(event) {
       clearPreview();
-      if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (event.isPrimary === false || event.pointerType !== 'mouse' || event.button !== 0) return;
       const card = event.target.closest?.('[data-hand-preview]');
       if (usable(card) && canSelect(card)) { preview = card; card.classList.add('is-hand-preview'); }
     }
@@ -145,7 +145,7 @@
       const snap=target?.hasAttribute('data-drop-snap')?visibleDropRect(target):null;
       const left = Math.max(0, Math.min(root.innerWidth - s.width, snap?(snap.left+snap.right-s.width)/2:s.x-s.offsetX));
       const top = Math.max(0, Math.min(root.innerHeight - s.height, snap?(snap.top+snap.bottom-s.height)/2:s.y-s.offsetY));
-      s.ghost.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+      s.ghost.style.transform = `translate3d(${left-s.originX}px, ${top-s.originY}px, 0)`;
       if(s.ghost.classList.contains('playroom-composite-ghost'))s.ghost.classList.toggle('playroom-drag-invalid',!target);
     }
     function takeCapture(s) {
@@ -175,9 +175,9 @@
       try { if (capture.hasPointerCapture(s.id)) capture.releasePointerCapture(s.id); } catch (_) { /* Pointer already ended. */ }
     }
     function cancel() {
-      const cancelled=active?.immediate&&active.phase==='dragging'&&String(getSelected())===String(active.piece);
+      const cancelled=active?.phase==='dragging'&&String(getSelected())===String(active.piece);
       clearPreview();
-      if (active?.phase !== 'pending' && active) suppress = { id: active.id, x: active.x, y: active.y, until: performance.now() + (policy.dragClickSuppressionMs??700) };
+      if (active?.phase !== 'pending' && active) suppress = { id: active.id, x: active.x, y: active.y, awaitingRelease:true, until: Infinity };
       cleanup();
       if (pendingCommit) { root.cancelAnimationFrame(pendingCommit); pendingCommit = 0; }
       if(cancelled&&!disposed)select(null);
@@ -222,7 +222,12 @@
       if ('disabled' in s.ghost) s.ghost.disabled = true;
       Object.assign(s.ghost.style, { width: `${s.width}px`, height: `${s.height}px`, minWidth: '0', minHeight: '0', font: style.font, color: style.color, borderRadius: style.borderRadius, flexDirection: style.flexDirection });
       s.phase = 'dragging';
+      s.ghost.style.transform = 'none';
       doc.body.append(s.ghost);
+      // Pointer/target rectangles use viewport coordinates. A fixed element's
+      // containing-block origin may include a native root gutter or border.
+      // Measure once, before the optional straightening animation.
+      const origin=s.ghost.getBoundingClientRect();s.originX=origin.left;s.originY=origin.top;
       if(pose.angle&&!root.matchMedia?.('(prefers-reduced-motion: reduce)').matches)s.ghost.animate([{rotate:pose.angle+'deg'},{rotate:'0deg'}],{duration:policy.dragStraightenMs??100,easing:'ease-out'});
       capture.classList.add('playroom-dragging'); takeCapture(s);
       try { select(s.piece,{viewKey:s.source.dataset.dragViewKey}); } catch (error) { cancel(); throw error; }
@@ -267,6 +272,7 @@
       const scrollableX = !!scroll.x, scrollableY = !!scroll.y;
       if (scrollOnly && !scrollableX && !scrollableY) return;
       const s = { source, scrollOnly, drag: actionable && source.hasAttribute('data-drag-piece'), piece: source.dataset.dragPiece ?? source.dataset.swipeSelect ?? source.dataset.select ?? readAction(source.dataset.swipeAction)?.card, id: event.pointerId, touch: event.pointerType !== 'mouse', startedAt: performance.now(), phase: 'pending', immediate:source.dataset.dragStart==='immediate', startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, track, scrollX:scroll.x, scrollY:scroll.y, scrollableX, scrollableY, scrollAxis: null, scrollLeft: scroll.x?.scrollLeft || 0, scrollTop: scroll.y?.scrollTop || 0, timer: 0, ghost: null, hover: null };
+      if(s.immediate)s.selectedBefore=getSelected();
       active = s;
       // Touch Events stay bound to their original touchstart node even after
       // pointer capture moves to <html>. select() may detach that node; keep
@@ -278,7 +284,7 @@
       s.contextMenu = event => { if (active === s) event.preventDefault(); };
       source.addEventListener('contextmenu', s.contextMenu, true);
       if(s.drag&&s.immediate){beginDrag(s);if(event.cancelable)event.preventDefault();}
-      if (s.drag&&!s.immediate) s.timer = root.setTimeout(() => beginDrag(s), s.touch ? (policy.dragTouchDelayMs??220) : (policy.dragPointerDelayMs??180));
+      if (s.drag&&!s.immediate&&!s.touch) s.timer = root.setTimeout(() => beginDrag(s), policy.dragPointerDelayMs??180);
       // Other modes defer render and capture so a quick tap uses the ordinary
       // accessible click handler; immediate board pieces are already lifted.
     }
@@ -288,9 +294,13 @@
       if (!s || event.pointerId !== s.id) return;
       s.x = event.clientX; s.y = event.clientY;
       const dx = s.x - s.startX, dy = s.y - s.startY;
+      if(Math.hypot(dx,dy)>=3)s.moved=true;
       if (s.phase === 'pending') {
         if(s.immediate&&s.drag&&Math.hypot(dx,dy)>=3)beginDrag(s);
         else if (!s.touch && Math.hypot(dx, dy) >= 5) beginDrag(s);
+        // A stationary touch remains a tap. Lift only after both a hold and
+        // intentional motion; early motion belongs to scrolling or a swipe.
+        else if (s.touch&&s.drag&&performance.now()-s.startedAt>=(policy.dragTouchDelayMs??220)&&Math.hypot(dx,dy)>7) beginDrag(s);
         else if (s.touch && s.scrollableY && Math.abs(dy) > 7 && Math.abs(dy) > Math.abs(dx) * 1.1) {
           s.phase = 'scrolling'; s.scrollAxis = 'y'; s.track=s.scrollY; clearTimeout(s.timer); clearPreview(); takeCapture(s);
         } else if (s.touch && (s.scrollableX || !s.drag) && Math.abs(dx) > 7 && Math.abs(dx) > Math.abs(dy) * 1.1) {
@@ -305,12 +315,18 @@
       if (s.phase === 'dragging') paint(s);
       if (s.phase !== 'pending' && event.cancelable) event.preventDefault();
     }
+    function releaseSuppression(event) {
+      if(suppress?.awaitingRelease&&event.pointerId===suppress.id){
+        suppress={id:suppress.id,x:event.clientX,y:event.clientY,until:performance.now()+(policy.dragClickSuppressionMs??700)};
+      }
+    }
     function pointerUp(event) {
       const s = active;
-      if (!s || event.pointerId !== s.id) return;
+      if (!s || event.pointerId !== s.id) { releaseSuppression(event);return; }
       s.x = event.clientX; s.y = event.clientY;
+      const immediateTap=s.phase==='dragging'&&s.immediate&&!s.moved&&Math.hypot(s.x-s.startX,s.y-s.startY)<3;
       let action = null, selection = null, playedFrom = null, commitSource = s.source;
-      if (s.phase === 'dragging') {
+      if (s.phase === 'dragging'&&!immediateTap) {
         paint(s);
         const target = s.hover;
         if (target?.isConnected) {
@@ -332,8 +348,11 @@
         if (!s.source.hasAttribute('data-swipe-action') && s.source.hasAttribute('data-swipe-select')) selection = s.source.dataset.swipeSelect;
       }
       if (s.phase !== 'pending') suppress = { id: s.id, x: s.x, y: s.y, until: performance.now() + (policy.dragClickSuppressionMs??700) };
-      const cancelled=s.immediate&&s.phase==='dragging'&&!action&&selection===null&&Math.hypot(s.x-s.startX,s.y-s.startY)>=3;
+      const cancelled=s.phase==='dragging'&&!immediateTap&&!action&&selection===null;
       cleanup();
+      // Immediate pieces lift on press, but a stationary release is still a selection tap.
+      // Keep the press-time selection and suppress its compatibility click; a second tap toggles it off.
+      if(immediateTap){if(!canSelect(s.source)||s.selectedBefore!=null&&String(s.selectedBefore)===String(s.piece))select(null);return;}
       if(cancelled&&String(getSelected())===String(s.piece))select(null);
       // Let pointerup and its compatibility click finish against stable DOM.
       if (action || selection !== null) pendingCommit = root.requestAnimationFrame(() => {
@@ -342,10 +361,17 @@
       });
     }
     function click(event) {
-      if (!suppress || event.detail === 0) return;
-      if (performance.now() > suppress.until) { suppress = null; return; }
-      const samePointer = Number.isInteger(event.pointerId) && event.pointerId >= 0 ? event.pointerId === suppress.id : Math.hypot(event.clientX - suppress.x, event.clientY - suppress.y) < 12;
-      if (samePointer) { suppress = null; event.preventDefault(); event.stopImmediatePropagation(); }
+      if (event.detail === 0 || event.defaultPrevented) return;
+      if (suppress) {
+        if (performance.now() > suppress.until) suppress = null;
+        else {
+          const samePointer = Number.isInteger(event.pointerId) && event.pointerId >= 0 ? event.pointerId === suppress.id : Math.hypot(event.clientX - suppress.x, event.clientY - suppress.y) < 12;
+          if (samePointer) { suppress = null; event.preventDefault(); event.stopImmediatePropagation(); return; }
+        }
+      }
+      const target=event.target,scope=target?.closest?.('.table-shell,.game-scene');
+      if(!scope||getSelected()==null||target.closest('button,a,input,select,textarea,summary,[contenteditable],[data-action],[data-select],[data-cell],[data-drop-select],[data-drop-piece],[data-double-action],[data-view-key]'))return;
+      if(canSelect(scope))select(null);
     }
     listen(doc, 'pointerdown', previewDown, true);
     listen(doc, 'pointerdown', pointerDown, true);
@@ -359,7 +385,7 @@
     listen(doc, 'pointerup', pointerUp, true);
     listen(doc, 'pointerup', clearPreview, true);
     listen(doc, 'pointercancel', clearPreview, true);
-    listen(doc, 'pointercancel', event => { if (event.pointerId === active?.id) cancel(); }, true);
+    listen(doc, 'pointercancel', event => { if (event.pointerId === active?.id) cancel();releaseSuppression(event); }, true);
     listen(doc, 'lostpointercapture', event => { if (event.pointerId === active?.id && event.target === capture) cancel(); }, true);
     listen(doc, 'click', click, true);
     listen(doc, 'contextmenu', event => { if (active || (sourceAt(event.target) && suppress)) event.preventDefault(); }, true);

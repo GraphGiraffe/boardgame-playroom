@@ -1,0 +1,22 @@
+/* The catalog stays in place while a short filter task owns its own surface. */
+.catalog-filter-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border-radius:50%;background:var(--green);color:var(--color-action-on-primary,var(--paper));font-size:11px}
+.catalog-filters-v021{display:flex;flex-direction:column;gap:8px;min-width:0;padding:0}
+.catalog-filters-v021 fieldset{display:flex;flex-direction:column;gap:10px;min-width:0;margin:0;padding:0;border:0}
+.catalog-filters-v021 legend{padding:0;font-size:13px;line-height:1.4;font-weight:650}
+.catalog-filter-fields{display:grid;gap:16px;min-width:0;padding-top:0}
+.catalog-filter-choices{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.catalog-filter-choices>button{min-width:44px;min-height:44px;max-width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:transparent;font:inherit;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.catalog-filter-choices>button[aria-pressed="true"]{border-color:var(--green);background:var(--color-surface-selected)}
+.catalog-filter-footer{display:flex;gap:8px;padding-top:8px}
+.catalog-filter-footer>.btn{display:flex;align-items:center;justify-content:center;min-width:0;min-height:44px;padding:10px 12px;border-radius:12px;box-shadow:none;font-size:14px}
+.catalog-filter-footer>[data-catalog-filter-apply]{flex:1}
+.catalog-filter-empty{padding:24px 4px;text-align:center}
+.catalog-filter-empty h3{margin:0 0 8px;font-size:18px}
+.catalog-filter-empty p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
+.catalog-filter-empty>.text-btn{justify-content:center;min-height:44px;font-weight:500}
+
+.catalog-filter-choices.filter-format>button{display:inline-grid;place-items:center;width:auto;height:auto;min-width:44px;min-height:44px;padding:10px;border-radius:12px;font-size:.9375rem;font-weight:600}
+.catalog-filter-choices.filter-format>button>svg{display:block;width:22px;height:22px}
+
+.catalog-filter-choices>button[data-catalog-filter-kind="type"]{display:inline-flex;align-items:center;gap:6px}
+.catalog-filter-choices>button[data-catalog-filter-kind="type"]>svg{width:18px;height:18px;flex:none}

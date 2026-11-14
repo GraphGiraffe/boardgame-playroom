@@ -21,7 +21,9 @@
  function apply(doc,percent,width,height){
   const style=doc.documentElement.style,sizes=resolve(percent,width,height);
   for(const [name,value]of Object.entries(catalogue.presentation.css))style.setProperty(name,value);
-  for(const binding of catalogue.bindings){const value=nearest(binding.family,binding.base*percent/100);style.setProperty(binding.name,(binding.family==='border'&&binding.base>0?Math.max(1,value):value)+'px');}
+  // Typography follows the user's root font. Art, spacing and input geometry
+  // remain in screen-space CSS pixels, independently of text preferences.
+  for(const binding of catalogue.bindings){const value=nearest(binding.family,binding.base*percent/100);style.setProperty(binding.name,binding.family==='type'?(value/16)+'rem':(binding.family==='border'&&binding.base>0?Math.max(1,value):value)+'px');}
   for(const [name,value]of Object.entries(sizes))style.setProperty('--size-'+name,value+'px');
   const grid=layoutGrid(width,percent,height);for(const [name,value]of Object.entries({columns:grid.columns,margin:grid.margin+'px',gutter:grid.gutter+'px','tile-columns':grid.tileColumns,'featured-span':catalogue.layoutGrids.library.featuredSpan,'content-max':grid.maxContentWidth+'px','sidebar-width':nearest('length',176*percent/100)+'px'}))style.setProperty('--ui-grid-'+name,String(value));
   style.setProperty('--size-card-height',sizes.card*1.4+'px');style.setProperty('--size-domino-height',sizes.domino*1.75+'px');

@@ -3,14 +3,14 @@
 #app .layout-field :is(.shared-card,.shared-card-slot):not(.solitaire-card):not(.solitaire-empty){width:var(--size-card);height:var(--size-card-height)}
 #app .layout-field .pexeso-grid :is(.shared-card,.shared-card-slot){width:var(--grid-card-width);height:calc(var(--grid-card-width) * 1.4)}
 #app :is(.shared-die,.die){width:var(--size-die);height:var(--size-die);min-width:0;min-height:0}
-#app .solitaire-control{width:var(--size-control);height:var(--size-control);min-width:var(--size-control);min-height:var(--size-control)}
+
 #app .layout-field .shared-card:not(.solitaire-card){width:var(--size-card)!important;min-width:0!important;height:var(--size-card-height)!important;min-height:0!important}
 #app .layout-field .pexeso-grid .shared-card{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
 #app .app-game-layout .layout-hand .hand-card{width:var(--scene-card-width)!important;min-width:var(--scene-card-width)!important;height:var(--scene-card-height)!important}
 #app .layout-field [data-size-role="card"]{width:var(--size-card)!important;height:var(--size-card-height)!important;min-width:0!important;min-height:0!important}
 #app .layout-field .pexeso-grid [data-size-role="card"]{width:var(--grid-card-width)!important;height:calc(var(--grid-card-width) * 1.4)!important}
-body{min-width:320px;font-size:var(--size-type-16_0,16px)}
-#app .app-shell,#modal-root,#avatar-picker-root,.appearance-dialog{font-size:16px}
+body{min-width:min(320px,100%);font-size:var(--size-type-16_0,1rem)}
+#app .app-shell,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog{font-size:1rem}
 /* Keep two phone columns; wider libraries add tracks before enlarging tiles. */
 #app .game-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 #app .game-grid .game-tile.featured{grid-column:auto}
@@ -28,43 +28,43 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
  #app .app-shell .mobile-brand{display:none}
 }
 /* Optical centering correction only; retain release control dimensions. */
-:is(#app,#modal-root,#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button){display:inline-flex;align-items:center;justify-content:center;line-height:1}
-:is(#app,#modal-root,#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button)>svg{display:block;flex:none;margin:0;max-width:100%;max-height:100%}
+:is(#app,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button){display:inline-flex;align-items:center;justify-content:center;line-height:1}
+:is(#app,:is(#modal-root,[data-ui-surface-exit]),#avatar-picker-root,.appearance-dialog) :is(.icon-btn,.ui-icon-button)>svg{display:block;flex:none;margin:0;max-width:100%;max-height:100%}
 
 /* Roomy board controls share a semantic size; five-dice hands keep their own role. */
 #app [data-size-role="board-dice"] :is(.shared-die,.die){width:var(--size-board-die);height:var(--size-board-die);max-width:none;max-height:none}
-/* Replay owns a separate toolbar; play-only dice/adjustment controls reserve no row. */
+/* Replay keeps public dice while omitting a duplicated self card and play commands. */
 #app .scene.replaying .layout-actions:has([data-size-role="board-dice"]):not(:has([data-view-preference])){display:flex!important;pointer-events:none}
-#app .scene.replaying .app-game-layout[data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self:has([data-size-role="board-dice"]){display:none!important}
+#app .scene.replaying .app-game-layout[data-has-hand="false"]:has([data-seat-copy="true"])>.layout-self:has([data-size-role="board-dice"])>.player-panel{display:none!important}
 
 /* The table heading shares two lines between the title and optional mode. */
 #app .table-title{flex:1;min-width:0;overflow:hidden}
 #app .table-title [data-game-title],.lobby-game-line [data-game-title]{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
 #app .table-title p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#app .table-shell .table-header{flex-wrap:nowrap;min-height:44px}
-.lobby-game-line [data-game-title]{flex:1}
+
+.lobby-game-line [data-game-title]{flex:1;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;max-height:2.4em}
 .lobby-game-line .lobby-tools{flex:none}
 
 #app .table-tools [data-command=fullscreen]{display:inline-flex}
 /* Content field has no scrolling interaction; keep all card layers at one size. */
-#app .uno-scene .layout-field{overflow:clip;scrollbar-gutter:auto}
-#app .uno-scene .uno-play-area{min-height:0;width:100%;max-height:100%}
-#app .uno-scene .uno-discard:before{width:var(--size-card);height:var(--size-card-height)}
-#app .uno-scene .uno-center .piece-back{width:var(--size-card)!important;min-width:var(--size-card)!important;height:var(--size-card-height)!important}
+
+
+
+
 
 /* Counter art includes a lower rim/shadow; leave room inside the scrolling row. */
-#app .app-game-layout .player-data{padding-block:2px;min-height:0;align-items:center}
+
 #app .app-game-layout[data-opponent-hands="false"] .player-panel.opponent-hand{min-height:0;justify-content:flex-start}
-#app .app-game-layout[data-opponent-hands="false"] .player-panel .player-info{min-height:0;padding-block:2px}
+
 
 @media(orientation:landscape) and (min-width:600px){
  #app .table-shell{--right-side-width:var(--side-width)}
- #app .table-shell:has(.yatzy-scene){--right-side-width:max(26%,244px)}
- #app .app-game-layout.yatzy-scene:not([data-surface="player"]){grid-template-columns:minmax(0,var(--side-width)) minmax(0,1fr) minmax(0,var(--right-side-width))!important}
- #app .table-shell:has(.yatzy-scene) .table-tools{width:calc(var(--right-side-width) - 8px)}
+
+
+
  #app .table-status .turn-extra,#app .table-status .status-event{width:calc(var(--right-side-width) - 18px);text-align:left}
  #app .table-status .turn-label{left:14px}
- #app .yatzy-scene .yatzy-dice{gap:6px}
+
 }
 
 #app .app-game-layout .player-panel.is-inactive{background:color-mix(in srgb,var(--paper,#f4f2e8) 60%,#a5aaa5);border-color:#a5aaa5}
@@ -74,36 +74,36 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 }
 #app .resume-actions .resume-primary{background:var(--color-action-primary,#356951);border-color:var(--color-action-primary,#356951);color:var(--color-action-on-primary,#fffef8)}
 @media(orientation:landscape) and (min-width:600px){
- #app .yatzy-scene:is([data-player-count="5"],[data-player-count="6"]) .players-panels{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
 }
 
 /* Hand pieces retain the readable release scale independently of field pieces. */
-#app .uno-scene .layout-field{--size-card:var(--size-hand-card,60px);--size-card-height:calc(var(--size-hand-card,60px) * 1.4)}
-#app .uno-scene .game-field-content{overflow:visible!important}
+
+
 /* Book summaries are a table, not a coloured card-play surface. */
 #app .gofish-scene>.layout-field{background:transparent}
 #app .gofish-scene .gofish-book-cards .shared-card{width:24px!important;height:34px!important;min-width:24px!important;min-height:34px!important;flex-shrink:0}
 
 /* Compact player headers share one spacing policy across every pack. */
-#app .app-game-layout .player-panel .player-info{align-items:flex-start;padding-top:0;padding-bottom:0}
-#app .app-game-layout .player-panel .player-details{gap:0;align-self:flex-start}
-#app .app-game-layout .player-panel .player-data{padding-block:0;align-items:flex-start;gap:2px}
-#app .app-game-layout .player-panel .player-heading{align-items:flex-start}
+
+
+
+
 #app .app-game-layout .player-panel .player-hand{margin-top:0;gap:0}
 #app .app-game-layout .player-panel .player-hand .mini-hand{padding-top:0!important}
 
-#app .app-game-layout .player-panel .player-heading{padding-right:0;align-items:flex-start}
-#app .app-game-layout .player-panel .player-turn-position{position:static;flex:0 0 16px;margin-left:auto}
-#app .app-game-layout .player-panel .player-info{padding:4px}
+#app .app-game-layout .player-panel .player-heading{padding-right:0;}
+#app .app-game-layout .player-panel .player-turn-position{margin-left:auto;}
+
 #app .app-game-layout .layout-actions>.game-action-bar{height:100%;align-self:stretch}
 .player-target-menu.is-panel-overlay{box-sizing:border-box;max-width:none;min-width:0;max-height:none;overflow:auto;justify-content:center;box-shadow:none}
 .player-target-menu.is-panel-overlay>.scene-button{min-width:0;width:100%;flex-shrink:0;padding-inline:4px;overflow-wrap:anywhere}
 /* Narrow player cards keep the name and order together above avatar/counters. */
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-info{display:grid;grid-template-columns:20px minmax(0,1fr);gap:2px;padding:4px}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-details{display:contents}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-heading{grid-column:1/-1;grid-row:1}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-avatar-wrap{grid-column:1;grid-row:2}
-#app .app-game-layout .opponent-hand[data-compact-identity="true"] .player-data{grid-column:2;grid-row:2}
+
+
+
+
+
 
 /* Paint each overlapping card as a single opaque layer, including SVG artboards. */
 #app .app-game-layout .hand-track.is-fan .hand-card{isolation:isolate;contain:paint}
@@ -112,11 +112,11 @@ body{min-width:320px;font-size:var(--size-type-16_0,16px)}
 /* Fixed quick-action slots shared by the library and game header. */
 #app :is(.topbar-tools,.table-tools){display:flex;gap:4px;flex:none;margin-left:auto;}
 #app :is(.topbar-tools,.table-tools)>.icon-btn{display:inline-flex!important;width:44px!important;height:44px!important;min-width:44px!important;align-items:center;justify-content:center;}
-#modal-root .modal-head>[data-command="reset-rules"]{margin-left:auto;flex:none;}
+:is(#modal-root,[data-ui-surface-exit]) .modal-head>[data-command="reset-rules"]{margin-left:auto;flex:none;}
 @media(max-width:760px) and (orientation:portrait){#app .hub-main>.topbar{height:44px;min-height:44px;margin-top:-4px;margin-right:-4px;}}
 
-#modal-root .modal-head>[data-command="reset-rules"]{order:1;}
-#modal-root .modal>[data-fixed-footer]{flex:none;margin:12px 10px 10px;width:auto!important;}
+:is(#modal-root,[data-ui-surface-exit]) .modal-head>[data-command="reset-rules"]{order:1;}
+:is(#modal-root,[data-ui-surface-exit]) .modal:not([data-ui-surface])>[data-fixed-footer]{flex:none;margin:12px 10px 10px;width:auto!important;}
 
 /* The sidebar uses a vertical, equal-size page selector. */
 @media(min-width:761px),(orientation:landscape){
@@ -137,7 +137,7 @@ input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b9
 .player-score.is-token-counter{display:inline-flex!important;align-items:center;gap:1px;background:transparent;padding:0;min-width:0;box-shadow:none;border:0}
 .player-score .counter-token{width:13px;height:15px;flex:none;fill:currentColor;stroke:currentColor;stroke-width:1;stroke-linejoin:round}
 .player-score .counter-token.is-empty{fill:none;opacity:.25}.token-heart{color:var(--color-side-red,#ce735d)}.token-meeple{color:var(--color-side-blue,#668fad)}.token-crown{color:var(--color-side-yellow,#cfac4c)}
-.player-avatar-wrap[data-decision-player]{cursor:pointer}
+.player-avatar-wrap[data-decision-player]{cursor:pointer;}
 
 .app-game-layout.is-public-playback .layout-hand,.app-game-layout.is-public-playback .layout-actions{visibility:hidden;pointer-events:none}
 
@@ -153,12 +153,12 @@ input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b9
 .player-panel:is(.is-turn,.is-ready){--counter-token-empty-fill:var(--color-surface-turn,#dfedcb)}
 
 /* Optional compact counters share the name row without expanding its height. */
-#app .app-game-layout .player-heading:has(.player-heading-counters){display:flex;align-items:center;gap:3px;min-width:0;flex-wrap:nowrap}
-#app .app-game-layout .player-heading:has(.player-heading-counters)>strong{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#app .app-game-layout .player-heading-counters{display:flex;align-items:center;flex:0 0 auto;gap:3px;line-height:1}
-#app .app-game-layout .player-heading-counters .player-score{font-size:11px;min-height:0;padding:0;line-height:1}
-#app .app-game-layout .player-heading-counters .counter-token{width:11px!important;height:11px!important;flex:0 0 11px}
-#app .app-game-layout .player-heading-counters .is-overlapping .counter-token+.counter-token{margin-left:calc(11px * -.54)}
+
+#app .app-game-layout .player-heading:has(.player-heading-counters)>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+#app .app-game-layout .player-heading-counters .player-score{font-size:11px;}
+
+#app .app-game-layout .player-heading-counters .is-overlapping .counter-token+.counter-token{margin-left:calc(11px * -.54);}
 
 /* Games can request a wider local hand lane through the shared layout contract. */
 @media(orientation:landscape) and (min-width:600px){
@@ -173,8 +173,7 @@ input[type=range].is-high-error-rate{accent-color:var(--color-feedback-error,#b9
 
 /* Quick actions follow available shell width after interface zoom. */
 :where(:root[data-ui-compact="true"]) #app :is(.topbar-tools,.table-tools)>.icon-btn{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important;border-radius:50%;padding:6px}
-:where(:root[data-ui-compact="true"]) #modal-root :is(.modal-head,.lobby-tools,.lobby-primary,.slot-edit,.lobby-game-line) .icon-btn{width:32px!important;min-width:32px!important;height:32px!important;min-height:32px!important;border-radius:50%;padding:6px;flex:none}
-:where(:root[data-ui-compact="true"]) :is(#app,#modal-root) :is(.topbar-tools,.modal-head,.lobby-tools,.lobby-primary,.slot-edit,.rulebook-toolbar){gap:4px}
-:where(:root[data-ui-compact="true"]) #modal-root .room-setup-modal .lobby-seat-row:has(>.slot-edit){grid-template-columns:minmax(0,1fr) 68px}
-#modal-root .modal-head h2{min-width:0;overflow-wrap:anywhere}
-#modal-root .room-setup-modal :is(.lobby-wrap,.lobby-card,.lobby-config,.lobby-roster-scroll,.lobby-footer){min-width:0}
+:where(:root[data-ui-compact="true"]) :is(#app,:is(#modal-root,[data-ui-surface-exit])) :is(.topbar-tools,.lobby-tools,.lobby-primary,.slot-edit,.rulebook-toolbar){gap:4px}
+:where(:root[data-ui-compact="true"]) :is(#modal-root,[data-ui-surface-exit]) .room-setup-modal .lobby-seat-row:has(>.slot-edit){grid-template-columns:minmax(0,1fr) 68px}
+:is(#modal-root,[data-ui-surface-exit]) .modal-head h2{min-width:0;overflow-wrap:anywhere}
+:is(#modal-root,[data-ui-surface-exit]) .room-setup-modal :is(.lobby-wrap,.lobby-card,.lobby-config,.lobby-roster-scroll,.lobby-footer){min-width:0}

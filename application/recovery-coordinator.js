@@ -2,9 +2,9 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomRecoveryCoordinator=api;})(globalThis,function(){
 'use strict';
 class Recovery {
-    constructor({link,transport,reconcile,onState=()=>{},visibility,diagnostics=async()=>null,clock,interval=5000,grace=10000,noticeDelay=5000}){
-      Object.assign(this,{link,transport,reconcile,onState,visibilitySource:visibility,diagnostics,clock,grace,noticeDelay});
-      this.notice=false;this.state='connecting';this.lastResponse=null;this.error=null;this.route=null;this.events=[];this.closed=false;this.flight=null;this.generation=0;
+    constructor({link,transport,reconcile,onState=()=>{},visibility,diagnostics=async()=>null,clock,interval=5000,currentStatus=()=>null,grace=10000,noticeDelay=5000}){
+      Object.assign(this,{link,transport,reconcile,onState,visibilitySource:visibility,diagnostics,clock,currentStatus,grace,noticeDelay});
+      this.lastStatus=null;this.notice=false;this.state='connecting';this.lastResponse=null;this.error=null;this.route=null;this.events=[];this.closed=false;this.flight=null;this.generation=0;
       this.notify=()=>{const state=link.connectionState;if(state!=='connected')this.generation++;
         if(['failed','closed'].includes(state))this.setState('invite','channel-closed');
         else if(state==='disconnected'){this.setState('recovering','channel-disconnected');this.waitForInvite();}
@@ -17,7 +17,7 @@ class Recovery {
     }
     setState(state,error=null){
       if(this.closed)return;const changed=this.state!==state||this.error!==error;this.state=state;this.error=error;
-      if(state==='connected'||state==='invite'){this.clock.clearTimeout(this.noticeTimer);this.noticeTimer=null;this.notice=state==='invite';}
+      if(state==='connected'){this.clock.clearTimeout(this.noticeTimer);this.noticeTimer=null;this.notice=false;}
       else if(!this.noticeTimer&&!this.notice)this.noticeTimer=this.clock.setTimeout(()=>{this.noticeTimer=null;if(!this.closed&&this.state!=='connected'){this.notice=true;this.onState(this.report());}},this.noticeDelay);
       if(state==='connected'){this.clock.clearTimeout(this.graceTimer);this.graceTimer=null;}
       if(changed){this.events.push({at:this.clock.now(),state,error});if(this.events.length>100)this.events.shift();}
@@ -28,23 +28,45 @@ class Recovery {
     async routeInfo(){try{this.route=await this.diagnostics();}catch(_){}}
     check({recover=false}={}){
       if(this.closed||this.visibilitySource.hidden)return Promise.resolve();
-      if(this.flight)return this.flight;
+      if(this.flight){
+        if(this.flightGeneration!==this.generation||recover&&!this.flightRecovering)this.followup=true;
+        return this.flight;
+      }
       if(this.link.connectionState!=='connected'){this.notify();return Promise.resolve();}
-      const recovering=recover||this.state!=='connected';
-      if(recovering)this.setState('recovering');
-      const generation=this.generation;
-      this.flight=(async()=>{
-        let received=false;
-        try{
-          const snapshot=await this.transport.snapshot();received=true;if(this.closed||generation!==this.generation||this.visibilitySource.hidden)return;
-          await this.reconcile(snapshot,{recovering});if(this.closed||generation!==this.generation||this.visibilitySource.hidden)return;
-          this.lastResponse=this.clock.now();await this.routeInfo();
-          if(this.closed||generation!==this.generation||this.visibilitySource.hidden||this.link.connectionState!=='connected')return;
-          this.setState('connected');
-        }catch(_){if(!this.closed&&generation===this.generation&&!this.visibilitySource.hidden){if(received)this.setState('invite','sync-failed');else{this.setState('recovering','request-timeout');this.waitForInvite();}}}
-        finally{this.flight=null;}
-      })();
+      this.followup=recover;this.flightGeneration=this.generation;this.flightRecovering=recover||this.state!=='connected';
+      this.flight=Promise.resolve().then(async()=>{
+        do{
+          const force=this.followup;this.followup=false;
+          await this.checkOnce(force);
+        }while(this.followup&&!this.closed&&!this.visibilitySource.hidden&&this.link.connectionState==='connected');
+      }).finally(()=>{
+        this.flight=null;const followup=this.followup;this.followup=false;
+        if(followup&&!this.closed&&!this.visibilitySource.hidden&&this.link.connectionState==='connected')return this.check({recover:true});
+      });
       return this.flight;
+    }
+    async checkOnce(recover){
+      let recovering=recover||this.state!=='connected';
+      const generation=this.generation;this.flightGeneration=generation;this.flightRecovering=recovering;
+      if(recovering)this.setState('recovering');
+      let received=false;
+      try{
+        const status=await this.transport.status();received=true;if(this.closed||generation!==this.generation||this.visibilitySource.hidden)return;
+        // A forced check on the same generation upgrades this probe rather
+        // than issuing a second status RPC. A stale generation is retried above.
+        if(this.followup){recovering=true;this.followup=false;this.flightRecovering=true;this.setState('recovering');}
+        const signature=JSON.stringify(status),current=this.currentStatus();
+        if(recovering||signature!==(current?JSON.stringify(current):this.lastStatus)){
+          this.flightRecovering=true;
+          const snapshot=await this.transport.snapshot();if(this.closed||generation!==this.generation||this.visibilitySource.hidden)return;
+          await this.reconcile(snapshot,{recovering});
+          // Retain the probe baseline: a concurrent newer push must not mask a gap.
+          this.lastStatus=signature;
+        }if(this.closed||generation!==this.generation||this.visibilitySource.hidden)return;
+        this.lastResponse=this.clock.now();await this.routeInfo();
+        if(this.closed||generation!==this.generation||this.visibilitySource.hidden||this.link.connectionState!=='connected')return;
+        this.setState('connected');
+      }catch(_){if(!this.closed&&generation===this.generation&&!this.visibilitySource.hidden){if(received)this.setState('invite','sync-failed');else{this.setState('recovering','request-timeout');this.waitForInvite();}}}
     }
     close(){this.closed=true;this.clock.clearInterval(this.timer);this.clock.clearTimeout(this.graceTimer);this.clock.clearTimeout(this.noticeTimer);this.link.removeEventListener('connectionstatechange',this.notify);this.unsubscribeVisibility?.();}
   }

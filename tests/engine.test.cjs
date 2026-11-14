@@ -28,7 +28,7 @@ function dominoState(hands, chain, stock = []) {
 }
 function durakState(hands, drawPile = []) {
   const s = create('durak'); s.turn = 0;
-  s.data = { variant:'throwin',endCondition:'lastfool',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
+  s.data = { variant:'throwin',endMode:'last',composing:false,boutOrigin:0,deckSize: 36, jokerMode:'universal', hands, drawPile, trump: card('♥', 6), table: [], attacker: 0, defender: 1, attackCursor:0, passes:0, discard: [], taking: false, handSize: 6, attackLimit: Math.min(6, hands[1].length) }; const used=new Set([...hands.flat(),...drawPile].map(card=>card.id));s.data.discard=StandardDeck.create(36).filter(card=>!used.has(card.id));return s;
 }
 function checkersState(pieces, turn = 0) {
   const s = create('checkers'); s.turn = turn; s.data.board.fill(null); s.data.repetitions = {};
@@ -88,7 +88,17 @@ test('projection protects hands, stock, RNG, drawn identity and private event pa
   for (const game of ['uno', 'domino', 'durak']) {
     const s = create(game, 2), own = s.turn;
     E.event(s, 'secret card', own, 'draw', { privateTo: own, publicText: 'one card', card: { secret: 'value' } });
+    let privateCopies=0,eventArrayCopies=0;
+    Object.defineProperty(s.data,'toJSON',{value(){privateCopies++;return this;},configurable:true});
+    Object.defineProperty(s.events,'toJSON',{value(){eventArrayCopies++;return this;},configurable:true});
+    // Pack projections retain their own immutable model boundary. Compare with
+    // that required work, rather than banning its authorized snapshots.
+    for(const viewer of [own,1-own,-1])E.get(game).project({...s,data:{},events:[]},viewer,s);
+    const requiredPrivateCopies=privateCopies,requiredEventCopies=eventArrayCopies;
+    privateCopies=0;eventArrayCopies=0;
     const p = E.project(s, own), opponent = E.project(s, 1 - own), spectator = E.project(s, -1);
+    assert.equal(privateCopies,requiredPrivateCopies,'projection adds no discarded complete private data copy');
+    assert.equal(eventArrayCopies,requiredEventCopies,'projection adds no discarded complete raw event array copy');
     assert.deepEqual(p.data.hands[own], s.data.hands[own]);
     assert(opponent.data.hands[own].every(c => c.hidden && Object.keys(c).length === 1));
     assert(spectator.data.hands.flat().every(c => c.hidden)); assert.equal(spectator.rng, undefined);
@@ -256,7 +266,8 @@ test('checkers wins by blocked opponent and draws by repetition or quiet-king li
 test('snakes exact finish, reflected overshoot, one link per turn and no extra six', () => {
   for(const boardSize of [64,100]) {
     const preset='classic';
-    let s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
+    // This checks immediate finish; the current default waits until the round ends.
+    let s=create('snakes',2,preset,23,{boardSize,endMode:'winner'}); s.data.positions[0]=s.data.finish-4; s.rng=rngForRoll(4); s=act(s,{type:'roll'}); assert.equal(s.winner,0); assert.equal(s.players[0].score,1);
     s=create('snakes',2,preset,23,{boardSize}); s.data.positions[0]=s.data.finish-1; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],s.data.finish-2); assert.equal(s.status,'playing');
     s=create('snakes',2,preset,23,{boardSize}); s.data.links={3:15,15:25}; s.rng=rngForRoll(3); s=act(s,{type:'roll'}); assert.equal(s.data.positions[0],15); assert.equal(s.data.lastMove.landing,3);
     s=create('snakes',2,preset,23,{boardSize}); s.rng=rngForRoll(6); s=act(s,{type:'roll'}); assert.equal(s.turn,1);
@@ -346,6 +357,16 @@ test('standalone audio library registers scoped pack overrides without a browser
   assert.throws(()=>audio.registerPack('bad',{move:{src:'https://example.invalid/audio.wav'}}));
   audio.setEnabled(true);assert.equal(await audio.play('move'),false,'play must not bypass a user gesture');assert.equal(contexts,0);
   assert.equal(await audio.unlock(),false);assert.equal(contexts,1);assert.equal(await audio.sequence(['move']),false);
+  assert.equal(await audio.prepare(),false,'preparation never creates a context');assert.equal(contexts,1);
+  let release,resumes=0,created=0;
+  const gain=()=>({gain:{value:0},connect(){}}),context={state:'suspended',destination:{},createGain:gain,resume(){resumes++;return new Promise(resolve=>{release=()=>{context.state='running';resolve();};});}};
+  const warming=new Audio({enabled:true,contextFactory:()=>{created++;return context;}});
+  const unlocking=warming.unlock();assert.equal(created,1,'construct synchronously in the gesture');assert.equal(resumes,1,'resume synchronously in the gesture');
+  let prepared=false;const ready=warming.prepare().then(value=>{prepared=value;return value;});await Promise.resolve();assert.equal(prepared,false);assert.equal(warming.busy,true);release();assert.equal(await unlocking,true);assert.equal(await ready,true);assert.equal(warming.busy,false);
+  context.state='suspended';warming.unlock();const cancelled=warming.prepare();warming.stop();assert.equal(await cancelled,false,'stop aborts a pending readiness barrier');
+  const abort=new AbortController(),aborted=warming.prepare({signal:abort.signal});abort.abort();assert.equal(await aborted,false);
+  assert.equal(await warming.prepare({timeoutMs:1}),false,'OS refusal cannot stall presentation indefinitely');
+  warming.setVolume(0);assert.equal(await warming.prepare(),false);warming.setVolume(.6);warming.setEnabled(false);assert.equal(await warming.prepare(),false);
   audio.setEnabled(false);assert.equal(await audio.play('move'),false);
   const started=[],ends=[];audio.play=id=>{started.push(id);return new Promise(resolve=>ends.push(resolve));};
   let finished=false;const mixed=audio.batch(['move','success','move']).then(()=>finished=true);
@@ -357,7 +378,7 @@ test('standalone audio library registers scoped pack overrides without a browser
 // separate core so version switching cannot affect the built-in game tests.
 function packEnvironment(storage, viewsOverride) {
   const vm = require('node:vm'), fs = require('node:fs');
-  const sandbox = {module:{exports:{}},PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
+  const sandbox = {module:{exports:{}},PlayroomModelValues:require('../core/model-values.js'),PlayroomEvents:require('../core/events.js'),PlayroomMessages:require('../core/messages.js')};
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/random.js'), 'utf8'), sandbox);
   vm.runInNewContext(fs.readFileSync(require.resolve('../core/engine.js'), 'utf8'), sandbox);
   const core = sandbox.module.exports, views = viewsOverride || require('../core/ui.js').createRegistry(), catalog = {};
@@ -478,6 +499,7 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   const passed=E.applyAction(domino,0,{type:'pass'});
   assert.deepEqual(E.project(passed,-1).events.at(-1).feedback,{kind:'skip',player:0});
   assert.deepEqual(E.soundCues(passed,-1,domino.events.at(-1).id).map(c=>c.id),['attack.skip']);
+
   const special=uno('red','+2'),s=unoState([[special,uno('green','3')],[uno('blue','1')]],uno('red','5'),[uno('blue','2'),uno('green','2')]);
   const n=act(s,{type:'play',card:special.id});
   const cues=E.soundCues(n,1,s.events.at(-1).id);assert(cues.some(c=>c.id==='attack.light'));assert.equal(new Set(cues.map(c=>c.eventId)).size,cues.length,'one cue per distinct logical event');assert(cues.every((c,i)=>!i||c.eventId>cues[i-1].eventId),'consequences follow event order');
@@ -488,7 +510,8 @@ test('first actor is deterministic, assigned inside each pack, and never rerolle
   s.data.ending.groups=[[2]];
   const n=act(s,{type:'play',card:reverse.id});
   assert.equal(n.turn,0);assert.deepEqual(E.get('uno').presentEvent(n.events.find(e=>e.type==='uno.played'),n.players).feedback,{kind:'skip',player:1});
-  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip']);
+  assert.deepEqual(E.soundCues(n,-1,s.events.at(-1).id).map(c=>c.id),['attack.skip','uno.call']); // The fixture uses automatic UNO declaration.
+
  });
 
 test('fractional result details survive validation and reject nonfinite values',()=>{

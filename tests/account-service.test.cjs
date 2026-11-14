@@ -47,8 +47,8 @@ test('password recovery uses PKCE; callback code is removed and new password use
  assert.equal(f.values.has(f.auth.pendingKey),false);
 });
 test('registration requiring confirmation does not fabricate a signed-in user',async()=>{
- const f=fixture(()=>response({id:user.id,email:user.email})),s=new Service({auth:f.auth,guestId:'local'});
- assert.deepEqual(await s.signup(user.email,'password123'),{confirmationRequired:true});assert.equal(s.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false);
+ const f=fixture(url=>response(url.includes('/rest/v1/')?true:{id:user.id,email:user.email})),s=new Service({auth:f.auth,guestId:'local'});
+ assert.deepEqual(await s.signup(user.email,'password123','player_name'),{confirmationRequired:true});assert.equal(s.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false);
 });
 test('cloud guests are explicit and restored, never created at local startup',async()=>{
  const f=fixture(()=>response(tokens({user:{id:'guest-1',is_anonymous:true}}))),s=new Service({auth:f.auth,guestId:'local'});
@@ -92,6 +92,19 @@ test('cached identity is status only: no startup request, validation still uses 
  f.auth.fetch=async()=>{throw Error('network unavailable');};await assert.rejects(s.restore(),e=>e.code==='network');
  assert.equal(s.snapshot().error,'network');assert.equal(s.snapshot().id,user.id);assert(f.values.has(f.auth.key));assert(!JSON.stringify(s.snapshot()).includes('private'));
 });
+test('ready account navigation skips repeated validation while cold restore, explicit validation and real busy operations remain guarded',async()=>{
+ let release,start,hold=false,invalid=false,providerUser=user;const f=fixture(async url=>{if(hold){start?.();await new Promise(resolve=>release=resolve);}return invalid?response({},401):response(url.endsWith('/user')?providerUser:tokens({user:providerUser}));});
+ const service=new Service({auth:f.auth,guestId:'local'});await service.login(user.email,'password123');const loggedCalls=f.calls.length;
+ await service.restore({ifNeeded:true});await service.restore({ifNeeded:true});assert.equal(f.calls.length,loggedCalls,'navigation of a server-validated login needs no user lookup');assert.equal(service.snapshot().busy,false);
+ // A fresh service knows the stored identity only as status, and must validate it.
+ const cold=new Service({auth:f.auth,guestId:'local'});hold=true;const started=new Promise(resolve=>start=resolve),first=cold.restore({ifNeeded:true});await started;assert(cold.snapshot().busy);await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy');release();hold=false;await first;await cold.restore({ifNeeded:true});assert.equal(f.calls.length,loggedCalls+1);
+ const passwordCalls=f.calls.length;hold=true;const passwordStarted=new Promise(resolve=>start=resolve),passwordChange=cold.updatePassword('current-password','new-password123');await passwordStarted;await assert.rejects(cold.updatePassword('current-password','other-password123'),e=>e.code==='busy');await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy');hold=false;release();await passwordChange;assert.equal(f.calls.length,passwordCalls+3,'one password update still validates user, reauthenticates and writes once');
+ hold=true;const leaving=cold.logout();await new Promise(resolve=>setImmediate(resolve));await assert.rejects(cold.restore({ifNeeded:true}),e=>e.code==='busy','ready navigation cannot bypass an actual logout');release();hold=false;await leaving;assert.equal(cold.snapshot().kind,'local');
+ await cold.login(user.email,'password123');invalid=true;await assert.rejects(cold.restore(),e=>e.code==='credentials');assert.equal(cold.snapshot().kind,'local');assert.equal(f.values.has(f.auth.key),false,'explicit invalid session revokes the stored identity');invalid=false;await cold.login(user.email,'password123');await cold.restore({ifNeeded:true});assert.equal(cold.snapshot().kind,'account');
+ f.auth.save(tokens({expires_in:0}));await f.auth.session();assert(f.calls.at(-1).url.includes('refresh_token'),'actual adapter still refreshes expired tokens after UI readiness');
+ providerUser={id:'replacement-account',email:'replacement@example.test',is_anonymous:false};f.auth.save(tokens({user:providerUser}));await cold.restore({ifNeeded:true});assert.equal(cold.snapshot().id,providerUser.id,'changed cached identity from another tab invalidates readiness before navigation');assert.equal(cold.snapshot().email,providerUser.email);
+});
+
 test('password recovery reports same/weak passwords explicitly and keeps recovery available for retry',async()=>{
  for(const [providerCode,expected]of [['same_password','same-password'],['weak_password','weak-password'],['reauthentication_needed','reauthentication']]){
   const f=fixture(()=>response({code:422,error_code:providerCode,msg:'private provider text'},422));f.auth.save(tokens(),{recovery:true});
@@ -158,15 +171,15 @@ test('cloud signaling: stopping during discovery cancels polling and ignores a l
 });
 test('cloud signaling: stop closes a peer created by an earlier host generation',async()=>{
  let finish,closed=0;
- const driver=new CloudSignaling({remote:async action=>action==='host'?{}:action==='poll-host'?[{id:'slot'}]:{userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'},peers:{host:()=>new Promise(done=>{finish=done;})},idFactory:()=> 'epoch'});
+ const driver=new CloudSignaling({remote:async action=>action==='host'?{}:action==='poll-host'?{contract:1,signals:[{id:'slot',userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'}],peers:[]}:{},peers:{host:()=>new Promise(done=>{finish=done;})},idFactory:()=> 'epoch'});
  await driver.host('room','local');await new Promise(done=>setImmediate(done));driver.stop();finish({offer:'private-sdp',close(){closed++;}});await driver.running;assert.equal(closed,1);assert.equal(driver.handles.size,0);
 });
 
-test('cloud RTC capability does not await per-command HTTP, survives transient validation and revokes on denial',async()=>{
- let resume,phase='allow',checks,validates,authorizations=0,closed=0,accepted=false,polls=0;
+test('cloud RTC capability uses one batch, survives API outage and revokes before closing',async()=>{
+ let resume,phase='allow',checks,authorizations=0,closed=0,accepted=false,polls=0;
  const identity={userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'};
- const driver=new CloudSignaling({remote:async(action,data)=>{if(action==='host'||action==='offer')return {};if(action==='poll-host'){polls++;return [{id:'slot',...(polls>1?{offer:'offer',answer:'answer'}:{})}];}if(action==='authorize'){authorizations++;if(data.userId&&phase!=='allow')throw Object.assign(Error(phase),{code:phase});return identity;}},peers:{host:async({check,validate})=>{checks=check;validates=validate;return {offer:'offer',validate,closed:()=>false,accept:async()=>{accepted=true;},close:()=>{closed++;}};}},idFactory:()=> 'epoch',clock:{setTimeout:fn=>{resume=fn;return 1;},clearTimeout(){}}});
- const tick=()=>new Promise(resolve=>setImmediate(resolve));await driver.host('room','local');await tick();assert.equal(authorizations,1);for(let i=0;i<50;i++)checks();assert.equal(authorizations,1);resume();await tick();assert(accepted);phase='network';resume();await tick();assert.equal(closed,0);assert.doesNotThrow(checks);assert.equal(driver.handles.size,1);phase='forbidden';resume();await tick();assert.equal(closed,1);assert.throws(checks,e=>e.code==='forbidden');driver.stop();await driver.running;
+ const driver=new CloudSignaling({remote:async(action,data)=>{if(action==='authorize'){authorizations++;throw Error('extra RPC');}if(action!=='poll-host')return {};polls++;if(phase==='network')throw Object.assign(Error('network'),{code:'network'});return {contract:1,signals:polls<3?[{id:'slot',...identity,...(polls>1?{offer:'offer',answer:'answer'}:{})}]:[],peers:data.peers.map(p=>({id:p.id,allowed:phase!=='forbidden'}))};},peers:{host:async({check,validate})=>{checks=check;return {offer:'offer',validate,active:()=>true,closed:()=>false,accept:async()=>{accepted=true;},close:()=>{closed++;}};}},idFactory:()=> 'epoch',clock:{setTimeout:fn=>{resume=fn;return 1;},clearTimeout(){}}});
+ const tick=()=>new Promise(resolve=>setImmediate(resolve));try{await driver.host('room','local');await tick();for(let i=0;i<50;i++)checks();assert.equal(authorizations,0);resume();await tick();assert(accepted);phase='network';resume();await tick();assert.equal(closed,0);assert.doesNotThrow(checks);phase='forbidden';resume();await tick();assert.equal(closed,1);assert.throws(checks,e=>e.code==='forbidden');}finally{driver.stop();await driver.running;}
 });
 
 test('cloud rendezvous polls quickly only while a join is pending',async()=>{
@@ -175,14 +188,48 @@ test('cloud rendezvous polls quickly only while a join is pending',async()=>{
  const client=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='request'?{id:'slot',epoch:'epoch'}:action==='poll'?{epoch:'epoch',...(++polls===3?{offer:'offer'}:{})}:{},peers:{client:async()=>({answer:'answer',close(){}}),attach:async()=>{}}});
  const pending=client.connect('room');await new Promise(r=>setImmediate(r));wake();await new Promise(r=>setImmediate(r));wake();await pending;assert.deepEqual(delays,[500,500]);client.stop();
  delays.length=0;
- const host=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='poll-host'?[]:{},peers:{}});await host.host('room','local');await new Promise(r=>setImmediate(r));assert.deepEqual(delays,[2000]);host.stop();await host.running;
+ const host=new CloudSignaling({clock,idFactory:()=> 'epoch',remote:async action=>action==='poll-host'?{contract:1,signals:[],peers:[]}:{},peers:{}});await host.host('room','local');await new Promise(r=>setImmediate(r));assert.deepEqual(delays,[2000]);host.stop();await host.running;
 });
 
 test('cloud rendezvous uses inline server identities and omits accepted signaling payloads',{timeout:5000},async()=>{
  let resume,polls=0,authorizations=0,known,dead=false,created=0;const identity={userId:'00000000-0000-4000-8000-000000000001',participantId:'00000000-0000-4000-8000-000000000002'},delays=[];
  const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:(fn,ms)=>{resume=fn;delays.push(ms);return 1;},clearTimeout(){}},peers:{host:async()=>{created++;return {offer:'offer',accept:async()=>{},closed:()=>dead,close(){}};}},remote:async(action,data)=>{
   if(action==='authorize'){authorizations++;throw Error('Unnecessary identity request');}
-  if(action==='poll-host'){known=data.known;if(data.known.length)dead=true;return [{id:'slot',...identity,...(++polls>1&&!data.known.length?{offer:'offer',answer:'answer'}:{})}];}return {};
+  if(action==='poll-host'){known=data.known;if(data.known.length)dead=true;return {contract:1,signals:[{id:'slot',...identity,...(++polls>1&&!data.known.length?{offer:'offer',answer:'answer'}:{})}],peers:data.peers.map(p=>({id:p.id,allowed:true}))};}return {};
  }});
  const tick=()=>new Promise(r=>setImmediate(r));await driver.host('room','local');await tick();resume();await tick();resume();await tick();assert.equal(authorizations,0);assert.deepEqual(known,['slot']);assert.equal(created,1,'a peer lost during a compact poll must not recreate an already answered signal');assert.equal(driver.handles.size,0);assert.equal(delays.at(-1),2000);driver.stop();await driver.running;
+});
+
+
+test('registration requires an available normalized name before sending auth signup metadata',async()=>{
+ const f=fixture(url=>response(url.includes('/rest/v1/')?true:tokens())),s=new Service({auth:f.auth,guestId:'local'});
+ await assert.rejects(s.signup(user.email,'password123','!bad'),{code:'username-invalid'});assert.equal(f.calls.length,0);
+ await s.signup(user.email,'password123',' @Player_Name ');assert.equal(f.calls.length,2);assert.deepEqual(JSON.parse(f.calls[0].body),{p_username:'player_name'});assert.deepEqual(JSON.parse(f.calls[1].body).data,{username:'player_name'});assert.equal(s.snapshot().kind,'account');
+ const taken=fixture(()=>response(false));await assert.rejects(taken.auth.signup(user.email,'password123','player_name'),{code:'username-taken'});assert.equal(taken.calls.length,1);
+});
+test('registration distinguishes email delivery limits and timeouts without automatic retries',async()=>{
+ const f=fixture(()=>response({code:'over_email_send_rate_limit'},429));await assert.rejects(f.auth.recover(user.email),{code:'email-rate-limit'});assert.equal(f.calls.length,1);
+ const timeout=fixture(()=>{throw Object.assign(Error('timed out'),{name:'TimeoutError'});});await assert.rejects(timeout.auth.login(user.email,'password123'),{code:'timeout'});assert.equal(timeout.calls.length,1);
+});
+
+test('friend notifications announce requests and outgoing acceptance once, including reload and Push hints',()=>{
+ const Tracker=require('../application/friend-notifications.js');let saved={};
+ const t=new Tracker({save:value=>saved=value}),incoming={id:'incoming',incoming:true,accepted:false},outgoing={id:'outgoing',incoming:false,accepted:false};
+ assert.deepEqual(t.update([incoming,outgoing]).map(e=>e.kind),['friend-request']);assert.deepEqual(t.update([incoming,outgoing]),[]);
+ const reloaded=new Tracker({states:saved});assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}]).map(e=>e.kind),['friend-accepted']);assert.deepEqual(reloaded.update([incoming,{...outgoing,accepted:true}],['friend-accepted:outgoing']),[]);
+ const first=new Tracker();assert.deepEqual(first.update([{...outgoing,accepted:true}]),[]);assert.equal(new Tracker().update([{...outgoing,accepted:true}],['friend-accepted:outgoing'])[0].kind,'friend-accepted');
+});
+
+test('cloud rendezvous silently retries transient signaling failures without recreating a peer and stops on revocation',async()=>{
+ const failures=new Set(['request','poll','answer']),calls=[],delays=[];let peers=0,attached=0;
+ const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:(fn,ms)=>{delays.push(ms);queueMicrotask(fn);return delays.length;},clearTimeout(){}},remote:async action=>{calls.push(action);if(failures.delete(action))throw Object.assign(Error('network'),{code:'network'});if(action==='request')return {id:'slot',epoch:'epoch',localRoomId:'local'};if(action==='poll')return {epoch:'epoch',offer:'offer'};return {};},peers:{client:async()=>{peers++;return {answer:'answer',close(){}};},attach:async()=>{attached++;}}});
+ try{await driver.connect('room');assert.equal(peers,1);assert.equal(attached,1);assert.deepEqual(calls,['request','request','poll','poll','answer','answer']);assert.deepEqual(delays,[500,500,500]);}finally{driver.stop();}
+ let denied=0;const blocked=new CloudSignaling({idFactory:()=> 'epoch',remote:async()=>{denied++;throw Object.assign(Error('forbidden'),{code:'forbidden'});},peers:{}});await assert.rejects(blocked.connect('room'),e=>e.code==='forbidden');assert.equal(denied,1);blocked.stop();
+});
+
+test('host heartbeat publishes public card metadata only when it changes',async()=>{
+ const polls=[];let wake,move=0;
+ const driver=new CloudSignaling({idFactory:()=> 'epoch',clock:{setTimeout:fn=>{wake=fn;return 1;},clearTimeout(){}},peers:{summary:()=>({game:'uno',move})},remote:async(action,data)=>{if(action==='poll-host'){polls.push(data);return {contract:1,signals:[],peers:[]};}return {};}});
+ await driver.host('room','local');await new Promise(setImmediate);wake();await new Promise(setImmediate);move=1;wake();await new Promise(setImmediate);driver.stop();await driver.running;
+ assert.equal(polls.length,3);assert.equal(polls[0].summary.move,0);assert.equal(Object.hasOwn(polls[1],'summary'),false,'idle heartbeat does not resend roster metadata');assert.equal(polls[2].summary.move,1);
 });

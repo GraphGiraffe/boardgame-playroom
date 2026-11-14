@@ -1,0 +1,258 @@
+/* 0.21 mobile surface contract. Palette and game geometry remain semantic tokens. */
+[data-ui-surface="panel"]{--surface-dismiss-edge:bottom}
+:root{--surface-gap:12px;--surface-inset:12px;--surface-motion:180ms;--surface-focus-clearance:6px}
+/* Entry/exit projections stay inside the overlay viewport; content scrollports
+   retain their own overflow and remain independently measurable. */
+:is(#modal-root,[data-ui-surface-exit])>:is(.modal-backdrop,.shared-modal-backdrop){overflow-x:hidden}
+.connection-alternative{margin-top:16px;border-top:1px solid var(--line);padding-top:8px}
+.connection-alternative>summary{min-height:44px;display:list-item;align-content:center;cursor:pointer;font-weight:650}
+.connection-alternative>p{color:var(--muted);font-size:14px;line-height:1.45}
+@media(max-width:600px){
+ :is(#modal-root,[data-ui-surface-exit])>.modal-backdrop:not(:has(>.modal[data-ui-surface])){padding:8px}
+ :is(#modal-root,[data-ui-surface-exit]) .modal:not([data-ui-surface]){padding:8px;border-radius:20px;max-height:calc(var(--ui-viewport-height,100dvh) - 16px - var(--app-safe-top,0px) - var(--app-safe-bottom,0px))}
+ :is(#modal-root,[data-ui-surface-exit]) .modal>.modal-body{padding:4px 4px 8px;scroll-padding-block:12px}
+ :is(#modal-root,[data-ui-surface-exit]) .modal.room-setup-modal{padding:8px!important}
+ :is(#modal-root,[data-ui-surface-exit]) .switch{padding-block:12px;min-height:44px}
+}
+@media(prefers-reduced-motion:no-preference){
+ body:not(.reduced-motion) #modal-root>:is(.modal-backdrop,.shared-modal-backdrop)[data-ui-motion="enter"]>.modal{animation:ui-dialog-in var(--surface-motion) cubic-bezier(.2,.8,.2,1.08)}
+ body:not(.reduced-motion) #modal-root>[data-ui-motion="enter"]>.modal[data-ui-surface="screen"]{animation-name:ui-screen-in}
+ body:not(.reduced-motion) #modal-root>[data-ui-motion="enter"]>.modal[data-ui-surface="panel"]{animation-name:ui-panel-in}
+ body:not(.reduced-motion) :is(#modal-root,[data-ui-surface-exit])>[data-ui-motion="exit"]>.modal{animation:ui-dialog-out var(--surface-motion) ease-in both}
+ body:not(.reduced-motion) :is(#modal-root,[data-ui-surface-exit])>[data-ui-motion="exit"]>.modal[data-ui-surface="screen"]{animation-name:ui-screen-out}
+ body:not(.reduced-motion) :is(#modal-root,[data-ui-surface-exit])>[data-ui-motion="exit"]>.modal[data-ui-surface="panel"]{animation-name:ui-panel-out}
+ @keyframes ui-dialog-in{from{opacity:.4;translate:0 8px;scale:.97}to{opacity:1;translate:0 0;scale:1}}
+ @keyframes ui-dialog-out{from{opacity:var(--ui-motion-from-opacity,1);translate:var(--ui-motion-from-translate,0 0);scale:var(--ui-motion-from-scale,1)}to{opacity:0;translate:0 8px;scale:.97}}
+ @keyframes ui-screen-in{from{opacity:.65;translate:24px 0}to{opacity:1;translate:0 0}}
+ @keyframes ui-screen-out{from{opacity:var(--ui-motion-from-opacity,1);translate:var(--ui-motion-from-translate,0 0)}to{opacity:0;translate:24px 0}}
+ @keyframes ui-panel-in{from{translate:var(--ui-panel-x,0px) var(--ui-panel-y,calc(100% + 12px))}to{translate:0 0}}
+ @keyframes ui-panel-out{from{opacity:var(--ui-motion-from-opacity,1);translate:var(--ui-motion-from-translate,0 0)}to{opacity:.6;translate:var(--ui-panel-x,0px) var(--ui-panel-y,calc(100% + 12px))}}
+ body:not(.reduced-motion) .quick-reaction-picker[data-ui-motion="enter"]{animation:ui-popover-in var(--surface-motion) cubic-bezier(.2,.8,.2,1.08)}
+ body:not(.reduced-motion) .quick-reaction-picker[data-ui-motion="exit"]{animation:ui-popover-out var(--surface-motion) ease-in both}
+ body:not(.reduced-motion) :is(.chat-notification,.host-offer-banner,:where(#toast).show)[data-ui-motion="enter"]{animation:ui-banner-in var(--surface-motion) cubic-bezier(.2,.8,.2,1.08)}
+ body:not(.reduced-motion) :is(.chat-notification,.host-offer-banner,.app-notice)[data-ui-motion="exit"]{animation:ui-banner-out var(--surface-motion) ease-in both}
+ @keyframes ui-popover-in{from{opacity:.4;scale:.94}to{opacity:1;scale:1}}
+ @keyframes ui-popover-out{from{opacity:var(--ui-motion-from-opacity,1);scale:var(--ui-motion-from-scale,1)}to{opacity:0;scale:.94}}
+ @keyframes ui-banner-in{from{opacity:.4;scale:.97}to{opacity:1;scale:1}}
+ @keyframes ui-banner-out{from{opacity:var(--ui-motion-from-opacity,1);scale:var(--ui-motion-from-scale,1)}to{opacity:0;scale:.97}}
+ /* Native popovers keep their native top-layer, Escape and focus semantics. */
+ body:not(.reduced-motion) [popover]{display:block;visibility:hidden;opacity:0;scale:.96;pointer-events:none;transition:opacity var(--surface-motion),scale var(--surface-motion),visibility var(--surface-motion)}
+ body:not(.reduced-motion) [popover]:popover-open{visibility:visible;opacity:1;scale:1;pointer-events:auto}
+ @starting-style{body:not(.reduced-motion) [popover]:popover-open{opacity:0;scale:.96}}
+ /* Feedback belongs to the control surface, not a changing layout/filter. */
+ body:not(.reduced-motion) #app .game-tile{transition:transform .2s,box-shadow .2s,scale 120ms ease-out}
+ body:not(.reduced-motion) #app .game-tile:has(.tile-hit:active){scale:.97}
+ body:not(.reduced-motion) :is(.ui-button,.icon-btn,.btn,.text-btn,.menu-row,.surface-panel-close,.pairing-choice-option,[data-game-menu-action],[data-game-menu-close],.nav-item,.filter,.catalog-view-controls button,.tile-favorite,.catalog-card-visibility,.profile021-person,.profile021-row,.saved021-open,.saved021-more,.shared-page-tabs>button):not(:disabled):not([aria-disabled="true"]){transition:background-color 120ms ease-out,scale 120ms ease-out}
+ body:not(.reduced-motion) :is(.ui-button,.icon-btn,.btn,.text-btn,.menu-row,.surface-panel-close,.pairing-choice-option,[data-game-menu-action],[data-game-menu-close],.nav-item,.filter,.catalog-view-controls button,.tile-favorite,.catalog-card-visibility,.profile021-person,.profile021-row,.saved021-open,.saved021-more,.shared-page-tabs>button):not(:disabled):not([aria-disabled="true"]):active{scale:.97}
+}
+[data-ui-surface-exit]{position:fixed;inset:0;z-index:99;pointer-events:none;overflow:hidden}
+[data-ui-surface-exit] *{pointer-events:none!important}
+[data-ui-surface-exit="drawer"]{z-index:89}
+[data-ui-surface-exit="popover"]{z-index:1099}
+[data-ui-surface-exit="banner"]{z-index:1199}
+/* Catalog preferences change the library only, never the game scene. */
+.catalog-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:12px}
+[data-catalog-room-action]{min-width:0}
+[data-catalog-room-action] .btn{min-height:44px;padding:8px 12px;font-size:.875rem}
+.active-games-badge{display:inline-grid;place-items:center;min-width:1.25rem;height:1.25rem;padding:.125rem .3125rem;border-radius:50%;background:var(--accent,var(--ink));color:var(--paper);font-size:.6875rem}
+.rulebook-toc{position:sticky;top:0;z-index:5;background:var(--paper);border:1px solid var(--line);border-radius:12px;margin-block:10px}
+.rulebook-toc>summary{cursor:pointer;padding:12px;font-weight:650;min-height:44px}
+.rulebook-toc .rulebook-contents{max-height:45dvh;overflow:auto;padding:8px 12px;margin:0}
+.rulebook-section{scroll-margin-top:64px}
+.rulebook-mode.app-page-tabs{margin-block:0 12px}
+.rulebook-modal .rulebook-head{border-bottom:1px solid var(--line)}
+.rulebook-modal .rulebook-toolbar{margin-left:auto}
+.rulebook-modal .rulebook-section :is(p,li){overflow-wrap:anywhere}
+.rulebook-modal .rulebook-section code{font-size:.92em;background:var(--color-surface-raised,var(--paper));padding:1px 4px;border-radius:4px}
+/* All conversations share one capsule composer. Controls stay on the bottom row. */
+.social-content form.chat-composer{border-radius:26px;min-height:52px}
+.social-content .chat-composer [data-chat-editor]{min-height:50px;max-height:min(160px,25dvh);padding:13px var(--chat-composer-inline-padding,50px);overflow-y:auto;border-radius:26px}
+:is(:is(#modal-root,[data-ui-surface-exit]) .chat-modal,.game-chat-panel) .chat-composer>.icon-btn{position:absolute;bottom:var(--chat-composer-control-inset,5px);right:var(--chat-composer-control-inset,5px);width:var(--chat-composer-control-size,40px);min-width:var(--chat-composer-control-size,40px);height:var(--chat-composer-control-size,40px);min-height:var(--chat-composer-control-size,40px);border-radius:50%;padding:0;border:0;background:var(--green);color:var(--color-action-on-primary);box-shadow:none}
+:is(:is(#modal-root,[data-ui-surface-exit]) .chat-modal,.game-chat-panel) .chat-composer>.chat-reactions{left:var(--chat-composer-control-inset,5px);right:auto;background:transparent;color:var(--ink)}
+:is(:is(#modal-root,[data-ui-surface-exit]) .chat-modal,.game-chat-panel) .chat-composer>.icon-btn svg{width:20px;height:20px}
+/* Launcher is an edge affordance, outside the field's layout calculations. */
+#app .game-chat-launcher::after{content:none;width:6px;height:6px;border-top:2px solid currentColor;border-right:2px solid currentColor;transform:rotate(-45deg);flex:none}
+body.game-chat-open #app .game-chat-launcher{visibility:hidden;pointer-events:none}
+@media(orientation:portrait){#app .network-game:has(.layout-self .player-panel.is-turn){--game-chat-launcher-background:var(--color-surface-turn,var(--color-surface-game))}}
+.game-chat-panel{--surface-dismiss-edge:bottom;--chat-composer-control-size:44px;--chat-composer-control-inset:3px;--chat-composer-inline-padding:54px;position:fixed;z-index:90;inset:auto 0 0;box-sizing:border-box;height:var(--game-chat-size,56dvh);max-height:90dvh;display:flex;flex-direction:column;padding:28px 12px max(8px,var(--app-safe-bottom,0px));background:var(--paper);color:var(--ink);border:1px solid var(--line);border-bottom:0;border-radius:24px 24px 0 0;box-shadow:0 -8px 32px #0003;overflow:hidden}
+.game-chat-panel>.modal-head{display:flex;align-items:center;gap:8px;margin:0;padding:4px 0 8px;flex:none;min-height:44px}
+.game-chat-panel>.modal-head h2{flex:1;min-width:0;margin:0;font-size:18px;line-height:1.35}
+.surface-head-symbol{display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;color:var(--ink)}
+.surface-head-symbol>svg{display:block;width:24px;height:24px}
+.surface-head-actions{display:flex;align-items:center;justify-content:flex-end;flex:none;gap:8px;min-width:0}
+:is(#modal-root,[data-ui-surface-exit],.game-chat-panel) .modal-head :is(h1,h2){min-width:0;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.3}
+:is(#modal-root,[data-ui-surface-exit],.game-chat-panel) .modal-head .surface-head-actions>.icon-btn{box-sizing:border-box;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;padding:0;margin:0}
+.game-chat-panel>.modal-body{display:flex;flex:1;min-height:0;overflow:hidden;padding:0}
+.game-chat-panel .social-content{display:flex;flex-direction:column;flex:1;min-height:0;gap:8px;overflow:hidden}
+.game-chat-panel .chat-scroll-zone{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.game-chat-panel .chat-messages{overflow:auto;overscroll-behavior:contain;flex:1;min-height:0;padding:4px 0;-webkit-overflow-scrolling:touch}
+.game-chat-panel [data-room-chat-error]:empty{display:none}
+.game-chat-panel [data-room-chat-error]{margin:0;font-size:12px}
+.game-chat-panel [data-game-chat-resize]{position:absolute;inset:0 0 auto;width:100%;height:28px;min-height:28px;border:0;background:transparent;touch-action:none;cursor:ns-resize;display:grid;place-items:center}
+.game-chat-panel [data-game-chat-resize]>span{width:36px;height:4px;border-radius:3px;background:var(--muted)}
+.game-chat-panel .chat-composer{box-shadow:none}
+.game-chat-panel .room-chat-drawer-action{flex:none;align-self:center;min-height:44px;margin:0;padding:8px 4px;border:0;border-radius:8px;background:transparent;box-shadow:none;font:inherit;font-size:14px;line-height:1.4;color:var(--green)}
+.game-chat-panel .room-chat-drawer-action[hidden]{display:none}
+.game-chat-panel .room-chat-drawer-feedback{display:flex;flex:none;align-items:center;gap:8px}
+.game-chat-panel .room-chat-drawer-feedback:has([data-room-chat-error]:empty){display:none}
+.game-chat-panel .room-chat-drawer-feedback p{flex:1;min-width:0}
+:where(:root:not([data-input-modality="touch"])) .game-chat-panel button:focus-visible{outline:2px solid var(--ui-focus);outline-offset:2px}
+:where(:root:not([data-input-modality="touch"])) .game-chat-panel [data-game-chat-resize]:focus-visible{outline:none}
+:where(:root:not([data-input-modality="touch"])) .game-chat-panel [data-game-chat-resize]:focus-visible>span{outline:2px solid var(--ui-focus);outline-offset:4px}
+@media(orientation:landscape){
+ #app .game-chat-launcher::after{transform:rotate(-135deg)}
+ .game-chat-panel{inset:0 0 0 auto;width:var(--game-chat-size,42vw);height:100dvh;max-height:100dvh;border-radius:24px 0 0 24px;border-right:0;padding:8px max(12px,var(--app-safe-right,0px)) max(8px,var(--app-safe-bottom,0px)) 28px}
+ .game-chat-panel [data-game-chat-resize]{inset:0 auto 0 0;width:28px;height:100%;cursor:ew-resize}
+ .game-chat-panel [data-game-chat-resize]>span{width:4px;height:36px}
+}
+@media(prefers-reduced-motion:no-preference){
+ body:not(.reduced-motion) .game-chat-panel[data-ui-motion="enter"]{animation:ui-panel-in 220ms cubic-bezier(.2,.8,.2,1.08)}
+ body:not(.reduced-motion) .game-chat-panel[data-ui-motion="exit"]{animation:ui-panel-out var(--surface-motion) ease-in both}
+ .chat-composer>.icon-btn{transition:background-color 120ms,scale 120ms}
+ .chat-composer>.icon-btn:active{scale:.94}
+}
+@media(orientation:landscape){.game-chat-panel,.game-menu-panel{--surface-dismiss-edge:right;--ui-panel-x:calc(100% + 12px);--ui-panel-y:0px}}
+/* Four persistent root destinations; nested actions use the existing return stack. */
+#app .hub-page-tabs{--page-count:4;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+#app .hub-page-tabs::before{width:calc((100% - 8px)/4)}
+#app .hub-page-tabs .nav-item{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;padding:8px 3px;font-size:12px;white-space:nowrap}
+#app .hub-page-tabs .active-games-badge{position:absolute;right:5px;top:2px}
+#app .hub-pages>.shared-page-panel:not(.is-active){visibility:hidden;pointer-events:none}
+.hub-profile,.hub-community{padding-block:12px;min-height:50dvh}
+.hub-profile h1{font-size:28px}
+.profile-summary{display:flex;flex-direction:column;gap:6px;margin:20px 0;color:var(--muted)}
+.profile-summary strong{color:var(--ink);font-size:22px}
+.profile-actions{display:flex;flex-direction:column;gap:12px;max-width:560px}
+.profile-actions>.btn{justify-content:flex-start;width:100%}
+.profile-theme{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+.hub-community>.modal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+.hub-community>.modal-head h2{margin:0;font-size:28px}
+.hub-community .social-list{overflow:visible;max-height:none}
+
+/* Navigation is a quiet text list, not a stack of competing primary actions. */
+.menu-list{display:flex;flex-direction:column;max-width:560px}
+.menu-row{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;min-height:56px;padding:14px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);box-shadow:none;font:inherit;width:100%}
+.menu-row>span:first-child{min-width:0}.menu-row strong{font-weight:500}.menu-row small{display:block;margin-top:4px;color:var(--muted);font-size:var(--ui-type-caption,.8125rem)}
+.menu-row-chevron{color:var(--muted);font-size:24px;line-height:1}
+button.menu-row:hover,button.menu-row:active{background:var(--color-surface-hover)}
+.menu-list .profile-theme{border-bottom:0}
+.catalog-view-controls{display:flex;align-items:center;gap:0;flex:none}
+.catalog-view-controls button{width:44px;height:44px;min-width:44px;padding:10px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);display:grid;place-items:center}
+.catalog-view-controls button[aria-pressed=true]{background:var(--color-surface-selected);border-color:var(--green)}
+.catalog-view-controls svg{width:22px;height:22px}
+[data-catalog-room-action] .btn{display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;border-radius:12px;box-shadow:none}
+[data-catalog-room-action] .btn svg{width:20px;height:20px;flex:none}
+#app .filter-scope{gap:8px;justify-content:flex-start}
+#app .filter-scope .filter{width:auto;min-width:44px;height:44px;min-height:44px;padding:8px 12px;display:flex;align-items:center;gap:6px;border-radius:20px;font-size:13px;box-shadow:none}
+#app .filter-scope .filter svg{width:18px;height:18px}
+
+#app .library-heading{margin-bottom:0;border-bottom:0}
+#app .catalog-actions{margin:12px 0 16px}
+
+/* Quiet root header, with utility actions in Profile. */
+#app .hub-topbar-slot .topbar{justify-content:flex-start;min-height:52px;height:auto}
+#app .hub-topbar-slot .eyebrow{display:none}
+#app .hub-topbar-slot .mobile-brand{display:flex}
+#app .intro{padding-top:12px}
+#app .intro p{margin-block:12px 20px}
+#app .game-chat-launcher{min-height:44px}
+
+.tile-summary{margin:4px 0 0;font-size:11px;line-height:1.3;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+#app .filter-scope [data-filter="favorites"] span{color:var(--ink)}
+.hub-profile .profile-summary{margin-bottom:28px}
+.hub-profile h1{margin-top:8px}
+#app .intro h1{margin-top:8px}
+
+/* Root destinations share one header; identity and navigation remain quiet rows. */
+#app .hub-root-title{margin:0;font-size:28px;line-height:1.2;font-weight:700;min-width:0}
+#app .hub-profile>button.profile-summary{display:flex;flex-direction:row;align-items:center;gap:12px;width:100%;min-height:72px;margin:8px 0 16px;padding:8px 0;border:0;border-radius:0;background:transparent;box-shadow:none;text-align:left;font:inherit;color:var(--ink)}
+#app .hub-profile>button.profile-summary>.avatar{flex:none;width:52px;height:52px}
+#app .hub-profile>button.profile-summary>span{display:flex;flex-direction:column;gap:4px;min-width:0}
+#app .hub-profile>button.profile-summary strong{font-size:20px;overflow-wrap:anywhere}
+#app .hub-profile>button.profile-summary small{color:var(--muted);font-size:14px;overflow-wrap:anywhere}
+#app .community-login-action{display:flex;align-items:center;gap:10px;min-height:48px;width:100%;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;text-align:left;font:inherit;color:var(--ink)}
+#app .community-login-action svg{flex:none;width:22px;height:22px}
+#app .hub-community .community-tabs>button{min-height:44px;min-width:0}
+#app .hub-profile>button.profile-summary>span:not(.avatar):not(.menu-row-chevron){flex:1}
+#app .hub-profile>button.profile-summary>.menu-row-chevron{margin-left:auto;flex:none}
+#app .hub-community>.modal-head:empty{display:none}
+#app .hub-profile>button.profile-summary>.avatar{display:inline-grid;place-items:center;line-height:1;overflow:hidden;font-size:24px}
+/* Active/history are primary destinations; transport is a secondary filter. */
+#app .saved-status-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-block:12px}
+#app .saved-status-tabs>button{min-height:44px;min-width:0;padding:10px 8px;font:inherit;font-weight:600}
+#app .saved-status-tabs::before{width:calc((100% - 8px)/2)}
+#app .saved-filter-options{margin-block:8px 12px;border-bottom:1px solid var(--line)}
+#app .saved-filter-options>summary{min-height:44px;align-content:center;cursor:pointer;padding:10px 0;font-weight:500}
+#app .saved-filter-options .filters{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:12px}
+#app .saved-filter-options .filter{min-height:44px;width:auto;padding:8px 12px;gap:6px}
+#app .saved-page-tools{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-block:8px}
+#app .saved-page-tools>.text-btn{min-height:44px;font-weight:500;gap:6px;padding:10px 0}
+
+.storage-data-modal [data-storage-tabs]>button{min-height:44px;padding:10px 8px}
+.storage-data-modal .menu-row small{display:block;color:var(--muted);font-size:13px;line-height:1.4;margin-top:4px}
+/* Surface is assigned by the shell before insertion, never after the first frame. */
+:is(#modal-root,[data-ui-surface-exit])>:is(.modal-backdrop,.shared-modal-backdrop){z-index:100}
+:is(#modal-root,[data-ui-surface-exit])>:is(.modal-backdrop,.shared-modal-backdrop):has(>.modal[data-ui-surface="screen"]){padding:0;align-items:stretch}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]{display:flex;flex-direction:column;width:100%;max-width:none;height:var(--ui-viewport-height,100dvh);max-height:var(--ui-viewport-height,100dvh);border:0;border-radius:0;margin:0;padding:max(12px,var(--app-safe-top,0px)) max(var(--surface-inline-inset,12px),var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) max(var(--surface-inline-inset,12px),var(--app-safe-left,0px));box-shadow:none;overflow:hidden}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>.modal-head{flex:none;margin-bottom:12px}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>.modal-head h2{font-size:var(--ui-type-title,1.25rem);line-height:1.3;font-weight:700}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>.modal-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain}
+/* Zero-inset form/grid scrollports share outside-ring clearance. Expand only
+   the clip box; equal padding keeps every descendant's position and width. */
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface]>.modal-body:is(.surface-focus-scrollport,:has(>.rules-v021),:has(>.room-v021)){margin-inline:calc(-1 * var(--surface-focus-clearance));padding-inline:var(--surface-focus-clearance);scroll-padding-inline:var(--surface-focus-clearance)}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]>[data-fixed-footer]{flex:none;margin-top:12px}
+:is(#modal-root,[data-ui-surface-exit])>:is(.modal-backdrop,.shared-modal-backdrop):has(>.modal[data-ui-surface="panel"]){display:flex;align-items:flex-end;justify-content:stretch;padding:0;overflow:hidden}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]{display:flex;flex-direction:column;flex:none;width:100%;max-width:none;min-height:0;max-height:calc(var(--ui-viewport-height,100dvh) - 40px);margin:0;padding:0 max(var(--surface-inline-inset,12px),var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) max(var(--surface-inline-inset,12px),var(--app-safe-left,0px));border:0;border-radius:24px 24px 0 0;overflow:hidden;translate:var(--surface-pull-x,0px) var(--surface-pull-y,var(--surface-pull-distance,0px))}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]>.modal-head{background:transparent}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]>.modal-head,.game-chat-panel>.modal-head{touch-action:pinch-zoom}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"][data-panel-scrollable="false"]>:is(.modal-body,.game-menu-v021-body){touch-action:pinch-zoom}
+.game-chat-panel[data-surface-pulling]{translate:var(--surface-pull-x,0px) var(--surface-pull-y,var(--surface-pull-distance,0px))}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]>.modal-head :is(h1,h2){flex:1;min-width:0;margin:0;font-size:var(--ui-type-panel-title,1.125rem);font-weight:700;line-height:1.3;letter-spacing:0;overflow-wrap:anywhere}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]>.modal-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:0;touch-action:pan-y pinch-zoom}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"]>[data-fixed-footer]{flex:none;margin:12px 0 0;width:auto}
+.surface-panel-handle{display:grid;place-items:center;flex:none;width:100%;min-height:44px;height:44px;margin:0;padding:0;border:0;background:transparent;box-shadow:none;touch-action:pinch-zoom;cursor:grab}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="panel"][data-surface-zoomed="true"]>:is(.modal-head,.modal-body,.game-menu-v021-body,.surface-panel-handle){touch-action:pan-x pan-y pinch-zoom}
+.surface-panel-handle>span{display:block;width:38px;height:4px;border-radius:999px;background:var(--muted);pointer-events:none}
+.surface-panel-handle:active{cursor:grabbing}
+.surface-panel-close{display:grid;place-items:center;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:transparent;box-shadow:none}
+.surface-panel-close>svg{width:20px;height:20px;flex:none}
+:is(:is(#modal-root,[data-ui-surface-exit]) .modal,.game-chat-panel)[data-surface-pulling="false"]{transition:translate 160ms ease-out}
+@media(prefers-reduced-motion:reduce){:is(#modal-root,[data-ui-surface-exit]) .modal[data-surface-pulling]{transition:none}}
+@media(min-width:900px){:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]{max-width:960px;margin-inline:auto;border-inline:1px solid var(--line)}}
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]{width:100%!important;max-width:none!important;height:var(--ui-viewport-height,100dvh)!important;max-height:var(--ui-viewport-height,100dvh)!important;padding:max(12px,var(--app-safe-top,0px)) max(var(--surface-inline-inset,12px),var(--app-safe-right,0px)) max(12px,var(--app-safe-bottom,0px)) max(var(--surface-inline-inset,12px),var(--app-safe-left,0px))!important}
+@media(min-width:900px){:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface="screen"]{max-width:960px!important}}
+/* Participant/friend commands are signed rows, even when built from icon-button helpers. */
+:is(#modal-root,[data-ui-surface-exit]) .participant-profile-actions.menu-list{display:flex;flex-flow:column nowrap;align-items:stretch;gap:0;width:100%;max-width:none}
+:is(#modal-root,[data-ui-surface-exit]) .participant-profile-actions.menu-list>button.menu-row{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;width:100%;min-width:0;max-width:none;height:auto;min-height:48px;max-height:none;aspect-ratio:auto;margin:0;padding:12px 0;white-space:normal;overflow-wrap:anywhere;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;font:inherit;font-size:15px;line-height:1.4}
+:is(#modal-root,[data-ui-surface-exit]) .participant-profile-actions.menu-list>button.menu-row>span:first-child{flex:1;min-width:0;white-space:normal}
+:is(#modal-root,[data-ui-surface-exit]) .participant-profile-actions.menu-list>button.menu-row>.menu-row-chevron{flex:none}
+:is(#modal-root,[data-ui-surface-exit]) .participant-profile-actions.menu-list>.ui-action-danger{color:var(--color-feedback-error)}
+/* Settings categories occupy the complete screen width; only paired ranges share a row. */
+
+/* The collection count is secondary; editing remains available in the action row. */
+#app [data-hub-editing=false] #hub-games-page .hub-library-tools{display:none}
+
+/* The view switch shares the application segmented-control geometry. */
+.catalog-view-controls.app-page-tabs{display:grid;flex:none;width:132px;min-height:44px;height:44px;padding:0;border:0;border-radius:14px;background:var(--color-surface-raised)}
+.catalog-view-controls.app-page-tabs::before{inset:0 auto 0 0;width:calc(100%/3);border-radius:12px}
+.catalog-view-controls.app-page-tabs>button{display:flex;align-items:center;justify-content:center;width:auto;min-width:0;height:44px;min-height:44px;padding:0;border:0;border-radius:12px;background:transparent}
+.catalog-view-controls.app-page-tabs>button[aria-pressed=true]{border:0;background:transparent}
+
+/* Authored dropdown surface; native form semantics remain the value port. */
+:is(#app,#modal-root) select:not([multiple]){appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-inline-end:34px}
+
+:is(#modal-root,[data-ui-surface-exit]) .modal:is(.select-choice-dialog,.avatar-picker-modal)[data-ui-surface="panel"]>.modal-body{padding:6px;scroll-padding:6px}
+
+/* Shared typed headers wrap whole content when title and44px actions need another row. */
+:is(#modal-root,[data-ui-surface-exit]) .modal>.modal-head{flex-wrap:wrap}
+:is(#modal-root,[data-ui-surface-exit]) .modal>.modal-head :is(h1,h2){flex:1 1 min-content;display:block;-webkit-line-clamp:none;overflow:visible;overflow-wrap:normal;word-break:normal}
+:is(#modal-root,[data-ui-surface-exit]) .modal>.modal-head>.surface-head-actions{margin-inline-start:auto}
+/* Illustrated table cells carry their own semantic palette, including older packs. */
+:is(#modal-root,[data-ui-surface-exit]) .game-memo-modal td>svg{color:inherit}
+
+/* The frame owns content insets; a scrolling body reaches its outside edge. */
+:is(#modal-root,[data-ui-surface-exit]) .modal[data-ui-surface]{--surface-scroll-inset-start:max(var(--surface-inline-inset,12px),var(--app-safe-left,0px));--surface-scroll-inset-end:max(var(--surface-inline-inset,12px),var(--app-safe-right,0px))}
+:is(#modal-root,[data-ui-surface-exit]) .modal.room-setup-modal{--surface-scroll-inset-start:14px;--surface-scroll-inset-end:14px}
+@media(max-width:600px){:is(#modal-root,[data-ui-surface-exit]) .modal.room-setup-modal{--surface-scroll-inset-start:8px;--surface-scroll-inset-end:8px}}
+:is(#modal-root,[data-ui-surface-exit]) .modal:is([data-ui-surface="screen"],[data-ui-surface="panel"][data-panel-scrollable="true"])>.modal-body{margin-inline:calc(-1 * var(--surface-scroll-inset-start)) calc(-1 * var(--surface-scroll-inset-end));padding-inline:var(--surface-scroll-inset-start) var(--surface-scroll-inset-end);scroll-padding-inline:var(--surface-focus-clearance,6px)}

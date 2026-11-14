@@ -16,7 +16,7 @@ function presetLabel(preset,metadata={},presetSetting=null){
   }
 function describeRules(rules={},settings=[],hasHands=false,presetSetting=null){
     const rows=[{label:presetSetting?.label||globalThis.PlayroomMessages.text("ui.multiplayer.b5d827de5168"),value:String(presetSetting?.options?.find(option=>option.value===rules.preset)?.label||rules.presetLabel||rules.preset||globalThis.PlayroomMessages.text("ui.multiplayer.4da4da9da138"))}];
-    const fields=Array.isArray(settings)?settings:[];
+    const fields=Array.isArray(settings)?settings.map(Rooms.standardRule):[];
     for(const [key,value] of Object.entries(rules.options||{})){
       const field=fields.find(item=>item?.key===key);
       if(field?.visibleWhen&&!Object.entries(field.visibleWhen).every(([k,v])=>String(rules.options?.[k])===String(v)))continue;

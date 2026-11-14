@@ -32,7 +32,9 @@ begin
   update public.playroom_host_transfers set state='cancelled' where room_id=rid and state in ('offered','accepted','ready') and (expires_at<=now() or epoch is distinct from r.host_epoch);
   if exists(select 1 from public.playroom_host_transfers where room_id=rid and state in ('offered','accepted','ready')) then raise exception 'social:host-busy'; end if;
   if exists(select 1 from public.playroom_peer_bindings where room_id=rid and participant_id=p_data->>'source' and user_id<>me) then raise exception 'social:forbidden'; end if;
-  insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values(rid,me,p_data->>'source') on conflict(room_id,user_id) do update set participant_id=excluded.participant_id;
+  if not exists(select 1 from public.playroom_peer_bindings where room_id=rid and user_id=me and participant_id=p_data->>'source') then
+   insert into public.playroom_peer_bindings(room_id,user_id,participant_id) values(rid,me,p_data->>'source') on conflict(room_id,user_id,device_id) do update set participant_id=excluded.participant_id;
+  end if;
   insert into public.playroom_host_transfers(id,room_id,source,target,source_participant,target_participant,epoch,state) values(tid,rid,me,target_user,p_data->>'source',p_data->>'target',r.host_epoch,'offered') returning * into t;
  end if;
  if t.id is null or t.room_id<>rid or me not in (t.source,t.target) then raise exception 'social:forbidden'; end if;

@@ -12,3 +12,35 @@ module.exports=handler=>async route=>{
  }
  return route.fulfill({status:200,json:{results}});
 };
+
+// WebKit can bypass Playwright URL routing after Service Worker control. Intercept
+// the page's Supabase port before native fetch, while retaining the real UI,
+// Auth/RPC adapters and app worker. Other origins keep their native fetch path.
+module.exports.installFetch=async(context,handler)=>{
+ const counts={intercepted:0,nativeSupabaseRequests:0},binding='__playroomSupabaseFixtureFetch';
+ context.on('request',request=>{if(new URL(request.url()).hostname.endsWith('.supabase.co'))counts.nativeSupabaseRequests++;});
+ await context.exposeBinding(binding,async(_source,input)=>{
+  counts.intercepted++;let response,aborted=false;
+  const request={url:()=>input.url,method:()=>input.method,headers:()=>input.headers,allHeaders:async()=>input.headers,postData:()=>input.body,postDataJSON:()=>input.body?JSON.parse(input.body):null};
+  await handler({request:()=>request,fulfill:async value=>{response=value;},abort:async()=>{aborted=true;}});
+  if(aborted)throw Error('Fixture request aborted');if(!response)throw Error('Supabase fixture did not fulfill request');
+  const headers={...response.headers};if(response.contentType)headers['content-type']=response.contentType;
+  if(response.json!==undefined){headers['content-type']='application/json';return {status:response.status||200,headers,body:JSON.stringify(response.json)};}
+  return {status:response.status||200,headers,body:response.body||''};
+ });
+ await context.addInitScript(({binding})=>{
+  const native=globalThis.fetch.bind(globalThis);
+  globalThis.fetch=async(input,options={})=>{
+   const request=input instanceof Request?input:null,url=new URL(request?.url||String(input),location.href);
+   if(!url.hostname.endsWith('.supabase.co'))return native(input,options);
+   const signal=options.signal||request?.signal;if(signal?.aborted)throw signal.reason||new DOMException('Aborted','AbortError');
+   const payload={url:url.href,method:options.method||request?.method||'GET',headers:Object.fromEntries(new Headers(options.headers||request?.headers)),body:options.body===undefined?(request?await request.clone().text():null):String(options.body)};
+   let remove=()=>{};
+   try{
+    const pending=globalThis[binding](payload),value=signal?await new Promise((resolve,reject)=>{const abort=()=>reject(signal.reason||new DOMException('Aborted','AbortError'));remove=()=>signal.removeEventListener('abort',abort);signal.addEventListener('abort',abort,{once:true});pending.then(resolve,reject);}):await pending;
+    return new Response([204,205,304].includes(value.status)?null:value.body,{status:value.status,headers:value.headers});
+   }finally{remove();}
+  };
+ },{binding});
+ return counts;
+};

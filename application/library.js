@@ -67,10 +67,12 @@
       return [...records.values()];
     }
     list() {
+      const previous=this.summaryCache||new Map(),next=new Map();this.summaryCache=next;
       return this.records().map(record => {
         try {
           const indexed=header(record.raw)?.librarySummary;
-          const summary=indexed||this.summary(this.Session.restore(this.engine,JSON.parse(record.raw)));
+          let summary=indexed;
+          if(!summary){const cached=previous.get(record.id);const value=cached?.raw===record.raw?cached.summary:this.summary(this.Session.restore(this.engine,JSON.parse(record.raw)));next.set(record.id,{raw:record.raw,summary:value});summary=JSON.parse(JSON.stringify(value));}
           if(this.packs&&!this.packs.list().some(item=>item.id===summary.game&&item.version===summary.packVersion))
             return {id:record.id,active:record.active,missingPack:true,game:summary.game,packVersion:summary.packVersion,updatedAt:summary.updatedAt};
           const participants=summary.participants?.map((p,index,all)=>({...p,primary:p.primary??(index===all.findIndex(person=>!person.bot))}));
@@ -84,6 +86,12 @@
           return {id:record.id, active:record.active, invalid:true, updatedAt:0};
         }
       }).sort((a,b) => b.updatedAt - a.updatedAt || Number(b.active) - Number(a.active));
+    }
+    currentId() {
+      const raw=this.storage().getItem(ACTIVE);
+      if(!raw){this.activeIdentity=null;return null;}
+      if(this.activeIdentity?.raw===raw)return this.activeIdentity.id;
+      const id=identity(raw);this.activeIdentity={raw,id};return id;
     }
     current() {
       const raw = this.storage().getItem(ACTIVE);
@@ -123,14 +131,19 @@
       try { store.removeItem(PREFIX + id); } catch (_) {}
     }
     remove(id) {
+      this.summaryCache?.delete(id);if(this.activeIdentity?.id===id)this.activeIdentity=null;
       const store = this.storage(), active = store.getItem(ACTIVE);
-      store.removeItem(PREFIX + id);
+      store.removeItem(PREFIX + id);store.removeItem(this.statusKey('local:'+id));
       if (active && identity(active) === id) store.removeItem(ACTIVE);
     }
-    persist(operation) { return this.storage().transact?this.storage().transact(operation):Promise.resolve().then(operation); }
+    statusKey(key){if(typeof key!=='string'||key.length>1024||!key.match(/^(local|network):.+/))fail('LIBRARY_STATUS_INVALID');return 'playroom.match-status.v1.'+encodeURIComponent(key);}
+    archived(key){return this.storage().getItem(this.statusKey(key))==='archived';}
+    replaceAsync(session,id,roomName='',{guard=()=>{}}={}){const saved=JSON.parse(this.encode(session,id));saved.librarySummary.roomName=String(roomName).slice(0,100);const raw=JSON.stringify(saved);return this.persist(()=>{guard();if(!this.records().some(row=>row.id===id))fail('LIBRARY_REMOVED');this.writeRaw(raw,id);},{guard});}
+    setArchivedAsync(key,value,{guard=()=>{}}={}){const statusKey=this.statusKey(key);if(typeof value!=='boolean')fail('LIBRARY_STATUS_INVALID');if(this.archived(key)===value){guard();return Promise.resolve();}return this.persist(()=>{guard();value?this.storage().setItem(statusKey,'archived'):this.storage().removeItem(statusKey);},{guard});}
+    persist(operation,options) { return this.storage().transact?this.storage().transact(operation,options):Promise.resolve().then(operation); }
     writeAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.writeRaw(raw,id)); }
     activateAsync(session,id) { const raw=this.encode(session,id);return this.persist(()=>this.activateRaw(raw,id)); }
-    removeAsync(id) { return this.persist(()=>this.remove(id)); }
+    removeAsync(id,{guard=()=>{}}={}) { return this.persist(()=>{guard();return this.remove(id);},{guard}); }
     importAsync(session,id,roomName='',guard=()=>{}) {
       const raw=this.encode(session,id),saved=JSON.parse(raw);saved.librarySummary.roomName=String(roomName).slice(0,100);
       return this.persist(()=>{guard();const store=this.storage();if(this.records().some(row=>row.id===id))fail('LIBRARY_ID_CONFLICT');store.setItem(PREFIX+id,JSON.stringify(saved));});

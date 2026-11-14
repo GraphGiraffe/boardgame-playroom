@@ -1,17 +1,30 @@
 'use strict';
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const path=require('node:path');
+const path=require('node:path'),fs=require('node:fs'),crypto=require('node:crypto');
 const {chromium, executablePath} = require('../scripts/codex/browser.cjs');
-const root=path.resolve(__dirname,'..');
+const root=path.resolve(__dirname,'..'),motionSource=process.env.PLAYROOM_MOTION_OVERRIDE||path.join(root,'core/motion.js');
+async function captureMotionEvidence(page,name,{fraction=null,...details}={}){
+ const out=process.env.PLAYROOM_MOTION_EVIDENCE_DIR;if(!out)return;
+ const sample=await page.evaluate(async fraction=>{
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  if(fraction!==null)for(const animation of document.getAnimations()){const target=animation.effect?.target;if(target?.closest('.playroom-motion-layer')){animation.pause();animation.currentTime=Number(animation.effect.getTiming().duration)*fraction;}}
+  const pieces=[...document.querySelectorAll('.playroom-motion-piece')].map(node=>{const box=node.getBoundingClientRect(),css=getComputedStyle(node);return {kind:node.dataset.motionKind,text:node.textContent.trim(),box:{x:box.x,y:box.y,width:box.width,height:box.height},background:css.backgroundColor,transform:css.transform,secretNodes:node.querySelectorAll('[data-secret]').length};});
+  return {pieces,layers:document.querySelectorAll('.playroom-motion-layer').length,sourceVisible:document.querySelector('#source')?getComputedStyle(document.querySelector('#source')).visibility:null,destinationVisible:document.querySelector('.public-card')?getComputedStyle(document.querySelector('.public-card')).visibility:null};
+ },fraction);
+ fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,name+'.png')});const browser=page.context().browser();
+ fs.writeFileSync(path.join(out,name+'.json'),JSON.stringify({browserType:browser.browserType().name(),browserVersion:browser.version(),viewport:page.viewportSize(),fraction,sourceSha256:crypto.createHash('sha256').update(fs.readFileSync(motionSource)).digest('hex'),theme:{face:'#d47755'},...details,sample},null,2));
+ if(fraction!==null)await page.evaluate(()=>{for(const animation of document.getAnimations())if(animation.effect?.target?.closest('.playroom-motion-layer'))animation.play();});
+}
+
 
 test('Flip backs remain visible inside their clones and draws keep the stock aspect ratio',{timeout:30000},async()=>{
   const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
   try{
     const page=await browser.newPage();
     await page.setContent('<style>*{box-sizing:border-box}.scene{width:390px;height:740px}.slot{position:relative;width:70px;height:100px}.face,.back{display:block;width:100%;height:100%}.back{position:absolute;inset:0;visibility:hidden;transform:rotateY(-90deg)}.back button{width:100%;height:100%}.stock-button{position:absolute;left:100px;top:300px;width:70px;height:100px;padding:0;border:0}.piece-back{display:block;width:100%;height:100%;background:green}.mini-hand{position:absolute;left:20px;top:40px;width:130px;height:44px}</style><div class="scene"><div class="slot" data-motion-effect="flip" data-motion-trigger="flip" data-motion-key="index" data-motion-value="0" data-motion-close="true"><span class="face" data-motion-face><button>Public face</button></span><span class="back" data-motion-back><button>Public back</button></span></div><button class="stock-button" data-motion-stock><span class="piece-back"></span></button><div data-player-index="1"><div class="mini-hand"></div></div></div>');
-    await page.addScriptTag({path:path.join(root,'core/game-components.js')});
-    await page.addScriptTag({path:path.join(root,'core/motion.js')});
+    await page.addScriptTag({path:path.join(root,'core/vector-art.js')});await page.addScriptTag({path:path.join(root,'core/game-components.js')});
+    await page.addScriptTag({path:motionSource});
     const result=await page.evaluate(async()=>{
       const other=document.querySelector('.slot').cloneNode(true);other.dataset.motionValue='1';document.querySelector('.scene').append(other);
       const selective=PlayroomMotion.capture({actor:1,viewer:0,action:{type:'flip',index:0},deferDepartures:true});
@@ -20,7 +33,11 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       other.remove();
       const flip=PlayroomMotion.play({action:{type:'flip',index:1},entities:new Map(),flips:new Map()},{duration:300,effects:{flip:300,pair:200}});
       const sides=[...document.querySelectorAll('[data-motion-kind=flip]>div>* button')].map(n=>getComputedStyle(n).visibility);
-      PlayroomMotion.cancel();await flip;document.querySelector('.slot').remove();
+      PlayroomMotion.cancel();await flip;
+      const slot=document.querySelector('.slot'),face=slot.querySelector('[data-motion-face]'),back=slot.querySelector('[data-motion-back]');
+      const closing={faceInline:face.style.getPropertyValue('visibility'),backVisible:getComputedStyle(back).visibility,backTransform:getComputedStyle(back).transform};
+      back.remove();face.innerHTML='<button>Authored reopened face</button>';closing.reopened=getComputedStyle(face).visibility;
+      slot.remove();
       const shot=PlayroomMotion.capture({sceneModel:window.motionScene,actor:1,viewer:0,action:{type:'draw'}}),draw=PlayroomMotion.play(shot,{duration:500,draws:[{player:1,count:1,from:'stock'}]});
       const piece=document.querySelector('.playroom-motion-piece[data-motion-kind=draw]'),samples=[];
       for(const fraction of [.05,.5,.95]){for(const a of document.getAnimations()){a.pause();a.currentTime=a.effect.getTiming().duration*fraction;}const r=piece.getBoundingClientRect();samples.push(r.width/r.height);}
@@ -34,11 +51,12 @@ test('Flip backs remain visible inside their clones and draws keep the stock asp
       const simultaneous=document.querySelectorAll('.playroom-motion-layer').length;
       a.cancel();await pa;const surviving=document.querySelectorAll('.playroom-motion-layer').length;
       b.cancel();await pb;
-      return {copies,sides,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length,
+      return {copies,sides,closing,sourceRatio:shot.stock.width/shot.stock.height,samples,layers:document.querySelectorAll('.playroom-motion-layer').length,
         surface:{delta:sb.stock.x-sa.stock.x,simultaneous,surviving,missing:missing.capture().entities.size}};
     });
     assert.deepEqual(result.copies,{flips:1,hands:0,sources:[1]});
     assert.deepEqual(result.sides,['visible','visible']);
+    assert.deepEqual(result.closing,{faceInline:'',backVisible:'visible',backTransform:'none',reopened:'visible'},'closing back remains opaque and retained face can be authored again');
     assert(result.samples.every(ratio=>Math.abs(ratio-result.sourceRatio)<.01),JSON.stringify(result));
     assert.equal(result.layers,0);
     assert.deepEqual(result.surface,{delta:100,simultaneous:2,surviving:1,missing:0});
@@ -52,8 +70,8 @@ test('Motion effects move only public pieces and clean up at completion or cance
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     try{
       await page.setContent('<style>*{box-sizing:border-box}body{margin:0}.scene{position:absolute;left:20px;top:20px;width:350px;height:780px;background:#ddd;--face:#d47755}.hand-track{position:absolute;left:12px;top:580px;width:320px;height:130px;display:flex;gap:12px;overflow:auto}.mini-hand{position:absolute;left:110px;top:50px;width:110px;height:46px;display:flex}.piece-back{width:30px;height:44px;background:green}.card{position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;width:66px;height:98px;background:var(--face);color:white;border:4px solid #fff;border-radius:10px;box-shadow:0 3px 0 #aaa;font:700 16px sans-serif}.card span{font-size:18px}.public-card{position:absolute;left:205px;top:290px}.stock-button{position:absolute;left:35px;top:290px;width:66px;height:98px}.stock-button .piece-back{width:100%;height:100%}.die{position:absolute;left:30px;top:380px;width:50px;height:50px;background:#fff;transform:rotate(-5deg)}.token{position:absolute;width:30px;height:30px;border-radius:50%;background:#568669}.board{position:absolute;left:20px;top:180px;width:300px;height:250px}</style><main id="app"></main>');
-      await page.addStyleTag({path:path.join(root,'core/motion.css')});await page.addScriptTag({path:path.join(root,'core/game-components.js')});
-    await page.addScriptTag({path:path.join(root,'core/motion.js')});
+      await page.addStyleTag({path:path.join(root,'core/motion.css')});await page.addScriptTag({path:path.join(root,'core/vector-art.js')});await page.addScriptTag({path:path.join(root,'core/game-components.js')});
+    await page.addScriptTag({path:motionSource});
       await page.evaluate(()=>{
         window.motionScene={zones:[{id:'field',kind:'board'}],objects:[{ref:{namespace:'checker',id:'42'},zone:'field'}]};
         window.drawScene=(mode='before',card='c1')=>{
@@ -106,9 +124,12 @@ test('Motion effects move only public pieces and clean up at completion or cance
           for(const animation of document.getAnimations()){animation.pause();animation.currentTime=animation.effect.getTiming().duration*fraction;}
           const back=clone.getBoundingClientRect(),svg=clone.querySelector('svg').getBoundingClientRect();samples.push({w:back.width,h:back.height,sw:svg.width,sh:svg.height});
         }
-        window.dispatchEvent(new Event('resize'));await flight;
-        return {angle:snapshot.hands.get(1).angle,samples,layers:document.querySelectorAll('.playroom-motion-layer').length};
-      });assert.equal(Math.round(result.angle),90);assert(result.samples.every(s=>Math.abs(s.w-s.sw)<1&&Math.abs(s.h-s.sh)<1),JSON.stringify(result));assert.equal(result.layers,0);
+        window.rotatedFlight=flight;
+        return {angle:snapshot.hands.get(1).angle,samples};
+      });assert.equal(Math.round(result.angle),90);assert(result.samples.every(s=>Math.abs(s.w-s.sw)<1&&Math.abs(s.h-s.sh)<1),JSON.stringify(result));
+      await captureMotionEvidence(page,'rotated-stock-mid',{fraction:.5,action:{type:'draw'},actor:1,viewer:0,angle:result.angle});
+      const layers=await page.evaluate(async()=>{window.dispatchEvent(new Event('resize'));await rotatedFlight;return document.querySelectorAll('.playroom-motion-layer').length;});assert.equal(layers,0);
+      await captureMotionEvidence(page,'resize-cleanup',{action:{type:'draw'},actor:1,viewer:0});
     });
     await check('Own played card visibly travels upward, preserves face styling and restores destination',async page=>{
       const start=await page.evaluate(()=>{
@@ -118,7 +139,7 @@ test('Motion effects move only public pieces and clean up at completion or cance
       const clone=page.locator('.playroom-motion-piece[data-motion-kind=play]');assert.equal(await clone.count(),1);assert.equal(await clone.getAttribute('data-entity'),null);assert.equal(await clone.getAttribute('data-action'),null);assert.equal(await clone.getAttribute('id'),null);
       assert.equal(await clone.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(212, 119, 85)');assert.match(await clone.textContent(),/PUBLIC PLAY/);
       assert.equal(await page.locator('.scene .public-card').evaluate(el=>getComputedStyle(el).visibility),'hidden');assert(start.first.y>start.origin.y-5);
-      await page.waitForTimeout(120);const middle=await clone.boundingBox();assert(middle.y<start.first.y-50,'Played card must visibly leave the hand');
+      await page.waitForTimeout(120);const middle=await clone.boundingBox();assert(middle.y<start.first.y-50,'Played card must visibly leave the hand');await captureMotionEvidence(page,'own-play-mid',{fraction:.5,action:{type:'play',card:'c1'},source:start.origin});
       assert.equal(await page.evaluate(()=>done),false);await page.evaluate(()=>flight);assert.equal(await page.locator('.playroom-motion-layer').count(),0);assert.equal(await page.locator('.scene .public-card').evaluate(el=>getComputedStyle(el).visibility),'visible');
     });
     await check('Opponent play starts at hidden hand but clones only the newly public card',async page=>{
@@ -126,7 +147,7 @@ test('Motion effects move only public pieces and clean up at completion or cance
         const snapshot=PlayroomMotion.capture({sceneModel:window.motionScene,actor:1,viewer:0,action:{type:'play',card:'hidden-card'}});drawScene('after','hidden-card');window.flight=PlayroomMotion.play(snapshot,{duration:360});return snapshot.origin;
       });
       const clone=page.locator('.playroom-motion-piece[data-motion-kind=play]');assert.equal(await clone.count(),1);assert.equal(await clone.locator('[data-secret]').count(),0);assert.match(await clone.textContent(),/PUBLIC PLAY/);assert.doesNotMatch(await clone.textContent(),/HIDDEN BACK/);
-      const b=await clone.boundingBox();assert(b.y<origin.y+100,'Opponent card must originate above the board');assert(await page.locator('.mini-hand').isVisible());await page.evaluate(()=>flight);
+      const b=await clone.boundingBox();assert(b.y<origin.y+100,'Opponent card must originate above the board');assert(await page.locator('.mini-hand').isVisible());await captureMotionEvidence(page,'opponent-public-mid',{fraction:.5,action:{type:'play',card:'hidden-card'},viewer:0,actor:1,source:origin});await page.evaluate(()=>flight);
     });
     await check('Replay infers a newly public card without action.card',async page=>{
       await page.evaluate(()=>{const snap=PlayroomMotion.capture({sceneModel:window.motionScene,actor:0,viewer:0});drawScene('after');window.flight=PlayroomMotion.play(snap,{duration:250});});
@@ -259,4 +280,34 @@ test('Motion effects move only public pieces and clean up at completion or cance
       });assert(Math.abs(result.first.x-result.release.x)<2&&Math.abs(result.first.y-result.release.y)<2);assert.equal(result.invalid,null);await page.evaluate(()=>flight);
     });
   }finally{await browser.close();}
+});
+
+
+test('Clone captures resolve each source once per style epoch and preserve frozen hidden artwork',{timeout:30000},async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox']});
+ try{const page=await browser.newPage({viewport:{width:390,height:740}});
+  await page.setContent('<style>.scene{width:390px;height:740px;--ink:rgb(29,77,113)}.stock-button{position:absolute;left:20px;top:30px;width:70px;height:100px;transform:rotate(-7deg)}.piece-back{display:block;width:100%;height:100%;color:var(--ink);background:rgb(85,119,51)}.piece-back svg{width:100%;height:100%;fill:currentColor}.explicit-hidden{visibility:hidden}</style><div class="scene"><button class="stock-button" data-motion-stock><span id="frozen-back" class="piece-back" data-action="secret" onclick="void 0"><svg viewBox="0 0 70 100"><path d="M0 0H70V100H0Z"/><foreignObject x="1" y="1" width="20" height="20"><div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center">HTML</div></foreignObject></svg><span class="inherited">PUBLIC BACK</span><span class="explicit-hidden">hidden decoration</span></span></button></div>');
+  await page.addScriptTag({path:path.join(root,'core/vector-art.js')});await page.addScriptTag({path:path.join(root,'core/game-components.js')});await page.addScriptTag({path:motionSource});
+  const result=await page.evaluate(()=>{
+   const source=document.querySelector('.piece-back'),nativeStyle=window.getComputedStyle,nativeQuery=Element.prototype.querySelectorAll,nativeClone=Node.prototype.cloneNode;
+   function capture(hidden){
+    source.style.visibility=hidden?'hidden':'visible';const reads=new Map(),walks=new Map(),properties=new Map();let deepClones=0;
+    window.getComputedStyle=function(node,...args){const tracked=new Error().stack.includes('styledClone');if(tracked)reads.set(node,(reads.get(node)||0)+1);const style=nativeStyle.call(this,node,...args);return tracked?new Proxy(style,{get(target,key){if(key==='getPropertyValue')return property=>{if(!properties.has(node))properties.set(node,[]);properties.get(node).push(property);return target.getPropertyValue(property);};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}}):style;};
+    Element.prototype.querySelectorAll=function(selector){if(selector==='*'&&new Error().stack.includes('styledClone'))walks.set(this,(walks.get(this)||0)+1);return nativeQuery.call(this,selector);};
+    Node.prototype.cloneNode=function(deep){if(this===source&&deep)deepClones++;return nativeClone.call(this,deep);};
+    let snapshot;try{snapshot=PlayroomMotion.capture({action:{type:'draw'},deferDepartures:true});}finally{window.getComputedStyle=nativeStyle;Element.prototype.querySelectorAll=nativeQuery;Node.prototype.cloneNode=nativeClone;}
+    const clone=snapshot.stockBack;return {clone,metrics:{svgBoxReads:(properties.get(source.querySelector('path'))||[]).filter(key=>['margin','padding','border','background','flex','grid-template-columns'].includes(key)),foreignFlexRead:(properties.get(source.querySelector('foreignObject div'))||[]).includes('flex'),pathFill:clone.querySelector('path').style.fill,rootReads:reads.get(source),descendantReads:[...source.querySelectorAll('*')].map(node=>reads.get(node)||0),cloneWalks:walks.get(clone),deepClones,sourceVisibility:source.style.visibility,childVisibility:clone.querySelector('.inherited').style.visibility,hiddenVisibility:clone.querySelector('.explicit-hidden').style.visibility,color:clone.style.color,fill:clone.querySelector('svg').style.fill,width:clone.style.width,height:clone.style.height,activeAttrs:clone.querySelectorAll('[data-action],[onclick],[id]').length+(clone.matches('[data-action],[onclick],[id]')?1:0)}};
+   }
+   const visible=capture(false),hidden=capture(true);document.querySelector('.scene').style.setProperty('--ink','rgb(131,41,61)');source.style.visibility='visible';const recolored=capture(false);
+   let stockClones=0;Node.prototype.cloneNode=function(deep){if(this===source&&deep)stockClones++;return nativeClone.call(this,deep);};let lazy;
+   try{const shot=PlayroomMotion.capture({action:{type:'move'},deferDepartures:true});shot.prepareTransfers([]);lazy={before:stockClones,empty:shot.stockBack===null};shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.after=stockClones;lazy.prepared=!!shot.stockBack;shot.prepareTransfers([{from:'stock',player:0,count:1}]);lazy.repeated=stockClones;const request=PlayroomMotion.capture({action:{type:'ask'},deferDepartures:true});request.prepareTransfers([],{back:true});lazy.request=!!request.stockBack;const legacy=PlayroomMotion.capture({action:{type:'move'}});lazy.legacy=!!legacy.stockBack;}finally{Node.prototype.cloneNode=nativeClone;}
+   return {lazy,visible:visible.metrics,hidden:hidden.metrics,recolored:recolored.metrics,independent:visible.clone!==hidden.clone&&visible.clone.firstElementChild!==hidden.clone.firstElementChild,oldColor:visible.clone.style.color};
+  });
+  assert.equal(result.lazy.before,0,'ordinary deferred moves do not clone the stock back');assert(result.lazy.empty);assert.equal(result.lazy.after,1);assert.equal(result.lazy.repeated,1);assert(result.lazy.prepared&&result.lazy.request&&result.lazy.legacy);
+  assert.equal(result.visible.rootReads,1,'visible source root style is resolved once, not visibility + freeze + metrics');
+  assert.equal(result.hidden.rootReads,2,'hidden source is resolved again only after its temporary reveal');
+  for(const sample of [result.visible,result.hidden,result.recolored]){assert.equal(sample.foreignFlexRead,true,'foreignObject HTML keeps full layout capture');assert.equal(sample.pathFill,sample.color);assert(sample.descendantReads.every(n=>n===1));assert.equal(sample.cloneWalks,1,'interaction stripping reuses the already enumerated cloned nodes');assert.equal(sample.deepClones,1,'the required independent frozen visual tree remains');assert.equal(sample.childVisibility,'visible');assert.equal(sample.hiddenVisibility,'hidden');assert.equal(sample.activeAttrs,0);assert.equal(sample.fill,sample.color);assert(parseFloat(sample.width)>0&&parseFloat(sample.height)>0);}
+  assert.equal(result.hidden.sourceVisibility,'hidden');assert.equal(result.visible.color,'rgb(29, 77, 113)');assert.equal(result.recolored.color,'rgb(131, 41, 61)');assert.equal(result.oldColor,result.visible.color);assert(result.independent);
+  if(process.env.PLAYROOM_MOTION_EVIDENCE_DIR){fs.mkdirSync(process.env.PLAYROOM_MOTION_EVIDENCE_DIR,{recursive:true});fs.writeFileSync(path.join(process.env.PLAYROOM_MOTION_EVIDENCE_DIR,'clone-reads.json'),JSON.stringify({browserType:browser.browserType().name(),browserVersion:browser.version(),viewport:{width:390,height:740},result},null,2));}
+ }finally{await browser.close();}
 });

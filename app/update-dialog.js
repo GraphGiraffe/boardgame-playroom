@@ -1,5 +1,6 @@
 (function(root){
   'use strict';
+  const Meter=root.PlayroomStatusMeter||(typeof require==='function'?require('./status-meter.js'):null);
   const text=(key,vars)=>root.PlayroomMessages.text('ui.updates.'+key,vars);
   function releases(items,from,to){
     const compare=root.TabletopPacks.compareVersions;
@@ -10,24 +11,29 @@
     return selected.length?selected.map(item=>`<section><h3>${esc(item.version)}</h3><ul>${item.changes.filter(line=>typeof line==='string').map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>`).join(''):`<p class="muted">${text('missing')}</p>`;
   }
   function errorText(error){const code=['offline','network','timeout','http','response','integrity','quota','storage','incomplete'].includes(error?.code)?error.code:'network';return text('error.'+code,{status:error?.status||''});}
-  function progressMarkup(){return `<div class="update-download" data-update-download hidden><div class="update-download-caption"><span data-update-phase></span><span data-update-bytes></span></div><div class="storage-usage-line update-download-line" data-update-progress role="progressbar" aria-label="Загрузка обновления" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div>`;}
+  function progressMarkup(){return `<div class="update-download" data-update-download hidden><div class="status-meter-caption"><span data-update-phase></span><span data-update-bytes></span></div>${Meter.markup({attrs:'data-update-progress',label:'Подготовка обновления'})}</div>`;}
   function sync(){
-    const modal=document.querySelector('.updates-modal');if(!modal)return;const app=root.PlayroomPWA?.updateInfo,state=app?.download||{phase:'ready'},phase=state.phase,ready=phase==='ready',busy=phase==='downloading',preparing=state.stage==='preparing';
+    const active=document.querySelector('#modal-root>[data-surface-state=active]');
+    const modal=active?.querySelector('.updates-modal');if(!modal)return;const app=root.PlayroomPWA?.updateInfo,state=app?.download||{phase:'ready'},phase=state.phase,ready=phase==='ready',busy=phase==='downloading',preparing=state.stage==='preparing';
     const download=modal.querySelector('[data-command=download-app]'),install=modal.querySelector('[data-command=update-app]');
-    if(download){download.hidden=ready;download.disabled=busy;download.title=download.ariaLabel=busy?text('phase.downloading'):phase==='paused'?text('resume'):text('download');download.innerHTML=root.PlayroomGameScreen.icon(busy?'sync':phase==='paused'?'sync':'download');}
+    if(download){download.hidden=ready;download.disabled=busy;const label=busy?text('phase.downloading'):phase==='paused'?text('resume'):'Подготовить обновление';download.title=download.ariaLabel=label;download.innerHTML=root.PlayroomGameScreen.icon(busy?'sync':phase==='paused'?'sync':'download')+'<span>'+label+'</span>';}
     if(install)install.hidden=!ready;
     const block=modal.querySelector('[data-update-download]');if(!block)return;block.hidden=phase==='available';
-    const percent=ready?100:preparing?0:state.total?Math.min(99,Math.floor((state.received||0)/state.total*100)):state.totalFiles?Math.min(99,Math.floor((state.completed||0)/state.totalFiles*100)):0;
-    const progress=block.querySelector('[data-update-progress]');progress.setAttribute('aria-valuenow',percent);progress.style.setProperty('--download-progress',percent+'%');
+    const measured=!preparing&&Number.isFinite(state.total)&&state.total>0,files=!preparing&&Number.isFinite(state.totalFiles)&&state.totalFiles>0;
+    const percent=ready?100:measured?Math.max(0,Math.min(100,(state.received||0)/state.total*100)):files?Math.max(0,Math.min(100,(state.completed||0)/state.totalFiles*100)):null;
+    const format=root.PlayroomStorageUsage.format,detail=measured?format(state.received||0)+' / '+format(state.total):files?(state.completed||0)+' / '+state.totalFiles+' файлов':preparing?'Определяем объём обновления':'Объём пока неизвестен';
+    Meter.update(block.querySelector('[data-update-progress]'),{label:'Подготовка обновления',value:percent,max:100,valueText:detail,state:state.error?'error':ready?'ready':busy?'busy':'paused'});
     block.querySelector('[data-update-phase]').textContent=text(ready?'ready':busy?(preparing?'preparing':'downloading'):'paused');
-    const format=root.PlayroomStorageUsage.format;block.querySelector('[data-update-bytes]').textContent=(!preparing&&(state.total||ready)?format(state.received||0)+' / '+format(state.total)+' · ':'')+percent+'%';
-    const status=modal.querySelector('[data-update-status]');if(state.error){status.textContent=errorText(state.error);status.setAttribute('role','alert');}else if(!root.PlayroomPWA?.isUpdateLocked()){status.textContent='';status.setAttribute('role','status');}
+    block.querySelector('[data-update-bytes]').textContent=detail+(percent===null?'':' · '+Math.round(percent)+'%');
+    const status=modal.querySelector('[data-update-status]');if(root.PlayroomUnifiedUpdateBusy)return;if(state.error){status.textContent=errorText(state.error);status.setAttribute('role','alert');}else if(!root.PlayroomPWA?.isUpdateLocked()){status.textContent=ready?'Обновление готово к установке':busy?'Подготавливаем обновление':phase==='paused'?'Подготовка приостановлена':'Можно подготовить обновление';status.setAttribute('role','status');}
   }
-  function markup({app,installedVersion,packs,installed,esc,head}){
+  function markup({app,installedVersion,packs,installed,esc,head,notice=null,check=null,resume=false,cover=()=>''}){
     const H=root.PlayroomGameScreen;
-    return head(text('title'))+`<div class="update-changes">${app?`<section><h2>${text('app')}${app.version?' · '+esc(app.version):''}</h2>${changes(app.releases,installedVersion,app.version||installedVersion,esc)}</section>`:''}${packs.map(pack=>`<section><h2>${esc(pack.name||pack.id)} · ${esc(pack.version)}</h2>${changes(pack.releases,installed(pack.id),pack.version,esc)}</section>`).join('')}</div><div class="modal-foot update-actions">${app?progressMarkup():''}<p data-update-status role="status"></p>${packs.length?H.iconButton('data-command="update-packs"',text('packs'),'layers'):''}${app?H.iconButton('data-command="download-app"',text('download'),'download')+H.iconButton('data-command="update-app"',text('apply'),'install',{className:'update-apply'}):''}</div>`;
+    const title=app?'Обновление':packs.length?'Обновления игр':'Обновления',header=`<header class="modal-head update-v021-header">${H.iconButton('data-command="close-modal"','Назад','back')}<h2>${esc(title)}</h2></header>`;
+    return header+`<div class="update-v021">${notice?`<section data-important-update><h3>${esc(notice.title||'Важное обновление')}</h3><p>${esc(notice.body||'')}</p>${notice.version?`<small>${esc(notice.version)}</small>`:''}</section>`:''}<p class="muted" data-installed-app-version>Установлена версия ${esc(installedVersion)}</p>${!app&&!packs.length?'<section class="update-v021-summary" data-update-current><h3>Обновление ХОД</h3><p>Можно проверить, появились ли новые версии приложения и игр.</p></section>':''}${app?`<section class="update-v021-summary"><h3>Обновление ${esc(app.version||'ХОД')}</h3><div class="update-changes">${changes(app.releases,installedVersion,app.version||installedVersion,esc)}</div></section><section class="update-v021-state"><p data-update-status role="status">Можно подготовить обновление</p>${progressMarkup()}</section>`:''}${packs.length?`<details class="update-pack-changes"><summary>Изменения игр · ${packs.length}</summary>${packs.map(pack=>`<article class="post-update-pack"><div class="post-update-cover">${cover(pack.id)}</div><div><h3>${esc(pack.name||pack.id)} · ${esc(pack.version)}</h3>${changes(pack.releases,installed(pack.id),pack.version,esc)}</div></article>`).join('')}</details>`:''}${app?'':'<p data-update-status role="status"></p>'}</div><footer class="update-v021-footer" data-fixed-footer><p data-update-check-status role="${check?.error?'alert':'status'}">${esc(check?.message||'')}</p><div class="update-v021-actions">${H.button({attrs:`data-command="check-updates" ${check?.busy?'disabled':''}`,label:check?.busy?'Проверяем обновления…':'Проверить обновления',icon:'sync',className:app||packs.length?'secondary':''})}${app||packs.length||resume?H.button({attrs:'data-command="update-all"',label:resume?'Продолжить обновление':'Обновить всё',icon:'download'}):''}</div></footer>`;
   }
   root.addEventListener?.('playroom-update-progress',sync);
+  root.addEventListener?.('playroom:modal-restored',sync);
   root.PlayroomUpdateDialog={markup,releases,changes,sync,errorText};
   if(typeof module==='object'&&module.exports)module.exports=root.PlayroomUpdateDialog;
 })(globalThis);

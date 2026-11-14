@@ -107,7 +107,7 @@
 .hand-track.is-fan .hand-fan-row>.hand-card:is(.is-selected,:focus-visible,.is-hand-preview) ~ .hand-card:not(.is-selected):not(:focus-visible):not(.is-hand-preview){transform:translateX(var(--fan-reveal-space,calc(var(--fan-card-width) - var(--fan-peek))));}
 
 .participant-role{display:inline-flex;align-items:center;gap:var(--size-space-2_0,2px);flex:none;color:inherit;vertical-align:middle;}
-.participant-role svg{display:block;width:var(--size-length-14_0,12px);height:var(--size-length-14_0,12px);flex:none;}
+.participant-role svg{display:block;width:calc(var(--size-length-14_0,12px) * var(--role-ink-width,24)/24);height:calc(var(--size-length-14_0,12px) * var(--role-ink-height,24)/24);flex:none;}
 .number-mark{display:block;width:78%;height:78%;aspect-ratio:1;flex:none;overflow:visible;}
 .participant-role.is-online{color:var(--green,#35654f);}
 .participant-role.is-offline{color:var(--coral,#d77b62);}
@@ -136,3 +136,13 @@
 /* The artwork supplies its own frame. A miniature wrapper must not crop its
    corners or add another border; the hand viewport alone makes the pocket. */
 .app-game-layout .mini-hand>:is(.art-card,.shared-card-back){border:0!important;border-radius:0!important;padding:0!important;background:transparent!important;overflow:visible!important;box-shadow:none!important}
+
+/* Link feedback never changes card geometry or covers the playing field. */
+.table-shell.network-game .player-panel.is-network-offline{background:color-mix(in srgb,var(--color-surface-panel,#f4f2e8) 82%,var(--color-text-secondary,#526158) 18%);border-color:var(--color-border-subtle,#a8afa9);}
+.table-shell.network-game .player-panel.is-network-offline .player-details{color:var(--color-text-secondary,#526158);}
+.table-shell.network-game .player-panel.is-network-offline .avatar{background:color-mix(in srgb,var(--color-surface-panel,#f4f2e8) 70%,var(--color-text-secondary,#526158) 30%)!important;color:var(--color-text-primary,#263d32)!important;}
+.table-shell.network-game .player-panel.is-network-offline .avatar>[data-ui-icon="link-off"]{width:65%;height:65%;margin:auto;display:block;}
+.player-panel.is-network-returned{animation:network-player-return 1.8s ease-out;}
+@keyframes network-player-return{from{box-shadow:inset 0 0 0 2px var(--color-feedback-success,#56876b);}to{box-shadow:inset 0 0 0 0 transparent;}}
+@media(prefers-reduced-motion:reduce){.player-panel.is-network-returned{animation:none;outline:2px solid var(--color-feedback-success,#56876b);outline-offset:-2px;}}
+body.reduced-motion .player-panel.is-network-returned{animation:none;}

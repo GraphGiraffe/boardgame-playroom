@@ -7,7 +7,13 @@
  async function sendMessage(data){const r=await registration();return new Promise((resolve,reject)=>{const c=new MessageChannel(),timer=setTimeout(()=>{c.port1.close();reject(error('worker-timeout'));},3000);c.port1.onmessage=e=>{clearTimeout(timer);c.port1.close();e.data?.error?reject(error('storage')):resolve(e.data);};r.active.postMessage(data,[c.port2]);});}
  let messages=Promise.resolve();
  function message(data){const result=messages.catch(()=>{}).then(()=>sendMessage(data));messages=result;return result;}
- async function subscription(){return (await registration()).pushManager.getSubscription();}
+ async function subscription(){
+  if(!supported())throw error('unsupported');
+  // An existing subscription requires granted permission. Avoid probing the
+  // native push service before consent, including on first worker control.
+  if(root.Notification.permission!=='granted')return null;
+  return (await registration()).pushManager.getSubscription();
+ }
  async function subscribe(publicKey){
   const permission=await Notification.requestPermission();if(permission!=='granted')throw error('permission');
   const bytes=Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));

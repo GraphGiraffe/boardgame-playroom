@@ -44,6 +44,18 @@ test('commands have exact value identity and immutable transitions reject stale 
   assert.deepEqual(model.legalActions(position,-1),[]);
 });
 
+test('immutable event projections reuse prior facts without mixing viewers or trusting mutable inputs',()=>{
+ const Events=require('../core/events.js');
+ const draft={type:'cards.drawn',actor:0,params:{card:'secret-spades'},visibility:{kind:'players',players:[0]},publicEvent:{type:'cards.received',actor:0,params:{count:1},visibility:{kind:'public'}}};
+ const journal=Events.append([], [draft],2,1),owner=Events.project(journal,0,2),other=Events.project(journal,1,2);
+ assert.equal(Events.project(journal,0,2)[0],owner[0]);
+ assert.equal(Events.project(Events.append(journal,[draft],2,2),0,2)[0],owner[0]);
+ assert.equal(owner[0].params.card,'secret-spades');assert.equal(other[0].params.card,undefined);assert.notEqual(owner[0],other[0]);
+ assert(Object.isFrozen(owner)&&Object.isFrozen(owner[0].params));
+ draft.params.card='changed';assert.equal(Events.project([draft],0,2)[0].params.card,'changed');draft.params.card='again';assert.equal(Events.project([draft],0,2)[0].params.card,'again');
+ assert.throws(()=>Events.project(journal,0,0));
+});
+
 test('visibility is resolved before events reach presentation and invalid viewers receive only public data',()=>{
   const secret={type:'cards.drawn',actor:0,params:{card:'secret-spades'},visibility:{kind:'players',players:[0]},
     publicEvent:{type:'cards.received',actor:0,params:{count:1},visibility:{kind:'public'}}};
@@ -309,7 +321,8 @@ test('portable reactions have independent episodes, authorized public choices an
  const repeat=model.apply(changed.position,1,command);assert.deepEqual(repeat.position,changed.position);assert.deepEqual(repeat.events,[]);
  assert.equal(model.reactionControl(changed.position,1,command).ignore,true);
  assert.throws(()=>model.commandFor(initial,1,{type:'declare-uno',episode:999},'table'),coded('TABLE_ACTION_UNAVAILABLE'));
- assert.equal(model.project(changed.position,-1).data.uno.situations,undefined);
+ assert.deepEqual(model.project(changed.position,-1).data.uno.situations,changed.position.data.uno.situations);
+ assert(model.project(changed.position,-1).data.hands.flat().every(card=>card.hidden));
 });
 
 test('preparation is durable but does not create game turns; public projection exposes only its boundary',()=>{
@@ -406,7 +419,8 @@ test('all installed pack scenes obey participant and metric contracts for every 
     require(path.join(packs,'packs',id,'rules.js'));
     const game=E.get(id);
     for(const preset of game.presets){
-      const count=preset.id==='teams'?4:game.min;
+      const manifest=JSON.parse(fs.readFileSync(path.join(packs,'packs',id,'manifest.json'),'utf8')),declared=manifest.playModes?.find(mode=>mode.id===preset.id);
+      const count=declared?.players?.[0]??game.min;
       const state=E.createGame(id,{players:Array.from({length:count},(_,i)=>({name:'P'+i,bot:true})),preset:preset.id,seed:17});
       for(let viewer=-1;viewer<count;viewer++){
         const projected=E.project(state,viewer);
@@ -449,15 +463,21 @@ test('event scenes use authorized current events, ordered checkpoints and inert 
 });
 
 test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',()=>{
+ // Compare complete bundles against the independently prepared app companion.
+ // Git HEAD can predate unrelated compiler/asset work in the same checkout.
+ const prepared={};vm.runInNewContext(fs.readFileSync(path.join(root,'installed-packs.js'),'utf8'),prepared);
  const script=`
-import importlib.util,json,sys,tempfile,shutil,subprocess
+import json,sys,tempfile,shutil
 from pathlib import Path
 packs_root=Path(sys.argv[2]);app_root=Path(sys.argv[1])
 ns={'__file__':str(packs_root/'shared/pack_compiler.py')}
 exec((packs_root/'shared/pack_compiler.py').read_text(),ns)
-old={'__file__':ns['__file__']};exec(subprocess.check_output(['git','-C',str(packs_root),'show','HEAD:shared/pack_compiler.py'],text=True),old)
-for path in sorted((packs_root/'packs').glob('*/manifest.json')):
- assert old['build_pack'](path.parent)==ns['build_pack'](path.parent),path.parent.name
+prepared={bundle['manifest']['id']:bundle for bundle in json.load(sys.stdin)}
+paths=sorted((packs_root/'packs').glob('*/manifest.json'))
+assert set(prepared)=={json.loads(path.read_text())['id'] for path in paths},'prepared companion catalog differs from source'
+for path in paths:
+ actual=ns['build_pack'](path.parent)
+ assert actual==prepared[actual['manifest']['id']],path.parent.name+' differs from prepared companion'
 md='# Цель\\n\\n**Соберите** *три* знака. \\x60X\\x60\\n\\n## Ход\\n\\n1. Выберите клетку\\n2. Подтвердите\\n\\n| Карта | Действие |\\n|---|---|\\n| X | Поставить |\\n\\n![Линия](line)\\n'
 book=ns['compile_rulebook_markdown'](md)
 assert len(book['sections'])==2
@@ -474,10 +494,173 @@ with tempfile.TemporaryDirectory() as tmp:
  assert 'locales/ru/rules.md' not in bundle['files']
  print(json.dumps({'book':book,'bundle':bundle},ensure_ascii=False))
 `;
- const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:5*1024*1024}));
+ const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{input:JSON.stringify(prepared.PlayroomInstalledPacks),encoding:'utf8',maxBuffer:5*1024*1024}));
  const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
  const manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});manager.install(manager.prepare(result.bundle));
  manager.activate('tictactoe',result.bundle.manifest.version);assert.deepEqual(E.get('tictactoe').rulebook,result.book);
  const html=require('../app/rulebook-view.js').render(result.book,{esc:value=>String(value??'').replaceAll('<','&lt;'),illustrate:()=>''});
  assert.match(html,/<strong>Соберите<\/strong>/);assert.match(html,/<em>три<\/em>/);assert.match(html,/<code>X<\/code>/);assert.match(html,/<ol>/);assert.match(html,/<table/);assert.doesNotMatch(html,/<script/);
+});
+
+
+test('immutable snapshots reuse only their own validated frozen values',()=>{
+  const values=require('../core/model-values.js');
+  const source={nested:{cards:[{id:'card-1'}]}};
+  const first=values.snapshot(source);
+  assert.notEqual(first,source);assert.notEqual(first.nested,source.nested);
+  assert.equal(values.snapshot(first),first);
+  const nested=values.snapshot(first.nested);
+  assert.equal(nested,first.nested);assert.equal(values.snapshot(nested),nested);
+  assert.throws(()=>{first.nested.cards[0].id='changed';},TypeError);
+  source.nested.cards[0].id='changed';assert.equal(first.nested.cards[0].id,'card-1');
+  const mutable=values.copy(first);mutable.nested.cards.push({id:'card-2'});
+  assert.equal(first.nested.cards.length,1);
+  const shallow=Object.freeze({nested:{value:1}}),second=values.snapshot(shallow);
+  shallow.nested.value=2;assert.equal(second.nested.value,1);assert.notEqual(second,shallow);
+  const external=values.freeze({nested:{value:1}});assert.notEqual(values.snapshot(external),external);
+  const cyclic={};cyclic.self=cyclic;Object.freeze(cyclic);
+  assert.throws(()=>values.snapshot(cyclic),error=>error.code==='JSON_INVALID');
+  assert.throws(()=>values.snapshot(Object.freeze({bad:undefined})),error=>error.code==='JSON_INVALID');
+  assert.equal(values.snapshot(null),null);assert.equal(values.snapshot(3),3);
+});
+
+test('unimplemented optional mechanics do not traverse the complete game position',()=>{
+  const E=require('../core/engine.js');require('../packs/tictactoe/rules.js');
+  const adapted=globalThis.PlayroomModelRegistration.adapt(E,{definition,presentation,locales:{ru:require('../packs/tictactoe/locales/ru/game.json')},version:'0.1.0'});
+  const state=E.createGame('tictactoe',{seed:17,players:[{name:'A'},{name:'B'}]});let reads=0;const data=state.data;Object.defineProperty(state,'data',{get(){reads++;return data;}});
+  for(let i=0;i<40;i++){
+    assert.deepEqual(adapted.reactions(state,0),[]);assert.deepEqual(adapted.reactionWindows(state),[]);assert.equal(adapted.reactionControl(state,0,{type:'place',cell:0}),null);assert.equal(adapted.botReaction(state,0),null);assert.equal(adapted.botReactionDelay(state,0),null);assert.equal(adapted.decisionWindow(state),null);
+  }
+  assert.equal(reads,0,'absent hooks must return their default without cloning the position');
+});
+
+test('model validation reuses validated immutable positions but rechecks mutable or changed inputs',()=>{
+ let calls=0;const counted=new GameModel({...definition,validate(position){calls++;return definition.validate(position);}}),position=counted.create({playerCount:2,firstPlayer:0,preset:'classic'});calls=0;counted.validate(position);const once=calls;counted.validate(position);counted.validate(position);assert.equal(calls,once,'one immutable position is validated once');
+ const mutable=JSON.parse(JSON.stringify(position));counted.validate(mutable);const checked=calls;counted.validate(mutable);assert(calls>checked,'mutable callers are detached and rechecked');mutable.data.board[0]=0;mutable.data.board[1]=0;assert.throws(()=>counted.validate(mutable));
+});
+
+test('shared turn-order policy validates cycles, directions, repeat overrides and simultaneous windows',()=>{
+ const projection={status:'playing',playerCount:4,turn:2,data:{},timeline:{},decisionWindow:null},base=new GameModel(definition);
+ assert.equal(base.turnOrder(projection).next,3);
+ const custom=turnOrder=>new GameModel({...definition,turnOrder});
+ assert.equal(custom(()=>({players:[0,2,3],direction:-1})).turnOrder(projection).next,0);
+ assert.equal(custom(()=>({next:2})).turnOrder(projection).next,2,'rules may declare a repeat');
+ assert.equal(custom(()=>null).turnOrder(projection),null);
+ assert.equal(base.turnOrder({...projection,status:'finished'}),null);
+ assert.equal(base.turnOrder({...projection,playerCount:1,turn:0}),null);
+ assert.equal(base.turnOrder({...projection,timeline:{preparing:true}}),null);
+ assert.equal(base.turnOrder({...projection,decisionWindow:{participants:[0,1]}}),null);
+ for(const bad of [{players:[0,0]},{players:[4]},{players:[0,2],direction:0},{next:4}])assert.throws(()=>custom(()=>bad).turnOrder(projection),coded('TURN_ORDER_INVALID'));
+});
+
+test('parameter preview metadata stays public, bounded and identical across compiler and runtime',()=>{
+ const script=`
+import copy,json,sys
+from pathlib import Path
+root=Path(sys.argv[1]);path=root/'shared/pack_compiler.py';ns={'__file__':str(path)};exec(compile(path.read_text(),str(path),'exec'),ns)
+bundles=[ns['build_pack'](root/'packs'/game) for game in ['battleship','ludo','mage-brawl','uno','gofish','durak','oldmaid','klondike','snakes']]
+for path in (root/'packs').glob('*/manifest.json'):ns['validate_manifest'](json.loads(path.read_text()),path.parent.name)
+base=copy.deepcopy(bundles[2]['manifest']);base['sdkFeatures'].append('parameter-previews-v2');health=next(i for i,f in enumerate(base['settings']) if f['key']=='health')
+bad=[]
+def reject(change):
+ value=copy.deepcopy(base);change(value);bad.append(value)
+ try:ns['validate_manifest'](value,'bad-preview')
+ except ValueError:return
+ raise AssertionError('unsafe preview accepted')
+def field(m):return m['settings'][health]
+def option(m):return field(m)['options'][0]
+for preview in [None,[],{'kind':'html'},{'kind':'health','html':'<svg/>'},{'kind':{}}]:reject(lambda m,p=preview:field(m).__setitem__('preview',p))
+for preview in [None,[], {'kind':None}, {'kind':'html','html':'<svg/>'}, {'count':-1},{'count':101},{'count':True},{'count':1.5},{'count':'3'},{'count':4,'countFrom':{'field':'actionsPerTurn','values':{'1':3}}},{'countFrom':{'field':'missing','values':{'1':3}}},{'countFrom':{'field':'actionsPerTurn','values':{}}},{'countFrom':{'field':'actionsPerTurn','values':{'unknown':3}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':101}}},{'countFrom':{'field':'actionsPerTurn','values':{'1':3},'html':'<img>'}}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
+for preview in [{'kind':'fleet','pieces':[0]},{'kind':'fleet','pieces':[17]},{'kind':'fleet','pieces':[1]*17},{'kind':'teams','teamSizes':[0]},{'kind':'teams','teamSizes':[32,1]},{'kind':'teams','teamSizes':[1]*9},{'kind':'fleet','pieces':[4],'html':'<svg>'}]:
+ def change(m,p=preview):m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':p}]})
+ reject(change)
+reject(lambda m:m['presetSetting'].__setitem__('presentation','large'))
+reject(lambda m:field(m).__setitem__('presentation','large'))
+reject(lambda m:m['presetSetting'].update({'presentation':'mode','options':[]}))
+def two_modes(m):
+ field(m)['presentation']='mode';m['presetSetting'].update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':{'kind':'cards','count':7}}]})
+reject(two_modes)
+for preview in [{'kind':'declaration','actor':'other','label':'UNO!'},{'kind':'declaration','actor':'human','label':'x'*25},{'kind':'declaration','actor':'human'},{'kind':'symbol','icon':'not-a-ui-icon'},{'kind':'symbol','icon':'first','html':'<svg/>'}]:reject(lambda m,p=preview:option(m).__setitem__('preview',p))
+for ids in [None,[],['ok']*5,[''],['x'*65],['https://example.test'],['<svg>'],[1],[True]]:reject(lambda m,ids=ids:option(m).__setitem__('preview',{'kind':'illustrations','ids':ids}))
+reject(lambda m:option(m).__setitem__('preview',{'kind':'illustrations','ids':['ok'],'html':'<svg>'}))
+def missing_illustration_feature(m):
+ option(m)['preview']={'kind':'illustrations','ids':['ok']};m['sdkFeatures'].remove('parameter-illustrations-v1')
+reject(missing_illustration_feature)
+for description in [None,False,[], '', 'x'*361]:reject(lambda m,d=description:option(m).__setitem__('description',d))
+for condition in [None,{},[],{'missing':'vegas'},{'actionsPerTurn':'unknown'},{'actionsPerTurn':2}]:
+ def change(m,c=condition):field(m).update({'inactiveWhen':c,'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}})
+ reject(change)
+for inactive in [None,{}, {'preview':{'kind':'html'},'description':'Text'},{'preview':{'kind':'symbol','icon':'refresh'},'description':'x'*361},{'preview':{'kind':'symbol','icon':'refresh'},'description':'Text','html':'<svg/>'}]:
+ def change(m,i=inactive):field(m).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':i})
+ reject(change)
+reject(lambda m:field(m).__setitem__('inactiveWhen',{'actionsPerTurn':'1'}))
+def missing_feature(m):
+ field(m)['presentation']='mode';m['sdkFeatures'].remove('parameter-previews-v2')
+reject(missing_feature)
+def missing_inactive_feature(m):
+ field(m).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'lock'},'description':'Mode-defined value'}});m['sdkFeatures'].remove('parameter-previews-v2')
+reject(missing_inactive_feature)
+valid=[]
+for preview in [{'kind':'cards','count':7},{'kind':'symbol','icon':'cards'},{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'dice','count':2},{'kind':'health','count':3},{'kind':'lives','count':2},{'kind':'fleet','pieces':[3,2]},{'kind':'teams','teamSizes':[2,2]}]:
+ for key in ['presetSetting','settings']:
+  value=copy.deepcopy(base);
+  if key=='settings':value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]}
+  target=value['presetSetting'] if key=='presetSetting' else field(value);target.update({'presentation':'mode','options':[{'value':'classic','label':'Mode','preview':preview}]});ns['validate_manifest'](value,'valid-mode-preview');valid.append(value)
+value=copy.deepcopy(base);value['presetSetting']={'label':'Mode','options':[{'value':'classic','label':'Classic'}]};field(value)['presentation']='mode';ns['validate_manifest'](value,'inherited-mode-preview');valid.append(value)
+value=copy.deepcopy(base);field(value).update({'inactiveWhen':{'actionsPerTurn':'1'},'inactivePresentation':{'preview':{'kind':'symbol','icon':'refresh'},'description':'Inactive option'}});ns['validate_manifest'](value,'valid-inactive-preview');valid.append(value)
+for count in [0,100]:
+ value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
+for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'},{'kind':'illustrations','ids':['setting-type-attack']},{'kind':'illustrations','ids':['same']*4}]:
+ value=copy.deepcopy(base);option(value)['preview']=preview;ns['validate_manifest'](value,'valid-common-preview');valid.append(value)
+print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False))
+`;
+ const result=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8',maxBuffer:8*1024*1024}));
+ const Packs=require('../core/packs.js'),parse=manifest=>Packs.parse({format:'playroom-pack',formatVersion:1,manifest,files:{'rules.js':'fixture','view.js':'fixture','styles.css':'/* fixture */','sounds.js':'fixture'}});
+ for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
+ for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
+ const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
+ const Rooms=require('../application/rooms.js');
+ for(const bundle of result.bundles){
+  const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);
+  assert.deepEqual(catalog[id].settings,bundle.manifest.settings.map(Rooms.standardRule),'installed public standard wording is application-owned');
+  for(const raw of bundle.manifest.settings){
+   const installed=catalog[id].settings.find(field=>field.key===raw.key);assert.equal(installed.default,raw.default);assert.deepEqual(installed.options?.map(o=>o.value),raw.options?.map(o=>o.value),'wording normalization preserves supported option IDs');
+   if(Object.hasOwn(Rooms.STANDARD_RULE_VALUES,raw.key)){
+    const prefix='rules-help.standard.'+raw.key;assert.equal(installed.label,globalThis.PlayroomMessages.text(prefix+'.label'));assert.equal(installed.help,globalThis.PlayroomMessages.text(prefix+'.help'));
+    for(const option of installed.options)assert.equal(option.description,globalThis.PlayroomMessages.text(prefix+'.'+option.value+'.description'));
+   }
+  }
+  const exported=manager.exportView(id);assert.deepEqual(exported.manifest.settings,bundle.manifest.settings,'immutable export preserves authored metadata');assert.deepEqual(exported.manifest.presetSetting,bundle.manifest.presetSetting);
+ }
+ for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),['mage-brawl','ludo','spider','durak','pexeso','snakes','yatzy','oldmaid','domino','checkers'].includes(id),'author-supplied component illustrations require the feature');
+ const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
+ const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);
+ for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
+ const modes=[catalog.durak.presetSetting,...catalog.durak.settings].filter(f=>f.presentation==='mode');assert.equal(modes.length,1);assert.equal(modes[0].key,'variant');assert.deepEqual(modes[0].options.map(o=>o.value),['simple','throwin','transfer']);
+ const fleet=require('../packs/battleship/domain/geometry.js').fleets;
+ for(const o of catalog.battleship.presetSetting.options)assert.deepEqual(o.preview.pieces,fleet[o.value]);
+ for(const f of catalog['mage-brawl'].settings.filter(f=>['health','handLimit'].includes(f.key)))assert.deepEqual(f.options[0].preview.countFrom,{field:'actionsPerTurn',values:{'1':3,'2':4}});
+ for(const steps of ['1','2']){const state=Engine.createGame('mage-brawl',{seed:17,players:[{name:'A'},{name:'B'}],actionsPerTurn:steps,health:'mode',handLimit:'mode'});for(const key of ['health','handLimit']){const field=catalog['mage-brawl'].settings.find(f=>f.key===key);assert.equal(field.options[0].preview.countFrom.values[steps],state.data.config[key],'automatic preview agrees with the actual domain value');}}
+ assert.equal(catalog.uno.presetSetting.presentation,undefined,'quantity choices never become a mode hero');
+ for(const option of catalog.uno.presetSetting.options){const state=Engine.createGame('uno',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.count,state.data.hands[0].length,'hand preview agrees with the actual initial deal');}
+ assert.deepEqual(catalog.ludo.presetSetting.options.map(o=>o.preview.teamSizes),[[1,1,1,1],[2,2]]);
+ const board=require('../packs/ludo/domain/board.js'),teamSizes=Object.values(Array.from({length:4},(_,player)=>board.team(player)).reduce((groups,team)=>({...groups,[team]:(groups[team]||0)+1}),{}));assert.deepEqual(catalog.ludo.presetSetting.options.find(o=>o.value==='teams').preview.teamSizes,teamSizes,'team diagram agrees with actual partner grouping');
+ for(const game of ['gofish','durak','oldmaid']){const field=catalog[game].settings.find(f=>f.key==='deck');for(const option of field.options){const state=Engine.createGame(game,{seed:17,deck:option.value,players:[{name:'A'},{name:'B'}]}),count=game==='oldmaid'?state.data.hands.flat().length+state.data.discard.length:state.data.deckSize;assert.equal(option.preview?.count??Number(option.value),count,game+' preview describes the actual card pool');}}
+ for(const option of catalog.klondike.settings.find(f=>f.key==='draw').options){const state=Engine.createGame('klondike',{seed:17,draw:option.value,players:[{name:'A'}]});assert.equal(Number(option.value),state.data.config.draw,'draw preview agrees with actual solitaire configuration');}
+ const passes=catalog.klondike.settings.find(f=>f.key==='maxPasses');assert.deepEqual(passes.inactiveWhen,{scoring:'vegas'});assert.deepEqual(passes.inactivePresentation.preview,{kind:'symbol',icon:'lock'});for(const draw of ['1','3'])for(const selected of ['0','1','3']){const state=Engine.createGame('klondike',{seed:17,draw,scoring:'vegas',maxPasses:selected,players:[{name:'A'}]});assert.equal(state.data.config.maxPasses,draw==='1'?1:3,'Vegas domain overrides pass draft according to draw size');}
+ const declaration=catalog.uno.settings.find(f=>f.key==='unoMode');assert.deepEqual(declaration.preview,{kind:'declaration',label:'UNO!'});assert.deepEqual(declaration.options.map(o=>o.preview.actor),['human','bot']);
+ assert.equal(catalog.snakes.presetSetting.presentation,undefined,'dice-count choices remain compact');
+ for(const option of catalog.snakes.presetSetting.options){const state=Engine.createGame('snakes',{seed:17,preset:option.value,players:[{name:'A'},{name:'B'}]});assert.equal(option.preview.kind,'illustrations');assert.deepEqual(option.preview.ids,['setting-mode-'+option.value]);assert.equal(Array.isArray(state.data.dice)?state.data.dice.length:1,option.value==='plus'?2:1,'illustrated mode agrees with actual initial dice');}
+});
+
+
+test('result playerOrder is an optional complete permutation, separate from score direction',()=>{
+ const model=new GameModel(definition);let s=model.create({playerCount:2,firstPlayer:0,preset:'classic'});
+ for(const cell of [0,3,1,4,2])s=model.apply(s,s.turn,{type:'place',cell}).position;
+ assert.equal(s.status,'finished');
+ for(const playerOrder of [[1,0],[],[0],[0,0],[0,2],[0,1,2],'desc']){
+  const candidate=new GameModel({...definition,result:p=>({...definition.result(p),playerOrder})});
+  if(Array.isArray(playerOrder)&&playerOrder.length===2&&playerOrder[0]===1)assert.deepEqual(candidate.result(s).playerOrder,[1,0]);
+  else assert.throws(()=>candidate.result(s),/RESULT_INVALID/);
+ }
 });

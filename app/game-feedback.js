@@ -7,8 +7,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const Plans=root.PlayroomEventPlan||(typeof require==='function'?require('../presentation/event-plan.js'):null);
   const participantEffects=new Set(['skip','damage','capture','sunk','penalty']);
   class GameFeedback {
-    constructor({motion=root.PlayroomMotion,mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},clock=Scheduler.clock,executor=new Scheduler(clock),duration=700,fieldChanged=null}={}){
-      this.fieldChanged=fieldChanged;this.motion=motion;this.mount=mount;this.play=play;this.player=executor.track('feedback');this.planId=0;this.duration=duration;this.cursor=0;this.notice=null;this.queue=[];this.active=null;this.waiters=[];this.generation=0;this.layer=null;this.bubble=null;this.bubbleEvent=null;
+    constructor({motion=root.PlayroomMotion,mount=()=>root.document?.querySelector('.table-shell'),play=()=>{},prepareAudio=null,clock=Scheduler.clock,executor=new Scheduler(clock),duration=700,fieldChanged=null}={}){
+      this.fieldChanged=fieldChanged;this.motion=motion;this.mount=mount;this.play=play;this.prepareAudio=prepareAudio;this.player=executor.track('feedback');this.planId=0;this.duration=duration;this.cursor=0;this.notice=null;this.queue=[];this.active=null;this.waiters=[];this.generation=0;this.layer=null;this.bubble=null;this.bubbleEvent=null;
       this.revealer=root.PlayroomActionReveal?new root.PlayroomActionReveal({mount}):null;
       this.reposition=()=>{for(const entry of this.departureNodes?.values()||[]){entry.animation?.cancel();entry.layer.remove();entry.played=true;}this.motion?.releaseStage?.();if(this.stagedBoundary){this.movedBoundaries??=new WeakSet();this.movedBoundaries.add(this.stagedBoundary);}this.position();};root.addEventListener?.('resize',this.reposition);root.document?.addEventListener('scroll',this.reposition,true);
     }
@@ -17,14 +17,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const additions=Plans.transferScenes(events.filter(e=>Number.isSafeInteger(e?.id)&&e.id>this.cursor),initialScene,finalScene);if(!additions.length)return;
       this.cursor=additions.at(-1).id;if(silent)return;
       // Preserve the displayed turn across the entire committed effect queue.
-      if(this.presentationTurn==null){const stage=this.mount()?.querySelector('.app-game-layout');if(stage?.dataset.turnPlayer!=null)this.presentationTurn=Number(stage.dataset.turnPlayer);}
+      if(this.presentationTurn==null){this.presentationMode=mode;const stage=this.mount()?.querySelector('.app-game-layout');if(stage?.dataset.turnPlayer!=null)this.presentationTurn=Number(stage.dataset.turnPlayer);const next=stage?.querySelector('.player-panel.is-next[data-player-index]');this.presentationNextPlayer=next?Number(next.dataset.playerIndex):null;}
       // The result dialog owns terminal audio; never play it during the final action.
       const finishIds=new Set(events.filter(event=>event.kind==='finish').map(event=>event.id));
       cues=cues.filter(cue=>!finishIds.has(cue.eventId));
       const timing=times[mode]||times.normal;
       if(!this.queue.length&&!this.active)this.initialScene=initialScene;this.finalScene=finalScene;
       snapshot?.prepareDepartures?.(finalScene);
-      snapshot?.prepareTransfers?.(additions.flatMap(event=>event.transfer?[event.transfer]:[]));
+      snapshot?.prepareTransfers?.(additions.flatMap(event=>event.transfer?[event.transfer]:[]),{back:additions.some(event=>event.speech&&event.reveal?.kind==='card')});
       const boundary={initial:initialScene,final:finalScene,snapshot};
       // Only authorized public board objects can outlive their committed removal.
       const boardZones=new Set(initialScene?.zones?.filter(zone=>zone.kind==='board').map(zone=>zone.id));
@@ -67,7 +67,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         }:routes.length?null:transfers.length>1&&event.transfer&&motion?context=>motion(context,{snapshot:this.active.snapshot,draws:[event.transfer],transferOnly:true}):event===motionEvent?motion:null;
         if(animated||effect||ids.length||event.scene)this.queue.push({...event,pack,ids,timing,mode,boundary:eventBoundary,snapshot:eventSnapshot,transferIndex:transfers.indexOf(event),departures:event===motionEvent?departures:[],motion:effect,duration:event.reveal?.kind==='dice'?timing.diceReveal:event.speech&&event.reveal?.kind==='card'?timing.speech:event.reveal?timing.reveal:participantEffects.has(event.feedback?.kind)?timing.skip:event.speech?(['take','pass'].includes(event.feedback?.kind)?timing.skip:timing.speech):0});
       }
-      if(!this.active&&!this.queue.length)this.presentationTurn=null;
+      if(!this.active&&!this.queue.length){this.presentationTurn=null;this.presentationNextPlayer=null;}
       if(!this.active&&!defer)this.next();
     }
     next(){
@@ -75,11 +75,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const batch=[...this.queue];
       if(!batch.length){this.settled();return;}
       const generation=this.generation;
+      // Own the queue while the first group waits for native audio readiness.
+      this.active=batch[0];
       const plan=Plans.compile({id:'feedback:'+ ++this.planId,items:batch,initial:this.initialScene,final:this.finalScene});
-      this.player.play(plan,{
+      if(Number.isInteger(this.presentationTurn)&&this.presentationTurn>=0&&this.presentationMode!=='instant')plan.groups.push({scene:plan.final,duration:0,cues:[{id:plan.id+':turn-handoff',kind:'turn-handoff',from:this.presentationTurn}]});
+      const diagnosticStart=root.PlayroomDiagnostics?.begin()??null;
+      const played=this.player.play(plan,{
         initial:index=>{this.presentedScene=plan.scenes[index];this.paintMetrics();},
-        group:(_,group)=>{this.presentedScene=plan.scenes[group.scene];this.paintMetrics();},
-        effect:(cue,context)=>this.presentCue({kind:cue.stage,item:batch[cue.index],last:cue.index===batch.length-1},generation,context),
+        group:(_,group,context)=>{const paint=()=>{if(generation===this.generation){this.presentedScene=plan.scenes[group.scene];this.paintMetrics();}};if(this.prepareAudio&&group.cues.some(cue=>cue.stage==='prepare'&&batch[cue.index]?.ids?.length))return Promise.resolve(this.prepareAudio(context)).then(paint);paint();},
+        effect:(cue,context)=>cue.kind==='turn-handoff'?this.turnHandoff(cue,context):this.presentCue({kind:cue.stage,item:batch[cue.index],last:cue.index===batch.length-1},generation,context),
         cancel:()=>{if(generation===this.generation)this.clear();},
         final:(index,status)=>{
           if(generation!==this.generation)return;
@@ -89,6 +93,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           else this.settled();
         }
       });
+      if(diagnosticStart!==null)Promise.resolve(played).then(result=>root.PlayroomDiagnostics?.end('presentation',diagnosticStart,{status:result?.status||'complete',items:batch.length,queued:this.queue.length,requestedMs:batch.reduce((total,item)=>total+(item.duration||0),0)}),()=>root.PlayroomDiagnostics?.end('presentation',diagnosticStart,{status:'failed'}));
     }
     async presentCue({kind,item,last},generation,context){
       const valid=()=>generation===this.generation;
@@ -138,7 +143,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const boundary=(this.active||this.queue[0])?.boundary;
       const heldField=boundary?.liveSurfaceMotion?this.displayScene:this.fieldScene||this.displayScene;
       this.motion?.releaseStage?.();this.stagedBoundary=null;this.movedBoundaries=new WeakSet();
-      this.active=null;this.initialScene=null;this.finalScene=null;this.presentationTurn=null;this.clearDepartures();this.restoreRoutes();this.restoreMetrics();this.presentedScene=null;if(heldField)this.fieldChanged?.();this.refresh();this.positionTurn();
+      this.active=null;this.initialScene=null;this.finalScene=null;this.presentationTurn=null;this.presentationNextPlayer=null;this.clearDepartures();this.restoreRoutes();this.restoreMetrics();this.presentedScene=null;if(heldField)this.fieldChanged?.();this.refresh();this.positionTurn();
       for(const done of this.waiters.splice(0))done();
     }
     whenIdle(){return this.active||this.queue.length||this.request?new Promise(resolve=>this.waiters.push(resolve)):Promise.resolve();}
@@ -150,7 +155,24 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       for(const panel of stage.querySelectorAll('.player-panel[data-player-index]')){
         const active=panel.dataset.turnPrimary!=='false'&&Number(panel.dataset.playerIndex)===turn;
         panel.classList.toggle('is-turn',active);if(active)panel.setAttribute('aria-current','true');else panel.removeAttribute('aria-current');
+        panel.classList.toggle('is-next',panel.dataset.turnPrimary!=='false'&&(held?Number(panel.dataset.playerIndex)===this.presentationNextPlayer:panel.dataset.nextTurn==='true'));
       }
+    }
+    async turnHandoff(cue,context){
+      if(!context.current())return;
+      const stage=this.mount()?.querySelector('.app-game-layout');if(!stage)return;
+      const target=Number(stage.dataset.turnPlayer);if(!Number.isInteger(target)||target<0||target===cue.from)return;
+      // This cue is after card/reply/transfer effects, on the same owned track.
+      this.presentationTurn=target;
+      const next=stage.querySelector('.player-panel[data-next-turn="true"]');this.presentationNextPlayer=next?Number(next.dataset.playerIndex):null;this.positionTurn();
+      if(root.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches||root.document?.body.classList.contains('reduced-motion'))return;
+      const style=root.PlayroomGameFlow.turnHandoff,animations=[];
+      for(const [player,role,scale] of [[cue.from,'outgoing',style.outgoingScale],[target,'incoming',style.incomingScale]]){
+        const panel=[...stage.querySelectorAll('.player-panel[data-player-index]')].find(n=>Number(n.dataset.playerIndex)===player&&n.dataset.turnPrimary!=='false'&&n.getClientRects().length);
+        if(!panel||!this.motion?.pulseParticipant)continue;
+        animations.push(this.motion.pulseParticipant(panel,{scale,role,duration:style.duration,context}));
+      }
+      await Promise.allSettled(animations);
     }
     position(){
       const bubble=this.bubble,mount=this.mount(),speech=this.active?.speech;if(!bubble||!mount||!speech)return;
@@ -291,7 +313,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       };
       const from=refs(initial),to=refs(final);
       const independent=initial&&final&&!final.plan&&!item.reveal&&!item.diceRoll&&
-        !this.routePoints?.size&&item.snapshot&&
+        (!this.routePoints?.size||item.presentation?.sequence?.arrival==='after-departures')&&item.snapshot&&
         this.renderField&&this.motion?.withFieldTargets;
       if(!independent&&!item.scene)this.releaseField(item);
       if(!item.diceRoll){this.movedBoundaries??=new WeakSet();this.movedBoundaries.add(boundary);this.motion?.releaseStage?.();}
@@ -342,7 +364,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       this.position();
     }
-    clear(){const heldField=this.fieldScene||this.displayScene;this.motion?.releaseStage?.();this.stagedBoundary=null;this.movedBoundaries=new WeakSet();this.clearDepartures();this.request?.cancel();this.request=null;if(this.active||this.queue.length||this.routePoints?.size)this.motion?.cancel();this.restoreRoutes();this.restorePending();this.restoreMetrics();this.generation++;this.player.cancel();this.revealer?.clear();this.queue=[];this.active=null;this.initialScene=null;this.finalScene=null;this.presentedScene=null;this.presentationTurn=null;if(heldField)this.fieldChanged?.();this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
+    clear(){const heldField=this.fieldScene||this.displayScene;this.motion?.releaseStage?.();this.stagedBoundary=null;this.movedBoundaries=new WeakSet();this.clearDepartures();this.request?.cancel();this.request=null;if(this.active||this.queue.length||this.routePoints?.size)this.motion?.cancel();this.restoreRoutes();this.restorePending();this.restoreMetrics();this.generation++;this.player.cancel();this.revealer?.clear();this.queue=[];this.active=null;this.initialScene=null;this.finalScene=null;this.presentedScene=null;this.presentationTurn=null;this.presentationNextPlayer=null;if(heldField)this.fieldChanged?.();this.refresh();this.layer?.remove();this.layer=null;this.bubble=null;this.bubbleEvent=null;for(const done of this.waiters.splice(0))done();}
     destroy(){this.clear();root.removeEventListener?.('resize',this.reposition);root.document?.removeEventListener('scroll',this.reposition,true);}
   }
   GameFeedback.times=Object.freeze(times);return GameFeedback;

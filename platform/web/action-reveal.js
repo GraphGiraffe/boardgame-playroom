@@ -5,12 +5,17 @@
     constructor({mount=()=>root.document?.querySelector('.table-shell')}={}){this.mount=mount;this.host=null;this.value=null;this.hidden=null;this.animation=null;this.entered=false;this.timing=null;}
     position(){
       if(!this.host)return;
-      const mount=this.mount(),field=mount?.querySelector('.layout-field'),rect=(field||mount)?.getBoundingClientRect();
+      const mount=this.mount(),field=mount?.querySelector('.layout-field'),rect=root.PlayroomGameScreen?.fieldBounds?.(mount)||(field||mount)?.getBoundingClientRect();
       if(!rect)return;
       const width=root.innerWidth||rect.right,height=root.innerHeight||rect.bottom;
       const left=Math.max(0,rect.left),top=Math.max(0,rect.top),right=Math.min(width,rect.right),bottom=Math.min(height,rect.bottom);
-      const x=right>left?(left+right)/2:width/2,y=bottom>top?(top+bottom)/2:height/2;
-      this.host.style.setProperty('--reveal-x',x+'px');this.host.style.setProperty('--reveal-y',y+'px');
+      const box=right>left&&bottom>top?{left,top,width:right-left,height:bottom-top}:{left:0,top:0,width,height};
+      Object.assign(this.host.style,{inset:'auto',left:'0px',top:'0px',width:box.width+'px',height:box.height+'px'});
+      // Stable scrollbar gutters can offset the fixed containing block from
+      // viewport coordinates. Measure that origin instead of assuming zero.
+      const origin=this.host.getBoundingClientRect();
+      Object.assign(this.host.style,{left:(box.left-origin.left)+'px',top:(box.top-origin.top)+'px'});
+      this.host.style.setProperty('--reveal-x',box.width/2+'px');this.host.style.setProperty('--reveal-y',box.height/2+'px');
     }
     target(){return [...(this.mount()?.querySelectorAll('.scene [data-entity]')||[])].find(el=>this.value?.entity&&el.dataset.entity===root.PlayroomGameComponents.entityKey(this.value.entity)&&!el.closest('.hand-track,.hand-cards,.hand-scroll,.mini-hand'))||(this.value?.kind==='cards'?this.mount()?.querySelector('[data-motion-table]'):null);}
     restore(){if(!this.hidden)return;const {el,value,priority}=this.hidden;el.style.setProperty('visibility',value,priority);el.removeAttribute('data-reveal-active');this.hidden=null;}

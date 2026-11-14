@@ -1,4 +1,5 @@
 'use strict';
+const TestUI=require('./browser-origin.cjs');
 const{test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const Scale=require('../platform/web/interface-scale.js'),{chromium,executablePath}=require('../scripts/codex/browser.cjs'),{serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..'),shots=path.join(root,'tmp_files/interface-scale');
@@ -9,30 +10,28 @@ test('interface scale validates preferences and reserves tested phone geometry',
 });
 async function fixture(run,{width=390,height=844,settings={}}={}){
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width,height},hasTouch:true,isMobile:width<1000}),page=await context.newPage(),errors=[];
- await context.addInitScript(settings=>{if(!sessionStorage.getItem('scale-seeded')){sessionStorage.setItem('scale-seeded','1');localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',...settings}));}},settings);
+ await context.addInitScript(settings=>{if(!sessionStorage.getItem('scale-seeded')){sessionStorage.setItem('scale-seeded','1');localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'instant',tutorialsEnabled:false,...settings}));}},settings);
  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(5000);
- try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}finally{await context.close();await browser.close();await server.close();}
+ try{await page.goto(server.url);await page.locator('.game-tile').first().waitFor();fs.mkdirSync(shots,{recursive:true});await run(page);assert.deepEqual(errors,[]);}catch(error){await page.screenshot({path:path.join(shots,'current-failure.png')}).catch(()=>{});fs.writeFileSync(path.join(shots,'current-failure.json'),JSON.stringify(await page.evaluate(()=>({scale:PlayroomInterfaceScale.applied,viewport:[innerWidth,innerHeight],scroll:[scrollX,scrollY],active:[...document.querySelectorAll('#modal-root>[data-surface-state=active],#modal-root>[data-surface-state=active] .modal,#modal-root>[data-surface-state=active] .modal-head,#modal-root>[data-surface-state=active] [data-command=close-modal]')].map(n=>({class:n.className,rect:n.getBoundingClientRect().toJSON(),style:getComputedStyle(n).transform,scroll:[n.scrollTop,n.scrollLeft]}))})),null,2));throw error;}finally{await context.close();await browser.close();await server.close();}
 }
-async function change(page,id,value){await page.locator('#'+id).evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));},value);}
-test('settings sliders keep all ticks, clamp unavailable scale, preserve nodes and restore preferences',async()=>fixture(async page=>{
- await page.locator('[data-command=settings]:visible').first().click();
- assert.equal(await page.locator('#setting-sound').count(),0);
- for(const [id,count]of [['setting-scale',11],['setting-speed',4],['setting-volume',4]]){assert.equal(await page.locator('#'+id).getAttribute('type'),'range');assert.equal(await page.locator('#'+id).locator('..').locator('[data-range-stop]').count(),count);}
- assert.equal(await page.locator('#setting-scale').inputValue(),'100');assert.equal(await page.locator('#setting-scale').getAttribute('max'),'150');assert.equal(await page.locator('#setting-scale').getAttribute('data-allowed-max'),'120');
- assert(await page.locator('#setting-scale').evaluate(e=>e.closest('.settings-range').compareDocumentPosition(document.querySelector('.settings-grid'))&Node.DOCUMENT_POSITION_PRECEDING));
- await page.evaluate(()=>window.scaleInput=document.getElementById('setting-scale'));
- await change(page,'setting-scale',150);assert.equal(await page.locator('#setting-scale').inputValue(),'120');assert.equal(await page.locator('#setting-scale-value').textContent(),'120%');assert(await page.evaluate(()=>scaleInput===document.getElementById('setting-scale')));
- await page.locator('#setting-scale').focus();await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#setting-scale').inputValue(),'120');
- await page.keyboard.press('End');assert.equal(await page.locator('#setting-scale').inputValue(),'120');const rail=await page.locator('#setting-scale').boundingBox();await page.mouse.click(rail.x+rail.width-3,rail.y+rail.height/2);assert.equal(await page.locator('#setting-scale').inputValue(),'120','grey positions cannot be clicked');
- const dots=await page.locator('#setting-scale').locator('..').locator('[data-range-stop]').evaluateAll(nodes=>nodes.map(n=>!n.hidden));assert.equal(dots.length,11);assert(dots.every(Boolean));
- await change(page,'setting-volume',2);assert.equal(await page.locator('#setting-volume-value').textContent(),'Средне');assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound));
- await change(page,'setting-volume',0);assert.equal(await page.locator('#setting-volume-value').textContent(),'Без звука');assert.equal(await page.locator('#setting-volume').isDisabled(),false);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).sound),false);
- await change(page,'setting-speed',1);assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.settings.v1')).animationSpeed),'fast');
- await page.locator('#setting-scale').locator('..').locator('..').scrollIntoViewIfNeeded();await page.locator('#setting-scale').evaluate(e=>e.blur());await page.screenshot({path:path.join(shots,'settings-390-120.png')});
- await page.reload();await page.locator('.game-tile').first().waitFor();assert.equal(await page.locator('html').getAttribute('data-interface-scale'),'120');
- await page.setViewportSize({width:320,height:640});await page.waitForFunction(()=>PlayroomInterfaceScale.applied===100);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.requested),120);
- await page.setViewportSize({width:844,height:390});await page.waitForFunction(()=>PlayroomInterfaceScale.applied===110);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.requested),120);await page.locator('[data-command=settings]:visible').first().click();await page.locator('#setting-scale').locator('..').locator('..').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(shots,'settings-844-110.png')});
-}));
+async function change(page,id,value){if(id==='setting-scale'){await page.evaluate(value=>PlayroomInterfaceScale.set(value),value);return;}await page.locator('#'+id).evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));},value);}
+test('adaptive mobile settings remove manual geometry and label connection choices',async()=>fixture(async page=>{
+ for(const [width,height]of [[360,800],[390,844],[412,915],[430,932],[844,390]]){
+  await page.setViewportSize({width,height});await TestUI.openSettings(page);
+  assert.equal(await page.locator('#setting-scale,#setting-three-opponents').count(),0);
+  assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),100);
+  const bounds=await TestUI.activeSurface(page).locator('.modal').evaluate(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:document.documentElement.clientWidth};});
+  assert(bounds.left>=0&&bounds.right<=bounds.width+1,JSON.stringify(bounds));
+  await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+ }
+ await page.setViewportSize({width:390,height:844});await page.locator('[data-hub-page=games]').click();await page.locator('[data-start=domino]').click();
+ const choices=TestUI.activeSurface(page).locator('[data-game-mode]');
+ assert.deepEqual(await choices.evaluateAll(ns=>ns.map(n=>n.dataset.gameMode)),['hotseat','online','network']);
+ assert.deepEqual(await choices.locator('strong').allTextContents(),['На устройстве','Онлайн','Рядом']);
+ await choices.filter({has:page.locator('[data-ui-icon=wifi]')}).click();
+ await TestUI.activeSurface(page).locator('.room-v021').waitFor();assert(await page.locator('#network-pair-button').isVisible());
+},{settings:{interfaceScale:150,splitThreeOpponents:true}}));
+
 test('all packs keep square boards and contained slots at every available scale position', {timeout:90000},async()=>fixture(async page=>{
  for(const [width,height]of [[320,640],[390,844],[844,390],[768,1024],[1024,768],[1440,900]]){
   await page.setViewportSize({width,height});
@@ -58,23 +57,23 @@ test('all packs keep square boards and contained slots at every available scale 
 test('scaled live games preserve their session and card input uses screen coordinates',{timeout:30000},async()=>fixture(async page=>{
  for(const [width,height,scale]of [[390,844,50],[390,844,120],[844,390,110]]){
   await page.setViewportSize({width,height});
-  const card=await page.evaluate(scale=>{
+  const card=await page.evaluate(async scale=>{
    const session=new TabletopSession(TabletopCore,'uno',{seed:17,mode:'solo',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'Иван'},{name:'Мика'}]}),action=TabletopCore.legalActions(session.current,0).find(a=>a.type==='play'&&a.color===undefined);
    if(!action)throw Error('fixture requires a playable non-wild card');
-   localStorage.setItem('playroom.session.v1',JSON.stringify(session.export()));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast',quickPlay:false,interfaceScale:scale}));return action.card;
+   await PlayroomAppBridge.saveLibrary.activateAsync(session,'scale-'+scale+'-'+innerWidth);localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast',quickPlay:false,tutorialsEnabled:false}));return action.card;
   },scale);
-  await page.reload();await page.locator('.resume-banner [data-command=resume]').click();await page.locator('.own-hand').waitFor();
+  await page.reload();await TestUI.resumeSaved(page);await page.locator('.own-hand').waitFor();await page.evaluate(scale=>{PlayroomInterfaceScale.set(scale);PlayroomGameScreen.allowLayoutChange(document.querySelector('#app'),{allowLayoutChange:true});PlayroomGameScreen.layoutScene(document.querySelector('#app'));},scale);
   assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),scale);
   const source=page.locator(`.hand-track [data-entity="card-${card}"]`);await source.click({position:{x:3,y:8}});
   const target=page.locator(`.uno-drop-target[data-drop-piece="${card}"][data-action]`);await target.waitFor();
   const from=await source.boundingBox(),to=await target.boundingBox();
   await page.mouse.move(from.x+5,from.y+12);await page.mouse.down();await page.mouse.move(to.x+to.width/2,to.y+to.height/2,{steps:8});await page.mouse.up();
-  await page.waitForFunction(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move===1);
+  await page.waitForFunction(()=>PlayroomAppBridge.saveLibrary.current().session.current.move===1);
   await page.waitForFunction(()=>document.querySelector('.scene').getAttribute('aria-busy')==='false');
-  assert.equal(await page.evaluate(()=>TabletopSession.restore(TabletopCore,JSON.parse(localStorage.getItem('playroom.session.v1'))).current.move),1);
-  await page.locator('.table-tools [data-command=settings]').click();const before=await page.evaluate(()=>localStorage.getItem('playroom.session.v1'));
-  await change(page,'setting-scale',100);assert.equal(await page.evaluate(()=>localStorage.getItem('playroom.session.v1')),before,'scale is a local preference, not a game command');
-  await page.locator('.modal [data-command=close-modal]').first().click();
+  assert.equal(await page.evaluate(()=>PlayroomAppBridge.saveLibrary.current().session.current.move),1);
+  await TestUI.openSettings(page);const before=await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export()));
+  await change(page,'setting-scale',100);assert.equal(await page.evaluate(()=>JSON.stringify(PlayroomAppBridge.saveLibrary.current().session.export())),before,'scale is a local preference, not a game command');
+  await TestUI.closeToGame(page);
  }
 }));
 
@@ -85,6 +84,12 @@ test('standard size catalogue has discrete monotonic families and valid componen
   let previous=0;for(const scale of Sizes.catalogue.scaleStops){const sizes=Sizes.resolve(scale,width,height);assert(Sizes.catalogue.families.card.includes(sizes.card));assert(sizes.card>=previous);assert(sizes.control>=32);previous=sizes.card;}
  }
  assert.equal(Sizes.resolve(100,390,844).card,50);assert.equal(Sizes.resolve(50,390,844).card,24);
+ const properties=new Map(),doc={documentElement:{style:{setProperty:(name,value)=>properties.set(name,value)},dataset:{}}};
+ Sizes.apply(doc,100,390,844);
+ assert.equal(properties.get('--size-type-16_0'),'1rem','text follows the browser font preference');
+ assert.equal(properties.get('--size-type-20_0'),'1.25rem');
+ assert.equal(properties.get('--size-card'),'50px','art and input coordinates retain physical CSS pixels');
+ for(const binding of Sizes.catalogue.bindings)assert(properties.get(binding.name).endsWith(binding.family==='type'?'rem':'px'),binding.name);
 });
 
 test('standard size roles match across packs and shrink without compensating root zoom',{timeout:60000},async()=>fixture(async page=>{
@@ -113,52 +118,87 @@ test('standard grid profiles use complete tile spans and standard physical spaci
 });
 
 test('standard layout guides follow real content and never intercept input or change geometry',{timeout:30000},async()=>fixture(async page=>{
- const settings=page.locator('.topbar-tools [data-command=settings]').first(),before=await settings.boundingBox();
+ await page.locator('[data-hub-page=profile]').click();const settings=page.locator('#hub-profile-page [data-command=settings]'),before=await settings.boundingBox();
  await page.evaluate(()=>PlayroomLayoutGuides.show({baseline:8,columns:true,centers:true,zones:true}));
  assert.equal(await page.locator('#playroom-layout-guides [data-guide-column]').count(),8);assert(await page.locator('#playroom-layout-guides [data-guide-padding]').count()>0);assert.equal(await page.locator('#playroom-layout-guides').getAttribute('aria-hidden'),'true');assert.equal(await page.locator('#playroom-layout-guides').evaluate(e=>getComputedStyle(e).pointerEvents),'none');assert.deepEqual(await settings.boundingBox(),before);
  const geometry=await page.evaluate(()=>PlayroomLayoutGuides.geometry());assert(geometry.content.left>=0&&geometry.content.right<=390);assert.equal(geometry.grid.columns,8);
- await settings.click();await page.locator('#setting-scale').waitFor();await change(page,'setting-scale',50);await page.waitForFunction(()=>document.querySelectorAll('#playroom-layout-guides [data-guide-column]').length===8);assert.equal(await page.locator('#setting-scale').inputValue(),'50');
+ await settings.click();await page.locator('[data-settings-screen]').waitFor();await change(page,'setting-scale',50);await page.waitForFunction(()=>document.querySelectorAll('#playroom-layout-guides [data-guide-column]').length===8);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),50);
  await page.evaluate(()=>PlayroomLayoutGuides.hide());assert.equal(await page.locator('#playroom-layout-guides').count(),0);
 }));
 
 test('standard portal icons stay centered at reduced density',{timeout:30000},async()=>fixture(async page=>{
  const centered=async selector=>{const rect=await page.locator(selector).first().evaluate(e=>{const a=e.getBoundingClientRect(),b=e.querySelector('svg').getBoundingClientRect();return {dx:b.x+b.width/2-a.x-a.width/2,dy:b.y+b.height/2-a.y-a.height/2};});assert(Math.abs(rect.dx)<=1&&Math.abs(rect.dy)<=1,selector+' '+JSON.stringify(rect));};
- await page.locator('.topbar-tools [data-command=settings]').first().click();await change(page,'setting-scale',50);await page.locator('.settings-personal [data-avatar-picker]').click();await page.locator('.avatar-options').waitFor();await centered('#avatar-picker-root .icon-btn');await page.locator('[data-avatar-option=circle-red]').click();await page.locator('.modal [data-command=close-modal]').first().click();await page.evaluate(()=>PlayroomAppearanceUI.openEditor());await page.locator('.appearance-dialog').waitFor();await centered('.appearance-dialog .icon-btn');
+ await TestUI.openSettings(page);await change(page,'setting-scale',50);await centered('#modal-root>[data-surface-state=active] .modal-head .icon-btn');
+ await page.evaluate(()=>PlayroomAvatarPicker.open({name:'Игрок'}));await TestUI.activeSurface(page).locator('.avatar-picker-modal').waitFor();await centered('#modal-root>[data-surface-state=active] .modal-head .icon-btn');
+ await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+ await page.locator('#hub-profile-page [data-appearance-open]').click();await centered('.appearance-gallery-modal .modal-head .icon-btn');
 }));
 
-test('phone library preserves two portrait and three landscape columns with side navigation at every density',{timeout:60000},async()=>fixture(async page=>{
- for(const [width,height,columns]of [[320,640,2],[390,844,2],[640,280,3],[844,390,3]]){
-  await page.setViewportSize({width,height});
+test('phone library adapts readable columns and navigation to viewport at every density',{timeout:60000},async()=>fixture(async page=>{
+ for(const [width,height]of [[320,640],[390,844],[640,280],[844,390]]){
+  await page.setViewportSize({width,height});let previous=Infinity;
   for(const scale of [50,100,150]){
    await page.evaluate(scale=>PlayroomInterfaceScale.set(scale),scale);
-   const state=await page.evaluate(()=>{const grid=document.querySelector('.game-grid'),side=document.querySelector('.sidebar'),nav=document.querySelector('.side-nav'),main=document.querySelector('.hub-main');return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,featured:[...grid.querySelectorAll('.featured')].map(e=>getComputedStyle(e).gridColumnEnd),sidebar:getComputedStyle(side).display,navPosition:getComputedStyle(nav).position,sideRight:side.getBoundingClientRect().right,mainLeft:main.getBoundingClientRect().left,overflow:document.documentElement.scrollWidth>innerWidth+1};});
-   assert.equal(state.columns,columns,JSON.stringify({width,height,scale,state}));assert(!state.overflow);assert(state.featured.every(x=>x==='auto'));
-   if(width>height){assert.equal(state.sidebar,'flex');assert.equal(state.navPosition,'static');assert(state.sideRight<=state.mainLeft+1);}else assert.equal(state.navPosition,'fixed');
+   const state=await page.evaluate(()=>{const grid=document.querySelector('.game-grid'),nav=document.querySelector('.hub-navigation-v021'),main=document.querySelector('.hub-main'),box=n=>n.getBoundingClientRect().toJSON();return {columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length,cards:[...grid.children].map(n=>box(n)),nav:box(nav),main:box(main),overflow:document.documentElement.scrollWidth>innerWidth+1};});
+   assert(state.columns>=1&&state.columns<=previous,JSON.stringify({width,height,scale,state}));previous=state.columns;assert(!state.overflow);
+   for(const card of state.cards)assert(card.width>=120&&card.left>=state.main.left-1&&card.right<=state.main.right+1,JSON.stringify(card));
+   if(width>height)assert(state.nav.right<=state.main.left+1);else assert(Math.abs(state.nav.bottom-height)<=1);
   }
  }
 }));
 
-test('release0.18.3 defines the100% menu and settings baseline independently of game-piece scale',{timeout:30000},async()=>fixture(async page=>{
+test('current menu and settings baseline remains independent of game-piece scale',{timeout:30000},async()=>fixture(async page=>{
  await page.setViewportSize({width:384,height:797});await page.evaluate(()=>PlayroomInterfaceScale.set(100));
- const hub=await page.evaluate(()=>({heading:parseFloat(getComputedStyle(document.querySelector('.intro h1')).fontSize),description:parseFloat(getComputedStyle(document.querySelector('.intro p')).fontSize),button:document.querySelector('.topbar-tools .icon-btn').getBoundingClientRect().width,columns:getComputedStyle(document.querySelector('.game-grid')).gridTemplateColumns.split(' ').length,zoom:Number(getComputedStyle(document.querySelector('.app-shell')).zoom),overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}));
- assert(Math.abs(hub.heading-31.9872)<.05);assert.equal(hub.description,12);assert.equal(hub.button,44);assert.equal(hub.columns,2);assert.equal(hub.zoom,1);assert(!hub.overflow);
- await page.locator('.topbar-tools [data-command=settings]').first().click();assert.equal(await page.locator('.modal h2').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)),18);
- await change(page,'setting-scale',50);assert.equal(await page.evaluate(()=>Number(getComputedStyle(document.querySelector('.app-shell')).zoom)),.5);assert.equal(await page.evaluate(()=>PlayroomElementSizes.resolve(50,innerWidth,innerHeight).card),24);
+ const hub=await page.evaluate(()=>({heading:parseFloat(getComputedStyle(document.querySelector('.intro h1')).fontSize),description:parseFloat(getComputedStyle(document.querySelector('.intro p')).fontSize),button:document.querySelector('[data-theme-toggle]').getBoundingClientRect().width,columns:getComputedStyle(document.querySelector('.game-grid')).gridTemplateColumns.split(' ').length,zoom:Number(getComputedStyle(document.querySelector('.hub-shell-v021')).zoom),overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}));
+ assert.equal(hub.heading,26);assert.equal(hub.description,13);assert.equal(hub.button,44);assert.equal(hub.columns,2);assert.equal(hub.zoom,1);assert(!hub.overflow);
+ await TestUI.openSettings(page);assert.equal(await TestUI.activeSurface(page).locator('h2').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)),20);
+ await change(page,'setting-scale',50);assert.equal(await page.evaluate(()=>Number(getComputedStyle(document.querySelector('.hub-shell-v021')).zoom)),1);assert.equal(await page.evaluate(()=>PlayroomElementSizes.resolve(50,innerWidth,innerHeight).card),24);
 }));
 
- test('scaled shell adapts shortcuts and keeps headers lobby and alignment contained',{timeout:60000},async()=>fixture(async page=>{
- let variant='';const failures=[],capture=async name=>{if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,variant+name+'.png'),animations:'disabled'});}};
- const check=async(label,selectors)=>{const issues=await page.evaluate(selectors=>{const issues=[];for(const selector of selectors)for(const el of document.querySelectorAll(selector)){const r=el.getBoundingClientRect();if(el.scrollWidth>el.clientWidth+2)issues.push(selector+' overflows '+el.scrollWidth+'/'+el.clientWidth);if(r.left< -1||r.right>document.documentElement.clientWidth+1)issues.push(selector+' outside viewport '+Math.round(r.left)+'..'+Math.round(r.right));}const head=document.querySelector('.modal-head'),title=head?.querySelector('h2');if(title){const a=title.getBoundingClientRect();for(const b of head.querySelectorAll('button')){const r=b.getBoundingClientRect();if(r.right>a.left+1&&r.left<a.right-1&&r.bottom>a.top&&r.top<a.bottom)issues.push('title overlaps action');}}return issues;},selectors);failures.push(...issues.map(i=>label+': '+i));};
- await page.locator('[data-start=tictactoe]').first().click();await page.locator('[data-room-option=transportMode][value=network]').check();
- for(const [width,height]of [[384,797],[390,844]])for(const theme of ['light','dark']){await page.setViewportSize({width,height});await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);variant=width+'-'+theme+'-';
- for(const value of [100,110,120,100]){
-  await page.evaluate(value=>PlayroomInterfaceScale.set(value),value);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),value);
-  await check('lobby '+value,['.room-setup-modal','.lobby-header','.lobby-wrap','.lobby-card','.lobby-seat-row','.lobby-public-places','.lobby-primary']);
-  const centered=await page.locator('.room-modes').evaluate(el=>{const a=el.getBoundingClientRect(),b=el.parentElement.getBoundingClientRect();return Math.abs((a.left+a.right-b.left-b.right)/2)<2;});if(!centered)failures.push('transport not centered '+value);assert(await page.locator('.lobby-primary').evaluate(el=>{const a=el.getBoundingClientRect(),buttons=[...el.querySelectorAll(':scope > .icon-btn')],first=buttons[0].getBoundingClientRect(),last=buttons.at(-1).getBoundingClientRect();return Math.abs(first.left-a.left)<2&&Math.abs(last.right-a.right)<2;}),'footer keeps edge alignment '+value);
-  await capture('lobby-'+value);await page.locator('.room-setup-modal [data-command=settings]').click();await check('settings '+value,['.modal-head','.settings-header-actions','.settings-overview','.settings-quick']);assert(await page.locator('.settings-identity .lobby-profile').evaluate(el=>{const field=el.querySelector('.field').getBoundingClientRect(),box=el.getBoundingClientRect();return Math.abs(field.right-box.right)<2;}),'nickname has no empty save-button column');const before=await page.locator('.settings-header-actions .icon-btn').first().evaluate(el=>({width:el.getBoundingClientRect().width/Number(PlayroomInterfaceScale.applied/100),radius:parseFloat(getComputedStyle(el).borderRadius)}));assert(Math.abs(before.width-(value>100?32:44))<1,'shortcuts adapt and restore '+value);await capture('settings-'+value);
-  await page.locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-command=room-rules-view]').click();await check('rules '+value,['.rulebook-head','.rulebook-toolbar','.game-rules-help']);await capture('rules-'+value);await page.locator('.modal-head [data-command=close-modal]').click();
-  await page.locator('.room-setup-modal [data-command=close-modal]').click();await check('hub '+value,['.hub-main','.topbar','.topbar-tools','.hub-page-tabs']);await capture('hub-'+value);await page.locator('#app [data-command=room]').first().click();
+test('scaled shell keeps current settings, room headers and rules contained',{timeout:60000},async()=>fixture(async page=>{
+ const check=async selectors=>{const issues=await page.evaluate(selectors=>{const issues=[];for(const selector of selectors)for(const el of document.querySelectorAll(selector)){if(!el.getClientRects().length)continue;const r=el.getBoundingClientRect();if(el.scrollWidth>el.clientWidth+2||r.left< -1||r.right>document.documentElement.clientWidth+1)issues.push({selector,scroll:el.scrollWidth,client:el.clientWidth,rect:r.toJSON()});}const head=document.querySelector('#modal-root>[data-surface-state=active] .modal-head'),title=head?.querySelector('h2');if(title){const a=title.getBoundingClientRect();for(const button of head.querySelectorAll('button')){const r=button.getBoundingClientRect();if(r.right>a.left+1&&r.left<a.right-1&&r.bottom>a.top&&r.top<a.bottom)issues.push({selector:'title overlaps action'});}}return issues;},selectors);assert.deepEqual(issues,[]);};
+ await TestUI.openGame(page,'tictactoe','network');
+ for(const [width,height]of [[384,797],[390,844]])for(const theme of ['light','dark']){
+  await page.setViewportSize({width,height});await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
+  for(const value of [100,110,120,100]){
+   await page.evaluate(value=>PlayroomInterfaceScale.set(value),value);assert.equal(await page.evaluate(()=>PlayroomInterfaceScale.applied),Math.min(value,await page.evaluate(()=>PlayroomInterfaceScale.limit)));
+   await check(['.room-setup-modal','.room-v021','.room-v021-row','.room-v021-primary']);
+   await TestUI.activeSurface(page).locator('[data-command=room-rules-view]').click();await check(['.modal-head','.rulebook-toolbar','.game-rules-help']);await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();
+   await TestUI.openSettings(page);await check(['.modal-head','.settings-v021','.settings-shortcuts']);
+   for(const button of await TestUI.activeSurface(page).locator('.settings-shortcuts button').all()){const box=await button.boundingBox();assert(box.width>=22&&box.height>=22,'diagnostic 50–120% zoom retains proportional shortcut targets');}
+   await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-hub-page=games]').click();await page.locator('#network-join-button').click();await TestUI.activeSurface(page).locator('.room-v021').waitFor();
+  }
  }
+ await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>PlayroomInterfaceScale.set(150));assert.equal(await page.locator('html').getAttribute('data-ui-compact'),'false');await check(['.room-v021','.room-v021-row']);
+},{width:390,height:844}));
+
+test('Chromium native font preference scales profile fields skins and canonical composer',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),samples=[],out=path.resolve(root,'../tmp_files/ux-021/web-dev-audit');
+ try{for(const size of [16,32]){
+  const browser=await require('playwright-core').chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking','--blink-settings=defaultFontSize='+size]});
+  try{
+   const context=await browser.newContext({viewport:{width:390,height:740},reducedMotion:'reduce'}),network=await require('./account-sync-fixture.cjs').installFetch(context,r=>r.fulfill({json:{}}));
+   await context.addInitScript(()=>localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'font-consumer-audit',name:'Игрок'})));
+   const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(server.url);
+   await page.locator('[data-hub-page=profile]').click();const profile=await page.locator('.profile021-person strong').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.locator('[data-profile-account]').click();const input=await page.locator('[data-account-form=login] input[type=email]').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>PlayroomAppearanceUI.show());await page.locator('[data-appearance-tab=components]').click();
+   const skin=await page.locator('.appearance-skin-label>strong').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.locator('.appearance-gallery-modal .modal-head [data-command=close-modal]').click();
+   await page.evaluate(()=>PlayroomAppBridge.openModal(PlayroomGameScreen.modalHead('Типографика')+PlayroomChatComponents.composer('chat'),'chat-modal'));
+   const editor=await page.locator('[data-chat-editor]').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>PlayroomCloudSavesUI.showData());
+   const dataSummary=await page.locator('.data-summary>strong').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   const dataNote=await page.locator('.data-note').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await TestUI.openPacks(page);
+   const library=await page.locator('.packs-v021-summary strong,.packs-v021-empty').first().evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   await page.evaluate(()=>PlayroomAppBridge.closeModal());await page.evaluate(()=>{window.PlayroomPWA={...PlayroomPWA,updateInfo:{version:'font-audit-update',releases:[],download:{phase:'available'}}};dispatchEvent(new Event('playroom-update-ready'));});
+   const notification=await page.locator('#toast.show').evaluate(n=>parseFloat(getComputedStyle(n).fontSize));
+   samples.push({nativeDefaultFont:size,profile,input,skin,editor,dataSummary,dataNote,library,notification});
+   assert.deepEqual(errors,[]);assert.equal(network.nativeSupabaseRequests,0);
+  }finally{await browser.close();}
  }
- await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>PlayroomInterfaceScale.set(150));assert.equal(await page.locator('html').getAttribute('data-ui-compact'),'false');await check('wide lobby',['.lobby-header','.lobby-card','.lobby-primary']);assert.deepEqual(failures,[]);
- },{width:390,height:844}));
+ fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'font-consumer-runtime-report.json'),JSON.stringify({samples,scope:'Real profile/account/appearance/Data/Pack library UI and canonical composer in owned modal; not a live chat flow'},null,2));
+ for(const key of ['profile','input','skin','editor','dataSummary','dataNote','library','notification'])assert(Math.abs(samples[1][key]/samples[0][key]-2)<.01,key+' follows the native user font preference, not a fixed px override');
+ }finally{await server.close();}
+});

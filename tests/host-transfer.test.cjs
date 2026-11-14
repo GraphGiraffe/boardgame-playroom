@@ -56,3 +56,22 @@ for(const role of ['spectator','table'])test('running game handoff keeps '+role+
  const next=bundle(raw,{id:'transfer',target:'c',sourceToken:'a'.repeat(64)});
  assert.equal(next.record.room.ownerId,'c');assert.equal(next.record.room.hostMode,'table');assert.deepEqual(next.record.room.seats,room.seats);assert.equal(next.record.room.participants.find(p=>p.id==='c').role,role);assert(!next.record.recovery.tokens.some(t=>t.participantId==='c'));
 });
+
+
+test('handoff receiver shares pending consent retries and denies private preparation before acceptance',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');let receive,releaseCloud,accepts=0,settled=0;const banners=[];
+ class Element extends EventTarget{constructor(){super();this.isConnected=false;this.control={focus(){},setAttribute(){}};}setAttribute(){}contains(node){return node===this||node===this.control;}addEventListener(type,fn,...args){if(type==='click')this.clickHandler=fn;return super.addEventListener(type,fn,...args);}querySelector(){return this.control;}remove(){this.isConnected=false;}}
+ class ModalController{open(markup,options){const element=new Element();element.isConnected=true;banners.push(element);this.options=options;return this.frame={id:'fixture-consent',state:'active',element};}isActive(frame){return frame===this.frame&&frame.state==='active';}close(frame){if(!this.isActive(frame))return false;frame.state='disposed';frame.element.remove();this.options.onDispose();return true;}dispose(){this.close(this.frame);}capture(){return null;}}
+ const channel=new EventTarget(),room={id:'room',ownerId:'source',phase:'playing',participants:[{id:'source',nickname:'Host'}]},client={channel,room,id:'target'};
+ const context={Event,EventTarget,setTimeout,clearTimeout,document:{addEventListener(){},createElement:()=>new Element(),body:{append:element=>{element.isConnected=true;banners.push(element);}},querySelector:()=>null,getElementById:()=>null},PlayroomDOM:{ModalController,enterVisual(){},retireVisual(element){element.remove();},clearVisualExits(){}},PlayroomGameScreen:{icon:()=>'',esc:v=>v,modalHead:()=>'',bindSurfaceDismiss:()=>()=>{}},PlayroomData:{length:0},PlayroomAppBridge:{toast(){}},PlayroomNetworkLibrary:{transferClient:()=>client},PlayroomHostTransferWire:{bind:(_channel,handler)=>{receive=handler;}}};
+ vm.createContext(context);vm.runInContext(fs.readFileSync(require.resolve('../app/host-transfer-ui.js'),'utf8'),context);
+ context.PlayroomHostTransferUI.init({account:{snapshot:()=>({kind:'account',id:'target'}),subscribe(){}},remote:{call:async action=>{assert.equal(action,'accept');accepts++;await new Promise(resolve=>releaseCloud=resolve);}}});context.PlayroomHostTransferUI.clientBind(channel);
+ const offer={id:'transfer',roomId:'room',source:'source',target:'target',kind:'game',cloudRoomId:'cloud-room'};
+ const first=receive('consent',offer).then(value=>{settled++;return value;}),retry=receive('consent',offer).then(value=>{settled++;return value;});await Promise.resolve();assert.equal(settled,0,'duplicate is not a positive receipt before the decision');
+ await assert.rejects(receive('prepare',{...offer,payload:{}}),/CONSENT_REQUIRED/);assert.equal(accepts,0);
+ banners[0].dispatchEvent(new Event('cancel'));assert.equal((await first).accepted,false);assert.equal((await retry).accepted,false);assert.equal(accepts,0,'decline never touches cloud acceptance');
+ let completed=0;const next=receive('consent',{...offer,id:'next'}).then(value=>{completed++;return value;}),duplicate=receive('consent',{...offer,id:'next'}).then(value=>{completed++;return value;});
+ banners[1].control.onclick();banners[2].clickHandler({target:{closest:selector=>selector==='[data-host-offer-accept]'?{}:null}});await new Promise(setImmediate);assert.equal(accepts,1);assert.equal(completed,0,'both ACKs wait for durable acceptance');
+ await assert.rejects(receive('prepare',{...offer,id:'next',payload:{}}),/CONSENT_REQUIRED/);releaseCloud();assert.equal((await next).accepted,true);assert.equal((await duplicate).accepted,true);assert.equal(accepts,1,'retry shares one cloud acceptance');await receive('cancel',{...offer,id:'next'});
+ const closed=receive('consent',{...offer,id:'closed'}),closedRetry=receive('consent',{...offer,id:'closed'});channel.dispatchEvent(new Event('close'));assert.equal((await closed).accepted,false);assert.equal((await closedRetry).accepted,false);assert.equal(accepts,1,'closing the channel cancels pending consent requests');
+});

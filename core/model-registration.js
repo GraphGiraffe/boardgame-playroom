@@ -11,6 +11,7 @@
   const Scenes = root.PlayroomSceneContract || require('../presentation/scene-contract.js');
   function adapt(engine, {definition, presentation, locales, version, stateVersion=1, rulebooks=null}) {
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
+    const Values = root.PlayroomModelValues || require('./model-values.js');
     const model = new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
     function bindParticipants(value,players){
@@ -28,12 +29,42 @@
     }
     const text = (reference,players=[]) => translator.format(bindParticipants(reference,players));
     const metadata = presentation.metadata;
-    const position = state => ({playerCount:state.players.length, turn:state.turn, status:state.status,
+    function translateRulebook(document) {
+      return {sections:document.sections.map(section=>({
+        title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
+        figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
+        ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,
+          ...(block.type==='paragraph'?{text:text(block.text)}:{}),
+          ...(block.type==='list'?{ordered:!!block.ordered,items:(block.items||[]).map(text)}:{}),
+          ...(block.type==='table'?{headers:(block.headers||[]).map(text),rows:(block.rows||[]).map(row=>row.map(text))}:{})
+        }))}:{}),
+        ...(section.note?{note:text(section.note)}:{})
+      })),...(document.brief?{brief:translateRulebook(document.brief)}:{})};
+    }
+
+    const stateCache=new WeakMap(),recentStates=[];
+    function cache(state){
+      const History=root.PlayroomHistory||(typeof require==='function'?require('./history.js'):null);
+      if(!History?.owns(state))return null;
+      let value=stateCache.get(state);if(!value){value={positions:new Map()};stateCache.set(state,value);recentStates.push(state);if(recentStates.length>2)stateCache.delete(recentStates.shift());}return value;
+    }
+    function position(state){const entry=cache(state);if(entry?.position)return entry.position;const value=Values.snapshot({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
-      timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
-    function decorated(action,projection,players) { const choice=presentation.choice?.(action,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action(action,projection),players)}; }
+      timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});if(entry)entry.position=value;return value;}
+    function projected(state,viewer,table=false,factsOnly=false){
+      const entry=cache(state),key=(table?'table:':'player:')+viewer+':'+factsOnly;if(entry?.positions.has(key))return entry.positions.get(key);
+      const events=entry?(entry.events??=(state.events.filter(value=>value.visibility))):state.events.filter(value=>value.visibility);
+      const value=table?model.projectTable(position(state),viewer,events,{factsOnly}):model.project(position(state),viewer,events,{factsOnly});
+      if(entry)entry.positions.set(key,value);return value;
+    }
+    function choices(state,actor,reactions=false){
+      const entry=cache(state),key=(reactions?'reactions:':'legal:')+actor;
+      if(entry?.positions.has(key))return entry.positions.get(key);
+      const value=reactions?model.reactions(position(state),actor):model.legalActions(position(state),actor);if(entry)entry.positions.set(key,value);return value;
+    }
+    function decorated(action,projection,players) { const display=action.type==='batch'?action.actions.at(-1):action,choice=presentation.choice?.(display,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action({...choice,...display},projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
-    function presentScene(projection,players,value=presentation.scene(projection)){const scene=Scenes.validate(value,projection.playerCount);return {...scene,audience:projection.audience,viewer:projection.viewer,...(projection.decisionWindow?{decisionWindow:projection.decisionWindow}:{}),...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,...(person.countLabel?{countLabel:text(person.countLabel,players)}:{}),metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
+    function presentScene(projection,players,value=presentation.scene(projection)){const scene=Scenes.validate(value,projection.playerCount),order=model.turnOrder(projection);return {...scene,nextPlayer:order?.next??null,audience:projection.audience,viewer:projection.viewer,...(projection.decisionWindow?{decisionWindow:projection.decisionWindow}:{}),...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,...(person.countLabel?{countLabel:text(person.countLabel,players)}:{}),metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
     function presentEventScenes(projection,players,events) {
       if(!presentation.eventScenes)return events;
       const frames=presentation.eventScenes(projection);
@@ -64,22 +95,23 @@
         ...(description.notice?{notice:{...description.notice,title:text(description.notice.title,players),detail:text(description.notice.detail,players)}}:{})};
     }
     return {
-      id:model.id, version, stateVersion, modelContractVersion:1, model, presentEvent, scene:presentScene,
+      id:model.id, version, stateVersion, modelContractVersion:1, model, localProjection:projection=>model.localProjection(projection),localCommands:projection=>model.localCommands(projection),draftSpec:projection=>model.draftSpec(projection),draftProjection:(projection,actions)=>model.draftProjection(projection,actions),isIntent:action=>Values.canonical(model.intent(action))===Values.canonical(action),localReaction:(projection,action)=>model.localReaction(projection,action),presentEvent, scene:presentScene, eventScenes:presentEventScenes, decorate:decorated,
+      storageState(state){return definition.storageState?{...state,data:definition.storageState(engine.clone(state.data))}:state;},
+      checkpoint(before,next,actor,command){
+        if(next.status==='finished'||(next.events.at(-1)?.id||0)!==(before.events.at(-1)?.id||0))return true;
+        if(definition.checkpoint){const value=definition.checkpoint(before.data,next.data,actor,command);if(typeof value!=='boolean')throw Error('CHECKPOINT_INVALID');return value;}
+        // Existing portable packs already declare simultaneous decision windows.
+        // An unready participant's edit is a draft; becoming ready is the checkpoint.
+        const window=state=>definition.decisionWindow?.({playerCount:state.players.length,turn:state.turn,status:state.status,winners:state.winners||[],timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
+        const a=window(before),b=window(next);
+        return !(a&&b&&a.id===b.id&&a.participants.length>1&&a.participants.includes(actor)&&!a.ready.includes(actor)&&!b.ready.includes(actor)&&a.versions?.[actor]!==b.versions?.[actor]);
+      },
       botSettings:{strategies:(metadata.botSettings?.strategies||[]).map(p=>({id:p.id,label:text(p.label),description:text(p.description)})),defaultDifficulty:'medium'},
       name:text(metadata.name), min:model.minPlayers, max:model.maxPlayers,
       description:text(metadata.description), scoreLabel:text(metadata.scoreLabel),
       presets:metadata.presets.map(preset => ({id:preset.id, label:text(preset.label),...(preset.description?{description:text(preset.description)}:{})})),
       rules:metadata.rules.map(text),
-      ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:{sections:metadata.rulebook.sections.map(section=>({
-        title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
-        figures:(section.figures||[]).map(figure=>({...figure,caption:figure.caption?text(figure.caption):''})),
-        ...(Array.isArray(section.blocks)?{blocks:section.blocks.map(block=>({type:block.type,
-          ...(block.type==='paragraph'?{text:text(block.text)}:{}),
-          ...(block.type==='list'?{ordered:!!block.ordered,items:(block.items||[]).map(text)}:{}),
-          ...(block.type==='table'?{headers:(block.headers||[]).map(text),rows:(block.rows||[]).map(row=>row.map(text))}:{})
-        }))}:{}),
-        ...(section.note?{note:text(section.note)}:{})
-      }))}}:{}),
+      ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:translateRulebook(metadata.rulebook)}:{}),
       create(state, options) {
         const initial = model.start({playerCount:state.players.length, preset:state.preset,
           firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
@@ -91,21 +123,23 @@
       },
       validateState(state) { model.validate(position(state)); },
       resolveAction(state,actor,action) {
-        const input=model.reactionControl(position(state),actor,action)?.command||action;
-        const command=model.availableActions(position(state),actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
-        return command?decorated(command,model.project(position(state),actor),state.players):null;
+        const current=position(state),input=model.reactionControl(current,actor,action)?.command||action;
+        if(input?.type==='batch'){try{return decorated(model.batch(current,actor,input),projected(state,actor),state.players);}catch{return null;}}
+        const command=model.availableActions(current,actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
+        return command?decorated(command,projected(state,actor),state.players):null;
       },
-      legal(state, actor) { const projection=model.project(position(state),actor);return model.legalActions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
-      reactions(state,actor) { const projection=model.project(position(state),actor);return model.reactions(position(state),actor).map(command=>decorated(command,projection,state.players)); },
-      decisionWindow(state) { return model.decisionWindow(position(state)); },
-      reactionWindows(state) { return model.reactionWindows(position(state)); },
-      reactionControl(state,actor,action) { return model.reactionControl(position(state),actor,action); },
-      botReactionDelay(state,actor) { return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
-      botReaction(state,actor) { const command=model.botReaction(position(state),actor,state.players[actor]?.botSettings);return command?decorated(command,model.project(position(state),actor),state.players):null; },
+      commands(state,actor,reactions=false){return choices(state,actor,reactions);},
+      legal(state, actor) { const current=position(state),projection=projected(state,actor);return choices(state,actor).map(command=>decorated(command,projection,state.players)); },
+      reactions(state,actor) { if(!definition.reactions)return [];const current=position(state),projection=projected(state,actor);return choices(state,actor,true).map(command=>decorated(command,projection,state.players)); },
+      decisionWindow(state) { if(!definition.decisionWindow)return null;return model.decisionWindow(position(state)); },
+      reactionWindows(state) { if(!definition.reactionWindows)return [];return model.reactionWindows(position(state)); },
+      reactionControl(state,actor,action) { if(!definition.reactionControl)return null;return model.reactionControl(position(state),actor,action); },
+      botReactionDelay(state,actor) { if(!definition.botReactionDelay)return null;return model.botReactionDelay(position(state),actor,state.players[actor]?.botSettings); },
+      botReaction(state,actor) { if(!definition.botReaction)return null;const current=position(state),command=model.botReaction(current,actor,state.players[actor]?.botSettings);return command?decorated(command,projected(state,actor),state.players):null; },
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.
-        const legal = model.availableActions(position(state), actor).find(candidate =>
+        const legal = action.type==='batch'?model.batch({...position(state),revision:Math.max(0,state.move-1)},actor,{type:'batch',actions:action.actions}):model.availableActions(position(state), actor).find(candidate =>
           Object.keys(candidate).every(key => JSON.stringify(candidate[key]) === JSON.stringify(action[key])));
         const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal);
         state.timeline=engine.clone(changed.position.timeline);state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;
@@ -116,15 +150,15 @@
         }
         state.events=[...Events.append(state.events,changed.events,state.players.length,state.move)];
       },
-      project(out, viewer, state) { out.modelProjection = model.project(position(state), viewer, state.events.filter(value=>value.visibility));out.data=engine.clone(out.modelProjection.data);out.scene=presentScene(out.modelProjection,state.players);out.events=presentEventScenes(out.modelProjection,state.players,out.events); },
-      tableProjection(state, actor) { return model.projectTable(position(state),actor,state.events.filter(value=>value.visibility)); },
-      tableChoices(state, actor) { const projection=model.projectTable(position(state),actor);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
-      tableCommand(state, actor, action) { const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },
+      project(out, viewer, state, options={}) { out.modelProjection = projected(state,viewer,false,!!options.rawEvents);if(!options.rawEvents){out.data=engine.clone(out.modelProjection.data);out.scene=presentScene(out.modelProjection,state.players);out.events=presentEventScenes(out.modelProjection,state.players,out.events);} },
+      tableProjection(state, actor, options={}) { return projected(state,actor,true,!!options.rawEvents); },
+      tableChoices(state, actor) { const projection=projected(state,actor,true);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
+      tableCommand(state, actor, action) { if(action?.type==='batch')return model.batch(position(state),actor,action,'table');const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },
       bot(state, actor) { const chosen = model.botAction(position(state), actor, {...state.players[actor]?.botSettings,enabled:!!state.players[actor]?.bot}); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
       result(state) {
         const summary = model.result(position(state));
         const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
-        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',places:summary.places,exits:summary.exits||[],lastPlayers:summary.lastPlayers||[],metrics,
+        return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',...(summary.playerOrder?{playerOrder:summary.playerOrder}:{}),places:summary.places,exits:summary.exits||[],lastPlayers:summary.lastPlayers||[],metrics,
           ...(metrics[1]?{detailLabel:metrics[1].label,detailMetricId:metrics[1].id,details:metrics[1].values}:{})};
       }
     };

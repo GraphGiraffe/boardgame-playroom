@@ -27,8 +27,9 @@
 .session-card .icon-btn{flex:none;width:44px;min-width:44px;height:44px;padding:0;border-radius:14px}
 .session-card .saved-continue{background:var(--green);border-color:var(--green);color:var(--color-action-on-primary,#fffdf4)}
 .session-card .saved-status{display:inline-flex;flex:none}
-#app .session-card .saved-status .pill{display:inline-flex;align-items:center;gap:4px;justify-content:center;min-width:46px;min-height:0;margin:0;padding:3px 6px;line-height:1;border:1px solid color-mix(in srgb,var(--green) 42%,transparent);border-radius:999px;background:color-mix(in srgb,var(--color-surface-tile-green,#e2ead7) 76%,var(--green));color:var(--ink)}
-#app .session-card:not([data-card-mode=hotseat]) .saved-status .pill{background:color-mix(in srgb,var(--color-surface-tile-blue,#dbe9e8) 76%,#527b8d);border-color:#7798a5}
+#app .session-kind-badge{display:inline-flex;align-items:center;flex:none;gap:4px;justify-content:center;min-width:46px;min-height:0;margin:0;padding:3px 6px;line-height:1;border:1px solid color-mix(in srgb,var(--green) 42%,transparent);border-radius:999px;background:color-mix(in srgb,var(--color-surface-tile-green,#e2ead7) 76%,var(--green));color:var(--ink)}
+#app [data-card-mode]:not([data-card-mode=hotseat]) .session-kind-badge{background:color-mix(in srgb,var(--color-surface-tile-blue,#dbe9e8) 76%,#527b8d);border-color:#7798a5}
+.session-kind-badge>.saved-state-icon,.session-kind-badge>.saved-state-icon svg,.session-kind-badge>.saved-state-icon[data-ui-icon]{display:inline-flex;width:14px;height:14px}
 .session-card .saved-state-icon{display:inline-flex;width:14px;height:14px;align-items:center;justify-content:center}
 .session-card .saved-state-icon svg[data-ui-icon]{width:14px;height:14px}
 .session-card .connection-light{margin:0}
@@ -38,14 +39,14 @@
 .session-card-bottom-action:has(button){display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .save-transfer-modal .modal-foot{display:flex;gap:12px}.save-transfer-modal [data-save-error]:empty{display:none}
 
-#app .saved-filter-bar{margin:0;gap:8px;align-items:center;flex-wrap:wrap}
+#app .saved-filter-bar{display:flex;margin:0 0 12px;gap:8px;align-items:center;flex-wrap:wrap}
+#app .saved-filter-bar>.filter{min-height:44px;width:auto;padding:8px 12px;gap:6px}
 .saved-clear-options{display:flex;gap:12px;padding:10px 0}.saved-clear-options .btn{flex:1;min-width:0;justify-content:center}
 
 /* Short scope labels keep both destructive choices readable on narrow phones. */
-#modal-root .saved-clear-modal{padding:12px}
-#modal-root .saved-clear-modal>.modal-head{padding:6px 4px 10px;gap:10px}
-#modal-root .saved-clear-modal>.modal-body{padding:4px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal{padding:12px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal>.modal-body{padding:4px}
 .saved-clear-options{gap:8px;padding:6px 0}
-#modal-root .saved-clear-options .btn{padding:10px 8px;gap:6px;font-size:14px;white-space:nowrap}
-#modal-root .saved-clear-options .btn svg{width:20px;height:20px;flex:none}
-:where(:root[data-ui-compact="true"]) #modal-root .saved-clear-modal .modal-head h2{font-size:20px}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-options .btn{padding:10px 8px;gap:6px;font-size:14px;white-space:nowrap}
+:is(#modal-root,[data-ui-surface-exit]) .saved-clear-options .btn svg{width:20px;height:20px;flex:none}
+:where(:root[data-ui-compact="true"]) :is(#modal-root,[data-ui-surface-exit]) .saved-clear-modal .modal-head h2{font-size:20px}

@@ -2,6 +2,21 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const Screen=require('../app/game-screen.js');
 const projected={game:'uno',turn:1,move:5,players:[{name:'Первый',bot:false,score:9},{name:'Второй',bot:false,score:4}],data:{hands:[[{hidden:true}],[{hidden:true}]]}};
+test('title fitting preserves the full title and user font while hiding a redundant mode after wrapping',()=>{
+ for(const frame of [false,true])for(const fontSize of [20,40]){
+  let inlineSize='14px',wrapped=false;
+  const table={classList:{toggle:(_name,value)=>{wrapped=value;}}};
+  const node={dataset:{fullTitle:'Стихийная потасовка',shortTitle:'Потасовка'},textContent:'Потасовка',
+   style:{removeProperty:()=>{inlineSize='';},set fontSize(value){inlineSize=value;}},
+   ownerDocument:{defaultView:{getComputedStyle:()=>({fontSize:String(fontSize),lineHeight:String(fontSize*1.2)})}},
+   closest:selector=>selector==='.game-frame-title'?(frame?{}:null):selector==='.table-title'?table:null,
+   scrollWidth:300,clientWidth:120,scrollHeight:fontSize*2.4};
+  Screen.fitGameTitles({querySelectorAll:()=>[node]});
+  assert.equal(node.textContent,node.dataset.fullTitle,'a narrow title does not become an abbreviation');
+  assert.equal(inlineSize,'','the user font is not replaced by a smaller inline pixel size');
+  if(!frame)assert.equal(wrapped,true,'two title lines replace the optional mode subtitle');
+ }
+});
 test('player targeting is exposed only for allowed actions',()=>{
   const safe=Screen.playersMarkup(projected,0,[],{scoreLabel:'очки'});
   assert.ok(!safe.includes('data-player-target'));
@@ -17,8 +32,9 @@ test('shared result screen shows wins, losses, public spectator and hot seat nam
   assert.match(Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO'}),/Второй побеждает/);
   const dialog=Screen.resultMarkup({state:finished,viewer:0,gameName:'UNO',scoreLabel:'очки',network:true});
   assert.match(dialog,/9|4/);assert.match(dialog,/result-replay/);assert.doesNotMatch(dialog,/Ещё партию/);
-  assert.match(dialog,/>В комнату</);assert.match(dialog,/>История</);assert.doesNotMatch(dialog,/data-command="(?:home|close-modal)"/);
+  assert.match(dialog,/>В лобби</);assert.match(dialog,/>История</);assert.doesNotMatch(dialog,/data-command="(?:home|close-modal)"/);
   assert.doesNotMatch(dialog,/В меню/,'network result has a single explicit return action');
+  const publicResult=Screen.resultMarkup({state:finished,viewer:-1,gameName:'UNO',network:true,returnAction:{command:'home',label:'К играм'}});assert.match(publicResult,/data-command="home"/);assert.doesNotMatch(publicResult,/data-command="rematch"/,'public read-only result does not offer an unauthorized lobby action');assert.equal(Screen.classifySurface('result-modal'),'screen');
 });
 
 test('team results place the shared team disc behind each medal while solo results stay unchanged',()=>{
@@ -36,7 +52,7 @@ test('team results place the shared team disc behind each medal while solo resul
 test('results reuse the first-player disc, under a medal when one is awarded',()=>{
   const state={...projected,status:'finished',winner:0,firstPlayer:0,result:{places:[1,4],values:[10,4]},players:[{name:'Первый'},{name:'Второй'}]};
   const solo=Screen.resultMarkup({state,viewer:0,gameName:'Шашки'});
-  assert.match(solo,/<span class="result-awards"><span class="player-medallion is-place place-1"[^>]*>.*?<span class="player-medallion is-first"[^>]*aria-label="Первый ход"/);
+  assert(solo.indexOf('result-avatar-wrap')<solo.indexOf('player-medallion is-first'));assert.match(solo,/aria-label="Первый ход"/);
   assert.equal((solo.match(/player-medallion is-first/g)||[]).length,1);
   const noMedal=Screen.resultMarkup({state:{...state,result:{places:[4,1],values:[4,10]}},viewer:0,gameName:'Шашки'});
   assert.match(noMedal,/class="result-awards"><span class="player-medallion is-place place-4 is-minor"/);
@@ -69,14 +85,17 @@ test('local and network deletion share confirmation layout and preserve target r
 });
 
 
-test('the primary toolbar slot switches between room and results, including earlier replay frames',()=>{
+test('the game menu retains room and results across replay frames without cluttering the header',()=>{
  for(const network of [false,true])for(const historyResult of [false,true]){
   const html=Screen.render({state:{...projected,status:'playing'},viewer:0,network,historyResult,roomAction:{attrs:'data-command="room"'},historyHTML:historyResult?'<section class="history-panel"></section>':''});
-  const toolbar=html.split('class="table-tools ui-toolbar">')[1].split('</div></header>')[0];
-  assert.equal((toolbar.match(/data-game-primary=/g)||[]).length,1);
-  assert.match(toolbar,new RegExp('data-command="'+(historyResult?'result':'room')+'"'));
-  assert.doesNotMatch(toolbar,new RegExp('data-command="'+(historyResult?'room':'result')+'"'));
-  assert(toolbar.indexOf('data-game-primary')<toolbar.indexOf(network?'data-room-chat-open':'data-command="history"'));
+  const toolbar=html.split('class="game-frame-tools">')[1].split('</div></header>')[0];
+  assert.doesNotMatch(toolbar,/data-game-primary/);
+  assert.match(toolbar,/data-game-menu/);
+  const primary=Screen.gameMenuActions().filter(a=>a.attrs.includes('data-game-primary'));
+  assert.equal(primary.length,1);
+  assert(primary[0].attrs.includes('data-command="'+(historyResult?'result':'room')+'"'));
+  assert(Screen.gameMenuActions().some(a=>a.name==='room'));
+  assert(Screen.gameMenuActions().some(a=>a.attrs.includes('data-command="history"')));
  }
  assert.match(Screen.addPlayerButton(),/Подключить игрока или устройство/);
  assert.match(Screen.addPlayerButton(),/ui-icon-button/);
@@ -134,7 +153,7 @@ test('field toggle is exclusive to an interactive network player with a Table',(
   const html=Screen.render({state:projected,viewer,network,readOnly,fieldToggle:{hidden:true}});
   assert.equal(html.includes('data-command="toggle-field"'),allowed);
   assert.equal(Screen.quickAccessMarkup().includes('data-command="toggle-field"'),allowed);
-  if(!allowed)assert.match(html,network&&!readOnly?/data-room-chat-open/:/data-command="history"/);
+  if(!allowed){if(network&&!readOnly)assert.match(html,/data-room-chat-open/);else assert(Screen.gameMenuActions().some(a=>a.attrs.includes('data-command="history"')));}
  }
 });
 
@@ -145,6 +164,18 @@ test('history navigates explicit turn and round boundaries while the slider rema
  const html=Screen.historyMarkup({index:5,count:12,turnStarts:[0,3,6,8],roundStarts:[{revision:0,number:1},{revision:8,number:2}]});
  assert.match(html,/max="12" value="5"/);assert.match(html,/data-command="replay-round-prev"/);assert.match(html,/data-command="replay-round-next"/);assert.match(html,/history-round-marker/);assert.match(html,/history-turn-marker/);
  assert.doesNotMatch(Screen.historyMarkup({index:5,count:12}),/data-command="replay-round-prev"/);
+});
+
+test('history skips human and bot planning drafts to the next public presentation only',async()=>{
+ const History=require('../application/history-controller.js'),Controller=require('../application/game-screen-controller.js');
+ const state=(id,event=1,window='round:1')=>({status:'playing',events:[{id:event}],scene:{plan:{id},decisionWindow:{id:window,participants:[0,1],ready:[]}}});
+ const states=[state('a'),state('a'),state('a'),state('a'),state('b',2,'round:2'),state('b',3,'respawn:2'),state('b',3,'round:2'),state('b',3,'round:2'),state('c',4,'round:3')];
+ assert.equal(History.presentationEnd(states,1,s=>s),4);assert.equal(History.presentationEnd(states,5,s=>s),5);assert.equal(History.presentationEnd(states,7,s=>s),8);
+ const frame=index=>({sessionId:'same',authorityEpoch:'same',game:'fixture',packVersion:'1',viewer:0,role:'player',revision:index,historyLength:states.length,state:states[index],events:states[index].events});
+ const reads=[],history=new History({read:async i=>{reads.push(i);return frame(i);}});history.receive(frame(8));await history.enter(0);reads.length=0;
+ const next=await history.seek(1,{skip:Controller.planningUpdate});assert.equal(next.revision,4);assert.equal(history.index,4);assert.deepEqual(reads,[1,0,2,3,4]);
+ assert.equal((await history.seek(5,{skip:Controller.planningUpdate})).revision,5,'respawn/loot/event transitions stay visible');
+ history.read=async i=>{history.close();return frame(i);};assert.equal(await history.seek(7,{skip:Controller.planningUpdate}),null,'cancelled scans cannot select a late result');
 });
 
 test('history clamps preparation and keeps its view controls separate from the live view',async()=>{
@@ -178,8 +209,16 @@ test('Continuation cards share heading, player and room progress rows',()=>{
     assert.match(html,new RegExp('data-transport-mode="'+transportMode+'"'));assert.match(html,/<strong>Морской бой<\/strong>/);assert.match(html,/Раунд 4 · Ход 8/);assert.match(html,/session-card-heading.*session-card-room.*resume-participants.*session-card-progress/s);
     assert.match(html,/class="resume-person saved-current-turn"/);assert.equal((html.match(/class="avatar /g)||[]).length,2);
     assert.equal(html.includes('connection-light'),network);assert.match(html,/resume-actions.*resume-participants/s);
+    const common={gameName:'UNO',mode:transportMode,status:'<svg data-status="paused"></svg>',badgeTitle:'Тип партии'};
+    const recent=Screen.sessionCard({...common,className:'resume-banner'}),saved=Screen.sessionCard({...common,className:'saved-game'});
+    const capsule=markup=>markup.match(/<span class="pill session-kind-badge"[^]*?<\/span><\/span>/)?.[0];
+    assert(capsule(recent));assert.equal(capsule(saved),capsule(recent),'saved and recent cards use the same kind badge');
+    assert.match(saved,/saved021-title.*pill session-kind-badge.*UNO/);assert.equal((saved.match(/data-transport-mode=/g)||[]).length,1,'transport icon is not repeated in the extra summary');
   }
   assert.match(Screen.resumeCard({state,network:true,connected:false}),/is-disconnected/);
+  for(const [move,label] of [[0,'0 действий'],[1,'1 действие'],[2,'2 действия'],[5,'5 действий'],[11,'11 действий'],[21,'21 действие'],[22,'22 действия'],[25,'25 действий']]) {
+    assert(Screen.resumeCard({state:{...state,move},gameName:'Игра'}).includes(label),'continuation card shows '+label);
+  }
 });
 
 test('Toolbar keeps two context actions plus fixed fullscreen and settings slots',()=>{
@@ -189,13 +228,16 @@ test('Toolbar keeps two context actions plus fixed fullscreen and settings slots
   assert.match(html,/data-command="full"/);
   assert.doesNotMatch(html,/data-command="pause"/);
   assert.match(Screen.quickAccessMarkup(),/data-command="pause"/);
+  const frame=Screen.toolbar(actions,{gameMenu:{network:true}});
+  assert.doesNotMatch(frame,/data-game-quick="history"/);assert(Screen.gameMenuActions().some(action=>action.attrs.includes('data-command="history"')),'History remains in the game menu');assert.match(frame,/data-game-quick="fullscreen"/);assert.match(frame,/data-game-menu/);
+  assert.doesNotMatch(frame,/data-command="pause"|data-command="help"/,'rare actions stay in the menu');
 });
 
-test('duels always render a row even with a saved circular or anchored preference',()=>{
+test('duels preserve declared base anchors unless row seating is explicitly selected',()=>{
  const UI=require('../core/ui.js'),state={players:[{name:'A'},{name:'B'}],turn:0,data:{}};
  for(const seating of ['circle','anchors','row']){
   const html=UI.composeScene({api:3,family:'board',layout:{seats:['north-west','south-east'],duplicateSelf:true},elements:{field:'<div>field</div>'}},{state,viewer:0,seating});
-  assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);
+  if(seating==='row'){assert.match(html,/data-seating="row"/);assert.doesNotMatch(html,/data-seat-copy/);}else{assert.match(html,/data-seating="circle"/);assert.match(html,/data-seat-copy/);}
  }
 });
 test('continuation avatars carry host, first-player and team badges with regular-weight progress',()=>{
@@ -243,4 +285,93 @@ test('all packs use one result sound on first presentation, with neutral interme
   assert.equal(Screen.resultSound({...state,winner:null},0),'draw-game');
   assert.equal(Screen.resultSound({...state,winners:[0,1]},1),'victory');
  }
+});
+
+test('shared landscape allocation reserves readable players and hand before the field',()=>{
+ for(const [width,height]of [[600,280],[740,390],[844,390],[900,600],[932,430],[1024,600]]){
+  const zones=Screen.landscapeZones(width,height,7);
+  assert(zones.self>=240,'local hand keeps its minimum width');
+  assert((zones.opponents-(zones.columns-1)*4)/zones.columns>=144,'each opponent keeps a readable footprint');
+  assert(zones.field<=height-12,'field fits the usable height');
+  assert(Math.abs(zones.opponents+zones.field+zones.self+24-width)<=3,'all zones share one viewport budget');
+  for(const count of [2,3,15])assert.deepEqual(Screen.landscapeZones(width,height,count),zones,'same budget for every multi-opponent roster');
+ }
+ assert.equal(Screen.landscapeZones(740,390,7).columns,1,'narrow landscape scrolls one readable roster column');
+ assert.equal(Screen.landscapeZones(844,390,7).columns,2,'two columns when both cards fit');
+ const tall=Screen.landscapeZones(900,600,5);
+ assert(tall.field<600-12,'field yields width rather than squeezing side zones');
+ const measured=Screen.landscapeZones(844,390,7,true,null,210);
+ assert(measured.opponents>=210,'larger authorized metric footprints are respected');
+ assert.equal(measured.columns,1,'wide metrics reduce columns before shrinking identities');
+ const fullscreen=Screen.landscapeZones(900,650,5,true,tall.self);
+ assert.equal(fullscreen.self,tall.self,'fullscreen retains the local reserve');
+});
+
+// Header markup carries its canonical glyph so the prepaint policy can be idempotent.
+test('surface header markup defers fullscreen until its type and keeps canonical icon Back controls',()=>{
+ const html=Screen.modalHead('Настройки',{symbol:'settings'});
+ assert.match(html,/data-surface-symbol="settings"/);
+ assert.match(Screen.modalHead(''),/<h2><\/h2>/,'empty header slot remains replaceable by the native chat identity');
+ assert(html.indexOf('data-surface-symbol')<html.indexOf('<h2'));
+ assert.doesNotMatch(html,/data-surface-fullscreen/,'untyped header must not preadd fullscreen');
+ assert.match(html,/data-command="close-modal"/);
+});
+
+
+test('geometry identity follows the authorized session pack and audience rather than names or turn data',()=>{
+ const identity=options=>Screen.render({layoutId:'session-a',gameName:'UNO',state:{...projected,packVersion:'0.6.8-preview.3'},viewer:0,scene:'<div class="app-game-layout" data-surface="combined"></div>',...options}).match(/data-geometry-identity="([^"]+)"/)[1];
+ const initial=identity({});assert.equal(identity({state:{...projected,packVersion:'0.6.8-preview.3',move:6,players:projected.players.map(p=>({...p,name:'Changed',score:20}))}}),initial);
+ for(const options of [{viewer:-1},{viewer:1},{readOnly:true},{replay:true},{historyHTML:'<div>history</div>'},{layoutId:'session-b'},{state:{...projected,packVersion:'0.6.9'}}])assert.notEqual(identity(options),initial,'different authority audience never reuses authored private geometry');
+});
+
+test('diagnostic recorder is bounded, keeps timings and exports game data only on request',async()=>{
+ const {Recorder,LIMIT}=require('../app/diagnostics.js'),r=new Recorder();let saves=0;r.configure({save:()=>{saves++;return {format:'fixture-save'};}});
+ r.record('off',{duration:1});assert.equal(r.count,0);assert.equal(r.begin(),null);r.enabled=true;
+ for(let i=0;i<LIMIT+7;i++)r.record('sample',{revision:i,duration:2,token:'private-token',url:'private-url',email:'private-email'});
+ assert.equal(saves,0,'no game serialization while collecting');const report=await r.report();assert.equal(saves,1);assert.equal(report.events.length,LIMIT);assert(report.dropped>=7);assert.equal(report.game.status,'included');assert(report.events.every(e=>!('token'in e)&&!('url'in e)&&!('email'in e)));assert(!JSON.stringify(report.events).includes('private-'));
+ assert.equal(await r.measure('async',async()=>42),42);await assert.rejects(r.measure('failure',async()=>{throw Error('secret failure');}));assert(!JSON.stringify((await r.report()).events).includes('secret failure'));r.stop();const count=r.written;r.record('after-stop');assert.equal(r.written,count);
+});
+
+test('zone alignment contains oversized content and supports edge alignment',()=>{
+ assert.deepEqual(Screen.alignInZone({x:10,y:20,width:100,height:80},{width:30,height:20},{inline:'end',block:'start',inset:4}),{x:76,y:24,width:30,height:20});
+ assert.deepEqual(Screen.alignInZone({x:0,y:0,width:100,height:80},{width:200,height:200}),{x:0,y:0,width:100,height:80});
+});
+
+test('fullscreen keeps the established player width and gives remaining width to the opponent zone',()=>{
+ const before=Screen.landscapeZones(797,339,7),after=Screen.landscapeZones(832,384,7,true,before.self);
+ assert.equal(after.self,before.self);assert(after.field<=384-12);assert(after.opponents>=292,'two complete opponent cards survive fullscreen');
+ const readable=Screen.landscapeZones(816,382,7,true,246,204);assert.equal(readable.self,246);assert.equal(readable.opponents,204);assert.equal(readable.field,342,'field respects intrinsic roster width while self width stays fixed');
+});
+
+test('screen layout selects one declared profile independently of player count',()=>{
+ const cases=[[{},'standard'],[{seatAnchors:'true'},'bases'],[{soloField:'true'},'field-only'],[{surface:'player'},'player-only']];
+ for(const [options,expected] of cases)for(const playerCount of [1,2,4,8])assert.equal(Screen.screenLayout({...options,playerCount}),expected);
+});
+
+test('pack overrides declare only the affected zones and reject unknown policies',()=>{
+ const UI=require('../core/ui.js'),state={...projected,players:projected.players};
+ const scene={api:3,family:'board',elements:{field:'<div>field</div>'}};
+ const html=UI.composeScene({...scene,layout:{overrides:{opponentsAlign:'end',playerIndicators:'below-avatar',mirrorIndicators:true}}},{state,viewer:0});
+ assert.match(html,/data-opponents-align="end"/);assert.match(html,/data-player-indicators="below-avatar"/);assert.doesNotMatch(html,/data-field-columns/);
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{gameName:'battleship'}}},{state}),/layout overrides/);
+ assert.throws(()=>UI.composeScene({...scene,layout:{overrides:{fieldColumns:17}}},{state}),/layout overrides/);
+});
+
+
+test('one immutable snapshot is presented once across duplicate snapshot and ACK delivery',async()=>{
+ const Controller=require('../application/game-screen-controller.js'),shown=[];
+ const frame=revision=>Object.freeze({kind:'snapshot',sessionId:'dedup',authorityEpoch:'epoch',game:'cards',packVersion:'1',role:'player',viewer:0,revision,historyLength:revision+1,state:{turn:0}});
+ const client={snapshot:frame(0),history:async revision=>({...frame(revision),kind:'history'})},controller=new Controller({client,present:async(before,next,{show})=>{show();shown.push(next);}});
+ const next=frame(1);client.snapshot=next;await Promise.all([controller.enqueue(next),controller.enqueue(next),controller.enqueue(next)]);await new Promise(setImmediate);assert.deepEqual(shown,[next]);
+ const control=Object.freeze({...next,controlRevision:1});client.snapshot=control;await controller.enqueue(control);await new Promise(setImmediate);assert.equal(shown.at(-1),control,'a new control snapshot at the same game revision is still delivered');
+});
+
+test('planning readiness does not backfill invisible revisions during public playback',async()=>{
+ const Controller=require('../application/game-screen-controller.js'),shown=[],reads=[];
+ const frame=(revision,event=1,window='round:2')=>({sessionId:'same',authorityEpoch:'same',game:'fixture',packVersion:'1',viewer:0,role:'player',revision,historyLength:revision+1,events:[{id:event}],state:{status:'playing',turn:0,scene:{plan:{id:'public:round:1'},decisionWindow:{id:window}}}});
+ const client={snapshot:frame(0),history:async revision=>{reads.push(revision);return {...frame(revision),kind:'history'};}},controller=new Controller({client,present:async(_before,next,{show})=>{show();shown.push(next.revision);}});
+ client.snapshot=frame(8);await controller.enqueue(client.snapshot);await new Promise(setImmediate);assert.deepEqual(reads,[]);assert.deepEqual(shown,[8]);assert.equal(controller.history.count,8,'all committed revisions remain reviewable');
+ client.snapshot=frame(11,2);await controller.enqueue(client.snapshot);await new Promise(setImmediate);assert.deepEqual(reads,[9,10],'a new public event still backfills its boundaries');
+ assert.equal(Controller.planningUpdate(frame(0),frame(8,1,'another-window')),false);assert.equal(Controller.planningUpdate(frame(0),{...frame(8),paused:true}),false);assert.equal(Controller.planningUpdate(frame(0),{...frame(8),viewer:1}),false);
+ assert.equal(Controller.planningUpdate(frame(0),{...frame(8),state:{...frame(8).state,turn:1}}),true,'the coordination turn may change inside a simultaneous decision window');
 });

@@ -22,8 +22,8 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
       scanner:!!globalThis.PlayroomQRScanner,profile:!!document.getElementById('profile-form'),
       body:document.body?.innerText.slice(0,200)}));
     assert.ok(boot.app&&boot.network,'PlayRoom failed to initialize: '+JSON.stringify({boot,errors}));
-    await page.evaluate(()=>{
-      localStorage.setItem('playroom.session.v1',JSON.stringify({
+    await page.evaluate(async()=>{
+      await PlayroomData.put('playroom.session.v1',JSON.stringify({
         game:'uno',packVersion:'0.1.0',createdAt:1712345678,updatedAt:1712345678
       }));
     });
@@ -38,12 +38,12 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
       assert.fail('No recovery warning: '+JSON.stringify({diagnostics,errors,error:error.message}));
     }
     assert.match(await page.locator('.recovery-note').innerText(),/Не удалось восстановить/);
-    await page.locator('.side-nav [data-command=sessions]').click();
+    await page.locator('[data-hub-page=sessions]').click();await page.locator('[data-saved-actions-toggle]').first().click();
     await page.locator('[data-delete-id]').first().click();
     await page.locator('[data-delete-confirm]').click();
     await page.locator('[data-delete-id]').waitFor({state:'detached'});
     assert.equal(await page.locator('[data-delete-id]').count(),0);
-    await page.locator('.side-nav [data-command=home]').click();
+    await page.locator('[data-hub-page=games]').click();
     assert.equal(await page.locator('.recovery-note').count(),0,'No stale warning after removing the broken save');
     assert.equal(await page.evaluate(()=>PlayroomData.getItem('playroom.session.v1')),null);
     // Also filter startup pack-version conflicts when there are no dependent games.
@@ -51,7 +51,7 @@ test('deleting the final old-pack save clears the stale recovery warning',{timeo
       PlayroomPacks.warnings.push('Встроенный пакет uno@0.1.0 отличается от сохранённой версии. Для совместимости партий используется сохранённая версия.');
       globalThis.PlayroomPackLoadError=PlayroomPacks.warnings.join(' ');
     });
-    await page.locator('.pack-hub-button').click();
+    await require('./browser-origin.cjs').openPacks(page);
     assert.equal(await page.locator('.pack-message').count(),0);
   }finally{await context.close();await browser.close();await fixture?.close();}
 });

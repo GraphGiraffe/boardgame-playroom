@@ -3,6 +3,12 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 
+async function clickExposedCard(page,selector){
+ const card=page.locator(selector).first();await card.waitFor({state:'visible'});
+ const point=await card.evaluate(node=>{const r=node.getBoundingClientRect();for(let y=Math.max(1,r.top+3);y<Math.min(innerHeight,r.bottom-3);y+=4)for(let x=Math.max(1,r.left+3);x<Math.min(innerWidth,r.right-3);x+=4){const hit=document.elementFromPoint(x,y);if(hit&&(hit===node||node.contains(hit)))return {x,y};}return null;});
+ if(!point)throw Error('No exposed card hit area');await page.mouse.click(point.x,point.y);
+}
+
 async function pair(run){
  const server=await serveBrowserFixture(path.resolve(__dirname,'..'));
  const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
@@ -42,6 +48,22 @@ async function pair(run){
  }finally{await browser.close();await server.close();}
 }
 const mastered=(page,game)=>page.evaluate(g=>PlayroomFirstTurnGuide.settings(g).mastered,game);
+
+test('fresh RTC learning follows the first actionable seat and survives repeated frames', {timeout:60000},()=>pair(async({pages,start})=>{
+ for(let viewer=0;viewer<2;viewer++)await pages[viewer].evaluate(viewer=>localStorage.removeItem('playroom.learning.v1.learner-'+viewer),viewer);
+ await start('tictactoe',0);
+ const intro=page=>page.locator('#modal-root>[data-surface-state=active] .learning-intro');
+ await intro(pages[0]).waitFor();assert.equal(await intro(pages[1]).count(),0,'waiting player is not offered learning');
+ await pages[0].evaluate(()=>{PlayroomFirstTurnGuide.update({...netGuideContext});PlayroomFirstTurnGuide.update({...netGuideContext});});
+ await intro(pages[0]).locator('[data-learning-choice=yes]').click();await pages[0].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ await pages[0].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ await intro(pages[1]).waitFor();assert.equal(await pages[1].evaluate(()=>netClient.snapshot.revision),1);
+ await intro(pages[1]).locator('[data-learning-choice=yes]').click();await pages[1].locator('.first-turn-guide:not([hidden]) .guide-caption').waitFor();
+ await pages[1].locator('.ttt-cell[data-action]:not([disabled])').first().click();
+ await pages[0].waitForFunction(()=>netClient.snapshot.revision===2&&!netClient.pending&&!netGuideContext.busy);
+ assert.equal(await pages[0].evaluate(()=>document.querySelector('#app').inert),false);
+ assert.equal(await intro(pages[0]).count(),0,'no repeated introduction on the next turn');
+}));
 
 test('two RTC clients persist UNO help without a host command', {timeout:90000},()=>pair(async({pages,start})=>{
  for(let viewer=0;viewer<2;viewer++){
@@ -125,7 +147,7 @@ test('RTC Mage local choices and both planning steps are distinct persistent goa
   let progress=await mastered(page,'mage-brawl');assert.equal(progress.rotate,1);assert.equal(progress.help,1);assert.equal(progress.card,1);assert.equal(progress['card-second'],undefined);
   await page.locator('#modal-root [data-command="close-modal"]').first().click();
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered.ready===1);
-  await page.locator('.mage-card:not([disabled]):not(.selected)').first().click();
+  await clickExposedCard(page,'.mage-card:not([disabled]):not(.selected)');
   assert.equal((await mastered(page,'mage-brawl'))['card-second'],1);
   await page.locator('.mage-ready').click();await page.waitForFunction(()=>PlayroomFirstTurnGuide.settings('mage-brawl').mastered['ready-second']===1);
  }

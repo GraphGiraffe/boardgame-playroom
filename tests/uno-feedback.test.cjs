@@ -7,7 +7,7 @@ const make=()=>Engine.createGame('uno',{players:[{name:'Иван'},{name:'Джо
 const makeOne=(s,who)=>{while(s.data.hands[who].length>1)s.data.drawPile.push(s.data.hands[who].pop());s.data.uno.situations[who].open=true;};
 test('UNO accusation publishes localized target metadata',()=>{
   const pack=Engine.get('uno');
-  if(enhanced)assert.match(pack.rules.join(' '),/коснитесь его имени или руки/);
+  if(enhanced)assert.match(pack.rules.join(' '),/обвин/i);
   const s=make(),before=s.data.hands[0].length;
   const action=Engine.reactions(s,0).find(a=>a.type==='accuse-uno'&&a.target===1);
   if(enhanced){assert.equal(action.targetPrompt,'UNO!');assert.equal(action.confirmation,undefined,'The player-card menu performs the accusation without a second confirmation');}
@@ -34,4 +34,15 @@ test('early and correct shouts are prominent without changing early-call penalty
   assert.equal(declared.data.uno.declared[0],true);if(enhanced)assert.equal(visible(declared).at(-1).notice.tone,'success');
   assert(Engine.project(declared,1).data.hands[0].every(c=>c.hidden));
   assert(Engine.validateState(declared));
+});
+
+
+test('UNO results rank remaining hands by card points, preserve ties and finished order',()=>{
+ const makeHand=(color,value)=>({color,value});
+ const factory=require('../../playroom-paks/packs/uno/domain/game.js'),ending=require('../../playroom-paks/shared/domain/end-policy.js'),D=factory({ending});
+ const hands=[[],[makeHand('red','9'),makeHand('blue','7')],[makeHand('red','skip')],[makeHand('wild','+4')],[makeHand('wild','wild')]];
+ const s={status:'finished',winners:[0],data:{hands,points:[86,0,0,0,0],ending:ending.create(5,0,'winner')}};ending.record(s.data.ending,[0]);
+ assert.deepEqual(D.score({...s,status:'playing'}),[86,0,0,0,0],'live scores never expose private hand point totals');assert.deepEqual(D.score(s),[0,16,20,50,50]);assert.deepEqual(D.result(s).places,[1,2,3,4,4]);assert.deepEqual(D.result(s).metrics[0].values,[0,16,20,50,50]);
+ const zero=structuredClone(s);zero.data.hands[1]=[makeHand('red','0')];assert.deepEqual(D.result(zero).places,[1,2,3,4,4],'a zero-point hand still ranks after the player who finished');
+ s.data.ending=ending.create(5,0,'last');ending.record(s.data.ending,[2]);ending.record(s.data.ending,[0]);s.data.hands[2]=[];assert.deepEqual(D.result(s).places,[2,3,1,4,4]);
 });

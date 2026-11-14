@@ -3,20 +3,53 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),path=requ
 const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
+test('planning drafts use RAM and a complete plan commits actions with one checkpoint batch',{timeout:45000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const page=await browser.newPage();await page.goto(fixture.url);await page.locator('.game-tile').first().waitFor();
+ const result=await page.evaluate(async()=>{
+  const E=TabletopCore,store=new PlayroomNetworkSessionStore({name:'checkpoint-browser'}),session=new TabletopSession(E,'mage-brawl',{seed:17,actionsPerTurn:'2',firstPlayerMode:'assigned',firstPlayer:0,players:Array.from({length:8},(_,i)=>({name:'P'+i}))});
+  await store.create({sessionId:'checkpoints',room:{id:'checkpoint-room',game:{id:session.game,version:session.packVersion}},session});
+  let writes=0,reads=0;const transaction=store.transaction;store.transaction=function(stores,mode,run){mode==='readwrite'?writes++:reads++;return transaction.call(this,stores,mode,run);};
+  const authority=new SessionAuthority(session,{sessionId:'checkpoints',persistence:{commit:r=>store.commit(r),commitBatch:r=>store.commitBatch(r),recordReceipt:r=>store.recordReceipt(r)}}),connection=authority.connect(0),command=id=>PlayroomProtocol.command(connection.snapshot(),connection.snapshot().actions.find(a=>a.type==='plan'),'checkpoint-'+id);
+  const draftCommand=command('draft'),draft=await connection.dispatch(draftCommand),afterDraft={writes,reads,revision:session.current.move,draft:!!draft.draft};await connection.dispatch(draftCommand);const duplicateWrites=writes;
+  const finish=await connection.dispatch(command('finish')),afterFinish={writes,revision:session.current.move,ok:finish.ok};authority.dispose();const loaded=await store.load('checkpoints',E,TabletopSession),raw=await store.readPrivate('checkpoints');store.close();
+  return {afterDraft,duplicateWrites,afterFinish,reloadedRevision:loaded.revision,receipts:loaded.receipts.length,format:raw.record.eventStorage,actionsOnly:raw.steps.every(row=>Array.isArray(row.a)&&!row.state&&!row.delta),noFrames:loaded.session.current.data.frames.length===0,history:loaded.session.states.length};
+ });assert.deepEqual(result.afterDraft,{writes:0,reads:0,revision:1,draft:true});assert.equal(result.duplicateWrites,0);assert.deepEqual(result.afterFinish,{writes:1,revision:2,ok:true});assert.equal(result.reloadedRevision,2);assert.equal(result.receipts,2);assert.equal(result.format,'actions-checkpoint-v1');assert.equal(result.actionsOnly,true);assert.equal(result.noFrames,true);assert.equal(result.history,3);
+ }finally{await browser.close();await fixture.close();}
+});
+test('checkpoint load is immediate, history replays on demand and compression failure preserves the durable revision',{timeout:30000},async()=>{
+ const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
+ try{const page=await browser.newPage();await page.goto(fixture.url);await page.locator('.game-tile').first().waitFor();
+ const result=await page.evaluate(async()=>{
+  const E=TabletopCore;E.register({id:'packed-journal-fixture',name:'Packed',min:2,max:2,presets:[{id:'basic'}],create(s){s.data={counter:0,frames:[]};},legal(){return [{type:'tick'}];},storageState:s=>({...s,data:{...s.data,frames:[]}}),apply(s){s.data.counter++;s.data.frames=Array.from({length:100},(_,i)=>({frame:i,board:Array.from({length:100},(_,j)=>j%3)}));E.event(s,'step',s.turn,'action');s.turn=1-s.turn;}});
+  const store=new PlayroomNetworkSessionStore({name:'packed-journal-fixture'}),session=new TabletopSession(E,'packed-journal-fixture',{players:[{name:'A'},{name:'B'}]});await store.create({sessionId:'packed',room:{id:'packed-room',game:{id:session.game,version:session.packVersion}},session});
+  const next=session.prepare(0,{type:'tick'}),entry={sessionId:'packed',previousRevision:0,nextState:next,action:session.preparedAction(next),viewer:0,commandId:'packed-1',signature:'packed-command',receipt:{ok:true,code:'OK',commandId:'packed-1',revision:1}},original=PlayroomSaveCompression;
+  let rejected=false;globalThis.PlayroomSaveCompression={...original,encode:async()=>{throw Error('COMPRESSION_FAILED');}};try{await store.commit(entry);}catch(error){rejected=error.message==='COMPRESSION_FAILED';}finally{globalThis.PlayroomSaveCompression=original;}
+  const failed=await store.load('packed',E,TabletopSession);await store.commit(entry);session.commitPrepared(next);
+  const apply=E.applyAction;let replays=0;E.applyAction=(...args)=>{replays++;return apply(...args);};
+  const loaded=await store.load('packed',E,TabletopSession),live=new SessionAuthority(loaded.session),snapshot=live.connect(0).snapshot(),bootReplays=replays;live.dispose();
+  const identical=JSON.stringify(loaded.session.states)===JSON.stringify(session.states),historyReplays=replays;E.applyAction=apply;
+  const raw=await store.transaction(['sessions'],'readonly',(tx,done)=>{const q=tx.objectStore('sessions').get('packed');q.onsuccess=()=>done(q.result);}),steps=await store.transaction(['steps'],'readonly',(tx,done)=>{const q=tx.objectStore('steps').getAll();q.onsuccess=()=>done(q.result);});
+  await store.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').put({...raw,checkpoint:{...raw.checkpoint,data:'AAAA'}}));let corruptRejected=false;try{await store.load('packed',E,TabletopSession);}catch{corruptRejected=true;}await store.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').put({...raw,version:1}));let legacyRejected=false;try{await store.load('packed',E,TabletopSession);}catch(error){legacyRejected=error.message==='SAVE_FORMAT';}store.close();
+  return {rejected,failedRevision:failed.revision,bootReplays,historyReplays,identical,revision:snapshot.revision,encoding:raw.checkpoint.encoding,smallActions:JSON.stringify(steps).length<512,corruptRejected,legacyRejected};
+ });assert.deepEqual(result,{rejected:true,failedRevision:0,bootReplays:0,historyReplays:1,identical:true,revision:1,encoding:'gzip-base64-v1',smallActions:true,corruptRejected:true,legacyRejected:true});
+ }finally{await browser.close();await fixture.close();}
+});
 test('Table public commands survive IndexedDB reload with player receipts and public duplicate ACKs',{timeout:30000},async()=>{
  const fixture=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  try{
   const context=await browser.newContext(),page=await context.newPage();await page.goto(fixture.url);await page.waitForFunction(()=>!!globalThis.PlayroomAccountUI?.service);
   const before=await page.evaluate(async()=>{
+   const commit=IDBTransaction.prototype.commit;let explicitCommits=0;IDBTransaction.prototype.commit=function(){explicitCommits++;return commit.call(this);};
    const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'});
    const session=new TabletopSession(TabletopCore,'tictactoe',{seed:'TABLE-PRIVATE-SEED',firstPlayerMode:'assigned',firstPlayer:0,players:[{name:'A'},{name:'B'}]});
    await store.create({sessionId:'table-browser',room:{id:'table-room',name:'Table',game:{id:session.game,version:session.packVersion}},session});
    const authority=new SessionAuthority(session,{sessionId:'table-browser',authorityEpoch:'before-reload',persistence:{commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)}});
    const table=authority.connectTable([0,1]),command=PlayroomProtocol.command(table.snapshot(),{type:'place',cell:4},'table-place');
    const receipt=await table.dispatch(command);sessionStorage.setItem('table-test-command',JSON.stringify(command));
-   const out={ok:receipt.ok,revision:authority.revision,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role};authority.dispose();return out;
+   const out={ok:receipt.ok,revision:authority.revision,viewer:receipt.snapshot.viewer,role:receipt.snapshot.role,explicitCommits};authority.dispose();IDBTransaction.prototype.commit=commit;return out;
   });
-  assert.deepEqual(before,{ok:true,revision:1,viewer:-1,role:'table'});await page.reload();
+  assert.deepEqual(before,{ok:true,revision:1,viewer:-1,role:'table',explicitCommits:1});await page.reload();await require('./browser-origin.cjs').ready(page);
   const after=await page.evaluate(async()=>{
    const store=new PlayroomNetworkSessionStore({name:'playroom-table-journal-test'}),saved=await store.load('table-browser',TabletopCore,TabletopSession);
    const authority=new SessionAuthority(saved.session,{sessionId:saved.sessionId,authorityEpoch:'after-reload',restoredReceipts:saved.receipts,persistence:{commit:entry=>store.commit(entry),recordReceipt:entry=>store.recordReceipt(entry)}});
@@ -87,7 +120,7 @@ test('LAN-01 persists initial session, full history and atomic receipts across h
           list:listed.length,version:loaded.session.packVersion,paused:loaded.paused,controlRevision:loaded.controlRevision};
         const next=loaded.session.prepare(0,{type:'tick'});
         let duplicateRejected=false;
-        try{await store.commit({sessionId:'session-test',previousRevision:2,nextState:next,viewer:0,
+        try{await store.commit({sessionId:'session-test',previousRevision:2,nextState:next,action:loaded.session.preparedAction(next),viewer:0,
           commandId:'cmd-0',signature:'changed-payload',receipt:{ok:true,revision:3,commandId:'cmd-0'}});}
         catch(_){duplicateRejected=true;}
         out.duplicateRejected=duplicateRejected;
@@ -227,4 +260,24 @@ test('replacement roster commits atomically without changing the existing game j
     });
     assert.deepEqual(result,{rejected:[true,true,true,true,true],sameGame:true,sameReceipts:true,stableIndex:1,participant:'new-player',oldToken:false,newToken:true,replacement:true,revision:1,rosterUnchanged:true,rotationPreserved:true,removalRevoked:true});
   }finally{await context.close();await browser.close();await close();}
+});
+
+ test('Nearby checkpoint reload resumes eight Mage players without replay and accepts the next plan',{timeout:90000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'}),page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
+ const net=await require('./account-sync-fixture.cjs').installFetch(context,require('./account-sync-fixture.cjs')(async route=>route.fulfill({json:{profile:null,friends:[],groups:[],entries:[],rooms:[],invitations:[],messages:[]}})));
+ try{
+  await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'native-checkpoint',name:'Иван'}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,animationSpeed:'fast',tutorialsEnabled:false}));});
+  await page.goto(server.url);await page.locator('[data-start=mage-brawl]').click();await page.locator('[data-game-mode=network]').click();await page.locator('[data-room-auto-start]').uncheck();
+  await page.evaluate(()=>{const b=PlayroomAppBridge,r=b.room();for(let i=2;i<=8;i++)b.roomService.setLocalSeat(r.id,r.ownerId,'seat-'+i,{kind:'bot',nickname:'Бот '+i});b.roomService.updateRules(r.id,r.ownerId,{...r.rules,options:{...r.rules.options,actionsPerTurn:'2'}});b.renderLobby();});
+  await page.locator('[data-command=lobby-ready]').click();await page.locator('[data-command=lobby-start]').click();await page.waitForFunction(()=>document.querySelectorAll('.layout-participants .player-panel.is-ready').length===7);
+  await page.locator('.mage-ready:not([disabled])').click();await page.locator('.mage-card:not([disabled])').last().click();await page.locator('.mage-ready:not([disabled])').click();await page.waitForFunction(()=>document.querySelector('.is-public-playback'));await page.waitForFunction(()=>!document.querySelector('.is-public-playback'));await page.waitForFunction(()=>document.querySelectorAll('.layout-participants .player-panel.is-ready').length===7);
+  const before=await page.evaluate(async()=>{const [entry]=await PlayroomNetworkLibrary.list();return {id:entry.sessionId,revision:entry.revision};});
+  await context.addInitScript(()=>{let engine;window.reloadRuleApplies=0;Object.defineProperty(window,'TabletopCore',{configurable:true,get:()=>engine,set:value=>{engine=value;const apply=value.applyAction;value.applyAction=(...args)=>{reloadRuleApplies++;return apply(...args);};}});});
+  await page.reload();await page.locator('.game-tile').first().waitFor();await page.evaluate(()=>PlayroomAppBridge.showSessions());await page.locator(`.saved-game[data-network-session-id="${before.id}"]`).click();await page.locator(`#modal-root [data-network-continue="${before.id}"]`).click();await page.locator('.room-setup-modal').waitFor();
+  assert.equal(await page.evaluate(()=>reloadRuleApplies),0,'opening the saved room does not replay the action log');
+  await page.locator('[data-command=lobby-ready]').click();await page.locator('[data-command=lobby-start]').click();await page.locator('.network-game .mage-grid').waitFor();
+  assert.equal(await page.evaluate(()=>reloadRuleApplies),0,'the live screen loads from its checkpoint');assert.equal(Number(await page.locator('.network-game').getAttribute('data-revision')),before.revision);
+  await page.locator('.mage-ready:not([disabled])').click();await page.locator('.mage-card:not([disabled])').last().click();await page.locator('.mage-ready:not([disabled])').click();await page.waitForFunction(revision=>Number(document.querySelector('.network-game')?.dataset.revision)>revision,before.revision,{timeout:15000});
+  const result=await page.evaluate(async id=>{const source=await PlayroomNetworkLibrary.portableSource(id,{stored:true});return {move:source.session.current.move,states:source.session.states.length};},before.id);assert(result.move>before.revision);assert.equal(result.states,result.move+1);assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+ }catch(error){console.error('RESUME_DIAGNOSTIC',JSON.stringify(await page.evaluate(()=>({revision:document.querySelector('.network-game')?.dataset.revision,ready:[...document.querySelectorAll('.mage-ready')].map(e=>({label:e.textContent,disabled:e.disabled})),notices:[...document.querySelectorAll('.toast,.notice,.banner')].map(e=>e.textContent.slice(0,180)),debug:globalThis.PlayroomNetworkDebug?.()}))));throw error;}finally{await context.close();await browser.close();await server.close();}
 });

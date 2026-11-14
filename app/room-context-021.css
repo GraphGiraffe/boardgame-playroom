@@ -1,0 +1,19 @@
+.room-v021-context [data-room-context-name]{margin:0 0 14px;padding:0 0 14px;border-bottom:1px solid var(--line)}
+.room-context-name-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.room-context-name-actions>.btn{min-height:44px;box-shadow:none}
+.room-context-name-actions>.btn:first-child{flex:1 1 min-content;justify-content:center}
+.room-context-name-actions>.btn:last-child{flex:none}
+.room-context-name-message,.room-context-name-note{margin:8px 0;color:var(--muted);font-size:13px;line-height:1.4}
+.room-context-name-message:empty{display:none}
+.room-context-name-message[data-room-name-error]{color:var(--ui-danger,#c84d45)}
+.room-v021-context [data-room-title]{width:100%;min-width:0;min-height:44px;box-shadow:none}
+.room-v021-context [data-room-name-pending] [data-room-title]{cursor:wait}
+
+.room-v021-actions>.lobby-text-action{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;color:var(--ink);text-align:left;font:inherit;font-size:15px;line-height:1.4}
+.room-v021-actions>.lobby-text-action svg{width:20px;height:20px;flex:none}
+.room-v021-actions>.ui-action-danger{color:var(--ui-danger)}
+:is(#modal-root,[data-ui-surface-exit]) .room-v021-context .lobby-text-action.ui-action-danger :is(span,svg){color:inherit}
+.choice021-other-seats{margin-top:12px}
+.choice021-other-seats>summary{min-height:44px;align-content:center;color:var(--muted);font-size:13px;cursor:pointer}
+
+.room-v021-context>.menu-list{width:100%;max-width:none}

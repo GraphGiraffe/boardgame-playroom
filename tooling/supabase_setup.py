@@ -3,10 +3,12 @@ from hashlib import md5
 from pathlib import Path
 import re
 
-MIGRATIONS = ('supabase.sql', 'social.sql', 'signaling.sql', 'online.sql', 'host-transfer.sql', 'push.sql', 'cloud-saves.sql', 'account-sync.sql', 'room-cleanup.sql')
-RPCS = ('playroom_social', 'playroom_signal', 'playroom_online', 'playroom_groups_rpc',
+MIGRATIONS = ('supabase.sql', 'social.sql', 'signaling.sql', 'signaling-sync.sql', 'online.sql', 'host-transfer.sql', 'push.sql', 'host-transfer-push.sql', 'cloud-saves.sql', 'account-sync.sql', 'room-cleanup.sql', 'registration.sql', 'ice.sql')
+RPCS = ('playroom_social', 'playroom_signal', 'playroom_signal_sync', 'playroom_online', 'playroom_groups_rpc',
         'playroom_host_transfer', 'playroom_push', 'playroom_push_claim', 'playroom_push_complete',
-        'playroom_push_game', 'playroom_push_activity', 'playroom_cloud_saves_rpc', 'playroom_account_sync')
+        'playroom_push_game', 'playroom_push_activity', 'playroom_push_pending',
+        'playroom_push_host_pending', 'playroom_push_host_transfer',
+        'playroom_cloud_saves_rpc', 'playroom_account_sync', 'playroom_signup_name_available', 'playroom_ice_access', 'playroom_connection_trace')
 
 
 def render(root: Path) -> dict[str, str]:
@@ -38,13 +40,27 @@ with expected(function_name,expected_md5) as (values
 select e.function_name,p.oid is not null as installed,
  pg_get_function_identity_arguments(p.oid) as arguments,
  coalesce(md5(p.prosrc)=e.expected_md5,false)
+ and (e.function_name not in ('playroom_push_host_pending','playroom_push_host_transfer') or
+  (not has_function_privilege('anon',p.oid,'EXECUTE')
+   and not has_function_privilege('authenticated',p.oid,'EXECUTE')))
  and (e.function_name<>'playroom_cloud_saves_rpc' or exists(
   select 1 from pg_proc f where f.pronamespace='playroom_private'::regnamespace
    and f.proname='cloud_saves' and md5(f.prosrc)='""" + private_md5 + """')) as exact_match
 from expected e left join pg_proc p on p.proname=e.function_name
  and p.pronamespace='public'::regnamespace
-order by e.function_name;
+union all
+select 'playroom_push_host_transfer_trigger',t.oid is not null,'trigger',
+ coalesce(t.tgfoid=to_regprocedure('public.playroom_push_host_transfer()')
+  and t.tgenabled='O' and not t.tgisinternal
+  -- Row-level AFTER INSERT or UPDATE OF state; no arguments or WHEN filter.
+  and t.tgtype=21 and t.tgattr::text=a.attnum::text
+  and t.tgnargs=0 and octet_length(t.tgargs)=0 and t.tgqual is null,false)
+from (select 1) singleton
+left join pg_trigger t on t.tgrelid=to_regclass('public.playroom_host_transfers')
+ and t.tgname='playroom_push_host_transfer'
+left join pg_attribute a on a.attrelid=t.tgrelid and a.attname='state' and not a.attisdropped
+order by 1;
 """
-    setup = '-- PlayRoom 0.20: repeatable schema update. No secrets; Push delivery stays opt-in.\n' + 'begin;\n\n' + '\n\n'.join(sections) + "\n\nnotify pgrst, 'reload schema';\ncommit;\n"
+    setup = '-- PlayRoom 0.21: repeatable schema update. No secrets; Push delivery stays opt-in.\n' + 'begin;\n\n' + '\n\n'.join(sections) + "\n\nnotify pgrst, 'reload schema';\ncommit;\n"
     return {'setup-supabase.sql': setup, 'check-supabase.sql': check,
             'enable-web-push.sql': (root / 'server/push/enable.sql').read_text(encoding='utf-8')}
