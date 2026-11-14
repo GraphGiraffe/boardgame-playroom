@@ -657,3 +657,51 @@ test('unused lobby dismissal closes the room while invitations and live parties 
   assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
  }finally{await context.close();await browser.close();await server.close();}
 });
+
+
+test('reaction picker keeps its anchor side throughout entry motion in every lobby row',{timeout:45000},async()=>{
+ const fixture=await serveBrowserFixture(root);
+ const browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--disable-background-networking']});
+ const report={states:[],errors:[]},out=process.env.PLAYROOM_CAPTURE_DIR;
+ try{
+  for(const motion of ['no-preference','reduce']){
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:motion});
+  await context.route('https://*.supabase.co/**',route=>route.abort());
+  if(process.env.REACTION_ARTIFACT_HTML)await context.route(fixture.url,route=>route.fulfill({path:path.resolve(process.env.REACTION_ARTIFACT_HTML),contentType:'text/html'}));
+  const page=await context.newPage();page.on('pageerror',error=>report.errors.push(error.message));
+  await page.goto(fixture.url);await openGame(page,'mage-brawl','network');
+  await page.locator('.room-setup-modal').evaluate(async node=>{await Promise.allSettled(node.getAnimations({subtree:true}).map(animation=>animation.finished));});
+  for(const viewport of [{width:390,height:844},{width:844,height:390},{width:390,height:844}]){
+  await page.setViewportSize(viewport);
+  for(const row of [0,1,2,3]){
+   const state=await page.evaluate(async row=>{
+    const bridge=PlayroomAppBridge,room=bridge.room();
+    bridge.roomService.moveParticipant(room.id,room.ownerId,room.ownerId,'seat-'+(row*2+1));bridge.renderLobby();
+    const anchor=document.querySelector('[data-quick-reaction]');
+    anchor.scrollIntoView({block:'nearest'});
+    // Dispatch the real lobby trigger before collecting every animation frame.
+    anchor.click();
+    const picker=document.querySelector('body>.quick-reaction-picker'),samples=[];
+    const start=performance.now();
+    do{
+     const a=anchor.getBoundingClientRect();
+     samples.push({left:Number.parseFloat(picker.style.left),top:Number.parseFloat(picker.style.top),anchorTop:a.top,anchorBottom:a.bottom,width:picker.offsetWidth,height:picker.offsetHeight,scale:getComputedStyle(picker).scale});
+     await new Promise(requestAnimationFrame);
+    }while(performance.now()-start<350);
+    const focused=picker.contains(document.activeElement);
+    return {row,focused,samples};
+   },row);
+   report.states.push({...state,motion,viewport});
+   const positions=state.samples.map(sample=>sample.top),horizontal=state.samples.map(sample=>sample.left);
+   assert(Math.max(...horizontal)-Math.min(...horizontal)<1,'entry must not move horizontally in row '+row);
+   assert(Math.max(...positions)-Math.min(...positions)<1,'entry must not move the layout anchor in row '+row+': '+JSON.stringify(state.samples));
+   assert(state.focused,'keyboard focus stays in picker');
+   if(out){fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,'reaction-'+motion+'-'+viewport.width+'-row-'+row+'.png')});}
+   await page.keyboard.press('Escape');assert.equal(await page.locator('body>.quick-reaction-picker').count(),0);
+  }
+  }
+  await context.close();
+  }
+  assert.deepEqual(report.errors,[]);
+ }finally{if(out){fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'reaction-position-report.json'),JSON.stringify(report,null,2));}await browser.close();await fixture.close();}
+});

@@ -270,3 +270,34 @@ for(const scenario of ['selected-option','game-list-row','header-over-scrolled-l
 test('standard parameter captions come from the application in every game',{timeout:150000},()=>fixture(async page=>{
  for(const game of await page.evaluate(()=>TabletopCore.GAMES.filter(g=>g.max>1).map(g=>g.id))){await startRoom(page,game);await active(page).locator('[data-command=room-rules]').tap();const form=active(page).locator('#room-rules-form');for(const key of ['firstPlayerMode','seatOrder','endMode']){const field=form.locator('[data-rule-field='+key+']');if(!await field.count())continue;const options=field.locator('input[type=radio]');for(let i=0;i<await options.count();i++){await options.nth(i).check();const value=await options.nth(i).inputValue(),expected=await page.evaluate(({key,value})=>PlayroomMultiplayer.standardRule({key,options:[{value}]}).options[0].description,{key,value});assert.equal(await field.locator('[data-rule-preview-detail]').innerText(),expected,game+'/'+key+'/'+value);if(key==='firstPlayerMode'){assert.equal(await field.locator('[data-first-player-icon] [data-piece-type]').count(),0);assert.equal(await field.locator('[data-first-player-icon] [data-ui-icon=first]').count(),1);}}}await active(page).locator('.rules-v021-footer [data-command=close-modal]').tap();await page.evaluate(()=>PlayroomAppBridge.leaveLobby());}
 }));
+
+
+test('Mage shrink previews explain the disappearing field and zero lives has no token',{timeout:60000},()=>fixture(async page=>{
+ await startRoom(page,'mage-brawl');await active(page).locator('[data-command=room-rules]').tap();
+ const form=active(page).locator('#room-rules-form'),lives=form.locator('[data-rule-field=extraLives]'),shrink=form.locator('[data-rule-field=shrinkMode]'),report=[];
+ for(const width of [360,390]){
+  await page.setViewportSize({width,height:844});
+  for(const theme of ['light','dark']){
+   await page.evaluate(theme=>PlayroomAppearanceUI.runtime.service.select(theme),theme);
+   for(const value of ['0','1','2'])for(const mode of ['lives','players']){
+    await lives.locator('input[value="'+value+'"]').check();await shrink.locator('input[value="'+mode+'"]').check();
+    if(value==='0'){
+     assert.equal(await lives.locator('.rule-preview-tokens').count(),0,'zero reserve contains no life token');
+     assert.equal(await lives.locator('[data-parameter-symbol="close"]').count(),1,'zero uses the same standard cross as other disabled parameters');
+    }else{
+     const tokens=lives.locator('.rule-preview-tokens');assert.equal(await tokens.getAttribute('data-preview-count'),value);
+     assert.equal(await tokens.locator('svg.counter-token').count(),Number(value),'preview shows the chosen reserve');
+    }
+    assert.equal(await shrink.locator('[data-mage-shrink-preview="'+mode+'"] [data-shrinking-edge]').count(),1);
+    assert.equal(await shrink.locator('[data-remaining-field]').count(),1);
+    const captions=await form.locator('[data-rule-field]').evaluateAll(fields=>fields.map(field=>{const node=field.querySelector('[data-rule-preview-detail]');return {field:field.dataset.ruleField,text:node?.textContent||'',lines:node?node.getBoundingClientRect().height/parseFloat(getComputedStyle(node).lineHeight):0};}));
+    assert(captions.every(c=>c.lines<=2.05),'all Mage captions fit two lines: '+JSON.stringify(captions));
+    assert(captions.every(c=>!/[×=]/.test(c.text)),'captions explain the rule without formulas');
+    report.push({width,theme,value,mode,captions});
+    await lives.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'mage-shrink-'+width+'-'+theme+'-'+value+'-'+mode+'.png')});
+   }
+  }
+ }
+ fs.writeFileSync(path.join(out,'mage-shrink-parameter-report.json'),JSON.stringify(report,null,2));
+ const draft=await snapshot(page);await active(page).locator('.modal-head [data-command=close-modal]').click();assert.deepEqual(await snapshot(page),draft,'Cancel preserves saved configuration');
+}));

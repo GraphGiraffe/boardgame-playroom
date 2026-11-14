@@ -572,7 +572,7 @@ test('Mage respawn remount reserves the player hand before fitting the arena',{t
  }finally{await context.close();await browser.close();await server.close();}
 });
 
-test('Mage team reserves and shrink indicator: one to four corners, warning glow and responsive cards',{timeout:60000},async()=>{
+test('Mage team reserves and shrink indicator: clockwise 4x4 cells, edge warning and responsive cards',{timeout:60000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']});
  const out=path.resolve(process.env.MAGE_EVIDENCE_DIR||path.join(root,'../tmp_files/mage-teams-1113/screenshots'));fs.mkdirSync(out,{recursive:true});
  try{
@@ -592,19 +592,26 @@ test('Mage team reserves and shrink indicator: one to four corners, warning glow
    records.push({filled,aria:await own.locator('.mage-shrink-counter').getAttribute('aria-label')});
   }
   await p.evaluate(()=>showShrink(4,true));const warning=p.locator('.self-player .mage-shrink-counter');
-  const glow=await warning.evaluate(e=>{const a=e.getAnimations()[0];if(!a)throw Error('Warning animation missing');a.pause();a.currentTime=1400;return {animation:getComputedStyle(e).animationName,filter:getComputedStyle(e).filter};});assert.equal(glow.animation,'mage-shrink-warning');assert.notEqual(glow.filter,'none');await p.locator('.self-player').screenshot({path:path.join(out,'indicator-warning.png')});
+  const warningFrames=await warning.evaluate(e=>{const animations=e.getAnimations({subtree:true});if(!animations.length)throw Error('Warning animation missing');const snapshot=time=>{for(const a of animations){a.pause();a.currentTime=time;}return {center:[...e.querySelectorAll('.mage-shrink-center')].map(n=>getComputedStyle(n).fill),edge:getComputedStyle(e.querySelector('.mage-shrink-corner')).fill,filter:getComputedStyle(e).filter,shadow:getComputedStyle(e).boxShadow,background:getComputedStyle(e).backgroundColor};};return {low:snapshot(0),high:snapshot(1400)};});
+  assert.deepEqual(warningFrames.low.center,warningFrames.high.center,'four central cells never blink');assert.notEqual(warningFrames.low.edge,warningFrames.high.edge,'only edge cells blink');for(const state of Object.values(warningFrames)){assert.equal(state.filter,'none');assert.equal(state.shadow,'none');assert.equal(state.background,'rgba(0, 0, 0, 0)');}await p.locator('.self-player').screenshot({path:path.join(out,'indicator-warning.png')});
   await p.evaluate(()=>showShrink(2));
   const own=p.locator('.self-player'),geometry=()=>own.evaluate(e=>{const mark=e.querySelector('.mage-shrink-counter').getBoundingClientRect(),status=e.querySelector('.player-status').getBoundingClientRect(),team=e.querySelector('.mage-team-lives').getBoundingClientRect();return {counterX:mark.x,right:mark.right,statusRight:status.right,teamRight:team.right,teamWidth:team.width,score:[...e.querySelectorAll('.mage-team-score b')].map(n=>{const r=n.getBoundingClientRect();return r.x+r.width/2;})};});
-  const before=await geometry();assert(Math.abs(before.right-before.statusRight)<1);assert(before.teamRight<before.counterX);assert.notEqual(await own.locator('.mage-shrink-center').evaluate(n=>getComputedStyle(n).stroke),'none');await own.screenshot({path:path.join(out,'team-lives-full.png')});
+  const before=await geometry();assert(Math.abs(before.right-before.statusRight)<1);assert(before.teamRight<before.counterX);assert.notEqual(await own.locator('.mage-shrink-center').first().evaluate(n=>getComputedStyle(n).stroke),'none');await own.screenshot({path:path.join(out,'team-lives-full.png')});
   await p.evaluate(()=>showShrink(2,false,1,[1,2]));assert.equal(await own.locator('.mage-team-full .counter-token').count(),8);assert.equal(await own.locator('.mage-team-full .counter-token.is-empty').count(),5);assert.deepEqual(await geometry(),before,'spent reserves keep slots and score columns fixed');assert.deepEqual(await own.locator('.mage-team-score b').allTextContents(),['1','2']);await own.screenshot({path:path.join(out,'team-lives-spent.png')});
   for(const extraLives of [0,2]){await p.evaluate(n=>showShrink(n+1,false,n),extraLives);const mark=p.locator('.self-player .mage-shrink-counter');assert.equal(await mark.getAttribute('data-shrink-capacity'),String(2*(extraLives+1)));assert.equal(await mark.locator('.mage-shrink-corner.is-filled').count(),extraLives+1);await p.locator('.self-player').screenshot({path:path.join(out,`indicator-capacity-${2*(extraLives+1)}.png`)});}
   const segmentGeometry=[];
-  for(const capacity of [2,4,6]){await p.evaluate(n=>showShrink(0,false,n/2-1),capacity);const measurement=await p.locator('.self-player .mage-shrink-counter').evaluate(el=>{
-   const svg=el.querySelector('svg'),inverse=svg.getScreenCTM().inverse();const boxes=[...svg.querySelectorAll('.mage-shrink-corner')].map(n=>{const r=n.getBBox(),m=inverse.multiply(n.getScreenCTM()),points=[[r.x,r.y],[r.x+r.width,r.y],[r.x,r.y+r.height],[r.x+r.width,r.y+r.height]].map(([x,y])=>new DOMPoint(x,y).matrixTransform(m));return {left:Math.min(...points.map(p=>p.x)),top:Math.min(...points.map(p=>p.y)),right:Math.max(...points.map(p=>p.x)),bottom:Math.max(...points.map(p=>p.y))};});
-   return {boxes,gaps:boxes.map((a,i)=>{const b=boxes[(i+1)%boxes.length];return Math.hypot(Math.max(0,a.left-b.right,b.left-a.right),Math.max(0,a.top-b.bottom,b.top-a.bottom));}),stroke:parseFloat(getComputedStyle(svg.querySelector('.mage-shrink-corner')).strokeWidth)};
-  });segmentGeometry.push({capacity,...measurement});const expected=capacity===6?28/3:20;assert(measurement.gaps.every(n=>Math.abs(n-expected)<.001),JSON.stringify({capacity,measurement}));if(capacity===6){const sizes=measurement.boxes.map(b=>[b.right-b.left,b.bottom-b.top].sort((a,b)=>a-b));assert(sizes.every(([a,b])=>Math.abs(a-14)<.001&&Math.abs(b-112/3)<.001));}assert.equal(measurement.stroke,4);}
+  const expected=[[2,0],[3,0],[3,1],[3,2],[3,3],[2,3],[1,3],[0,3],[0,2],[0,1],[0,0],[1,0]].map(([x,y])=>({x:8+x*22,y:8+y*22,width:18,height:18}));
+  for(const capacity of [2,4,6]){
+   await p.evaluate(n=>showShrink(0,false,n/2-1),capacity);
+   const mark=p.locator('.self-player .mage-shrink-counter');
+   const cells=await mark.locator('[data-shrink-cell]').evaluateAll(nodes=>nodes.map(n=>({x:n.x.baseVal.value,y:n.y.baseVal.value,width:n.width.baseVal.value,height:n.height.baseVal.value})));
+   assert.deepEqual(cells,expected,'same clockwise 4x4 border for every capacity');assert.equal(await mark.locator('.mage-shrink-center').count(),4);
+   assert.deepEqual(await mark.locator('.mage-shrink-corner').evaluateAll(nodes=>nodes.map(n=>n.children.length)),Array(capacity).fill(12/capacity));
+   for(let filled=0;filled<=capacity;filled++){await p.evaluate(([n,extra])=>showShrink(n,false,extra),[filled,capacity/2-1]);assert.equal(await mark.locator('.mage-shrink-corner.is-filled [data-shrink-cell]').count(),filled*12/capacity);}
+   segmentGeometry.push({capacity,cells,cellsPerStep:12/capacity});
+  }
   await p.evaluate(()=>showShrink(4,true));
   for(const viewport of [{width:320,height:740},{width:844,height:390},{width:390,height:844}]){await p.setViewportSize(viewport);await p.evaluate(()=>PlayroomGameScreen.layoutScene(document.querySelector('#app')));const overflow=await p.locator('.player-status').evaluateAll(ns=>ns.filter(n=>{const card=n.closest('.player-panel').getBoundingClientRect(),r=n.getBoundingClientRect();return r.right>card.right+1||r.left<card.left-1;}).map(n=>n.outerHTML));assert.deepEqual(overflow,[],JSON.stringify(viewport));await p.screenshot({path:path.join(out,`team-${viewport.width}x${viewport.height}.png`)});}
-  await p.emulateMedia({reducedMotion:'reduce'});assert.equal(await warning.evaluate(e=>getComputedStyle(e).animationName),'none');assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({records,segmentGeometry,glow,errors,scope:'Native app boot and game launch; staged public match states for exact indicator coverage'},null,2));
+  await p.emulateMedia({reducedMotion:'reduce'});assert.equal(await warning.locator('.mage-shrink-corner').first().evaluate(e=>getComputedStyle(e).animationName),'none');assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({records,segmentGeometry,warningFrames,errors,scope:'Native app boot and game launch; staged public match states for exact indicator coverage'},null,2));
  }finally{await browser.close();await server.close();}
 });
