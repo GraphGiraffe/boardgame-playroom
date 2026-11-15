@@ -4,7 +4,7 @@
  const fail=(code,status=0)=>Object.assign(Error(code),{code,status});
  const reasons=['account-required','room-active','invalid','profile-required','not-found','forbidden','limit','invite-invalid','owner-leave','friend-required','host-offline','host-busy','username-taken','username-invalid','room-password','invite-disabled','rate-limit','setup','conflict','quota'];
  class SupabaseSocial{
-  constructor({auth,fetch=(...args)=>globalThis.fetch(...args),rpc='playroom_social',batch=null}){if(!['playroom_social','playroom_signal','playroom_signal_sync','playroom_online','playroom_push','playroom_host_transfer','playroom_cloud_saves_rpc','playroom_account_sync'].includes(rpc))throw fail('configuration');this.auth=auth;this.fetch=fetch;this.rpc=rpc;this.batch=batch;}
+  constructor({auth,fetch=(...args)=>globalThis.fetch(...args),rpc='playroom_social',batch=null}){if(!['playroom_social','playroom_signal','playroom_signal_sync','playroom_online','playroom_push','playroom_host_transfer','playroom_cloud_saves_rpc','playroom_account_sync','playroom_bug_report'].includes(rpc))throw fail('configuration');this.auth=auth;this.fetch=fetch;this.rpc=rpc;this.batch=batch;}
   async call(action,data={}, {userId,signal}={}){
    if(!signal&&this.batch?.supports(this.rpc,action))return this.batch.request(this.rpc,action,data,{userId});
    this.batch?.invalidate();

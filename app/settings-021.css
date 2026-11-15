@@ -1,10 +1,8 @@
 /* Accepted category tabs and controls; this surface has no legacy settings grid. */
-.settings-v021>[role=tabpanel]{display:flex;flex-direction:column;gap:12px;min-width:0;padding-top:2px}
+.settings-v021>[role=tabpanel]{display:flex;flex-direction:column;gap:0;min-width:0;padding-top:0}
 .settings-v021>[role=tabpanel][hidden]{display:none}
-.settings-v021 .switch{width:100%;min-height:52px;margin:0;gap:16px;padding:12px 0;align-items:center}
-.settings-v021 .switch>span{font-size:var(--ui-type-label,.875rem)}
-.settings-v021-range{display:flex;flex-direction:column;gap:14px;width:100%;min-width:0;margin:0;padding:4px 0 12px}
-.settings-v021-range-heading{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;font-size:var(--ui-type-caption,.8125rem);font-weight:650}
+.settings-v021-range{display:flex;flex-direction:column;gap:0;width:100%;min-width:0;margin:0;padding:8px 0 4px}
+.settings-v021-range-heading{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;font-size:var(--ui-type-label,.875rem);font-weight:400}
 .settings-v021-range-heading output{font:inherit;color:inherit;white-space:nowrap}
 .settings-v021-range input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:44px;margin:0;padding:0;background:transparent;cursor:pointer}
 .settings-v021-range input[type=range]::-webkit-slider-runnable-track{height:6px;border:1px solid var(--line);border-radius:999px;background:linear-gradient(to right,var(--green) 0 var(--range-progress),transparent var(--range-progress) 100%)}
@@ -25,10 +23,34 @@
 .settings-v021 .setting-title-end .rule-help>button{position:static}
 
 .settings-v021 .settings-diagnostics{min-width:0}
-.settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:600}
+.settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:400}
 
 
 @media(max-width:359px){
  :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head{gap:4px}
  :is(#modal-root,[data-ui-surface-exit]) .settings-modal>.modal-head>.surface-head-actions{gap:4px}
 }
+
+.bug-report-form{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bug-report-form>.field{margin:0}
+.bug-report-attach-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.bug-report-attach-row>.bug-report-add{min-width:0;margin:0}
+.bug-report-attach-limit{flex:none;white-space:nowrap;font-size:var(--ui-type-caption,.8125rem)}
+.bug-report-form textarea{width:100%;min-height:100px;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--paper);color:inherit;font:inherit}
+.bug-report-add{align-self:flex-start;cursor:pointer}
+.bug-report-add{position:relative}
+.bug-report-add input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.bug-report-add:focus-within{outline:2px solid var(--green);outline-offset:3px}
+.bug-report-images{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.bug-report-images figure{margin:0;min-width:0}
+.bug-report-images img{display:block;width:100%;height:110px;object-fit:contain;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.bug-report-images figcaption{font-size:var(--ui-type-caption,.8125rem);display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.bug-report-info summary{min-height:44px;display:list-item;padding-block:12px;cursor:pointer}
+.bug-report-info pre{max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.75rem}
+.bug-report-receipt{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:end;gap:8px}
+.bug-report-receipt label{display:flex;flex-direction:column;gap:6px;min-width:0;margin:0}
+.bug-report-receipt input{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:inherit;font:inherit;font-weight:700;user-select:text;-webkit-user-select:text;cursor:text}
+.bug-report-receipt button{width:44px;min-height:44px;margin:0;padding:0;font-size:1.4rem;line-height:1}
+
+.settings-diagnostics-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.settings-diagnostics-actions>.btn{width:100%;min-width:0;margin:0}

@@ -1,6 +1,8 @@
-# Разработчику ХОД · 0.19
+# Разработчику ХОД · 0.21.0
 
-Действующий контракт: приложение **0.19.5**, коллекция **0.8.5**, engineApi **4**, viewApi **3**, сетевой protocol **3**. Источники и фактическое состояние публикации — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASE-0.19.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+
+Действующий контракт: приложение **0.19.5**, коллекция **0.8.5**, engineApi **4**, viewApi **3**, сетевой protocol **3**. Источники и фактическое состояние публикации — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
 
 | Вопрос | Руководство |
 |---|---|
@@ -30,7 +32,7 @@
 
 Перенос отдельных сохранений с точными паками: [SAVE-TRANSFER.md](SAVE-TRANSFER.md).
 
-Сеть 0.20: [статус четырёх этапов и SQL для Supabase](NETWORK-0.20-PREVIEW.md).
+Сеть 0.20: [статус четырёх этапов и SQL для Supabase](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 - [Realtime ink and guessing SDK](REALTIME-SDK.md) — optional pack ports, durable commits, preview, repair and authorization.
 
