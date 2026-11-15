@@ -33,7 +33,7 @@
   if(identityChanged){for(const input of accountRoot().querySelectorAll('input'))input.value='';clearDrafts();if(!s.recovery)mode='login';}
   lastIdentity=identity;
   const field=(name,type,autocomplete,label=name)=>`<label class="field"><span>${text(label)}</span><input name="${name}" type="${type}" autocomplete="${autocomplete}" ${type==='email'?'inputmode="email" autocapitalize="off" spellcheck="false"':''} required ${type==='password'?`minlength="${autocomplete==='current-password'?1:8}" maxlength="256"`:'maxlength="254"'}></label>`;
-  const accountRow=(action,label)=>`<button type="button" class="menu-row preference-row preference-row--action ${action==='logout'?'ui-action-danger':''}" data-account-mode="${action}" ${s.busy?'disabled':''}><span>${label}</span>${H().icon(({username:'edit','password-change':'lock',recover:'undo',logout:'exit',account:'player',online:'cloud'})[action]||'player')}</button>`;
+  const accountRow=(action,label)=>`<button type="button" class="menu-row preference-row preference-row--action ${action==='logout'?'ui-action-danger':''}" data-account-mode="${action}" ${s.busy&&action!=='online'?'disabled':''}><span>${label}</span>${H().icon(({username:'edit','password-change':'lock',recover:'undo',logout:'exit',account:'player',online:'cloud'})[action]||'player')}</button>`;
   const accountView=s.kind==='account'&&!s.recovery&&mode!=='password-change'&&mode!=='username'&&mode!=='recover';
   const passwordMode=mode==='password-change'||s.recovery,guestModes=!editor&&!s.recovery&&s.kind!=='account'&&authModes.includes(mode);
   const feedback='<p class="account-message" role="status" aria-live="polite"></p>';
@@ -55,7 +55,7 @@
   }
   // Busy/error updates retain the real inputs, autofill, focus and native selection.
   const fieldset=modal.querySelector('fieldset');if(fieldset)fieldset.disabled=s.busy;
-  for(const button of modal.querySelectorAll('[data-account-mode],[data-account-guest]'))button.disabled=s.busy;
+  for(const button of modal.querySelectorAll('[data-account-mode],[data-account-guest]'))button.disabled=s.busy&&button.dataset.accountMode!=='online';
   const submit=modal.querySelector('button[type=submit]');if(submit){const label=submit.querySelector('.ui-button-label'),caption=text(s.busy?'waiting':mode==='username'?'save-username':passwordMode?'save-password':mode);if(label)label.textContent=caption;submit.setAttribute('aria-label',caption);}
   modal.setAttribute('aria-busy',String(s.busy));
   const message=modal.querySelector('.account-message'),changed=message.textContent!==(error||notice);message.setAttribute('role',error?'alert':'status');message.textContent=error||notice;if(changed&&(error||notice)&&interactive())(message.closest('.account-feedback-action')||message).scrollIntoView({block:'nearest',behavior:'instant'});
@@ -123,11 +123,12 @@
   root.PlayroomLobbyNetwork.init();
   if(auth)root.PlayroomCloudNetwork.init({account:service,remote:new root.PlayroomSupabaseSocial({auth,rpc:'playroom_signal_sync'})});
   service.subscribe(()=>{updateButtons();render();root.dispatchEvent(new Event('playroom:profile-identity-updated'));});
-  root.PlayroomSocialUI.service.subscribe(render);
+  let profileIdentity='';root.PlayroomSocialUI.service.subscribe(state=>{render();const identity=service.snapshot().id+':'+(state.profile?.username||'');if(identity!==profileIdentity){profileIdentity=identity;root.dispatchEvent(new Event('playroom:profile-identity-updated'));}});
   let syncIdentity=service.snapshot().kind+':'+service.snapshot().id;
   service.subscribe(()=>{const next=service.snapshot().kind+':'+service.snapshot().id;if(next!==syncIdentity){syncIdentity=next;void syncAccount();}});
   void syncAccount();root.addEventListener('online',()=>void syncAccount());document.addEventListener('visibilitychange',()=>{if(!document.hidden)void syncAccount();});
   root.addEventListener('online',updateButtons);root.addEventListener('offline',updateButtons);root.addEventListener('playroom:modal-restored',updateButtons);
+  if(!auth?.hasCallback()&&service.snapshot().kind==='account'&&!service.snapshot().recovery)void service.restore({ifNeeded:true}).catch(()=>{});
   if(auth?.hasCallback()){
    opened=true;const surfaceTicket=dialogGeneration;surface=bridge().openModal(`${bridge().modalHead('Аккаунт')}<nav class="menu-list" aria-label="Профиль на устройстве"><button type="button" class="menu-row preference-row preference-row--action" data-command="profile-edit"><span>Никнейм и аватар</span>${H().icon('player')}</button></nav><div class="account-content"></div>`,'account-modal',{beforeBack,valid:()=>opened&&surfaceTicket===dialogGeneration,onDispose:()=>{if(surfaceTicket===dialogGeneration){dialogGeneration++;opened=false;continuation=null;surface=null;clearDrafts();}}});render();
    void execute(()=>service.callback(),'confirmed');
@@ -144,7 +145,7 @@
   if(event.target.closest('[data-account-guest]')&&interactive()){bridge().closeModal();return;}
   if(event.target.closest('[data-account-open]')){show();return;}
   if(event.target.closest('[data-account-logout]')){void logout();return;}
-  const button=event.target.closest('[data-account-mode]');if(!button||button.disabled||service.snapshot().busy||!interactive()||!accountRoot().contains(button))return;
+  const button=event.target.closest('[data-account-mode]');if(!button||button.disabled||(service.snapshot().busy&&button.dataset.accountMode!=='online')||!interactive()||!accountRoot().contains(button))return;
   if(button.dataset.accountMode==='username'){navigate('username');void execute(()=>root.PlayroomSocialUI.service.refresh());return;}
   if(button.dataset.accountMode==='logout'){void logout();return;}
   navigate(button.dataset.accountMode);
