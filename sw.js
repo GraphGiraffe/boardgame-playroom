@@ -16,7 +16,7 @@ const CORE=[
   './platform/web/data-storage.js','./platform/web/storage-usage.js','./platform/web/pack-storage.js',
   './platform/web/interface-scale.js','./app/interface-scale.css','./app/mobile-surfaces.css','./app/conversation-021.css','./app/hub-shell-021.css','./app/catalog-filters-021.css','./app/result-021.css','./app/lobby-021.css','./app/context-choices-021.css','./app/room-context-021.css','./app/invite-021.css','./app/packs-021.css','./app/connection-021.css','./app/room-rules-021.css','./app/settings-021.css',
   './app/hub-presenter.js','./app/hub-action.js',
-  './application/pack-update-cleanup.js','./application/upgrade-service.js','./app/upgrade-ui.js',
+  './application/pack-update-cleanup.js',
   './core/messages.js','./core/character-styles.js','./core/avatars.js','./app/avatar-picker.js',
   './','./index.html','./manifest.webmanifest','./icons/playroom.svg','./icons/icon-192.png','./icons/icon-512.png','./icons/badge-96.png','./installed-packs.js',
   './app/styles.css','./app/design-system.css','./app/game-interactions.css','./app/saved-games.css','./app/saved-021.css','./app/pack-manager.css','./app/lobby.css','./app/shared-views.css',

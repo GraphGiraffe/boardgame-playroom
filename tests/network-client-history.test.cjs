@@ -34,18 +34,3 @@ test('client match IDs are scoped by Session, not only by room/seat',()=>{
   // Previously saved RC7-derived entries retain their old archive ID.
   assert.equal(Store.id('room-1','participant-2'),'room-1|participant-2');
 });
-
-test('API cutover preserves original data, exports archives and acknowledges the notice once',()=>{
- const Upgrade=require('../application/upgrade-service.js');
- const entries=new Map([['playroom.packs.v1',JSON.stringify({packs:[],quarantined:[{bundle:{manifest:{engineApi:3}}}]})],['playroom.network-resume.secret','private-token']]);
- const storage={getItem:key=>entries.get(key)||null,setItem:(key,value)=>entries.set(key,value),key:index=>[...entries.keys()][index],get length(){return entries.size;}};
- const service=new Upgrade(storage);assert.equal(service.inspect(),true);
- const archives={network:{version:1,stores:{frames:[{revision:0}]}}},backup=JSON.parse(service.export(archives));assert.deepEqual(backup.archives,archives);assert(!JSON.stringify(backup).includes('private-token'));
- const original=entries.get('playroom.packs.v1');service.accept();assert.equal(service.inspect(),false);assert.equal(entries.get('playroom.packs.v1'),original);
-});
-
-test('upgrade export excludes resume credentials from both payload store and host archive without changing source',()=>{
- const Upgrade=require('../application/upgrade-service.js'),entries=new Map([['playroom.network-resume.secret','private-token'],['playroom.session.v1',JSON.stringify({options:{lobbyConfig:{resumeToken:'private-token',password:'private-password'}}})]]),storage={getItem:k=>entries.get(k)||null,key:i=>[...entries.keys()][i],get length(){return entries.size;}};
- const archives={host:{stores:{sessions:[{recovery:{tokens:[{participantId:'guest',token:'private-token'}],room:{name:'Keep',password:'private-password'}},initial:{states:[{data:{value:1}}]}}]}}};
- const before=JSON.stringify(archives),result=new Upgrade(storage,storage).export(archives);assert(!result.includes('private-token'));assert(!result.includes('private-password'));assert(result.includes('Keep'));assert.equal(JSON.stringify(archives),before);assert.equal(entries.get('playroom.network-resume.secret'),'private-token');
-});
