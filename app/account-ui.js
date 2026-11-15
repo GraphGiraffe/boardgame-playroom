@@ -10,7 +10,7 @@
  function accountEntryContent(state,labelled){return H().icon(statusIcons[state])+(labelled?`<span data-account-entry-label>${H().esc(accountEntryLabel())}</span>`:'');}
  function markup({labelled=false}={}){const state=status(),label=text('title')+' · '+text('status.'+state);return labelled?`<button type="button" class="btn secondary" data-account-open data-account-labelled data-account-status="${state}" aria-label="${H().esc(accountEntryLabel()+' · '+text('status.'+state))}">${accountEntryContent(state,true)}</button>`:H().iconButton(`data-account-open data-account-status="${state}"`,label,statusIcons[state],{className:'account-status-button'});}
  function updateButtons(){for(const label of document.querySelectorAll('[data-profile-play-label]'))label.textContent=service?.snapshot().kind==='account'?'Играть':'Играть без облака';const state=status(),label=text('title')+' · '+text('status.'+state);for(const button of document.querySelectorAll('[data-account-open]')){const labelled=button.hasAttribute('data-account-labelled');button.dataset.accountStatus=state;button.setAttribute('aria-label',labelled?accountEntryLabel()+' · '+text('status.'+state):label);button.title=label;button.innerHTML=accountEntryContent(state,labelled);}}
- const authModes=['login','signup','recover'],authLabels=['Войти','Регистрация','Восстановить'];
+ const authModes=['login','signup'],authLabels=['Войти','Регистрация'];
  function clearDrafts(){drafts=Object.create(null);emailDraft='';lastIdentity='';}
  function rememberForm(){
   const form=accountRoot()?.querySelector('[data-account-form]');if(!form)return;
@@ -24,6 +24,7 @@
  function authTabs(){return H().pageTabs({label:'Действие с аккаунтом',tabs:authModes.map((action,i)=>[action,authLabels[i]]),value:mode,attribute:'data-account-mode',buttonAttrs:'data-account-tab aria-controls="account-form-panel"',idPrefix:'account-tab-',className:'account-mode-tabs'});}
  function render(){
   if(!opened||!accountRoot())return;
+  if(editor?.accountOwner&&(service.snapshot().kind!=='account'||service.snapshot().id!==editor.accountOwner)){bridge().refreshModalValidity();return;}
   if(editor&&mode==='account'){bridge().closeModal();return;}
   const profile=root.PlayroomSocialUI.service.snapshot().profile;
   const s={...service.snapshot(),busy:service.busy||(mode==='username'&&root.PlayroomSocialUI.service.busy)},esc=H().esc;
@@ -32,18 +33,19 @@
   if(identityChanged){for(const input of accountRoot().querySelectorAll('input'))input.value='';clearDrafts();if(!s.recovery)mode='login';}
   lastIdentity=identity;
   const field=(name,type,autocomplete,label=name)=>`<label class="field"><span>${text(label)}</span><input name="${name}" type="${type}" autocomplete="${autocomplete}" ${type==='email'?'inputmode="email" autocapitalize="off" spellcheck="false"':''} required ${type==='password'?`minlength="${autocomplete==='current-password'?1:8}" maxlength="256"`:'maxlength="254"'}></label>`;
-  const accountRow=(action,label)=>`<button type="button" class="menu-row preference-row preference-row--action ${action==='logout'?'ui-action-danger':''}" data-account-mode="${action}" ${s.busy?'disabled':''}><span>${label}</span>${H().icon(({username:'edit','password-change':'lock',recover:'undo',logout:'exit',account:'player'})[action]||'player')}</button>`;
+  const accountRow=(action,label)=>`<button type="button" class="menu-row preference-row preference-row--action ${action==='logout'?'ui-action-danger':''}" data-account-mode="${action}" ${s.busy?'disabled':''}><span>${label}</span>${H().icon(({username:'edit','password-change':'lock',recover:'undo',logout:'exit',account:'player',online:'cloud'})[action]||'player')}</button>`;
   const accountView=s.kind==='account'&&!s.recovery&&mode!=='password-change'&&mode!=='username'&&mode!=='recover';
   const passwordMode=mode==='password-change'||s.recovery,guestModes=!editor&&!s.recovery&&s.kind!=='account'&&authModes.includes(mode);
   const feedback='<p class="account-message" role="status" aria-live="polite"></p>';
   let body;
   if(!s.configured)body=`<p>${text('unavailable')}</p>`;
-  else if(accountView)body=`<div class="account-identity">${profile?.username?`<strong>@${esc(profile.username)}</strong>`:''}<span class="muted">${esc(s.email)}</span></div><nav class="menu-list account-actions" aria-label="Управление аккаунтом">${accountRow('username','Никнейм и имя аккаунта')}${accountRow('password-change',text('change-password'))}${accountRow('recover',text('recover'))}${accountRow('logout',text('logout'))}<div data-push-settings>${root.PlayroomPushUI.markup()}</div></nav><div data-cloud-settings>${root.PlayroomCloudSavesUI.settings()}</div>`;
-  else if(mode==='username'&&!s.recovery&&s.kind==='account')body=`<form class="account-form" data-account-form="username"><fieldset><label class="field"><span>Никнейм</span><input name="nickname" autocomplete="nickname" maxlength="24" required value="${esc(bridge().profile()?.name||profile?.nickname||'')}"></label><label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({value:profile?.username||'',pattern:true})}</label><p class="account-hint">Никнейм виден в партии. По имени аккаунта вас могут найти друзья.</p><div class="account-feedback-action">${feedback}${H().button({type:'submit',label:text('save-username'),icon:'check'})}</div></fieldset></form>`;
+  else if(accountView&&mode==='online')body=`<div class="account-identity">${profile?.username?`<strong>@${esc(profile.username)}</strong>`:''}<span class="muted">${esc(s.email)}</span></div><nav class="menu-list account-actions" aria-label="Управление аккаунтом">${accountRow('username','Имя аккаунта')}${accountRow('password-change',text('change-password'))}${accountRow('recover',text('recover'))}${accountRow('logout',text('logout'))}</nav>`;
+  else if(accountView)body=`<nav class="menu-list account-actions" aria-label="Аккаунт">${accountRow('online','Онлайн аккаунт')}<div data-push-settings>${root.PlayroomPushUI.markup()}</div></nav><div data-cloud-settings>${root.PlayroomCloudSavesUI.settings()}</div>`;
+  else if(mode==='username'&&!s.recovery&&s.kind==='account')body=`<form class="account-form" data-account-form="username"><fieldset><label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({value:profile?.username||'',pattern:true})}</label><p class="account-hint">По имени аккаунта вас могут найти друзья.</p><div class="account-feedback-action">${feedback}${H().button({type:'submit',label:text('save-username'),icon:'check'})}</div></fieldset></form>`;
   else{
    if(s.recovery)mode='password';
    const caption=mode==='signup'?'Имя аккаунта понадобится друзьям, чтобы найти вас.':mode==='recover'?'Отправим письмо со ссылкой для восстановления пароля.':continuation?'После входа вернёмся к приглашению или выбранной игре.':'Аккаунт нужен для онлайн-игры и облачных сохранений.';
-   body=`${guestModes?authTabs():''}${passwordMode?`<p class="account-hint">${text('password-info')}</p>`:`<p class="account-hint">${caption}</p>`}<section ${guestModes?`id="account-form-panel" role="tabpanel" aria-labelledby="account-tab-${mode}"`:''}><form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${mode==='signup'?`<label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({pattern:true})}<small class="account-field-hint">3–24: латиница, цифры, _. Начните с буквы.</small></label>`:''}${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${mode==='signup'?'<small class="account-field-hint">Пароль — не менее 8 символов.</small>':''}<div class="account-feedback-action">${feedback}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</div></fieldset></form></section>${guestModes?`<nav class="menu-list"><button type="button" class="menu-row preference-row preference-row--action" data-account-guest><span>Пока играть без аккаунта</span><span aria-hidden="true">›</span></button></nav>`:''}`;
+   body=`${guestModes?authTabs():''}${passwordMode?`<p class="account-hint">${text('password-info')}</p>`:`<p class="account-hint">${caption}</p>`}<section ${guestModes?`id="account-form-panel" role="tabpanel" aria-labelledby="account-tab-${mode}"`:''}><form data-account-form="${mode}" class="account-form"><fieldset ${s.busy?'disabled':''}>${mode==='signup'?`<label class="field"><span>${text('username')}</span>${root.PlayroomSocialUI.usernameInput({pattern:true})}<small class="account-field-hint">3–24: латиница, цифры, _. Начните с буквы.</small></label>`:''}${passwordMode?'':field('email','email','email')}${mode==='password-change'?field('current-password','password','current-password'):''}${mode==='recover'?'':field('password','password',mode==='login'?'current-password':'new-password',passwordMode?'new-password':'password')}${mode==='signup'?'<small class="account-field-hint">Пароль — не менее 8 символов.</small>':''}<div class="account-feedback-action">${feedback}${H().button({type:'submit',label:text(s.busy?'waiting':passwordMode?'save-password':mode)})}</div></fieldset></form></section>${guestModes?`<nav class="menu-list">${mode==='login'?accountRow('recover',text('recover')):''}<button type="button" class="menu-row preference-row preference-row--action" data-account-guest><span>Пока играть без аккаунта</span><span aria-hidden="true">›</span></button></nav>`:''}`;
   }
   const modal=accountRoot()?.querySelector('.account-content');if(!modal)return;
   const view=(!s.configured?'unavailable':accountView?'account:'+(profile?.username||''):'form:'+mode+(mode==='username'?':'+(profile?.username||''):''))+':'+identity;
@@ -61,21 +63,21 @@
 
  function navigate(next){
   const state=service.snapshot(),guestRecovery=state.kind!=='account'&&next==='recover';
-  if(!editor&&!state.recovery&&(guestRecovery||state.kind==='account'&&['username','password-change','recover'].includes(next))){
-   const parent=surface,trigger=document.activeElement,owner=state.id,returnMode=mode;
+  if(!state.recovery&&(guestRecovery||state.kind==='account'&&['online','username','password-change','recover'].includes(next))){
+   const parent=surface,parentEditor=editor,trigger=document.activeElement,owner=state.id,returnMode=mode;
    rememberForm();const prior=guestRecovery?{drafts,emailDraft,lastIdentity}:null;
    viewRevision++;mode=next;notice='';error='';clearDrafts();
    if(guestRecovery)emailDraft=prior.emailDraft;
-   const entry=editor={parent,mode:next};
-   const title=next==='username'?'Никнейм и имя аккаунта':text(next==='password-change'?'change-password':'recover');
+   const entry=editor={parent,mode:next,accountOwner:state.kind==='account'?state.id:null};
+   const title=next==='online'?'Онлайн аккаунт':next==='username'?'Имя аккаунта':text(next==='password-change'?'change-password':'recover');
    surface=bridge().openModal(`${bridge().modalHead(title)}<div class="account-content"></div>`,'account-editor-modal'+(next==='password-change'?' account-password-editor':''),{
     mode:'push',valid:()=>opened&&service.snapshot().kind===state.kind&&service.snapshot().id===owner&&!service.snapshot().recovery,
     onDispose:reason=>{if(editor!==entry)return;viewRevision++;clearDrafts();for(const input of entry.frame?.element.querySelectorAll('input')||[])input.value='';
      // Invalidation/reset have no onBack. Release the retired child owner here,
      // then render the surviving parent for the current identity only.
-     if(reason!=='back'){editor=null;surface=parent?.state!=='disposed'?parent:null;mode=service.snapshot().kind==='account'?'account':'login';error='';notice='';if(surface)render();}
+     if(reason!=='back'){editor=parentEditor;surface=parent?.state!=='disposed'?parent:null;mode=service.snapshot().kind==='account'?returnMode:'login';error='';notice='';if(surface)render();}
     },
-    onBack:()=>{if(editor!==entry)return;const completed=mode==='account';editor=null;surface=parent;mode=guestRecovery?returnMode:'account';if(prior){drafts=prior.drafts;emailDraft=prior.emailDraft;lastIdentity=prior.lastIdentity;}error='';if(!completed)notice='';render();if(trigger?.isConnected)trigger.focus({preventScroll:true});}
+    onBack:()=>{if(editor!==entry)return;const completed=mode==='account';editor=parentEditor;surface=parent;mode=service.snapshot().kind==='account'?returnMode:guestRecovery?returnMode:'login';if(prior){drafts=prior.drafts;emailDraft=prior.emailDraft;lastIdentity=prior.lastIdentity;}error='';if(!completed)notice='';render();if(trigger?.isConnected)trigger.focus({preventScroll:true});}
    });entry.frame=surface;render();return;
   }
   viewRevision++;mode=next;notice='';error='';render();
@@ -103,7 +105,7 @@
  }
  function show({onReady=null}={}){
   const back=bridge().captureModalReturn(),trigger=document.activeElement;dialogGeneration++;editor=null;clearDrafts();continuation=onReady;opened=true;mode='login';error='';notice='';
-  const surfaceTicket=dialogGeneration;surface=bridge().openModal(`${bridge().modalHead('Аккаунт')}<nav class="menu-list" aria-label="Профиль на устройстве"><button type="button" class="menu-row preference-row preference-row--action" data-command="profile-edit"><span>Имя и аватар</span>${H().icon('player')}</button></nav><div class="account-content"></div>`,'account-modal',{beforeBack,valid:()=>opened&&surfaceTicket===dialogGeneration,onDispose:()=>{if(surfaceTicket===dialogGeneration){dialogGeneration++;opened=false;continuation=null;surface=null;clearDrafts();}},onBack:()=>{dialogGeneration++;opened=false;continuation=null;clearDrafts();back();if(trigger?.isConnected&&!document.querySelector('#modal-root>*'))trigger.focus({preventScroll:true});}});render();
+  const surfaceTicket=dialogGeneration;surface=bridge().openModal(`${bridge().modalHead('Аккаунт')}<nav class="menu-list" aria-label="Профиль на устройстве"><button type="button" class="menu-row preference-row preference-row--action" data-command="profile-edit"><span>Никнейм и аватар</span>${H().icon('player')}</button></nav><div class="account-content"></div>`,'account-modal',{beforeBack,valid:()=>opened&&surfaceTicket===dialogGeneration,onDispose:()=>{if(surfaceTicket===dialogGeneration){dialogGeneration++;opened=false;continuation=null;surface=null;clearDrafts();}},onBack:()=>{dialogGeneration++;opened=false;continuation=null;clearDrafts();back();if(trigger?.isConnected&&!document.querySelector('#modal-root>*'))trigger.focus({preventScroll:true});}});render();
   void syncAccount();
   if(service.snapshot().configured&&!service.snapshot().recovery&&!service.snapshot().busy)void execute(()=>service.restore({ifNeeded:true}));
  }
@@ -127,7 +129,7 @@
   void syncAccount();root.addEventListener('online',()=>void syncAccount());document.addEventListener('visibilitychange',()=>{if(!document.hidden)void syncAccount();});
   root.addEventListener('online',updateButtons);root.addEventListener('offline',updateButtons);root.addEventListener('playroom:modal-restored',updateButtons);
   if(auth?.hasCallback()){
-   opened=true;const surfaceTicket=dialogGeneration;surface=bridge().openModal(`${bridge().modalHead('Аккаунт')}<nav class="menu-list" aria-label="Профиль на устройстве"><button type="button" class="menu-row preference-row preference-row--action" data-command="profile-edit"><span>Имя и аватар</span>${H().icon('player')}</button></nav><div class="account-content"></div>`,'account-modal',{beforeBack,valid:()=>opened&&surfaceTicket===dialogGeneration,onDispose:()=>{if(surfaceTicket===dialogGeneration){dialogGeneration++;opened=false;continuation=null;surface=null;clearDrafts();}}});render();
+   opened=true;const surfaceTicket=dialogGeneration;surface=bridge().openModal(`${bridge().modalHead('Аккаунт')}<nav class="menu-list" aria-label="Профиль на устройстве"><button type="button" class="menu-row preference-row preference-row--action" data-command="profile-edit"><span>Никнейм и аватар</span>${H().icon('player')}</button></nav><div class="account-content"></div>`,'account-modal',{beforeBack,valid:()=>opened&&surfaceTicket===dialogGeneration,onDispose:()=>{if(surfaceTicket===dialogGeneration){dialogGeneration++;opened=false;continuation=null;surface=null;clearDrafts();}}});render();
    void execute(()=>service.callback(),'confirmed');
   }
  }
@@ -149,7 +151,7 @@
  });
  document.addEventListener('keydown',event=>{
   const button=event.target.closest('[data-account-tab]');if(!button||!interactive()||!accountRoot().contains(button)||button.disabled)return;
-  const index=authModes.indexOf(button.dataset.accountMode),next=event.key==='Home'?0:event.key==='End'?2:event.key==='ArrowLeft'?(index+2)%3:event.key==='ArrowRight'?(index+1)%3:null;if(next===null)return;
+  const index=authModes.indexOf(button.dataset.accountMode),next=event.key==='Home'?0:event.key==='End'?authModes.length-1:event.key==='ArrowLeft'?(index+authModes.length-1)%authModes.length:event.key==='ArrowRight'?(index+1)%authModes.length:null;if(next===null)return;
   event.preventDefault();event.stopPropagation();navigate(authModes[next]);(accountRoot().querySelector('[data-account-mode="'+mode+'"]')||accountRoot().querySelector('input'))?.focus({preventScroll:true});
  });
  document.addEventListener('invalid',event=>{
@@ -168,7 +170,7 @@
   const email=form.elements.email?.value||'',password=form.elements.password?.value||'',currentPassword=form.elements['current-password']?.value||'',action=form.dataset.accountForm;
   if(service.snapshot().busy)return;
   if(!form.checkValidity())return;
-  if(action==='username'){const nickname=form.elements.nickname.value.trim(),username=form.elements.username.value;void execute(async current=>{await root.PlayroomSocialUI.service.perform('profile',{nickname,username});if(!current())return;bridge().saveNickname(nickname);root.dispatchEvent(new Event('playroom:profile-identity-updated'));mode='account';},'username-saved');return;}
+  if(action==='username'){const nickname=root.PlayroomSocialUI.service.snapshot().profile?.nickname||bridge().profile()?.name||'Игрок',username=form.elements.username.value;void execute(async current=>{await root.PlayroomSocialUI.service.perform('profile',{nickname,username});if(!current())return;root.dispatchEvent(new Event('playroom:profile-identity-updated'));mode='account';},'username-saved');return;}
   if(action==='login')void execute(()=>service.login(email,password));
   else if(action==='signup')void execute(()=>service.signup(email,password,form.elements.username?.value));
   else if(action==='recover')void execute(()=>service.recover(email),'recovery-sent');

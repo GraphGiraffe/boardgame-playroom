@@ -18,6 +18,7 @@
 .account-identity{display:grid;gap:4px;margin:0}
 .account-identity .muted{font-size:var(--ui-type-label,.875rem)}
 .account-actions.menu-list{margin:0;gap:0}
+.account-modal .account-content[data-account-view^="account:"]{gap:0}
 .account-content .menu-list{width:100%;max-width:none}
 .account-mode-tabs.shared-page-tabs>button{font-size:var(--ui-type-caption,.8125rem);padding:8px 4px}
 

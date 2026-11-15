@@ -68,8 +68,8 @@ root.document.addEventListener('keydown',event=>{const card=event.target.closest
 function navigation(){return `<div class="hub-page-tabs app-page-tabs shared-page-tabs" role="tablist" aria-label="Разделы приложения" style="--page-count:4;--page-index:${pageIndex()}">${pages.map(([id,label,glyph])=>`<button type="button" role="tab" id="hub-tab-${id}" aria-controls="hub-${id}-page" aria-selected="${ports.hubTab===id}" tabindex="${ports.hubTab===id?0:-1}" class="nav-item ${ports.hubTab===id?'current':''}" data-hub-page="${id}" ${id==='social'?'data-social-unread':''} ${id==='games'?'data-command="home"':id==='sessions'?'data-command="sessions"':''} aria-current="${ports.hubTab===id?'page':'false'}"><span class="hub-nav-icon">${ports.icon(glyph)}${id==='sessions'?activeBadge():''}</span><span>${label}</span></button>`).join('')}</div>`;}
 function profileIdentity(){
  const p=root.PlayroomAppBridge?.profile?.(),account=root.PlayroomAccountUI?.service?.snapshot?.(),social=root.PlayroomSocialUI?.service?.snapshot?.().profile;
- const status=account?.kind==='account'?'Облачный аккаунт'+(social?.username?' · @'+social.username:''):'Войти в облако';
- return `${root.TabletopUI.avatar({name:p?.name||'Игрок',avatar:p?.avatar},0,{hidden:true})}<span class="profile021-identity-copy"><strong>${ports.esc(p?.name||'Игрок')}</strong><small>${ports.esc(status)}</small></span>${ports.icon('next')}`;
+ const status=account?.kind==='account'?(social?.username?'@'+social.username:''):'Войти в облако';
+ return `${root.TabletopUI.avatar({name:p?.name||'Игрок',avatar:p?.avatar},0,{hidden:true})}<span class="profile021-identity-copy"><strong>${ports.esc(p?.name||'Игрок')}</strong>${status?`<small>${ports.esc(status)}</small>`:''}</span>${ports.icon('next')}`;
 }
 root.addEventListener('playroom:profile-identity-updated',()=>{const node=ports.$('#hub-profile-page .profile-summary');if(node)node.innerHTML=profileIdentity();});
 function profilePage(){
