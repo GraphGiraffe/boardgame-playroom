@@ -1,6 +1,6 @@
 # Ordered presentation execution (local refactor)
 
-Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; актуальное приложение доступно на [сайте](https://graphgiraffe.github.io/playroom-hod-test/).
 
 ## Field viewport for enlarged displays (preview.28)
 
@@ -89,7 +89,7 @@ panels on local redraws. An unchanged close of an ordinary modal does not emit a
 settings-change event or redraw the field. A changed command-permission boundary
 still renders. Geometry capture remains opt-in per affected action.
 
-Evidence and measured limits: [planning performance](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Evidence and measured limits: planning performance.
 
 ## Interaction transaction (preview.13)
 
@@ -462,7 +462,7 @@ retain the full preparation path. A geometry-owner change retires parsed reuse.
 Currently solitaire columns use this contract; outer recipes and other packs
 still need migration. Region reuse is not evidence of whole-scene incremental
 rendering or general performance acceptance. See
-[measured scope](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+measured scope.
 
 ## Component fragments (preview.16)
 

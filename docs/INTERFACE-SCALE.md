@@ -1,6 +1,6 @@
 # Локальный масштаб и дискретные настройки
 
-Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; актуальное приложение доступно на [сайте](https://graphgiraffe.github.io/playroom-hod-test/).
 
 
 ## Поведение
@@ -32,4 +32,4 @@ Controls, typography, spacing, radii and windows use named size families. Гра
 Старые сценарии UI теперь явно выбирают ручной режим для проверок выбора перед ходом и отключают автоматическую передачу в проверке инспекции своей руки. Два кубика ЗиЛ+ выполняют одну и ту же команду броска; тест нажимает один из них. Геометрия display:contents проверяется по всем реальным группам мест, а не по нулевому прямоугольнику контейнера. После поворота проверка ждёт два кадра рендера для завершения штатного ResizeObserver, затем измеряет все области; проверки неподвижности поля во время ходов продолжают снимать покадровые значения. Строгие границы, 44 px и проверки звука/сохранений сохранены.
 
 
-Проверки: case/interface-scale; stable evidence — [RELEASE-0.18](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Проверки: case/interface-scale; stable evidence — RELEASE-0.18.
