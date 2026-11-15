@@ -1,6 +1,6 @@
 # Приоритет версий паков
 
-Область применения: приложение **0.21.0** и коллекция **0.8.9**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 При автоматическом выборе пака для новой партии сначала сравниваются числа
 `major.minor.patch`. Суффикс имеет приоритет только при одинаковой основной

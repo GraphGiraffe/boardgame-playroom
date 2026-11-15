@@ -1,6 +1,6 @@
 # Стандартные размеры ХОД
 
-Область применения: приложение **0.21.0** и коллекция **0.8.9**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Контракт приложения 0.18.4. Канонический каталог: `core/size-tokens.json`, сгенерированная браузерная копия `core/size-tokens.js`, выбор/применение: `platform/web/element-sizes.js`. Сборка обновляет копию из JSON. Паки используют `--size-*` с автономными fallback, не собственный store масштаба.
 

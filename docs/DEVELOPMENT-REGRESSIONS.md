@@ -1,6 +1,6 @@
 # Durable local start and UI failure regression
 
-Область применения: приложение **0.21.0** и коллекция **0.8.9**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Persist the prior session/archive and activate the next save successfully BEFORE replacing the current in-memory session/ID. On quota, denied storage or serialization failure, preserve exact prior bytes and identity; retry must not target a never-created ID and claim LIBRARY_REMOVED. Reuse an identical archive without another write. Never free quota by silently deleting sessions or temporarily removing the active save. Multiple localStorage writes are not a transaction: test failure at each boundary, not only successful save.
 

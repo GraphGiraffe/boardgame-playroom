@@ -1,6 +1,6 @@
 # Разработчику ХОД · 0.21.0
 
-Область применения: приложение **0.21.0** и коллекция **0.8.9**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Действующий контракт: приложение **0.19.5**, коллекция **0.8.5**, engineApi **4**, viewApi **3**, сетевой protocol **3**. Источники и фактическое состояние публикации — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
 
