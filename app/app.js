@@ -1379,7 +1379,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function attachSettingsHelp(){
     const root=document.querySelector('.modal:has([data-settings-screen])');if(!root)return;
-    for(const id of ['setting-player-name','setting-hand-shape','setting-seating','setting-last-game','setting-auto-pass','setting-quick-play','setting-volume','setting-speed']){
+    for(const id of ['setting-player-name','setting-hand-shape','setting-seating','setting-last-game','setting-auto-pass','setting-quick-play','setting-volume','setting-speed','setting-reduced-motion','setting-tutorials','setting-diagnostics']){
       const input=root.querySelector('#'+id);if(!input)continue;
       const field=input.closest('.settings-v021-range,.settings-range,.field,.switch');
       const title=field.querySelector('.settings-v021-range-heading > span,.settings-range-heading > span')||field.querySelector(':scope > span');if(!title)continue;const label=title.textContent;

@@ -13,8 +13,9 @@ test('screen:phone:portrait settings help opens by touch and Escape closes only 
   await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}}));await page.goto(server.url);await TestUI.ready(page);await startLocal(page,'uno');await TestUI.openSettings(page);
   assert(!await active(page).locator('.modal').innerText().then(t=>t.includes('О настройках')||t.includes('Для этой игры, только на этом устройстве')));
   const before=await page.evaluate(()=>localStorage.getItem('playroom.settings.v1'));
-  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed']){
-   await active(page).locator('[data-settings-tab='+(['setting-last-game','setting-quick-play'].includes(id)?'behavior':'effects')+']').click();
+  for(const id of ['setting-hand-shape','setting-last-game','setting-quick-play','setting-volume','setting-speed','setting-reduced-motion','setting-tutorials','setting-diagnostics']){
+   await active(page).locator('[data-settings-tab='+(['setting-last-game','setting-quick-play','setting-tutorials','setting-diagnostics'].includes(id)?'behavior':'effects')+']').click();
+   if(id==='setting-diagnostics')await active(page).locator('.settings-diagnostics>summary').click();
    const wrapper=page.locator('#'+id).locator('xpath=ancestor::div[contains(@class,"settings-v021-field-help")][1]'),button=wrapper.locator('.rule-help>button');assert.equal(await button.count(),1,id+' has one help button');
    assert(await wrapper.locator('.setting-title').evaluate(e=>{const walker=document.createTreeWalker(e,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.textContent.trim()&&!n.parentElement.closest('.rule-help')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});let last;while(walker.nextNode())last=walker.currentNode;const range=document.createRange();range.selectNodeContents(last);const a=range.getBoundingClientRect(),b=e.querySelector('.rule-help>button').getBoundingClientRect();return b.left>=a.right-1&&b.left-a.right<=8&&Math.abs((a.top+a.bottom-b.top-b.bottom)/2)<2;}),id+' help sits beside its title');
    await button.focus();await button.press('ArrowRight');
