@@ -1,6 +1,6 @@
 # Обучение: каталог пака и прогресс пользователя
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Контракт реализации 0.19.5 / 0.8.5. Обучение — вспомогательное представление доступного действия. Оно не исполняет команду за человека, не меняет legal actions и не открывает скрытые данные. Общая карта слоёв — [архитектура](DEVELOPER-ARCHITECTURE.md).
 
