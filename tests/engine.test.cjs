@@ -406,7 +406,7 @@ test('offline packs validate metadata, entries and assets before registry mutati
   assert.equal(core.GAMES.length,0);assert.equal(store.get(),null,'failed prepare cannot persist or activate');
   assert.throws(()=>manager.install(source),/подготовьте/);
   assert.throws(()=>manager.parse(bad(b=>b.files['huge.txt']='x'.repeat(4*1024*1024))),/слишком большой/);
-  assert(Pack.compareVersions('1.10.0','1.2.0')>0);assert(Pack.compareVersions('1.0.0','1.0.0-rc.2')<0,'explicit test versions take priority for new games');assert(Pack.compareVersions('1.0.0-rc.10','1.0.0-rc.2')>0);
+  assert(Pack.compareVersions('1.10.0','1.2.0')>0);assert(Pack.compareVersions('1.0.0','1.0.0-rc.2')>0,'stable releases outrank their prereleases');assert(Pack.compareVersions('1.0.0-rc.10','1.0.0-rc.2')>0);
   const installed=manager.install(manager.prepare(parsed));
   assert.equal(installed.id,'install-fixture');assert.match(installed.styles,/data:image\/svg\+xml/);assert(!installed.styles.includes('url("assets/'));
   assert.equal(installed.catalog.playerBadge(),'0.1.0');assert.match(installed.catalog.asset,/^data:image/);
@@ -524,7 +524,7 @@ test('fractional result details survive validation and reject nonfinite values',
 test('numeric pack versions outrank older suffixes and bootstrap selects the newest base',()=>{
  const Pack=require('../core/packs.js');
  assert(Pack.compareVersions('0.6.5','0.6.3-preview.6')>0);
- assert(Pack.compareVersions('0.6.3-preview.6','0.6.3')>0);
+ assert(Pack.compareVersions('0.6.3-preview.6','0.6.3')<0);
  assert(Pack.compareVersions('0.6.3-preview.10','0.6.3-preview.6')>0);
  const {manager}=packEnvironment();
  manager.bootstrap([installFixture('0.6.3-preview.6'),installFixture('0.6.5')]);

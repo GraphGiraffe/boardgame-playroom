@@ -113,3 +113,28 @@ test('pack staging and activation preserve the public reveal renderer',()=>{
  const invalid=bundle('invalid-reveal');invalid.files['view.js']=sample.files['view.js'].replace("reveal:value=>'<b>'+value.card+'</b>'","reveal:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid reveal renderer/);
  invalid.files['view.js']=sample.files['view.js'].replace("seating:'row'","seating:'bad'");assert.throws(()=>repo.instance.prepare(invalid),/Invalid seating policy/);
 });
+
+
+test('stable release update stays active through reload cleanup and repeated update checks',async()=>{
+ const {RemoteCatalog,validate}=require('../app/remote-catalog.js'),Cleanup=require('../application/pack-update-cleanup.js'),crypto=require('node:crypto'),preview=bundle('preview'),stable=bundle('stable');preview.manifest.version='0.6.8-preview.26';stable.manifest.version='0.6.8';for(const item of [preview,stable])item.files['rules.js']=require('./pack-fixture.cjs').rules({id:'demo',name:'Demo',version:item.manifest.version,min:1,max:2,preset:'base'});
+ const raw=JSON.stringify(stable),sha=crypto.createHash('sha256').update(raw).digest('hex'),entry={id:'demo',name:'Demo',version:stable.manifest.version,stateVersion:1,engineApi:4,viewApi:3,sha256:sha,url:'/api/packs/files/demo/0.6.8/'+sha+'.playroom-pack.json'},catalog=validate({format:'playroom-catalog',version:1,collection:'0.8.10',packs:[entry]});let downloads=0;
+ const first=manager({format:'playroom-packs',formatVersion:1,packs:[preview],active:{demo:preview.manifest.version},removed:['demo@0.6.8']});await first.instance.bootstrap([preview]);
+ const makeRemote=m=>{const remote=new RemoteCatalog({manager:m,storage:{getItem:()=>null,setItem(){}},crypto:crypto.webcrypto,fetcher:async()=>{downloads++;return new Response(raw);}});remote.current=catalog;return remote;};
+ assert.equal(makeRemote(first.instance).pending().length,1);await makeRemote(first.instance).install('demo',{activate:true});
+ let current=manager(JSON.parse(first.raw()));await current.instance.bootstrap([preview]);assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8','reloading must not reactivate the prerelease');
+ let pinned=true;const cleanup=m=>new Cleanup({manager:m,localReferences:(_id,version)=>pinned&&version===preview.manifest.version?['saved-preview-match']:[],networkArchives:async()=>[],activeRoom:()=>false,compare:Packs.compareVersions});
+ assert.deepEqual((await cleanup(current.instance).plan()).retained.map(p=>p.version),[preview.manifest.version]);assert.equal(current.instance.activate('demo',preview.manifest.version).version,preview.manifest.version,'saved matches resolve their exact prerelease');assert.deepEqual(cleanup(current.instance).oldVersions(),[],'newer inactive stable release is never an old-version cleanup candidate');current.instance.activate('demo');assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8');
+ pinned=false;
+ for(let cycle=0;cycle<3;cycle++){
+  await cleanup(current.instance).removeUnused(await cleanup(current.instance).plan());assert.deepEqual(current.instance.list().map(p=>p.version),['0.6.8']);assert.deepEqual(makeRemote(current.instance).pending(),[]);
+  current=manager(JSON.parse(current.raw()));await current.instance.bootstrap([preview]);assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8');assert.deepEqual(makeRemote(current.instance).pending(),[]);
+ }
+ assert.equal(downloads,1,'cleanup and reload cannot cause repeat downloads');
+});
+
+test('remote catalog never offers an older release or prerelease over a newer installed version',()=>{
+ const {RemoteCatalog}=require('../app/remote-catalog.js');
+ for(const [installed,available,pending] of [['0.6.8-preview.26','0.6.8',true],['0.6.8','0.6.8-preview.26',false],['0.6.9-preview.2','0.6.8',false],['0.6.7','0.6.8',true],['0.6.8-preview.9','0.6.8-preview.10',true],['0.6.8-preview.10','0.6.8-preview.9',false],['0.6.8','0.6.8+rebuilt',false]]){
+  const remote=new RemoteCatalog({manager:{list:()=>[{id:'demo',version:installed}]},storage:{getItem:()=>null}});remote.current={packs:[{id:'demo',version:available}]};assert.equal(remote.pending().length,Number(pending),installed+' -> '+available);
+ }
+});

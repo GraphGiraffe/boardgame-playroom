@@ -1480,7 +1480,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     finally{refreshFullscreenEntry();}
   }
   const commands={
-    'profile-edit':showLocalProfile,'notifications-settings':()=>showSettings({category:'behavior'}),
+    'profile-edit':showLocalProfile,
     'dismiss-notice':dismissNotice,
     'dismiss-recovery'(){loadWarning='';renderHub();},
     rematch,'rematch-start':async()=>{await rematch();if(room?.transportMode==='hotseat'&&roomService.canStart(room.id))await startLobbyCountdown();},
