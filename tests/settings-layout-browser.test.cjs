@@ -185,3 +185,26 @@ test('short landscape application surfaces use side tabs and bounded forms',{tim
   assert.equal(net.nativeSupabaseRequests,0);assert.deepEqual(errors,[]);console.log('landscape surfaces',JSON.stringify(report));
  }finally{await context.close();await browser.close();await server.close();}
 });
+
+
+test('preference rows: shared action/control styles, compact sliders and direct notifications',{timeout:60000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox',...(process.env.SITE_URL?['--no-proxy-server']:[])]}),context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'}),page=await context.newPage(),errors=[];
+ const evidence=path.join(root,'../tmp_files/settings-rows-1115');fs.mkdirSync(evidence,{recursive:true});page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
+ const active=()=>TestUI.activeSurface(page),user={id:'00000000-0000-4000-8000-000000000099',email:'fixture@example.test'};
+ try{
+  await context.addInitScript(user=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'rows-fixture',name:'Проверка'}));localStorage.setItem('playroom.cloud-auth.v1:https://geurlwivdiqboylciqhl.supabase.co',JSON.stringify({access_token:'fixture-only',refresh_token:'fixture-only',expires_at:Date.now()+3600000,user}));},user);
+  const sync=require('./account-sync-fixture.cjs');await sync.installFetch(context,sync(async route=>route.fulfill({json:route.request().url().includes('/auth/v1/user')?user:{profile:{username:'fixture',nickname:'Проверка'},friends:[],rooms:[],invitations:[],requests:[],messages:[],groups:[],ready:false,enabled:false,used:0,limit:10485760,entries:[]}})));
+  await page.goto(process.env.SITE_URL||server.url);await TestUI.ready(page);await page.evaluate(()=>{PlayroomPushDevice={supported:()=>true,permission:()=> 'granted',subscription:async()=>null,message:async()=>({})};PlayroomPushUI.init({account:PlayroomAccountUI.service,remote:{call:async()=>({ready:true,publicKey:'fixture-only'})}});});await TestUI.openSettings(page);
+  const metrics=locator=>locator.evaluateAll(nodes=>nodes.map(n=>{const s=getComputedStyle(n),r=n.getBoundingClientRect();return {font:s.fontSize,weight:s.fontWeight,top:s.paddingTop,bottom:s.paddingBottom,height:r.height};}));
+  for(const width of [390,320]){
+   await page.setViewportSize({width,height:844});await active().locator('[data-settings-tab=effects]').click();const ranges=await metrics(active().locator('.settings-v021-range'));assert(ranges.every(r=>r.height<=90),JSON.stringify(ranges));const controls=await metrics(active().locator('[data-settings-panel=effects] .switch'));assert(controls.every(r=>r.top===r.bottom&&r.weight==='400'&&r.font===ranges[0].font),JSON.stringify(controls));
+   await page.screenshot({animations:'disabled',path:path.join(evidence,'effects-'+width+'.png')});await active().locator('[data-settings-tab=behavior]').click();assert.equal(await active().locator('[data-push-toggle]').count(),1);assert(await active().locator('[data-push-state]').isHidden());assert.equal(await active().locator('[data-push-toggle] strong').count(),0);assert.equal(await page.locator('.notification-settings-modal').count(),0);
+   const rows=await metrics(active().locator('[data-settings-panel=behavior]>.preference-row,[data-settings-panel=behavior]>div>[data-push-toggle]'));assert(rows.every(r=>r.top===r.bottom&&r.font===ranges[0].font&&r.weight==='400'),JSON.stringify(rows));assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({animations:'disabled',path:path.join(evidence,'behavior-'+width+'.png')});
+  }
+  await active().locator('.modal-head [data-command=close-modal]').click();await page.locator('[data-hub-page=profile]').click();assert.equal(await page.locator('#hub-profile-page [data-command=notifications-settings]').count(),0);await page.locator('[data-profile-account]').click();await active().locator('[data-account-mode=logout]').waitFor();
+  for(const viewport of [{width:390,height:844},{width:740,height:390}]){
+   await page.setViewportSize(viewport);const actions=await metrics(active().locator('.account-actions>[data-account-mode]')),push=await metrics(active().locator('[data-push-toggle]'));assert(actions.every(a=>a.font===push[0].font&&a.weight===push[0].weight&&a.top===a.bottom));assert.equal(push[0].top,push[0].bottom);assert(push[0].height<=60);assert(await active().locator('[data-push-state]').isHidden());await page.screenshot({animations:'disabled',path:path.join(evidence,'account-'+viewport.width+'.png')});
+  }
+  await active().locator('.modal-head [data-command=close-modal]').click();await page.setViewportSize({width:390,height:844});await page.locator('#hub-profile-page [data-command=packs]').click();await active().locator('[data-pack-bulk=all]').waitFor();const pack=await metrics(active().locator('[data-pack-bulk=all]'));assert.equal(pack[0].font,'14px');assert.equal(pack[0].weight,'400');assert.equal(pack[0].top,pack[0].bottom);await page.screenshot({animations:'disabled',path:path.join(evidence,'games.png')});assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close();await server.close();}
+});

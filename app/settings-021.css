@@ -1,10 +1,8 @@
 /* Accepted category tabs and controls; this surface has no legacy settings grid. */
-.settings-v021>[role=tabpanel]{display:flex;flex-direction:column;gap:12px;min-width:0;padding-top:2px}
+.settings-v021>[role=tabpanel]{display:flex;flex-direction:column;gap:0;min-width:0;padding-top:0}
 .settings-v021>[role=tabpanel][hidden]{display:none}
-.settings-v021 .switch{width:100%;min-height:52px;margin:0;gap:16px;padding:12px 0;align-items:center}
-.settings-v021 .switch>span{font-size:var(--ui-type-label,.875rem)}
-.settings-v021-range{display:flex;flex-direction:column;gap:14px;width:100%;min-width:0;margin:0;padding:4px 0 12px}
-.settings-v021-range-heading{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;font-size:var(--ui-type-caption,.8125rem);font-weight:650}
+.settings-v021-range{display:flex;flex-direction:column;gap:0;width:100%;min-width:0;margin:0;padding:8px 0 4px}
+.settings-v021-range-heading{display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;font-size:var(--ui-type-label,.875rem);font-weight:400}
 .settings-v021-range-heading output{font:inherit;color:inherit;white-space:nowrap}
 .settings-v021-range input[type=range]{appearance:none;-webkit-appearance:none;width:100%;height:44px;margin:0;padding:0;background:transparent;cursor:pointer}
 .settings-v021-range input[type=range]::-webkit-slider-runnable-track{height:6px;border:1px solid var(--line);border-radius:999px;background:linear-gradient(to right,var(--green) 0 var(--range-progress),transparent var(--range-progress) 100%)}
@@ -25,7 +23,7 @@
 .settings-v021 .setting-title-end .rule-help>button{position:static}
 
 .settings-v021 .settings-diagnostics{min-width:0}
-.settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:600}
+.settings-v021 .settings-diagnostics>summary{min-height:44px;padding-block:12px;cursor:pointer;font-weight:400}
 
 
 @media(max-width:359px){

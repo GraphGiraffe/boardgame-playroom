@@ -26,12 +26,7 @@
 
 .account-feedback-action{display:flex;flex-direction:column;gap:10px;min-width:0}
 
-/* One complete notification row owns the action and its current state. */
 [data-push-settings]{min-width:0}
-[data-push-settings]>[data-push-toggle]{width:100%;min-height:44px;text-align:start}
-[data-push-toggle]>span{display:grid;gap:3px;min-width:0}
-[data-push-state]{display:block;min-height:2.8em;margin:0;font-size:.75rem;line-height:1.4;color:var(--muted);overflow-wrap:anywhere;font-weight:400}
-
 /* First entry presents both account choices as labelled, reachable actions. */
 .profile-entry-actions{display:grid;gap:10px;margin-top:14px}
 .profile-entry-actions>.btn{width:100%;margin:0}

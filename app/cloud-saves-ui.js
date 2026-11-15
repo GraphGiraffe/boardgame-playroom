@@ -22,7 +22,7 @@
   const summary=entry.summary||entry,time=savedTime(entry),name=B().meta(summary.game)?.name||summary.game||'Партия',version=summary.packVersion?'v'+summary.packVersion:'Версия неизвестна';
   return `<span class="data-save-label"><span class="data-save-title"><strong>${H().esc(name)}</strong><small>${Number.isFinite(bytes)?H().esc(size(bytes)):'Измеряем размер файла…'}</small></span><small class="data-save-meta"><span>${H().esc(version)}</span> · ${time?`<time datetime="${new Date(time).toISOString()}">${H().esc(savedDate(entry))}</time>`:'Дата неизвестна'}</small></span>`;
  }
- function settings(){return `<label class="switch ui-switch"><span title="Отправлять по завершении партии и при выходе в главное меню">Автосохранение в облако</span><input type="checkbox" data-cloud-default ${service?.enabled?'checked':''} ${!service?.user?'disabled':''}></label>`;}
+ function settings(){return `<label class="switch ui-switch preference-row preference-row--control"><span title="Отправлять по завершении партии и при выходе в главное меню">Автосохранение в облако</span><input type="checkbox" data-cloud-default ${service?.enabled?'checked':''} ${!service?.user?'disabled':''}></label>`;}
  function quotaValue(){return (service?.user&&(service.loaded||service.cachedUsage)?root.PlayroomStorageUsage.number(service.used/1048576):'—')+'/10 МБ';}
  function quotaLabel(){return H().icon('cloud')+'<b>'+H().esc(quotaValue())+'</b>';}
  function quotaInlineMarkup(){return `<span class="storage-cloud-label" data-cloud-usage data-cloud-inline title="Облако: ${H().esc(quotaValue())}" aria-label="Облако: ${H().esc(quotaValue())}">${quotaLabel()}</span>`;}
