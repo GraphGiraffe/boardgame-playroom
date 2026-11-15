@@ -797,9 +797,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const modalHead = GameScreen.modalHead;
   function ensureRoomButton(){
     const tools=$('#app .hub-root-actions')||$('#app .topbar-tools')||$('#app .table-tools');
-    if(!tools||tools.closest('.table-shell')||!room||globalThis.PlayroomNetworkLibrary?.isClient?.()||tools.querySelector('[data-command="room"],[data-net-action="room"]'))return;
+    if(!tools||tools.closest('.table-shell'))return;
+    const button=tools.querySelector('[data-command="room"]');
+    if(!room||globalThis.PlayroomNetworkLibrary?.isClient?.()){button?.remove();return;}
+    if(button||tools.querySelector('[data-net-action="room"]'))return;
     const node=document.createElement('button');node.className='icon-btn';node.dataset.command='room';node.setAttribute('aria-label',globalThis.PlayroomMessages.text("ui.app.3a73248bdd79"));node.title=globalThis.PlayroomMessages.text("ui.app.3a73248bdd79");node.innerHTML=icon('room');tools.prepend(node);
   }
+  window.addEventListener('playroom:hub-rendered',ensureRoomButton);
   new MutationObserver(ensureRoomButton).observe($('#app'),{subtree:true,childList:true});
   function showGameCard(gameId){
     const game=meta(gameId);if(!game)return;const back=captureModalReturn(),activeRoom=!!globalThis.PlayroomNetworkLibrary?.hasActiveRoom?.();

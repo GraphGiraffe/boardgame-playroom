@@ -7,6 +7,7 @@ svg[data-ui-icon]{width:var(--ui-icon);height:var(--ui-icon);flex:none;vertical-
 :is(#app,:is(#modal-root,[data-ui-surface-exit])) .icon-btn:disabled{opacity:.43;cursor:default}
 :is(#modal-root,[data-ui-surface-exit]) .modal{border-radius:28px;max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain}
 :is(#modal-root,[data-ui-surface-exit]) .modal-head{position:sticky;top:0;z-index:2;background:var(--paper);display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:0 0 12px;margin:0}
+:is(#modal-root,[data-ui-surface-exit],.game-chat-panel) .modal-head{border-bottom:1px solid var(--line)}
 :is(#modal-root,[data-ui-surface-exit]) .modal-head h2{flex:1;min-width:0;overflow-wrap:anywhere;margin:0;text-align:left}
 :is(#modal-root,[data-ui-surface-exit]) .modal-head .icon-btn{box-sizing:border-box;flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;margin:0;padding:0;border-radius:12px;box-shadow:none}
 .shared-modal-backdrop{position:fixed;inset:0;background:#20352d66;padding:16px;display:flex;align-items:center;justify-content:center;z-index:50;overflow:auto}
