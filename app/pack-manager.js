@@ -92,7 +92,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return [fatal,...visible,...(manager.quarantined?.length?[globalThis.PlayroomMessages.text('ui.packs.acf425f8c8f5',{p0:String(manager.quarantined.length)})]:[])].filter(Boolean).join(' ');
     }
     const H=root.PlayroomGameScreen;
-    const actionRow=(attrs,label,{disabled=false,danger=false,icon='next'}={})=>`<button type="button" class="packs-v021-action ${danger?'is-danger ui-action-danger':''}" ${attrs} ${busy||disabled?'disabled':''}><span>${esc(label)}</span>${H.icon(icon)}</button>`;
+    const actionRow=(attrs,label,{disabled=false,danger=false,icon='next'}={})=>`<button type="button" class="packs-v021-action preference-row preference-row--action ${danger?'is-danger ui-action-danger':''}" ${attrs} ${busy||disabled?'disabled':''}><span>${esc(label)}</span>${H.icon(icon)}</button>`;
     const catalogEntries=()=>remote?.pending()||[];
     const catalogAvailability=()=>remote?.availability?.()||{available:!!remote,reason:remote?'':'Каталог игр сейчас недоступен.'};
     const updates=()=>{const ids=new Set(manager.list().map(item=>item.id));return catalogEntries().filter(item=>ids.has(item.id));};

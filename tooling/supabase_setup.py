@@ -3,12 +3,12 @@ from hashlib import md5
 from pathlib import Path
 import re
 
-MIGRATIONS = ('supabase.sql', 'social.sql', 'signaling.sql', 'signaling-sync.sql', 'online.sql', 'host-transfer.sql', 'push.sql', 'host-transfer-push.sql', 'cloud-saves.sql', 'account-sync.sql', 'room-cleanup.sql', 'registration.sql', 'ice.sql')
+MIGRATIONS = ('supabase.sql', 'social.sql', 'signaling.sql', 'signaling-sync.sql', 'online.sql', 'host-transfer.sql', 'push.sql', 'host-transfer-push.sql', 'cloud-saves.sql', 'account-sync.sql', 'room-cleanup.sql', 'registration.sql', 'ice.sql', 'bug-reports.sql')
 RPCS = ('playroom_social', 'playroom_signal', 'playroom_signal_sync', 'playroom_online', 'playroom_groups_rpc',
         'playroom_host_transfer', 'playroom_push', 'playroom_push_claim', 'playroom_push_complete',
         'playroom_push_game', 'playroom_push_activity', 'playroom_push_pending',
         'playroom_push_host_pending', 'playroom_push_host_transfer',
-        'playroom_cloud_saves_rpc', 'playroom_account_sync', 'playroom_signup_name_available', 'playroom_ice_access', 'playroom_connection_trace')
+        'playroom_cloud_saves_rpc', 'playroom_account_sync', 'playroom_signup_name_available', 'playroom_ice_access', 'playroom_connection_trace', 'playroom_bug_report')
 
 
 def render(root: Path) -> dict[str, str]:

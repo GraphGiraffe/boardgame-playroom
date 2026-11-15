@@ -680,3 +680,21 @@ test('two-card team bots complete all team modes with legal deterministic privat
   assert.equal(s.status,'finished',preset);assert(s.winners.length===0||new Set(s.winners.map(i=>s.data.players[i].team)).size===1);t.diagnostic(JSON.stringify({preset,actions,round:s.data.round,ms:Math.round(performance.now()-started)}));
  }
 });
+
+
+test('elemental tiles boost outgoing attacks and incoming damage cumulatively for every element',()=>{
+ const tiles={air:'air_island',earth:'desert',water:'puddle',fire:'forest'},base={air:0,earth:2,water:1,fire:1};
+ for(const element of Object.keys(tiles))for(const source of [false,true])for(const target of [false,true]){
+  const s=fixture([{pos:[2,1],hand:[element],health:6},{pos:[2,2],health:6},{pos:[4,4]}],{size:6,board:{...(source?{'2,1':tiles[element]}:{}),...(target?{'2,2':tiles[element]}:{})},options:{health:6}}),commands=[plan(element,'attack',1),plan('earth','movement',0),plan('earth','movement',0)];
+  const after=round(s,commands),damage=base[element]+Number(source)+Number(target);assert.equal(after.data.players[1].health,6-damage,element+' '+source+' '+target);
+ }
+ const blocked=round(fixture([{pos:[2,1],element:'fire'},{pos:[2,2]}],{board:{'2,1':'forest','2,2':'puddle'}}),[plan('fire','attack',1),plan('earth','movement',0)]);assert.equal(blocked.data.players[1].health,3,'terrain immunity still blocks boosted attacks');
+ const shield=round(fixture([{pos:[2,1],element:'earth'},{pos:[2,2]}],{board:{'2,1':'desert','2,2':'desert'}}),[plan('earth','attack',1),plan('earth','movement',3)]);assert.equal(shield.data.players[1].health,3,'facing shield blocks both bonuses');
+ const blast=round(fixture([{pos:[2,1],element:'fire',ultimate:1,health:6},{pos:[0,0]}],{board:{'2,1':'forest','2,2':'wall'},options:{health:6}}),[plan('fire','ultimate',1),plan('earth','movement',0)]);assert.equal(blast.data.players[0].health,3,'self-hit applies the source and target bonuses once each');
+});
+
+test('bots use elemental tile attack bonus in single-card choices and move-then-attack forecasts',()=>{
+ const s=fixture([{pos:[2,1],hand:['water','fire']},{pos:[2,2],health:2}],{board:{'2,1':'puddle'},options:{extraLives:0}});Object.assign(s.data.players[0].bot,{resolvedStrategy:'fighter',difficulty:'hard',errorRate:0});const command=model.commandFor(s,0,model.botAction(s,0));assert.equal(command.element,'water');assert.equal(command.action,'attack');assert.equal(command.direction,1);
+ let pair=fixture([{pos:[2,0],hand:['fire','earth']},{pos:[2,3],health:3,hand:['earth','water']}],{size:6,board:{'2,2':'desert'},options:{extraLives:0}});pair.data.config.steps=2;Object.assign(pair.data.players[0].bot,{resolvedStrategy:'fighter',difficulty:'hard',errorRate:0});const first=model.commandFor(pair,0,model.botAction(pair,0));assert.equal(first.element,'fire');assert.equal(first.action,'movement');assert.equal(first.direction,1);pair=model.apply(pair,0,first).position;const second=model.commandFor(pair,0,model.botAction(pair,0));assert.equal(second.element,'earth');assert.equal(second.action,'attack');const projected=model.project(pair,0).data;assert.equal(D.rules.forecast(projected,0,[first,second]).players[1].lives,0,'boosted second attack is lethal');
+ const hidden=clone(pair);hidden.data.players[1].hand.reverse();assert.deepEqual(model.botAction(hidden,0),model.botAction(pair,0),'no hidden card information is needed');
+});

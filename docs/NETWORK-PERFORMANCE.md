@@ -1,5 +1,7 @@
 # Compact authorized network exchange (RTC 14)
 
+Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+
 A client sends an intent with a receipt ID and expected revision. Authority validates actor, audience and current reaction/control gates, persists the transition and receipt, and then acknowledges it. Receipt delivery does not wait for the complete outbound fanout. The client waits up to 750 ms for the corresponding pushed revision before requesting one shared checkpoint; a normal early ACK creates no extra snapshot request. Durable failures never acknowledge a successful move.
 
 The host retains projected facts for at most two state identities and 128 audience/metadata variants per state. Reaction clocks, paused/away/bot gates and allowed commands are checked on every read. Only protocol-owned detached immutable JSON may share descendants or canonical serialization results. The canonical cache is capped at 2048 entries / 8 MiB; SHA-256 still covers the complete authorized semantic position and event chain. Private domain state/RNG never enters this cache or the wire position.
