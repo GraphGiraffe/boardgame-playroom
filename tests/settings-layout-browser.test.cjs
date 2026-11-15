@@ -235,10 +235,10 @@ test('account identity: startup sync repaints profile, owner cache survives netw
 });
 
 
-test('shared screen and panel headers separate controls from content in both orientations',{timeout:45000},async()=>{
+test('shared headers keep separators on screens only in both orientations',{timeout:45000},async()=>{
  const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
  page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));const net=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}})),active=()=>TestUI.activeSurface(page);
- const check=async()=>{const header=active().locator('.modal-head').first(),line=await header.evaluate(el=>{const c=getComputedStyle(el);return {width:c.borderBottomWidth,style:c.borderBottomStyle,color:c.borderBottomColor};});assert.equal(line.width,'1px');assert.equal(line.style,'solid');assert(!/transparent|rgba\([^)]*, 0\)/.test(line.color));};
+ const check=async()=>{const header=active().locator('.modal-head').first(),line=await header.evaluate(el=>{const c=getComputedStyle(el);return {surface:el.closest('.modal').dataset.uiSurface,width:c.borderBottomWidth,style:c.borderBottomStyle,color:c.borderBottomColor};});assert(['screen','panel'].includes(line.surface));assert.equal(line.width,line.surface==='screen'?'1px':'0px');if(line.surface==='screen'){assert.equal(line.style,'solid');assert(!/transparent|rgba\([^)]*, 0\)/.test(line.color));}};
  const back=()=>active().locator('.modal-head [data-command=close-modal]').first().click();
  try{
   await page.goto(process.env.PLAYROOM_SCREEN_CHROME_URL||server.url);await TestUI.ready(page);if(process.env.PLAYROOM_SCREEN_CHROME_VERSION)assert.equal(await page.evaluate(()=>PlayroomAppVersion),process.env.PLAYROOM_SCREEN_CHROME_VERSION);
@@ -246,7 +246,7 @@ test('shared screen and panel headers separate controls from content in both ori
    await page.setViewportSize(viewport);await page.locator('[data-hub-page=profile]').click();
    for(const selector of ['[data-profile-account]','[data-command=settings]','[data-appearance-open]','[data-cloud-data-open]','[data-command=packs]','[data-command=show-updates]']){
     await page.locator('#hub-profile-page '+selector).click();await check();
-    if(selector==='[data-profile-account]'){await active().locator('[data-command=profile-edit]').click();await check();await back();await check();}
+    if(selector==='[data-profile-account]'){await active().locator('[data-command=profile-edit]').click();await check();if(process.env.PLAYROOM_CAPTURE_DIR){fs.mkdirSync(process.env.PLAYROOM_CAPTURE_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PLAYROOM_CAPTURE_DIR,'panel-header-'+viewport.width+'.png')});}await back();await check();}
     await back();
    }
    await page.locator('[data-hub-page=games]').click();
