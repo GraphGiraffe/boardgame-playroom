@@ -4,11 +4,27 @@
   const text=(key,vars)=>root.PlayroomMessages.text('ui.updates.'+key,vars);
   function releases(items,from,to){
     const compare=root.TabletopPacks.compareVersions;
-    return (Array.isArray(items)?items:[]).filter(item=>item&&typeof item.version==='string'&&Array.isArray(item.changes)&&compare(item.version,from)>0&&compare(item.version,to)<=0).sort((a,b)=>compare(a.version,b.version));
+    return (Array.isArray(items)?items:[]).filter(item=>item&&typeof item.version==='string'&&Array.isArray(item.changes)&&(to.includes('-')||!item.version.includes('-'))&&compare(item.version,from)>0&&compare(item.version,to)<=0).sort((a,b)=>compare(a.version,b.version));
   }
   function changes(items,from,to,esc){
     const selected=releases(items,from,to);
-    return selected.length?selected.map(item=>`<section><h3>${esc(item.version)}</h3><ul>${item.changes.filter(line=>typeof line==='string').map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>`).join(''):`<p class="muted">${text('missing')}</p>`;
+    return selected.length?selected.map(item=>`<section>${item.version===to?'':`<h3>${esc(item.version)}</h3>`}<ul>${item.changes.filter(line=>typeof line==='string').map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>`).join(''):`<p class="muted">${text('missing')}</p>`;
+  }
+  function summarizePacks(packs,installed){
+    const groups=new Map(),rows=packs.map(pack=>{
+      const lines=[...new Set(releases(pack.releases,installed(pack.id),pack.version).flatMap(item=>item.changes).filter(line=>typeof line==='string'))];
+      if(!lines.length)lines.push('Обновлена версия игры.');
+      for(const line of lines){if(!groups.has(line))groups.set(line,[]);groups.get(line).push(pack);}
+      return {pack,lines};
+    });
+    const common=[...groups].filter(([,items])=>items.length>1).map(([line,items])=>({line,packs:items}));
+    const specific=rows.map(({pack,lines})=>({...pack,changes:lines.filter(line=>groups.get(line).length===1)})).filter(pack=>pack.changes.length);
+    return {common,specific};
+  }
+  function packChanges(packs,installed,esc,cover=()=>''){
+    const {common,specific}=summarizePacks(packs,installed);
+    const shared=common.length?`<section data-common-pack-changes><h3>Общие изменения игр</h3><ul>${common.map(item=>`<li>${esc(item.line)}${item.packs.length===packs.length?'':`<small class="muted"> — ${esc(item.packs.map(pack=>pack.name||pack.id).join(', '))}</small>`}</li>`).join('')}</ul></section>`:'';
+    return shared+specific.map(pack=>`<article class="post-update-pack"><div class="post-update-cover">${cover(pack.id)}</div><div><h3>${esc(pack.name||pack.id)} · ${esc(pack.version)}</h3><ul>${pack.changes.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></div></article>`).join('');
   }
   function errorText(error){const code=['offline','network','timeout','http','response','integrity','quota','storage','incomplete'].includes(error?.code)?error.code:'network';return text('error.'+code,{status:error?.status||''});}
   function progressMarkup(){return `<div class="update-download" data-update-download hidden><div class="status-meter-caption"><span data-update-phase></span><span data-update-bytes></span></div>${Meter.markup({attrs:'data-update-progress',label:'Подготовка обновления'})}</div>`;}
@@ -30,10 +46,10 @@
   function markup({app,installedVersion,packs,installed,esc,head,notice=null,check=null,resume=false,cover=()=>''}){
     const H=root.PlayroomGameScreen;
     const title=app?'Обновление':packs.length?'Обновления игр':'Обновления',header=`<header class="modal-head update-v021-header">${H.iconButton('data-command="close-modal"','Назад','back')}<h2>${esc(title)}</h2></header>`;
-    return header+`<div class="update-v021">${notice?`<section data-important-update><h3>${esc(notice.title||'Важное обновление')}</h3><p>${esc(notice.body||'')}</p>${notice.version?`<small>${esc(notice.version)}</small>`:''}</section>`:''}<p class="muted" data-installed-app-version>Установлена версия ${esc(installedVersion)}</p>${!app&&!packs.length?'<section class="update-v021-summary" data-update-current><h3>Обновление ХОД</h3><p>Можно проверить, появились ли новые версии приложения и игр.</p></section>':''}${app?`<section class="update-v021-summary"><h3>Обновление ${esc(app.version||'ХОД')}</h3><div class="update-changes">${changes(app.releases,installedVersion,app.version||installedVersion,esc)}</div></section><section class="update-v021-state"><p data-update-status role="status">Можно подготовить обновление</p>${progressMarkup()}</section>`:''}${packs.length?`<details class="update-pack-changes"><summary>Изменения игр · ${packs.length}</summary>${packs.map(pack=>`<article class="post-update-pack"><div class="post-update-cover">${cover(pack.id)}</div><div><h3>${esc(pack.name||pack.id)} · ${esc(pack.version)}</h3>${changes(pack.releases,installed(pack.id),pack.version,esc)}</div></article>`).join('')}</details>`:''}${app?'':'<p data-update-status role="status"></p>'}</div><footer class="update-v021-footer" data-fixed-footer><p data-update-check-status role="${check?.error?'alert':'status'}">${esc(check?.message||'')}</p><div class="update-v021-actions">${H.button({attrs:`data-command="check-updates" ${check?.busy?'disabled':''}`,label:check?.busy?'Проверяем обновления…':'Проверить обновления',icon:'sync',className:app||packs.length?'secondary':''})}${app||packs.length||resume?H.button({attrs:'data-command="update-all"',label:resume?'Продолжить обновление':'Обновить всё',icon:'download'}):''}</div></footer>`;
+    return header+`<div class="update-v021">${notice?`<section data-important-update><h3>${esc(notice.title||'Важное обновление')}</h3><p>${esc(notice.body||'')}</p>${notice.version?`<small>${esc(notice.version)}</small>`:''}</section>`:''}<p class="muted" data-installed-app-version>Установлена версия ${esc(installedVersion)}</p>${!app&&!packs.length?'<section class="update-v021-summary" data-update-current><h3>Обновление ХОД</h3><p>Можно проверить, появились ли новые версии приложения и игр.</p></section>':''}${app?`<section class="update-v021-summary"><h3>Обновление ${esc(app.version||'ХОД')}</h3><div class="update-changes">${changes(app.releases,installedVersion,app.version||installedVersion,esc)}</div></section><section class="update-v021-state"><p data-update-status role="status">Можно подготовить обновление</p>${progressMarkup()}</section>`:''}${packs.length?`<details class="update-pack-changes"><summary>Изменения игр · ${packs.length}</summary>${packChanges(packs,installed,esc,cover)}</details>`:''}${app?'':'<p data-update-status role="status"></p>'}</div><footer class="update-v021-footer" data-fixed-footer><p data-update-check-status role="${check?.error?'alert':'status'}">${esc(check?.message||'')}</p><div class="update-v021-actions">${H.button({attrs:`data-command="check-updates" ${check?.busy?'disabled':''}`,label:check?.busy?'Проверяем обновления…':'Проверить обновления',icon:'sync',className:app||packs.length?'secondary':''})}${app||packs.length||resume?H.button({attrs:'data-command="update-all"',label:resume?'Продолжить обновление':'Обновить всё',icon:'download'}):''}</div></footer>`;
   }
   root.addEventListener?.('playroom-update-progress',sync);
   root.addEventListener?.('playroom:modal-restored',sync);
-  root.PlayroomUpdateDialog={markup,releases,changes,sync,errorText};
+  root.PlayroomUpdateDialog={markup,releases,changes,summarizePacks,packChanges,sync,errorText};
   if(typeof module==='object'&&module.exports)module.exports=root.PlayroomUpdateDialog;
 })(globalThis);

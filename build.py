@@ -48,6 +48,12 @@ def read_source_pack(manifest_path):
 _registry = json.loads((ROOT / "core/tags.json").read_text(encoding="utf-8"))
 (ROOT / "core/tag-registry.js").write_text("// Generated from core/tags.json by build.py.\nglobalThis.PlayroomTagRegistry = " + json.dumps(_registry, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
 _app_version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
+_release_history = json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))["releases"]
+# Stable workers also serve old clients: never send preview notes to stable users.
+def release_notes(version, history):
+    return history if "-" in version else [item for item in history if "-" not in item["version"]]
+
+_worker_releases = release_notes(_app_version, _release_history)
 (ROOT / "app/version.js").write_text("// Generated from package.json and updates.json by build.py.\nglobalThis.PlayroomAppVersion = " + json.dumps(_app_version) + ";\nglobalThis.PlayroomAppReleases = " + json.dumps([r for r in json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))["releases"] if r["version"] == _app_version], ensure_ascii=False) + ";\n", encoding="utf-8")
 ASSET_URL = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.IGNORECASE)
 ATTR = re.compile(r"([\w-]+)\s*=\s*(['\"])(.*?)\2", re.DOTALL)
@@ -264,7 +270,7 @@ def ensure_dev_icons():
 
 
 def update_release_metadata():
-    info = {"version": _app_version, **json.loads((ROOT / "updates.json").read_text(encoding="utf-8"))}
+    info = {"version": _app_version, "releases": _worker_releases}
     path = ROOT / "sw.js"
     source = path.read_text(encoding="utf-8")
     source = re.sub(r"^const CACHE=.*?;$", "const CACHE='playroom-pwa-v" + _app_version + "';", source, count=1, flags=re.M)
@@ -304,8 +310,9 @@ def pwa_runtime_items(packs=(), remote_catalog=True):
     worker = originals["sw.js"].decode("utf-8")
     # Ship bundled pack notes with the waiting worker, before activation and
     # independently of the remote catalog's availability.
-    info = {"version": _app_version, **json.loads((ROOT / "updates.json").read_text(encoding="utf-8")),
-            "packs": [{key: bundle["manifest"][key] for key in ("id", "version", "name", "releases") if key in bundle["manifest"]}
+    info = {"version": _app_version, "releases": _worker_releases,
+            "packs": [{**{key: bundle["manifest"][key] for key in ("id", "version", "name") if key in bundle["manifest"]},
+                       "releases": release_notes(bundle["manifest"]["version"], bundle["manifest"].get("releases", []))}
                       for bundle in ([] if remote_catalog else packs)]}
     worker = re.sub(r"^const UPDATE_INFO=.*?;$", lambda _: "const UPDATE_INFO=" + json.dumps(info, ensure_ascii=False, separators=(",", ":")) + ";", worker, count=1, flags=re.M)
     worker = re.sub(r"const CACHE='[^']+';", "const CACHE='playroom-pwa-v" + _app_version + "';", worker, count=1)
