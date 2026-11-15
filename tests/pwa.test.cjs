@@ -210,6 +210,10 @@ from unittest.mock import patch
 items=dict(build.pwa_runtime_items())
 html=items['index.html'].decode()
 worker=items['sw.js'].decode()
+info=json.loads(re.search(r'^const UPDATE_INFO=(.*);$',worker,re.M).group(1))
+assert info['version']==build._app_version
+if '-' not in info['version']:
+ assert all('-' not in release['version'] for release in info['releases']), 'Stable update notes must exclude preview history for old clients'
 refs=re.findall(r'(?:src|href)="([^"]+\\.(?:js|css))"',html)
 assert len(refs)>30
 for ref in refs:
