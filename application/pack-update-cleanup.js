@@ -3,12 +3,13 @@
  'use strict';
  return class PackUpdateCleanup {
   constructor({manager,localReferences,networkArchives,activeRoom,compare}){Object.assign(this,{manager,localReferences,networkArchives,activeRoom,compare});}
+  oldVersions(){const rows=this.manager.list();return rows.filter(row=>{const active=rows.find(p=>p.id===row.id&&p.active);return !row.active&&active&&this.compare(row.version,active.version)<0;});}
   async plan({guard=()=>{}}={}){
    guard();if(this.activeRoom())return {items:[],retained:[],blocked:true};
    const archives=await this.networkArchives();guard();if(this.activeRoom())return {items:[],retained:[],blocked:true};
-   const rows=this.manager.list(),items=[],retained=[];
+   const items=[],retained=[];
    const referenced=(id,version)=>this.localReferences(id,version).length||archives.some(row=>row.game===id&&row.packVersion===version);
-   for(const row of rows){const active=rows.find(p=>p.id===row.id&&p.active);if(row.active||!active||this.compare(row.version,active.version)>=0)continue;
+   for(const row of this.oldVersions()){
     const item={id:row.id,version:row.version,name:row.manifest?.name||row.id,kind:'old'};(referenced(row.id,row.version)?retained:items).push(item);
    }
    for(const entry of this.manager.quarantined||[]){let bundle=entry.bundle;try{if(typeof bundle==='string')bundle=JSON.parse(bundle);}catch(_){}

@@ -60,7 +60,7 @@
    body+=`<div class="social-list" data-entity="community-list" tabindex="0" aria-label="${t(view.tab)}"><ul>${friends.map(friend=>root.PlayroomFriendCard.row(friend,{attrs:`data-community-chat="${esc(friend.userId)}"`,openable:view.tab==='chats'||friend.accepted,rowActions:(view.tab==='chats'||friend.accepted)?rowActions('dm',friend.userId):'',actions:view.tab==='chats'||friend.accepted?'':(friend.incoming?action('accept','Принять',`data-id="${esc(friend.id)}"`):'')+action('remove',friend.incoming?'Отклонить':'Отменить заявку',`data-id="${esc(friend.id)}"`)})).join('')}${view.tab==='chats'?groupRows(hub.groups||[]):''}</ul>${!friends.length&&!(view.tab==='chats'&&hub.groups?.length)&&(!view.loading||!!data)&&!view.error?`<p data-community-empty>${t(view.tab==='chats'?'no-chats':'no-friends')}</p>`:''}<p data-community-search-empty hidden>Ничего не найдено.</p></div>`;
    body+=`<div class="community-primary" data-entity="community-primary">${view.tab==='chats'?H().button({attrs:'data-community-create-group',icon:'groupChat',label:'Создать группу',variant:'secondary'}):H().button({attrs:'data-community-action="add"',icon:'addPlayer',label:'Добавить друга',variant:'secondary'})}</div>`;
   }
-  body+=`</section><button type="button" class="menu-row community-notifications" data-command="notifications-settings" data-surface-action="child"><span><strong>Уведомления</strong><small>Предпочтения сообщений</small></span>${H().icon('bell')}</button>`;
+  body+='</section>';
 
   const signature=JSON.stringify([a.kind,a.recovery,view.tab,view.editing,hub,status,retry,initialLoading,busy]);
   if(view.signature!==signature){

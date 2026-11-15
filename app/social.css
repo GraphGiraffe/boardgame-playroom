@@ -292,7 +292,6 @@
 /* A18 keeps primary tasks visible and secondary list maintenance quiet. */
 [data-community-content] .social-list{border:0;border-radius:0;background:transparent;padding:0}
 [data-community-content] .community-primary>.ui-button{width:100%;min-height:44px}
-[data-community-content] .community-notifications{min-height:56px}
 [data-community-content] [data-community-maintenance]>summary{cursor:pointer;min-height:44px;padding:12px 0;font-size:14px;color:var(--muted)}
 [data-community-content] [data-community-status]>p{margin:0 0 8px}
 [data-community-content] [data-community-status][hidden]{display:none}
