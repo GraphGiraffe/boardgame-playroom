@@ -645,6 +645,8 @@ test('unused lobby dismissal closes the room while invitations and live parties 
    await roomParameters(page);await backFrom(page,'.room-rules-modal');assert.equal(await page.evaluate(()=>PlayroomAppBridge.room().id),id,'return from a child panel keeps the room');
    if(mode==='network')await page.keyboard.press('Escape');else await TestUI.activeSurface(page).locator('.modal-head [data-command=close-modal]').tap();await page.waitForFunction(()=>PlayroomAppBridge.room()===null);
    assert.equal(await page.evaluate(id=>{try{PlayroomAppBridge.roomService.snapshot(id);return true;}catch(_){return false;}},id),false,'discard the unused local room and recovery capabilities');assert.equal(await page.evaluate(()=>PlayroomNetworkLibrary.hasActiveRoom()),false,'no active transport room remains');
+   assert.equal(await page.locator('#app .hub-root-actions [data-command=room],#app .topbar-tools [data-command=room]').count(),0,'closed room removes the lobby return action');
+   await page.locator('[data-hub-page=profile]').click();await page.locator('[data-hub-page=games]').click();assert.equal(await page.locator('#app [data-command=room]').count(),0,'retired room never reappears after navigation');
   }
   await openGame(page,'uno','network');await page.locator('[data-room-auto-start]').uncheck();
   const host=await page.evaluate(()=>PlayroomAppBridge.participantId());assert.equal(await page.locator('.room-v021-seat.is-ready').count(),1,'bot is ready immediately');assert(!/не готов|готов/.test(await page.locator('.room-v021-person-copy small').allTextContents().then(a=>a.join(' '))));

@@ -233,3 +233,24 @@ test('account identity: startup sync repaints profile, owner cache survives netw
   const out=path.join(root,'../tmp_files/account-identity-1115');fs.mkdirSync(out,{recursive:true});await page.screenshot({path:path.join(out,'profile.png'),animations:'disabled'});fs.writeFileSync(path.join(out,'browser.json'),JSON.stringify({reads,errors,background:true,cached:true,ownerIsolation:true,safeNavigationDuringValidation:true},null,2));
  }finally{releaseProfile();releaseAuth();await context.close();await browser.close();await server.close();}
 });
+
+
+test('shared screen and panel headers separate controls from content in both orientations',{timeout:45000},async()=>{
+ const server=await serveBrowserFixture(root),browser=await chromium.launch({headless:true,executablePath:executablePath(),args:['--no-sandbox','--disable-background-networking']}),context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+ page.setDefaultTimeout(5000);page.on('pageerror',error=>errors.push(error.message));const net=await require('./account-sync-fixture.cjs').installFetch(context,async route=>route.fulfill({json:{}})),active=()=>TestUI.activeSurface(page);
+ const check=async()=>{const header=active().locator('.modal-head').first(),line=await header.evaluate(el=>{const c=getComputedStyle(el);return {width:c.borderBottomWidth,style:c.borderBottomStyle,color:c.borderBottomColor};});assert.equal(line.width,'1px');assert.equal(line.style,'solid');assert(!/transparent|rgba\([^)]*, 0\)/.test(line.color));};
+ const back=()=>active().locator('.modal-head [data-command=close-modal]').first().click();
+ try{
+  await page.goto(process.env.PLAYROOM_SCREEN_CHROME_URL||server.url);await TestUI.ready(page);if(process.env.PLAYROOM_SCREEN_CHROME_VERSION)assert.equal(await page.evaluate(()=>PlayroomAppVersion),process.env.PLAYROOM_SCREEN_CHROME_VERSION);
+  for(const viewport of [{width:390,height:844},{width:740,height:390}]){
+   await page.setViewportSize(viewport);await page.locator('[data-hub-page=profile]').click();
+   for(const selector of ['[data-profile-account]','[data-command=settings]','[data-appearance-open]','[data-cloud-data-open]','[data-command=packs]','[data-command=show-updates]']){
+    await page.locator('#hub-profile-page '+selector).click();await check();
+    if(selector==='[data-profile-account]'){await active().locator('[data-command=profile-edit]').click();await check();await back();await check();}
+    await back();
+   }
+   await page.locator('[data-hub-page=games]').click();
+  }
+  assert.deepEqual(errors,[]);assert.equal(net.nativeSupabaseRequests,0);
+ }finally{await browser.close();await server.close();}
+});
