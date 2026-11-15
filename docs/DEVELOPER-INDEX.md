@@ -1,41 +1,20 @@
 # Разработчику ХОД
 
-Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Карта кода и действующих контрактов приложения. Начните с [локального запуска и проверок](TESTING.md) и [правил внесения изменений](../CONTRIBUTING.md).
 
-Действующий контракт: приложение **0.19.5**, коллекция **0.8.5**, engineApi **4**, viewApi **3**, сетевой protocol **3**. Источники и фактическое состояние публикации — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md). История разработки доступна в Git и CHANGELOG; промежуточные API не являются частью SDK.
-
-| Вопрос | Руководство |
+| Задача | Документация |
 |---|---|
-| Объём следующего релиза: SDK и унификация существующих игр | [План SDK паков](PACK-SDK-NEXT-RELEASE.md) — целевой объём, не действующий API |
-| Облачные сохранения и квота аккаунта | [Облачные сохранения](CLOUD-SAVES.md) |
-| Где находится код и как взаимодействуют слои | [Архитектура](DEVELOPER-ARCHITECTURE.md) |
-| Как добавить обучение и сохранить прогресс пользователя | [Обучение](TUTORIALS.md) |
-| Как назвать и использовать общую механику | [Реестр механик](MECHANICS.md) |
-| Модель, команды, события, проекции, история | [SDK](SDK-0.18.md) |
-| Сцена, жесты и фиксированная компоновка | [UI API](GAME-ELEMENTS-API.md) |
-| Визуальные правила, ассеты и скины | [Дизайн](UI-DESIGN-SYSTEM.md) |
-| Масштаб и дискретные слайдеры | [Настройки](INTERFACE-SCALE.md) |
-| Роли, authority, Стол, reconnect | [Сеть](DEVELOPER-MULTIPLAYER.md) |
-| Сетевой аккаунт, друзья, приватные комнаты и миграции Supabase 0.20 | [Сетевой сервис](NETWORK-SERVICE.md) |
-| Хранение, точные версии, обновление | [Данные](DEVELOPER-DATA.md) |
-| Контейнер и сборка пака | [Формат](PACK-FORMAT.md) |
-| Проверки и выпуск | [Тесты](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md), [релиз](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md) |
-| Пасьянсы и наследование скинов в рабочей ветке | [Реализация](SOLITAIRE-IMPLEMENTATION.md) |
-| Защита от повторных ошибок: ассеты, сохранения, скины, жесты | [Инварианты и проверки](DEVELOPMENT-REGRESSIONS.md) |
-| Ближайшие патчи | [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/ROADMAP.md), [подготовка расширений](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/NEXT-PATCHES.md) |
+| Найти модуль и его владельца | [Архитектура](DEVELOPER-ARCHITECTURE.md) |
+| Разобраться в модели, командах, событиях и проекциях | [Контракт runtime](SDK-0.18.md), [механики](MECHANICS.md) |
+| Подключить пак | [Формат контейнера](PACK-FORMAT.md), [ресурсы коллекции](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/main/docs/README.md) |
+| Изменить игровой интерфейс | [UI API](GAME-ELEMENTS-API.md), [зоны экрана](PACK-SDK-LAYOUT.md), [исполнение представления](PRESENTATION-PLAYER.md) |
+| Соблюсти общий стиль | [Дизайн](UI-DESIGN-SYSTEM.md), [размеры](SIZE-SYSTEM.md), [масштаб](INTERFACE-SCALE.md) |
+| Добавить правила и обучение | [Правила](RULEBOOK-LAYOUT.md), [обучение](TUTORIALS.md) |
+| Работать с сохранениями и версиями | [Данные](DEVELOPER-DATA.md), [локальное хранение](LOCAL-STORAGE.md), [облачные сохранения](CLOUD-SAVES.md), [перенос](SAVE-TRANSFER.md) |
+| Работать с сетью и восстановлением | [Сеть и роли](DEVELOPER-MULTIPLAYER.md), [сетевой сервис](NETWORK-SERVICE.md), [обмен данными](NETWORK-PERFORMANCE.md) |
+| Понять обновление приложения | [PWA](PWA-UPDATES.md), [приоритет версий паков](PACK-VERSION-PRIORITY.md) |
+| Использовать realtime-взаимодействия | [Realtime SDK](REALTIME-SDK.md) |
+| Изменить пасьянсы или карточные скины | [Реализация пасьянсов](SOLITAIRE-IMPLEMENTATION.md) |
+| Выбрать проверки и избежать повторной ошибки | [Локальные проверки](TESTING.md), [инварианты](DEVELOPMENT-REGRESSIONS.md) |
 
-Автор пака начинает с [руководства коллекции](https://github.com/GraphGiraffe/boardgame-playroom-paks/blob/main/docs/AUTHORING.md). Все примеры относятся к текущему API. Новая механика сначала получает владельца слоя и понятное имя; игровое правило не переносится в Web renderer.
-
-Мобильные контракты 0.18.4: [размеры](SIZE-SYSTEM.md), [навигация и установка](NAVIGATION-AND-INSTALL.md), [приоритет тестовых версий](PACK-VERSION-PRIORITY.md).
-
-Иллюстрированные правила и границы модулей: [RULEBOOK-LAYOUT](RULEBOOK-LAYOUT.md).
-
-Перенос отдельных сохранений с точными паками: [SAVE-TRANSFER.md](SAVE-TRANSFER.md).
-
-Сеть 0.20: [статус четырёх этапов и SQL для Supabase](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
-
-- [Realtime ink and guessing SDK](REALTIME-SDK.md) — optional pack ports, durable commits, preview, repair and authorization.
-
-RTC 14: [компактные разрешённые данные, ACK, история и ограничения](NETWORK-PERFORMANCE.md).
-
-Подготовка 0.21 и живые проверки: [план и состояние](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21-PREPARATION.md), [итоги](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21.md), [чеклист](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/dev/docs/project/app/RELEASE-0.21-LIVE-CHECKLIST.md).
+Контракты: engineApi 4, viewApi 3, сетевой protocol 3. Историческое имя файла `SDK-0.18.md` сохранено для совместимости ссылок. Подготовка отдельного SDK для авторов паков — будущая работа; текущие компоненты и их ограничения описаны в документации коллекции.

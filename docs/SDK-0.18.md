@@ -1,8 +1,8 @@
 # SDK · API 4 (стабильный контракт)
 
-Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; актуальное приложение доступно на [сайте](https://graphgiraffe.github.io/playroom-hod-test/).
 
-`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.19.5. Источники и публикация — [RELEASE-0.19](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+`tabletop-core.zip` сохраняет структуру `tabletop-core/{core,application,presentation,platform,themes,locales}`. Это нужно для одинаковых относительных CommonJS imports и browser source imports; прежняя плоская раскладка не включала зависимости model registration и scheduler. Версия SDK — 0.19.5. Источники и публикация — RELEASE-0.19.
 
 Карта файлов, поток команды и границы владения — [архитектура](DEVELOPER-ARCHITECTURE.md). Каталог целей, события и пользовательское хранение — [обучение](TUTORIALS.md).
 
@@ -96,7 +96,7 @@ Presentation может объявлять `scene.round:{number,limit:null|integ
 
 engineApi 4 и network protocol 3 обязательны. API 1/2/3 не исполняются в новом runtime. Старые данные не переписываются; подтверждение полного обновления отдельно от загрузки, исходные данные можно выгрузить. Опубликованные старые файлы и теги неизменны.
 
-Публикация приложения и коллекции независима; процедура и cutover — [RELEASING](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/RELEASING.md).
+Публикация приложения и коллекции независима; процедура и cutover — [RELEASING](RELEASING.md).
 
 Порядок физических мест не меняется при reverse UNO: `scene.turnOrder` описывает очередь, направление показывается отдельным индикатором. Перестановка карточек при изменении направления сбивала бы жесты и привычные позиции игроков.
 
