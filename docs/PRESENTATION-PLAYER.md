@@ -401,7 +401,7 @@ checkpoint until the finishing action is shown. Old Maid's arrival checkpoint ho
 the award until the final pair leaves the hand. Results reuse the same tokens: medals
 for 1–3, smaller white numbered discs thereafter, a distinct last-loser disc.
 
-## Release 0.19 integration invariants
+## Integration invariants
 
 Await asynchronous prepare before starting effects. Concurrent cues share one group; advance only after all finite animation/audio promises and the minimum display interval finish (maximum duration, not their sum). Explicit delay cues share pause/rate/cancel. Infinite selection pulses never hold a group. Instant speech prioritizes the answer sound over the question.
 
@@ -447,7 +447,7 @@ Definition содержит `steps` (`id`, CSS `selector`, локализова�
 Пак может предоставить `botReactionDelay(projection, actor, settings, memory)` (0–60000 мс или null для стандартной задержки). Authority отсчитывает задержку от первого обнаружения эпизода; перепланирование не начинает отсчёт заново. Выбор пропуска принадлежит `botReaction`, а не таймеру UI.
 
 
-## Incremental authored regions (0.21 work in progress)
+## Incremental authored regions ( work in progress)
 
 Pack UI may call `ui.region(id, dependencies, build)` for an independent HTML
 region. Dependencies must include all authorized values affecting its markup:
