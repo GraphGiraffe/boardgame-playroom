@@ -1,6 +1,6 @@
 # UI API 3 · ХОД
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Пак регистрирует `PlayroomViews.register(id, render, cover, options)`. render получает разрешённые state/viewer/actions/ui и возвращает **элементы сцены**, не собственную оболочку. Эталоны: tictactoe/view.js (поле), gofish/view.js (руки/таблица), yatzy/view.js (таблица), ludo/view.js (маршруты).
 

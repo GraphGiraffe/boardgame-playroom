@@ -1,6 +1,6 @@
 # Сеть, роли и восстановление · ХОД
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Браузер хоста владеет authority. WebRTC DataChannel — транспорт, не источник прав; protocol 3 передаёт проверяемые команды и разрешённые снимки. application services работают через порты, app/network-ui и app/transports/webrtc связывают их с браузером.
 

@@ -1,6 +1,6 @@
 # Compact authorized network exchange (RTC 14)
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 A client sends an intent with a receipt ID and expected revision. Authority validates actor, audience and current reaction/control gates, persists the transition and receipt, and then acknowledges it. Receipt delivery does not wait for the complete outbound fanout. The client waits up to 750 ms for the corresponding pushed revision before requesting one shared checkpoint; a normal early ACK creates no extra snapshot request. Durable failures never acknowledge a successful move.
 

@@ -1,6 +1,6 @@
 # Иллюстрированные правила
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Необязательное расширение существующего контракта API 4 / viewApi 3. Старые паки продолжают использовать экранированный `rules: string[]`. Новый пак также сохраняет полный текстовый вариант, чтобы его можно было прочитать старым приложением. Игровой движок не получает HTML и не исполняет правила из текста.
 
