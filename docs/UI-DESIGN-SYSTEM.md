@@ -1,6 +1,6 @@
 # Визуальные правила · ХОД
 
-Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
+Область применения: приложение **0.21.0** и коллекция **0.9.0**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
 Общий стиль: спокойная светлая/тёмная палитра, округлые квадратные элементы, читаемая типографика, умеренная толщина/тень игровых объектов. Все размеры исходят из artboard и масштабируются вместе. Дизайн не изменяет состояние, RNG, legal actions и видимость.
 
