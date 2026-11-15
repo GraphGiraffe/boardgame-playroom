@@ -1,6 +1,6 @@
 # Работа с ХОД
 
-Текущие контракты: engineApi 4, viewApi 3, protocol 3. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и [Roadmap](https://github.com/GraphGiraffe/boardgame-playroom/issues). Актуальный stable и публикацию проверять по release evidence в canonical utils и опубликованным артефактам; версия исходников или preview не доказывает stable-публикацию.
+Текущие контракты: engineApi 4, viewApi 3, protocol 3. Начните с [индекса](docs/DEVELOPER-INDEX.md), [архитектуры](docs/DEVELOPER-ARCHITECTURE.md), [механик](docs/MECHANICS.md) и ROADMAPler. Актуальный stable и публикацию проверять по release evidence в canonical utils и опубликованным артефактам; версия исходников или preview не доказывает stable-публикацию.
 
 - Проверьте root/status/ветку и live-состояние. Соседние проекты и чужие изменения сохранять.
 - domain игр принадлежит отдельной коллекции; application принимает порты, platform/web реализует их. Общие компоненты не узнают game ID.
@@ -32,4 +32,6 @@ Task branch → Draft PR → dev squash. Stable: dev → main merge commit, за
 
 Important update Push is operator-only and opt-in. Never send an update announcement unless the owner explicitly instructs sending that particular important update; release/build/deploy requests are not authorization. announce-update.mjs is dry-run unless --send is explicit. Never invoke the announcement RPC as a deployment smoke test.
 
-Приложение и паки распространяются через сайт; GitHub Releases в этих двух репозиториях не создавать. Тестовые сборки выполняются локально, deployment — в репозитории сайта. Существующие теги и файлы паков на сайте сохранять.
+Приложение и паки распространяются через сайт; GitHub Releases в этих двух репозиториях не создавать. Тестовые сборки выполняются локально, deployment — в репозитории сайта. Файлы паков на сайте сохранять; старые Git-теги очищать только по явному поручению владельца.
+
+Новая исходная точка — приложение 0.21.0 и коллекция 0.9.0. Поддерживать обновление пользователей с 0.19+, но не старые app/pack online-комбинации. Не переносить и не экспортировать несовместимые сохранения: удалять после успешной установки текущего пака и вне активной партии/комнаты. Задачи/идеи/статусы вести только в ROADMAPler; локальные планы и отчёты не восстанавливать. Исходные ассеты сохранять.

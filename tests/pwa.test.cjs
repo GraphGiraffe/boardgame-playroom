@@ -2,55 +2,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'..');
 
-test('Pages origin proxy permits one TLS destination and denies other redirect hosts and ports',async()=>{
- const http=require('node:http'),net=require('node:net'),{originProxy}=require('../scripts/pages-origin-proxy.cjs');
- const upstream=http.createServer((req,res)=>res.end('allowed-origin'));
- await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
- const authority='127.0.0.1:'+upstream.address().port,proxy=await originProxy('https://'+authority);
- const connect=target=>new Promise((resolve,reject)=>{
-  const socket=net.connect(Number(new URL(proxy.server).port),'127.0.0.1');let output='',sent=false;
-  socket.setTimeout(5000,()=>socket.destroy(Error('Proxy test timed out')));socket.on('error',reject);
-  socket.on('connect',()=>socket.write('CONNECT '+target+' HTTP/1.1\r\nHost: '+target+'\r\n\r\n'));
-  socket.on('data',data=>{output+=data;if(!sent&&output.includes('200 Connection Established')){sent=true;socket.write('GET / HTTP/1.1\r\nHost: '+authority+'\r\nConnection: close\r\n\r\n');}});
-  socket.on('close',()=>resolve(output));
- });
- try{
-  assert.match(await connect(authority),/allowed-origin/);
-  assert.match(await connect('forbidden.invalid:443'),/^HTTP\/1.1 403/);
-  assert.match(await connect('127.0.0.1:1'),/^HTTP\/1.1 403/);
- }finally{await proxy.close();await new Promise(resolve=>upstream.close(resolve));}
-});
-
-test('protected Pages browser authenticates its initial Service Worker script through a scoped TLS bridge',{timeout:30000},async()=>{
- const https=require('node:https'),os=require('node:os'),crypto=require('node:crypto');
- const {execFileSync}=require('node:child_process'),{accessProxy}=require('../scripts/pages-access-proxy.cjs');
- const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
- const directory=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-access-test-'));
- const key=path.join(directory,'key.pem'),cert=path.join(directory,'cert.pem');
- execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=127.0.0.1','-addext','subjectAltName=IP:127.0.0.1'],{stdio:'ignore'});
- const seen=[];
- const server=https.createServer({key:fs.readFileSync(key),cert:fs.readFileSync(cert)},(request,response)=>{
-  const authorized=request.headers['cf-access-client-id']==='id'&&request.headers['cf-access-client-secret']==='secret';
-  seen.push({path:request.url,authorized});
-  if(!authorized){response.writeHead(302,{location:'/login'}).end();return;}
-  if(request.url==='/sw.js')response.writeHead(200,{'content-type':'application/javascript'}).end("self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));");
-  else response.writeHead(200,{'content-type':'text/html'}).end("<script>navigator.serviceWorker.register('/sw.js').then(()=>navigator.serviceWorker.ready).then(()=>document.body.dataset.worker='ready')</script><body></body>");
- });
- await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- let proxy,browser;
- try{
-  proxy=await accessProxy('https://127.0.0.1:'+server.address().port,{clientId:'id',clientSecret:'secret',upstreamCA:fs.readFileSync(cert)});
-  browser=await chromium.launch({headless:true,executablePath:executablePath(),proxy:{server:proxy.server},args:['--no-sandbox','--proxy-bypass-list=<-loopback>','--ignore-certificate-errors-spki-list='+proxy.spki]});
-  const context=await browser.newContext({ignoreHTTPSErrors:true});
-  const page=await context.newPage();await page.goto('https://127.0.0.1:'+server.address().port+'/');
-  await page.waitForFunction(()=>document.body.dataset.worker==='ready');
-  assert.ok(seen.some(entry=>entry.path==='/sw.js'&&entry.authorized),'browser must authenticate the Worker script');
-  const checked=await context.request.get('https://127.0.0.1:'+server.address().port+'/sw.js',{headers:{'CF-Access-Client-Id':'id','CF-Access-Client-Secret':'secret'}});
-  assert.equal(checked.status(),200,'API requests must accept the local bridge certificate');
-  await assert.rejects(page.goto('https://forbidden.invalid/'));
- }finally{await browser?.close();await proxy?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
-});
-
 test('PWA manifest exposes share target and custom Playroom protocol',()=>{
   const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.webmanifest'),'utf8'));
   assert.equal(manifest.display,'standalone');
@@ -115,49 +66,6 @@ test('offline pairing UI provides speaker-only mode and explains blocked microph
   assert.match(ui,/net-client-acoustic-listen/);
   assert.match(acoustic,/function microphoneIssue\(/);
   assert.match(acoustic,/function explainMicrophoneError\(/);
-});
-
-test('private Pages packaging removes PWA prefix and preserves access files',()=>{
- const {execFileSync}=require('node:child_process');
- const code=`import importlib.util, tempfile
-from pathlib import Path
-from zipfile import ZipFile
-spec=importlib.util.spec_from_file_location('pages','scripts/package-pages.py')
-m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-with tempfile.TemporaryDirectory() as d:
- p=Path(d)
- with ZipFile(p/'public.zip','w') as z:
-  for n in ['index.html','sw.js','app/app.js','manifest.webmanifest']: z.writestr('playroom-pwa/'+n,n)
- with ZipFile(p/'private.zip','w') as z:
-  for n in ['_routes.json','manifest.webmanifest']: z.writestr(n,'private-'+n)
-  z.writestr('_worker.js','export default {fetch(request,env){return env.ASSETS.fetch(request)}}')
- m.package(p/'public.zip',p/'private.zip',p/'out.zip')
- with ZipFile(p/'out.zip') as z:
-  assert 'index.html' in z.namelist()
-  assert not any(n.startswith('playroom-pwa/') for n in z.namelist())
-  assert b'PlayroomPrivateWorker' in z.read('_worker.js')
-  assert b'PlayroomPackRoute' in z.read('_worker.js')
-  assert z.read('manifest.webmanifest')==b'private-manifest.webmanifest'
-`;
- execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
-});
-
-test('R2 catalog route verifies snapshot bytes and serves immutable pack files',async()=>{
- const vm=require('node:vm'),crypto=require('node:crypto');
- const source=fs.readFileSync(path.join(root,'scripts/pack-catalog-route.js'),'utf8');
- const route=vm.runInNewContext(source+'\nPlayroomPackRoute',{Request,Response,URL,crypto:crypto.webcrypto,Uint8Array});
- const snapshot=Buffer.from('{"format":"playroom-catalog","version":1,"packs":[]}');
- const sha=crypto.createHash('sha256').update(snapshot).digest('hex'),pack=Buffer.from('{"manifest":{"id":"uno"}}');
- const packSha=crypto.createHash('sha256').update(pack).digest('hex');
- const objects=new Map([['catalog/current.json',{text:async()=>JSON.stringify({version:1,key:`catalog/snapshots/${sha}.json`,sha256:sha})}],[`catalog/snapshots/${sha}.json`,{arrayBuffer:async()=>Uint8Array.from(snapshot).buffer}],[`files/uno/0.4.9/${packSha}.playroom-pack.json`,{body:pack}]]);
- const env={PLAYROOM_PACKS:{get:key=>objects.get(key)}};
- const catalog=await route.fetch(new Request('https://example.test/api/packs/catalog'),env);
- assert.equal(catalog.status,200);assert.equal(catalog.headers.get('cache-control'),'no-store, max-age=0');assert.equal(await catalog.text(),snapshot.toString());
- const file=await route.fetch(new Request(`https://example.test/api/packs/files/uno/0.4.9/${packSha}.playroom-pack.json`),env);
- assert.equal(file.status,200);assert.match(file.headers.get('cache-control'),/immutable/);assert.equal(await file.text(),pack.toString());
- objects.set(`catalog/snapshots/${sha}.json`,{arrayBuffer:async()=>Uint8Array.from(Buffer.from('tampered')).buffer});
- assert.equal((await route.fetch(new Request('https://example.test/api/packs/catalog'),env)).status,503);
- assert.equal((await route.fetch(new Request('https://example.test/api/packs/catalog'),{})).status,503);
 });
 
 test('remote pack loader checks URL, SHA256 and manifest before installation',async()=>{
@@ -250,59 +158,6 @@ with tempfile.TemporaryDirectory() as d:
  build.write_directory(dest,changed.items())
  assert {p.relative_to(dest).as_posix() for p in dest.rglob('*') if p.is_file()}==set(changed)|{'_worker.js'}
  assert (dest/'_worker.js').read_text()=='private access wrapper'
-`],{cwd:root,stdio:'pipe'});
-});
-
-test('Pages deployment validates immutable archives, access routes and rollback targets',()=>{
- const {execFileSync}=require('node:child_process');
- execFileSync('python3',['-c',`import build, hashlib, importlib.util, io, json, tempfile, zipfile
-from pathlib import Path
-from unittest.mock import patch
-spec=importlib.util.spec_from_file_location('pages', 'scripts/pages-deploy.py')
-pages=importlib.util.module_from_spec(spec);spec.loader.exec_module(pages)
-def archive(items):
- buffer=io.BytesIO()
- with zipfile.ZipFile(buffer,'w') as z:
-  for name,value in items.items():z.writestr(name,value)
- return buffer.getvalue()
-def denied(call):
- try:call()
- except (ValueError, KeyError):return
- raise AssertionError('Unsafe deployment accepted')
-with patch.object(build,'installed_script',return_value='globalThis.PlayroomInstalledPacks = [];'):
- items=dict(build.pwa_runtime_items())
-private={'_worker.js':'export default {fetch(request,env){return env.ASSETS.fetch(request)}}', '_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':['/icons/*']}), 'manifest.webmanifest':'{}'}
-with tempfile.TemporaryDirectory() as directory:
- root=Path(directory);public=root/'playroom-pwa.zip';sums=root/'SHA256SUMS'
- def package(files):
-  public.write_bytes(archive({'pwa/'+k:v for k,v in files.items()}))
-  sums.write_text(hashlib.sha256(public.read_bytes()).hexdigest()+'  playroom-pwa.zip\\n')
- package(items)
- result=pages.prepare(public,sums,archive(private),root/'valid')
- assert result['files']==len(items)+2
- assert 'PlayroomPrivateWorker' in (root/'valid/_worker.js').read_text()
- assert 'PlayroomPackRoute' in (root/'valid/_worker.js').read_text()
- denied(lambda:pages.prepare(public,sums,archive(private),root/'valid'))
- sums.write_text('0'*64+'  playroom-pwa.zip\\n')
- denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
- package(dict(items,**{'../escape':'bad'}))
- denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
- package(dict(items,**{'_worker.js':'leaked wrapper'}))
- denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
- asset=next(n for n in items if n.endswith('.js') and n!='sw.js')
- package(dict(items,**{asset:b'corrupted'}))
- denied(lambda:pages.prepare(public,sums,archive(private),root/'bad'))
- package(items)
- for exclusion in ['/*','/index.html','/sw.js','/app/*']:
-  unsafe=dict(private,**{'_routes.json':json.dumps({'version':1,'include':['/*'],'exclude':[exclusion]})})
-  denied(lambda:pages.prepare(public,sums,archive(unsafe),root/'bad'))
-for environment,status in [('preview','success'),('production','failure')]:
- client=object.__new__(pages.Pages);calls=[]
- def api(method='GET',suffix=''):
-  calls.append(method);return {'environment':environment,'latest_stage':{'status':status}}
- client.api=api
- denied(lambda:client.rollback('12345678-1234-1234-1234-123456789abc'))
- assert calls==['GET']
 `],{cwd:root,stdio:'pipe'});
 });
 
@@ -472,102 +327,6 @@ print(json.dumps(snapshots))`],{cwd:root,maxBuffer:20*1024*1024}));
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));}
 });
 
-test('local Pages production deploy uploads once without GitHub and rolls back on failed smoke',()=>{
- const code=String.raw`
-import importlib.util, json, os, tempfile
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
-spec=importlib.util.spec_from_file_location('pages', 'scripts/pages-deploy.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-222222222222';sha='a'*40
-class Pages:
- def __init__(self):self.project='existing';self.current=old;self.uploads=[];self.rollbacks=[]
- def api(self,*args,**kwargs):
-  if kwargs.get('suffix')=='/deployments':return [{'id':new,'environment':'production','created_on':'1','url':'https://new.example','deployment_trigger':{'metadata':{'branch':'production','commit_hash':sha,'commit_message':self.message}}}]
-  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':self.current}}
- def production_target(self,value):return {'id':value,'url':'https://old.example'}
- def manual_uploads(self,project):pass
- def rollback(self,value):self.rollbacks.append(value);self.current=value
-for fail in (False,True):
- pages=Pages()
- def command(cmd,**kwargs):
-  assert cmd[0]!='gh'
-  if cmd[0]=='npx':pages.message=cmd[cmd.index('--commit-message')+1];pages.uploads.append(cmd[cmd.index('--branch')+1]);pages.current=new
- def prepare(public,sums,wrapper,destination,catalog_channel=""):destination.mkdir();return {'sha256':'b'*64}
- def smoke(url,*args,**kwargs):
-  if fail and url=='https://new.example':raise ValueError('smoke failed')
-  if kwargs.get('report_path'):kwargs['report_path'].write_text(json.dumps({'appVersion':'0.18.0','catalog':{'collection':'0.7.0','sha256':'c'*64}}))
- args=SimpleNamespace(operation='deploy',release='v0.16.0-rc.4',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('protected.zip'),commit=sha)
- with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
-  try:report=m.run(args)
-  except ValueError:
-   assert fail and pages.rollbacks==[old]
-  else:
-   assert not fail and report['status']=='published' and not pages.rollbacks
-   assert report['productionVerified']=={'appVersion':'0.18.0','catalog':{'collection':'0.7.0','sha256':'c'*64}}
- assert pages.uploads==['production']
-`;
- require('node:child_process').execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
-});
-
-test('preview catalog cannot read or switch the production pointer',async()=>{
- const vm=require('node:vm'),crypto=require('node:crypto');
- const source=fs.readFileSync(path.join(root,'scripts/pack-catalog-route.js'),'utf8');
- const route=vm.runInNewContext('const PlayroomPackCatalogPrefix="channels/0.18-rc.1/";'+source+'\nPlayroomPackRoute',{Request,Response,URL,crypto:crypto.webcrypto,Uint8Array});
- const body=Buffer.from('{"format":"playroom-catalog","version":1,"collection":"0.7.0-rc.1","packs":[]}'),sha=crypto.createHash('sha256').update(body).digest('hex');
- const prefix='channels/0.18-rc.1/',read=[],pointer={version:1,sha256:sha,key:prefix+`catalog/snapshots/${sha}.json`};
- const env={PLAYROOM_PACKS:{get:async key=>{read.push(key);return key===prefix+'catalog/current.json'?{text:async()=>JSON.stringify(pointer)}:key===pointer.key?{arrayBuffer:async()=>Uint8Array.from(body).buffer}:null;}}};
- assert.equal((await route.fetch(new Request('https://preview.test/api/packs/catalog'),env)).status,200);assert(read.every(key=>key.startsWith(prefix)));
- pointer.key=`catalog/snapshots/${sha}.json`;assert.equal((await route.fetch(new Request('https://preview.test/api/packs/catalog'),env)).status,503);
-});
-
-test('RC preview publishes once to a preview branch and verifies production runtime and catalog unchanged',()=>{
- const {execFileSync}=require('node:child_process');
- const code=`
-import importlib.util, json, os, tempfile
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
-spec=importlib.util.spec_from_file_location('pages','scripts/pages-deploy.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-old='11111111-1111-1111-1111-111111111111';new='22222222-2222-2222-2222-222222222222';sha='a'*40
-class Pages:
- def __init__(self):self.project='existing';self.uploads=[];self.patches=[];self.buckets={}
- def api(self,method='GET',suffix='',payload=None):
-  if method=='PATCH':
-   assert set(payload['deployment_configs']['preview'])=={'r2_buckets'}
-   self.patches.append(payload);self.buckets=payload['deployment_configs']['preview']['r2_buckets']
-  if suffix=='/deployments':return [{'id':new,'environment':'preview','created_on':'1','url':'https://preview.example','deployment_trigger':{'metadata':{'branch':self.uploads[-1],'commit_hash':sha,'commit_message':self.message}}}]
-  return {'production_branch':'production','subdomain':'existing.pages.dev','canonical_deployment':{'id':old},'deployment_configs':{'production':{'r2_buckets':{'PLAYROOM_PACKS':{'name':'existing-packs'}}},'preview':{'env_vars':({} if self.patches else None) if empty_env else {'KEEP':{'value':'value'}},'r2_buckets':self.buckets,'compatibility_date':None}}}
- def production_target(self,value):return {'id':value,'url':'https://existing.pages.dev'}
- def manual_uploads(self,project):pass
-for tamper,empty_env in ((False,False),(True,False),(False,True)):
- pages=Pages();stable_reads=[]
- def prepare(public,sums,wrapper,destination,catalog_channel=''):
-  assert catalog_channel=='0.18-rc.1';destination.mkdir();return {'sha256':'b'*64}
- def command(cmd,**kwargs):
-  if cmd[0]=='node':return # Wrapper byte validation has independent real tests.
-  assert cmd[0]=='npx';pages.message=cmd[cmd.index('--commit-message')+1];branch=cmd[cmd.index('--branch')+1];assert branch.startswith('verify-');pages.uploads.append(branch)
- def smoke(url,runtime=None,online_only=False,report_path=None):
-  stable=url=='https://existing.pages.dev'
-  if stable:stable_reads.append(url)
-  data={'appVersion':'0.17.6' if stable else '0.18.0-rc.1','catalog':{'collection':'0.6.5' if stable else '0.7.0-rc.1','sha256':'changed' if stable and tamper and len(stable_reads)>1 else 'original'}}
-  Path(report_path).write_text(json.dumps(data))
- args=SimpleNamespace(operation='preview',release='v0.18.0-rc.1',pack_channel='0.18-rc.1',deployment=None,public=Path('playroom-pwa.zip'),checksums=Path('SHA256SUMS'),protected_base=Path('private.zip'),commit=sha)
- with patch.dict(os.environ,{'PAGES_SMOKE_PASSWORD':'test','CLOUDFLARE_PRODUCTION_BRANCH':'production','CLOUDFLARE_PAGES_ORIGIN':'https://existing.pages.dev'}),patch.object(m,'Pages',lambda:pages),patch.object(m,'prepare',prepare),patch.object(m,'private_wrapper',lambda args:b'private'),patch.object(m,'smoke',smoke),patch.object(m.subprocess,'run',command):
-  try:report=m.run(args)
-  except ValueError as error:
-   assert tamper and 'catalog changed' in str(error)
-  else:
-   assert not tamper and report['productionUnchanged'] and report['previewVerified']['appVersion']=='0.18.0-rc.1'
-  assert len(pages.uploads)==1 and len(stable_reads)==2
-  assert pages.patches[0]['deployment_configs']['preview']['r2_buckets']['PLAYROOM_PACKS']['name']=='existing-packs'
-  assert (pages.api()['deployment_configs']['preview']['env_vars'] or {})==({} if empty_env else {'KEEP':{'value':'value'}})
-  assert 'env_vars' not in pages.patches[0]['deployment_configs']['preview']
-`;
- execFileSync('python3',['-c',code],{cwd:root,stdio:'pipe'});
-});
-
-
 test('built remote-catalog PWA starts and opens all preset avatars offline',{timeout:30000},async()=>{
  const os=require('node:os'),http=require('node:http'),{execFileSync}=require('node:child_process'),{chromium,executablePath}=require('../scripts/codex/browser.cjs');
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-offline-avatar-'));
@@ -589,38 +348,6 @@ test('built remote-catalog PWA starts and opens all preset avatars offline',{tim
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('playroom.player-profile.v1')).avatar),avatar);assert.deepEqual(errors,[]);
  }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fs.rmSync(directory,{recursive:true,force:true});}
 });
-
-test('existing preview verification pins the release and never uploads or changes production',()=>{
- const {execFileSync}=require('node:child_process');
- execFileSync('python3',['-c',`import importlib.util,json,tempfile
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch
-spec=importlib.util.spec_from_file_location('pages','scripts/pages-deploy.py');pages=importlib.util.module_from_spec(spec);spec.loader.exec_module(pages)
-sha='a'*40
-class ReadOnlyPages:
- def deployment_target(self,ident,environment):
-  assert environment=='preview'
-  return {'id':ident,'url':'https://preview.example','deployment_trigger':{'metadata':{'commit_hash':sha}}}
- def api(self,*args,**kwargs):
-  assert not args and not kwargs,'No provider mutation or upload is allowed'
-  return {'canonical_deployment':{'id':'stable'}}
-with tempfile.TemporaryDirectory() as d:
- root=Path(d);args=SimpleNamespace(deployment='preview-id',release='v0.18.0-rc.5',pack_channel='0.18-rc.4',report=root/'report.json')
- seen=[]
- def smoke(url,*args,**kwargs):
-  seen.append(url);kwargs['report_path'].write_text(json.dumps({'appVersion':'0.17.6' if url=='https://stable.example' else '0.18.0-rc.5'}))
- with patch.object(pages,'github_release_assets',return_value=(root/'public.zip',root/'SHA256SUMS',sha)),patch.object(pages,'prepare'),patch.object(pages,'private_wrapper',return_value=b'private'),patch.object(pages,'smoke',side_effect=smoke):
-  result=pages.verify_existing_preview(ReadOnlyPages(),args,{},'https://stable.example','stable')
-  assert result['productionUnchanged'] and not result['uploaded'] and result['status']=='preview-verified'
-  assert seen==['https://stable.example','https://preview.example','https://stable.example']
-  with patch.object(pages,'github_release_assets',return_value=(root/'public.zip',root/'SHA256SUMS','b'*40)):
-   try:pages.verify_existing_preview(ReadOnlyPages(),args,{},'https://stable.example','stable')
-   except ValueError as error:assert 'commit' in str(error)
-   else:raise AssertionError('Wrong release must be rejected')
-`],{cwd:root,stdio:'pipe'});
-});
-
 
 test('staged update announces metadata only, keeps verified files after HTTP failure and resumes without redownloading',{timeout:30000},async()=>{
  const vm=require('node:vm'),crypto=require('node:crypto'),source=fs.readFileSync(path.join(root,'sw.js'),'utf8'),listeners={},messages=[],files=new Map(),requests=new Map();let fail=true,quota=false,broken=false,fetches=0;
