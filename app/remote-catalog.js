@@ -2,6 +2,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
 (function(root){
   'use strict';
   const Deadline=root.PlayroomRequestDeadline||(typeof require==='function'?require('../platform/web/request-deadline.js'):null);
+  const compareVersions=root.TabletopPacks?.compareVersions||(typeof require==='function'?require('../core/packs.js').compareVersions:null);
   const KEY='playroom.remote-catalog.v1',ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
   const HEX=/^[a-f0-9]{64}$/;
@@ -43,8 +44,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     async load(options){const request=this.readSequence+1;try{return await this.refresh(options);}catch(error){if(request===this.readSequence&&!options?.signal?.aborted)this.warning=globalThis.PlayroomMessages.error(error);return this.current;}}
     pending(){
-      const installed=new Set(this.manager.list().map(item=>item.id+'@'+item.version));
-      return (this.current?.packs||[]).filter(item=>!installed.has(item.id+'@'+item.version));
+      const installed=this.manager.list(),compare=this.manager.constructor?.compareVersions||compareVersions;
+      return (this.current?.packs||[]).filter(item=>installed.filter(row=>row.id===item.id).every(row=>compare(item.version,row.version)>0));
     }
     async prepare(id){
       this.requireAvailable();
