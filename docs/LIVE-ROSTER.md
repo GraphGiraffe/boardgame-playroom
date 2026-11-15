@@ -1,4 +1,4 @@
-# Смена состава начатой партии · ХОД 0.21.0
+# Смена состава начатой партии · ХОД
 
 Область применения: приложение **0.21.0** и коллекция **0.8.10**, engineApi 4 / viewApi 3 / protocol 3. Исторические этапы ниже поясняют совместимость; текущая приёмка хранится в [utils](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/reports/ACCEPTANCE-0.21.0.md).
 
