@@ -4,4 +4,4 @@
 
 Контракты и примеры: [SDK](../docs/SDK-0.18.md), [архитектура](../docs/DEVELOPER-ARCHITECTURE.md), [формат пака](../docs/PACK-FORMAT.md). Канонические игровые определения и общие ассеты находятся в соседнем репозитории коллекции.
 
-Проверки выбираются явно через [руководство тестирования](https://github.com/GraphGiraffe/boardgame-playroom-utils/blob/main/docs/project/app/TESTING.md).
+Проверки выбираются явно через [руководство тестирования](../docs/TESTING.md).
