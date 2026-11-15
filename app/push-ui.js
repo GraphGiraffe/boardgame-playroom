@@ -7,9 +7,9 @@
  function markup(){
   const supported=D().supported(),ready=!!config?.ready,denied=D().permission()==='denied',reason=notice||(!supported?labels.unsupported:denied?labels.permission:!user?'Войдите в облачный аккаунт.':configPending?'Проверяем доступность уведомлений…':!ready?labels.setup:'');
   const status=reason||(busy?(enabled?'Отключаем уведомления…':'Включаем уведомления…'):enabled?'Включены':'Выключены');
-  return `<button type="button" class="menu-row ${enabled?'push-enabled':''}" data-push-toggle data-entity="push-control" aria-pressed="${enabled}" aria-busy="${busy||configPending}" aria-label="${H().esc((enabled?'Отключить уведомления':'Включить уведомления')+(reason?' · '+reason:''))}" ${busy||!enabled&&(!user||!supported||!ready||denied||configPending)?'disabled':''}><span><strong>Уведомления</strong><small data-push-state data-entity="push-state" role="status" aria-live="polite">${H().esc(status)}</small></span>${H().icon(enabled?'bell':'bell-off')}</button>`+(notice===labels['pwa-required']?`<button type="button" class="btn secondary" data-push-retry ${busy||configPending?'disabled':''}>${H().icon('refresh')}Повторить проверку</button>`:'');
+  return `<label class="switch ui-switch preference-row preference-row--control ${enabled?'push-enabled':''}" data-entity="push-row" title="${H().esc(reason||status)}"><span>Уведомления ${root.PlayroomLobbyView.fieldHelp(root.PlayroomMessages.text('ui.app.help.notifications'),'Уведомления')}<small hidden data-push-state data-entity="push-state" role="status" aria-live="polite">${H().esc(status)}</small></span><input type="checkbox" role="switch" data-push-toggle data-entity="push-control" ${enabled?'checked':''} aria-busy="${busy||configPending}" aria-label="${H().esc((enabled?'Отключить уведомления':'Включить уведомления')+(reason?' · '+reason:''))}" ${busy||!enabled&&(!user||!supported||!ready||denied||configPending)?'disabled':''}></label>`+(notice===labels['pwa-required']?`<button type="button" class="menu-row preference-row preference-row--action" data-push-retry ${busy||configPending?'disabled':''}><span>Повторить проверку</span>${H().icon('refresh')}</button>`:'')+(root.PlayroomPWA?.installState().mode==='ios'&&!supported?`<button type="button" class="menu-row preference-row preference-row--action" data-install-open data-install-for-push aria-haspopup="dialog"><span>Установить ХОД для уведомлений</span>${H().icon('install')}</button>`:'');
  }
- function update(){for(const el of document.querySelectorAll('[data-push-settings]')){if(root.PlayroomDOM?.ListController)root.PlayroomDOM.ListController.update(el,markup());else el.innerHTML=markup();}}
+ function update(){for(const el of document.querySelectorAll('[data-push-settings]')){if(root.PlayroomDOM?.ListController)root.PlayroomDOM.ListController.update(el,markup());else el.innerHTML=markup();const input=el.querySelector('[data-push-toggle]');if(input)input.checked=enabled;}}
  async function sync({force=false}={}){
   const s=account.snapshot(),next=s.kind==='account'&&!s.recovery?s.id:null;
   if(next===user&&!force)return;
@@ -120,6 +120,7 @@
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{user=undefined;void sync();});
   root.addEventListener('online',()=>{user=undefined;void sync();});
  }
- document.addEventListener('click',event=>{if(event.target.closest('[data-push-retry]')){if(!busy&&!configPending)void sync({force:true});return;}if(event.target.closest('[data-push-toggle]'))void toggle();});
+ document.addEventListener('click',event=>{if(event.target.closest('[data-push-retry]')){if(!busy&&!configPending)void sync({force:true});return;}});
+ document.addEventListener('change',event=>{if(event.target.matches('[data-push-toggle]')){event.target.checked=enabled;void toggle();}});
  root.PlayroomPushUI=Object.freeze({init,markup,beforeLogout,roomSeen,openPending,notifyRoom,watchGame});
 })(globalThis);
