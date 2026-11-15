@@ -76,7 +76,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const availableIds=new Set(),onlineStates=new Map();
     const title = manifest => manifest.name || manifest.title || manifest.id;
     const references = (id,version) => library.references(id,version);
-    const cleanup=new root.PlayroomPackUpdateCleanup({manager,localReferences:references,networkArchives:()=>networkLibrary.list({strict:true}),activeRoom:()=>!!networkLibrary.hasActiveRoom?.(),compare:manager.constructor.compareVersions});
+    const cleanup=root.PlayroomPackUpdateCleanup.fromLibraries({manager,library,networkLibrary,activeRoom:()=>!!networkLibrary.hasActiveRoom?.()});
     function currentBootWarnings(){
       const warnings=root.PlayroomPacks?.warnings||[];
       // A bundled version conflict matters to the user while a saved game

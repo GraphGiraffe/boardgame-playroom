@@ -214,15 +214,6 @@ test('user learning persists across sessions, stops tracking when disabled, and 
  user='bob';assert.deepEqual(store.read('fixture').mastered,{});user='alice';c.restart('fixture');assert.deepEqual(store.read('fixture').mastered,{});assert(store.read('fixture').enabled);
 });
 
-test('pack update cleanup preserves referenced versions, active rooms and failed archive reads',async()=>{
- const Cleanup=require('../application/pack-update-cleanup.js');
- let items=[{id:'game',version:'1',active:false},{id:'game',version:'2',active:false},{id:'game',version:'3',active:true}],active=false;
- const cleanup=new Cleanup({manager:{list:()=>items,remove:(id,version)=>{items=items.filter(p=>p.version!==version);}},compare:(a,b)=>Number(a)-Number(b),localReferences:(_,v)=>v==='1'?['saved']:[],networkArchives:async()=>[],activeRoom:()=>active});
- active=true;assert.deepEqual(await cleanup.run('game'),[]);active=false;assert.deepEqual(await cleanup.run('game'),['2']);assert.deepEqual(items.map(p=>p.version),['1','3']);
- cleanup.localReferences=()=>[];cleanup.networkArchives=async()=>[{game:'game',packVersion:'1'}];assert.deepEqual(await cleanup.run('game'),[]);
- cleanup.networkArchives=async()=>{throw Error('archive unavailable');};await assert.rejects(()=>cleanup.run('game'));assert.equal(items.length,2);
-});
-
 test('round token pawn profile puts the white rim on the top only and preserves the artboard',()=>{
  const geometry=require(path.join(companion,'shared/components/round-token.js'));
  const pawn=geometry.roundTokenArt({profile:'pawn',value:4}),normal=geometry.roundTokenArt({value:4});
@@ -233,11 +224,18 @@ test('round token pawn profile puts the white rim on the top only and preserves 
  assert.match(pawn,/>4<\/text>/);assert.throws(()=>geometry.roundTokenArt({profile:'other'}));
 });
 
-test('reviewed pack cleanup preserves local and network references and rechecks stale plans',async()=>{
- const Cleanup=require('../application/pack-update-cleanup.js');const pinned={bundle:{manifest:{id:'pinned',version:'1',name:'Pinned'}}},unused={bundle:{manifest:{id:'bad',version:'1',name:'Bad'}}};let rows=[{id:'game',version:'1',active:false},{id:'game',version:'2',active:false},{id:'game',version:'3',active:true}],refs=new Set(['game@1','pinned@1']),removed=[];
- const manager={quarantined:[pinned,unused],list:()=>rows,async remove(id,version,{guard}){guard();removed.push(id+'@'+version);rows=rows.filter(p=>p.id!==id||p.version!==version)},async discardQuarantine(index,{guard}){guard();removed.push(this.quarantined[index].bundle.manifest.id);this.quarantined=this.quarantined.filter((_,i)=>i!==index)}};
- const cleanup=new Cleanup({manager,compare:(a,b)=>Number(a)-Number(b),localReferences:(id,v)=>refs.has(id+'@'+v)?['save']:[],networkArchives:async()=>[],activeRoom:()=>false});
- const plan=await cleanup.plan();assert.equal(plan.items.length,2);assert.equal(plan.retained.length,2);assert.deepEqual(removed,[],'review does not delete');refs.add('game@2');await cleanup.removeUnused(plan);assert.deepEqual(removed,['bad']);assert.equal(rows.length,3);assert.deepEqual(manager.quarantined,[pinned]);
- refs.delete('game@2');cleanup.networkArchives=async()=>[{game:'game',packVersion:'2'}];assert.equal((await cleanup.plan()).items.length,0);cleanup.activeRoom=()=>true;assert.equal((await cleanup.plan()).blocked,true);
- cleanup.activeRoom=()=>false;cleanup.networkArchives=async()=>{throw Error('archive unreadable')};await assert.rejects(()=>cleanup.removeUnused(plan),/archive unreadable/);assert.equal(rows.length,3);
+
+function cleanupFixture(){
+ const Cleanup=require('../application/pack-update-cleanup.js'),state={busy:false,fail:false,refs:['old-save'],archives:[{game:'game',packVersion:'1',role:'host',sessionId:'old-host'}],rows:[{id:'game',version:'1',active:false},{id:'game',version:'2',active:true}],events:[]};
+ const manager={list:()=>state.rows,remove:async(id,version,{guard})=>{guard();state.events.push('pack');state.rows=state.rows.filter(r=>r.version!==version);}};
+ const cleanup=new Cleanup({manager,compare:(a,b)=>Number(a)-Number(b),localReferences:()=>state.refs,networkArchives:async()=>{if(state.fail)throw Error('archive unreadable');return state.archives;},activeRoom:()=>state.busy,removeLocal:async(id,{guard})=>{guard();state.events.push(id);state.refs=[];},removeNetwork:async(row,{guard})=>{guard();state.events.push(row.sessionId);state.archives=[];}});return {state,cleanup};
+}
+test('pack cleanup deletes superseded local and network saves before the old pack, retaining current pack',async()=>{
+ const {state,cleanup}=cleanupFixture();const plan=await cleanup.plan();assert.equal(plan.items[0].saves,2);assert.deepEqual(state.events,[]);await cleanup.removeUnused(plan);assert.deepEqual(state.events,['old-save','old-host','pack']);assert.deepEqual(state.rows,[{id:'game',version:'2',active:true}]);
+});
+test('pack cleanup refuses active rooms and unreadable archives without deleting saves',async()=>{
+ const {state,cleanup}=cleanupFixture();state.busy=true;assert((await cleanup.plan()).blocked);state.busy=false;const plan=await cleanup.plan();state.fail=true;await assert.rejects(cleanup.removeUnused(plan),/archive unreadable/);assert.deepEqual(state.events,[]);state.fail=false;state.busy=true;await assert.rejects(cleanup.removeUnused(plan),/CLEANUP_CHANGED/);assert.deepEqual(state.events,[]);
+});
+test('pack cleanup does not remove a version that became active after the review',async()=>{
+ const {state,cleanup}=cleanupFixture();const plan=await cleanup.plan();state.rows=state.rows.map(row=>({...row,active:row.version==='1'}));await assert.rejects(cleanup.removeUnused(plan),/CLEANUP_CHANGED/);assert.deepEqual(state.events,[]);
 });

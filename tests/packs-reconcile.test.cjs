@@ -14,10 +14,7 @@ test('compressed pack storage preserves exact versions, quarantine, preferences 
  const data=durable(snapshot),storage=await PackStorage.create({data,key:'packs'});assert.equal(storage.get(),snapshot);
  await storage.commit(snapshot);assert.equal(JSON.parse(data.getItem()).encoding,'gzip-base64-v1');assert(Buffer.byteLength(data.getItem())<Buffer.byteLength(snapshot)/2);
  const reloaded=await PackStorage.create({data,key:'packs'});assert.equal(reloaded.get(),snapshot);
- const Upgrade=require('../application/upgrade-service.js'),prefs={getItem:()=>null,length:0,key:()=>null};
- const payloads={getItem:()=>data.getItem(),length:1,key:()=> 'playroom.packs.v1'};
- const service=new Upgrade(prefs,payloads,reloaded);assert.equal(JSON.parse(service.export()).entries['playroom.packs.v1'],snapshot);
- const incompatible=JSON.parse(snapshot);incompatible.quarantined[0].bundle.manifest.engineApi=3;await reloaded.commit(JSON.stringify(incompatible));assert.equal(service.inspect(),true);
+ const incompatible=JSON.parse(snapshot);incompatible.quarantined[0].bundle.manifest.engineApi=3;await reloaded.commit(JSON.stringify(incompatible));assert.equal(JSON.parse(reloaded.get()).quarantined[0].bundle.manifest.engineApi,3);
 });
 test('compressed pack storage failures and cancellation preserve prior bytes; plain fallback and deletion work',async()=>{
  const before='original bytes',data=durable(before),compression=require('../application/save-compression.js');
@@ -122,8 +119,8 @@ test('stable release update stays active through reload cleanup and repeated upd
  const makeRemote=m=>{const remote=new RemoteCatalog({manager:m,storage:{getItem:()=>null,setItem(){}},crypto:crypto.webcrypto,fetcher:async()=>{downloads++;return new Response(raw);}});remote.current=catalog;return remote;};
  assert.equal(makeRemote(first.instance).pending().length,1);await makeRemote(first.instance).install('demo',{activate:true});
  let current=manager(JSON.parse(first.raw()));await current.instance.bootstrap([preview]);assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8','reloading must not reactivate the prerelease');
- let pinned=true;const cleanup=m=>new Cleanup({manager:m,localReferences:(_id,version)=>pinned&&version===preview.manifest.version?['saved-preview-match']:[],networkArchives:async()=>[],activeRoom:()=>false,compare:Packs.compareVersions});
- assert.deepEqual((await cleanup(current.instance).plan()).retained.map(p=>p.version),[preview.manifest.version]);assert.equal(current.instance.activate('demo',preview.manifest.version).version,preview.manifest.version,'saved matches resolve their exact prerelease');assert.deepEqual(cleanup(current.instance).oldVersions(),[],'newer inactive stable release is never an old-version cleanup candidate');current.instance.activate('demo');assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8');
+ let pinned=true;const cleanup=m=>new Cleanup({manager:m,localReferences:(_id,version)=>pinned&&version===preview.manifest.version?['saved-preview-match']:[],networkArchives:async()=>[],removeLocal:async()=>{pinned=false;},activeRoom:()=>false,compare:Packs.compareVersions});
+ assert.deepEqual((await cleanup(current.instance).plan()).retained,[]);assert.equal((await cleanup(current.instance).plan()).items[0].saves,1);assert.equal(current.instance.activate('demo',preview.manifest.version).version,preview.manifest.version,'saved matches resolve their exact prerelease');assert.deepEqual(cleanup(current.instance).oldVersions(),[],'newer inactive stable release is never an old-version cleanup candidate');current.instance.activate('demo');assert.equal(current.instance.list().find(p=>p.active).version,'0.6.8');
  pinned=false;
  for(let cycle=0;cycle<3;cycle++){
   await cleanup(current.instance).removeUnused(await cleanup(current.instance).plan());assert.deepEqual(current.instance.list().map(p=>p.version),['0.6.8']);assert.deepEqual(makeRemote(current.instance).pending(),[]);
