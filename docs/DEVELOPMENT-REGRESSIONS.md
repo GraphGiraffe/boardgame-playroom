@@ -32,13 +32,13 @@ Preserve original art, rejected candidates and chosen versions in source design 
 
 Within the same game/viewer/viewport, removing or emptying a local or opponent hand must preserve its measured layout zone, including during public playback. Retain only geometry: never retain removed cards, private markup, commands or focus targets. Reserve resets with a new scene identity or viewport/scale change; explicit field reflow does not erase hand reserves. Check removal, repeated empty rendering and restoration in portrait and landscape.
 
-## 0.19 presentation performance
+## presentation performance
 
 Сопоставление публичных команд с разрешёнными действиями не должно выполнять попарную сериализацию N×N. Authority индексирует разрешённые значения по набору ключей команды в рамках одного снимка; дополнительные presentation-поля сохраняют прежнюю семантику сопоставления. Постоянного кеша игровых состояний нет. Локальный замер расстановки Морского боя (602 команды, seed 17): до ~203 мс, после прогрева ~21–23 мс; это время snapshot, не полный render и не замер телефона.
 
 Не клонировать все руки/поле ради одного эффекта: выбирать source hands, leaving board refs и затронутые flip slots. Проверять порядок async prepare → ответ/звук → transfer → set/reveal → counters в local/network/history. При resize инвалидировать координатные резервы, сохраняя объявленные зоны пустых рук. Быстрый режим сохраняет видимость действия, instant при наложении выбирает ответ.
 
-## Справка и компактная компоновка · 0.19.2
+## Справка и компактная компоновка
 
 Общий заголовок стола занимает максимум две строки: если название переносится, подпись режима скрывается; после поворота экрана повторно измерять текст. `template[data-card-help-intro]` задаёт вводный блок справки активного пака. `--square-hand-padding` позволяет уменьшить резерв квадратной руки; значение по умолчанию сохраняет другие паки. Проверять полный offline HTML, восемь игроков и возврат portrait → landscape → portrait. Размер кнопки сверять по computed style: общий `--ui-target` может перекрыть локальные width/height.
 
