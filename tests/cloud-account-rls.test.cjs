@@ -130,6 +130,53 @@ test('cloud accounts/social: repeatable migrations and server access separate ac
   sql('create role service_role;');const pushSQL=fs.readFileSync(path.join(__dirname,'../server/push.sql'),'utf8');sql(pushSQL);sql(pushSQL);
   const handoffSQL=fs.readFileSync(path.join(__dirname,'../server/host-transfer.sql'),'utf8');sql(handoffSQL);sql(handoffSQL);const pushReadsSQL=fs.readFileSync(path.join(__dirname,'../server/push-read-receipts.sql'),'utf8');sql(pushReadsSQL);sql(pushReadsSQL);const hostPushSQL=fs.readFileSync(path.join(__dirname,'../server/host-transfer-push.sql'),'utf8');sql(hostPushSQL);sql(hostPushSQL);sql('alter table public.playroom_host_transfers disable trigger playroom_push_host_transfer;');
   const cleanupSQL=fs.readFileSync(path.join(__dirname,'../server/room-cleanup.sql'),'utf8');sql(cleanupSQL);sql(cleanupSQL);
+  // Lease expiry only hides a room. Permanent cleanup waits a full day.
+  const inactivity=JSON.parse(sql(`with fixtures as (
+   insert into public.playroom_cloud_rooms(owner_id,name,local_room_id,created_at,host_until)
+   values
+    ('${registered}','fresh','inactivity-fresh',now()-interval '2 days',now()+interval '20 seconds'),
+    ('${registered}','offline','inactivity-offline',now()-interval '2 days',now()-interval '1 hour'),
+    ('${registered}','expired','inactivity-expired',now()-interval '2 days',now()-interval '25 hours'),
+    ('${registered}','never','inactivity-never',now()-interval '25 hours',null),
+    ('${registered}','member','inactivity-member',now()-interval '2 days',now()-interval '25 hours')
+   returning name,id
+  ) select json_object_agg(name,id) from fixtures;`).split('\n')[0]);
+  sql(`insert into public.playroom_room_members(room_id,user_id,nickname,active_until) values
+   ('${inactivity.expired}','${registered}','Алиса',now()-interval '25 hours'),
+   ('${inactivity.member}','${registered}','Алиса',now()+interval '2 minutes');
+   insert into public.playroom_peer_bindings(room_id,user_id) values('${inactivity.expired}','${a}');
+   insert into public.playroom_host_transfers(id,room_id,source,target,source_participant,target_participant,epoch,state,expires_at)
+    values(gen_random_uuid(),'${inactivity.expired}','${a}','${b}','host','guest',gen_random_uuid(),'committed','infinity');`);
+  sql(as(a,false,'select public.playroom_close_inactive_rooms();'),false);
+  sql('set role anon;select public.playroom_close_inactive_rooms();',false);
+  assert.equal(sql('select public.playroom_close_inactive_rooms();'),'2');
+  assert.equal(sql('select public.playroom_close_inactive_rooms();'),'0','cleanup is idempotent');
+  assert.deepEqual(JSON.parse(sql("select json_object_agg(name,closed) from public.playroom_cloud_rooms where local_room_id like 'inactivity-%';")),
+   {fresh:false,offline:false,expired:true,never:true,member:false});
+  for(const table of ['playroom_room_members','playroom_peer_bindings','playroom_host_transfers'])
+   assert.equal(sql(`select count(*) from public.${table} where room_id='${inactivity.expired}';`),'0','closure cleans '+table);
+  // A restored local save keeps its local identity, but receives a new cloud room.
+  rpc(registered,false,'lobby',{localRoomId:'inactivity-expired',name:'Продолженная партия'},false);
+  sql(`update public.playroom_cloud_rooms set host_until=now()-interval '1 hour' where id='${inactivity.fresh}';`);
+  const recreated=rpc(registered,false,'lobby',{localRoomId:'inactivity-expired',name:'Продолженная партия'});
+  assert.notEqual(recreated.id,inactivity.expired);
+  assert.equal(rpc(registered,false,'lobby',{localRoomId:'inactivity-expired',name:'Продолженная партия'}).id,recreated.id);
+  assert.equal(sql(`select closed from public.playroom_cloud_rooms where id='${recreated.id}';`),'f');
+  sql("delete from public.playroom_cloud_rooms where local_room_id like 'inactivity-%';");
+  // Isolated scheduler metadata: retain unfinished and recently completed jobs.
+  sql("create schema cron;create table cron.job_run_details(runid bigint primary key,status text,start_time timestamptz,end_time timestamptz);");
+  const retentionSQL=fs.readFileSync(path.join(__dirname,'../server/cron-retention.sql'),'utf8');sql(retentionSQL);sql(retentionSQL);
+  sql(`insert into cron.job_run_details values
+   (1,'succeeded',now()-interval '9 days',now()-interval '8 days'),
+   (2,'failed',now()-interval '9 days',now()-interval '8 days'),
+   (3,'running',now()-interval '9 days',null),
+   (4,'succeeded',now()-interval '2 days',now()-interval '1 day'),
+   (5,'succeeded',now()-interval '9 days',now()-interval '1 day');`);
+  sql(as(a,false,'select public.playroom_prune_cron_history();'),false);
+  sql('set role anon;select public.playroom_prune_cron_history();',false);
+  assert.equal(sql('select public.playroom_prune_cron_history();'),'2');
+  assert.equal(sql('select public.playroom_prune_cron_history();'),'0');
+  assert.equal(sql("select string_agg(runid::text,',' order by runid) from cron.job_run_details;"),'3,4,5');
   const iceSQL=fs.readFileSync(path.join(__dirname,'../server/ice.sql'),'utf8');sql(iceSQL);sql(iceSQL);
   const traceRoom=sql(`insert into public.playroom_cloud_rooms(owner_id,name) values('${a}','ICE') returning id;`).split('\n')[0];
   assert.equal(JSON.parse(sql(as(a,false,`select public.playroom_ice_access('${traceRoom}');`)).split('\n').at(-1)).userId,a);
