@@ -66,7 +66,7 @@ Checkpoint привязан к hash исходников и содержит з�
 python3 sdk.py --app ../playroom import-asset /tmp/my-game /path/to/piece.svg --name piece.svg --license CC0-1.0 --provenance 'Original drawing'
 ```
 
-Для проекта с shared-ресурсами добавьте `--shared ../playroom-paks/shared`. До записи импорт проверяет полный local/shared closure и размер source-export с новым ресурсом, base64 и provenance. Отсутствующий shared root или превышение бюджета не оставляет файл или metadata; устанавливаемый pack дополнительно проверяет `compile`.
+Для проекта с shared-ресурсами добавьте `--shared ../playroom-paks/shared`. До записи импорт проверяет полный local/shared closure и размер source-export с новым ресурсом, base64 и provenance. Отсутствующий shared root или превышение бюджета не оставляет файл или metadata; импорт также измеряет полный устанавливаемый pack тем же Python-компилятором, включая повторное JSON escaping. Отчёт разделяет `sourceBudget` и `installableBudget`; `compile` остаётся окончательной проверкой готового файла.
 
 Импорт копирует оригинал без перезаписи; лицензия, источник и SHA записываются в `sdk/assets.json`. Допустимы SVG/PNG/JPEG/WebP, WAV/OGG/MP3, JSON-анимации. SVG разбирается XML-парсером: ограниченный словарь, без DTD, скриптов, событий, встроенных стилей и внешних ссылок. Растр: максимум 2048 по стороне/4 000 000 пикселей. Анимация: `contractVersion:1`, `frames:[{time:0,values:{opacity:0}}]`; x/y/rotation/scale/opacity, до 10 секунд/1000 кадров. Галерея позволяет проиграть её с учётом reduced motion. Пользовательский звук прослушивается отдельно; события используют общую TabletopAudio с выключенным по умолчанию звуком.
 
@@ -76,7 +76,7 @@ python3 sdk.py --app ../playroom import-asset /tmp/my-game /path/to/piece.svg --
 
 Цель — **500 kB**, жёсткий максимум — **4 MB = 4 000 000 байт UTF-8 до HTTP-сжатия**, без минимального размера. `check` и `build` используют один encoder и возвращают `budget`/`warnings`: подсчёт включает manifest, descriptor, locales, все выбранные модули, JSON escaping и base64 ресурсов. `SDK_PACK_TARGET_EXCEEDED` — предупреждение, а не ошибка. `SDK_PACK_SIZE_LIMIT` отклоняет экспорт до создания файла; существующий output не перезаписывается. Изменившийся после аудита ресурс отклоняется по SHA.
 
-Тот же hard limit применяется к полному устанавливаемому `playroom-pack` в compiler, player parser и проверке импортируемых файлов сайта. Межъязыковой контракт проверяется на точной границе, включая многобайтовый UTF-8. SDK source-export и player-pack остаются разными форматами: размеры одного не доказывают размер другого. Source-мастера и расход памяти VM считаются отдельно.
+Тот же hard limit применяется к полному устанавливаемому `playroom-pack` в compiler, player parser и проверке импортируемых файлов сайта. Обычный player до создания VM и Blob повторно проверяет count/bytes/SHA, форматы и ограничения медиа тем же переносимым валидатором, что и SDK. Межъязыковой контракт проверяется на точной границе, включая многобайтовый UTF-8. SDK source-export и player-pack остаются разными форматами: размеры одного не доказывают размер другого. Source-мастера и расход памяти VM считаются отдельно.
 
 `build --output FILE` экспортирует новый `playroom-sdk-source` для передачи/ревью. Это не устанавливаемый player-pack, не gameplay-проверка и не deployment. Устанавливаемый pack создаёт `compile`, а проверку обычного player, сети и offline выполняют отдельно от source-проверок. Публикация — отдельная операция.
 

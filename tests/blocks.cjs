@@ -5,6 +5,7 @@ module.exports = {
     {"file":"sdk-pack-scenes-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-browser-runtime.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-resource-closure.test.cjs","profiles":[],"subblock":"core/sdk"},
+    {"file":"sdk-media.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-budget.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-sandbox.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-contract.test.cjs","profiles":[],"subblock":"core/sdk"},
