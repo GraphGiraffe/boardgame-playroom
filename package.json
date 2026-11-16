@@ -26,7 +26,11 @@
     "test:changed": "node scripts/codex/test.cjs --changed"
   },
   "devDependencies": {
-    "playwright-core": "1.63.0"
+    "acorn": "8.15.0",
+    "playwright-core": "1.63.0",
+    "quickjs-emscripten": "0.32.0",
+    "saxes": "6.0.0",
+    "typescript": "5.9.3"
   },
   "engines": {
     "node": ">=22"
