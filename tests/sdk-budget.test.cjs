@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
 const {fixture}=require('./sdk-fixture.cjs');
 const {check,prepareProject}=require('../sdk/check.cjs');
-const {validateAsset,auditAssets}=require('../sdk/assets.cjs');
+const {validateAsset,auditAssets,auditProjectAssetImport}=require('../sdk/assets.cjs');
 const {BUDGET}=require('../sdk/budget.cjs');
 const Packs=require('../core/packs.js');
 const root=path.resolve(__dirname,'..');
@@ -58,4 +58,21 @@ test('SDK excludes author documentation from runtime assets and catches files ch
  const project=fixture(t),folder=assets(project);fs.writeFileSync(path.join(folder,'README.md'),'Origin of the artwork');fs.writeFileSync(path.join(folder,'art.svg'),svg());
  const report=auditAssets(project);assert.equal(report.files.length,1);assert.deepEqual(report.documentation,['assets/README.md']);assert.equal(JSON.parse(prepareProject(project).text).assets.length,1);
  const {encodeSource}=require('../sdk/artifact.cjs'),{loadProject}=require('../sdk/project.cjs');fs.writeFileSync(path.join(folder,'art.svg'),svg().toString().replace(' ','\t'));assert.throws(()=>encodeSource(loadProject(project),report),e=>e.code==='SDK_ASSET_CHANGED');
+});
+test('asset import preflight counts shared and local closure without creating candidate files',t=>{
+ const project=fixture(t),folder=assets(project),shared=path.join(project,'shared');fs.mkdirSync(path.join(shared,'assets'),{recursive:true});
+ const manifest=JSON.parse(fs.readFileSync(path.join(project,'manifest.json')));manifest.sharedAssets=['one.png','two.png','three.png'];fs.writeFileSync(path.join(project,'manifest.json'),JSON.stringify(manifest));
+ for(const file of manifest.sharedAssets)fs.writeFileSync(path.join(shared,'assets',file),png(1,1,500_000));fs.writeFileSync(path.join(folder,'local.png'),png(1,1,450_000));
+ const candidate={file:'assets/new.png',buffer:png(1,1,100_000),provenance:{license:'CC0-1.0',source:'Fixture'}};
+ assert.equal(auditAssets(project,{candidate}).bytes,550_000,'a local-only inventory misses the actual shared resource total');
+ assert.throws(()=>auditProjectAssetImport(project,candidate,{shared}),e=>e.code==='SDK_ASSET_TOTAL_LIMIT');assert.throws(()=>auditProjectAssetImport(project,candidate),e=>e.code==='SDK_SHARED_REQUIRED');assert(!fs.existsSync(path.join(folder,'new.png')));
+ const source=path.join(project,'original.png'),metadata=path.join(project,'sdk/assets.json');fs.writeFileSync(source,candidate.buffer);fs.writeFileSync(metadata,'{"kept":{"source":"Existing provenance"}}');const before=fs.readFileSync(metadata);
+ const importAsset=()=>spawnSync('python3',[path.resolve(root,'../boardgame-playroom-utils/sdk.py'),'--app',root,'import-asset',project,source,'--name','new.png','--license','CC0-1.0','--provenance','Fixture','--shared',shared],{encoding:'utf8',timeout:20000});
+ const refused=importAsset();assert.equal(refused.status,1,refused.stderr);assert.match(JSON.parse(refused.stdout).message,/SDK_ASSET_TOTAL_LIMIT/);assert(!fs.existsSync(path.join(folder,'new.png')));assert.deepEqual(fs.readFileSync(metadata),before);assert.deepEqual(fs.readFileSync(source),candidate.buffer);
+ candidate.buffer=png(1,1,50_000);const accepted=auditProjectAssetImport(project,candidate,{shared});assert.equal(accepted.assetBudget.bytes,2_000_000);assert.equal(accepted.assetBudget.count,5);assert(accepted.sourceBudget.bytes<4_000_000);assert(!fs.existsSync(path.join(folder,'new.png')));
+ fs.writeFileSync(source,candidate.buffer);const imported=importAsset();assert.equal(imported.status,0,imported.stdout);const report=JSON.parse(imported.stdout);assert.equal(report.assetBudget.bytes,2_000_000);assert.equal(check(project,{shared}).budget.bytes,report.sourceBudget.bytes);assert.deepEqual(fs.readFileSync(source),candidate.buffer);assert.equal(fs.statSync(path.join(folder,'new.png')).size,50_000);assert.equal(JSON.parse(fs.readFileSync(metadata))['assets/new.png'].license,'CC0-1.0');
+});
+test('asset import preflight includes base64 and provenance in the complete source budget',t=>{
+ const project=fixture(t);fs.appendFileSync(path.join(project,'domain/game.js'),'/*'+'x'.repeat(3_500_000)+'*/');
+ assert.throws(()=>auditProjectAssetImport(project,{file:'assets/new.png',buffer:png(1,1,400_000),provenance:{license:'CC0',source:'Fixture'}}),e=>e.code==='SDK_PACK_SIZE_LIMIT');assert(!fs.existsSync(path.join(project,'assets/new.png')));
 });

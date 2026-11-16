@@ -83,4 +83,18 @@ function auditAssets(root,{candidate}={}){
  const duplicates=new Map();for(const file of files){if(!duplicates.has(file.sha256))duplicates.set(file.sha256,[]);duplicates.get(file.sha256).push(file.file);}
  return {files,bytes,decodedImageBytes,documentation,limits:{maxBytes:BUDGET.assetBytes,maxFiles:BUDGET.files,maxDecodedImageBytes:BUDGET.decodedImageBytes,audioSeconds:BUDGET.audioSeconds},duplicates:[...duplicates.values()].filter(list=>list.length>1),note:'Decoded totals cover reported raster dimensions only; SVG/audio memory and unreported duration remain unknown. Markdown/text documentation is not a runtime asset. Source masters are never modified.'};
 }
-module.exports={MIME,validateAsset,auditAssets};
+function auditProjectAssetImport(root,candidate,{shared}={}){
+ if(!candidate||!/^assets\/[A-Za-z0-9_-]+\.(?:svg|png|jpe?g|webp|wav|ogg|mp3|json)$/.test(candidate.file)||!Buffer.isBuffer(candidate.buffer))fail('SDK_ASSET_PATH');
+ const project=require('./project.cjs').loadProject(root,{shared}),inventory=project.resourceAudit;
+ if(project.resourceAssets.some(asset=>asset.file===candidate.file))fail('SDK_ASSET_EXISTS');
+ const report=validateAsset(candidate.buffer,candidate.file),count=inventory.files.length+1,bytes=inventory.bytes+report.bytes,decodedImageBytes=inventory.decodedImageBytes+(report.decodedImageBytes||0);
+ if(count>BUDGET.files)fail('SDK_ASSET_COUNT',{maxFiles:BUDGET.files});
+ if(bytes>BUDGET.assetBytes)fail('SDK_ASSET_TOTAL_LIMIT',{bytes,maxBytes:BUDGET.assetBytes});
+ if(decodedImageBytes>BUDGET.decodedImageBytes)fail('SDK_DECODED_IMAGE_LIMIT',{decodedImageBytes,maxBytes:BUDGET.decodedImageBytes});
+ const assets={...inventory,files:[...inventory.files,{file:candidate.file,...report}],bytes,decodedImageBytes};
+ const resource={file:candidate.file,sha256:report.sha256,mime:report.mime,bytes:report.bytes,data:candidate.buffer.toString('base64'),provenance:{...candidate.provenance,sha256:report.sha256}};
+ const prepared={...project,resourceAssets:[...project.resourceAssets,resource],resourceAudit:assets,resourceClosure:{...project.resourceClosure,budget:{...project.resourceClosure.budget,assetBytes:bytes,assetCount:count}}};
+ const sourceBudget=require('./artifact.cjs').encodeSource(prepared,assets).budget;
+ return {...report,assetBudget:{bytes,count,...inventory.limits},sourceBudget};
+}
+module.exports={MIME,validateAsset,auditAssets,auditProjectAssetImport};
