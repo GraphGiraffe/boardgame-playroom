@@ -23,12 +23,16 @@
     "test:layout": "node scripts/codex/test.cjs layout",
     "test:smoke": "node scripts/codex/test.cjs smoke",
     "test:rtc": "node scripts/codex/test.cjs rtc",
-    "test:changed": "node scripts/codex/test.cjs --changed"
+    "test:changed": "node scripts/codex/test.cjs --changed",
+    "build:sandbox": "node scripts/build-sandbox.cjs"
   },
   "devDependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "acorn": "8.15.0",
+    "esbuild": "0.25.12",
     "playwright-core": "1.63.0",
     "quickjs-emscripten": "0.32.0",
+    "quickjs-emscripten-core": "0.32.0",
     "saxes": "6.0.0",
     "typescript": "5.9.3"
   },
