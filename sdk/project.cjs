@@ -1,7 +1,8 @@
 'use strict';
 // Read sources as data. Never require/evaluate a pack in the host process.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const LIMITS=Object.freeze({fileBytes:4*1024*1024,sourceBytes:12*1024*1024,assetBytes:64*1024*1024,files:2048,messageBytes:4*1024*1024,memoryBytes:64*1024*1024,callMs:2000,wallMs:5000});
+const {BUDGET}=require('./budget.cjs');
+const LIMITS=Object.freeze({fileBytes:4*1024*1024,sourceBytes:12*1024*1024,assetBytes:BUDGET.assetBytes,files:BUDGET.files,packBytes:BUDGET.packBytes,targetBytes:BUDGET.targetBytes,messageBytes:4*1024*1024,memoryBytes:64*1024*1024,callMs:2000,wallMs:5000});
 class SDKError extends Error{
  constructor(code,detail={}){super(code);this.name='SDKError';this.code=code;this.diagnostic={code,...detail};}
 }

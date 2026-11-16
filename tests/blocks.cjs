@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"sdk-budget.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-sandbox.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-contract.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-studio-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
