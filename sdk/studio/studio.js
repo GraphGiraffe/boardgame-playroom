@@ -13,7 +13,7 @@ function text(value){
  return JSON.stringify(value);
 }
 function error(value){$('error').hidden=false;$('error').textContent=JSON.stringify(value?.code?value:{code:'SDK_CONNECTION_FAILED'},null,2);}
-const renderer=new PlayroomSDKSceneRenderer($('scene'),{text,command:command=>request('apply',{command}),preview:(operation,command)=>sendPreview(operation,command),error});
+const renderer=new PlayroomSDKSceneRenderer($('scene'),{text,externalActions:authorized=>[...$('actions').querySelectorAll('button')].filter(element=>authorized.some(command=>JSON.stringify(command)===JSON.stringify(element._command))).map(element=>({element,command:element._command})),command:command=>request('apply',{command}),preview:(operation,command)=>sendPreview(operation,command),error});
 function button(label,command){const result=node('button',label||'Действие');result.type='button';result.dataset.sdkCommand='true';result._command=command;result.disabled=!!frame?.history?.reviewing;result.onclick=()=>request('apply',{command:result._command});return result;}
 function renderSettings(){
  const settings=frame.pack.settings||frame.settings||[],defaults=frame.options||frame.defaults||{},key=JSON.stringify([frame.pack.hash,settings]);if(key===settingsKey)return;settingsKey=key;const root=$('option-fields');root.replaceChildren();
@@ -30,7 +30,7 @@ function render(){
  $('status').textContent=frame.changed?'Исходники изменились. Перечитайте код, чтобы начать новую партию.':frame.projection.status==='finished'?'Партия завершена':frame.history.reviewing?'Просмотр истории · действия отключены':'Играет: игрок '+(frame.projection.turn+1);
  const count=frame.projection.playerCount;if($('viewer').options.length!==count+1){$('viewer').replaceChildren(new Option('Наблюдатель','-1'));for(let i=0;i<count;i++)$('viewer').add(new Option('Игрок '+(i+1),String(i)));}selectedViewer=Math.min(selectedViewer,count-1);$('viewer').value=String(selectedViewer);
  renderer.update(frame);
- PlayroomSDKKeyed($('actions'),(frame.actions||[]).filter(a=>!frame.scene.vote?.command||JSON.stringify(a.command)!==JSON.stringify(frame.scene.vote.command)),a=>JSON.stringify(a.command),a=>button(text(a.label),a.command),(b,a)=>{if(b.textContent!==text(a.label))b.textContent=text(a.label);b._command=a.command;b.disabled=!!frame.history.reviewing;});
+ PlayroomSDKKeyed($('actions'),(frame.actions||[]).filter(a=>!frame.scene.vote?.command||JSON.stringify(a.command)!==JSON.stringify(frame.scene.vote.command)),a=>JSON.stringify(a.command),a=>button(text(a.label),a.command),(b,a)=>{if(b.textContent!==text(a.label))b.textContent=text(a.label);b._command=a.command;b.disabled=!!frame.history.reviewing;});renderer.renderTutorial(frame.support?.tutorial||frame.scene.support?.tutorial||frame.tutorial);
  PlayroomSDKKeyed($('events'),frame.events||[],(event,i)=>event.id??i,()=>node('li'),(li,event)=>{const value=text(event.message||event.kind||'');if(li.textContent!==value)li.textContent=value;});
  const rules=frame.support?.catalog?.manual||frame.metadata?.catalog?.manual||frame.metadata?.rulebook?.brief||frame.metadata?.rulebook||frame.metadata?.rules,key=frame.pack.hash+JSON.stringify(rules);if(key!==ruleKey){ruleKey=key;$('rules').replaceChildren();ruleBlocks(rules,$('rules'));}
  renderSettings();
