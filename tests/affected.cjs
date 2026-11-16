@@ -1,6 +1,7 @@
 'use strict';
 // Conservative dependency groups. Unmapped application changes require all tests.
 module.exports = [
+  {paths:['tests/sdk-fixture.cjs'],select:['case/sdk-sandbox','case/sdk-contract']},
   {paths:['presentation/transition.js'],select:['case/game-flow','case/game-feedback','case/solitaire-history-stacks','case/sdk-contract','case/sdk-studio-browser']},
   {paths:['sdk/'],select:['case/sdk-sandbox','case/sdk-contract','case/sdk-studio-browser']},
   {paths:['application/update-all.js'],select:['case/update-all','case/pack-update-notice-browser']},
