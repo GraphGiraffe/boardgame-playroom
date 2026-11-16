@@ -8,7 +8,7 @@ const {chromium,executablePath}=require('../scripts/codex/browser.cjs');
 let server,browser,base;
 before(async()=>{
  const built=await buildSandbox();
- server=http.createServer((request,response)=>{const name=request.url?.split('?')[0];if(name==='/'){response.setHeader('content-type','text/html');response.end('<!doctype html><meta charset="utf-8"><script src="/sandbox.js"></script>');return;}if(!['/sandbox.js','/quickjs.wasm'].includes(name)){response.writeHead(404).end();return;}response.setHeader('content-type',name.endsWith('.wasm')?'application/wasm':'application/javascript');response.end(fs.readFileSync(path.join(built.directory,name.slice(1))));});
+ server=http.createServer((request,response)=>{const name=request.url?.split('?')[0];if(name==='/packs.js'){response.setHeader('content-type','application/javascript');response.end(fs.readFileSync(path.join(__dirname,'../core/packs.js')));return;}if(name==='/'){response.setHeader('content-type','text/html');response.end('<!doctype html><meta charset="utf-8"><script src="/sandbox.js"></script>');return;}if(!['/sandbox.js','/quickjs.wasm'].includes(name)){response.writeHead(404).end();return;}response.setHeader('content-type',name.endsWith('.wasm')?'application/wasm':'application/javascript');response.end(fs.readFileSync(path.join(built.directory,name.slice(1))));});
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));base='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,executablePath:executablePath()});
 });
@@ -86,4 +86,15 @@ test('portable browser authored bots validate structured bids before authority a
   results.push(await page.evaluate(project=>{const g=PlayroomSandbox.createRules(project);try{const p=g.model.create({playerCount:2,rng:1});try{const c=g.model.botAction(p,0,{enabled:true}),next=g.model.apply(p,0,c).position;return {command:c,count:next.data.count};}catch(e){return {code:e.code};}}finally{g.close();}},payload(root)));
  }
  assert.deepEqual(results,[{command:{type:'bid',roundId:1,actor:0,amount:7},count:7},{code:'INPUT_INVALID'},{code:'BOT_ACTION_INVALID'},{code:'BOT_ACTION_INVALID'}]);
+});
+
+test('normal browser pack preparation rejects untrusted media bytes before guest Blob or registry creation',{timeout:45000},async t=>{
+ const page=await pageFor(t),requests=[];page.on('request',r=>requests.push(r.url()));await page.addScriptTag({url:base+'/packs.js'});
+ const fixtures=require('./sdk-media-fixtures.cjs'),valid=fixtures.valid();const accepted=await page.evaluate(rows=>PlayroomSandbox.validateMedia(rows),valid);assert.equal(accepted.files.length,valid.length);assert.deepEqual(accepted.files.map(f=>f.sha256),valid.map(r=>r.sha256));
+ for(const [name,rows,code]of fixtures.cases()){
+  const bundle=fixtures.bundle(rows);assert(Buffer.byteLength(JSON.stringify(bundle))<4_000_000,name+' stays below outer pack limit');
+  const result=await page.evaluate(bundle=>{const trusted=PlayroomSandbox,originalBlob=globalThis.Blob;let guests=0,blobs=0,registrations=0;globalThis.PlayroomMessages={text:key=>key};globalThis.PlayroomSandbox={...trusted,createRules(){guests++;throw Error('GUEST_MUST_NOT_START');}};globalThis.Blob=class extends originalBlob{constructor(...args){blobs++;super(...args);}};try{const manager=new TabletopPacks({engine:{registerVersion(){registrations++;},activatePack(){}},views:{register(){registrations++;},get(){},remove(){}},catalog:{},storage:{get:()=>null,set(){}}});let code;try{manager.prepare(bundle);}catch(error){code=error.code||error.message;}return {code,guests,blobs,registrations,installed:manager.list().length};}finally{globalThis.PlayroomSandbox=trusted;globalThis.Blob=originalBlob;}},bundle);
+  assert.deepEqual(result,{code,guests:0,blobs:0,registrations:0,installed:0},name);
+ }
+ assert(!requests.some(url=>url.includes('should-never-fetch')),'no external SVG resources are requested');
 });

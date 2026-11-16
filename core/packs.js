@@ -150,9 +150,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     parse(value){return parse(value);}
     _isolated(bundle){
       const m=bundle.manifest,sandbox=root.PlayroomSandbox;
-      if(!sandbox?.createRules||!sandbox?.present)throw Object.assign(Error('SDK_NOT_READY'),{code:'SDK_NOT_READY'});
+      if(!sandbox?.createRules||!sandbox?.present||!sandbox?.validateMedia)throw Object.assign(Error('SDK_NOT_READY'),{code:'SDK_NOT_READY'});
       let source;try{source=JSON.parse(bundle.files['sdk/source.json']);}catch{throw Error('PACK_SDK_SOURCE_INVALID');}
       if(!record(source)||!record(source.sources)||source.manifest?.id!==m.id||source.manifest?.version!==m.version)throw Error('PACK_SDK_SOURCE_INVALID');
+      sandbox.validateMedia(source.assets===undefined?[]:source.assets);
       const project={resourceClosure:source.resourceClosure||{},manifest:source.manifest,catalogs:source.catalogs||{ru:{}},...Object.fromEntries(['dependencies','rules','helpers','presentation','support'].map(name=>[name,source.sources[name]||[]]))};
       const resolveAsset=path=>{const item=(source.assets||[]).find(a=>a.file===path);if(item)return 'data:'+item.mime+(item.encoding==='utf8'?';charset=utf-8,'+encodeURIComponent(item.data):';base64,'+item.data);return asset(bundle,path);};
       const guest=sandbox.createRules(project);

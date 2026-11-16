@@ -2,6 +2,9 @@
 import {newQuickJSWASMModuleFromVariant,newVariant} from 'quickjs-emscripten-core';
 import RELEASE_SYNC from '@jitl/quickjs-wasmfile-release-sync';
 import hostModule from './vm-host.js';
+import mediaModule from './media.cjs';
+const media=mediaModule.createMediaValidator(__PLAYROOM_TRUSTED_MEDIA_LIMITS__);
+export const validateMedia=media.validateMedia;
 const {createVMHost,DEFAULT_LIMITS}=hostModule;
 // This constant is supplied from the trusted checkout by build-sandbox.cjs.
 const coreSources=__PLAYROOM_TRUSTED_CORE__;

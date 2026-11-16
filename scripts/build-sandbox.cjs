@@ -8,7 +8,7 @@ async function buildSandbox(output=path.join(root,'tmp_files/sdk-browser')){
  const coreSources=core.map(name=>({file:'sdk/core/'+name+'.js',source:fs.readFileSync(path.join(root,'core',name+'.js'),'utf8')}));
  coreSources.push({file:'sdk/support.js',source:fs.readFileSync(path.join(root,'sdk/sdk-support.js'),'utf8')});
  fs.mkdirSync(output,{recursive:true});
- await esbuild.build({absWorkingDir:root,entryPoints:['sdk/browser-entry.js'],bundle:true,platform:'browser',format:'iife',globalName:'PlayroomSandbox',target:['es2022'],outfile:path.join(output,'sandbox.js'),minify:true,legalComments:'eof',define:{__PLAYROOM_TRUSTED_CORE__:JSON.stringify(coreSources)}});
+ await esbuild.build({absWorkingDir:root,entryPoints:['sdk/browser-entry.js'],bundle:true,platform:'browser',format:'iife',globalName:'PlayroomSandbox',target:['es2022'],outfile:path.join(output,'sandbox.js'),minify:true,legalComments:'eof',define:{__PLAYROOM_TRUSTED_CORE__:JSON.stringify(coreSources),__PLAYROOM_TRUSTED_MEDIA_LIMITS__:JSON.stringify(require('../sdk/budget.cjs').BUDGET)}});
  fs.copyFileSync(require.resolve('@jitl/quickjs-wasmfile-release-sync/wasm'),path.join(output,'quickjs.wasm'));
  return {directory:output,files:['sandbox.js','quickjs.wasm'].map(name=>{const bytes=fs.readFileSync(path.join(output,name));return {file:name,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex')};})};
 }
