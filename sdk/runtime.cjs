@@ -64,10 +64,19 @@ function validateScene(value,projection){
  return value;
 }
 class StudioSession{
- constructor(project){this.project=project;this.rules=new Guest(project,'rules');this.presentation=new Guest(project,'presentation');this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.position=null;this.events=[];}
+ constructor(project){this.project=project;this.rules=new Guest(project,'rules');this.presentation=new Guest(project,'presentation');this.renderGuests=new Set();this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.position=null;this.events=[];}
  static async open(directory,options){const session=new StudioSession(loadProject(directory,options));try{await Promise.all([session.rules.ready,session.presentation.ready]);return session;}catch(error){session.close();throw error;}}
  async start(options={}){const defaults=this.project.descriptor.options||{};const result=await this.rules.call('start',{playerCount:2,firstPlayer:0,rng:1,preset:'classic',...defaults,...options});result.events=Events.append([],result.events,result.position.playerCount,result.position.revision);this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.appendFrame(result);this.position=result.position;this.events=result.events;this.initial=serialized({...defaults,...options});return this.position;}
- async view(viewer=-1){if(!this.position)fail('SDK_SESSION_REQUIRED');if(!Number.isInteger(viewer)||viewer< -1||viewer>=this.position.playerCount)fail('SDK_VIEWER_INVALID');const projection=await this.rules.call('project',this.currentFrame().position,viewer,this.currentFrame().events);const rendered=validateScene(await this.presentation.call('render',projection),projection);return {projection,...rendered};}
+ async view(viewer=-1){
+  if(!this.position)fail('SDK_SESSION_REQUIRED');if(!Number.isInteger(viewer)||viewer< -1||viewer>=this.position.playerCount)fail('SDK_VIEWER_INVALID');
+  const projection=await this.rules.call('project',this.currentFrame().position,viewer,this.currentFrame().events);
+  // Renderer module globals must never retain a prior viewer's private data.
+  // The persistent presentation VM is metadata-only; each render gets a fresh
+  // compartment, including when views are requested concurrently.
+  const guest=new Guest(this.project,'presentation');this.renderGuests.add(guest);
+  try{const rendered=validateScene(await guest.call('render',projection),projection);return {projection,...rendered};}
+  finally{this.renderGuests.delete(guest);guest.close();}
+ }
  async apply(actor,command){if(this.historyIndex!==null)fail('SDK_HISTORY_READ_ONLY');if(!this.position)fail('SDK_SESSION_REQUIRED');const before=this.position;const result=await this.rules.call('apply',before,actor,command);result.events=Events.append(this.events,result.events,result.position.playerCount,result.position.revision);this.appendFrame(result);this.position=result.position;this.events=result.events;this.history.push({actor,command:JSON.parse(serialized(command))});return this.position;}
  async bot(actor=this.position?.turn){const command=await this.rules.call('botAction',this.position,actor,{enabled:false});if(command)await this.apply(actor,command);return command;}
  async checkpoint(){if(!this.position)fail('SDK_SESSION_REQUIRED');return {format:'playroom-sdk-checkpoint',contractVersion:1,packHash:this.project.hash,position:JSON.parse(serialized(this.currentFrame().position)),events:JSON.parse(serialized(this.currentFrame().events))};}
@@ -77,6 +86,6 @@ class StudioSession{
  seek(index=null){if(index!==null&&(!Number.isInteger(index)||index<0||index>=this.frames.length))fail('SDK_HISTORY_INDEX');this.historyIndex=index;}
  historyInfo(){return {index:this.historyIndex??this.frames.length-1,count:this.frames.length,reviewing:this.historyIndex!==null};}
  async metadata(){return this.presentation.call('metadata');}
- close(){this.rules.close();this.presentation.close();}
+ close(){this.rules.close();this.presentation.close();for(const guest of this.renderGuests)guest.close();this.renderGuests.clear();}
 }
 module.exports={Guest,StudioSession,serialized,validateScene};
