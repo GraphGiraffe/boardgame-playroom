@@ -576,12 +576,26 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const History=globalThis.PlayroomHistoryController,states=session.states;
     return History.presentationEnd(states,History.readyBatchEnd(states,index,s=>E.decisionWindow?.(s)),state=>E.project(state,viewer));
   }
+  function queueLocalPresentation(before,after,options={}) {
+    const cursor=before.events.at(-1)?.id||0,projected=E.project(after,viewer);
+    feedback.accept(projected.events.filter(event=>event.id>cursor),E.soundCues(after,viewer,cursor),session.game,options);
+  }
+  function presentHistoryTransition(before,after,show) {
+    const beforeProjection=E.project(before,viewer),afterProjection=E.project(after,viewer),identity={sessionId:String(session.createdAt),authorityEpoch:0};
+    const descriptor=globalThis.PlayroomTransition.eventAction({...identity,revision:before.move,state:beforeProjection,events:beforeProjection.events},{...identity,revision:after.move,state:afterProjection,events:afterProjection.events});
+    const timing=pace(),snapshot=descriptor?flow.capture({actor:descriptor.actor,action:descriptor.action,viewer,sceneModel:beforeProjection.scene,deferDepartures:true}):null,draws=cardTransfers(before,after);
+    feedback.start(beforeProjection.events);
+    queueLocalPresentation(before,after,{initialScene:beforeProjection.scene,finalScene:afterProjection.scene,mode:timing.mode,snapshot,motion:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??draws,transferOnly:step?.transferOnly,context}),defer:true});
+    show();Motion.prepare(snapshot,draws);
+    return flow.present(()=>{feedback.next();return feedback.whenIdle();});
+  }
   function scrubHistory(index) {
     const slider=$('#replay-range'),focused=document.activeElement===slider,before=currentState(),previous=replayIndex??session.states.length-1;
-    input?.cancel();stopReplay();const next=historyPresentationEnd(Math.max(historyStart(),Math.min(session.states.length-1,index))),after=session.states[next],events=E.project(after,viewer).events;
-    const action=next<previous?{type:'replay-back'}:events.findLast(e=>e.presentation)?.presentation||{type:'replay'};
-    const snapshot=next!==previous&&catalog[session.game]?.capabilities?.presentation?.entityMotion?flow.capture({actor:before.turn,action,viewer,deferDepartures:true}):null;
-    replayIndex=next;selected=null;renderTable();if(snapshot)void flow.play(snapshot);
+    input?.cancel();stopReplay();const next=historyPresentationEnd(Math.max(historyStart(),Math.min(session.states.length-1,index))),after=session.states[next];
+    const show=()=>{replayIndex=next;selected=null;renderTable();};
+    // Backward/random access restores a checkpoint. Forward playback uses the
+    // same projected events and feedback/motion pipeline as a live commit.
+    if(next>previous&&next===historyPresentationEnd(previous+1))void presentHistoryTransition(before,after,show);else show();
     if(slider){slider.value=String(replayIndex);$('#replay-range')?.replaceWith(slider);if(focused)slider.focus();}
   }
   function hotseatPreference(){
@@ -652,7 +666,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if(result)presentFinishedResult();
   }
   function interruptAction() { feedback.clear();if(transition)finishAction(transition,{redraw:false,result:false}); }
-  const cardTransfers=(before,after)=>Authority.transfers(before,after,E.project(after,viewer).events);
+  const cardTransfers=(before,after)=>Authority.transfers(before,after,E.project(after,viewer).events).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer));
   function act(actor,action,context={}) {
     const diagnosticStart=diagnostics?.begin()??null;
     if(isReplay()||paused||gate!==null)return;
@@ -671,9 +685,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       else {const receipt=screenController.send(action,{actor});if(receipt.ignored||receipt.code==='REACTION_WAIT')return;if(!receipt.ok)throw Error(receipt.message);}
       globalThis.PlayroomFirstTurnGuide.committed(session,actor,action,guideToken);
       GameScreen.allowLayoutChange($('#app'),context);if(!action.preserveSelection)selected=null;playerTargets?.cancel();
-      const draws=cardTransfers(beforeState,session.current).filter(draw=>draw.privateTo==null||(Array.isArray(draw.privateTo)?draw.privateTo.includes(viewer):draw.privateTo===viewer));
-      const projected=E.project(session.current,viewer),events=projected.events.filter(event=>event.id>(beforeState.events.at(-1)?.id||0));
-      feedback.accept(events,E.soundCues(session.current,viewer,beforeState.events.at(-1)?.id||0),session.game,{initialScene,finalScene:projected.scene,defer:!quiet,silent:document.hidden||gate!==null,mode:timing.mode,snapshot,motion:quiet?null:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??draws,transferOnly:step?.transferOnly,context})});
+      const draws=cardTransfers(beforeState,session.current);
+      const projected=E.project(session.current,viewer);
+      queueLocalPresentation(beforeState,session.current,{initialScene,finalScene:projected.scene,defer:!quiet,silent:document.hidden||gate!==null,mode:timing.mode,snapshot,motion:quiet?null:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??draws,transferOnly:step?.transferOnly,context})});
       if(E.checkpoint(beforeState,session.current,actor,action)!==false)save();input?.invalidate();
       if(quiet&&context.deferRender)return;
       if(quiet){
@@ -1462,10 +1476,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(ticket!==replayTicket||!isReplay()||screen!=='table')return;
       if(replayIndex>=session.states.length-1){stopReplay(false);renderTable();return;}
       const nextIndex=historyPresentationEnd(replayIndex+1);
-      const before=currentState(),after=session.states[nextIndex],events=E.project(after,viewer).events.filter(e=>e.id>(before.events.at(-1)?.id||0));
-      const action=events.findLast(e=>e.presentation)?.presentation||{type:events.some(e=>e.kind==='roll')?'roll':'replay'},timing=pace(),snapshot=flow.capture({actor:before.turn,action,viewer,sceneModel:E.project(before,viewer).scene,deferDepartures:true});
-      const beforeProjection=E.project(before,viewer),afterProjection=E.project(after,viewer);feedback.start(beforeProjection.events);feedback.accept(afterProjection.events,E.soundCues(after,viewer,before.events.at(-1)?.id||0),session.game,{initialScene:beforeProjection.scene,finalScene:afterProjection.scene,mode:timing.mode,snapshot,motion:(context,step)=>flow.play(step?.snapshot||snapshot,{draws:step?.draws??cardTransfers(before,after),transferOnly:step?.transferOnly,context}),defer:true});
-      replayIndex=nextIndex;renderTable();Motion.prepare(snapshot,cardTransfers(before,after));await flow.present(()=>{feedback.next();return feedback.whenIdle();});
+      const before=currentState(),after=session.states[nextIndex],timing=pace();
+      await presentHistoryTransition(before,after,()=>{replayIndex=nextIndex;renderTable();});
       await globalThis.PlayroomPublicSequence?.whenIdle($('#app'));
       if(ticket===replayTicket)replayTimer=setTimeout(step,timing.settle+timing.botDelay);
     };
