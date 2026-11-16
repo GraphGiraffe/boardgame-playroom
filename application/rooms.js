@@ -152,6 +152,7 @@ class RoomService{
     setLocalSeat(roomId,hostId,seatId,{kind='bot',nickname=globalThis.PlayroomMessages.text("ui.rooms.aa691043b447")}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       if(room.recovery&&(!['bot','empty'].includes(kind)||!room.seats.some(s=>s.id===seatId&&Number.isInteger(s.playerIndex))))throw Error('RECOVERY_SLOT_FIXED');
+      if(kind==='bot'&&room.game.capabilities?.bots===false)throw Object.assign(Error('В этой игре участвуют только люди.'),{code:'BOTS_UNSUPPORTED'});
       const seat=room.seats.find(s=>s.id===seatId);if(!seat||!['bot','human','empty','closed'].includes(kind))throw Error(globalThis.PlayroomMessages.text("ui.rooms.365699432c56"));
       const old=room.participants.find(p=>p.id===seat.participantId);
       if(old?.isHost){if(kind!=='human')throw Error(globalThis.PlayroomMessages.text("ui.rooms.654b70a3012d"));old.nickname=normalizeName(nickname);this._resetRoomReady(room);return this.snapshot(roomId);}
@@ -295,7 +296,7 @@ class RoomService{
       const bySeat=(a,b)=>seatIndex(a)-seatIndex(b);
       const humans=room.participants.filter(p=>p.role==='player'&&!p.bot).sort(bySeat);
       const bots=room.participants.filter(p=>p.role==='player'&&p.bot).sort(bySeat);
-      const keptBots=bots.slice(0,Math.max(0,next.max-humans.length));
+      const keptBots=game.capabilities?.bots===false?[]:bots.slice(0,Math.max(0,next.max-humans.length));
       const dropped=new Set(bots.slice(keptBots.length).map(p=>p.id));
       const seats=Array.from({length:next.max},(_,i)=>({...room.seats[i],id:'seat-'+(i+1),index:i,sideId:i,participantId:null}));
       const place=(p,seat)=>{seat.participantId=p.id;seat.closed=false;p.seatId=seat.id;};

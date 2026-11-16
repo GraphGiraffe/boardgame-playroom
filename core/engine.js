@@ -144,8 +144,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return true;
   }
   function createGame(game, options = {}) {
-    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, ...(pack.max===1?[]:[{ name: globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: true }])];
+    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, ...(pack.max===1?[]:[{ name: pack.capabilities?.bots===false?globalThis.PlayroomMessages.text('ui.engine.97bd9bdf39ef',{p0:'2'}):globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: pack.capabilities?.bots!==false }])];
     if (players.length < pack.min || players.length > pack.max) throw Error(globalThis.PlayroomMessages.text("ui.engine.8d8e0eef63ac",{p0:String(pack.min),p1:String(pack.max)}));
+    if(pack.capabilities?.bots===false&&players.some(player=>player.bot))throw Object.assign(Error('В этой игре участвуют только люди.'),{code:'BOTS_UNSUPPORTED'});
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error(globalThis.PlayroomMessages.text("ui.engine.4046d56fe0ac"));
     const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || globalThis.PlayroomMessages.text("ui.engine.97bd9bdf39ef",{p0:String(i + 1)})).slice(0, 40), bot: !!p.bot,...(p.avatar?{avatar:p.avatar}:{}),...(p.bot?{botSettings:{...clone(p.botSettings||{}),difficulty:p.botSettings?.difficulty??'medium'}}:{}), score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
@@ -254,9 +255,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if (!activePlayer(state, actor) || (actor !== state.turn && !decisionWindow(state)?.participants.includes(actor)) || decisionWindow(state)?.ready.includes(actor)) return null;
     // Reactions have their own scheduler; normal bots must not loop on an
     // always-available declaration or accusation instead of taking their turn.
+    if(forState(state).capabilities?.bots===false)return null;
     const actions = forState(state).legal(state, actor);
-    if (!actions.length) return null;
-    return forState(state).bot?.(state, actor, actions) || actions[0];
+    if (!actions.length&&!inputChoices(state,actor).length) return null;
+    return forState(state).bot?.(state, actor, actions) || actions[0] || null;
   }
   function botReaction(state, actor = state.turn) {
     const actions = reactions(state, actor);
@@ -292,7 +294,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function inputChoices(state,actor=state.turn){return activePlayer(state,actor)?forState(state).inputs?.(state,actor)||[]:[];}
   function advanceClock(state,now){if(!Number.isSafeInteger(now)||now<0||now<(state.clock??0))throw Error('CLOCK_INVALID');return forState(state).advance?.(state,now)||state;}
   const api = { inputChoices,advanceClock,storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
-  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
+  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings, capabilities }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}),...(capabilities?{capabilities}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);

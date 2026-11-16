@@ -158,7 +158,7 @@
       tableProjection(state, actor, options={}) { return projected(state,actor,true,!!options.rawEvents); },
       tableChoices(state, actor) { const projection=projected(state,actor,true);return projection.actions.map(command=>presentation.choice?decorated(command,projection,state.players):command); },
       tableCommand(state, actor, action) { if(action?.type==='batch')return model.batch(position(state),actor,action,'table');const command=model.projectTable(position(state),actor).actions.find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action?.[key])));return model.commandFor(position(state), actor, command||action, 'table'); },
-      bot(state, actor) { const chosen = model.botAction(position(state), actor, {...state.players[actor]?.botSettings,enabled:!!state.players[actor]?.bot}); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
+      bot(state, actor, actions=[]) { const chosen = model.botAction(position(state), actor, {...state.players[actor]?.botSettings,enabled:!!state.players[actor]?.bot});if(!chosen)return null;if(definition.inputs&&!actions.some(action=>Object.keys(chosen).every(key=>JSON.stringify(chosen[key])===JSON.stringify(action[key]))))return chosen;return decorated(chosen,model.project(position(state),actor),state.players); },
       result(state) {
         const summary = model.result(position(state));
         const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric?.(metric.id)||metadata.scoreLabel||metric.id)}));

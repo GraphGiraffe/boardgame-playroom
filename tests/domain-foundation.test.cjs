@@ -185,7 +185,7 @@ test('pack tutorials remain separate pure projection consumers and never load in
   const code=fs.readFileSync(path.join(dir,tutorial),'utf8');
   assert.doesNotMatch(code,/\b(?:document|localStorage|setTimeout|fetch|WebSocket|SessionAuthority|TabletopCore)\b/,id);
   const context=vm.createContext({});vm.runInContext(code,context);assert.equal(typeof context.PlayroomPackTutorial({format:m=>m.key}),'function',id);
-  assert.doesNotMatch(fs.readFileSync(path.join(dir,'view.js'),'utf8'),/guideProgress|const required=|const steps=\[\{/ ,id);
+  assert.equal(fs.existsSync(path.join(dir,'view.js')),false,id+' uses the shared isolated renderer');
  }
 });
 

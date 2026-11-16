@@ -1,12 +1,8 @@
 'use strict';
 require('../core/model-registration.js');
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const {test,before,after}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const E=require('../core/engine.js'),ids=['tictactoe','battleship','pexeso','ludo','yatzy','gofish','oldmaid','durak'];
-for(const id of ids)require(`../packs/${id}/rules.js`);
-for(const id of ['checkers','snakes'])require(`../packs/${id}/rules.js`);
-require('../core/ui.js');const V=require('../app/views.js');require(path.join(path.dirname(fs.realpathSync(path.join(__dirname,'../packs'))),'shared/view-kit.js'));
-for(const id of ids)require(`../packs/${id}/view.js`);
-for(const id of ['checkers','snakes'])require(`../packs/${id}/view.js`);
+let environment,V;before(async()=>{environment=await require('./sdk-installed.cjs').bootstrap();V=environment.views;});after(()=>environment?.close());
 const create=(id,n=2,preset=E.get(id).presets[0].id,deck)=>E.createGame(id,{players:Array.from({length:n},(_,i)=>({name:`P${i}`,bot:true})),preset,deck,seed:17});
 const play=(s,a)=>E.applyAction(s,s.turn,a||E.botAction(s));
 
@@ -47,27 +43,11 @@ test('Ludo teams finish together and Yatzy uses classic small straight',()=>{
  s=create('yatzy');s.data.rolls=3;s.data.dice=[1,2,3,4,5];s=play(s,{type:'score',key:'smallStraight'});assert.equal(s.data.scores[0].smallStraight,15);
 });
 
-test('Ludo keeps every pawn visible on a shared start and does not replay the prior roll',()=>{
+test('Ludo projection preserves stacked public identities, current roll and safe route anchors',()=>{
  const s=create('ludo',4),cell=13;
- for(const count of [2,4,8,16]){
-  s.data.pawns=s.data.pawns.map((row,p)=>row.map((_,j)=>p*4+j<count?(cell-p*13+52)%52:-1));
-  const html=V.render(E.project(s,0),0,E.legalActions(s,0),{});
-  const pawns=[...html.matchAll(/<button[^>]*class="ludo-pawn[^>]*data-entity="token-(\d)-(\d)"[^>]*>/g)].filter(match=>Number(match[1])*4+Number(match[2])<count);
-  assert.equal(pawns.length,count);
-  const positions=pawns.map(match=>match[0].match(/left:([\d.]+)%;top:([\d.]+)%/).slice(1).join(':'));
-  assert.equal(new Set(positions).size,count,`${count} pawns occupy distinct positions`);
-  assert(pawns.every(match=>match[0].includes('is-stacked')));
- }
- s.data.phase='roll';s.data.lastRoll=6;s.data.lastRolled=[0];s.events.push({id:1,kind:'roll',player:0});s.turn=1;
- assert.doesNotMatch(V.render(E.project(s,1),1,E.legalActions(s,1),{}),/data-motion-lead="roll"/);
- // The just-committed roll still animates when no legal move advanced the turn.
- assert.match(V.render(E.project(s,1),1,E.legalActions(s,1),{presentationTurn:0}),/data-motion-lead="roll"/);
- s.turn=0;assert.match(V.render(E.project(s,0),0,E.legalActions(s,0),{}),/data-motion-lead="roll"/);
- s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];
- const route=V.render(E.project(s,0),0,E.legalActions(s,0),{viewState:{pawn:'0:0'}});
- const safeCell=route.match(/<button class="ludo-cell ludo-safe[^>]*data-motion-anchor="path-8"[^>]*>[\s\S]*?<\/button>/)?.[0];
- assert(safeCell?.includes('ludo-safe-star'));
- assert(!safeCell.includes('board-route-dot'),'route dots do not hide a safe star');
+ for(const count of [2,4,8,16]){s.data.pawns=s.data.pawns.map((row,p)=>row.map((_,j)=>p*4+j<count?(cell-p*13+52)%52:-1));const scene=E.project(s,0).scene,tokens=scene.objects.filter(object=>object.ref.namespace==='token');assert.equal(tokens.length,16);assert.equal(new Set(tokens.map(object=>object.ref.id)).size,16);assert.equal(tokens.filter(object=>Number(object.ref.id[0])*4+Number(object.ref.id[2])<count&&JSON.stringify(object.point)===JSON.stringify(tokens[0].point)).length,count,'every public stacked identity remains in the scene');}
+ s.data.phase='roll';s.data.dice=s.data.dice.map(()=>6);s.data.used=s.data.used.map(()=>false);s.data.lastRolled=s.data.dice.map((_,index)=>index);s.events.push({id:s.events.length+1,revision:s.move,type:'ludo.rolled',actor:0,params:{dice:[6]},visibility:{kind:'public'}});s.turn=1;assert.equal(E.project(s,1).scene.repeatSix,false);s.turn=0;assert.equal(E.project(s,0).scene.repeatSix,true);
+ s.data.phase='move';s.data.pawns[0]=[7,-1,-1,-1];s.data.diceCount=1;s.data.rollIndices=[0];s.data.dice=[1];s.data.used=[false];const scene=E.project(s,0).scene;assert(scene.geometry.anchors.some(anchor=>anchor.id==='path-8'));assert(scene.moves.some(move=>move.command.pawn===0));
 });
 
 test('Durak lets a non-defender join the attack',()=>{
@@ -75,8 +55,8 @@ test('Durak lets a non-defender join the attack',()=>{
  assert(s);s=play(s,{type:'take'});s=play(s,{type:'done'});assert.equal(s.turn,2);assert(E.legalActions(s).some(a=>a.type==='attack'));
 });
 
-test('all new views render playable controls without fallback',()=>{
- for(const id of ids){const preset=id==='battleship'?'russian':id==='pexeso'?'easy':'classic';let s=create(id,id==='ludo'?4:2,preset);const html=V.render(E.project(s,s.turn),s.turn,E.legalActions(s),{selected:null});assert.doesNotMatch(html,/Не удалось показать игру|undefined|NaN/,id);assert.match(html,/data-action=|data-select=|data-player-target=/,id);}
+test('all new isolated scenes describe a legal target for every command',()=>{
+ for(const id of ids){const preset=id==='battleship'?'russian':id==='pexeso'?'easy':'classic',s=create(id,id==='ludo'?4:2,preset),projection=E.project(s,s.turn),commands=projection.scene.interactions.map(interaction=>interaction.command);assert.equal(E.get(id).isolated,true,id);assert.doesNotThrow(()=>require('../presentation/scene-contract.js').validate(projection.scene,s.players.length));for(const action of projection.modelProjection.actions)assert(commands.some(command=>JSON.stringify(command)===JSON.stringify(action)),id+' has an authorized semantic dispatch target');}
 });
 
 test('pack display preferences persist order, visibility and favorites',()=>{
@@ -137,14 +117,12 @@ test('fleet counters show distinct deck lengths and mark zero in both surfaces',
  assert.equal((html.match(/class="player-indicator fleet-indicator is-empty"/g)||[]).length,1);
  assert.deepEqual([...html.matchAll(/class="fleet-ship-icon" width="(\d+)"/g)].map(x=>Number(x[1])),[25,34,43,52,61]);
  let s=create('battleship');s=play(s,{type:'auto'});s=play(s,{type:'ready'});s=play(s,{type:'auto'});s=play(s,{type:'ready'});
- const scene=V.render(E.project(s,0),0,E.legalActions(s,0));
- assert.match(scene,/fleet-indicator/);
+ const scene=E.project(s,0).scene;assert(scene.fleets.every(fleet=>fleet.indicators.every(item=>item.icon==='ship'&&Number.isInteger(item.size))));
 });
 test('board game avatars use the shared distinct seat palette',()=>{
  for(const id of ['ludo','snakes','checkers']){
   const s=E.createGame(id,{players:[{name:'Аня'},{name:'Борис'}],seed:17});
-  const html=V.render(E.project(s,0),0,E.legalActions(s,0));
-  assert.match(html,/background:color-mix\(in srgb,var\(--color-seat-0/,id);
+  assert.deepEqual(E.project(s,0).scene.players.map(player=>player.player),[0,1]);assert.match(TabletopUI.helpers.playerColor(0),/--color-seat-0/,id);assert.notEqual(TabletopUI.helpers.playerColor(0),TabletopUI.helpers.playerColor(1));
  }
 });
 test('RC4 sea bot decisions depend only on observed shots',()=>{
@@ -193,14 +171,7 @@ test('Ludo friendly occupied cells keep pawn selection separate from a move',()=
   s.turn=0;s.data.phase='move';s.data.dice=[2,3];s.data.used=[false,false];s.data.pawns[0]=[7,9,-1,-1];
   const projected=E.project(s,0),actions=E.legalActions(s,0),before=JSON.stringify(s),move=actions.find(a=>a.owner===0&&a.pawn===0&&a.dieIndex===0);
   assert(move,'moving onto a friendly occupied cell is legal');
-  const html=V.render(projected,0,actions,{viewState:{pawn:'0:0'}});
-  const pawn=html.match(/<button[^>]*class="ludo-pawn[^>]*data-entity="token-0-1"[^>]*>/)?.[0];
-  assert.match(pawn,/data-view-key="pawn" data-view-value="0:1"/);assert.doesNotMatch(pawn,/data-action=/);
-  const cell=html.match(/<button class="ludo-cell[^>]*data-motion-anchor="path-9"[^>]*>/)?.[0];
-  assert(cell.includes(V.helpers.actionAttr(move)),'the marked cell still executes the selected move');
-  assert(html.includes('data-motion-lead="" '+V.helpers.actionAttr(move)),'the selected pawn can also move by tapping its die');
-  const other=V.render(projected,0,actions,{viewState:{pawn:'0:1'}}),otherMove=actions.find(a=>a.owner===0&&a.pawn===1&&a.dieIndex===0);
-  assert(other.includes('data-motion-lead="" '+V.helpers.actionAttr(otherMove)),'switching pawns updates the die command');
+  const raw=projected.modelProjection.actions,interaction=projected.scene.interactions.find(value=>value.command.owner===0&&value.command.pawn===0&&value.command.dieIndex===0);assert.equal(interaction.kind,'move');assert.deepEqual(interaction.source,{entity:{namespace:'token',id:'0-0'}});assert(projected.scene.objects.some(object=>object.ref.namespace==='token'&&object.ref.id==='0-1'));assert(raw.some(command=>command.owner===0&&command.pawn===1&&command.dieIndex===0),'the other pawn retains its own command');
   assert.equal(JSON.stringify(s),before,'selection and previews do not consume a die or move a pawn');
   const next=play(s,move);assert.equal(next.data.pawns[0][0],9);assert.equal(next.data.pawns[0][1],9);assert.deepEqual(next.data.used,[true,false]);
  }
@@ -214,9 +185,7 @@ test('Pexeso shows a mismatch through its animation, then closes it before the n
  s=play(s,{type:'flip',index:first});s=play(s,{type:'flip',index:second});
  assert.equal(s.data.phase,'reveal');assert.deepEqual(s.data.flipped,[first,second]);assert.equal(s.turn,1);
  assert(E.legalActions(s).every(a=>a.type==='flip'));
- const projected=E.project(s,1),animated=V.render(projected,1,[],{presentationTurn:0}),settled=V.render(projected,1,[]);
- assert.equal((animated.match(/class="pexeso-close-back"/g)||[]).length,2);assert.equal((animated.match(/<span class="pexeso-face"[^>]*><[^>]*class="shared-card shared-card-back/g)||[]).length,s.data.board.length-2);
- assert.equal((settled.match(/class="shared-card shared-card-back/g)||[]).length,s.data.board.length);
+ const projected=E.project(s,1);assert.equal(projected.scene.cards.filter(card=>card.closing).length,2);assert.equal(projected.scene.cards.filter(card=>!card.card.hidden).length,2);assert(projected.scene.cards.filter(card=>card.card.hidden).every(card=>!card.card.id&&!card.card.rank),'unopened identities stay hidden');
  s=play(s,{type:'flip',index:first});assert.equal(s.data.phase,'second');assert.deepEqual(s.data.flipped,[first]);
 });
 test('Pexeso bot sometimes overlooks a known pair',()=>{
@@ -255,13 +224,10 @@ test('Battleship Table can fire for either authorized actor without exposing eit
  for(let i=0;i<2;i++){state=play(state,{type:'auto'});state=play(state,{type:'ready'});}
  for(const actor of [0,1]){
   state.turn=actor;
-  const projection=E.projectTable(state,actor),scene=V.render(projection,-1,projection.tableActions,{surface:'table',viewState:{fleet:actor===0?'enemy':'own'}});
-  assert.equal((scene.match(/data-action=/g)||[]).length,100,'public shots on the opponent field');
-  assert(!scene.includes('aria-label="undefined"'));assert(projection.data.ships.flat(2).every(cell=>cell===null));
+  const projection=E.projectTable(state,actor);assert.equal(projection.modelProjection.actions.filter(action=>action.type==='fire').length,100,'authorized public shots');require('../presentation/scene-contract.js').commands(projection.scene,projection.modelProjection);assert(projection.data.ships.flat(2).every(cell=>cell===null));
   const next=E.applyTableAction(state,actor,projection.tableActions[0]);assert.equal(next.data.shots[actor].length,1);
  }
- const spectator=V.render(E.project(state,-1),-1,[],{surface:'table'});
- assert(!spectator.includes('data-action='));
+ const spectator=E.project(state,-1);assert.deepEqual(spectator.modelProjection.actions,[]);assert.deepEqual(spectator.scene.interactions,[]);
 });
 
 
@@ -393,7 +359,7 @@ test('Go Fish sorts ranks and asks with the exact selected physical card',()=>{
  const sibling=hand.find(c=>c.id!==card.id&&c.rank===card.rank),before=JSON.stringify(s);
  const scene=E.project(s,actor).scene,ranks=scene.players[actor].hand.map(c=>c.rank);assert.deepEqual(ranks,[...ranks].sort((a,b)=>a-b));
  const actions=E.legalActions(s,actor),a=actions.find(a=>a.cardId===sibling.id);assert(a);assert.equal(a.card,sibling.id);
- const html=V.render(E.project(s,actor),actor,actions,{selected:sibling.id});assert(html.includes('data-select="'+sibling.id+'"'));assert.equal(JSON.stringify(s),before);
+ assert(scene.interactions.some(interaction=>interaction.source?.entity?.id===sibling.id&&interaction.command.cardId===sibling.id));assert.equal(JSON.stringify(s),before);
  const next=E.applyAction(s,actor,a),asked=E.project(next,actor).events.findLast(e=>e.type==='gofish.asked');assert.equal(asked.reveal.card.id,sibling.id);
  assert(E.project(s,-1).scene.players.every(p=>p.hand.every(c=>c.hidden&&!c.id&&!c.rank)));
 });
@@ -422,18 +388,16 @@ test('all bot levels complete card, dice and board games without mutating decisi
 test('Ludo tutorial distinguishes the initial throw from a six reroll using actual public state',()=>{
  const tutorial=require('../packs/ludo/presentation/tutorial.js')({format:m=>m.key});
  for(const sixReroll of ['on','off'])for(const diceCount of [1,2,3]){
-  let s=E.createGame('ludo',{players:[{name:'A',bot:true},{name:'B',bot:true}],seed:17,preset:'classic',sixReroll,diceCount}),found=false;
-  assert.equal(E.project(s,0).scene.repeatSix,false,'initial display of six is not a reroll');
-  for(let i=0;i<150&&s.status==='playing';i++){
-   const actor=s.turn,before=E.project(s,actor),action=E.botAction(s);s=E.applyAction(s,actor,action);
-   const state=E.project(s,s.turn),guide=tutorial({state}),canRoll=E.legalActions(s,s.turn).some(a=>a.type==='roll');
-   if(canRoll&&s.turn===actor&&s.status==='playing'){
-    assert.equal(sixReroll,'on');assert.equal(state.scene.repeatSix,true);assert.equal(guide.steps[0].id,'reroll-six');found=true;break;
-   }
-   if(s.turn!==actor||sixReroll==='off')assert.equal(state.scene.repeatSix,false);
-   if(sixReroll==='off')assert(!guide.required.includes('reroll-six'));
-  }
-  if(sixReroll==='on')assert(found,'six reroll reached with '+diceCount+' dice');
+  let s=E.createGame('ludo',{players:[{name:'A'},{name:'B'}],seed:17,preset:'classic',sixReroll,diceCount,firstPlayerMode:'assigned',firstPlayer:0});
+  assert.equal(E.project(s,0).scene.repeatSix,false,'initial six is not a reroll');
+  // Bound the fixture at the actual roll boundary; a whole simulated bot match
+  // is irrelevant to the tutorial and expensive through isolated bot realms.
+  s.data.pawns[0]=[56,56,56,56];let seed=1;
+  for(;seed<100000;seed++){const probe={rng:seed};if(Array.from({length:diceCount},()=>E.rollDie(6,probe)).every(value=>value===6))break;}
+  assert(seed<100000);s.rng=seed;s=E.applyAction(s,0,{type:'roll'});
+  const state=E.project(s,s.turn),guide=tutorial({state});
+  assert.equal(state.scene.repeatSix,sixReroll==='on');
+  if(sixReroll==='on'){assert.equal(s.turn,0);assert.equal(guide.steps[0].id,'reroll-six');}else assert(!guide.required.includes('reroll-six'));
  }
 });
 

@@ -256,64 +256,39 @@ for builder in [app,packs]:
   try:builder.validate_manifest({**json.loads(manifest.read_text()),'engineApi':api},'tictactoe')
   except ValueError:pass
   else:raise AssertionError('invalid engineApi accepted')
-current=[app.read_source_pack(manifest),packs.build_pack(manifest.parent)]
-with tempfile.TemporaryDirectory() as tmp:
- fixture=Path(tmp)/'tictactoe';shutil.copytree(manifest.parent,fixture)
- value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
- legacy=[builder.build_pack(fixture,shared=Path(sys.argv[2])/'shared') for builder in [app,packs]]
-print(json.dumps({'current':current,'legacy':legacy},ensure_ascii=False))
+print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.parent)],ensure_ascii=False))
 `;
   globalThis.PlayroomSandbox=await require('../sdk/node-host.cjs').createNodeHost();
-  const pair=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024})),[a,b]=pair.legacy,[isolated,companion]=pair.current;
+  const [isolated,companion]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
   assert.deepEqual(isolated,companion);assert.equal(isolated.manifest.execution,'isolated-v1');
   const source=JSON.parse(isolated.files['sdk/source.json']);assert.deepEqual(source.manifest,isolated.manifest);
   assert(source.sources.rules.some(row=>row.file==='domain/game.js'));assert(source.sources.presentation.some(row=>row.file==='presentation/scene.js'));
   assert.deepEqual(source.catalogs.ru,JSON.parse(fs.readFileSync(path.join(packs,'packs/tictactoe/locales/ru/game.json'),'utf8')));
   for(const file of ['rules.js','view.js','styles.css'])assert(!isolated.files[file].includes('PlayroomPackDefinition'),'host entrypoints are inert markers');
-  assert.deepEqual(a,b);assert.equal(a.manifest.engineApi,4);assert.equal(a.manifest.sourceModules,undefined);
-  const Remote=require('../app/remote-catalog.js'),sha='a'.repeat(64),manifest=a.manifest;
-  const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:4,viewApi:3,sha256:sha,
-    url:`/api/packs/files/${manifest.id}/${manifest.version}/${sha}.playroom-pack.json`};
+  const Remote=require('../app/remote-catalog.js'),sha='a'.repeat(64),manifest=isolated.manifest;
+  const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:4,viewApi:3,sha256:sha,url:`/api/packs/files/${manifest.id}/${manifest.version}/${sha}.playroom-pack.json`};
   assert.equal(Remote.validate({format:'playroom-catalog',version:1,collection:'0.6.5',packs:[entry]}).packs[0].engineApi,4);
-  for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(a.files[file],undefined,'source is already compiled into entrypoints');
-  const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
-  let before=E.GAMES;const views=UI.createRegistry();
-  const manager=new Packs({engine:E,views,catalog:{},storage:{get:()=>null,set(){}},allowTrustedLegacy:true});
-  const isolatedToken=manager.prepare(isolated);manager.install(isolatedToken);
-  const isolatedState=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1});
-  const isolatedNext=E.applyAction(isolatedState,1,{type:'place',cell:4});assert.equal(E.project(isolatedNext,0).scene.cells[4].owner,1);
-  assert.equal(E.get('tictactoe').isolated,true);before=E.GAMES;
-  const token=manager.prepare(a);assert.deepEqual(E.GAMES,before,'staging must not bypass scoped registration');
-  manager.install(token);
-  const state=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1});
-  const next=E.applyAction(state,1,{type:'place',cell:4}),projected=E.project(next,0);
-  const html=views.render(projected,0,E.legalActions(next,0));assert.match(html,/ttt-cell cross/);assert.match(html,/Клетка 5: X/);
-  assert.equal(views.render({...projected,data:{},modelProjection:null},0,E.legalActions(next,0)),html);
-  const spectator=views.render(E.project(next,-1),-1,[],{surface:'table'});assert.doesNotMatch(spectator,/data-action=/);
-  const table=E.projectTable(next,0),commands=table.tableActions;
-  assert.deepEqual(table.data,E.project(next,-1).data);assert.equal(table.modelProjection.viewer,-1);
-  assert.match(views.render(table,-1,commands,{surface:'table'}),/data-action=/);
-  assert.doesNotMatch(views.render(table,-1,[],{surface:'table'}),/data-action=/,'read-only history cannot regain controls');
-  assert.throws(()=>E.applyTableAction(next,-1,{type:'place',cell:0}),coded('TABLE_ACTION_UNAVAILABLE'));
-  assert.equal(E.applyTableAction(next,0,{type:'place',cell:0}).data.board[0],0);
-  // Authoring examples obey the same scene-only renderer boundary as the collection.
-  const example=JSON.parse(execFileSync('python3',['-c',`import importlib.util,json,sys
+  for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(isolated.files[file],undefined,'guest source has one payload copy');
+  const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js'),manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});
+  const before=E.GAMES,token=manager.prepare(isolated);assert.deepEqual(E.GAMES,before,'staging cannot register guest rules');manager.install(token);
+  const state=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1}),next=E.applyAction(state,1,{type:'place',cell:4}),projected=E.project(next,0);
+  assert.equal(E.get('tictactoe').isolated,true);assert.equal(projected.scene.cells[4].owner,1);assert.equal(projected.scene.cells[4].mark,'X');
+  assert(E.project(next,-1).scene.cells.every(cell=>!cell.command),'spectator scenes contain no controls');
+  const table=E.projectTable(next,0);assert.deepEqual(table.data,E.project(next,-1).data);assert.equal(table.modelProjection.viewer,-1);assert.equal(table.tableActions.length,8);assert.equal(table.scene.cells.filter(cell=>cell.command).length,8);
+  assert.throws(()=>E.applyTableAction(next,-1,{type:'place',cell:0}),coded('TABLE_ACTION_UNAVAILABLE'));assert.equal(E.applyTableAction(next,0,{type:'place',cell:0}).data.board[0],0);
+  // Adopt the separate hidden-information example into the same current VM wire.
+  const example=JSON.parse(execFileSync('python3',['-c',`import json,runpy,sys,tempfile,shutil
 from pathlib import Path
-spec=importlib.util.spec_from_file_location('packs_build',Path(sys.argv[1])/'build.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-print(json.dumps(module.build_pack(Path(sys.argv[1])/'examples/private-counter')))
-`,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
-  manager.install(manager.prepare(example));
+root=Path(sys.argv[1]);compiler=runpy.run_path(str(root/'shared/pack_compiler.py'))
+with tempfile.TemporaryDirectory() as tmp:
+ pack=Path(tmp)/'private-counter';shutil.copytree(root/'examples/private-counter',pack)
+ manifest=json.loads((pack/'manifest.json').read_text());manifest.update(execution='isolated-v1',sdkFeatures=['isolated-execution-v1']);(pack/'manifest.json').write_text(json.dumps(manifest))
+ (pack/'sdk').mkdir();(pack/'sdk/project.json').write_text(json.dumps({'contractVersion':1,'rules':['domain/game.js'],'presentation':['presentation/scene.js'],'helpers':[],'types':[],'support':[]}))
+ print(json.dumps(compiler['build_pack'](pack,shared=root/'shared')))
+`,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));manager.install(manager.prepare(example));
   const counter=E.createGame('private-counter',{players:[{name:'One'},{name:'Two'}],seed:17});
-  for(const viewer of [-1,0,1]){
-    const projection=E.project(counter,viewer),markup=views.render(projection,viewer,E.legalActions(counter,viewer));
-    assert.doesNotMatch(markup,/role="alert"/);
-    assert.match(markup,/private-counter-value/);
-    assert.equal(views.render({...projection,data:undefined,modelProjection:undefined},viewer,E.legalActions(counter,viewer)),markup);
-    projection.scene.goals.forEach((goal,index)=>assert.deepEqual(goal,viewer===index?{value:index+2}:{hidden:true}));
-  }
-
-  const malformed=JSON.parse(JSON.stringify(a));malformed.files['rules.js']='globalThis.TabletopCore.register({id:"tictactoe",name:"Fake",min:2,max:2,presets:[{id:"classic"}],create(){},legal(){return[]},apply(){}});';
-  assert.throws(()=>manager.prepare(malformed),/API 3/);
+  for(const viewer of [-1,0,1]){const projection=E.project(counter,viewer);assert.equal(projection.scene.count,0);projection.scene.goals.forEach((goal,index)=>assert.deepEqual(goal,viewer===index?{value:index+2}:{hidden:true}));}
+  const ignored=structuredClone(isolated);ignored.files['view.js']='globalThis.packEscaped=true;';assert.doesNotThrow(()=>manager.prepare(ignored));assert.equal(globalThis.packEscaped,undefined,'host entrypoint text is never executed');
 });
 
 test('portable reactions have independent episodes, authorized public choices and no implicit bot turns',()=>{
@@ -367,13 +342,9 @@ for name,folder in [('app',sys.argv[1]),('packs',sys.argv[2])]:
  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
  manifest=Path(sys.argv[2])/'packs/gofish/manifest.json'
  out.append(module.read_source_pack(manifest) if name=='app' else module.build_pack(manifest.parent))
-with tempfile.TemporaryDirectory() as tmp:
- fixture=Path(tmp)/'gofish';shutil.copytree(manifest.parent,fixture)
- value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
- legacy=module.build_pack(fixture,shared=Path(sys.argv[2])/'shared')
-print(json.dumps({'current':out,'legacy':legacy}))
+print(json.dumps(out))
 `;
- const {current:[app,pak],legacy}=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
+ const [app,pak]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
  assert.deepEqual(app,pak);
  assert(app.manifest.sharedAssetPacks.includes('mini-cards'));
  for(const file of ['renderer.js','styles.css'])assert.equal(app.files['assets/shared-packs/mini-cards/'+file],undefined,'compiled asset entrypoint has no redundant separate copy');
@@ -381,8 +352,7 @@ print(json.dumps({'current':out,'legacy':legacy}))
  assert(source.sources.providers.some(row=>row.file==='assets/shared-packs/mini-cards/renderer.js'&&row.source.includes('root.PlayroomMiniCards=api')));
  assert(source.sources.providers.some(row=>row.file==='assets/shared-packs/mini-cards/styles.css'&&row.source.includes('.mini-card>.card-deck-art')));
  assert(source.assets.some(asset=>asset.file==='assets/shared-packs/mini-cards/back.svg'));
- assert(legacy.files['view.js'].includes('root.PlayroomMiniCards=api'));
- assert(legacy.files['styles.css'].includes('.mini-card>.card-deck-art'));
+ assert(!app.files['view.js'].includes('PlayroomMiniCards'),'host entrypoints remain inert');
 });
 
 test('prepared packs omit bundled sources, duplicate asset entrypoints and authoring notes',()=>{
@@ -494,7 +464,7 @@ test('event scenes use authorized current events, ordered checkpoints and inert 
  for(invalid of ['id','duplicate','actions'])assert.throws(()=>session.view(-1),/EVENT_SCENE/);
 });
 
-test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',async()=>{
+test('Markdown authoring compiles into inert rule blocks and preserves exact companion bytes',async()=>{
  globalThis.PlayroomSandbox=await require('../sdk/node-host.cjs').createNodeHost();
  // Compare complete bundles against the independently prepared app companion.
  // Git HEAD can predate unrelated compiler/asset work in the same checkout.
@@ -522,7 +492,6 @@ with tempfile.TemporaryDirectory() as tmp:
  pack=Path(tmp)/'tictactoe';shutil.copytree(packs_root/'packs/tictactoe',pack)
  manifest=pack/'manifest.json';data=json.loads(manifest.read_text());data['sourceModules']['rulebooks']={'ru':'locales/ru/rules.md'};data['version']+='-markdown-fixture';manifest.write_text(json.dumps(data))
  (pack/'locales/ru/rules.md').write_text(md)
- bridge=pack/'rules.js';bridge.write_text(bridge.read_text().replace('const specification = {definition, presentation, locales, version};','const specification = {definition, presentation, locales, version, rulebooks:source?null:root.PlayroomPackResources.rulebooks};'))
  bundle=ns['build_pack'](pack,shared=packs_root/'shared')
  assert 'locales/ru/rules.md' not in bundle['files']
  print(json.dumps({'book':book,'bundle':bundle},ensure_ascii=False))
@@ -648,13 +617,7 @@ for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
 for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'},{'kind':'illustrations','ids':['setting-type-attack']},{'kind':'illustrations','ids':['same']*4}]:
  value=copy.deepcopy(base);option(value)['preview']=preview;ns['validate_manifest'](value,'valid-common-preview');valid.append(value)
-legacy=[]
-with tempfile.TemporaryDirectory() as tmp:
- for bundle in bundles:
-  name=bundle['manifest']['id'];fixture=Path(tmp)/name;shutil.copytree(root/'packs'/name,fixture)
-  value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
-  legacy.append(ns['build_pack'](fixture,shared=root/'shared'))
-print(json.dumps({'bundles':bundles,'legacy':legacy,'bad':bad,'valid':valid},ensure_ascii=False))
+print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False))
 `;
  const result=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8',maxBuffer:8*1024*1024}));
  const Packs=require('../core/packs.js'),parse=manifest=>{
@@ -663,7 +626,7 @@ print(json.dumps({'bundles':bundles,'legacy':legacy,'bad':bad,'valid':valid},ens
  };
  for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
- const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}},allowTrustedLegacy:true});
+ const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
  const Rooms=require('../application/rooms.js');
  for(const bundle of result.bundles){
   const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);
@@ -679,8 +642,7 @@ print(json.dumps({'bundles':bundles,'legacy':legacy,'bad':bad,'valid':valid},ens
  }
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),['mage-brawl','ludo','spider','durak','pexeso','snakes','yatzy','oldmaid','domino','checkers'].includes(id),'author-supplied component illustrations require the feature');
  const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
- for(const bundle of result.legacy)manager.install(manager.prepare(bundle));
- const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);
+ const mageFigures=new Map(catalog['mage-brawl'].support.figures.map(figure=>[figure.id,figure.graphic]));for(const id of ['setting-card-fire-attack','setting-card-water-movement','setting-type-movement','setting-type-attack'])assert(mageFigures.has(id),'declared setting artwork is present: '+id);assert.notDeepEqual(mageFigures.get('setting-card-fire-attack'),mageFigures.get('setting-card-water-movement'));assert.notDeepEqual(mageFigures.get('setting-type-movement'),mageFigures.get('setting-type-attack'));
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
  const modes=[catalog.durak.presetSetting,...catalog.durak.settings].filter(f=>f.presentation==='mode');assert.equal(modes.length,1);assert.equal(modes[0].key,'variant');assert.deepEqual(modes[0].options.map(o=>o.value),['simple','throwin','transfer']);
  const fleet=require('../packs/battleship/domain/geometry.js').fleets;

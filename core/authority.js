@@ -286,6 +286,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!Number.isInteger(actor)||actor<0||actor>=r.playerControls.length||r.session.current.players[actor].bot||!changes||!Object.keys(changes).length||Object.keys(changes).some(k=>!['away','bot'].includes(k)||typeof changes[k]!=='boolean')||typeof requestId!=='string'||!requestId||requestId.length>128)error('BAD_COMMAND');
       const key=actor+':'+requestId,signature=canonical({actor,changes,expectedRevision}),cached=r.playerReceipts.get(key);
       if(cached){if(cached.signature!==signature)error('ID_CONFLICT');return freeze({...cached.receipt,duplicate:true});}
+      if(changes.bot===true&&r.session.engine.get(r.session.game,r.session.packVersion).capabilities?.bots===false)error('BOTS_UNSUPPORTED');
       if(r.stopRequested||r.controlPending)error('BUSY');
       if(expectedRevision!==r.playerControlRevision)error('STALE');
       if(r.playerReceipts.size>=20000)error('RECEIPT_LIMIT');
