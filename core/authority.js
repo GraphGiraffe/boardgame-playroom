@@ -27,7 +27,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
   }
   class SessionAuthority {
-    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[],realtime=null}={}){
+    constructor(session,{sessionId=uid(),authorityEpoch=uid(),clock={setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id)},receiptLimit=20000,persistence=null,restoredReceipts=[],paused=false,controlRevision=0,playerControls=null,playerControlRevision=0,playerControlReceipts=[],realtime=null,clockTime=session.clockTime??session.current.clock??0,clockUpdatedAt=null}={}){
       if(!session?.current||!session.engine?.project)throw Error('Session required');
       if(typeof paused!=='boolean'||!Number.isSafeInteger(controlRevision)||controlRevision<0)throw Error('Invalid restored control');
       const controlsApi=globalThis.PlayroomPlayerControls||(typeof require==='function'?require('./player-controls.js'):null);
@@ -36,7 +36,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const receipts=new Map();
       if(!Array.isArray(restoredReceipts))throw Error('Invalid restored receipts');
       for(const row of restoredReceipts){
-        if(!Number.isInteger(row?.viewer)||(row.viewer<0&&!(row.viewer===-1&&row.receipt?.host===true&&row.receipt?.control===true))||row.viewer>=session.current.players.length||
+        if(!Number.isInteger(row?.viewer)||(row.viewer<0&&!(row.viewer===-1&&(row.receipt?.host===true&&row.receipt?.control===true||row.receipt?.hostClock===true)))||row.viewer>=session.current.players.length||
             typeof row.commandId!=='string'||!row.commandId||typeof row.signature!=='string'||
             row.receipt?.commandId!==row.commandId||typeof row.receipt?.ok!=='boolean')
           throw Error('Invalid restored receipt');
@@ -46,15 +46,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }
       const realtimePort=typeof realtime==='function'?realtime({sessionId,authorityEpoch}):realtime;
       if(realtimePort&&(!realtimePort.scope||Object.keys(realtimePort.scope).some(k=>!['sessionId','authorityEpoch','roundId'].includes(k))||typeof realtimePort.scope.roundId!=='string'||!/^[a-zA-Z0-9_.:-]{1,128}$/.test(realtimePort.scope.roundId)||realtimePort.scope.sessionId!==sessionId||realtimePort.scope.authorityEpoch!==authorityEpoch||typeof realtimePort.request!=='function'||typeof realtimePort.preview!=='function'))throw Error('REALTIME_PORT_INVALID');
-      records.set(this,{realtime:realtimePort,playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),activityListeners:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});
+      records.set(this,{gameClock:clockTime+(!paused&&clockUpdatedAt!==null?Math.max(0,Date.now()-clockUpdatedAt):0),gameClockAnchor:typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now()),gameTimer:null,realtime:realtimePort,playerControls:clone(playerControls),playerControlRevision,playerReceipts,controlPending:false,session,sessionId,authorityEpoch,clock,receipts,bindings:new Set(),activityListeners:new Set(),timer:null,busy:false,idleWaiters:[],stopRequested:false,stopPromise:null,disposed:false,receiptLimit:persistence?Infinity:receiptLimit,persistence,paused:!!paused,controlRevision,reactions:new Map(),reactionRevision:0,botOptions:null,connected:new Map()});this._initializePreview();this._scheduleClock();
     }
+    _initializePreview(){const r=records.get(this);if(r.realtime||!r.session.engine.get(r.session.game,r.session.packVersion).isolated)return;const API=globalThis.PlayroomRealtimeSession||(typeof require==='function'?require('../application/realtime-session.js'):null);r.realtime=new API.PreviewHub({scope:{sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,roundId:'sdk-inputs'},authorize:(actor,data)=>{const Inputs=globalThis.PlayroomModelInputs||(typeof require==='function'?require('./model-inputs.js'):null),choices=r.session.engine.inputChoices(r.session.current,actor).filter(choice=>Object.values(choice.fields).some(field=>field.kind==='ink'));return Inputs.resolve(choices,data);},broadcast:envelope=>{for(const binding of r.bindings)if(!binding.closed)for(const listener of binding.realtimeListeners)try{listener(P.immutable(envelope));}catch{}},now:()=>this._now()});}
+    get gameTime(){const r=records.get(this);return Math.max(r.session.clockTime??0,Math.floor(r.gameClock+(r.paused?0:Math.max(0,this._now()-r.gameClockAnchor))));}
+    _clockFailed(error){const r=records.get(this);if(!r.clockError){r.clockError=typeof error?.code==='string'&&/^[A-Z][A-Z0-9_]{1,79}$/.test(error.code)?error.code:'CLOCK_TRANSITION_FAILED';r.reactionRevision++;}this._publish();}
+    _scheduleClock(){const r=records.get(this);if(r.gameTimer!==null)r.clock.clearTimeout(r.gameTimer);r.gameTimer=null;if(r.disposed||r.paused||r.stopRequested||r.clockError||r.session.current.status!=='playing'||r.session.current.clock===undefined)return;r.gameTimer=r.clock.setTimeout(()=>{r.gameTimer=null;if(r.busy||r.controlPending){this._scheduleClock();return;}try{const result=this.advanceClock();if(result?.then)result.catch(error=>this._clockFailed(error)).finally(()=>this._scheduleClock());else this._scheduleClock();}catch(error){this._clockFailed(error);}},100);}
+    advanceClock(now=this.gameTime){const r=records.get(this),s=r.session;if(r.disposed||r.paused||r.stopRequested||r.busy||s.current.clock===undefined)return s.current;if(!Number.isSafeInteger(now)||now<s.clockTime)throw Error('CLOCK_INVALID');const next=s.prepareClock(now);if(next===s.current)return next;const command={commandId:'clock-'+uid(),action:{type:'host-clock-v1',now}},before=s.current;const result=this._processor().execute({sessionId:r.sessionId,actor:-1,command,signature:canonical({kind:'host-clock-v1',now,revision:before.move}),before,prepare:()=>next});const finish=receipt=>{if(!receipt.ok){r.clockError=receipt.code;r.reactionRevision++;this._publish();throw Error(receipt.code);}r.clockError=null;this._scheduleClock();return s.current;};return result?.then?result.then(finish):finish(result);}
     _processor() {
       const r=records.get(this);
       return r.processor ||= new Processor({
         persistence:r.persistence,
         checkpoint:(before,next,actor,command)=>r.session.engine.checkpoint?.(before,next,actor,command)??true,
         begin:()=>{r.busy=true;},end:()=>this._idle(),
-        commit:next=>r.session.commitPrepared(next),
+        commit:next=>{const action=r.session.preparedAction(next);const result=r.session.commitPrepared(next);r.realtime?.confirmed?.(action?.command);return result;},
         describeAction:next=>r.session.preparedAction?.(next),
         remember:(actor,id,signature,receipt)=>r.receipts.set(`${actor}:${id}`,{signature,receipt:freeze(receipt)}),
         publish:(before,next)=>{
@@ -90,19 +95,20 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     _connect(access){
       const r=records.get(this);if(r.disposed)throw Error('Invalid audience');
-      const binding={...access,listeners:new Set(),wireListeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);if(binding.role==='player')r.realtime?.connected?.(viewer);
+      const binding={...access,listeners:new Set(),wireListeners:new Set(),realtimeListeners:new Set(),closed:false},viewer=binding.viewer;r.bindings.add(binding);if(binding.role==='player')r.realtime?.connected?.(viewer);
       const requireOpen=()=>{if(binding.closed||r.disposed)throw Error(text.CLOSED);};
       return Object.freeze({
         snapshot:(options={})=>{requireOpen();return this._snapshot(viewer,undefined,binding,!!options.wire);},
         status:()=>{requireOpen();return this._status(binding);},
         history:(index,options={})=>{requireOpen();if(!Number.isSafeInteger(index)||index<0||index>=r.session.historyLength)throw Error('Invalid history index');return this._snapshot(viewer,index,binding,!!options.wire);},
         historyRange:(start,count,options={})=>{requireOpen();return P.historyRange(index=>this._snapshot(viewer,index,binding,!!options.wire),start,count,r.session.historyLength);},
+        subscribeRealtime:listener=>{requireOpen();if(typeof listener!=='function')throw Error('REALTIME_LISTENER_INVALID');binding.realtimeListeners.add(listener);return()=>binding.realtimeListeners.delete(listener);},
         realtimeScope:()=>{requireOpen();return r.realtime?P.immutable(r.realtime.scope):null;},
-        realtime:value=>{requireOpen();if(!r.realtime)throw Error('REALTIME_UNAVAILABLE');if(!value||typeof value.method!=='string'||!/^[a-zA-Z0-9_.:-]{1,64}$/.test(value.method)||value.method==='finalize'||new TextEncoder().encode(JSON.stringify(value)).length>512*1024)throw Error('REALTIME_REQUEST_INVALID');const actor=binding.role==='player'?viewer:-1;if(!['checkpoint','stroke'].includes(value.method)&&(actor<0||r.paused||r.playerControls[actor]?.away||this._botControlled(actor)))throw Error('REALTIME_UNAVAILABLE');return value.method==='preview'?r.realtime.preview(actor,value.envelope):r.realtime.request(actor,value.method,value.envelope);},
+        realtime:value=>{requireOpen();if(!r.realtime)throw Error('REALTIME_UNAVAILABLE');if(!value||typeof value.method!=='string'||!/^[a-zA-Z0-9_.:-]{1,64}$/.test(value.method)||value.method==='finalize'||new TextEncoder().encode(JSON.stringify(value)).length>512*1024)throw Error('REALTIME_REQUEST_INVALID');const actor=binding.role==='player'?viewer:-1;if(!['checkpoint','stroke'].includes(value.method)&&(actor<0||r.paused||r.playerControls[actor]?.away||this._botControlled(actor)))throw Error('REALTIME_UNAVAILABLE');if(value.method==='preview'&&(r.busy||r.controlPending||r.stopRequested))throw Error('REALTIME_UNAVAILABLE');const run=()=>value.method==='preview'?r.realtime.preview(actor,value.envelope):r.realtime.request(actor,value.method,value.envelope);if(value.method==='preview'&&r.session.current.clock!==undefined){const advanced=this.advanceClock();return advanced?.then?advanced.then(run):run();}return run();},
         presentationReady:message=>this._presentationReady(binding,message),
         dispatch:(command,options={})=>this._dispatch(binding,command,false,options),
         subscribe:(listener,options={})=>{requireOpen();if(typeof listener!=='function')throw Error('Listener required');const listeners=options.wire?binding.wireListeners:binding.listeners;listeners.add(listener);return ()=>listeners.delete(listener);},
-        close:()=>{binding.closed=true;binding.listeners.clear();binding.wireListeners.clear();r.bindings.delete(binding);if(binding.role==='player'&&![...r.bindings].some(b=>!b.closed&&b.role==='player'&&b.viewer===viewer))r.realtime?.disconnected?.(viewer);}
+        close:()=>{binding.closed=true;binding.listeners.clear();binding.wireListeners.clear();binding.realtimeListeners.clear();r.bindings.delete(binding);if(binding.role==='player'&&![...r.bindings].some(b=>!b.closed&&b.role==='player'&&b.viewer===viewer))r.realtime?.disconnected?.(viewer);}
       });
     }
     _status(binding){
@@ -127,17 +133,19 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // All outer fields are deliberate. options, seed and authority journal are absent.
       const safe={};for(const key of ['version','game','packVersion','packStateVersion','preset','players','turn','status','winner','winners','move','firstPlayer','firstPlayerMode','result','openHands','events','scene','timeline'])if(projected[key]!==undefined)safe[key]=projected[key];
       if(live&&safe.players&&s.playerMetadata)safe.players=safe.players.map((player,index)=>({...player,...s.playerMetadata(index)}));
-      const inputAllowed=live&&!r.paused&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away;
-      const actions=!wire&&inputAllowed?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
+      const inputAllowed=live&&!r.paused&&!r.clockError&&actor>=0&&!this._botControlled(actor)&&!r.playerControls[actor]?.away;
+      const directSDK=s.engine.get(s.game,s.packVersion).isolated&&projected.modelProjection?.choicesVersion!==1;
+      const actions=(!wire||directSDK)&&inputAllowed?(role==='table'?projected.tableActions||[]:s.engine.legalActions(state,actor)).filter(action=>this._reactionDecision(actor,action)!=='REACTION_WAIT').map(action=>{const control=s.engine.reactionControl?.(state,actor,action);return control?.kind==='challenge'&&this._reactionDecision(actor,action)==='REACTION_IGNORED'?{...action,disabled:true}:action;}):[];
       if(projected.modelProjection){
-        const allowed=wire?[]:authorizedCommands(projected.modelProjection.actions,actions);
-        if(wire){const {events,...model}=projected.modelProjection;safe.modelProjection=P.composeRecord(model);delete safe.scene;}
-        else if(allowed.length===projected.modelProjection.actions.length&&safe.players.every((player,index)=>player.name===state.players[index].name))safe.scene=projected.scene;
-        else safe.scene=s.engine.get(s.game,s.packVersion).scene({...projected.modelProjection,actions:allowed},safe.players);
+        const allowed=wire&&!directSDK?[]:authorizedCommands(projected.modelProjection.actions,actions);
+        if(directSDK){const authorized={...projected.modelProjection,actions:allowed,inputs:inputAllowed?projected.modelProjection.inputs||[]:[]};safe.sdkProjection=P.composeRecord(authorized);safe.scene=s.engine.get(s.game,s.packVersion).scene(authorized,safe.players);}
+        else if(wire){const {events,...model}=projected.modelProjection;safe.modelProjection=P.composeRecord(model);delete safe.scene;}
+        else if(inputAllowed&&allowed.length===projected.modelProjection.actions.length&&safe.players.every((player,index)=>player.name===state.players[index].name))safe.scene=projected.scene;
+        else safe.scene=s.engine.get(s.game,s.packVersion).scene({...projected.modelProjection,actions:allowed,inputs:inputAllowed?projected.modelProjection.inputs||[]:[]},safe.players);
       }
       if(role==='table'){safe.tableActor=actor;safe.tableActions=actions;}
-      const frame=P.composeRecord({protocolVersion:3,inputAllowed,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',...(live&&r.realtime?{realtimeScope:r.realtime.scope}:{}),sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:P.composeRecord(safe),actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.historyLength,rosterRevision:s.metadataRevision||0,...(!wire?{cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects}:{}),reactionWindow,reactionWindows});
-      return projected.modelProjection?P.withProjection(frame,projected.modelProjection):frame;
+      const frame=P.composeRecord({...r.clockError?{clockError:r.clockError}:{},now:live?this.gameTime:state.clock??0,protocolVersion:3,inputAllowed,role,...(role==='table'?{actor}:{}),kind:live?'snapshot':'history',...(live&&r.realtime?{realtimeScope:r.realtime.scope}:{}),sessionId:r.sessionId,authorityEpoch:r.authorityEpoch,revision:state.move,reactionRevision:r.reactionRevision,paused:r.paused,controlRevision:r.controlRevision,playerControls:r.playerControls,playerControlRevision:r.playerControlRevision,game:s.game,packVersion:s.packVersion,viewer,audience:viewer<0?'public':'player',state:P.composeRecord(safe),actions,independentActions:role==='player'?actions.filter(action=>this._currentReaction(actor,action)):[],events:projected.events,historyLength:s.historyLength,rosterRevision:s.metadataRevision||0,...(!wire?{cues:s.engine.soundCues(state,viewer,previous?.events.at(-1)?.id||0),effects}:{}),reactionWindow,reactionWindows});
+      return projected.modelProjection?P.withProjection(frame,safe.sdkProjection||projected.modelProjection):frame;
     }
     _now(){const clock=records.get(this).clock;return typeof clock.now==='function'?clock.now():(globalThis.performance?.now?.()??Date.now());}
     _clearWindow(window){
@@ -219,7 +227,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const s=records.get(this).session;
       return binding.role==='table'?s.engine.tableCommand(s.current,actor,action):action;
     }
-    _dispatch(binding,command,internalBot=false,{wire=false,receiptOnly=false}={}){
+    _dispatch(binding,command,internalBot=false,{wire=false,receiptOnly=false,clockChecked=false}={}){
       const r=records.get(this),s=r.session;
       const snapshot=()=>this._snapshot(binding.viewer,undefined,binding,wire);
       const reject=code=>freeze({ok:false,code,message:text[code],commandId:typeof command?.commandId==='string'?command.commandId:null,
@@ -238,6 +246,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(r.controlPending)return reject('BUSY');
       if(r.stopRequested)return reject('PAUSED');
       if(r.busy||r.botBatch&&!internalBot)return reject('BUSY');
+      if(!clockChecked&&!r.paused&&s.current.clock!==undefined){const advanced=this.advanceClock();if(advanced?.then)return advanced.then(()=>this._dispatch(binding,command,internalBot,{wire,receiptOnly,clockChecked:true}));if(command.expectedRevision!==this.revision)return reject('STALE');}
       if(command.action.type==='session-pause')return this._pause(binding,command,signature,key,reject,{wire,receiptOnly});
       if(r.paused)return reject('PAUSED');
       if(r.receipts.size>=r.receiptLimit)return reject('RECEIPT_LIMIT');
@@ -245,7 +254,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const rejection=decision?{...reject(decision),...(decision==='REACTION_IGNORED'?{ignored:true}:{})}:
         command.expectedRevision!==this.revision&&!this._currentReaction(actor,command.action)?reject('STALE'):null;
       const result=this._processor().execute({sessionId:r.sessionId,actor,command,signature,before:s.current,rejection,
-        prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action))});
+        prepare:()=>s.prepare(actor,this._actionFor(binding,actor,command.action),s.current.clock===undefined?{}:{now:this.gameTime})});
       const reply=receipt=>freeze({...receipt,...(!r.disposed&&(!receiptOnly||!receipt.ok)?{snapshot:snapshot()}:{})});
       return result&&typeof result.then==='function'?result.then(reply):reply(result);
     }
@@ -257,17 +266,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       r.busy=true;
       try{
         await r.processor?.flush();
+        const gameClock=this.gameTime;
         const controlRevision=r.controlRevision+(r.paused===command.action.paused?0:1);
         const receipt={ok:true,code:'OK',control:true,commandId:command.commandId,revision:this.revision,controlRevision,...(binding.host?{host:true}:{})};
-        if(r.persistence)await r.persistence.setControl({sessionId:r.sessionId,previousControlRevision:r.controlRevision,paused:command.action.paused,controlRevision,viewer:binding.viewer,commandId:command.commandId,signature,receipt});
-        r.paused=command.action.paused;r.controlRevision=controlRevision;
+        if(r.persistence)await r.persistence.setControl({sessionId:r.sessionId,previousControlRevision:r.controlRevision,paused:command.action.paused,...(r.session.current.clock!==undefined?{clockTime:gameClock,clockUpdatedAt:Date.now()}:{}),controlRevision,viewer:binding.viewer,commandId:command.commandId,signature,receipt});
+        r.gameClock=gameClock;r.gameClockAnchor=this._now();if(r.session.current.clock!==undefined)r.session.setClockTime(gameClock);r.paused=command.action.paused;r.controlRevision=controlRevision;
         for(const window of r.reactions.values()){this._clearWindow(window);window.readyAt=null;window.createdAt=this._now();r.reactionRevision++;}
         r.receipts.set(key,{signature,receipt:freeze(receipt)});
         this.cancelBot();this._publish();
         return freeze({...receipt,...(!receiptOnly?{snapshot:this._snapshot(binding.viewer,undefined,binding,wire)}:{})});
       }catch(_){return reject('STORAGE_ERROR');}finally{this._idle();if(!r.paused&&r.persistence)this.scheduleBot();}
     }
-    _idle(){const r=records.get(this);r.busy=false;if(!r.botBatch)for(const resolve of r.idleWaiters.splice(0))resolve();}
+    _idle(){const r=records.get(this);r.busy=false;this._scheduleClock();if(!r.botBatch)for(const resolve of r.idleWaiters.splice(0))resolve();}
     _botControlled(actor){const r=records.get(this);return !!((r.session.playerMetadata?.(actor)?.bot??r.session.current.players[actor]?.bot)||r.playerControls[actor]?.bot);}
     // Host capability only. Network adapters bind the requester before calling this.
     async setPlayerControl(actor,changes,{requestId,expectedRevision}={}){
@@ -276,6 +286,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!Number.isInteger(actor)||actor<0||actor>=r.playerControls.length||r.session.current.players[actor].bot||!changes||!Object.keys(changes).length||Object.keys(changes).some(k=>!['away','bot'].includes(k)||typeof changes[k]!=='boolean')||typeof requestId!=='string'||!requestId||requestId.length>128)error('BAD_COMMAND');
       const key=actor+':'+requestId,signature=canonical({actor,changes,expectedRevision}),cached=r.playerReceipts.get(key);
       if(cached){if(cached.signature!==signature)error('ID_CONFLICT');return freeze({...cached.receipt,duplicate:true});}
+      if(changes.bot===true&&r.session.engine.get(r.session.game,r.session.packVersion).capabilities?.bots===false)error('BOTS_UNSUPPORTED');
       if(r.stopRequested||r.controlPending)error('BUSY');
       if(expectedRevision!==r.playerControlRevision)error('STALE');
       if(r.playerReceipts.size>=20000)error('RECEIPT_LIMIT');
@@ -331,7 +342,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!receipt.ok)throw Error(receipt.message);return r.session.current;
     }
     _publish(){
-      const r=records.get(this);
+      const r=records.get(this);this._scheduleClock();
       if(r.botBatch){r.botBatch.changed=true;return;}
       for(const listener of [...r.activityListeners])try{listener();}catch(_){}
       for(const binding of [...r.bindings])if(!binding.closed)for(const wire of [false,true]){
@@ -428,7 +439,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(!receipt.ok)throw Error(receipt.message);
       return s.current;
     }
-    dispose(){const r=records.get(this);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;r.realtime?.close?.();r.activityListeners.clear();for(const b of r.bindings){b.closed=true;b.listeners.clear();b.wireListeners.clear();}r.bindings.clear();}
+    dispose(){const r=records.get(this);if(r.gameTimer!==null)r.clock.clearTimeout(r.gameTimer);this.cancelBot();for(const window of r.reactions.values())this._clearWindow(window);r.reactions.clear();r.disposed=true;r.realtime?.close?.();r.activityListeners.clear();for(const b of r.bindings){b.closed=true;b.listeners.clear();b.wireListeners.clear();b.realtimeListeners.clear();}r.bindings.clear();}
   }
   SessionAuthority.transfers=transfers;
   return SessionAuthority;

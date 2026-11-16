@@ -30,6 +30,7 @@
     const {events:stateEvents,...position}=state;
     const computed=['player','text','message','kind','presentation','transfer','feedback','reveal','speech','sound','target','notice'];
     const model=state.modelProjection;
+    if(position.sdkProjection){delete position.scene;delete position.modelProjection;}
     if(model){
       delete position.modelProjection;delete position.scene;delete position.tableActions;
       delete rest.actions;delete rest.independentActions;
@@ -87,8 +88,9 @@
       state=Protocol.composeRecord({...state,scene:pack.scene(projection,state.players),...(snapshot.role==='table'?{tableActions:actions}:{})});
 
     }
+    if(state.sdkProjection){const direct=state.sdkProjection;pack??=globalThis.TabletopCore?.get(snapshot.game,snapshot.packVersion);if(!pack?.isolated||direct.game!==snapshot.game||direct.viewer!==snapshot.viewer||direct.playerCount!==state.players.length||direct.revision!==snapshot.revision)throw Error('PROJECTION_MODEL_INVALID');state=Protocol.composeRecord({...state,modelProjection:direct,scene:pack.scene({...direct,events:rawEvents.filter(e=>typeof e.type==='string')},state.players)});}
     const result=Protocol.composeRecord({...rest,...(model?{actions,independentActions}:{}),state:Protocol.composeRecord({...state,events}),events,cues:snapshot.cues??derived,effects:snapshot.effects??effects});
-    return model?Protocol.withProjection(result,local):result;
+    return model?Protocol.withProjection(result,local):state.sdkProjection?Protocol.withProjection(result,state.sdkProjection):result;
   }
   function draft(frame,model,pack){const source=compact({...frame,state:{...frame.state,modelProjection:model}}),next=restore({...source,localDraft:true},(event,snapshot)=>pack.presentEvent(event,snapshot.state.players),pack);return (globalThis.PlayroomProtocol||(typeof require==='function'?require('../core/protocol.js'):null)).withDraft(next,frame);}
   return Object.freeze({format,compact,restore,draft,soundCues});

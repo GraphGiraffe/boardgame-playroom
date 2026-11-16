@@ -54,3 +54,58 @@ test('SDK privacy pairs detect accidental projection leaks and redact the mismat
  const leaky=fixture(t,{project:'position.data'});
  await assert.rejects(privacy(leaky,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE'&&!JSON.stringify(error.diagnostic).includes('hidden-alpha')&&!JSON.stringify(error.diagnostic).includes('hidden-beta'));
 });
+
+test('SDK bot decisions cannot read private caches populated by create or reduce',async t=>{
+ const root=fixture(t,{start:"cachedSecret='hidden-alpha';globalThis.cachedPrivate='hidden-alpha'"}),file=path.join(root,'domain/game.js');
+ fs.writeFileSync(file,'let cachedSecret;\n'+fs.readFileSync(file,'utf8')+`
+ const D=PlayroomPackDefinition;
+ D.actions=()=>[0,1].map(choice=>({command:{type:'step',choice},visibility:'public'}));
+ D.reactions=()=>[0,1].map(choice=>({command:{type:'react',choice},visibility:'public'}));
+ D.observe=()=>({known:'observed'});D.botContext=()=>({tag:'allowed'});
+ D.reduce=p=>{cachedSecret=p.data.secret;globalThis.cachedPrivate=p.data.secret;return {position:p,events:[]};};
+ const leaked=()=>!!cachedSecret||Object.hasOwn(globalThis,'cachedPrivate');
+ D.bot=(projection,actor,actions,memory,context)=>{if(Object.hasOwn(context,'decisionRandom')||Object.hasOwn(context,'seed'))throw Error('RNG_EXPOSED');return actions[leaked()||memory.known!=='observed'||context.tag!=='allowed'?1:0];};
+ D.botMistakes=(projection,actor,actions)=>{if(leaked())throw Error('PRIVATE_CACHE');return actions;};
+ D.botReaction=(projection,actor,actions,memory)=>actions[leaked()||memory.known!=='observed'?1:0];
+ D.botReactionDelay=(projection,actor,settings,memory)=>leaked()||memory.known!=='observed'?100:0;
+ `);
+ const s=await StudioSession.open(root);t.after(()=>s.close());await s.start();
+ for(let i=0;i<2;i++){
+  assert.equal((await s.rules.call('botAction',s.position,0,{enabled:false})).choice,0);
+  assert.equal((await s.rules.call('botReaction',s.position,0,{})).choice,0);
+  assert.equal(await s.rules.call('botReactionDelay',s.position,0,{}),0);
+  assert.deepEqual(await s.rules.call('botAction',s.position,0,{enabled:true}),await s.rules.call('botAction',s.position,0,{enabled:true}));
+  await assert.rejects(s.rules.call('definitionCall','bot',{},0,[],{},{}),e=>e.code==='SDK_METHOD_DENIED');
+  if(!i)await s.apply(0,{type:'step',choice:0});
+ }
+});
+
+test('SDK privacy pairs compare public score hooks and redact hidden score values',async t=>{
+ const root=fixture(t),file=path.join(root,'domain/game.js');
+ fs.appendFileSync(file,"\nPlayroomPackDefinition.score=p=>[p.data.secret==='hidden-alpha'?12345:67890,0];");
+ const s=await StudioSession.open(root);await s.start();const left=s.position,right=JSON.parse(JSON.stringify(left));right.data.secret='hidden-beta';s.close();
+ await assert.rejects(privacy(root,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE'&&!/hidden-alpha|hidden-beta|12345|67890/.test(JSON.stringify(error.diagnostic)));
+});
+
+test('SDK privacy pairs include bot memory and authored context but exclude trusted decision randomness',async t=>{
+ const root=fixture(t),file=path.join(root,'domain/game.js');
+ fs.appendFileSync(file,"\nPlayroomPackDefinition.botContext=p=>({known:p.data.secret});");
+ const s=await StudioSession.open(root);await s.start();const left=s.position,right=JSON.parse(JSON.stringify(left));right.data.secret='hidden-beta';s.close();
+ await assert.rejects(privacy(root,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE'&&!/hidden-alpha|hidden-beta/.test(JSON.stringify(error.diagnostic)));
+ fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('({known:p.data.secret})','({known:0})')+"\nPlayroomPackDefinition.observe=p=>({known:p.data.secret});");
+ await assert.rejects(privacy(root,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE');
+ fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('({known:p.data.secret})','({known:0})'));
+ right.data.secret=left.data.secret;right.rng=2;
+ assert.equal((await privacy(root,{left:{...left,rng:1},right,viewer:0})).status,'passed');
+});
+
+test('SDK fresh authored bots resolve numeric inputs against exact actor and round schema',async t=>{
+ for(const [returned,rejected]of [["({...p.inputs[0].command,amount:7})",null],["({...p.inputs[0].command,amount:11})",'INPUT_INVALID'],["({...p.inputs[0].command,amount:7,roundId:2})",'BOT_ACTION_INVALID'],["({...p.inputs[0].command,amount:7,actor:1})",'BOT_ACTION_INVALID']]){
+  const root=fixture(t),file=path.join(root,'domain/game.js');fs.appendFileSync(file,`\nconst D=PlayroomPackDefinition;D.actions=()=>[];D.inputs=(p,actor)=>actor===p.turn?[{visibility:'private',command:{type:'bid',roundId:1,actor},fields:{amount:{kind:'integer',min:0,max:10}}}]:[];D.bot=p=>p.inputs.length?${returned}:null;D.reduce=(p,a,c)=>({position:{...p,data:{...p.data,count:c.amount}},events:[]});`);
+  const s=await StudioSession.open(root);t.after(()=>s.close());await s.start();const before=JSON.stringify(s.position);
+  if(rejected)await assert.rejects(s.rules.call('botAction',s.position,0,{enabled:true}),e=>e.code===rejected);
+  else{const command=await s.rules.call('botAction',s.position,0,{enabled:true});assert.deepEqual(command,{type:'bid',roundId:1,actor:0,amount:7});assert.deepEqual(command,await s.rules.call('botAction',s.position,0,{enabled:true}));await s.apply(0,command);assert.equal(s.position.data.count,7);}
+  if(rejected)assert.equal(JSON.stringify(s.position),before);assert.equal(await s.rules.call('botAction',s.position,1,{}),null);
+ }
+ const root=fixture(t),file=path.join(root,'domain/game.js');fs.appendFileSync(file,"\nPlayroomPackDefinition.actions=()=>[];PlayroomPackDefinition.inputs=()=>[{visibility:'private',command:{type:'bid'},fields:{amount:{kind:'integer',min:0,max:10}}}];");const s=await StudioSession.open(root);t.after(()=>s.close());await s.start();assert.equal(await s.rules.call('botAction',s.position,0,{}),null,'a fallback does not invent input');
+});

@@ -25,17 +25,22 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }});
   let playerProfile=profileStore.load();
   let profileAvatar=playerProfile?.avatar||null;
+  const sdkGuideStore=new globalThis.PlayroomGuidePreferences(()=>localStorage,()=>hotseatPreference()?.primary?playerProfile?.id:hotseatPreference()?.key||playerProfile?.id||'default');
+  const sdkGuideCheckpoints=new WeakMap();
+  let sdkRenderer=null;
   let authority=null,authoritySession=null,localClients=new Map(),commandSequence=0;
   function localAuthority(){
-    if(authoritySession!==session){authority?.dispose();authoritySession=session;authority=session?new Authority(session,{clock:globalThis.PlayroomDiagnostics.clock('authority')}):null;localClients=new Map();}
+    if(authoritySession!==session){authority?.dispose();authoritySession=session;authority=session?new Authority(session,{paused,clock:globalThis.PlayroomDiagnostics.clock('authority')}):null;localClients=new Map();}
     return authority;
   }
   function localClient(player){
     const executor=localAuthority();
     if(!localClients.has(player)){
       const client=executor.connect(player);localClients.set(player,client);let shown=client.snapshot();
-      client.subscribe(next=>{const refresh=next.revision===shown.revision&&(next.controlRevision!==shown.controlRevision||(next.reactionRevision||0)>(shown.reactionRevision||0));shown=next;
+      client.subscribeRealtime?.(envelope=>{if(envelope.data?.kind==='sdk.preview')sdkRenderer?.preview(envelope.data.entries);});
+      client.subscribe(next=>{if(next.clockError&&!shown.clockError)reportSaveFailure({code:next.clockError});const revisionChanged=next.revision!==shown.revision;const refresh=next.revision===shown.revision&&(next.controlRevision!==shown.controlRevision||(next.reactionRevision||0)>(shown.reactionRevision||0));shown=next;
         if(refresh)localLegal.delete(player);
+        if(revisionChanged&&player===viewer&&E.get(session.game,session.packVersion).isolated){localLegal.clear();void save();queueMicrotask(()=>{if(screen==='table'&&!transition)renderTable();});}
         if(refresh)queueMicrotask(()=>{if(localClients.get(player)===client&&viewer===player&&screen==='table'&&!isReplay()&&!transition)renderTable();});});
     }
     return localClients.get(player);
@@ -208,6 +213,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function dismissNotice(animate=false){clearTimeout(noticeTimer);delete noticeElement.returnFocus;if(animate&&noticeElement.classList.contains('show')){const old=noticeElement;noticeElement=document.createElement('div');noticeElement.id='toast';noticeElement.className='toast';document.body.append(noticeElement);old.removeAttribute('id');old.classList.add('app-notice');globalThis.PlayroomDOM.retireVisual(old,{kind:'banner'});}else{noticeElement.classList.remove('show');noticeElement.textContent='';}}
   new MutationObserver(placeNotice).observe($('#modal-root'),{childList:true,subtree:true});
   document.addEventListener('click',event=>{
+    if(event.target?.closest?.('[data-sdk-player-scene]'))return;
     if(event.target?.closest?.('[data-surface-state="suspended"]'))return;if(event.target.closest('#toast [data-command="dismiss-notice"]')){event.preventDefault();event.stopImmediatePropagation();dismissNotice(true);}},true);
   function toast(message,{action='',label='',polite=false}={}) {
     const alreadyShown=noticeElement.classList.contains('show');
@@ -318,6 +324,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   async function save() {
     if (!session||historyOrigin?.kind==='library') return true;
     const diagnosticStart=diagnostics?.begin()??null;
+    if(session.current.clock!==undefined&&authoritySession===session)session.setClockTime(localAuthority().gameTime);
     try { await library.writeAsync(session,sessionId); storageOK = true; loadWarning=''; globalThis.PlayroomCloudSavesUI?.saved('local:'+sessionId,{finished:session.current.status==='finished',menu:screen==='hub'});return true; }
     catch (error) { return reportSaveFailure(error); }
     finally {diagnostics?.end('save',diagnosticStart,{revision:session?.current.move});}
@@ -349,7 +356,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function stopReplay(stopAudio=true) { replayPaused=false;globalThis.PlayroomPublicSequence?.setMode($('#app'),'still');clearTimeout(replayTimer); replayTimer=null;replayTicket++;feedback.clear();flow.cancel();if(stopAudio)stopSounds(); }
   const {orderedVisibleGames,tile,recentGameCard,hubFilterMarkup,showCatalogFilters,renderHub:renderHubSurface,moveHubGame,editHubStep,hubDropAt,savedGamesMarkup,refreshNetworkSaved,updateSavedPanel}=globalThis.PlayroomHubPresenter.create({get settings(){return settings;},get $(){return $;},set $(value){$=value;},get E(){return E;},set E(value){E=value;},get GameScreen(){return GameScreen;},set GameScreen(value){GameScreen=value;},get Tags(){return Tags;},set Tags(value){Tags=value;},get V(){return V;},set V(value){V=value;},get appVersion(){return appVersion;},set appVersion(value){appVersion=value;},get brand(){return brand;},set brand(value){brand=value;},get cancelBot(){return cancelBot;},get catalog(){return catalog;},set catalog(value){catalog=value;},get esc(){return esc;},set esc(value){esc=value;},get feedback(){return feedback;},set feedback(value){feedback=value;},get flashPacksOnHub(){return flashPacksOnHub;},set flashPacksOnHub(value){flashPacksOnHub=value;},get hubEditing(){return hubEditing;},set hubEditing(value){hubEditing=value;},get hubFilters(){return hubFilters;},set hubFilters(value){hubFilters=value;},get hubTab(){return hubTab;},set hubTab(value){hubTab=value;},get icon(){return icon;},set icon(value){icon=value;},get input(){return input;},set input(value){input=value;},get interruptAction(){return interruptAction;},get isPass(){return isPass;},set isPass(value){isPass=value;},get latestPacks(){return latestPacks;},get library(){return library;},set library(value){library=value;},get loadWarning(){return loadWarning;},set loadWarning(value){loadWarning=value;},get meta(){return meta;},set meta(value){meta=value;},get networkSaved(){return networkSaved;},set networkSaved(value){networkSaved=value;},get networkSavedState(){return networkSavedState;},set networkSavedState(value){networkSavedState=value;},get networkSavedTicket(){return networkSavedTicket;},set networkSavedTicket(value){networkSavedTicket=value;},get packNotices(){return packNotices;},set packNotices(value){packNotices=value;},get packUpdates(){return packUpdates;},get playerTargets(){return playerTargets;},set playerTargets(value){playerTargets=value;},get savedFilter(){return savedFilter;},set savedFilter(value){savedFilter=value;},get screen(){return screen;},set screen(value){screen=value;},get session(){return session;},set session(value){session=value;},get localResumeVisible(){return settings.hiddenLocalSession!==sessionId;},get updateKey(){return updateKey;},set updateKey(value){updateKey=value;}});
-  function renderHub(...args){localTutorialContext=null;renderedLocalInputs=null;return renderHubSurface(...args);}
+  function renderHub(...args){sdkRenderer?.destroy();sdkRenderer=null;localTutorialContext=null;renderedLocalInputs=null;return renderHubSurface(...args);}
 
 
 
@@ -404,7 +411,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     catch(_){
       // Legacy saves still open. Rebuild a locked view from the actual session.
       const g=meta(session.game),host={id:playerProfile.id,nickname:playerProfile.name};
-      let draft=roomService.create({transportMode:'hotseat',name:session.options.portableRoomName||settings.lastRoomName||globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion,...(g.botSettings?{botSettings:g.botSettings}:{})},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+      let draft=roomService.create({transportMode:'hotseat',name:session.options.portableRoomName||settings.lastRoomName||globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:session.game,name:g.name,version:session.packVersion,capabilities:{bots:g.capabilities?.bots!==false},...(g.botSettings?{botSettings:g.botSettings}:{})},rules:{preset:session.options.preset,presetLabel:session.options.presetLabel,openHands:!!session.options.openHands,options:Object.fromEntries((catalog[session.game]?.settings||[]).map(field=>[field.key,session.options[field.key]??field.default]))},constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       draft=roomService.configure(draft.id,host.id,{transportMode:'hotseat'});
       const hostIndex=Math.max(0,players.findIndex(p=>!p.bot));
       if(hostIndex)draft=roomService.moveParticipant(draft.id,host.id,host.id,draft.seats[hostIndex].id);
@@ -509,10 +516,18 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const replay=isReplay();
     globalThis.PlayroomFirstTurnGuide.update({...context,busy:!!transition||!!feedback.active||feedback.queue.length>0,active:!paused&&gate===null&&!replay,replay});
   }
+  window.addEventListener('playroom:learning',event=>{if(screen==='table'&&session?.game===event.detail?.game&&catalog[session.game]?.isolated)renderTable();});
   function localInputsCurrent(){
     if(!session||!renderedLocalInputs)return false;
     const state=currentState(),last=renderedLocalInputs,keys=Object.keys(viewState);
     return Object.isFrozen(state)&&last.owner===session&&last.state===state&&last.viewer===(gate!==null?-1:viewer)&&last.replayIndex===replayIndex&&last.historyOpen===historyOpen&&last.paused===paused&&last.gate===gate&&last.awaitingPass===awaitingPass&&last.saved===storageOK&&last.selected===selected&&last.view===V.get(session.game)&&last.catalog===catalog[session.game]&&!transition&&!feedback.active&&!feedback.queue.length&&keys.length===Object.keys(last.viewState).length&&keys.every(key=>{const value=viewState[key];return (value===null||!['object','function'].includes(typeof value))&&value===last.viewState[key];});
+  }
+  function mountSDK(projected,actions,replay){
+    const container=$('[data-sdk-player-scene]');if(!container){sdkRenderer?.destroy();sdkRenderer=null;return;}
+    if(!sdkRenderer||sdkRenderer.root!==container){sdkRenderer?.destroy();sdkRenderer=new globalThis.PlayroomSDKSceneRenderer(container,{externalActions:commands=>[...document.querySelectorAll('#app [data-action]')].map(element=>{const action=JSON.parse(element.dataset.action);return {element,command:commands.find(command=>Object.keys(command).every(key=>JSON.stringify(command[key])===JSON.stringify(action[key])))||action};}),scheduler:presentationExecutor.lane('sdk-scene'),planPlayer:presentationExecutor.track('sdk-scene'),text:value=>typeof value==='string'?value:value?.key?new globalThis.PlayroomLocalization.Translator({catalogs:{ru:{},...(catalog[projected.game]?.locales||{})}}).format(value):String(value??''),command:async command=>{if(isReplay()||paused||gate!==null||transition||awaitingPass)return false;const finite=activeActions(session.current).find(candidate=>Object.keys(command).every(key=>JSON.stringify(command[key])===JSON.stringify(candidate[key])));if(finite){const before=session.current.move;act(viewer,finite);return session.current.move!==before;}const owner=session,beforeTurn=session.current.turn,guideToken=globalThis.PlayroomFirstTurnGuide.capture(session,viewer),receipt=await localPort.send(command,{actor:viewer});if(!receipt.ok){toast(receipt.message);return false;}if(owner===session){globalThis.PlayroomFirstTurnGuide.committed(session,viewer,command,guideToken);markDeviceHandoff(beforeTurn);await save();renderTable();presentFinishedResult();}return true;},onTutorialProgress:progress=>{const current=sdkGuideStore.read(session.game),goals=catalog[session.game]?.support?.tutorialGoals||[];sdkGuideStore.learn(session.game,Object.fromEntries(goals.filter(goal=>progress.seen.includes(goal.id)).map(goal=>[goal.id,goal.revision||1])),current);let seats=sdkGuideCheckpoints.get(session);if(!seats){seats=new Map();sdkGuideCheckpoints.set(session,seats);}seats.set(viewer,progress.checkpoint);renderTable();},preview:async(operation,command)=>{const client=localClient(viewer);return client.realtime({method:'preview',envelope:{scope:client.realtimeScope(),data:{...command,operation}}});},error:error=>toast(globalThis.PlayroomMessages.error(error))});}
+    const learned=sdkGuideStore.read(projected.game),goals=catalog[projected.game]?.support?.tutorialGoals||[],guideProgress={seen:goals.filter(goal=>learned.mastered[goal.id]===(goal.revision||1)).map(goal=>goal.id),...(projected.modelProjection.viewer>=0&&sdkGuideCheckpoints.get(session)?.get(viewer)?{checkpoint:sdkGuideCheckpoints.get(session).get(viewer)}:{})};const tutorial=V.get(projected.game)?.tutorial?.({state:projected,viewer,ui:{selected,viewState},guideProgress});
+    sdkRenderer.setReducedMotion(settings.animationSpeed==='instant');
+    sdkRenderer.update({ui:{quickPlay:settings.quickPlay,flipped:viewer===1},metadata:catalog[projected.game]?.metadata,guideProgress,projection:projected.modelProjection,scene:projected.scene,support:{...projected.scene.support,tutorial:projected.modelProjection.viewer>=0&&learned.enabled&&learned.prompted&&settings.tutorialsEnabled!==false?tutorial:null},resources:catalog[projected.game]?.resources,actions:actions.map(action=>({command:projected.modelProjection.actions.find(command=>Object.keys(command).every(key=>JSON.stringify(command[key])===JSON.stringify(action[key])))||action,label:action.label||action.type})),events:projected.events,now:replay?projected.clock??0:localAuthority()?.gameTime??projected.clock??0,history:{reviewing:replay||paused||gate!==null||!!transition||awaitingPass}});
   }
   function renderTable(animate=false,preserveField=false,preserveLayout=false) {
     const diagnosticStart=diagnostics?.begin()??null;
@@ -553,6 +568,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     globalThis.PlayroomPublicSequence?.setMode($('#app'),replay?(replayPaused?'pause':replayTimer?'play':'still'):'live');
     const keptLayout=GameScreen.update($('#app'),markup,{preserveLayout,fragments:regionSink});
     renderedLocalInputs={owner:session,state,viewer:shownViewer,replayIndex,historyOpen,paused,gate,awaitingPass,saved:storageOK,selected,view:V.get(session.game),catalog:catalog[session.game],viewState:{...viewState}};
+    if(E.get(session.game,session.packVersion).isolated)mountSDK(projected,actions,replay);else {sdkRenderer?.destroy();sdkRenderer=null;}
     const newHand=$('.hand-track, .hand-cards, .hand-scroll'); if(newHand)newHand.scrollLeft=scrollLeft;
     if(!keptLayout)HandOverflow.sync($('#app'));
     ensureRoomButton();globalThis.PlayroomPublicSequence?.useExecutor($('#app'),flow.executor);if(!keptLayout)GameScreen.layoutScene($('#app'));
@@ -833,10 +849,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const active=activatePack(gameId),g=meta(gameId);if(!g){packUI?.open();return;}
     const rules=defaultRules(gameId,g);
     const host={id:playerProfile?.id||'local-host',nickname:playerProfile?.name||globalThis.PlayroomMessages.text("ui.app.f54f58cf08df"),avatar:profileAvatar};
-    room=roomService.create({transportMode:'hotseat',name:settings.lastRoomName||globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
+    room=roomService.create({transportMode:'hotseat',name:settings.lastRoomName||globalThis.PlayroomMessages.text("ui.app.499f4549c0b2",{p0:String(host.nickname)}),host,game:{id:gameId,name:g.name,version:active.version,capabilities:{bots:g.capabilities?.bots!==false},...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
     settings.lastRoomName=room.name;settingsStore.write(settings);
     lobbyParticipantId=host.id;room=roomService.configure(room.id,host.id,{transportMode:'hotseat'});
-    for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,{kind:'bot',nickname:randomBotName()});
+    for(let i=1;i<g.min;i++)room=roomService.setLocalSeat(room.id,host.id,room.seats[i].id,g.capabilities?.bots===false?{kind:'human',nickname:globalThis.PlayroomMessages.text('ui.engine.97bd9bdf39ef',{p0:String(i+1)})}:{kind:'bot',nickname:randomBotName()});
     renderLobby();
   }
   function ruleOptionAvailable(field,form){return (!field.visibleWhen||Object.entries(field.visibleWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value)))&&(!field.inactiveWhen||!Object.entries(field.inactiveWhen).every(([key,value])=>choiceValue(form.elements['option-'+key])===String(value)));}
@@ -903,7 +919,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const claim=!person&&!seat.closed&&state.phase==='lobby'?row('claim',me?.role==='player'?'Пересесть сюда':'Занять место','player',me?.ready?'Сначала снимите готовность':''):'';
     const alternatives=state.seats.filter(s=>s.id!==id&&!s.participantId),others=alternatives.length?`<details class="choice021-other-seats"><summary>Другие места · ${alternatives.length}</summary><div class="menu-list">${alternatives.map(s=>`<button type="button" class="menu-row" data-seat-select="${esc(s.id)}"><span><strong>Место ${state.seats.indexOf(s)+1}</strong><small>${s.closed?'Закрыто':'Свободно'}</small></span>${icon('next')}</button>`).join('')}</div></details>`:'';
     const owns=()=>{if(room?.id!==roomId||lobbyParticipantId!==actor)return false;const latest=roomService.snapshot(roomId),place=latest.seats.find(s=>s.id===id);return latest.ownerId===actor&&!!place&&!place.participantId;};
-    const frame=openModal(`${modalHead('Место '+(state.seats.indexOf(seat)+1))}<div class="choice021-content"><p class="choice021-state">${esc(seat.closed?'Место закрыто':'Свободное место')}</p><div class="menu-list">${claim}${row('bot','Добавить бота','bot-medium')}${state.transportMode==='hotseat'?row('human','Игрок на устройстве','player'):''}${row(seat.closed?'empty':'closed',seat.closed?'Открыть место':'Закрыть место',seat.closed?'addPlayer':'lock')}</div>${others}</div>`,kind,{onBack:back,mode:replacing?'replace':null,valid:owns});
+    const frame=openModal(`${modalHead('Место '+(state.seats.indexOf(seat)+1))}<div class="choice021-content"><p class="choice021-state">${esc(seat.closed?'Место закрыто':'Свободное место')}</p><div class="menu-list">${claim}${state.game.capabilities?.bots===false?'':row('bot','Добавить бота','bot-medium')}${state.transportMode==='hotseat'?row('human','Игрок на устройстве','player'):''}${row(seat.closed?'empty':'closed',seat.closed?'Открыть место':'Закрыть место',seat.closed?'addPlayer':'lock')}</div>${others}</div>`,kind,{onBack:back,mode:replacing?'replace':null,valid:owns});
     const current=()=>owns()&&localModal.isActive(frame);
     for(const button of frame.element.querySelectorAll('[data-seat-select]'))button.onclick=()=>{if(current())showRoomSeatChoices(button.dataset.seatSelect);};
     for(const button of frame.element.querySelectorAll('[data-seat-choice]'))button.onclick=async()=>{if(!current())return;const choice=button.dataset.seatChoice;if(choice==='claim'){try{room=roomService.claimSeat(roomId,actor,id);renderLobby();}catch(error){toast(globalThis.PlayroomMessages.error(error));}return;}if(choice==='human'){showRoomHuman(id);return;}try{if(room.phase==='playing')await globalThis.PlayroomNetworkLibrary.prepareRoster();if(!current())return;room=roomService.setLocalSeat(roomId,actor,id,{kind:choice,...(choice==='bot'?{nickname:randomBotName(),difficulty:'medium'}:{})});renderLobby();}catch(error){if(current())toast(globalThis.PlayroomMessages.error(error));}};
@@ -1292,7 +1308,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const active=activatePack(gameId);
       if(!g||!active||!V.supports(gameId,'player')||!V.supports(gameId,'table'))throw Error(globalThis.PlayroomMessages.text("ui.app.5d39a9ae84f6"));
       const rules=defaultRules(gameId,g);
-      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
+      room=roomService.changeGame(room.id,lobbyParticipantId,{game:{id:gameId,name:g.name,version:active.version,capabilities:{bots:g.capabilities?.bots!==false},...(g.botSettings?{botSettings:g.botSettings}:{}),teamLayouts:catalog[gameId]?.teamLayouts||{}},rules,
         constraints:{min:g.min,max:g.max,allowed:g.playerCounts}});
       closeModal(true);renderLobby();
     }catch(error){toast(globalThis.PlayroomMessages.error(error));}

@@ -6,8 +6,9 @@
  const controller=new root.PlayroomTutorialController({store:preferences});
  let current=null,overlay=null,observer=null,frame=0,lastTarget=null,idleTimer=null,idleUntil=0,pointerHeld=false,listeners=null;
  const skipped=game=>preferences.skipped(game);
- function setSkipped(game,value){preferences.setSkipped(game,value);if(current)update(current);else schedule();}
- function restart(game){controller.restart(game);if(current?.state.game===game)update(current);}
+ function learningChanged(game){root.dispatchEvent(new CustomEvent('playroom:learning',{detail:{game}}));}
+ function setSkipped(game,value){preferences.setSkipped(game,value);if(current)update(current);else schedule();learningChanged(game);}
+ function restart(game){controller.restart(game);if(current?.state.game===game)update(current);learningChanged(game);}
  function activity(){
   if(!current)return;
   idleUntil=performance.now()+500;hide();if(current.guide?.steps?.some(step=>step.immediate))schedule();

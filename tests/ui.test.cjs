@@ -7,7 +7,7 @@ async function home(page){await gameAction(page,'home');await page.locator('[dat
 async function seedProfile(context){await context.addInitScript(()=>{localStorage.setItem('playroom.player-profile.v1',JSON.stringify({version:1,id:'ui-owner',name:'Иван',createdAt:1,updatedAt:1}));localStorage.setItem('playroom.settings.v1',JSON.stringify({sound:false,tutorialsEnabled:false,animationSpeed:'instant',autoPass:false}));});}
 
 async function setRange(page,id,value){await page.locator('#'+id).evaluate((input,value)=>{input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},value);}
-const {test}=require('node:test');
+const {test,before,after}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
@@ -16,7 +16,7 @@ const {serveBrowserFixture}=require('./browser-origin.cjs');
 const root=path.resolve(__dirname,'..');
 const E=require(root+'/core/engine.js');
 const Session=require(root+'/core/session.js');
-for(const id of ['uno','domino','durak','checkers','snakes'])require(root+'/packs/'+id+'/rules.js');
+let sdkEnvironment;before(async()=>{sdkEnvironment=await require('./sdk-installed.cjs').bootstrap({ids:['uno','domino','durak','checkers','snakes']});});after(()=>sdkEnvironment?.close());
 const url=process.env.PLAYROOM_URL||pathToFileURL(root+'/index.html').href;
 const options=(mode='pass')=>({players:[{name:'Аня'},{name:'Борис',bot:mode==='solo'}],mode,preset:'classic',presetLabel:'Классика',firstPlayerMode:'assigned',firstPlayer:0,seed:17});
 function fixture(game='uno',mode='pass',turns=0){const s=new Session(E,game,options(mode));for(let i=0;i<turns&&s.current.status==='playing';i++)s.act(s.current.turn,E.botAction(s.current));return s.export();}

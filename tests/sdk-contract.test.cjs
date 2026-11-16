@@ -16,6 +16,7 @@ test('SDK checks SVG and image content, external references and animation vocabu
  assert.throws(()=>validateAsset(svg('<svg/>'),'a.png'),error=>error.code==='SDK_ASSET_SIGNATURE');
  assert.throws(()=>validateAsset(Buffer.from(JSON.stringify({contractVersion:1,frames:[{time:0,values:{script:1}}]})),'motion.json'),error=>error.code==='SDK_ANIMATION_INVALID');
  assert.equal(validateAsset(Buffer.from(JSON.stringify({contractVersion:1,frames:[{time:0,values:{opacity:0}},{time:150,values:{opacity:1}}]})),'motion.json').mime,'application/json');
+ for(const frame of [null,[],{time:0,values:[]},{time:0,values:'x'},{time:0,values:true}])assert.throws(()=>validateAsset(Buffer.from(JSON.stringify({contractVersion:1,frames:[frame]})),'motion.json'),error=>error.code==='SDK_ANIMATION_INVALID');
 });
 test('SDK verifier detects stateful projections that depend on viewer order',async t=>{
  const project=fixture(t,{project:'(globalThis.cachedProjection ||= {viewer})'});

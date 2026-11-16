@@ -25,8 +25,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for (const player of winners) state.players[player].score += points;
     const summary=forState(state).result?.(state);
     const values=summary?.values??state.players.map((_,index)=>winners.includes(index)?1:0);
-    if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||value<0))throw Error(globalThis.PlayroomMessages.text("ui.engine.12bcf9bc2478"));
-    if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isFinite(value)||value<0||value>Number.MAX_SAFE_INTEGER)))throw Error(globalThis.PlayroomMessages.text("ui.engine.adea212152fd"));
+    if(!Array.isArray(values)||values.length!==state.players.length||values.some(value=>!Number.isSafeInteger(value)||(!forState(state).isolated&&value<0)))throw Error(globalThis.PlayroomMessages.text("ui.engine.12bcf9bc2478"));
+    if(summary?.details!==undefined&&(!Array.isArray(summary.details)||summary.details.length!==values.length||summary.details.some(value=>!Number.isFinite(value)||(!forState(state).isolated&&value<0)||value>Number.MAX_SAFE_INTEGER)))throw Error(globalThis.PlayroomMessages.text("ui.engine.adea212152fd"));
     const order=summary?.order==='asc'?'asc':'desc',places=summary?.places||values.map(value=>1+new Set(values.filter(other=>order==='asc'?other<value:other>value)).size);
     state.result={label:summary?.label||globalThis.PlayroomMessages.text("ui.engine.231d91ffeba0"),values,places,order,exits:clone(summary?.exits||[]),lastPlayers:clone(summary?.lastPlayers||[]),...(summary?.metricId?{metricId:summary.metricId,metrics:clone(summary.metrics)}:{}),...(summary?.details?{detailLabel:summary.detailLabel||globalThis.PlayroomMessages.text("ui.engine.fdf0487fc4f1"),details:summary.details,...(summary.detailMetricId?{detailMetricId:summary.detailMetricId}:{})}:{})};
   }
@@ -116,13 +116,13 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const pack = forState(state);
     assertState((state.packStateVersion === undefined ? 1 : state.packStateVersion) === pack.stateVersion, globalThis.PlayroomMessages.text("ui.engine.a9712cea821a"));
     assertState(Array.isArray(state.players) && int(state.players.length, pack.min, pack.max), globalThis.PlayroomMessages.text("ui.engine.f2dbfc4c1f77"));
-    assertState(state.players.every(p => record(p) && typeof p.name === 'string' && p.name.length > 0 && p.name.length <= 40 && typeof p.bot === 'boolean' && int(p.score, 0, Number.MAX_SAFE_INTEGER)), globalThis.PlayroomMessages.text("ui.engine.a79bfee304c2"));
+    assertState(state.players.every(p => record(p) && typeof p.name === 'string' && p.name.length > 0 && p.name.length <= 40 && typeof p.bot === 'boolean' && int(p.score, pack.isolated?Number.MIN_SAFE_INTEGER:0, Number.MAX_SAFE_INTEGER)), globalThis.PlayroomMessages.text("ui.engine.a79bfee304c2"));
     assertState(pack.presets.some(p => p.id === state.preset), globalThis.PlayroomMessages.text("ui.engine.1543f57222df"));
     assertState(int(state.turn, 0, state.players.length - 1) && int(state.move, 0, Number.MAX_SAFE_INTEGER) && int(state.rng, 0, 4294967295), globalThis.PlayroomMessages.text("ui.engine.adf431f9200c"));
     assertState(typeof state.openHands === 'boolean' && ['playing', 'finished'].includes(state.status), globalThis.PlayroomMessages.text("ui.engine.13c168fbfc51"));
     assertState((state.winner === null || int(state.winner, 0, state.players.length - 1)) && (state.status !== 'playing' || state.winner === null), globalThis.PlayroomMessages.text("ui.engine.755a2d9d4024"));
     assertState(state.winners === undefined || (state.status === 'finished' && Array.isArray(state.winners) && state.winners.length > 0 && state.winners[0] === state.winner && new Set(state.winners).size === state.winners.length && state.winners.every(i => int(i, 0, state.players.length - 1))), globalThis.PlayroomMessages.text("ui.engine.9622aa5191c5"));
-    if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(p=>int(p,0,n-1)), 'RESULT_FINISH_INVALID');assertState(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(x=>x?.player)).size===result.exits.length&&result.exits.every(x=>record(x)&&int(x.player,0,n-1)&&['cards','domino','finished'].includes(x.kind)&&(int(x.round,1,Number.MAX_SAFE_INTEGER)||int(x.turn,1,Number.MAX_SAFE_INTEGER))), 'RESULT_FINISH_INVALID');assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),globalThis.PlayroomMessages.text("ui.engine.8d91204f84a3"));assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>Number.isFinite(v)&&v>=0&&v<=Number.MAX_SAFE_INTEGER)&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,globalThis.PlayroomMessages.text("ui.engine.a91603210473"));}
+    if(state.result!==undefined){const result=state.result,n=state.players.length;assertState(result.lastPlayers===undefined||Array.isArray(result.lastPlayers)&&new Set(result.lastPlayers).size===result.lastPlayers.length&&result.lastPlayers.every(p=>int(p,0,n-1)), 'RESULT_FINISH_INVALID');assertState(result.exits===undefined||Array.isArray(result.exits)&&new Set(result.exits.map(x=>x?.player)).size===result.exits.length&&result.exits.every(x=>record(x)&&int(x.player,0,n-1)&&['cards','domino','finished'].includes(x.kind)&&(int(x.round,1,Number.MAX_SAFE_INTEGER)||int(x.turn,1,Number.MAX_SAFE_INTEGER))), 'RESULT_FINISH_INVALID');assertState(state.status==='finished'&&record(result)&&typeof result.label==='string'&&result.label.length<=80&&['asc','desc'].includes(result.order)&&Array.isArray(result.values)&&result.values.length===n&&result.values.every(v=>int(v,pack.isolated?Number.MIN_SAFE_INTEGER:0,Number.MAX_SAFE_INTEGER))&&Array.isArray(result.places)&&result.places.length===n&&result.places.every(v=>int(v,1,n)),globalThis.PlayroomMessages.text("ui.engine.8d91204f84a3"));assertState(result.details===undefined||Array.isArray(result.details)&&result.details.length===n&&result.details.every(v=>Number.isFinite(v)&&v>=(pack.isolated?Number.MIN_SAFE_INTEGER:0)&&v<=Number.MAX_SAFE_INTEGER)&&typeof result.detailLabel==='string'&&result.detailLabel.length<=80,globalThis.PlayroomMessages.text("ui.engine.a91603210473"));}
     assertState(record(state.data) && Array.isArray(state.events), globalThis.PlayroomMessages.text("ui.engine.6bb6f415ea1f"));
     let last = 0;
     for (const e of state.events) {
@@ -144,8 +144,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     return true;
   }
   function createGame(game, options = {}) {
-    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, ...(pack.max===1?[]:[{ name: globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: true }])];
+    const pack = get(game, options.packVersion), players = options.players || [{ name: globalThis.PlayroomMessages.text("ui.engine.041bfceecc8f") }, ...(pack.max===1?[]:[{ name: pack.capabilities?.bots===false?globalThis.PlayroomMessages.text('ui.engine.97bd9bdf39ef',{p0:'2'}):globalThis.PlayroomMessages.text("ui.engine.aa691043b447"), bot: pack.capabilities?.bots!==false }])];
     if (players.length < pack.min || players.length > pack.max) throw Error(globalThis.PlayroomMessages.text("ui.engine.8d8e0eef63ac",{p0:String(pack.min),p1:String(pack.max)}));
+    if(pack.capabilities?.bots===false&&players.some(player=>player.bot))throw Object.assign(Error('В этой игре участвуют только люди.'),{code:'BOTS_UNSUPPORTED'});
     const preset = options.preset || pack.presets[0].id;
     if (!pack.presets.some(p => p.id === preset)) throw Error(globalThis.PlayroomMessages.text("ui.engine.4046d56fe0ac"));
     const state = { version: 1, game, packVersion:pack.version, packStateVersion:pack.stateVersion, preset, players: players.map((p, i) => ({ name: String(p.name || globalThis.PlayroomMessages.text("ui.engine.97bd9bdf39ef",{p0:String(i + 1)})).slice(0, 40), bot: !!p.bot,...(p.avatar?{avatar:p.avatar}:{}),...(p.bot?{botSettings:{...clone(p.botSettings||{}),difficulty:p.botSettings?.difficulty??'medium'}}:{}), score: 0 })), turn: 0, status: 'playing', winner: null, move: 0, rng: seedValue(options.seed), openHands: !!options.openHands, data: {}, events: [] };
@@ -168,11 +169,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function legalActions(state, actor = state.turn) {
     if (!activePlayer(state, actor)) return [];
-    return [...((actor === state.turn || decisionWindow(state)?.participants.includes(actor)) ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
+    return [...((forState(state).isolated||actor === state.turn || decisionWindow(state)?.participants.includes(actor)) ? forState(state).legal(state, actor) : []), ...reactions(state, actor)];
   }
   function availableCommands(state,actor=state.turn){
     if(!activePlayer(state,actor))return [];
-    const pack=forState(state),active=actor===state.turn||decisionWindow(state)?.participants.includes(actor);
+    const pack=forState(state),active=pack.isolated||actor===state.turn||decisionWindow(state)?.participants.includes(actor);
     return pack.commands?[...(active?pack.commands(state,actor):[]),...pack.commands(state,actor,true)]:legalActions(state,actor);
   }
   function decisionWindow(state) { return forState(state).decisionWindow?.(state)??null; }
@@ -254,9 +255,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     if (!activePlayer(state, actor) || (actor !== state.turn && !decisionWindow(state)?.participants.includes(actor)) || decisionWindow(state)?.ready.includes(actor)) return null;
     // Reactions have their own scheduler; normal bots must not loop on an
     // always-available declaration or accusation instead of taking their turn.
+    if(forState(state).capabilities?.bots===false)return null;
     const actions = forState(state).legal(state, actor);
-    if (!actions.length) return null;
-    return forState(state).bot?.(state, actor, actions) || actions[0];
+    if (!actions.length&&!inputChoices(state,actor).length) return null;
+    return forState(state).bot?.(state, actor, actions) || actions[0] || null;
   }
   function botReaction(state, actor = state.turn) {
     const actions = reactions(state, actor);
@@ -289,8 +291,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     for (const zone of Object.values(out)) zone.items = zone.items.map(item => zone.visibility === 'public' || (zone.visibility === 'owner' && Number.isInteger(viewer) && viewer >= 0 && viewer === zone.owner) || item.revealed ? item : { hidden: true });
     return out;
   }
-  const api = { storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
-  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}) }))) });
+  function inputChoices(state,actor=state.turn){return activePlayer(state,actor)?forState(state).inputs?.(state,actor)||[]:[];}
+  function advanceClock(state,now){if(!Number.isSafeInteger(now)||now<0||now<(state.clock??0))throw Error('CLOCK_INVALID');return forState(state).advance?.(state,now)||state;}
+  const api = { inputChoices,advanceClock,storageState:state=>forState(state).storageState?.(state)??state, registerModel, register, registerVersion, activatePack, unregisterVersion, get, createGame, legalActions, availableCommands, decisionWindow, reactions, reactionWindow, reactionWindows, reactionControl, applyAction, applyTableAction, tableCommand, project, projectTable, botAction, botReaction, botReactionDelay:(state,actor)=>forState(state).botReactionDelay?.(state,actor)??null, checkpoint:(before,next,actor,command)=>forState(before).checkpoint?.(before,next,actor,command)??true, validateState, assertState, validateComponents, shuffle, rollDie, random, clone, hidden, event, finish, complete, soundCues, createZone, moveComponent, reveal, projectZones };
+  Object.defineProperty(api, 'GAMES', { enumerable: true, get: () => clone([...registry.values()].map(({ id, version, stateVersion, name, min, max, description, rules, rulebook, presets, scoreLabel, botSettings, capabilities }) => ({ id, version, stateVersion, name, min, max, description, rules, ...(rulebook?{rulebook}:{}), presets, scoreLabel, ...(botSettings?{botSettings}:{}),...(capabilities?{capabilities}:{}) }))) });
   root.TabletopCore = root.PlayroomEngine = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(globalThis);

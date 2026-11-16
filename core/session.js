@@ -25,7 +25,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   }
   function envelope(session) {
     const {game, options, createdAt, updatedAt, history} = records.get(session);
-    return {format: 'playroom-session', version: 1, game, packVersion:session.packVersion, options, createdAt, updatedAt, states:session.states};
+    return {format: 'playroom-session', version: 1, game, packVersion:session.packVersion, options, createdAt, updatedAt, states:session.states,...(session.current.clock!==undefined?{clock:session.clockTime}:{})};
   }
   class Session {
     constructor(engine, game, options = {}, runtime = {}) {
@@ -51,12 +51,16 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         // History is lazy, but an active restored match must not replay its
         // entire prefix again whenever the next committed revision is reviewed.
         for(let index=replay.current.move;index<record.actions.length;index++){
-          const entry=record.actions[index];for(const {index,...metadata}of entry.players||[])replay.setPlayerMetadata(index,metadata);replay.act(entry.actor,entry.command);
+          const entry=record.actions[index];for(const {index,...metadata}of entry.players||[])replay.setPlayerMetadata(index,metadata);entry.actor===-1?replay.advanceClock(entry.command.now):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
         }
         if(Codec.fingerprint(Session.storageState(this.engine,replay.current))!==Codec.fingerprint(Session.storageState(this.engine,this.current)))throw Error('CHECKPOINT_HISTORY_MISMATCH');
         record.replaySession=replay;return replay.states;
       }catch(error){record.replaySession=null;throw error;}
     }
+    get clockTime(){const r=records.get(this);return Math.max(r.clockTime??0,this.current.clock??0);}
+    setClockTime(now){if(!Number.isSafeInteger(now)||now<this.clockTime)throw Error('CLOCK_INVALID');records.get(this).clockTime=now;}
+    prepareClock(now){if(!Number.isSafeInteger(now)||now<this.clockTime)throw Error('CLOCK_INVALID');const r=records.get(this),next=r.history.prepare(previous=>this.engine.advanceClock(previous,now));if(next!==this.current){r.preparedActions||=new WeakMap();r.preparedActions.set(next,freeze({actor:-1,command:{type:'host-clock-v1',now}}));}return next;}
+    advanceClock(now){return this.commitPrepared(this.prepareClock(now));}
     get createdAt() { return records.get(this).createdAt; }
     get updatedAt() { return records.get(this).updatedAt; }
     get current() { return records.get(this).history.current; }
@@ -85,7 +89,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     // The candidate is not applied to the live session. A network host may
     // persist it atomically with its command receipt before committing it.
-    prepare(actor, action) {
+    prepare(actor, action,context={}) {
       const record=records.get(this);
       const command=clone(action);
       // The same decoration fields are excluded by engine command matching.
@@ -102,6 +106,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
           input = clone(previous);
           for (const {index,...metadata} of changes) Object.assign(input.players[index], metadata);
         }
+        if(input.clock!==undefined&&context.now!==undefined){if(!Number.isSafeInteger(context.now)||context.now<input.clock)throw Error('CLOCK_INVALID');input={...input,clock:context.now};}
         let next = this.engine.applyAction(input, actor, action);
         if (next === input) next = previous;
         else {
@@ -113,7 +118,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
       if(candidate!==this.current){
         record.preparedActions||=new WeakMap();
-        record.preparedActions.set(candidate,freeze({actor,command,...(candidate.playerChanges?{players:clone(candidate.playerChanges)}:{})}));
+        record.preparedActions.set(candidate,freeze({actor,command,...(context.now!==undefined&&candidate.clock!==undefined?{now:context.now}:{}),...(candidate.playerChanges?{players:clone(candidate.playerChanges)}:{})}));
       }
       return candidate;
     }
@@ -122,6 +127,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       try { record.history.commit(next); }
       catch(error) {if(error.code==='HISTORY_PREPARED_INVALID')throw Error('Prepared transition is no longer current');throw error;}
       if(next===previous)return previous;
+      if(next.clock!==undefined)record.clockTime=Math.max(record.clockTime??0,next.clock);
       if(record.actions){
         const entry=record.preparedActions.get(next);
         // A missing command must never produce an incomplete replay log.
@@ -139,7 +145,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       catch (_) { /* Clock failure cannot undo an already durable transition. */ }
       return next;
     }
-    act(actor, action) { return this.commitPrepared(this.prepare(actor, action)); }
+    act(actor, action,context={}) { return this.commitPrepared(this.prepare(actor, action,context)); }
     view(player, index = this.states.length - 1) {
       if (!Number.isInteger(index)) throw new Error(globalThis.PlayroomMessages.text("ui.session.ae7a7f8eb000"));
       const state = this.states[Math.max(0, Math.min(index, this.states.length - 1))];
@@ -149,7 +155,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     serialize({compact = true, history:historyFormat = 'actions'} = {}) {
       if (!compact) return JSON.stringify(envelope(this));
       const record = records.get(this);
-      if(historyFormat==='actions'&&record.actions)return JSON.stringify({format:'playroom-session',version:3,encoding:record.replayInitial?'actions-v2':'actions-v1',game:this.game,packVersion:this.packVersion,options:this.options,createdAt:this.createdAt,updatedAt:this.updatedAt,actions:record.actions,end:{move:this.current.move,fingerprint:Codec.fingerprint(record.replayInitial?Session.storageState(this.engine,this.current):this.current)}});
+      if(historyFormat==='actions'&&record.actions)return JSON.stringify({format:'playroom-session',version:3,encoding:this.current.clock!==undefined?'actions-v3':record.replayInitial?'actions-v2':'actions-v1',...(this.current.clock!==undefined?{base:record.replayInitial?'actions-v2':'actions-v1',clock:this.clockTime}:{}),game:this.game,packVersion:this.packVersion,options:this.options,createdAt:this.createdAt,updatedAt:this.updatedAt,actions:record.actions,end:{move:this.current.move,fingerprint:Codec.fingerprint(record.replayInitial?Session.storageState(this.engine,this.current):this.current)}});
       if (!record.saveCache) {
         record.saveCache = Codec.create();
         record.saveCache.states = this.states.map(state => Codec.encodeSnapshot(record.saveCache, state));
@@ -158,14 +164,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const journal = (record.replayInitial?this.states.at(-1):this.current).events.map(codec.encode);
       return JSON.stringify({format: 'playroom-session', version: 2, encoding: 'interned-json-v1',
         game: this.game, packVersion:this.packVersion, options, createdAt: this.createdAt, updatedAt: this.updatedAt,
-        states: codec.states, journal, nodes: codec.nodes});
+        states: codec.states, journal, nodes: codec.nodes,...(this.current.clock!==undefined?{clock:this.clockTime}:{})});
     }
     static restoreCheckpoint(engine,{initial,checkpoint,actions,updatedAt},runtime={}){
       const session=Session.restore(engine,initial,runtime),record=records.get(session),state=checkpoint?.state;
       if(!Array.isArray(actions)||!state||state.game!==session.game||state.packVersion!==session.packVersion||state.move!==actions.length||state.players.length!==session.current.players.length||state.preset!==session.current.preset||state.openHands!==session.current.openHands||!Number.isSafeInteger(updatedAt)||updatedAt<session.createdAt)throw Error('CHECKPOINT_INVALID');
       engine.validateState(state);
       if(Codec.fingerprint(state)!==checkpoint.fingerprint)throw Error('CHECKPOINT_INVALID');
-      for(const entry of actions){if(!isRecord(entry)||!Number.isInteger(entry.actor)||entry.actor<0||entry.actor>=state.players.length||!isRecord(entry.command)||Object.keys(entry).some(key=>!['actor','command','players'].includes(key)))throw Error('CHECKPOINT_ACTION_INVALID');}
+      for(const entry of actions){if(!isRecord(entry)||!Number.isInteger(entry.actor)||(entry.actor<0&&!(entry.actor===-1&&entry.command?.type==='host-clock-v1'&&Number.isSafeInteger(entry.command.now)&&entry.command.now>=0))||entry.actor>=state.players.length||!isRecord(entry.command)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key)))throw Error('CHECKPOINT_ACTION_INVALID');}
       record.replayInitial=freeze(clone(initial));record.actions=freeze(clone(actions)).slice();record.preparedActions=new WeakMap();
       record.history=history([clone(state)],engine);record.updatedAt=updatedAt;
       return session;
@@ -181,11 +187,11 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         for(const entry of log.actions){
           for(const {index,...metadata} of entry.players||[])replay.setPlayerMetadata(index,metadata);
           const before=replay.current;
-          replay.act(entry.actor,entry.command);
+          entry.actor===-1?replay.advanceClock(entry.command.now):replay.act(entry.actor,entry.command,entry.now===undefined?{}:{now:entry.now});
           if(replay.current===before)throw Error('No-op in action history');
         }
-        if(Codec.fingerprint(log.encoding==='actions-v2'?Session.storageState(engine,replay.current):replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');
-        record.updatedAt=log.updatedAt;record.now=clockPort(runtime);
+        if(Codec.fingerprint((log.encoding==='actions-v2'||log.encoding==='actions-v3'&&log.base==='actions-v2')?Session.storageState(engine,replay.current):replay.current)!==log.end.fingerprint)throw Error('Action history mismatch');
+        record.updatedAt=log.updatedAt;record.now=clockPort(runtime);if(log.clock!==undefined)replay.setClockTime(log.clock);
         return replay;
       }catch(error){
         if(error.code==='PACK_VERSION_MISSING')throw error;
@@ -244,7 +250,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       // Explicit fields prevent imported keys from replacing methods/getters or
       // modifying the session prototype. Restoring does not rerun pack.create().
       records.set(session, {engine, game: data.game, options: freeze(data.options),
-        now:clockPort(runtime), createdAt: data.createdAt, updatedAt: data.updatedAt, history:history(data.states,engine)});
+        now:clockPort(runtime), createdAt: data.createdAt, updatedAt: data.updatedAt, history:history(data.states,engine),...(data.clock!==undefined?{clockTime:data.clock}:{})});
       return session;
     }
   }

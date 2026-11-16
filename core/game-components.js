@@ -1,4 +1,4 @@
-// Vendored from playroom-paks/shared/components/game-components.js; sha256=bba3cb005ce694d30b4530d02bfcd14b4c544b702e3b1bb91c7a76b9ca968f9a
+// Vendored from playroom-paks/shared/components/game-components.js; sha256=bc095a79c2cae43178808f3e0a7866ed7a0c2edcf3ce66ae6bdf9fe8ac8a7c80
 // Canonical scalable Web component geometry. Values, visibility and actions are external.
 (function(root,factory){const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;root.PlayroomGameComponents=api;})(globalThis,function(root){
  'use strict';
@@ -16,7 +16,7 @@ function entityKey(ref){
 function validMetric(value,{requireId=false,requireLabel=false,localized=false}={}){
  const record=item=>item!==null&&typeof item==='object'&&!Array.isArray(item);
  const identifier=id=>typeof id==='string'&&/^[a-z][a-z0-9-]{0,63}$/.test(id);
- if(!record(value)||!['points','wins','pieces'].includes(value.kind)||!Number.isSafeInteger(value.value)||value.value<0)return false;
+ if(!record(value)||!['points','wins','pieces'].includes(value.kind)||!Number.isSafeInteger(value.value)||(value.kind!=='points'&&value.value<0))return false;
  if(value.id===undefined?requireId:!identifier(value.id))return false;
  if(value.label===undefined?requireLabel:!(typeof value.label==='string'||!localized&&record(value.label)&&typeof value.label.key==='string'))return false;
  const d=value.display;

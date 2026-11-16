@@ -152,6 +152,7 @@ class RoomService{
     setLocalSeat(roomId,hostId,seatId,{kind='bot',nickname=globalThis.PlayroomMessages.text("ui.rooms.aa691043b447")}={}){
       const room=this._room(roomId);this._lobby(room);this._host(room,hostId);
       if(room.recovery&&(!['bot','empty'].includes(kind)||!room.seats.some(s=>s.id===seatId&&Number.isInteger(s.playerIndex))))throw Error('RECOVERY_SLOT_FIXED');
+      if(kind==='bot'&&room.game.capabilities?.bots===false)throw Object.assign(Error('В этой игре участвуют только люди.'),{code:'BOTS_UNSUPPORTED'});
       const seat=room.seats.find(s=>s.id===seatId);if(!seat||!['bot','human','empty','closed'].includes(kind))throw Error(globalThis.PlayroomMessages.text("ui.rooms.365699432c56"));
       const old=room.participants.find(p=>p.id===seat.participantId);
       if(old?.isHost){if(kind!=='human')throw Error(globalThis.PlayroomMessages.text("ui.rooms.654b70a3012d"));old.nickname=normalizeName(nickname);this._resetRoomReady(room);return this.snapshot(roomId);}
@@ -295,7 +296,7 @@ class RoomService{
       const bySeat=(a,b)=>seatIndex(a)-seatIndex(b);
       const humans=room.participants.filter(p=>p.role==='player'&&!p.bot).sort(bySeat);
       const bots=room.participants.filter(p=>p.role==='player'&&p.bot).sort(bySeat);
-      const keptBots=bots.slice(0,Math.max(0,next.max-humans.length));
+      const keptBots=game.capabilities?.bots===false?[]:bots.slice(0,Math.max(0,next.max-humans.length));
       const dropped=new Set(bots.slice(keptBots.length).map(p=>p.id));
       const seats=Array.from({length:next.max},(_,i)=>({...room.seats[i],id:'seat-'+(i+1),index:i,sideId:i,participantId:null}));
       const place=(p,seat)=>{seat.participantId=p.id;seat.closed=false;p.seatId=seat.id;};
@@ -633,8 +634,9 @@ class RoomService{
     snapshot(roomId){return clone(this._room(roomId));}
   }
 class SwitchableConnection{
-    constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
+    constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.realtimeListeners=new Set();this.unsubscribeRealtime=null;this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
     _bind(){
+      this.unsubscribeRealtime?.();this.unsubscribeRealtime=null;if(this.realtimeListeners.size)this.unsubscribeRealtime=this.current?.subscribeRealtime?.(envelope=>{for(const listener of this.realtimeListeners)listener(envelope);});
       this.unsubscribe?.();this.unsubscribeWire?.();this.unsubscribe=null;this.unsubscribeWire=null;
       if(this.listeners.size)this.unsubscribe=this.current?.subscribe?.(snapshot=>{for(const listener of this.listeners)listener(snapshot);});
       if(this.wireListeners.size)this.unsubscribeWire=this.current?.subscribe?.(snapshot=>{for(const listener of this.wireListeners)listener(snapshot);},{wire:true});
@@ -649,11 +651,12 @@ class SwitchableConnection{
     dispatch(value,options){if(!this.current)throw Error('CLOSED');return this.current.dispatch(value,options);}
     history(value,options){if(!this.current)throw Error('CLOSED');return this.current.history(value,options);}
     historyRange(start,count,options){if(!this.current)throw Error('CLOSED');return this.current.historyRange(start,count,options);}
+    subscribeRealtime(listener){this.realtimeListeners.add(listener);this._bind();return()=>{this.realtimeListeners.delete(listener);this._bind();};}
     realtimeScope(){return this.current?.realtimeScope?.()||null;}
     realtime(value){if(!this.current?.realtime)throw Error('REALTIME_UNAVAILABLE');return this.current.realtime(value);}
     presentationReady(value){if(!this.current)throw Error('CLOSED');return this.current.presentationReady?.(value)||{ok:false};}
     subscribe(listener,options={}){const listeners=options.wire?this.wireListeners:this.listeners;listeners.add(listener);this._bind();return()=>{listeners.delete(listener);this._bind();};}
-    close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
+    close(){this.unsubscribeRealtime?.();this.realtimeListeners.clear();this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
 
 return Object.freeze({sessionSetup,STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});

@@ -55,6 +55,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   root.PlayroomCatalog ||= {};
   root.PlayroomPacksReady=(async()=>{
     if(!root.TabletopPacks)return;
+    await root.PlayroomSandbox?.ready;
     const data=await new root.PlayroomDataStorage().open();root.PlayroomData=data;
     root.PlayroomPacks=new root.TabletopPacks({engine:root.TabletopCore,views:root.PlayroomViews,catalog:root.PlayroomCatalog,
       storage:await root.PlayroomPackStorage.create({data,key:STORAGE})});

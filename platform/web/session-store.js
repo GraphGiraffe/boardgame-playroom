@@ -87,23 +87,23 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       if(recovery&&(packDigest===null||recovery.version!==1||recovery.room?.id!==room.id||recovery.room.ownerId!==room.ownerId||!Array.isArray(recovery.tokens)))throw Error('CHECKPOINT_INVALID');
       this.engines.set(sessionId,session.engine);
       const timestamp=this.now(),initial=await pack(session.initialSave()),latest=await pack(checkpoint(session.engine,session.current));
-      const record={format:'playroom-network-host',version:2,eventStorage:FORMAT,sessionId,roomId:room.id,game:session.game,packVersion:session.packVersion,packDigest,room:cleanRoom(room),recovery:withoutRoom(recovery),initial,checkpoint:latest,playerBots:session.current.players.map(player=>player.bot),...this.describe(session.current),revision:0,finished:false,createdAt:timestamp,updatedAt:timestamp};
+      const record={format:'playroom-network-host',version:2,eventStorage:FORMAT,...(session.current.clock!==undefined?{clockEntriesVersion:1,clockTime:session.clockTime}:{}),sessionId,roomId:room.id,game:session.game,packVersion:session.packVersion,packDigest,room:cleanRoom(room),recovery:withoutRoom(recovery),initial,checkpoint:latest,playerBots:session.current.players.map(player=>player.bot),...this.describe(session.current),revision:0,finished:false,createdAt:timestamp,updatedAt:timestamp};
       await this.transaction(['sessions'],'readwrite',tx=>tx.objectStore('sessions').add(record));return {sessionId,revision:0};
     }
     commit(entry){return this.commitBatch({entries:[entry],receipts:[]});}
     async commitBatch({entries,receipts=[]}){
       if(!Array.isArray(entries)||!entries.length||!Array.isArray(receipts))throw Error('COMMIT_BATCH_INVALID');
       const first=entries[0],last=entries.at(-1),sessionId=first.sessionId;
-      for(let i=0;i<entries.length;i++){const row=entries[i];if(row.sessionId!==sessionId||!isId(sessionId)||row.nextState?.move!==row.previousRevision+1||(i&&row.previousRevision!==entries[i-1].nextState.move)||row.action?.actor!==row.viewer||!row.action.command||typeof row.action.command!=='object'||!isId(row.commandId)||typeof row.signature!=='string'||!row.receipt?.ok||row.receipt.revision!==row.nextState.move||row.receipt.commandId!==row.commandId)throw Error('COMMIT_BATCH_INVALID');}
+      for(let i=0;i<entries.length;i++){const row=entries[i];if(row.sessionId!==sessionId||!isId(sessionId)||row.nextState?.move!==row.previousRevision+1||(i&&row.previousRevision!==entries[i-1].nextState.move)||row.action?.actor!==row.viewer||(row.viewer===-1&&(!row.receipt?.hostClock||row.action.command?.type!=='host-clock-v1'||!Number.isSafeInteger(row.action.command.now)))||!row.action.command||typeof row.action.command!=='object'||!isId(row.commandId)||typeof row.signature!=='string'||!row.receipt?.ok||row.receipt.revision!==row.nextState.move||row.receipt.commandId!==row.commandId)throw Error('COMMIT_BATCH_INVALID');}
       for(const row of receipts)if(row.sessionId!==sessionId||row.receipt?.ok!==false||row.receipt.commandId!==row.commandId||row.receipt.revision>last.nextState.move)throw Error('COMMIT_BATCH_INVALID');
       const engine=this.engines.get(sessionId);if(!engine)throw Error('HOST_SESSION_NOT_LOADED');
       const latest=await pack(checkpoint(engine,last.nextState)),accepted=await Promise.all([...entries,...receipts].map(packReceipt));
       await this.transaction(['sessions','steps','receipts'],'readwrite',(tx,_,abort)=>{const sessions=tx.objectStore('sessions'),q=sessions.get(sessionId);q.onsuccess=()=>{const record=q.result;
           if(record?.version!==2||record.eventStorage!==FORMAT||record.revision!==first.previousRevision||record.transfer&&(record.transfer.role==='outgoing'||record.transfer.state!=='active')){abort(Error('CHECKPOINT_CONFLICT'));return;}
           try{if(entries.some(row=>row.nextState.game!==record.game||row.nextState.packVersion!==record.packVersion))throw Error('CHECKPOINT_CONFLICT');
-            for(const row of entries)tx.objectStore('steps').add({sessionId,revision:row.nextState.move,a:[row.action.actor,clone(row.action.command),...(row.action.players?[clone(row.action.players)]:[])]});
+            for(const row of entries)tx.objectStore('steps').add({sessionId,revision:row.nextState.move,a:[row.action.actor,clone(row.action.command),...(row.action.players||row.action.now!==undefined?[row.action.players?clone(row.action.players):null]:[]),...(row.action.now!==undefined?[row.action.now]:[])]});
             for(const row of accepted)tx.objectStore('receipts').add(row);
-            sessions.put({...record,...this.describe(last.nextState),checkpoint:latest,revision:last.nextState.move,finished:last.nextState.status==='finished',updatedAt:Math.max(this.now(),record.updatedAt)});tx.commit?.();
+            sessions.put({...record,...this.describe(last.nextState),checkpoint:latest,...(last.nextState.clock!==undefined?{clockEntriesVersion:1,clockTime:last.nextState.clock,clockUpdatedAt:this.now()}:{}),revision:last.nextState.move,finished:last.nextState.status==='finished',updatedAt:Math.max(this.now(),record.updatedAt)});tx.commit?.();
           }catch(error){abort(error);}};});return last.receipt;
     }
     async recordReceipt(row){
@@ -127,14 +127,15 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
     }
     async setControl(entry){
-      const {sessionId,previousControlRevision,paused,controlRevision,viewer,commandId,signature,receipt}=entry;
+      const {sessionId,previousControlRevision,paused,controlRevision,viewer,commandId,signature,receipt,clockTime,clockUpdatedAt}=entry;
+      if(clockTime!==undefined&&(!Number.isSafeInteger(clockTime)||clockTime<0||!Number.isSafeInteger(clockUpdatedAt)||clockUpdatedAt<0))throw Error('CLOCK_INVALID');
       if(!isId(sessionId)||typeof paused!=='boolean'||!Number.isSafeInteger(previousControlRevision)||previousControlRevision<0||!Number.isSafeInteger(controlRevision)||controlRevision<previousControlRevision||controlRevision>previousControlRevision+1||!Number.isInteger(viewer)||(viewer<0&&!(viewer===-1&&receipt?.host===true))||!isId(commandId)||typeof signature!=='string'||!receipt?.control||!receipt.ok||receipt.commandId!==commandId||receipt.controlRevision!==controlRevision)throw Error(globalThis.PlayroomMessages.text("ui.session-store.5cb6f12b984f"));
       await this.transaction(['sessions'],'readwrite',(tx,_,abort)=>{
         const store=tx.objectStore('sessions'),request=store.get(sessionId);
         request.onsuccess=()=>{const record=request.result;if(!record||(record.controlRevision||0)!==previousControlRevision){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.64e370251fd2")));return;}
           const controls=record.controlReceipts||[];
           if(controls.length>=20000){abort(Error(globalThis.PlayroomMessages.text("ui.session-store.9a72e8408554")));return;}
-          store.put({...record,paused,controlRevision,controlReceipts:[...controls,{viewer,commandId,signature,receipt}],updatedAt:Date.now()});};
+          store.put({...record,paused,controlRevision,...(clockTime!==undefined?{clockTime,clockUpdatedAt}:{}),controlReceipts:[...controls,{viewer,commandId,signature,receipt}],updatedAt:Date.now()});};
       });
     }
     async setPlayerControls(value){

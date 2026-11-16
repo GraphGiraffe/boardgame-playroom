@@ -4,7 +4,7 @@
  function participantMarkup(target){
   const ctx=N()?.playerControlContext();if(!ctx)return '';const {room,snapshot,id}=ctx,person=room.participants.find(p=>p.id===target),seat=room.seats.find(s=>s.participantId===target);
   if(!person||person.bot||!Number.isInteger(seat?.playerIndex))return '';
-  const control=snapshot.playerControls?.[seat.playerIndex]||{},self=target===id,operation=self?(control.away||control.bot?'return':'away'):room.ownerId===id&&!control.bot&&(control.away||!person.connected)?'bot':null;
+  const control=snapshot.playerControls?.[seat.playerIndex]||{},self=target===id,operation=self?(control.away||control.bot?'return':'away'):room.game?.capabilities?.bots!==false&&room.ownerId===id&&!control.bot&&(control.away||!person.connected)?'bot':null;
   return operation?H().iconButton(`data-player-control-action="${operation}"${operation==='bot'?` data-player-control-target="${H().esc(target)}"`:''}`,operation==='return'?'Вернуть управление':operation==='away'?'Отойти':'Подключить временного бота',operation==='return'?'play':operation==='away'?'pause':'bot'):'';
  }
  const labels={BUSY:'Дождитесь завершения действия.',STALE:'Состав обновился. Повторите действие.',PLAYER_AVAILABLE:'Игрок снова в игре.',READ_ONLY:'Это действие недоступно.',WRONG_SESSION:'Партия изменилась. Откройте окно ещё раз.'};

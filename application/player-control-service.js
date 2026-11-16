@@ -9,7 +9,7 @@
   if(command.sessionId!==snapshot.sessionId||command.authorityEpoch!==snapshot.authorityEpoch)fail('WRONG_SESSION');
   let id=requester,changes;
   if(command.operation==='bot'){
-   if(room.ownerId!==requester||typeof command.target!=='string')fail('READ_ONLY');id=command.target;changes={bot:true};
+   if(room.ownerId!==requester||typeof command.target!=='string')fail('READ_ONLY');if(room.game?.capabilities?.bots===false)fail('BOTS_UNSUPPORTED');id=command.target;changes={bot:true};
   }else if(command.operation==='away'){if(command.target!==undefined)fail('BAD_COMMAND');changes={away:true};}
   else if(command.operation==='return'){if(command.target!==undefined)fail('BAD_COMMAND');changes={away:false,bot:false};}
   else fail('BAD_COMMAND');

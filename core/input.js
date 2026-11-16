@@ -8,10 +8,12 @@
   // authoritative actions; this module never infers a move or accesses rules.
   const policy=root.PlayroomSizeCatalogue?.presentation?.interaction||{};
   const requiredFeedback=new WeakMap();
-  function attach({ canStart = () => true, canSelect = canStart, canCommit = canStart, getSelected = () => null, select, commit } = {}) {
+  function attach({ canStart = () => true, canSelect = canStart, canCommit = canStart, getSelected = () => null, select, commit, scope = root.document?.documentElement, handSelector = '.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]' } = {}) {
     if (typeof select !== 'function' || typeof commit !== 'function') throw Error('TabletopInput requires select and commit callbacks');
     if (!root.document?.documentElement) throw Error('TabletopInput.attach requires a browser document');
     const doc = root.document, capture = doc.documentElement;
+    if(!scope?.contains)throw Error('TabletopInput scope must be an element');
+    const within=target=>!!target&&scope.contains(target);
     let active = null, suppress = null, pendingCommit = 0, disposed = false, preview = null, blankTap = null, doubleAt = -Infinity;
     const handlers = [];
     const listen = (node, type, handler, options) => { node.addEventListener(type, handler, options); handlers.push(() => node.removeEventListener(type, handler, options)); };
@@ -22,7 +24,7 @@
       try { const action = JSON.parse(value); return action && typeof action === 'object' && !Array.isArray(action) && typeof action.type === 'string' ? action : null; } catch (_) { return null; }
     };
     function handleClick(event) {
-      if (disposed || event.defaultPrevented) return false;
+      if (disposed || event.defaultPrevented || !within(event.target)) return false;
       const feedback=event.target?.closest?.('[data-feedback-required]');
       if(feedback&&!feedback.closest('[inert]')){
         const scope=feedback.closest('.table-shell')||feedback.closest('.game-scene');
@@ -47,7 +49,7 @@
       return true;
     }
     function doubleSource(target) {
-      if(target?.closest?.('button,a,input,select,textarea,[data-select],[data-drag-stack-member],[data-view-key]'))return null;
+      if(!within(target)||target?.closest?.('button,a,input,select,textarea,[data-select],[data-drag-stack-member],[data-view-key]'))return null;
       const source=target?.closest?.('[data-double-action]');return usable(source)?source:null;
     }
     function commitDouble(source,event) {
@@ -64,7 +66,7 @@
     function clearPreview() { preview?.classList.remove('is-hand-preview'); preview = null; }
     function previewDown(event) {
       clearPreview();
-      if (event.isPrimary === false || event.pointerType !== 'mouse' || event.button !== 0) return;
+      if (!within(event.target) || event.isPrimary === false || event.pointerType !== 'mouse' || event.button !== 0) return;
       const card = event.target.closest?.('[data-hand-preview]');
       if (usable(card) && canSelect(card)) { preview = card; card.classList.add('is-hand-preview'); }
     }
@@ -92,7 +94,7 @@
     }
     function hoverAt(s, x, y) {
       if(x<0||y<0||x>=root.innerWidth||y>=root.innerHeight){s.hover?.classList.remove('playroom-drop-hover');s.hover=null;return null;}
-      let pointed=doc.elementFromPoint(x,y);
+      let pointed=doc.elementFromPoint(x,y);if(!within(pointed)){s.hover?.classList.remove('playroom-drop-hover');s.hover=null;return null;}
       if(s.segment){
         const cell=pointed?.closest('[data-grid-index]'),board=cell?.closest('[data-drag-boundary]');
         if(board){const columns=Number(board.dataset.gridColumns);if(!Number.isInteger(columns)||columns<1)return null;const index=Number(cell.dataset.gridIndex)-s.segment*(s.vertical?columns:1);
@@ -119,7 +121,7 @@
       if(!next&&!direct&&!s.gridShape&&!pointed?.closest('[data-grid-index]')&&!pointed?.closest('.modal-backdrop')){
         const ghost=ghostBox(s),radius=Math.max(0,Math.min(policy.dragMagnetPx??8,Math.min(ghost.width,ghost.height)/4));
         let best=Infinity;
-        for(const target of doc.querySelectorAll('[data-drop-piece]')){
+        for(const target of scope.querySelectorAll('[data-drop-piece]')){
           if(!legal(target)||target.closest('.playroom-drag-ghost'))continue;
           const rect=visibleDropRect(target);if(!rect)continue;
           const dx=Math.max(rect.left-ghost.right,ghost.left-rect.right,0),dy=Math.max(rect.top-ghost.bottom,ghost.top-rect.bottom,0);
@@ -232,7 +234,7 @@
       capture.classList.add('playroom-dragging'); takeCapture(s);
       try { select(s.piece,{viewKey:s.source.dataset.dragViewKey}); } catch (error) { cancel(); throw error; }
       if (active !== s) return;
-      s.renderedSource = [...doc.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
+      s.renderedSource = [...scope.querySelectorAll('[data-drag-piece]')].find(el => el.dataset.dragPiece === s.piece);
       s.renderedSource?.classList.add('playroom-drag-source');
       if(members.length>1){const fresh=s.renderedSource?.closest('[data-drag-stack]');s.stackSources=[...(fresh?.querySelectorAll('[data-drag-stack-member]')||[])].filter(node=>Number(node.dataset.dragStackMember)>=s.stackIndex).map(node=>node.firstElementChild).filter(Boolean);for(const node of s.stackSources)node.classList.add('playroom-drag-source');}
       paint(s);
@@ -247,9 +249,9 @@
       else s.track.scrollLeft = s.scrollLeft + s.startX - s.x;
     }
     function scrollContainers(target) {
-      const panel=target?.closest?.('.layout-self'),hand=target?.closest?.('.hand-track, .hand-cards, .hand-scroll, [data-hand-scroll]');
+      const panel=target?.closest?.('.layout-self'),hand=target?.closest?.(handSelector);
       const found={x:null,y:null};
-      for(let node=hand||panel;node;node=panel&&node!==panel?node.parentElement:null){
+      for(let node=hand||panel;node&&within(node);node=panel&&node!==panel?node.parentElement:null){
         const style=root.getComputedStyle(node);
         if(!found.x&&node.scrollWidth>node.clientWidth+1&&['auto','scroll'].includes(style.overflowX))found.x=node;
         if(!found.y&&node.scrollHeight>node.clientHeight+1&&['auto','scroll'].includes(style.overflowY))found.y=node;
@@ -257,6 +259,7 @@
       return {hand,panel,...found};
     }
     function pointerDown(event) {
+      if(!within(event.target))return;
       // A new physical interaction must never inherit click suppression from
       // the previous drag, even when it follows immediately on a touch screen.
       suppress = null;
@@ -361,7 +364,7 @@
       });
     }
     function click(event) {
-      if (event.detail === 0 || event.defaultPrevented) return;
+      if (!within(event.target) || event.detail === 0 || event.defaultPrevented) return;
       if (suppress) {
         if (performance.now() > suppress.until) suppress = null;
         else {
