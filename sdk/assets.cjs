@@ -17,6 +17,29 @@ function auditAssets(root,{candidate}={}){
  const duplicates=new Map();for(const file of files){if(!duplicates.has(file.sha256))duplicates.set(file.sha256,[]);duplicates.get(file.sha256).push(file.file);}
  return {files,bytes,decodedImageBytes,documentation,limits:{maxBytes:BUDGET.assetBytes,maxFiles:BUDGET.files,maxDecodedImageBytes:BUDGET.decodedImageBytes,audioSeconds:BUDGET.audioSeconds},duplicates:[...duplicates.values()].filter(list=>list.length>1),note:'Decoded totals cover reported raster dimensions only; SVG/audio memory and unreported duration remain unknown. Markdown/text documentation is not a runtime asset. Source masters are never modified.'};
 }
+// Measure the real installable wire with the pinned compiler serializer. It
+// reads source data only; no candidate file or authored JavaScript is executed.
+function installableImportBudget(project,resource,shared){
+ const script=`import json,runpy,sys
+from pathlib import Path
+c=runpy.run_path(sys.argv[1]);request=json.load(sys.stdin)
+p=c['isolated_source_payload'](request['root'],request['shared']);row=request['resource'];rows=p['assets']
+local=[(i,item) for i,item in enumerate(rows) if (Path(request['root'])/item['file']).is_file()]
+name=row['file'].split('/')[1]
+index=next((i for i,item in local if item['file'].split('/')[1]>name),local[-1][0]+1 if local else 0)
+rows.insert(index,row)
+p['resourceClosure']['budget'].update(assetBytes=sum(item['bytes'] for item in rows),assetCount=len(rows))
+p['sourceHash']=c['isolated_source_hash'](p)
+manifest=p['manifest'];files={**c['ISOLATED_MARKERS'],'sdk/source.json':c['json_text'](p)}
+if manifest.get('sounds'):files['sounds.js']=c['ISOLATED_SOUNDS_MARKER']
+wire=c['json_text']({'format':'playroom-pack','formatVersion':1,'manifest':manifest,'files':files})
+size=len(wire.encode('utf-8'));maximum=c['MAX_PACK_BYTES'];target=c['TARGET_PACK_BYTES']
+print(json.dumps({'format':'playroom-pack','bytes':size,'maxBytes':maximum,'targetBytes':target,'unit':'UTF-8 bytes before transport compression','warnings':[{'code':'SDK_PACK_TARGET_EXCEEDED','bytes':size,'targetBytes':target}] if size>target else []}))`;
+ const result=require('node:child_process').spawnSync('python3',['-c',script,path.resolve(__dirname,'../tooling/pack_compiler.py')],{input:JSON.stringify({root:project.root,shared:shared?fs.realpathSync(shared):null,resource}),encoding:'utf8',timeout:20000,maxBuffer:1024*1024});
+ if(result.error||result.status!==0)fail('SDK_IMPORT_COMPILER_FAILED',{hint:'Use a valid SDK manifest and the pinned compiler with Python 3; run SDK check/adopt before importing assets.'});
+ let budget;try{budget=JSON.parse(result.stdout);}catch{fail('SDK_IMPORT_COMPILER_FAILED');}
+ return budget;
+}
 function auditProjectAssetImport(root,candidate,{shared}={}){
  if(!candidate||!/^assets\/[A-Za-z0-9_-]+\.(?:svg|png|jpe?g|webp|wav|ogg|mp3|json)$/.test(candidate.file)||!Buffer.isBuffer(candidate.buffer))fail('SDK_ASSET_PATH');
  const project=require('./project.cjs').loadProject(root,{shared}),inventory=project.resourceAudit;
@@ -28,7 +51,8 @@ function auditProjectAssetImport(root,candidate,{shared}={}){
  const assets={...inventory,files:[...inventory.files,{file:candidate.file,...report}],bytes,decodedImageBytes};
  const resource={file:candidate.file,sha256:report.sha256,mime:report.mime,bytes:report.bytes,data:candidate.buffer.toString('base64'),provenance:{...candidate.provenance,sha256:report.sha256}};
  const prepared={...project,resourceAssets:[...project.resourceAssets,resource],resourceAudit:assets,resourceClosure:{...project.resourceClosure,budget:{...project.resourceClosure.budget,assetBytes:bytes,assetCount:count}}};
- const sourceBudget=require('./artifact.cjs').encodeSource(prepared,assets).budget;
- return {...report,assetBudget:{bytes,count,...inventory.limits},sourceBudget};
+ const sourceBudget=require('./artifact.cjs').encodeSource(prepared,assets).budget,installableBudget=installableImportBudget(project,resource,shared);
+ if(installableBudget.bytes>installableBudget.maxBytes)fail('SDK_PACK_SIZE_LIMIT',{bytes:installableBudget.bytes,maxBytes:installableBudget.maxBytes,sourceBytes:sourceBudget.bytes,format:installableBudget.format,hint:'The installable pack includes a second JSON encoding of sdk/source.json; reduce its runtime payload.'});
+ return {...report,assetBudget:{bytes,count,...inventory.limits},sourceBudget,installableBudget};
 }
 module.exports={MIME,validateAsset,validateMedia,auditAssets,auditProjectAssetImport};
