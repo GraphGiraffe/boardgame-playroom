@@ -29,3 +29,5 @@
 .sdk-turn-marker{display:inline-flex;margin-top:6px;padding:3px 6px;border-radius:7px;font-size:11px;background:var(--color-surface-notice,#f4e8c9);color:var(--color-text-primary)}.sdk-player.is-next{box-shadow:inset 0 -3px 0 var(--color-interaction-target,#668fad)}.sdk-player.is-preview-affected{border-color:var(--color-feedback-error,#aa4936)}.sdk-player[data-role=taking] h3::after{content:' · Берёт';font-size:11px;font-weight:500}
 
 .sdk-scene [data-drag-piece]{touch-action:none!important}.playroom-drag-ghost.sdk-piece-card>svg{width:100%;height:100%;display:block}
+
+.game-rules-help .rulebook-figures:not(.is-list)>.rulebook-figure:is(.is-diagram,.is-control):has(>.rulebook-illustration>:is(.sdk-graphic-group,.sdk-graphic-component)){width:fit-content;max-width:100%}

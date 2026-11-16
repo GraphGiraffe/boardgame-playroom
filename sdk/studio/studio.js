@@ -36,7 +36,7 @@ function render(){
  renderSettings();
  for(const [id,value]of [['projection',frame.projection],['scene-data',frame.scene],['checks',frame.check||frame.diagnostics||[]]]){const target=$(id);const json=JSON.stringify(value,null,2);if(target.parentElement.open||json.length<64000||id==='checks'&&frame.check)target.textContent=json;else target.textContent='Большой объём данных. Откройте раздел для просмотра.';}
  if(frame.debug){$('debug-data').hidden=false;$('debug-data').textContent=frame.debug.warning+'\n'+JSON.stringify(frame.debug.position,null,2);}else {$('debug-data').hidden=true;$('debug-data').textContent='';}
- $('history-status').textContent=(frame.history.index+1)+' / '+frame.history.count+(frame.history.reviewing?' · История':'');$('history-prev').disabled=frame.history.index<=0;$('history-next').disabled=frame.history.index>=frame.history.count-1;$('history-live').disabled=!frame.history.reviewing;$('bot').disabled=!!frame.history.reviewing||frame.projection.status==='finished';
+ $('history-status').textContent=(frame.history.index+1)+' / '+frame.history.count+(frame.history.reviewing?' · История':'');$('history-prev').disabled=frame.history.index<=0;$('history-next').disabled=frame.history.index>=frame.history.count-1;$('history-live').disabled=!frame.history.reviewing;$('bot').disabled=frame.pack.capabilities?.bots===false||!!frame.history.reviewing||frame.projection.status==='finished';$('bot').title=frame.pack.capabilities?.bots===false?'В этой игре нет ходов бота':'Выполнить ход бота';
 }
 function acceptFrame(value,source='request'){
  if(!value?.projection){if(value?.preview)renderer.preview(Array.isArray(value.preview)?value.preview:[value.preview]);return;}
