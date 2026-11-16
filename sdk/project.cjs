@@ -63,14 +63,25 @@ function sourceResources(root,manifest,shared,coreSourceBytes){
   if(!fs.existsSync(path.join(root,'sdk/rulebooks.json')))fail('SDK_RULEBOOKS_REBUILD',{hint:'Run SDK adopt to compile Markdown into the shared structured rulebook format.'});
   const compiled=json(root,'sdk/rulebooks.json');for(const [locale,file]of Object.entries(books)){if(compiled.hashes?.[locale]!==crypto.createHash('sha256').update(read(root,file)).digest('hex'))fail('SDK_RULEBOOKS_REBUILD');}resourceClosure.rulebooks=compiled.rulebooks;
  }
- const resourceAudit={files:reports,bytes,decodedImageBytes,documentation,limits:{maxBytes:BUDGET.assetBytes,maxFiles:BUDGET.files,maxDecodedImageBytes:BUDGET.decodedImageBytes,audioSeconds:BUDGET.audioSeconds},duplicates:[],note:'Actual declared local/shared media closure; provider source and authoring masters are separate.'};
+ const resourceAudit={scope:'resource-closure',files:reports,bytes,decodedImageBytes,documentation,limits:{maxBytes:BUDGET.assetBytes,maxFiles:BUDGET.files,maxDecodedImageBytes:BUDGET.decodedImageBytes,audioSeconds:BUDGET.audioSeconds},duplicates:[],note:'Actual declared local/shared media closure; provider source and authoring masters are separate.'};
  return {resourceAssets:assets,providers,resourceClosure,resourcePaths:paths,resourceAudit};
 }
 function publicResources(project){return {assets:project.resourceAssets||[],assetPacks:project.resourceClosure?.assetPacks||[],data:project.resourceClosure?.data||[],rulebooks:project.resourceClosure?.rulebooks||{}};}
 
+// JSON's number spelling and key ordering differ across Python/JavaScript.
+// Tag every value; binary64 numbers keep the complete resource identity portable.
+function resourceIdentity(value){
+ if(value===null)return ['null'];
+ if(typeof value==='number'){if(!Number.isFinite(value))fail('SDK_JSON_INVALID');const bytes=Buffer.alloc(8);bytes.writeDoubleBE(value===0?0:value);return ['number',bytes.toString('hex')];}
+ if(typeof value==='string'||typeof value==='boolean')return [typeof value,value];
+ if(Array.isArray(value))return ['array',value.map(resourceIdentity)];
+ if(value&&typeof value==='object')return ['object',Object.keys(value).sort().map(key=>[key,resourceIdentity(value[key])])];
+ fail('SDK_JSON_INVALID');
+}
 function loadProject(directory,{shared}={}){
  const root=fs.realpathSync(directory),manifest=json(root,'manifest.json');
  if(!/^[a-z][a-z0-9_-]{0,63}$/.test(manifest.id)||typeof manifest.version!=='string'||!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(manifest.version))fail('SDK_MANIFEST_INVALID',{file:'manifest.json'});
+ if(manifest.capabilities!==undefined&&(!manifest.capabilities||typeof manifest.capabilities!=='object'||Array.isArray(manifest.capabilities)||manifest.capabilities.bots!==undefined&&typeof manifest.capabilities.bots!=='boolean'))fail('SDK_MANIFEST_INVALID',{file:'manifest.json'});
  const descriptor=fs.existsSync(path.join(root,'sdk/project.json'))?json(root,'sdk/project.json'):null;
  if(!descriptor||descriptor.contractVersion!==1||!Array.isArray(descriptor.presentation))fail('SDK_DESCRIPTOR_REQUIRED',{file:'sdk/project.json',hint:'Create an SDK project or add the studio descriptor; executable view.js is never loaded.'});
  const dependencies=[];
@@ -93,7 +104,10 @@ function loadProject(directory,{shared}={}){
   const catalog=Object.create(null);for(const name of files){const value=json(root,name);if(!value||typeof value!=='object'||Array.isArray(value))fail('SDK_LOCALES_INVALID');for(const [key,text]of Object.entries(value)){if(Object.hasOwn(catalog,key)||typeof text!=='string')fail('SDK_LOCALES_INVALID');catalog[key]=text;}}catalogs[locale]=catalog;
  }
  const hash=crypto.createHash('sha256');hash.update(JSON.stringify({manifest,descriptor,catalogs}));for(const f of [...dependencies,...rules,...helpers,...presentation,...types,...support])hash.update(f.file+'\0'+f.source);
- return {root,manifest,descriptor,catalogs,dependencies,rules,presentation,helpers,types,support,sourceBytes,hash:hash.digest('hex'),...sourceResources(root,manifest,shared?fs.realpathSync(shared):undefined,sourceBytes)};
+ const resources=sourceResources(root,manifest,shared?fs.realpathSync(shared):undefined,sourceBytes);
+ const identity={resourceClosure:resources.resourceClosure,assets:resources.resourceAssets.map(({data,...metadata})=>metadata),providers:resources.providers};
+ hash.update('\0resources-v1\0'+JSON.stringify(resourceIdentity(identity)));
+ return {root,manifest,descriptor,catalogs,dependencies,rules,presentation,helpers,types,support,sourceBytes,hash:hash.digest('hex'),...resources};
 }
 function inspectProject(directory,options){
  const p=loadProject(directory,options);
