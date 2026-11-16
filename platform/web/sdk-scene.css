@@ -31,3 +31,5 @@
 .sdk-scene [data-drag-piece]{touch-action:none!important}.playroom-drag-ghost.sdk-piece-card>svg{width:100%;height:100%;display:block}
 
 .game-rules-help .rulebook-figures:not(.is-list)>.rulebook-figure:is(.is-diagram,.is-control):has(>.rulebook-illustration>:is(.sdk-graphic-group,.sdk-graphic-component)){width:fit-content;max-width:100%}
+
+.game-rules-help .rulebook-figures:not(.is-list)>.rulebook-figure:is(.is-diagram,.is-control):has(>.rulebook-illustration>:is(.sdk-graphic-group,.sdk-graphic-component))>figcaption{contain:inline-size}
