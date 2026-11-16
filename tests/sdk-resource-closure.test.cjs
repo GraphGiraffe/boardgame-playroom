@@ -39,3 +39,11 @@ test('tutorial availability follows authorized commands while retaining local he
  const restricted=tutorial([{type:'play',card:0}]).steps[0];
  assert.equal(restricted.available,false);assert.equal(restricted.commands.length,0);
 });
+
+test('parameter figures retain inherited preview kind and reject missing declared figures',()=>{
+ const vm=require('node:vm'),guest=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/sdk-support.js'),'utf8'),guest);
+ guest.PlayroomPack={settings:[{preview:{kind:'illustrations'},options:[{preview:{ids:['card-a','card-b']}},{preview:{kind:'illustrations',ids:['card-c']}}]}],presetSetting:{preview:{kind:'illustrations'},options:[{preview:{ids:['preset-a']}}]}};
+ guest.PlayroomPackRuleIllustrations={create:()=>id=>['card-a','card-b','card-c','preset-a'].includes(id)?'<svg viewBox="0 0 10 10"><title>'+id+'</title></svg>':undefined};
+ const catalog=guest.PlayroomSDKSupport.catalog({metadata:{}});assert.deepEqual(Array.from(catalog.figures,f=>f.id).sort(),['card-a','card-b','card-c','preset-a']);
+ guest.PlayroomPack.settings[0].options.push({preview:{ids:['missing']}});assert.throws(()=>guest.PlayroomSDKSupport.catalog({metadata:{}}),/SDK_SUPPORT_FIGURE_MISSING/);
+});
