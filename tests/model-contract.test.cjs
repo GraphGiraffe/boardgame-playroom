@@ -236,9 +236,9 @@ test('authority preserves model projections, idempotency and read-only spectator
   }finally{authority.dispose();}
 });
 
-test('both builders compile the same autonomous layered pack and reject invalid module and locale declarations',()=>{
+test('both builders compile the same autonomous layered pack and reject invalid module and locale declarations',async()=>{
   const script=`
-import importlib.util,json,sys
+import importlib.util,json,sys,tempfile,shutil
 from pathlib import Path
 def load(name,folder):
  spec=importlib.util.spec_from_file_location(name,Path(folder)/'build.py')
@@ -256,9 +256,20 @@ for builder in [app,packs]:
   try:builder.validate_manifest({**json.loads(manifest.read_text()),'engineApi':api},'tictactoe')
   except ValueError:pass
   else:raise AssertionError('invalid engineApi accepted')
-print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.parent)],ensure_ascii=False))
+current=[app.read_source_pack(manifest),packs.build_pack(manifest.parent)]
+with tempfile.TemporaryDirectory() as tmp:
+ fixture=Path(tmp)/'tictactoe';shutil.copytree(manifest.parent,fixture)
+ value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
+ legacy=[builder.build_pack(fixture,shared=Path(sys.argv[2])/'shared') for builder in [app,packs]]
+print(json.dumps({'current':current,'legacy':legacy},ensure_ascii=False))
 `;
-  const [a,b]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
+  globalThis.PlayroomSandbox=await require('../sdk/node-host.cjs').createNodeHost();
+  const pair=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024})),[a,b]=pair.legacy,[isolated,companion]=pair.current;
+  assert.deepEqual(isolated,companion);assert.equal(isolated.manifest.execution,'isolated-v1');
+  const source=JSON.parse(isolated.files['sdk/source.json']);assert.deepEqual(source.manifest,isolated.manifest);
+  assert(source.sources.rules.some(row=>row.file==='domain/game.js'));assert(source.sources.presentation.some(row=>row.file==='presentation/scene.js'));
+  assert.deepEqual(source.catalogs.ru,JSON.parse(fs.readFileSync(path.join(packs,'packs/tictactoe/locales/ru/game.json'),'utf8')));
+  for(const file of ['rules.js','view.js','styles.css'])assert(!isolated.files[file].includes('PlayroomPackDefinition'),'host entrypoints are inert markers');
   assert.deepEqual(a,b);assert.equal(a.manifest.engineApi,4);assert.equal(a.manifest.sourceModules,undefined);
   const Remote=require('../app/remote-catalog.js'),sha='a'.repeat(64),manifest=a.manifest;
   const entry={id:manifest.id,version:manifest.version,stateVersion:1,engineApi:4,viewApi:3,sha256:sha,
@@ -266,8 +277,12 @@ print(json.dumps([app.read_source_pack(manifest),packs.build_pack(manifest.paren
   assert.equal(Remote.validate({format:'playroom-catalog',version:1,collection:'0.6.5',packs:[entry]}).packs[0].engineApi,4);
   for(const file of ['domain/game.js','presentation/scene.js','locales/ru/game.json'])assert.equal(a.files[file],undefined,'source is already compiled into entrypoints');
   const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
-  const before=E.GAMES,views=UI.createRegistry();
-  const manager=new Packs({engine:E,views,catalog:{},storage:{get:()=>null,set(){}}});
+  let before=E.GAMES;const views=UI.createRegistry();
+  const manager=new Packs({engine:E,views,catalog:{},storage:{get:()=>null,set(){}},allowTrustedLegacy:true});
+  const isolatedToken=manager.prepare(isolated);manager.install(isolatedToken);
+  const isolatedState=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1});
+  const isolatedNext=E.applyAction(isolatedState,1,{type:'place',cell:4});assert.equal(E.project(isolatedNext,0).scene.cells[4].owner,1);
+  assert.equal(E.get('tictactoe').isolated,true);before=E.GAMES;
   const token=manager.prepare(a);assert.deepEqual(E.GAMES,before,'staging must not bypass scoped registration');
   manager.install(token);
   const state=E.createGame('tictactoe',{players:[{name:'One'},{name:'Two'}],seed:17,firstPlayerMode:'assigned',firstPlayer:1});
@@ -344,7 +359,7 @@ test('preparation is durable but does not create game turns; public projection e
 
 test('mini-card assets compile identically with their renderer and styles in both builders',()=>{
  const script=`
-import importlib.util,json,sys
+import importlib.util,json,sys,tempfile,shutil
 from pathlib import Path
 out=[]
 for name,folder in [('app',sys.argv[1]),('packs',sys.argv[2])]:
@@ -352,14 +367,22 @@ for name,folder in [('app',sys.argv[1]),('packs',sys.argv[2])]:
  module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
  manifest=Path(sys.argv[2])/'packs/gofish/manifest.json'
  out.append(module.read_source_pack(manifest) if name=='app' else module.build_pack(manifest.parent))
-print(json.dumps(out))
+with tempfile.TemporaryDirectory() as tmp:
+ fixture=Path(tmp)/'gofish';shutil.copytree(manifest.parent,fixture)
+ value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
+ legacy=module.build_pack(fixture,shared=Path(sys.argv[2])/'shared')
+print(json.dumps({'current':out,'legacy':legacy}))
 `;
- const [app,pak]=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
+ const {current:[app,pak],legacy}=JSON.parse(execFileSync('python3',['-c',script,root,packs],{encoding:'utf8',maxBuffer:4*1024*1024}));
  assert.deepEqual(app,pak);
  assert(app.manifest.sharedAssetPacks.includes('mini-cards'));
  for(const file of ['renderer.js','styles.css'])assert.equal(app.files['assets/shared-packs/mini-cards/'+file],undefined,'compiled asset entrypoint has no redundant separate copy');
- assert(app.files['view.js'].includes('root.PlayroomMiniCards=api'));
- assert(app.files['styles.css'].includes('.mini-card>.card-deck-art'));
+ const source=JSON.parse(app.files['sdk/source.json']);assert.equal(app.manifest.execution,'isolated-v1');
+ assert(source.sources.providers.some(row=>row.file==='assets/shared-packs/mini-cards/renderer.js'&&row.source.includes('root.PlayroomMiniCards=api')));
+ assert(source.sources.providers.some(row=>row.file==='assets/shared-packs/mini-cards/styles.css'&&row.source.includes('.mini-card>.card-deck-art')));
+ assert(source.assets.some(asset=>asset.file==='assets/shared-packs/mini-cards/back.svg'));
+ assert(legacy.files['view.js'].includes('root.PlayroomMiniCards=api'));
+ assert(legacy.files['styles.css'].includes('.mini-card>.card-deck-art'));
 });
 
 test('prepared packs omit bundled sources, duplicate asset entrypoints and authoring notes',()=>{
@@ -378,7 +401,13 @@ for pack in sorted((root/'packs').iterdir()):
   spec=json.loads((root/'shared/asset-packs'/name/'manifest.json').read_text())
   for filename in spec.get('scripts',[])+spec.get('styles',[]):assert 'assets/shared-packs/'+name+'/'+filename not in files
  if pack.name=='pexeso':assert not any(p.startswith('assets/shared-packs/characters/') for p in files)
- if pack.name=='battleship':assert 'base64' not in files['sounds.js'] and len([p for p in files if p.endswith('.wav')])==4
+ payload=json.loads(files['sdk/source.json']);assert payload['manifest']==source
+ assert source['execution']=='isolated-v1'
+ assert not any(a['file'].endswith(('.js','.css','.md','.txt')) for a in payload['assets'])
+ import base64,hashlib
+ for a in payload['assets']:assert hashlib.sha256(base64.b64decode(a['data'])).hexdigest()==a['sha256']
+ if pack.name=='pexeso':assert not any(a['file'].startswith('assets/shared-packs/characters/') for a in payload['assets'])
+ if pack.name=='battleship':assert 'base64' not in files['sounds.js'] and len([a for a in payload['assets'] if a['file'].endswith('.wav')])==4
  result.append(pack.name)
 print(json.dumps(result))
 `;
@@ -426,7 +455,10 @@ test('all installed pack scenes obey participant and metric contracts for every 
         const projected=E.project(state,viewer);
         assert.equal(projected.scene.players.length,count,`${id}/${preset.id}/${viewer}`);
         assert(projected.scene.geometry.topology);assert(projected.scene.zones.length);
-        assert.equal(projected.scene.interactions.length,E.legalActions(state,viewer).length);
+        const signature=require('../core/model-values.js').canonical;
+        const targets=new Set(projected.scene.interactions.map(item=>signature(item.command))),legal=new Set(E.availableCommands(state,viewer).map(signature));
+        assert.equal(targets.size,legal.size,`${id}/${preset.id}/${viewer}: unique target commands cover every legal command`);
+        for(const target of targets)assert(legal.has(target),`${id}/${preset.id}/${viewer}: presentation target is authorized`);
         assert.deepEqual(projected.scene.players.map(p=>p.player).sort((a,b)=>a-b),Array.from({length:count},(_,i)=>i));
       }
     }
@@ -462,7 +494,8 @@ test('event scenes use authorized current events, ordered checkpoints and inert 
  for(invalid of ['id','duplicate','actions'])assert.throws(()=>session.view(-1),/EVENT_SCENE/);
 });
 
-test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',()=>{
+test('Markdown authoring compiles into inert rule blocks and preserves legacy pack bytes',async()=>{
+ globalThis.PlayroomSandbox=await require('../sdk/node-host.cjs').createNodeHost();
  // Compare complete bundles against the independently prepared app companion.
  // Git HEAD can predate unrelated compiler/asset work in the same checkout.
  const prepared={};vm.runInNewContext(fs.readFileSync(path.join(root,'installed-packs.js'),'utf8'),prepared);
@@ -487,7 +520,7 @@ for source in ['Нет заголовка','# X\\n\\n<script>alert(1)</script>',
  else:raise AssertionError('unsafe/unsupported Markdown accepted')
 with tempfile.TemporaryDirectory() as tmp:
  pack=Path(tmp)/'tictactoe';shutil.copytree(packs_root/'packs/tictactoe',pack)
- manifest=pack/'manifest.json';data=json.loads(manifest.read_text());data['sourceModules']['rulebooks']={'ru':'locales/ru/rules.md'};manifest.write_text(json.dumps(data))
+ manifest=pack/'manifest.json';data=json.loads(manifest.read_text());data['sourceModules']['rulebooks']={'ru':'locales/ru/rules.md'};data['version']+='-markdown-fixture';manifest.write_text(json.dumps(data))
  (pack/'locales/ru/rules.md').write_text(md)
  bridge=pack/'rules.js';bridge.write_text(bridge.read_text().replace('const specification = {definition, presentation, locales, version};','const specification = {definition, presentation, locales, version, rulebooks:source?null:root.PlayroomPackResources.rulebooks};'))
  bundle=ns['build_pack'](pack,shared=packs_root/'shared')
@@ -496,7 +529,9 @@ with tempfile.TemporaryDirectory() as tmp:
 `;
  const result=JSON.parse(execFileSync('python3',['-c',script,root,packs],{input:JSON.stringify(prepared.PlayroomInstalledPacks),encoding:'utf8',maxBuffer:5*1024*1024}));
  const E=require('../core/engine.js'),UI=require('../core/ui.js'),Packs=require('../core/packs.js');
- const manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});manager.install(manager.prepare(result.bundle));
+ const manager=new Packs({engine:E,views:UI.createRegistry(),catalog:{},storage:{get:()=>null,set(){}}});
+ const encoded=JSON.parse(result.bundle.files['sdk/source.json']);assert.deepEqual(encoded.resourceClosure.rulebooks.ru,result.book);
+ manager.install(manager.prepare(result.bundle));
  manager.activate('tictactoe',result.bundle.manifest.version);assert.deepEqual(E.get('tictactoe').rulebook,result.book);
  const html=require('../app/rulebook-view.js').render(result.book,{esc:value=>String(value??'').replaceAll('<','&lt;'),illustrate:()=>''});
  assert.match(html,/<strong>Соберите<\/strong>/);assert.match(html,/<em>три<\/em>/);assert.match(html,/<code>X<\/code>/);assert.match(html,/<ol>/);assert.match(html,/<table/);assert.doesNotMatch(html,/<script/);
@@ -553,9 +588,10 @@ test('shared turn-order policy validates cycles, directions, repeat overrides an
  for(const bad of [{players:[0,0]},{players:[4]},{players:[0,2],direction:0},{next:4}])assert.throws(()=>custom(()=>bad).turnOrder(projection),coded('TURN_ORDER_INVALID'));
 });
 
-test('parameter preview metadata stays public, bounded and identical across compiler and runtime',()=>{
+test('parameter preview metadata stays public, bounded and identical across compiler and runtime',async()=>{
+ globalThis.PlayroomSandbox=await require('../sdk/node-host.cjs').createNodeHost();
  const script=`
-import copy,json,sys
+import copy,json,sys,tempfile,shutil
 from pathlib import Path
 root=Path(sys.argv[1]);path=root/'shared/pack_compiler.py';ns={'__file__':str(path)};exec(compile(path.read_text(),str(path),'exec'),ns)
 bundles=[ns['build_pack'](root/'packs'/game) for game in ['battleship','ludo','mage-brawl','uno','gofish','durak','oldmaid','klondike','snakes']]
@@ -612,13 +648,22 @@ for count in [0,100]:
  value=copy.deepcopy(base);option(value)['preview']={'count':count};ns['validate_manifest'](value,'valid-preview');valid.append(value)
 for preview in [{'kind':'declaration','actor':'human','label':'UNO!'},{'kind':'symbol','icon':'first'},{'kind':'illustrations','ids':['setting-type-attack']},{'kind':'illustrations','ids':['same']*4}]:
  value=copy.deepcopy(base);option(value)['preview']=preview;ns['validate_manifest'](value,'valid-common-preview');valid.append(value)
-print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False))
+legacy=[]
+with tempfile.TemporaryDirectory() as tmp:
+ for bundle in bundles:
+  name=bundle['manifest']['id'];fixture=Path(tmp)/name;shutil.copytree(root/'packs'/name,fixture)
+  value=json.loads((fixture/'manifest.json').read_text());value.pop('execution',None);value['sdkFeatures']=[f for f in value.get('sdkFeatures',[]) if f!='isolated-execution-v1'];value['version']='0.0.0-trusted-fixture';(fixture/'manifest.json').write_text(json.dumps(value))
+  legacy.append(ns['build_pack'](fixture,shared=root/'shared'))
+print(json.dumps({'bundles':bundles,'legacy':legacy,'bad':bad,'valid':valid},ensure_ascii=False))
 `;
  const result=JSON.parse(execFileSync('python3',['-c',script,packs],{encoding:'utf8',maxBuffer:8*1024*1024}));
- const Packs=require('../core/packs.js'),parse=manifest=>Packs.parse({format:'playroom-pack',formatVersion:1,manifest,files:{'rules.js':'fixture','view.js':'fixture','styles.css':'/* fixture */','sounds.js':'fixture'}});
+ const Packs=require('../core/packs.js'),parse=manifest=>{
+  const bundle=structuredClone(result.bundles[2]),payload=JSON.parse(bundle.files['sdk/source.json']);bundle.manifest=manifest;payload.manifest=manifest;
+  const hash=require('node:crypto').createHash('sha256');hash.update(JSON.stringify({manifest,descriptor:payload.descriptor,catalogs:payload.catalogs}));for(const kind of ['dependencies','rules','helpers','presentation','types','support'])for(const row of payload.sources[kind]||[])hash.update(row.file+'\0'+row.source);payload.sourceHash=hash.digest('hex');bundle.files['sdk/source.json']=JSON.stringify(payload);return Packs.parse(bundle);
+ };
  for(const m of result.valid)assert.doesNotThrow(()=>parse(m));
  for(const m of result.bad)assert.throws(()=>parse(m),error=>error.code==='PACK_PARAMETER_PREVIEW_INVALID');
- const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}}});
+ const Engine=require('../core/engine.js'),UI=require('../core/ui.js'),catalog={},views=UI.createRegistry(),manager=new Packs({engine:Engine,views,modelAdapter:require('../core/model-registration.js').adapt,catalog,storage:{get:()=>null,set(){}},allowTrustedLegacy:true});
  const Rooms=require('../application/rooms.js');
  for(const bundle of result.bundles){
   const {id}=bundle.manifest;manager.install(manager.prepare(bundle));assert.deepEqual(catalog[id].presetSetting,bundle.manifest.presetSetting);
@@ -634,6 +679,7 @@ print(json.dumps({'bundles':bundles,'bad':bad,'valid':valid},ensure_ascii=False)
  }
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-illustrations-v1'),['mage-brawl','ludo','spider','durak','pexeso','snakes','yatzy','oldmaid','domino','checkers'].includes(id),'author-supplied component illustrations require the feature');
  const mageFields=catalog['mage-brawl'].settings;assert.deepEqual(mageFields.find(f=>f.key==='actionsPerTurn').options.map(o=>o.preview.ids),[['setting-card-fire-attack'],['setting-card-fire-attack','setting-card-water-movement']]);assert.deepEqual(mageFields.find(f=>f.key==='differentActionTypes').options.map(o=>o.preview.ids),[['setting-type-attack','setting-type-attack'],['setting-type-movement','setting-type-attack']]);
+ for(const bundle of result.legacy)manager.install(manager.prepare(bundle));
  const cardFire=views.illustration('mage-brawl','setting-card-fire-attack'),cardWater=views.illustration('mage-brawl','setting-card-water-movement');assert.match(cardFire,/mage-spell-art/);assert.match(cardWater,/mage-spell-art/);assert.notEqual(cardFire,cardWater);assert.match(views.illustration('mage-brawl','setting-type-movement'),/mage-movement-icon/);assert.match(views.illustration('mage-brawl','setting-type-attack'),/sword/);
  for(const id of Object.keys(catalog))assert.equal(catalog[id].sdkFeatures.includes('parameter-previews-v2'),['durak','klondike'].includes(id),'only settings-mode/inactive packs require app68');
  const modes=[catalog.durak.presetSetting,...catalog.durak.settings].filter(f=>f.presentation==='mode');assert.equal(modes.length,1);assert.equal(modes[0].key,'variant');assert.deepEqual(modes[0].options.map(o=>o.value),['simple','throwin','transfer']);

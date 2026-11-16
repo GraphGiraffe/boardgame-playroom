@@ -12,8 +12,8 @@
       "source": "shared/components/game-components.js",
       "target": "core/game-components.js",
       "format": "text",
-      "sha256": "bba3cb005ce694d30b4530d02bfcd14b4c544b702e3b1bb91c7a76b9ca968f9a",
-      "renderedSha256": "bba3cb005ce694d30b4530d02bfcd14b4c544b702e3b1bb91c7a76b9ca968f9a"
+      "sha256": "bc095a79c2cae43178808f3e0a7866ed7a0c2edcf3ce66ae6bdf9fe8ac8a7c80",
+      "renderedSha256": "bc095a79c2cae43178808f3e0a7866ed7a0c2edcf3ce66ae6bdf9fe8ac8a7c80"
     },
     {
       "source": "shared/components/game-components.css",
