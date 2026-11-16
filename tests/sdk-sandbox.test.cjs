@@ -24,6 +24,16 @@ test('SDK gives presentation no authority globals and reports required missing f
  await assert.rejects(s.view(0),error=>error.code==='SDK_ACCESS_DENIED'&&!JSON.stringify(error.diagnostic).includes('hidden-alpha'));
  const isolated=fixture(t,{render:`if(typeof __definition!=='undefined'||typeof PlayroomPackDefinition!=='undefined')throw Error('LEAK');if(Object.hasOwn(projection.data,'secret'))throw Error('LEAK');`}),other=await StudioSession.open(isolated);t.after(()=>other.close());await other.start();assert.equal((await other.view(0)).scene.id,'probe');
 });
+test('SDK diagnostics redact guest exception metadata and dynamic missing-field values',async t=>{
+ for(const start of ["const error=Error('PRIVATE_PAYLOAD_XYZ');error.resource='hidden-beta';error.stack=' at domain/hidden-beta.js:1:1';throw error;","try{SDK.read({},'hidden-beta')}catch{}"]) {
+  const session=await StudioSession.open(fixture(t,{start}));t.after(()=>session.close());
+  await assert.rejects(session.start(),error=>['SDK_EXECUTION_FAILED','SDK_ACCESS_DENIED'].includes(error.code)&&!/PRIVATE_PAYLOAD_XYZ|hidden-beta/.test(JSON.stringify(error.diagnostic)));
+ }
+ const root=fixture(t,{start:'document.cookie'}),file=path.join(root,'domain/game.js');fs.writeFileSync(file,"if(typeof\n require === 'function'){}\n"+fs.readFileSync(file,'utf8'));
+ const session=await StudioSession.open(root);t.after(()=>session.close());await assert.rejects(session.start(),error=>error.code==='SDK_ACCESS_DENIED'&&error.diagnostic.frames.some(frame=>frame.file==='domain/game.js'&&frame.line===3));
+ const warningRoot=fixture(t),sceneFile=path.join(warningRoot,'presentation/scene.js');fs.writeFileSync(sceneFile,fs.readFileSync(sceneFile,'utf8').replace('players:[0,1]',"['hidden-beta']:undefined,players:[0,1]"));
+ const warning=await StudioSession.open(warningRoot);t.after(()=>warning.close());await warning.start();const view=await warning.view(0);assert.equal(view.diagnostics[0].count,1);assert(!JSON.stringify(view).includes('hidden-beta'));
+});
 test('SDK bounds loops and allocations independently of the guest exception handler',async t=>{
  for(const start of ['for(;;){}','const a=[];for(;;)a.push(new Uint8Array(1024*1024));']){
   const s=await StudioSession.open(fixture(t,{start}));t.after(()=>s.close());const time=Date.now();
