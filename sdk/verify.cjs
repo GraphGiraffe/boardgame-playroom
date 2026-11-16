@@ -17,7 +17,7 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
  if(!Number.isInteger(steps)||steps<1||steps>1000||!Array.isArray(seeds)||!seeds.length||seeds.length>32||seeds.some(n=>!Number.isSafeInteger(n)))fail('SDK_VERIFY_OPTIONS');
  const a=await StudioSession.open(directory,{shared});let b;
  try{
-  b=await StudioSession.open(directory,{shared});let transitions=0;const scenarios=[];
+  b=await StudioSession.open(directory,{shared});const supportsBots=a.project.manifest.capabilities?.bots!==false;let transitions=0;const scenarios=[];
   for(const seed of seeds){
    await a.start({...options,rng:seed});await b.start({...options,rng:seed});const commands=[];
    for(let i=0;i<steps;i++){
@@ -29,7 +29,7 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
     let actor=a.position.turn,actions=await a.rules.call('availableActions',a.position,actor);
     if(!actions.length){for(let player=0;player<a.position.playerCount;player++){const choices=await a.rules.call('availableActions',a.position,player);if(choices.length){actor=player;actions=choices;break;}}}
     if(!actions.length){scenarios.push({seed,stopped:'no-actions',step:i});break;}
-    const bot=await a.rules.call('botAction',a.position,actor,{enabled:false});const command=bot||actions[(seed+i)%actions.length];commands.push({actor,command});
+    const bot=supportsBots?await a.rules.call('botAction',a.position,actor,{enabled:false}):null;const command=bot||actions[(seed+i)%actions.length];commands.push({actor,command});
     await a.apply(actor,command);await b.apply(actor,command);transitions++;
    }
    scenarios.push({seed,commands:commands.length,status:a.position.status});
@@ -52,7 +52,7 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
     if(scenario.expect)expectations(a.position,scenario.expect,scenario.id,scenario.steps.length);if(a.position.status==='finished')await a.rules.call('result',a.position);authored++;
    }
   }
-  return {status:'passed',pack:a.project.manifest.id,hash:a.project.hash,transitions,authoredScenarios:authored,scenarios,scope:['contract','determinism','viewer-rendering','viewer-order-independence','checkpoint','legal-bot-actions',...(authored?['authored-rule-assertions']:[])],notCovered:['exhaustive-rule-correctness','privacy-equivalence-fixtures','physical-device','production-isolation']};
+  return {status:'passed',pack:a.project.manifest.id,hash:a.project.hash,transitions,authoredScenarios:authored,scenarios,scope:['contract','determinism','viewer-rendering','viewer-order-independence','checkpoint',supportsBots?'legal-bot-actions':'human-only-actions',...(authored?['authored-rule-assertions']:[])],notCovered:['exhaustive-rule-correctness','privacy-equivalence-fixtures','physical-device','production-isolation']};
  }finally{a.close();b?.close();}
 }
 async function privacy(directory,{shared,left,right,viewer}={}){

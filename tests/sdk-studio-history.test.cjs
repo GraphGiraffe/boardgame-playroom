@@ -16,3 +16,7 @@ test('all dispatch-capable scene controls are constrained to the projected comma
  assert.doesNotThrow(()=>validateScene({scene:{...scene,vote:{command:{type:'ok'}}},actions:[],events:[]},projection));
  assert.throws(()=>validateScene({scene:{...scene,players:[{player:0,metrics:[{id:'points',kind:'number',value:0,label:'Points'}]},{player:1,metrics:[]}]},actions:[],events:[]},projection),e=>e.code==='SDK_SCENE_INVALID'&&e.diagnostic.contract==='SCENE_METRIC_INVALID');
 });
+
+test('human-only studio projects reject automatic turns before changing the game',async t=>{
+ const project=fixture(t),path=require('node:path'),manifest=path.join(project,'manifest.json'),value=JSON.parse(fs.readFileSync(manifest));value.capabilities={bots:false};fs.writeFileSync(manifest,JSON.stringify(value));const session=await StudioSession.open(project);t.after(()=>session.close());await session.start();const before=JSON.stringify(session.position);await assert.rejects(session.bot(),e=>e.code==='SDK_BOTS_UNSUPPORTED');assert.equal(JSON.stringify(session.position),before);
+});
