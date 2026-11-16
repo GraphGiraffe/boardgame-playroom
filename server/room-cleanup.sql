@@ -36,4 +36,26 @@ update public.playroom_cloud_rooms r set closed=true
   or exists(select 1 from public.playroom_push_room_events x where x.room_id=r.id)
   or exists(select 1 from public.playroom_push_room_reads x where x.room_id=r.id)
  );
+-- A 20-second host lease marks availability, not permanent room lifetime.
+-- Keep a full day for reconnect/recovery; never retire an actively used room.
+create or replace function public.playroom_close_inactive_rooms() returns integer
+language plpgsql security definer set search_path=pg_catalog,public as $$
+declare affected integer;
+begin
+ with inactive as (
+  select r.id from public.playroom_cloud_rooms r
+   where not r.closed and coalesce(r.host_until,r.created_at)<now()-interval '24 hours'
+    and not exists(select 1 from public.playroom_room_members m where m.room_id=r.id and m.active_until>now())
+   for update of r skip locked
+ )
+ update public.playroom_cloud_rooms r set closed=true from inactive i where r.id=i.id;
+ get diagnostics affected=row_count;
+ return affected;
+end;$$;
+revoke all on function public.playroom_close_inactive_rooms() from public,anon,authenticated;
+do $$begin
+ if exists(select 1 from pg_extension where extname='pg_cron') then
+  perform cron.schedule('playroom-close-inactive-rooms','*/15 * * * *','select public.playroom_close_inactive_rooms();');
+ end if;
+end$$;
 commit;
