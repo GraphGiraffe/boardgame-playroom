@@ -24,3 +24,12 @@ test('human-only capability is enforced by engine and room authority',async()=>{
  assert.throws(()=>service.setLocalSeat(room.id,'human',room.seats[1].id,{kind:'bot'}),error=>error.code==='BOTS_UNSUPPORTED');
  assert.equal(service.snapshot(room.id).participants.length,1);const authority=new Authority(new Session(E,id));try{authority.setViewerConnected(1,false);await assert.rejects(authority.setPlayerControl(1,{bot:true},{requestId:'no-temporary-bot',expectedRevision:0}),/BOTS_UNSUPPORTED/);assert.equal(authority.connect(0).snapshot().playerControls[1].bot,false);}finally{authority.dispose();}
 });
+
+test('normal isolated saves retain signed secondary result metrics',()=>{
+ const id='sdk-signed-details-fixture',signed={...definition,id,inputs:undefined,actions:p=>p.status==='playing'?[{command:{type:'finish'},visibility:'public'}]:[],reduce:p=>({position:{...p,status:'finished',winners:[1]},events:[]}),score:()=>[-1,0],result:()=>({winners:[1],places:[2,1],metrics:[{id:'points',values:[-1,0]},{id:'penalties',values:[-2,0]}]})};
+ E.register({...Registration.adapt(E,{definition:signed,presentation,locales:{ru:{}},version:'1.0.0'}),isolated:true});
+ const session=new Session(E,id,{players:[{name:'A'},{name:'B'}],seed:1,firstPlayerMode:'assigned',firstPlayer:0});session.act(0,{type:'finish'});
+ assert.deepEqual(session.current.result.values,[-1,0]);assert.deepEqual(session.current.result.details,[-2,0]);assert(E.validateState(session.current));
+ const restored=Session.restore(E,JSON.parse(session.serialize()));assert.deepEqual(restored.current.result,session.current.result);
+ const legacy={...E.get(id),id:'legacy-signed-details-fixture',isolated:false};E.register(legacy);const invalid={...session.current,game:legacy.id,players:session.current.players.map(player=>({...player,score:0})),result:{...session.current.result,values:[0,0]}};assert(E.validateState({...invalid,result:{...invalid.result,details:[0.5,0]}}),'legacy finite positive detail values remain valid');assert.throws(()=>E.validateState(invalid),Error,'legacy unsigned result guard remains');
+});
