@@ -48,3 +48,8 @@ test('semantic source and destination traits retain entity and zone membership g
  assert.throws(()=>SceneContract.geometry({...scene,interactions:[{command:{type:'move'},source:{zone:'missing'},target:{zone:'field'}}]},2));
  assert.throws(()=>SceneContract.geometry({...scene,interactions:[{command:{type:'move'},kind:'execute',target:{zone:'field'}}]},2),e=>e.code==='SCENE_INTERACTION_INVALID');
 });
+test('scene contracts bound trusted renderer allocations before a guest can request a huge grid',()=>{
+ const scene={contractVersion:1,id:'bounded',family:'board',players:[{player:0,metrics:[]},{player:1,metrics:[]}]};
+ assert.doesNotThrow(()=>SceneContract.validate({...scene,columns:64,rows:64},2));
+ for(const extra of [{columns:1e9,rows:1e9},{columns:-1},{rows:0.5},{geometry:{topology:'fixed',columns:65},zones:[],objects:[],interactions:[]},{cells:Array(4097).fill(null)},{arena:{size:64,board:[],players:[]}}])assert.throws(()=>SceneContract.validate({...scene,...extra},2),e=>e.code==='SCENE_LIMIT');
+});

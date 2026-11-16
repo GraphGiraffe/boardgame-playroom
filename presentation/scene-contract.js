@@ -76,6 +76,19 @@
     V.check(V.integer(playerCount,1,64)&&V.record(scene)&&scene.contractVersion===1&&
       V.identifier(scene.id)&&V.identifier(scene.family)&&Array.isArray(scene.players)&&
       scene.players.length===playerCount,'SCENE_INVALID');
+    // A VM can return small JSON containing enormous dimensions. Bound work
+    // before trusted renderers allocate a grid or create its DOM children.
+    const dimension=value=>V.integer(value,1,64);
+    V.check((scene.columns===undefined||dimension(scene.columns))&&
+      (scene.rows===undefined||Array.isArray(scene.rows)||dimension(scene.rows)),'SCENE_LIMIT');
+    for(const [key,max]of [['cells',4096],['objects',8192],['zones',256],['interactions',8192],['pieces',4096],['dice',32]])
+      V.check(scene[key]===undefined||Array.isArray(scene[key])&&scene[key].length<=max,'SCENE_LIMIT');
+    if(Array.isArray(scene.rows))V.check(scene.rows.length<=256&&scene.rows.every(row=>V.record(row)&&
+      (row.cells===undefined||Array.isArray(row.cells)&&row.cells.length<=64)),'SCENE_LIMIT');
+    if(scene.geometry)V.check((scene.geometry.columns===undefined||dimension(scene.geometry.columns))&&
+      (scene.geometry.rows===undefined||dimension(scene.geometry.rows)),'SCENE_LIMIT');
+    if(scene.arena)V.check(V.record(scene.arena)&&dimension(scene.arena.size)&&Array.isArray(scene.arena.board)&&
+      scene.arena.board.length===scene.arena.size*scene.arena.size&&Array.isArray(scene.arena.players)&&scene.arena.players.length<=playerCount,'SCENE_LIMIT');
     const players=new Set();
     for(const person of scene.players){
       V.check(V.record(person)&&V.integer(person.player,0,playerCount-1)&&
@@ -98,5 +111,14 @@
     }
     return scene;
   }
-  return Object.freeze({validate,metric,entity,sequence,event,geometry});
+  function commands(scene,projection){
+    V.check(V.record(projection)&&Array.isArray(projection.actions),'SCENE_COMMANDS_INVALID');
+    const allowed=new Set([...projection.actions,...(projection.inputs||[]).map(input=>input.command)].map(V.canonical));
+    const controls=[...(Array.isArray(scene.cells)?scene.cells:[]),...(Array.isArray(scene.rows)?scene.rows.flatMap(row=>row.cells||[]):[]),
+      ...(scene.interactions||[]),...(scene.controls||[]),scene.canvas,scene.chat,scene.vote,
+      ...(scene.chat?.messages||[]).map(message=>({command:message.confirmCommand}))].filter(Boolean);
+    for(const control of controls)V.check(control.command===undefined||control.command===null||allowed.has(V.canonical(control.command)),'SCENE_COMMAND_DENIED');
+    return scene;
+  }
+  return Object.freeze({validate,commands,metric,entity,sequence,event,geometry});
 });

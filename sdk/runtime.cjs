@@ -60,8 +60,7 @@ function validateScene(value,projection){
  inspect(s);
  // Only controls in the closed renderer vocabulary can dispatch. Other scene
  // data may describe hypothetical moves for previews and rule illustrations.
- const controls=[...(Array.isArray(s.cells)?s.cells:[]),...(Array.isArray(s.rows)?s.rows.flatMap(row=>row.cells||[]):[]),...(s.interactions||[]),...(s.controls||[]),s.canvas,s.chat,s.vote,...(s.chat?.messages||[]).map(message=>({command:message.confirmCommand}))].filter(Boolean);
- for(const control of controls)if(control.command!==undefined&&control.command!==null&&!allowed.has(identity(control.command)))fail('SDK_SCENE_COMMAND_DENIED',{game:projection.game});
+ try{Scenes.commands(s,projection);}catch{fail('SDK_SCENE_COMMAND_DENIED',{game:projection.game});}
  // No host ever interprets HTML, CSS, URLs or code from a scene. They remain
  // data; only the closed renderer vocabulary can create DOM or play assets.
  return value;
