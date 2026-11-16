@@ -7,7 +7,7 @@ const {LIMITS}=require('./project.cjs');
 const core=['model-values','events','random','bot-difficulty','model-runtime'];
 const deniedGlobals=['process','require','module','exports','fetch','XMLHttpRequest','WebSocket','WebTransport','EventSource','window','document','navigator','location','localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','importScripts','setTimeout','setInterval','Date','performance'];
 const safeResources=new Set([...deniedGlobals,'Math.random','field:required','asset:path']);
-const safeCodes=new Set(['SDK_ACCESS_DENIED','SDK_TIME_LIMIT','SDK_OUTPUT_LIMIT','SDK_METHOD_DENIED','SDK_SOURCE_COMPLEXITY','SDK_RESERVED_BINDING','SDK_OUTPUT_INVALID']);
+const safeCodes=new Set(['SDK_ACCESS_DENIED','SDK_TIME_LIMIT','SDK_OUTPUT_LIMIT','SDK_METHOD_DENIED','SDK_SOURCE_COMPLEXITY','SDK_RESERVED_BINDING','SDK_OUTPUT_INVALID','SDK_MODEL_ID_MISMATCH']);
 const frameFiles=new Map();
 function browserSource(source){
  const tree=parse(source,{ecmaVersion:'latest',sourceType:'script'}),pending=[tree],ranges=[];let count=0;
@@ -23,7 +23,7 @@ let vm,runtime,dispatch,deadline=0,violations=[];
 function evaluate(source,file,original=source){
  const lines=source.split('\n'),originalLines=original.split('\n');
  frameFiles.set(file,{lines:originalLines.length,columns:lines.every((line,index)=>line.length===originalLines[index]?.length),lengths:originalLines.map(line=>line.length+1)});
- const result=vm.evalCode(source,file);
+ const result=vm.evalCode(source,file,{type:'global',strict:true});
  if(result.error){const error=vm.dump(result.error);result.error.dispose();throw error;}
  return result.value;
 }
@@ -54,14 +54,16 @@ function diagnostic(error,phase,violation=null){
  // browser branches by removing just the UMD checks, not by exposing Node.
  // The core is read from this checkout only, never selected by the pack.
  for(const name of core){const source=fs.readFileSync(path.join(__dirname,'../core',name+'.js'),'utf8');for(const match of source.matchAll(/['"]([A-Z][A-Z0-9_]{1,79})['"]/g))safeCodes.add(match[1]);evaluate(browserSource(source),'sdk/core/'+name+'.js',source).dispose();}
- evaluate(`(()=>{function freeze(o,seen=new Set()){if(!o||!['object','function'].includes(typeof o)||seen.has(o))return;seen.add(o);for(const key of Object.keys(o))freeze(o[key],seen);Object.freeze(o);}for(const key of ['PlayroomModelValues','PlayroomEvents','PlayroomRandom','PlayroomBotDifficulty','PlayroomModelRuntime']){freeze(globalThis[key]);Object.defineProperty(globalThis,key,{writable:false,configurable:false});}})();`,'sdk/freeze.js').dispose();
+ // Include non-enumerable class prototypes. Packs must not change validation
+ // methods or the intrinsic operations used by the trusted model runtime.
+ evaluate(`(()=>{const seen=new Set();function freeze(o){if(!o||!['object','function'].includes(typeof o)||seen.has(o))return;seen.add(o);for(const key of Reflect.ownKeys(o)){const d=Object.getOwnPropertyDescriptor(o,key);freeze(d.value);freeze(d.get);freeze(d.set);}Object.freeze(o);}for(const key of ['PlayroomModelValues','PlayroomEvents','PlayroomRandom','PlayroomBotDifficulty','PlayroomModelRuntime','Object','Array','Function','JSON','Math','Reflect','Number','String','Boolean','Symbol','BigInt','RegExp','Map','Set','WeakMap','WeakSet','Promise','ArrayBuffer','DataView','Int8Array','Uint8Array','Uint8ClampedArray','Int16Array','Uint16Array','Int32Array','Uint32Array','Float32Array','Float64Array','BigInt64Array','BigUint64Array']){freeze(globalThis[key]);Object.defineProperty(globalThis,key,{writable:false,configurable:false});}for(const key of ['Error','TypeError','RangeError','SyntaxError','ReferenceError','EvalError','URIError']){Object.freeze(globalThis[key]);Object.defineProperty(globalThis,key,{writable:false,configurable:false});}})();`,'sdk/freeze.js').dispose();
  const p=workerData.project;
  // Pack UMD modules get the browser branch. Access to Node remains forbidden.
  const guestSource=browserSource;
  if(workerData.role==='rules'){
   evaluate(`globalThis.PlayroomPackResources={locales:{}};globalThis.PlayroomPackPresentation=Object.freeze({});globalThis.PlayroomMessages=Object.freeze({text:key=>key});globalThis.PlayroomPack=Object.freeze({...${JSON.stringify(p.manifest)},sdkFeatures:['local-input-v1','turn-order-v1','player-status-v1'],adaptModel:spec=>{globalThis.__definition=spec.definition;return spec;}});globalThis.TabletopCore=Object.freeze({...PlayroomRandom,register:()=>{},registerModel:spec=>{globalThis.__definition=spec.definition;}});`,'sdk/registration.js').dispose();
   for(const f of [...p.dependencies,...p.rules])evaluate(guestSource(f.source),f.file,f.source).dispose();
-  dispatch=evaluate(`(()=>{const model=new PlayroomModelRuntime.GameModel(globalThis.__definition||globalThis.PlayroomPackDefinition);const allowed=new Set(['start','validate','apply','project','projectTable','botAction','result','legalActions','availableActions']);return (method,args)=>{if(!allowed.has(method))throw Error('SDK_METHOD_DENIED');const result=model[method](...JSON.parse(args));return JSON.stringify(result===undefined?null:result);};})()`,'sdk/rules.js');
+  dispatch=evaluate(`(()=>{const model=new PlayroomModelRuntime.GameModel(globalThis.__definition||globalThis.PlayroomPackDefinition);if(model.id!==${JSON.stringify(p.manifest.id)})throw Error('SDK_MODEL_ID_MISMATCH');const allowed=new Set(['start','validate','apply','project','projectTable','botAction','result','legalActions','availableActions']);return (method,args)=>{if(!allowed.has(method))throw Error('SDK_METHOD_DENIED');const result=model[method](...JSON.parse(args));return JSON.stringify(result===undefined?null:result);};})()`,'sdk/rules.js');
  }else{
   // A separate VM has no rules modules, model instance, position or journal.
   for(const f of [...p.dependencies,...p.helpers,...p.presentation])evaluate(guestSource(f.source),f.file,f.source).dispose();

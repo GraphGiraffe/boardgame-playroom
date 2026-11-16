@@ -21,6 +21,17 @@ test('SDK verifier detects stateful projections that depend on viewer order',asy
  const project=fixture(t,{project:'(globalThis.cachedProjection ||= {viewer})'});
  await assert.rejects(verify(project,{steps:1,seeds:[1]}),error=>error.code==='SDK_NONDETERMINISTIC'&&error.diagnostic.hint.includes('viewer call order'));
 });
+test('SDK packs cannot disable canonical model validation',async t=>{
+ for(const [mutation,turn]of [['PlayroomModelRuntime.GameModel.prototype.validate=()=>true',99],['Number.isSafeInteger=()=>true',0.5]]){
+  const project=fixture(t),file=path.join(project,'domain/game.js');
+  fs.writeFileSync(file,`try{${mutation};}catch{};`+fs.readFileSync(file,'utf8').replace('turn:0,',`turn:${turn},`));
+  const session=await StudioSession.open(project);try{await assert.rejects(session.start());}finally{session.close();}
+ }
+});
+test('SDK rejects model identities that differ from the manifest',async t=>{
+ const project=fixture(t),file=path.join(project,'domain/game.js');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace("id:'probe'","id:'other'"));
+ await assert.rejects(async()=>{const session=await StudioSession.open(project);session.close();},error=>error.code==='SDK_MODEL_ID_MISMATCH');
+});
 test('SDK collection descriptors initialize every current game without loading its DOM renderer',async()=>{
  for(const directory of fs.readdirSync(path.join(packs,'packs'))){const project=path.join(packs,'packs',directory);if(!fs.existsSync(path.join(project,'sdk/project.json')))continue;const session=await StudioSession.open(project,{shared:path.join(packs,'shared')});try{await session.start();const value=await session.view(0);assert.equal(value.scene.contractVersion,1,directory);const actor=session.position.turn,actions=await session.rules.call('availableActions',session.position,actor);if(actions.length){await session.apply(actor,actions[0]);const live=await session.view(0);session.seek(0);assert.deepEqual(await session.view(0),value,directory+': history uses the same renderer and projected state');await assert.rejects(session.apply(actor,actions[0]),error=>error.code==='SDK_HISTORY_READ_ONLY');session.seek(null);assert.deepEqual(await session.view(0),live,directory+': returning from history preserves the live game');}}finally{session.close();}}
 });
