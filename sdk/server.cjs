@@ -41,10 +41,10 @@ async function serve(directory,{shared,port=0}={}){
    try{streamWrite(connection,await frame(connection.viewer,connection.client));}catch(error){streamWrite(connection,{error:diagnostic(error)});}
   }
  }
- async function flushPreviews(force=false){
+ async function flushPreviews(){
   const current=await base(session.position.turn,null),deadline=current.scene.clock?.deadline??Infinity;
   for(const [id,value]of [...preview]){
-   if(!force&&Date.now()<deadline&&Date.now()-value.received<1000)continue;
+   if(Date.now()<deadline){if(Date.now()-value.received>30000)preview.delete(id);continue;}
    preview.delete(id);
    try{await session.apply(value.actor,{...value.command,operation:value.operation});cache.clear();}catch{/* Invalidated/expired previews never become authority facts. */}
   }
@@ -100,7 +100,7 @@ async function serve(directory,{shared,port=0}={}){
      case 'check':extra.check=check(root,{shared});break;
      case 'assets':extra.assets=session.project.resourceAudit;break;
      case 'debug':extra.debug={warning:'Authoritative state: private local debugging only. Never share this export.',position:c.index===null?session.position:session.frames.get(c.index).position};break;
-     case 'checkpoint':await flushPreviews(true);cache.clear();extra.checkpoint=await session.checkpoint(c.index);break;
+     case 'checkpoint':extra.checkpoint=await session.checkpoint(c.index);break;
      case 'restore':await session.restore(request.checkpoint);for(const item of clients.values()){item.index=null;item.previous.clear();}cache.clear();preview.clear();mutated=true;break;
      case 'reload':{const replacement=await StudioSession.open(root,{shared});try{await replacement.start({now:Date.now()});}catch(error){replacement.close();throw error;}session.close();session=replacement;metadata=await session.metadata();modelInfo=await session.rules.call('modelInfo');definitionInfo=await session.rules.call('definitionInfo');for(const item of clients.values()){item.index=null;item.previous.clear();}cache.clear();preview.clear();changed=false;mutated=true;break;}
      default:fail('SDK_OPERATION_UNKNOWN');
