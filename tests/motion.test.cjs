@@ -36,15 +36,22 @@ test('Motion never rotates/resizes the table or introduces temporary visible scr
           const id = game.replace('-long-hand', ''), longHand = game.endsWith('-long-hand');
           const context = await browser.newContext({ viewport: { width, height }, reducedMotion: 'no-preference', hasTouch: width < 500 });
           try {
-            await context.addInitScript(saved => {
+            await context.addInitScript(() => {
               localStorage.clear();
-              localStorage.setItem('playroom.session.v1', JSON.stringify(saved));
+              // Current local save is installed explicitly after application readiness.
               localStorage.setItem('playroom.settings.v1', JSON.stringify({ motion: true, sound: false, tutorialsEnabled:false, autoPass:false }));
-            }, fixture(id, longHand));
+            });
             const page = await context.newPage(), errors = [];
             page.on('pageerror', error => errors.push(error.message));
             await page.goto(process.env.PLAYROOM_URL || server.url);
-            await resumeSaved(page);
+            await TestUI.ready(page);
+            await page.evaluate(async saved=>{
+              const restored=TabletopSession.restore(TabletopCore,saved);
+              await PlayroomAppBridge.saveLibrary.activateAsync(restored,'motion-fixture');
+              sessionStorage.setItem('playroom.navigation.v1',JSON.stringify({screen:'table',sessionId:'motion-fixture'}));
+            },fixture(id,longHand));
+            await page.reload();await resumeSaved(page);
+
             for (let move = 0; move < 2; move++) {
               const pass=page.locator('[data-command="pass-device"]');
               if(await pass.count()&&await pass.isEnabled())await pass.click();

@@ -577,3 +577,7 @@ resize and cleanup use the existing shared motion lifecycle.
 Packs using this slot declare `sdkFeatures: ["player-status-v1"]`; older hosts reject the update instead of silently losing status information. A Web renderer may supply `playerContent[i].statusHTML` as a string of already authorized public status markup, like `handHTML`. The shared player card owns its right-aligned `.player-status` slot, wrapping and named `player-status` inline-size container. Pack content can use container queries for compact variants. Pack CSS styles only its own markup; it never positions `.player-data` or other application components. Public-frame player cards use the same slot, so indicators follow the displayed state rather than the final authority state.
 
 `statusMinWidth` optionally declares the smallest useful width (integer 24–320px, default24). The shared card wraps the whole status slot before shrinking it below this width; its container lets the renderer switch between full and compact contents without moving the card.
+
+## Общая история и переходы
+
+`presentation/transition.js` определяет переход по авторизованным событиям для игры, истории и SDK. Локальные ходы и просмотр используют один feedback/EventPlan/PlanPlayer/Scheduler. Переход вперёд на соседний presentation checkpoint проигрывает обычные события; переход назад и произвольный jump восстанавливают checkpoint без специальных правил перемещения карт в колоду. Во время упорядоченного переноса сохраняется прежняя видимая верхняя карта стопки, последующие прилёты рисуются выше предыдущих.

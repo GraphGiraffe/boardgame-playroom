@@ -52,14 +52,20 @@
     return hands;
   }
   function capture({ actor = null, action = null, viewer = null, playedFrom = null, sceneModel = null, deferDepartures = false } = {}) {
-    const doc = root.document, scene = query('.scene'), entities = new Map(), departureSources = new Map();
+    const doc = root.document, scene = query('.scene'), entities = new Map(), departureSources = new Map(), stacks = new Map();
     const boardZones=new Set((sceneModel?.plan?[]:sceneModel?.zones)?.filter(zone=>zone.kind==='board').map(zone=>zone.id));
     const boardRefs=new Set(sceneModel?.objects?.filter(object=>boardZones.has(object.zone)).map(object=>entityKey(object.ref)));
     if (scene) for (const el of scene.querySelectorAll('[data-entity]')) {
       const rect = rectOf(el);
       if (!rect || root.getComputedStyle(el).visibility === 'hidden') continue;
       const hand = el.closest(handSelector), boundary = rectOf(hand || scene);
-      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, handRect: hand?rect:null, handOwner: hand ? (hand.matches('.mini-hand') ? Number(hand.closest('[data-player-index]')?.dataset.playerIndex) : viewer) : null, public: publicEntity(el), board: boardRefs.has(el.dataset.entity)&&publicEntity(el),...(scene.querySelector('[data-motion-layout=cards]')&&publicEntity(el)&&(action?.type==='replay-back'||['draw','replay'].includes(action?.type)&&el.dataset.motionZone==='waste')?{clone:styledClone(el)}:{}),...(boardRefs.has(el.dataset.entity)&&publicEntity(el)&&!deferDepartures?{departureClone:styledClone(el)}:{}) });
+      entities.set(el.dataset.entity, { rect: clampRect(rect, boundary),pose:poseOf(el), hand: !!hand, handRect: hand?rect:null, handOwner: hand ? (hand.matches('.mini-hand') ? Number(hand.closest('[data-player-index]')?.dataset.playerIndex) : viewer) : null, public: publicEntity(el), board: boardRefs.has(el.dataset.entity)&&publicEntity(el),...(scene.querySelector('[data-motion-layout=cards]')&&publicEntity(el)&&(action?.type==='draw'&&el.dataset.motionZone==='waste')?{clone:styledClone(el)}:{}),...(boardRefs.has(el.dataset.entity)&&publicEntity(el)&&!deferDepartures?{departureClone:styledClone(el)}:{}) });
+    }
+    // Preserve only the previously visible public top of each named home pile.
+    // The arrival must cover it; the final DOM contains only the new top.
+    if(scene)for(const el of scene.querySelectorAll('[data-entity][data-motion-home]')){
+      const home=el.dataset.motionHome,anchor=el.closest('[data-motion-anchor]');
+      if(anchor?.dataset.motionAnchor===home&&publicEntity(el)&&root.getComputedStyle(el).visibility!=='hidden')stacks.set(home,{entity:el.dataset.entity,face:styledClone(el)});
     }
     if(deferDepartures&&scene)for(const el of scene.querySelectorAll('[data-entity]')){
       if(entities.get(el.dataset.entity)?.board)departureSources.set(el.dataset.entity,el);
@@ -101,7 +107,7 @@
       handSources.clear();
     };
     const stockControl=scene?.querySelector('.stock-button,.solitaire-stock')||query('.scene-header-actions .solitaire-stock');
-    return { prepareDepartures, prepareTransfers, handSurfaces, packId:scene?.querySelector('[data-appearance-pack]')?.dataset.appearancePack, anchors, flips, handRects:new Map([...(scene?.querySelectorAll('[data-player-index]')||[])].filter(el=>el.querySelector('.mini-hand')).map(el=>[Number(el.dataset.playerIndex),[...el.querySelector('.mini-hand').children].map(rectOf)])), handCounts:new Map([...(scene?.querySelectorAll('[data-player-index][data-hand-count]')||[])].map(el=>[Number(el.dataset.playerIndex),Number(el.dataset.handCount)])), actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: scene?.querySelector('[data-motion-layout="cards"]')?(poseOf(stockControl)||poseOf(stockBack)):(poseOf(stockBack)||poseOf(stockControl)), get stockBack(){return frozenStockBack;}, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
+    return { stacks, prepareDepartures, prepareTransfers, handSurfaces, packId:scene?.querySelector('[data-appearance-pack]')?.dataset.appearancePack, anchors, flips, handRects:new Map([...(scene?.querySelectorAll('[data-player-index]')||[])].filter(el=>el.querySelector('.mini-hand')).map(el=>[Number(el.dataset.playerIndex),[...el.querySelector('.mini-hand').children].map(rectOf)])), handCounts:new Map([...(scene?.querySelectorAll('[data-player-index][data-hand-count]')||[])].map(el=>[Number(el.dataset.playerIndex),Number(el.dataset.handCount)])), actor, viewer, action: action ? { ...action } : null, playedFrom: release, entities, origin: handOrigin(hand), hands: handOrigins(scene, viewer), stock: scene?.querySelector('[data-motion-layout="cards"]')?(poseOf(stockControl)||poseOf(stockBack)):(poseOf(stockBack)||poseOf(stockControl)), get stockBack(){return frozenStockBack;}, table: handOrigin(scene?.querySelector('[data-motion-table]'), 66, 98) };
   }
   function stripInteraction(el,nodes=null) {
     for (const node of nodes||[el, ...el.querySelectorAll('*')]) {
@@ -325,31 +331,52 @@
     for(const el of queryAll('[data-motion-pending]'))el.removeAttribute('data-motion-pending');
     if (running) running.finish();
   }
+  function mountViewportLayer(layer){
+    root.document.body.append(layer);
+    // Stable root scrollbar gutters can offset even a fixed inset:0 layer.
+    // All captured poses are viewport coordinates, so use that same origin.
+    const box=layer.getBoundingClientRect();
+    Object.assign(layer.style,{left:-box.x+'px',top:-box.y+'px',right:'auto',bottom:'auto',width:root.innerWidth+'px',height:root.innerHeight+'px'});
+  }
+  function holdStackTops(snapshot,scene,layer,destinations){
+    for(const [home,previous]of snapshot.stacks||[]){
+      if(!destinations.has(home))continue;
+      const anchor=[...scene.querySelectorAll('[data-motion-anchor]')].find(el=>el.dataset.motionAnchor===home);
+      const top=anchor?.querySelector('[data-entity]');
+      if(!top||top.dataset.entity===previous.entity)continue;
+      const box=poseOf(top)||rectOf(anchor);if(!box)continue;
+      const holder=root.document.createElement('div'),face=previous.face.cloneNode(true);
+      holder.className='playroom-motion-stack';holder.dataset.motionAnchor=home;
+      Object.assign(holder.style,{position:'absolute',left:box.x+'px',top:box.y+'px',width:box.width+'px',height:box.height+'px',zIndex:'0'});
+      Object.assign(face.style,{position:'absolute',left:'0',top:'0',width:box.width+'px',height:box.height+'px',visibility:'visible',transform:'none',translate:'none',rotate:'none',scale:'none',margin:'0'});
+      holder.append(face);layer.append(holder);
+    }
+  }
   // Public ordered transfers use named scene anchors and canonical face templates.
   function playTransfers(snapshot,scene,steps,duration,context) {
     const later=(fn,ms)=>context?context.schedule(fn,ms):root.setTimeout(fn,ms),clear=token=>context?context.unschedule(token):root.clearTimeout(token);
     const doc=root.document,templates=[...scene.querySelectorAll('[data-motion-template]')],anchors=[...scene.querySelectorAll('[data-motion-anchor]')];
     const flights=steps.slice(0,104).map(step=>{
       if(!step||!step.entity||typeof step.entity!=='object'||typeof step.from!=='string'||typeof step.to!=='string')return null;
-      const face=templates.find(el=>el.dataset.motionTemplate===entityKey(step.entity))?.firstElementChild,to=rectOf(anchors.find(el=>el.dataset.motionAnchor===step.to));
+      const face=templates.find(el=>el.dataset.motionTemplate===entityKey(step.entity))?.firstElementChild,anchor=anchors.find(el=>el.dataset.motionAnchor===step.to),to=poseOf(anchor?.querySelector('[data-entity]'))||rectOf(anchor);
       const origin=snapshot.entities?.get(entityKey(step.entity))?.rect||snapshot.anchors?.get(step.from)||rectOf(anchors.find(el=>el.dataset.motionAnchor===step.from));
-      return face&&to&&origin?{face,to,from:{...origin,width:to.width,height:to.height}}:null;
+      return face&&to&&origin?{face,to,toAnchor:step.to,from:{...origin,width:to.width,height:to.height}}:null;
     }).filter(Boolean);
     if(!flights.length)return Promise.resolve();
     return new Promise(resolve=>{
-      const layer=doc.createElement('div'),animations=[],timers=[],hidden=[];layer.className='playroom-motion-layer';layer.setAttribute('aria-hidden','true');doc.body.append(layer);let ended=false,startFrame=0;
+      const layer=doc.createElement('div'),animations=[],timers=[],hidden=[];layer.className='playroom-motion-layer';layer.setAttribute('aria-hidden','true');mountViewportLayer(layer);let ended=false,startFrame=0;
       const run={finish(){if(ended)return;ended=true;root.cancelAnimationFrame(startFrame);timers.forEach(clear);animations.forEach(a=>a.cancel());for(const item of hidden){if(item.value)item.el.style.setProperty('visibility',item.value,item.priority);else item.el.style.removeProperty('visibility');}layer.remove();root.removeEventListener('resize',run.finish);if(running===run)running=null;resolve();}};
       running=run;context?.cleanup(run.finish);root.addEventListener('resize',run.finish);
       const destinations=new Set(steps.map(step=>step.to));
+      holdStackTops(snapshot,scene,layer,destinations);
       for(const anchor of anchors.filter(el=>destinations.has(el.dataset.motionAnchor)))for(const el of anchor.querySelectorAll('[data-entity]')){hidden.push({el,value:el.style.getPropertyValue('visibility'),priority:el.style.getPropertyPriority('visibility')});el.style.setProperty('visibility','hidden','important');}
       const pace=Math.max(Math.min(duration,160),policy.transferMinMs??80,Math.min(policy.transferMaxMs??240,duration*(policy.transferFactor??.4))),stride=pace+(policy.transferGapMs??30);
-      try{flights.forEach(({face,from,to},index)=>{
-        const mover=doc.createElement('div'),clone=styledClone(face);mover.className='playroom-motion-flight';mover.dataset.motionKind='transfer';mover.dataset.motionIndex=String(index);
-        Object.assign(mover.style,{width:to.width+'px',height:to.height+'px',zIndex:String(Math.round(from.y))});
+      try{flights.forEach(({face,from,to,toAnchor},index)=>{
+        const mover=doc.createElement('div'),clone=styledClone(face);mover.className='playroom-motion-flight';mover.dataset.motionKind='transfer';mover.dataset.motionIndex=String(index);mover.dataset.motionDestination=toAnchor;
+        Object.assign(mover.style,{width:to.width+'px',height:to.height+'px',zIndex:String(2000+index)});
         Object.assign(clone.style,{position:'absolute',left:'0',top:'0',visibility:'visible',width:to.width+'px',height:to.height+'px',transform:'none',margin:'0'});mover.append(clone);layer.append(mover);
         const at=p=>`translate3d(${p.x}px,${p.y}px,0)`;
         const animation=mover.animate([{transform:at(from)},{transform:at(to)}],{duration:pace,delay:index*stride,easing:'ease-out',fill:'both'});animations.push(animation);
-        timers.push(later(()=>{mover.style.zIndex=String(2000+index);},index*stride));
       });for(const animation of animations){animation.pause();animation.currentTime=0;context?.animation(animation);}startFrame=root.requestAnimationFrame(startTime=>{if(ended)return;for(const animation of animations){animation.play();animation.startTime=startTime;}timers.push(later(run.finish,(flights.length-1)*stride+pace+(policy.transferGapMs??30)));});}catch(_){run.finish();}
     });
   }
@@ -416,17 +443,17 @@
       for(const el of current.filter(publicEntity)){
         const before=entities.get(el.dataset.entity),to=poseOf(el);if(!to)continue;
         const anchor=el.closest('[data-motion-anchor]')?.dataset.motionAnchor;
-        const back=snapshot.action?.type==='replay-back',drawing=['draw','replay'].includes(snapshot.action?.type);
-        let from=before?.pose||before?.rect||(!back&&drawing&&(el.dataset.motionZone==='waste'||snapshot.action?.type==='draw')?snapshot.stock:null)||(back?snapshot.anchors?.get(el.dataset.motionHome):null)||snapshot.anchors?.get(anchor);
+        const drawing=snapshot.action?.type==='draw';
+        let from=before?.pose||before?.rect||(drawing&&(el.dataset.motionZone==='waste'||snapshot.action?.type==='draw')?snapshot.stock:null)||snapshot.anchors?.get(anchor);
         if(snapshot.playedFrom&&card!=null&&el.dataset.entity===instanceKey('card',card))from=snapshot.playedFrom;
         if(!from)continue;
         if(before&&Math.hypot(from.x-to.x,from.y-to.y)<1&&Math.abs(from.width-to.width)<1)continue;
-        const reveal=!before&&!back&&(el.dataset.motionZone==='waste'&&drawing||anchor?.startsWith('tableau-'));
+        const reveal=!before&&(el.dataset.motionZone==='waste'&&drawing||anchor?.startsWith('tableau-'));
         flights.push({el,from,to,kind:reveal?'reveal':'move',delay:reveal?reveals++*duration*(policy.revealStagger??.15):0,duration:Math.max(Math.min(duration,160),duration*(reveal?(policy.revealFactor??.7):(policy.moveFactor??.55)))});used.add(el);
       }
       // Keep the previously visible waste beneath the newly dealt fan. It is
       // absent from the final DOM, but must slide into the pile rather than blink out.
-      if(['draw','replay'].includes(snapshot.action?.type)&&current.some(el=>el.dataset.motionZone==='waste'&&!entities.has(el.dataset.entity))){
+      if(snapshot.action?.type==='draw'&&current.some(el=>el.dataset.motionZone==='waste'&&!entities.has(el.dataset.entity))){
         const waste=scene.querySelector('[data-motion-anchor="waste"]'),target=rectOf(waste),ids=new Set(current.map(el=>el.dataset.entity));
         const previous=[];
         if(target)for(const [id,before]of entities)if(before.clone&&!ids.has(id)){const to={...(before.pose||before.rect),x:target.x,y:target.y};previous.push({el:null,art:before.clone,from:before.pose||before.rect,to,kind:'shift',duration:duration*(policy.stockShiftFactor??.3)});}
@@ -435,7 +462,6 @@
         for(const flight of flights)if(flight.kind==='reveal')flight.delay=(flight.delay||0)+shifts;
         if(snapshot.stockBack&&snapshot.stock&&!scene.querySelector('.solitaire-stock .shared-card-back'))flights.unshift({el:null,art:snapshot.stockBack,from:snapshot.stock,to:snapshot.stock,kind:'hold',duration:shifts+duration});
       }
-      if(snapshot.action?.type==='replay-back'&&snapshot.stock){const ids=new Set(current.map(el=>el.dataset.entity));for(const [id,before]of entities){if(!ids.has(id)&&before.clone)flights.push({el:null,art:before.clone,from:before.rect,to:snapshot.stock,kind:'move',duration:duration*.7});}}
     }
 
     const publicNow = snapshot.routeOnly||snapshot.transferOnly?[]:current.filter(publicEntity);
@@ -511,7 +537,8 @@
       const animations = [], restore = [], timers = [], resizeUpdates=[], finishUpdates=[], layer = doc.createElement('div');
       let ended = false, timer = null, startFrame = 0;
       const show = entry => { if (!entry || entry.shown) return; entry.shown = true; entry.visibility ? entry.el.style.setProperty('visibility', entry.visibility, entry.priority) : entry.el.style.removeProperty('visibility'); };
-      if (layer) { layer.className = 'playroom-motion-layer'; layer.setAttribute('aria-hidden', 'true'); doc.body.append(layer); }
+      if (layer) { layer.className = 'playroom-motion-layer'; layer.setAttribute('aria-hidden', 'true'); mountViewportLayer(layer); }
+      holdStackTops(snapshot,scene,layer,new Set(flights.map(flight=>flight.el?.dataset.motionHome).filter(Boolean)));
       const run = { finish() {
         if (ended) return; ended = true; root.cancelAnimationFrame(startFrame);clear(timer);timers.forEach(clear);root.removeEventListener('resize',onResize);
         for (const animation of animations) animation.cancel();
