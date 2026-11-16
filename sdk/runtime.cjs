@@ -2,6 +2,7 @@
 const {Worker}=require('node:worker_threads');
 const path=require('node:path');
 const Events=require('../core/events.js');
+const {FrameHistory}=require('./frame-history.cjs');
 const {LIMITS,SDKError,fail,loadProject}=require('./project.cjs');
 function serialized(value){
  const seen=new Set();
@@ -18,7 +19,7 @@ class Guest{
  constructor(project,role){
   this.role=role;this.pending=new Map();this.sequence=0;this.dead=false;
   // Each worker has its own WASM module and interpreter memory.
-  const payload={manifest:project.manifest,dependencies:project.dependencies,rules:role==='rules'?project.rules:[],presentation:role==='presentation'?project.presentation:[],helpers:role==='presentation'?project.helpers:[]};
+  const payload={manifest:project.manifest,catalogs:project.catalogs||{},resourceClosure:project.resourceClosure||{},dependencies:project.dependencies,rules:role==='rules'?project.rules:[],presentation:role==='presentation'?project.presentation:[],helpers:role==='presentation'?project.helpers:[],support:role==='presentation'?project.support||[]:[]};
   this.worker=new Worker(path.join(__dirname,'worker.cjs'),{workerData:{role,project:payload},resourceLimits:{maxOldGenerationSizeMb:128,maxYoungGenerationSizeMb:16,stackSizeMb:4}});
   this.ready=new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>this.abort(new SDKError('SDK_WALL_LIMIT',{role,phase:'load'})),LIMITS.wallMs);
@@ -50,26 +51,26 @@ function validateScene(value,projection){
  if(!s||s.contractVersion!==1||typeof s.id!=='string'||typeof s.family!=='string'||!Array.isArray(s.players)||s.players.length!==projection.playerCount||!Array.isArray(value.actions)||!Array.isArray(value.events))fail('SDK_SCENE_INVALID');
  const ids=s.players.map(p=>p.player);if(new Set(ids).size!==ids.length||ids.some(id=>!Number.isInteger(id)||id<0||id>=projection.playerCount))fail('SDK_SCENE_PLAYER_INVALID');
  const identity=command=>JSON.stringify(command,(_,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
- const allowed=new Set(projection.actions.map(identity));
+ const allowed=new Set([...projection.actions,...(projection.inputs||[]).map(input=>input.command)].map(identity));
  for(const action of value.actions)if(!allowed.has(identity(action.command)))fail('SDK_SCENE_COMMAND_DENIED',{game:projection.game});
  let count=0;
  function inspect(object){if(++count>20000)fail('SDK_SCENE_LIMIT');if(!object||typeof object!=='object')return;for(const item of Object.values(object))inspect(item);}
  inspect(s);
  // Only controls in the closed renderer vocabulary can dispatch. Other scene
  // data may describe hypothetical moves for previews and rule illustrations.
- const controls=[...(Array.isArray(s.cells)?s.cells:[]),...(Array.isArray(s.rows)?s.rows.flatMap(row=>row.cells||[]):[]),...(s.interactions||[])];
+ const controls=[...(Array.isArray(s.cells)?s.cells:[]),...(Array.isArray(s.rows)?s.rows.flatMap(row=>row.cells||[]):[]),...(s.interactions||[]),...(s.controls||[]),s.canvas,s.chat,s.vote,...(s.chat?.messages||[]).map(message=>({command:message.confirmCommand}))].filter(Boolean);
  for(const control of controls)if(control.command!==undefined&&control.command!==null&&!allowed.has(identity(control.command)))fail('SDK_SCENE_COMMAND_DENIED',{game:projection.game});
  // No host ever interprets HTML, CSS, URLs or code from a scene. They remain
  // data; only the closed renderer vocabulary can create DOM or play assets.
  return value;
 }
 class StudioSession{
- constructor(project){this.project=project;this.rules=new Guest(project,'rules');this.presentation=new Guest(project,'presentation');this.renderGuests=new Set();this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.position=null;this.events=[];}
+ constructor(project){this.project=project;this.now=0;this.rules=new Guest(project,'rules');this.presentation=new Guest(project,'presentation');this.renderGuests=new Set();this.history=[];this.frames=new FrameHistory();this.historyIndex=null;this.position=null;this.events=[];}
  static async open(directory,options){const session=new StudioSession(loadProject(directory,options));try{await Promise.all([session.rules.ready,session.presentation.ready]);return session;}catch(error){session.close();throw error;}}
- async start(options={}){const defaults=this.project.descriptor.options||{};const result=await this.rules.call('start',{playerCount:2,firstPlayer:0,rng:1,preset:'classic',...defaults,...options});result.events=Events.append([],result.events,result.position.playerCount,result.position.revision);this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.appendFrame(result);this.position=result.position;this.events=result.events;this.initial=serialized({...defaults,...options});return this.position;}
- async view(viewer=-1){
+ async start(options={}){const defaults=this.project.descriptor.options||{};this.now=options.now??defaults.now??0;const result=await this.rules.call('start',{playerCount:2,firstPlayer:0,rng:1,preset:'classic',...defaults,...options});result.events=Events.append([],result.events,result.position.playerCount,result.position.revision);const frames=new FrameHistory();try{frames.push(serialized(result));}catch(error){frames.close();throw error;}this.frames.close();this.history=[];this.frames=frames;this.historyIndex=null;this.position=result.position;this.events=result.events;this.initial=serialized({...defaults,...options,now:this.now});return this.position;}
+ async view(viewer=-1,index=this.historyIndex){
   if(!this.position)fail('SDK_SESSION_REQUIRED');if(!Number.isInteger(viewer)||viewer< -1||viewer>=this.position.playerCount)fail('SDK_VIEWER_INVALID');
-  const projection=await this.rules.call('project',this.currentFrame().position,viewer,this.currentFrame().events);
+  const selected=index===null?{position:this.position,events:this.events}:this.frames.get(index);if(!selected)fail('SDK_HISTORY_INDEX');const projection=await this.rules.call('project',selected.position,viewer,selected.events);
   // Renderer module globals must never retain a prior viewer's private data.
   // The persistent presentation VM is metadata-only; each render gets a fresh
   // compartment, including when views are requested concurrently.
@@ -77,15 +78,16 @@ class StudioSession{
   try{const rendered=validateScene(await guest.call('render',projection),projection);return {projection,...rendered};}
   finally{this.renderGuests.delete(guest);guest.close();}
  }
- async apply(actor,command){if(this.historyIndex!==null)fail('SDK_HISTORY_READ_ONLY');if(!this.position)fail('SDK_SESSION_REQUIRED');const before=this.position;const result=await this.rules.call('apply',before,actor,command);result.events=Events.append(this.events,result.events,result.position.playerCount,result.position.revision);this.appendFrame(result);this.position=result.position;this.events=result.events;this.history.push({actor,command:JSON.parse(serialized(command))});return this.position;}
+ async apply(actor,command){if(this.historyIndex!==null)fail('SDK_HISTORY_READ_ONLY');if(!this.position)fail('SDK_SESSION_REQUIRED');const before=this.position;const result=await this.rules.call('apply',before,actor,command,{now:this.now});result.events=Events.append(this.events,result.events,result.position.playerCount,result.position.revision);this.appendFrame(result);this.position=result.position;this.events=result.events;this.history.push({actor,command:JSON.parse(serialized(command)),now:this.now});return this.position;}
+ async advance(now){if(this.historyIndex!==null)fail('SDK_HISTORY_READ_ONLY');if(!Number.isSafeInteger(now)||now<this.now)fail('CLOCK_INVALID');this.now=now;for(let i=0;i<16;i++){const result=await this.rules.call('advance',this.position,now);if(result.position.revision===this.position.revision)return this.position;result.events=Events.append(this.events,result.events,result.position.playerCount,result.position.revision);this.appendFrame(result);this.position=result.position;this.events=result.events;}return this.position;}
  async bot(actor=this.position?.turn){const command=await this.rules.call('botAction',this.position,actor,{enabled:false});if(command)await this.apply(actor,command);return command;}
- async checkpoint(){if(!this.position)fail('SDK_SESSION_REQUIRED');return {format:'playroom-sdk-checkpoint',contractVersion:1,packHash:this.project.hash,position:JSON.parse(serialized(this.currentFrame().position)),events:JSON.parse(serialized(this.currentFrame().events))};}
- async restore(checkpoint){if(checkpoint?.format!=='playroom-sdk-checkpoint'||checkpoint.contractVersion!==1||checkpoint.packHash!==this.project.hash)fail('SDK_CHECKPOINT_INCOMPATIBLE');await this.rules.call('validate',checkpoint.position);if(!Array.isArray(checkpoint.events)||checkpoint.events.some((event,index)=>event.id!==index+1||!Number.isSafeInteger(event.revision)||event.revision<0||event.revision>checkpoint.position.revision))fail('SDK_CHECKPOINT_EVENTS_INVALID');await this.rules.call('project',checkpoint.position,-1,checkpoint.events);this.position=JSON.parse(serialized(checkpoint.position));this.events=JSON.parse(serialized(checkpoint.events));this.history=[];this.frames=[];this.frameBytes=0;this.historyIndex=null;this.appendFrame({position:this.position,events:this.events});return this.position;}
- appendFrame(frame){const encoded=serialized(frame);if(this.frames.length>=1000||this.frameBytes+Buffer.byteLength(encoded)>32*1024*1024)fail('SDK_HISTORY_LIMIT');this.frames.push(JSON.parse(encoded));this.frameBytes+=Buffer.byteLength(encoded);}
- currentFrame(){return this.historyIndex===null?{position:this.position,events:this.events}:this.frames[this.historyIndex];}
+ async checkpoint(index=this.historyIndex){if(!this.position)fail('SDK_SESSION_REQUIRED');const frame=index===null?{position:this.position,events:this.events}:this.frames.get(index);if(!frame)fail('SDK_HISTORY_INDEX');return {format:'playroom-sdk-checkpoint',contractVersion:1,packHash:this.project.hash,clock:index===null?this.now:frame.position.clock??0,position:JSON.parse(serialized(frame.position)),events:JSON.parse(serialized(frame.events))};}
+ async restore(checkpoint){if(checkpoint?.format!=='playroom-sdk-checkpoint'||checkpoint.contractVersion!==1||checkpoint.packHash!==this.project.hash)fail('SDK_CHECKPOINT_INCOMPATIBLE');await this.rules.call('validate',checkpoint.position);if(!Array.isArray(checkpoint.events)||checkpoint.events.some((event,index)=>event.id!==index+1||!Number.isSafeInteger(event.revision)||event.revision<0||event.revision>checkpoint.position.revision))fail('SDK_CHECKPOINT_EVENTS_INVALID');await this.rules.call('project',checkpoint.position,-1,checkpoint.events);if(checkpoint.clock!==undefined&&(!Number.isSafeInteger(checkpoint.clock)||checkpoint.clock<(checkpoint.position.clock??0)))fail('CLOCK_INVALID');this.now=checkpoint.clock??checkpoint.position.clock??0;this.position=JSON.parse(serialized(checkpoint.position));this.events=JSON.parse(serialized(checkpoint.events));this.history=[];this.frames.close();this.frames=new FrameHistory();this.historyIndex=null;this.appendFrame({position:this.position,events:this.events});return this.position;}
+ appendFrame(frame){this.frames.push(serialized(frame));}
+ currentFrame(){return this.historyIndex===null?{position:this.position,events:this.events}:this.frames.get(this.historyIndex);}
  seek(index=null){if(index!==null&&(!Number.isInteger(index)||index<0||index>=this.frames.length))fail('SDK_HISTORY_INDEX');this.historyIndex=index;}
  historyInfo(){return {index:this.historyIndex??this.frames.length-1,count:this.frames.length,reviewing:this.historyIndex!==null};}
  async metadata(){return this.presentation.call('metadata');}
- close(){this.rules.close();this.presentation.close();for(const guest of this.renderGuests)guest.close();this.renderGuests.clear();}
+ close(){this.frames.close();this.rules.close();this.presentation.close();for(const guest of this.renderGuests)guest.close();this.renderGuests.clear();}
 }
 module.exports={Guest,StudioSession,serialized,validateScene};

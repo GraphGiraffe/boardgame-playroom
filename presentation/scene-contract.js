@@ -56,11 +56,19 @@
       if(object.cells!==undefined)V.check(Array.isArray(object.cells)&&object.cells.every(cell=>V.integer(cell,0,100000)),'SCENE_OBJECT_CELLS_INVALID');
       if(object.point!==undefined)V.check(Array.isArray(object.point)&&object.point.length===2&&object.point.every(Number.isFinite),'SCENE_OBJECT_POINT_INVALID');
     }
+    function target(value){
+      V.check(V.record(value),'SCENE_TARGET_INVALID');
+      if(value.entity!==undefined){V.check(Object.keys(value).length===1&&objects.has(entity(value.entity)),'SCENE_TARGET_INVALID');return;}
+      V.check(Object.keys(value).every(key=>['zone','cell','index'].includes(key))&&zones.has(value.zone)&&
+        !(value.cell!==undefined&&value.index!==undefined)&&
+        (value.cell===undefined||V.integer(value.cell,0,100000))&&
+        (value.index===undefined||V.integer(value.index,0,100000)),'SCENE_TARGET_INVALID');
+    }
     for(const interaction of scene.interactions){
       V.check(V.record(interaction)&&V.record(interaction.command)&&V.record(interaction.target),'SCENE_INTERACTION_INVALID');
-      const target=interaction.target;
-      V.check(Object.keys(target).length===1&&
-        (target.entity!==undefined?objects.has(entity(target.entity)):zones.has(target.zone)),'SCENE_TARGET_INVALID');
+      target(interaction.target);
+      if(interaction.source!==undefined)target(interaction.source);
+      V.check(interaction.kind===undefined||['move','select','activate'].includes(interaction.kind),'SCENE_INTERACTION_INVALID');
     }
     return scene;
   }

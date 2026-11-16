@@ -25,7 +25,7 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
     const views=new Map();for(let viewer=-1;viewer<a.position.playerCount;viewer++)views.set(viewer,await a.view(viewer));
     for(let viewer=a.position.playerCount-1;viewer>=-1;viewer--){const bv=await b.view(viewer);if(serialized(views.get(viewer))!==serialized(bv))fail('SDK_NONDETERMINISTIC',{seed,step:i,viewer,hint:'Projection or presentation depends on viewer call order or mutable state.'});}
     const checkpoint=await a.checkpoint();await b.restore(checkpoint);
-    if(a.position.status==='finished')break;
+    if(a.position.status==='finished'){await a.rules.call('result',a.position);await b.rules.call('result',b.position);break;}
     let actor=a.position.turn,actions=await a.rules.call('availableActions',a.position,actor);
     if(!actions.length){for(let player=0;player<a.position.playerCount;player++){const choices=await a.rules.call('availableActions',a.position,player);if(choices.length){actor=player;actions=choices;break;}}}
     if(!actions.length){scenarios.push({seed,stopped:'no-actions',step:i});break;}
@@ -40,8 +40,16 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
    if(fixture.contractVersion!==1||!Array.isArray(fixture.scenarios)||fixture.scenarios.length>100)fail('SDK_SCENARIOS_INVALID');
    for(const scenario of fixture.scenarios){
     if(typeof scenario.id!=='string'||!Array.isArray(scenario.steps)||scenario.steps.length>1000)fail('SDK_SCENARIOS_INVALID');await a.start(scenario.options||{});
-    for(const [index,step]of scenario.steps.entries()){await a.apply(step.actor,step.command);if(step.expect)expectations(a.position,step.expect,scenario.id,index);}
-    if(scenario.expect)expectations(a.position,scenario.expect,scenario.id,scenario.steps.length);authored++;
+    for(const [index,step]of scenario.steps.entries()){
+     const before=serialized(a.position);let rejected=null;
+     try{if(step.advance!==undefined)await a.advance(step.advance);else await a.apply(step.actor,step.command);}catch(error){rejected=error;}
+     if(step.reject){if(!rejected||typeof step.reject==='string'&&rejected.code!==step.reject||serialized(a.position)!==before)fail('SDK_SCENARIO_FAILED',{scenario:scenario.id,step:index,hint:'Expected a rejected command without a state change.'});}
+     else if(rejected)throw rejected;
+     if(step.expect)expectations(a.position,step.expect,scenario.id,index);
+     for(let viewer=-1;viewer<a.position.playerCount;viewer++)await a.view(viewer);
+     if(a.position.status==='finished')await a.rules.call('result',a.position);
+    }
+    if(scenario.expect)expectations(a.position,scenario.expect,scenario.id,scenario.steps.length);if(a.position.status==='finished')await a.rules.call('result',a.position);authored++;
    }
   }
   return {status:'passed',pack:a.project.manifest.id,hash:a.project.hash,transitions,authoredScenarios:authored,scenarios,scope:['contract','determinism','viewer-rendering','viewer-order-independence','checkpoint','legal-bot-actions',...(authored?['authored-rule-assertions']:[])],notCovered:['exhaustive-rule-correctness','privacy-equivalence-fixtures','physical-device','production-isolation']};

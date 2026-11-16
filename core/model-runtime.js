@@ -8,6 +8,7 @@
   'use strict';
   const {record,integer,identifier,ModelError,check,snapshot,canonical,command}=Values;
   const Difficulty=globalThis.PlayroomBotDifficulty||require('./bot-difficulty.js');
+  const Inputs=globalThis.PlayroomModelInputs||(typeof require==='function'?require('./model-inputs.js'):null);
   const event=Events.validate, projectEvents=Events.project;
   function validTimeline(value,revision,hasRounds){
     const sequence=(starts,count)=>Array.isArray(starts)&&starts.length===count&&starts[0]===(value.playStart??0)&&starts.every((n,i)=>integer(n,0,revision)&&(!i||n>starts[i-1]));
@@ -30,7 +31,7 @@
         (definition.observe === undefined || typeof definition.observe === 'function') &&
         (definition.score === undefined || typeof definition.score === 'function') &&
         (definition.rounds===undefined||typeof definition.rounds==='boolean')&&
-        ['storageState','checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext','turnOrder'].every(key=>
+        ['storageState','checkpoint','preparing','reactions','reactionControl','reactionWindows','botReaction','botReactionDelay','decisionWindow','botContext','turnOrder','inputs','advance'].every(key=>
           definition[key]===undefined||typeof definition[key]==='function'), 'MODEL_INVALID');
       this.#definition = Object.freeze({...definition});
       this.id = definition.id; this.minPlayers = definition.minPlayers; this.maxPlayers = definition.maxPlayers;
@@ -45,6 +46,7 @@
         position.winners.every(player => integer(player, 0, position.playerCount - 1)) &&
         (position.status === 'finished' || position.winners.length === 0) && record(position.data) &&
         (position.revision===undefined||integer(position.revision,0,Number.MAX_SAFE_INTEGER))&&
+        (position.clock===undefined||integer(position.clock,0,Number.MAX_SAFE_INTEGER))&&
         (position.timeline===undefined||validTimeline(position.timeline,position.revision??0,this.#definition.rounds===true)), 'POSITION_INVALID');
       const value = this.#position(position);
       check(this.#definition.validate(value) === true, 'POSITION_INVALID');
@@ -58,7 +60,7 @@
       const created=this.#definition.create(snapshot(options));
       check(record(created),'POSITION_INVALID');
       const initial=created.position?created:{position:created,events:[]};
-      const transition={...initial,position:{...initial.position,revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.preparing?{preparing:!!this.#definition.preparing(initial.position),playStart:0}:{}),...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
+      const transition={...initial,position:{...initial.position,...(this.#definition.advance?{clock:options.now??0}:{}),revision:initial.position.revision??0,timeline:{turn:1,starts:[0],...(this.#definition.preparing?{preparing:!!this.#definition.preparing(initial.position),playStart:0}:{}),...(this.#definition.rounds?{round:1,roundStarts:[0]}:{})}}};
       const owned=snapshot(transition);
       this.validate(owned.position);
       check(owned.position.playerCount===options.playerCount&&Array.isArray(owned.events),'POSITION_INVALID');
@@ -70,7 +72,7 @@
       this.validate(position);
       if(!this.#definition.score)return null;
       const values=this.#definition.score(this.#position(position));
-      check(Array.isArray(values)&&values.length===position.playerCount&&values.every(value=>integer(value,0,Number.MAX_SAFE_INTEGER)),'SCORE_INVALID');
+      check(Array.isArray(values)&&values.length===position.playerCount&&values.every(value=>integer(value,Number.MIN_SAFE_INTEGER,Number.MAX_SAFE_INTEGER)),'SCORE_INVALID');
       return snapshot(values);
     }
     #choices(position, actor, kind = 'actions') {
@@ -92,6 +94,11 @@
     }
     availableActions(position, actor) {
       return snapshot([...this.legalActions(position,actor),...this.reactions(position,actor)]);
+    }
+    inputChoices(position,actor){
+      this.validate(position);
+      if(!this.#definition.inputs||position.status!=='playing'||!integer(actor,0,position.playerCount-1))return Object.freeze([]);
+      check(!!Inputs,'INPUT_SCHEMA_UNAVAILABLE');return Inputs.choices(this.#definition.inputs(this.#position(position),actor));
     }
     reactionControl(position, actor, action) {
       if(!this.#definition.reactionControl)return null;
@@ -158,13 +165,26 @@
       const signature = command(this.intent(action));
       const found = [...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].find(choice =>
         (surface !== 'table' || choice.visibility === 'public') && command(this.intent(choice.command)) === signature);
-      check(found !== undefined, surface === 'table' ? 'TABLE_ACTION_UNAVAILABLE' : 'ACTION_UNAVAILABLE');
+      if(found===undefined){const choices=this.inputChoices(position,actor).filter(c=>surface!=='table'||c.visibility==='public');const input=Inputs?.resolve(choices,action);check(input!==null&&input!==undefined,surface==='table'?'TABLE_ACTION_UNAVAILABLE':'ACTION_UNAVAILABLE');return input;}
       return found.command;
     }
-    apply(position, actor, action) {
+    apply(position, actor, action, context={}) {
+      const now=context.now??position.clock??0;check(integer(now,position.clock??0,Number.MAX_SAFE_INTEGER),'CLOCK_INVALID');
       if(this.reactionControl(position,actor,action)?.ignore)return snapshot({position,events:[]});
       const legal = this.commandFor(position, actor, action);
-      let result;if(legal.type==='batch'){let current=position;for(const action of legal.actions){const step=this.commandFor(current,actor,action);result=this.#definition.reduce(this.#position(current),actor,step);current=Values.composeRecord({...result.position,revision:position.revision,timeline:position.timeline});}}else result=this.#definition.reduce(this.#position(position),actor,legal);
+      let result;if(legal.type==='batch'){let current=position;for(const action of legal.actions){const step=this.commandFor(current,actor,action);result=this.#definition.reduce(this.#position(current),actor,step,snapshot({now}));current=Values.composeRecord({...result.position,revision:position.revision,timeline:position.timeline});}}else result=this.#definition.reduce(this.#position(position),actor,legal,snapshot({now}));
+      if(this.#definition.advance&&result?.position)result={...result,position:{...result.position,clock:now}};
+      return this.#transition(position,result);
+    }
+    advance(position,now){
+      this.validate(position);check(integer(now,position.clock??0,Number.MAX_SAFE_INTEGER),'CLOCK_INVALID');
+      if(!this.#definition.advance||position.status!=='playing')return snapshot({position,events:[]});
+      const result=this.#definition.advance(this.#position(position),now);
+      if(result===null||result===undefined)return snapshot({position,events:[]});
+      check(record(result)&&record(result.position),'TRANSITION_INVALID');
+      return this.#transition(position,{...result,position:{...result.position,clock:now}});
+    }
+    #transition(position,result){
       check(record(result) && record(result.position) && Array.isArray(result.events) &&
         result.position.playerCount === position.playerCount, 'TRANSITION_INVALID');
       check(!result.roundEnded||this.#definition.rounds===true,'ROUND_NOT_DECLARED');
@@ -193,14 +213,14 @@
         decisionWindow:this.decisionWindow(position),winners:position.winners,timeline:position.timeline||{turn:1,starts:[0]}, data,
         events:projectEvents(events, viewer, position.playerCount)};
       if(factsOnly){check(typeof this.#definition.localChoices==='function','LOCAL_CHOICES_REQUIRED');return snapshot({...base,choicesVersion:1});}
-      return snapshot({...base,data:this.#definition.localData?this.#definition.localData(base):base.data,actions:this.availableActions(position,viewer)});
+      return snapshot({...base,data:this.#definition.localData?this.#definition.localData(base):base.data,actions:this.availableActions(position,viewer),...(this.#definition.inputs?{inputs:this.inputChoices(position,viewer)}:{})});
     }
     projectTable(position, actor, events = [], options={}) {
       const projected = this.project(position, -1, events,options);
       if (!integer(actor, 0, position.playerCount - 1)) actor = -1;
       if(options.factsOnly)return snapshot({...projected,actor});
       return snapshot({...projected, actor,
-        actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command)});
+        actions:[...this.#choices(position, actor),...this.#choices(position,actor,'reactions')].filter(choice => choice.visibility === 'public').map(choice => choice.command),...(this.#definition.inputs?{inputs:this.inputChoices(position,actor).filter(choice=>choice.visibility==='public')}:{})});
     }
     localProjection(projection) {
       check(record(projection)&&projection.choicesVersion===1&&projection.game===this.id&&integer(projection.viewer,-1,projection.playerCount-1)&&integer(projection.actor,-1,projection.playerCount-1)&&typeof this.#definition.localChoices==='function','LOCAL_CHOICES_INVALID');

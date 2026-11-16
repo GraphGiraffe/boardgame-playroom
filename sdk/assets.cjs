@@ -22,7 +22,7 @@ function wavDuration(buffer,file){
  const seconds=dataBytes/byteRate;if(seconds>BUDGET.audioSeconds)fail('SDK_AUDIO_DURATION_LIMIT',{file,seconds,maxSeconds:BUDGET.audioSeconds});return seconds;
 }
 function svg(buffer,file){
- const allowed=new Set('svg g defs symbol use path rect circle ellipse line polyline polygon text tspan title desc linearGradient radialGradient stop clipPath mask pattern filter feGaussianBlur feOffset feMerge feMergeNode feColorMatrix feComposite feBlend'.split(' '));
+ const allowed=new Set('svg g defs symbol use path rect circle ellipse line polyline polygon text tspan title desc linearGradient radialGradient stop clipPath mask pattern filter feGaussianBlur feOffset feMerge feMergeNode feColorMatrix feComposite feBlend feMorphology feFlood'.split(' '));
  const parser=new SaxesParser({xmlns:true});let root=false,nodes=0;
  parser.on('doctype',()=>fail('SDK_SVG_ACTIVE',{file}));
  parser.on('processinginstruction',()=>fail('SDK_SVG_ACTIVE',{file}));
@@ -63,7 +63,7 @@ function validateAsset(buffer,file){
  else if(ext==='.wav')durationSeconds=wavDuration(buffer,file);
  else if(ext==='.ogg'){if(buffer.toString('ascii',0,4)!=='OggS')fail('SDK_ASSET_SIGNATURE',{file});}
  else if(ext==='.mp3'){if(buffer.toString('ascii',0,3)!=='ID3'&&!(buffer[0]===255&&(buffer[1]&224)===224))fail('SDK_ASSET_SIGNATURE',{file});}
- else {let value;try{value=JSON.parse(buffer.toString('utf8'));}catch{fail('SDK_ASSET_JSON',{file});}if(value?.contractVersion!==1||!Array.isArray(value.frames)||!value.frames.length||value.frames.length>1000||value.frames.some((frame,index)=>!Number.isFinite(frame.time)||frame.time<0||frame.time>BUDGET.animationMs||index>0&&frame.time<value.frames[index-1].time||!frame.values||Object.entries(frame.values).some(([key,n])=>!['x','y','rotation','scale','opacity'].includes(key)||!Number.isFinite(n)||Math.abs(n)>10000||key==='opacity'&&(n<0||n>1)||key==='scale'&&(n<0||n>20))))fail('SDK_ANIMATION_INVALID',{file});}
+ else {let value;try{value=JSON.parse(buffer.toString('utf8'));}catch{fail('SDK_ASSET_JSON',{file});}if(value?.contractVersion!==1||!Array.isArray(value.frames)||!value.frames.length||value.frames.length>1000||value.frames.some((frame,index)=>!frame||typeof frame!=='object'||Array.isArray(frame)||!Number.isFinite(frame.time)||frame.time<0||frame.time>BUDGET.animationMs||index>0&&frame.time<value.frames[index-1].time||!frame.values||typeof frame.values!=='object'||Array.isArray(frame.values)||Object.entries(frame.values).some(([key,n])=>!['x','y','rotation','scale','opacity'].includes(key)||!Number.isFinite(n)||Math.abs(n)>10000||key==='opacity'&&(n<0||n>1)||key==='scale'&&(n<0||n>20))))fail('SDK_ANIMATION_INVALID',{file});}
  if(pixels!==null&&pixels>BUDGET.imagePixels)fail('SDK_IMAGE_LIMIT',{file});
  if(pixels!==null&&buffer.length>BUDGET.imageTargetBytes)warnings.push({code:'SDK_ASSET_TARGET_EXCEEDED',file,bytes:buffer.length,targetBytes:BUDGET.imageTargetBytes});
  if(MIME[ext].startsWith('audio/')&&durationSeconds===null)warnings.push({code:'SDK_AUDIO_DURATION_UNVERIFIED',file,hint:'Encoded size/signature checked; OGG/MP3 duration must be checked by browser metadata in the studio.'});
