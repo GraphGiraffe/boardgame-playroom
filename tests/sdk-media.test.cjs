@@ -16,7 +16,7 @@ test('normal pack preparation rejects malformed media before guest creation or r
 
 test('current source media closures and installed pack activation pass the same portable policy',async()=>{
  const fs=require('node:fs'),path=require('node:path'),packs=path.resolve(__dirname,'../../playroom-paks'),{loadProject}=require('../sdk/project.cjs');
- const folders=['packs','sdk/examples'].flatMap(folder=>fs.readdirSync(path.join(packs,folder)).map(id=>path.join(packs,folder,id)).filter(dir=>fs.existsSync(path.join(dir,'sdk/project.json'))));let assets=0;
+ const folders=['packs','sdk/examples'].filter(folder=>fs.existsSync(path.join(packs,folder))).flatMap(folder=>fs.readdirSync(path.join(packs,folder)).map(id=>path.join(packs,folder,id)).filter(dir=>fs.existsSync(path.join(dir,'sdk/project.json'))));let assets=0;
  for(const folder of folders){const p=loadProject(folder,{shared:path.join(packs,'shared')}),report=validateMedia(p.resourceAssets);assert.equal(report.bytes,p.resourceAudit.bytes,p.manifest.id);assert.equal(report.decodedImageBytes,p.resourceAudit.decodedImageBytes,p.manifest.id);assets+=report.files.length;}
  assert(folders.length&&assets>0);
  const env=await require('./sdk-installed.cjs').bootstrap();try{assert.equal(env.manager.list().length,env.bundles.length);assert(env.manager.list().every(p=>p.manifest.execution==='isolated-v1'));}finally{env.close();}
