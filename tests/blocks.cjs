@@ -2,6 +2,7 @@
 // One owner per scenario; profiles preserve the existing release gates.
 module.exports = {
   core: {label: "Ядро и контракты", cases: [
+    {"file":"sdk-pack-scenes-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-browser-runtime.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-resource-closure.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-budget.test.cjs","profiles":[],"subblock":"core/sdk"},
@@ -11,6 +12,7 @@ module.exports = {
     {"file":"sdk-player-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-player-clock.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-studio-history.test.cjs","profiles":[],"subblock":"core/sdk"},
+    {"file":"sdk-scene-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"sdk-studio-browser.test.cjs","profiles":[],"subblock":"core/sdk"},
     {"file":"bug-report-attachments.test.cjs","profiles":[],"subblock":"core/support-reports"},
     {"file":"update-all.test.cjs","profiles":[],"subblock":"core/updates"},
