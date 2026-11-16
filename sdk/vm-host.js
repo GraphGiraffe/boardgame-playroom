@@ -29,7 +29,7 @@ function createVMHost({QuickJS,coreSources,limits=DEFAULT_LIMITS}){
  }
 
  function createRealm(project,role){
-  if(!['rules','presentation'].includes(role))throw Object.assign(Error('SDK_METHOD_DENIED'),{code:'SDK_METHOD_DENIED'});
+  if(!['rules','presentation','bot'].includes(role))throw Object.assign(Error('SDK_METHOD_DENIED'),{code:'SDK_METHOD_DENIED'});
   let vm,runtime,dispatch,deadline=Date.now()+LIMITS.callMs,violations=[],closed=false;
   const frameFiles=new Map();
 const deniedGlobals=['process','require','module','exports','fetch','XMLHttpRequest','WebSocket','WebTransport','EventSource','window','document','navigator','location','localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','importScripts','setTimeout','setInterval','Date','performance'];
@@ -89,10 +89,10 @@ function diagnostic(error,phase,violation=null){
  const p=project;
  // Pack UMD modules get the browser branch. Access to Node remains forbidden.
  const guestSource=browserSource;
- if(role==='rules'){
+ if(role==='rules'||role==='bot'){
   evaluate(`globalThis.PlayroomPackResources={locales:{}};globalThis.PlayroomPackPresentation=Object.freeze({});globalThis.PlayroomMessages=Object.freeze({text:key=>key});globalThis.PlayroomPack=Object.freeze({...${JSON.stringify(p.manifest)},sdkFeatures:['local-input-v1','turn-order-v1','player-status-v1'],adaptModel:spec=>{globalThis.__definition=spec.definition;return spec;}});globalThis.TabletopCore=Object.freeze({...PlayroomRandom,register:()=>{},registerModel:spec=>{globalThis.__definition=spec.definition;}});`,'sdk/registration.js').dispose();
   for(const f of [...p.dependencies,...p.rules])evaluate(guestSource(f.source),f.file,f.source).dispose();
-  dispatch=evaluate(`(()=>{const definition=globalThis.__definition||globalThis.PlayroomPackDefinition;const model=new PlayroomModelRuntime.GameModel(definition);if(model.id!==${JSON.stringify(p.manifest.id)})throw Error('SDK_MODEL_ID_MISMATCH');const allowed=new Set(Object.getOwnPropertyNames(PlayroomModelRuntime.GameModel.prototype).filter(key=>key!=='constructor'&&typeof Object.getOwnPropertyDescriptor(PlayroomModelRuntime.GameModel.prototype,key).value==='function'));return (method,args)=>{const values=JSON.parse(args);if(method==='modelInfo')return JSON.stringify({properties:{id:model.id,minPlayers:model.minPlayers,maxPlayers:model.maxPlayers},methods:[...allowed]});if(method==='definitionInfo'){const properties=Object.create(null),methods=[];for(const key of Object.keys(definition)){if(typeof definition[key]==='function')methods.push(key);else properties[key]=definition[key];}return JSON.stringify({properties,methods});}if(method==='definitionCall'){const [name,...parameters]=values;if(!Object.hasOwn(definition,name)||typeof definition[name]!=='function')throw Error('SDK_METHOD_DENIED');const value=definition[name](...parameters);if(value!==undefined)PlayroomModelValues.json(value);return JSON.stringify(value===undefined?{defined:false}:{defined:true,value});}if(!allowed.has(method))throw Error('SDK_METHOD_DENIED');const result=model[method](...values);return JSON.stringify(result===undefined?null:result);};})()`,'sdk/rules.js');
+  dispatch=evaluate(`(()=>{const definition=globalThis.__definition||globalThis.PlayroomPackDefinition;const model=new PlayroomModelRuntime.GameModel(definition);if(model.id!==${JSON.stringify(p.manifest.id)})throw Error('SDK_MODEL_ID_MISMATCH');const allowed=new Set(Object.getOwnPropertyNames(PlayroomModelRuntime.GameModel.prototype).filter(key=>!['constructor','botInputs','botDecision'].includes(key)&&typeof Object.getOwnPropertyDescriptor(PlayroomModelRuntime.GameModel.prototype,key).value==='function'));return (method,args)=>{const values=JSON.parse(args);const botHooks=new Set(['bot','botMistakes','botReaction','botReactionDelay']);if(${JSON.stringify(role)}==='bot'){if(method==='botDecision')return JSON.stringify(model.botDecision(...values));throw Error('SDK_METHOD_DENIED');}if(method==='botInputs')return JSON.stringify(model.botInputs(...values));if(method==='modelInfo')return JSON.stringify({properties:{id:model.id,minPlayers:model.minPlayers,maxPlayers:model.maxPlayers},methods:[...allowed]});if(method==='definitionInfo'){const properties=Object.create(null),methods=[];for(const key of Object.keys(definition)){if(typeof definition[key]==='function')methods.push(key);else properties[key]=definition[key];}return JSON.stringify({properties,methods});}if(method==='definitionCall'){const [name,...parameters]=values;if(botHooks.has(name))throw Error('SDK_METHOD_DENIED');if(!Object.hasOwn(definition,name)||typeof definition[name]!=='function')throw Error('SDK_METHOD_DENIED');const value=definition[name](...parameters);if(value!==undefined)PlayroomModelValues.json(value);return JSON.stringify(value===undefined?{defined:false}:{defined:true,value});}if(!allowed.has(method))throw Error('SDK_METHOD_DENIED');const result=model[method](...values);return JSON.stringify(result===undefined?null:result);};})()`,'sdk/rules.js');
  }else{
   // A separate VM has no rules modules, model instance, position or journal.
   evaluate(`globalThis.PlayroomPackResources={locales:${JSON.stringify(p.catalogs||{})},rulebooks:${JSON.stringify(p.resourceClosure?.rulebooks||{})}};globalThis.PlayroomPack=Object.freeze({...${JSON.stringify(p.manifest)},asset:SDK.resource});globalThis.PlayroomCatalog=Object.create(null);`,'sdk/presentation-registration.js').dispose();
@@ -101,7 +101,20 @@ function diagnostic(error,phase,violation=null){
  }
 
    if(violations.length)throw {code:'SDK_ACCESS_DENIED',...violations[0]};
-   return {call,close};
+   // The authority realm extracts approved bot inputs. The fresh realm never
+   // receives a position or observes state retained by create/reduce/query hooks.
+   function isolatedCall(method,args){
+    const botKinds={botAction:'action',botReaction:'reaction',botReactionDelay:'delay'};
+    let freshMethod=null,freshArgs;
+    if(Object.hasOwn(botKinds,method)){
+     const [position,actor,settings]=JSON.parse(args);
+     freshArgs=call('botInputs',encode([position,actor,settings??null,botKinds[method]]));
+     if(freshArgs==='null')return 'null';freshMethod='botDecision';freshArgs='['+freshArgs+']';
+    }
+    if(freshMethod){const fresh=createRealm(project,'bot');try{return fresh.call(freshMethod,freshArgs);}finally{fresh.close();}}
+    return call(method,args);
+   }
+   return {call:role==='rules'?isolatedCall:call,close};
   }catch(error){const wrapped=failure(error,'load');close();throw wrapped;}
  }
  function createRules(project){

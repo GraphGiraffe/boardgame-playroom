@@ -229,30 +229,49 @@
       return Values.composeRecord({...value,actions:this.localCommands(value)});
     }
     localReaction(projection, action) {return this.#definition.localReaction?.(snapshot(projection),snapshot(action))??null;}
-    botAction(position, actor, settings) {
-      const projection=this.project(position,actor),actions=this.#choices(position,actor).map(choice=>choice.command);
+    // Authority-only extraction. None of the raw position reaches a bot realm.
+    botKnowledge(position,actor,kind='action') {
+      check(['action','reaction','delay'].includes(kind),'BOT_INPUT_INVALID');
+      this.validate(position);
+      if(!integer(actor,0,position.playerCount-1))return null;
+      return snapshot({projection:this.project(position,actor),actor,
+        actions:kind==='action'?this.#choices(position,actor).map(choice=>choice.command):this.reactions(position,actor),
+        memory:this.#definition.observe?.(this.#position(position),actor)||{},
+        context:this.#definition.botContext?.(this.#position(position),actor)||{}});
+    }
+    botInputs(position,actor,settings,kind='action') {
+      const knowledge=this.botKnowledge(position,actor,kind);
+      if(!knowledge)return null;
+      return snapshot({...knowledge,kind,settings:settings??null,
+        decisionRandom:{seed:position.rng??0,key:this.id+':'+(position.revision||0)+':'+actor}});
+    }
+    // The portable sandbox invokes only this method in a fresh same-source realm.
+    // Mechanics stay in trusted locals; authored hooks receive their documented args.
+    botDecision(inputs) {
+      if(inputs===null)return null;
+      check(record(inputs)&&['action','reaction','delay'].includes(inputs.kind)&&Array.isArray(inputs.actions)&&record(inputs.projection)&&record(inputs.memory)&&record(inputs.context)&&record(inputs.decisionRandom),'BOT_INPUT_INVALID');
+      const {kind,projection,actor,actions,memory,settings}=snapshot(inputs);
+      if(kind==='delay'){
+        const delay=this.#definition.botReactionDelay?.(projection,actor,settings,memory)??null;
+        check(delay===null||integer(delay,0,60000),'BOT_REACTION_DELAY_INVALID');return delay;
+      }
       if(!actions.length)return null;
-      const memory=snapshot(this.#definition.observe?.(this.#position(position),actor)||{});
-      const context={...snapshot(this.#definition.botContext?.(this.#position(position),actor)||{}),...Difficulty.context(settings,position.rng,this.id+':'+(position.revision||0)+':'+actor)};
+      if(kind==='reaction'){
+        if(!this.#definition.botReaction)return null;
+        const chosen=this.#definition.botReaction(projection,actor,actions,memory,settings);
+        if(chosen==null)return null;
+        const found=actions.find(value=>command(value)===command(chosen));
+        check(found!==undefined,'BOT_REACTION_INVALID');return found;
+      }
+      const context={...inputs.context,...Difficulty.context(settings,inputs.decisionRandom.seed,inputs.decisionRandom.key)};
       const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??actions[Math.floor(context.random()*actions.length)];
       const preferred=actions.find(value=>command(this.intent(value))===command(this.intent(selected)));check(preferred!==undefined,'BOT_ACTION_INVALID');
       const chosen=this.#definition.botHandlesDifficulty||settings?.enabled===false?preferred:Difficulty.choose(preferred,this.#definition.botMistakes?.(projection,actor,actions)||actions,context);
       const found=actions.find(value=>command(this.intent(value))===command(this.intent(chosen)));check(found!==undefined,'BOT_ACTION_INVALID');return this.intent(found);
     }
-    botReaction(position,actor,settings) {
-      const actions=this.reactions(position,actor);
-      if(!actions.length||!this.#definition.botReaction)return null;
-      const memory=snapshot(this.#definition.observe?.(this.#position(position),actor)||{});
-      const chosen=this.#definition.botReaction(this.project(position,actor),actor,actions,memory,settings);
-      if(chosen==null)return null;
-      const found=actions.find(value=>command(value)===command(chosen));
-      check(found!==undefined,'BOT_REACTION_INVALID');
-      return found;
-    }
-    botReactionDelay(position,actor,settings) {
-      const delay=this.#definition.botReactionDelay?.(this.project(position,actor),actor,settings,snapshot(this.#definition.observe?.(this.#position(position),actor)||{}))??null;
-      check(delay===null||integer(delay,0,60000),'BOT_REACTION_DELAY_INVALID');return delay;
-    }
+    botAction(position,actor,settings) {return this.botDecision(this.botInputs(position,actor,settings,'action'));}
+    botReaction(position,actor,settings) {return this.botDecision(this.botInputs(position,actor,settings,'reaction'));}
+    botReactionDelay(position,actor,settings) {return this.botDecision(this.botInputs(position,actor,settings,'delay'));}
     result(position) {
       this.validate(position);
       if (position.status !== 'finished') return null;

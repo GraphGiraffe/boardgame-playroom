@@ -53,3 +53,28 @@ test('browser sandbox rejects non JSON bridge arguments instead of dropping host
  const codes=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{const loop={};loop.self=loop;return [()=>guest.definition.create({callback:()=>1}),()=>guest.model.start({playerCount:2,firstPlayer:0,rng:1,callback:()=>1}),()=>guest.model.start(loop),()=>guest.model.start({value:1n})].map(run=>{try{run();return null;}catch(error){return error.code;}});}finally{guest.close();}},payload(fixture(t)));
  assert.deepEqual(codes,['SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID','SDK_JSON_INVALID']);
 });
+
+test('browser sandbox isolates bot hooks from authority caches and rejects direct hook bypass',async t=>{
+ const page=await pageFor(t),root=fixture(t,{start:"privateCache='authority-only';globalThis.privateCache='authority-only'"}),file=path.join(root,'domain/game.js');
+ fs.writeFileSync(file,'let privateCache;\n'+fs.readFileSync(file,'utf8')+`
+ const D=PlayroomPackDefinition;
+ D.actions=()=>[0,1].map(choice=>({command:{type:'step',choice},visibility:'public'}));
+ D.reactions=()=>[0,1].map(choice=>({command:{type:'react',choice},visibility:'public'}));
+ D.observe=()=>({known:true});D.botContext=()=>({allowed:true});
+ D.reduce=p=>{privateCache=p.data.secret;globalThis.privateCache=p.data.secret;return {position:p,events:[]};};
+ const leak=()=>!!privateCache||Object.hasOwn(globalThis,'privateCache');
+ D.bot=(p,a,choices,m,c)=>choices[leak()||!m.known||!c.allowed||Object.hasOwn(c,'decisionRandom')||Object.hasOwn(c,'seed')?1:0];
+ D.botReaction=(p,a,choices,m)=>choices[leak()||!m.known?1:0];
+ D.botReactionDelay=()=>leak()?100:0;
+ `);
+ const result=await page.evaluate(project=>{const guest=PlayroomSandbox.createRules(project);try{
+  let position=guest.model.create({playerCount:2,firstPlayer:0,rng:7});const results=[];
+  for(let i=0;i<2;i++){
+   results.push([guest.model.botAction(position,0,{enabled:false}).choice,guest.model.botReaction(position,0,{}).choice,guest.model.botReactionDelay(position,0,{})]);
+   position=guest.model.apply(position,0,{type:'step',choice:0}).position;
+  }
+  let bypass;try{guest.definition.bot({},0,[],{},{});}catch(error){bypass=error.code;}
+  return {results,bypass};
+ }finally{guest.close();}},payload(root));
+ assert.deepEqual(result,{results:[[0,0,0],[0,0,0]],bypass:'SDK_METHOD_DENIED'});
+});

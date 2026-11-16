@@ -60,8 +60,8 @@ async function privacy(directory,{shared,left,right,viewer}={}){
  if(serialized(left)===serialized(right))fail('SDK_PRIVACY_IDENTICAL_FIXTURE');
  const a=await StudioSession.open(directory,{shared});let b;
  try{b=await StudioSession.open(directory,{shared});for(const [session,position]of [[a,left],[b,right]]){await session.rules.call('validate',position);session.position=position;session.events=[];}
-  const first=await a.view(viewer),second=await b.view(viewer);
-  if(serialized(first)!==serialized(second))fail('SDK_PRIVACY_DIFFERENCE',{viewer,hint:'The paired fixture must differ only in data hidden from this viewer. Compare locally; values are not exported.'});
+  const first=await a.view(viewer),second=await b.view(viewer),firstScore=await a.rules.call('score',left),secondScore=await b.rules.call('score',right),firstKnowledge=await a.rules.call('botKnowledge',left,viewer),secondKnowledge=await b.rules.call('botKnowledge',right,viewer);
+  if(serialized(first)!==serialized(second)||serialized(firstScore)!==serialized(secondScore)||serialized(firstKnowledge)!==serialized(secondKnowledge))fail('SDK_PRIVACY_DIFFERENCE',{viewer,hint:'The paired fixture must differ only in data hidden from this viewer. Compare locally; values are not exported.'});
   return {status:'passed',viewer,scope:'authored-equivalent-states'};
  }finally{a.close();b?.close();}
 }
