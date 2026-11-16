@@ -11,16 +11,16 @@
   if(record.recovery&&(record.recovery.version!==1||record.recovery.room?.id!==record.roomId||record.recovery.room.ownerId!==record.room.ownerId))throw Error('CHECKPOINT_INVALID');
   const accepted=new Set(),keys=new Set(),receipts=stored.receipts||[];
   for(const row of receipts){const key=row.viewer+':'+row.commandId,r=row.receipt;
-   if(row.sessionId!==sessionId||!Number.isInteger(row.viewer)||row.viewer<0||row.viewer>=record.initial.states[0].players.length||typeof row.commandId!=='string'||!row.commandId||!/^sha256:[0-9a-f]{64}$/.test(row.signature)||r?.commandId!==row.commandId||typeof r.ok!=='boolean'||keys.has(key)||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision)throw Error('CHECKPOINT_RECEIPT_INVALID');
+   if(row.sessionId!==sessionId||!Number.isInteger(row.viewer)||(row.viewer<0&&!(row.viewer===-1&&r?.hostClock===true&&record.clockEntriesVersion===1))||row.viewer>=record.initial.states[0].players.length||typeof row.commandId!=='string'||!row.commandId||!/^sha256:[0-9a-f]{64}$/.test(row.signature)||r?.commandId!==row.commandId||typeof r.ok!=='boolean'||keys.has(key)||!Number.isSafeInteger(r.revision)||r.revision<0||r.revision>record.revision)throw Error('CHECKPOINT_RECEIPT_INVALID');
    keys.add(key);if(r.ok){if(r.revision<1||accepted.has(r.revision)||steps[r.revision-1].a[0]!==row.viewer)throw Error('CHECKPOINT_RECEIPT_INVALID');accepted.add(r.revision);}}
   if(accepted.size!==record.revision)throw Error('CHECKPOINT_RECEIPT_MISSING');
   const controls=record.controlReceipts||[],controlRevision=record.controlRevision||0;let previousControl=0;
   if(!Array.isArray(controls)||controls.length>20000||!Number.isSafeInteger(controlRevision)||controlRevision<0)throw Error('CHECKPOINT_CONTROL_INVALID');
   for(const row of controls){const r=row.receipt,key=row.viewer+':'+row.commandId;if(!Number.isInteger(row.viewer)||(row.viewer<0&&!(row.viewer===-1&&r?.host===true))||typeof row.signature!=='string'||!r?.ok||!r.control||r.commandId!==row.commandId||!Number.isSafeInteger(r.controlRevision)||r.controlRevision<previousControl||r.controlRevision>previousControl+1||r.revision>record.revision||keys.has(key))throw Error('CHECKPOINT_CONTROL_INVALID');keys.add(key);previousControl=r.controlRevision;}
   if(previousControl!==controlRevision)throw Error('CHECKPOINT_CONTROL_INVALID');
-  const actions=steps.map(({a})=>({actor:a[0],command:a[1],...(a[2]?{players:a[2]}:{})}));
+  const actions=steps.map(({a})=>({actor:a[0],command:a[1],...(a[2]?{players:a[2]}:{}),...(a[3]!==undefined?{now:a[3]}:{})}));
   const playerControl=Controls.validate(record,record.initial.states[0].players,record.revision);
-  return {...playerControl,session:Session.restoreCheckpoint(engine,{initial:record.initial,checkpoint:record.checkpoint,actions,updatedAt:Math.max(record.updatedAt,record.initial.updatedAt)}),sessionId,revision:record.revision,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,packDigest:record.packDigest||null,hostDeviceId:record.hostDeviceId||null,paused:!!record.paused,controlRevision,receipts:clone([...receipts,...controls])};
+  return {...playerControl,session:Session.restoreCheckpoint(engine,{initial:record.initial,checkpoint:record.checkpoint,actions,updatedAt:Math.max(record.updatedAt,record.initial.updatedAt)}),sessionId,revision:record.revision,room:clone(record.room),recovery:record.recovery?clone(record.recovery):null,packDigest:record.packDigest||null,hostDeviceId:record.hostDeviceId||null,paused:!!record.paused,clockTime:record.clockTime??record.checkpoint.state.clock??0,clockUpdatedAt:record.clockUpdatedAt??record.updatedAt,controlRevision,receipts:clone([...receipts,...controls])};
  }
  return Object.freeze({restore});
 });

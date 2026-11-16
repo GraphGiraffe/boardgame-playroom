@@ -65,7 +65,8 @@ function bundle(marker){
 function manager(saved){
   let raw=saved?JSON.stringify(saved):null;
   const catalog={};
-  const instance=new Packs({engine:engine(),views:views(),catalog,document:null,storage:{get:()=>raw,set:value=>{raw=value;}}});
+  // Explicit operator trust is confined to these legacy compatibility fixtures.
+  const instance=new Packs({allowTrustedLegacy:true,engine:engine(),views:views(),catalog,document:null,storage:{get:()=>raw,set:value=>{raw=value;}}});
   return {instance,raw:()=>raw};
 }
 

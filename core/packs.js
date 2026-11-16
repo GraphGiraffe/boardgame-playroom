@@ -12,6 +12,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   const ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
   const prepared = new WeakMap();
+  const releasePrepared=typeof FinalizationRegistry==='function'?new FinalizationRegistry(guest=>{try{guest.close();}catch{}}):null;
   const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
   const clone=value=>JSON.parse(JSON.stringify(value));
   const bytes=value=>new TextEncoder().encode(value).byteLength;
@@ -35,7 +36,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }return 0;
   }
   function pathOK(path){return typeof path==='string'&&path.length<=180&&!path.startsWith('/')&&!path.includes('\\')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..'&&/^[\w. -]+$/.test(part));}
-  const SDK_FEATURES=Object.freeze(['local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1','standard-parameter-ui-v1','arrival-departures-v1','concurrent-reactions-v1','player-status-v1']);
+  const SDK_FEATURES=Object.freeze(['isolated-execution-v1','local-input-v1','turn-order-v1','parameter-previews-v2','parameter-illustrations-v1','standard-parameter-ui-v1','arrival-departures-v1','concurrent-reactions-v1','player-status-v1']);
   function validateParameterPreviews(m){
     const invalid=()=>{throw Object.assign(Error(globalThis.PlayroomMessages.text('ui.packs.aa1f11edec45')),{code:'PACK_PARAMETER_PREVIEW_INVALID'});};
     const settings=m.settings===undefined?[]:m.settings,preset=m.presetSetting===undefined?{}:m.presetSetting,quantities=['cards','dice','health','lives'];
@@ -95,6 +96,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     let bundle;try{bundle=JSON.parse(text);}catch(_){throw Error(globalThis.PlayroomMessages.text("ui.packs.86bb3a858015"));}
     if(!record(bundle)||bundle.format!==FORMAT||bundle.formatVersion!==1||!record(bundle.manifest)||!record(bundle.files))throw Error(globalThis.PlayroomMessages.text("ui.packs.aa1f11edec45"));
     const m=bundle.manifest;
+    if(m.execution!==undefined&&m.execution!=='isolated-v1')throw Error('PACK_EXECUTION_UNSUPPORTED');
+    if(m.execution==='isolated-v1'&&!m.sdkFeatures?.includes('isolated-execution-v1'))throw Object.assign(Error('Обновите пак до текущего изолированного SDK.'),{code:'PACK_SDK_UNSUPPORTED'});
     validateParameterPreviews(m);
     if(m.tags!==undefined||m.playModes!==undefined){if(!Tags)throw Error(globalThis.PlayroomMessages.text("ui.packs.ab9cbd0aeab5"));Tags.validate(m);}
     if(typeof m.id!=='string'||!ID.test(m.id)||typeof m.version!=='string'||!SEMVER.test(m.version))throw Error(globalThis.PlayroomMessages.text("ui.packs.483f600985f1"));
@@ -136,16 +139,40 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     });
   }
   class Packs {
-    constructor({engine=root.TabletopCore,views=root.PlayroomViews,catalog=root.PlayroomCatalog,storage,document=root.document,modelAdapter=root.PlayroomModelRegistration?.adapt||(typeof require==='function'?require('./model-registration.js').adapt:null)}={}){
+    constructor({engine=root.TabletopCore,views=root.PlayroomViews,catalog=root.PlayroomCatalog,storage,document=root.document,allowTrustedLegacy=false,modelAdapter=root.PlayroomModelRegistration?.adapt||(typeof require==='function'?require('./model-registration.js').adapt:null)}={}){
       if(!engine?.registerVersion||!engine?.activatePack||!views?.register||!views?.get||!views?.remove||!record(catalog))throw Error(globalThis.PlayroomMessages.text("ui.packs.acf00eb6a722"));
-      this.engine=engine;this.views=views;this.catalog=catalog;this.document=document;this.modelAdapter=modelAdapter;this.storage=storage||{get:()=>root.localStorage?.getItem(STORAGE),set:value=>root.localStorage?.setItem(STORAGE,value)};
+      this.allowTrustedLegacy=allowTrustedLegacy===true;this._trustedLegacy=new Set();this.engine=engine;this.views=views;this.catalog=catalog;this.document=document;this.modelAdapter=modelAdapter;this.storage=storage||{get:()=>root.localStorage?.getItem(STORAGE),set:value=>root.localStorage?.setItem(STORAGE,value)};
       this._items=new Map();this._active=new Map();this._bundled=new Set();this._removed=new Set();this._styles=new Map();this.warnings=[];
       if(this.storage.commit){let queue=Promise.resolve();for(const name of ['bootstrap','install','remove','discardQuarantine']){const operation=this[name].bind(this);this[name]=(...args)=>{const result=queue.then(()=>operation(...args));queue=result.catch(()=>{});return result;};}}
 
     }
     parse(value){return parse(value);}
+    _isolated(bundle){
+      const m=bundle.manifest,sandbox=root.PlayroomSandbox;
+      if(!sandbox?.createRules||!sandbox?.present)throw Object.assign(Error('SDK_NOT_READY'),{code:'SDK_NOT_READY'});
+      let source;try{source=JSON.parse(bundle.files['sdk/source.json']);}catch{throw Error('PACK_SDK_SOURCE_INVALID');}
+      if(!record(source)||!record(source.sources)||source.manifest?.id!==m.id||source.manifest?.version!==m.version)throw Error('PACK_SDK_SOURCE_INVALID');
+      const project={resourceClosure:source.resourceClosure||{},manifest:source.manifest,catalogs:source.catalogs||{ru:{}},...Object.fromEntries(['dependencies','rules','helpers','presentation','support'].map(name=>[name,source.sources[name]||[]]))};
+      const resolveAsset=path=>{const item=(source.assets||[]).find(a=>a.file===path);if(item)return 'data:'+item.mime+(item.encoding==='utf8'?';charset=utf-8,'+encodeURIComponent(item.data):';base64,'+item.data);return asset(bundle,path);};
+      const guest=sandbox.createRules(project);
+      try{
+        const metadata={name:m.name,description:'',scoreLabel:'Очки',presets:[{id:'classic',label:'Классика'}],rules:[],...sandbox.metadata(project)};
+        const rendered=new WeakMap();const frame=projection=>{if(!rendered.has(projection))rendered.set(projection,sandbox.render(project,projection));return rendered.get(projection);};const described=(command,projection)=>frame(projection).actions.find(action=>Object.keys(action.command).every(key=>JSON.stringify(action.command[key])===JSON.stringify(command[key])));
+        const presentation={metadata,scene:projection=>({...frame(projection).scene,support:frame(projection).support}),action:(command,projection)=>described(command,projection)?.label||command.type,choice:(command,projection)=>described(command,projection)?.choice||{},event:event=>sandbox.present(project,'event',event)||{message:event.type},metric:id=>sandbox.present(project,'metric',id)||metadata.scoreLabel};
+        const rules=this.modelAdapter(this.engine,{definition:guest.definition,model:guest.model,presentation,locales:{ru:{},...project.catalogs},version:m.version,stateVersion:m.stateVersion,rulebooks:source.resourceClosure?.rulebooks});
+        const render=(_state,_viewer,_actions,ui={})=>({api:3,family:'board',fieldSizing:'content',elements:{field:ui.region?ui.region('sdk-surface',[],()=>'<div data-sdk-player-scene></div>'):'<div data-sdk-player-scene></div>'}}),view={render,cover:null,surfaces:{table:render,player:render}};
+        const resourceView={assets:source.assets||[]};
+        const localText=value=>typeof value==='string'?value:new (root.PlayroomLocalization||(typeof require==='function'?require('../presentation/localization.js'):null)).Translator({catalogs:{ru:{},...project.catalogs}}).format(value);
+        view.illustrations=id=>{const figure=metadata.catalog?.figures?.find(value=>value.id===id);return figure?root.PlayroomSDKRenderGraphic(figure.graphic,{text:localText,resources:resourceView}).outerHTML:'';};
+        if(metadata.catalog?.tutorialGoals?.length){view.tutorial=context=>{const projection=context.state.modelProjection||context.state.sdkProjection;if(!projection)return null;const progress=context.guideProgress||{seen:[]};const guide=sandbox.render(project,projection,{ui:{selected:context.ui?.selected??null,viewState:context.ui?.viewState||{}},guideProgress:progress}).support?.tutorial;if(!guide)return null;return {...guide,steps:(guide.steps||[]).map(step=>({...step,selector:'[data-sdk-player-scene] [data-sdk-target].is-guided',match:command=>(step.commands||[]).some(candidate=>canonical(candidate)===canonical(command))}))};};view.tutorial.goals=metadata.catalog.tutorialGoals;}
+        const standardRules=root.PlayroomRooms||(typeof require==='function'?require('../application/rooms.js'):null);
+        const sounds=Object.fromEntries(Object.entries(metadata.sounds||{}).map(([id,cue])=>[id,{...cue,src:record(cue.src)&&cue.src.kind==='asset'?resolveAsset(cue.src.id):cue.src}]));
+        const compiled={byteSize:bytes(JSON.stringify(bundle)),bundle,rules:{...rules,isolated:true,id:m.id,version:m.version,stateVersion:m.stateVersion},view,catalog:{...clone(m),metadata,locales:project.catalogs,resources:{assets:source.assets||[],resourceClosure:source.resourceClosure||{}},support:metadata.catalog,sounds,isolated:true,settings:(m.settings||[]).map(field=>standardRules.standardRule(field))},styles:'',guest};
+        const token=Object.freeze({id:m.id,version:m.version,manifest:clone(m)});prepared.set(token,{owner:this,compiled});releasePrepared?.register(token,guest,token);return token;
+      }catch(error){guest.close();throw error;}
+    }
     prepare(value){
-      const bundle=parse(value),m=bundle.manifest,css=styles(bundle);let rules=null,view=null;
+      const bundle=parse(value),m=bundle.manifest;if(m.execution==='isolated-v1')return this._isolated(bundle);if(!this.allowTrustedLegacy&&!this._trustedLegacy.has(canonical(bundle)))throw Object.assign(Error('Установите текущую версию пака с изолированным SDK.'),{code:'PACK_ISOLATED_REQUIRED'});const css=styles(bundle);let rules=null,view=null;
       const compiledCatalog=Object.assign(Object.create(null),clone(m));
       const standardRules=root.PlayroomRooms||(typeof require==='function'?require('../application/rooms.js'):null);
       compiledCatalog.settings=(compiledCatalog.settings||[]).map(field=>standardRules.standardRule(field));
@@ -223,7 +250,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const before=this._serialized(),priorItems=this._items,priorRemoved=this._removed,items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.set(k,item);removed.delete(k);if(activate)active.set(m.id,m.version);
       let previousVersion,previousActive;try{previousVersion=this.engine.get(m.id,m.version);}catch(_){}try{previousActive=this.engine.get(m.id);}catch(_){}
       return this._persist(this._serialized(items,active,removed),()=>{
-      try{this.engine.registerVersion(item.rules,{replace:true});this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
+      try{this.engine.registerVersion(item.rules,{replace:true});releasePrepared?.unregister(token);this._items=items;this._removed=removed;return activate?this._apply(item):this._descriptor(item);}
       catch(error){this._items=priorItems;this._removed=priorRemoved;this.engine.unregisterVersion(m.id,m.version);if(previousVersion)this.engine.registerVersion(previousVersion,{replace:true});if(previousActive)this.engine.activatePack(previousActive);try{this.storage.set(before);}catch(_){}throw error;}
       });
     }
@@ -240,6 +267,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     // Presentation-only payload: no rule execution, Session, or saved state.
     exportView(id,version){const item=this._resolve(id,version),bundle=item.bundle;return {manifest:clone(bundle.manifest),rules:clone(item.rules.rules||[]),...(item.rules.rulebook?{rulebook:clone(item.rules.rulebook)}:{}),sounds:clone(item.catalog.sounds||{}),view:bundle.files['view.js'],styles:item.styles,assets:Object.fromEntries(Object.keys(bundle.files).filter(path=>!['rules.js','view.js','styles.css','sounds.js'].includes(path)).map(path=>[path,asset(bundle,path)]))};}
+    isTrustedView(definition){try{const item=this._resolve(definition.manifest.id,definition.manifest.version);return item.bundle.manifest.execution===undefined&&(this.allowTrustedLegacy||this._trustedLegacy.has(canonical(item.bundle)))&&canonical(this.exportView(definition.manifest.id,definition.manifest.version))===canonical(definition);}catch{return false;}}
     exportPack(id,version){return JSON.stringify(this._resolve(id,version).bundle,null,2);}
     remove(id,version,{guard=()=>{}}={}){
       const item=this._resolve(id,version),m=item.bundle.manifest,k=key(id,m.version),items=new Map(this._items),active=new Map(this._active),removed=new Set(this._removed);items.delete(k);removed.add(k);
@@ -251,7 +279,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(active.has(id))result=this._apply(items.get(key(id,active.get(id))));
         else{this.views.remove(id);delete this.catalog[id];this._style(id,null);}
       }catch(error){try{this.storage.set(before);}catch(_){}throw error;}
-      this._items=items;this._active=active;this._removed=removed;this._bundled.delete(k);this.engine.unregisterVersion(id,m.version);
+      this._items=items;this._active=active;this._removed=removed;this._bundled.delete(k);this.engine.unregisterVersion(id,m.version);item.guest?.close();
       return result;
       },guard);
     }
@@ -263,8 +291,9 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     }
     bootstrap(bundles=[],options={}){
       if(!Array.isArray(bundles))throw Error(globalThis.PlayroomMessages.text("ui.packs.d0c2c91da454"));
+      this._trustedLegacy.clear();
       const sources=new Map(),bundled=new Set(),removed=new Set();this.warnings=[];this.quarantined=[];this.rawBackups=[];
-      for(const input of bundles){const bundle=parse(input),k=key(bundle.manifest.id,bundle.manifest.version);sources.set(k,bundle);bundled.add(k);}
+      for(const input of bundles){const bundle=parse(input),k=key(bundle.manifest.id,bundle.manifest.version);sources.set(k,bundle);bundled.add(k);if(bundle.manifest.execution===undefined)this._trustedLegacy.add(canonical(bundle));}
       let saved=null,raw=null,readable=true;
       try{raw=this.storage.get();}catch(error){readable=false;this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.bf86059fb52f",{p0:String(error.message)}));}
       if(raw){try{
@@ -279,12 +308,14 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       }catch(_){saved=null;this.rawBackups.push(raw);this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.88d33f2b1234"));}}
       if(options.restoreBuiltins)for(const k of bundled)removed.delete(k);
       for(const k of removed){sources.delete(k);bundled.delete(k);}
-      const items=new Map(),active=new Map();
-      for(const [k,bundle]of sources){try{const token=this.prepare(bundle);items.set(k,prepared.get(token).compiled);}catch(error){if(bundled.has(k))throw error;this.quarantined.push({bundle,reason:error.message});}}
+      const items=new Map(),active=new Map(),ownedTokens=[];
+      for(const [k,bundle]of sources){try{const existing=this._items.get(k);if(existing&&canonical(existing.bundle)===canonical(bundle)){items.set(k,existing);continue;}const token=this.prepare(bundle);ownedTokens.push(token);items.set(k,prepared.get(token).compiled);}catch(error){if(bundled.has(k))throw error;this.quarantined.push({bundle,reason:error.message});}}
       for(const item of items.values()){const m=item.bundle.manifest;if(!active.has(m.id)||compare(m.version,active.get(m.id))>0)active.set(m.id,m.version);}
       if(this.quarantined.length)this.warnings.push(globalThis.PlayroomMessages.text("ui.packs.acf425f8c8f5",{p0:String(this.quarantined.length)}));
       const publish=()=>{
       for(const item of items.values())this.engine.registerVersion(item.rules,{replace:true});
+      for(const token of ownedTokens)releasePrepared?.unregister(token);
+      for(const [k,item]of this._items)if(!items.has(k))item.guest?.close();
       this._items=items;this._bundled=bundled;this._removed=removed;this._active=active;
       for(const [id,version]of active)this.activate(id,version);
       return this.list();};

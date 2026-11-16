@@ -7,7 +7,7 @@ const {createVMHost,DEFAULT_LIMITS}=hostModule;
 const coreSources=__PLAYROOM_TRUSTED_CORE__;
 const bundleURL=globalThis.document?.currentScript?.src||globalThis.location?.href;
 let host,initializing;
-export function initialize(options={}){
+export function initialize(options=globalThis.PlayroomSandboxOptions||{}){
  if(initializing)return initializing;
  initializing=(async()=>{
   const wasmURL=options.wasmURL||new URL('quickjs.wasm',bundleURL).href;
@@ -19,5 +19,7 @@ export function initialize(options={}){
 function initialized(){if(!host)throw Object.assign(Error('SDK_NOT_READY'),{code:'SDK_NOT_READY'});return host;}
 export const ready=initialize();
 export const createRules=project=>initialized().createRules(project);
-export const render=(project,projection)=>initialized().render(project,projection);
+export const render=(project,projection,context={})=>initialized().render(project,projection,context);
 export const metadata=project=>initialized().metadata(project);
+
+export const present=(project,method,...args)=>initialized().present(project,method,...args);

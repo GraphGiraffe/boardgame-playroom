@@ -5,6 +5,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function install(definition){
     const {manifest,view,styles,assets={}}=definition;
     if(!manifest||typeof manifest.id!=='string'||typeof view!=='string'||typeof styles!=='string')throw Error(globalThis.PlayroomMessages.text("ui.shared-views.d7b67cfc3bd2"));
+    if(manifest.execution==='isolated-v1'){if(!V.get(manifest.id))throw Error('PACK_VERSION_MISSING');return {manifest,catalog:root.PlayroomCatalog[manifest.id],rules:definition.rules||[],rulebook:definition.rulebook||null,sounds:definition.sounds||{}};}
+    if(!(root.PlayroomPacks||root.PlayroomAppBridge?.packs)?.isTrustedView(definition))throw Error('PACK_ISOLATED_REQUIRED');
     const catalog={[manifest.id]:manifest},scope={PlayroomMessages:root.PlayroomMessages,PlayroomViews:V,PlayroomComponents:root.PlayroomComponents,TabletopUI:root.TabletopUI,PlayroomCatalog:catalog,PlayroomPack:Object.freeze({id:manifest.id,version:manifest.version,asset:path=>{if(!Object.hasOwn(assets,path))throw Error(globalThis.PlayroomMessages.text("ui.shared-views.1d8d3c6abbb7"));return assets[path];}})};
     // A trusted view module executes here. The remote client receives authorized model facts, never the private Session.
     root.PlayroomPackLoader.execute(view,scope);
@@ -16,6 +18,8 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   function mount(client,definition,{surface,readOnly=false,onExit=null,connected:initialConnected=true,onPresented=()=>{},onReviewed=()=>{},tableAvailable=()=>false}={}){
     const pack=install(definition),app=document.getElementById('app'),modal=document.getElementById('modal-root');
     const dialogs=new root.PlayroomDOM.ModalController({host:modal,background:app});
+    const sdkGuideStore=new root.PlayroomGuidePreferences(()=>root.localStorage,()=>root.PlayroomAppBridge?.profile()?.id||'default');const sdkGuideCheckpoints=new Map();
+    let sdkRenderer=null;const realtimeOff=client.transport?.subscribeRealtime?.(envelope=>{if(envelope.data?.kind==='sdk.preview')sdkRenderer?.preview(envelope.data.entries);});
     let viewState={},presentationTurn=null;
     let selected=null,connected=initialConnected,connectionNotice=!initialConnected,historyOpen=false,scrubFrame=null;
     let input=null,playerTargets=null,dialogOpen=false,ownedDialog=null,queuedDialog=null,dialogReturnCommand=null,pendingAction=null,renderedRevision=-1,replayTimer=null,replayPaused=false,replayTicket=0,destroyed=false,historyPause=null,historyReturnToResult=false;
@@ -80,6 +84,10 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       });
       root.PlayroomPublicSequence?.setMode(app,historyOpen?(replayPaused?'pause':replayTimer?'play':'still'):'live');
       const keptLayout=GameScreen.update(app,markup,{preserveLayout:preserveLayout===true,fragments:regionSink});
+      if(pack.manifest.execution==='isolated-v1'){
+        const container=app.querySelector('[data-sdk-player-scene]');
+        if(container){if(!sdkRenderer||sdkRenderer.root!==container){sdkRenderer?.destroy();sdkRenderer=new root.PlayroomSDKSceneRenderer(container,{scheduler:flow.executor.lane('sdk-scene'),planPlayer:flow.executor.track('sdk-scene'),text:value=>typeof value==='string'?value:value?.key?new root.PlayroomLocalization.Translator({catalogs:{ru:{},...pack.catalog.locales}}).format(value):String(value??''),command:async command=>{if(!usable())return false;const finite=client.snapshot.actions.find(candidate=>Object.keys(command).every(key=>JSON.stringify(command[key])===JSON.stringify(candidate[key])));if(finite){const receipt=await submit(finite);return receipt?.ok===true;}const token=root.PlayroomFirstTurnGuide.capture(client,client.snapshot.viewer);const receipt=await client.send(command);if(receipt.ok)root.PlayroomFirstTurnGuide.committed(client,client.snapshot.viewer,command,token);if(!receipt.ok)toast(receipt.message);return receipt.ok;},onTutorialProgress:progress=>{const current=sdkGuideStore.read(pack.manifest.id),goals=pack.catalog.support?.tutorialGoals||[];sdkGuideStore.learn(pack.manifest.id,Object.fromEntries(goals.filter(goal=>progress.seen.includes(goal.id)).map(goal=>[goal.id,goal.revision||1])),current);sdkGuideCheckpoints.set(client.snapshot.viewer,progress.checkpoint);render();},preview:async(operation,command)=>{if(!usable())return;const transport=client.transport,packet={scope:client.snapshot.realtimeScope,data:{...command,operation}};return transport.realtime.length>=2?transport.realtime('preview',packet):transport.realtime({method:'preview',envelope:packet});},error:error=>toast(root.PlayroomMessages.error(error))});}const projection=root.PlayroomProtocol.projectedModel(s)||s.state.sdkProjection||s.state.modelProjection;if(!projection)throw Error('SDK_PROJECTION_MISSING');const learned=sdkGuideStore.read(s.game),goals=pack.catalog.support?.tutorialGoals||[],guideProgress={seen:goals.filter(goal=>learned.mastered[goal.id]===(goal.revision||1)).map(goal=>goal.id),...(s.viewer>=0&&sdkGuideCheckpoints.get(s.viewer)?{checkpoint:sdkGuideCheckpoints.get(s.viewer)}:{})},tutorial=V.get(s.game)?.tutorial?.({state:s.state,viewer:s.viewer,ui:{selected,viewState},guideProgress});sdkRenderer.update({metadata:pack.catalog.metadata,guideProgress,projection,scene:s.state.scene,support:{...s.state.scene.support,tutorial:s.viewer>=0&&learned.enabled&&learned.prompted&&root.PlayroomAppBridge?.gameOptions?.().tutorialsEnabled!==false?tutorial:null},resources:pack.catalog.resources,actions:commands.map(action=>({command:projection.actions.find(command=>Object.keys(command).every(key=>JSON.stringify(command[key])===JSON.stringify(action[key])))||action,label:action.label||action.type})),events:s.events,now:s.now??0,history:{reviewing:historyOpen||readOnly||!usable()}});}
+      }
       const next=app.querySelector('.hand-track, .hand-cards, .hand-scroll');if(next)next.scrollLeft=scroll;
       const historyPanel=app.querySelector('.history-panel');
       if(historyPanel)historyPanel.setAttribute('aria-busy',controller.history.frame&&controller.history.requested===null?'false':'true');
@@ -158,6 +166,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
         if(receipt.ok){root.PlayroomFirstTurnGuide?.committed(client,guideViewer,action,guideToken);if(!action.preserveSelection){selectionChanged=selected!==null;selected=null;}GameScreen.allowLayoutChange(app,context);}
         else if(!receipt.ignored)toast(receipt.message);
         if(selectionChanged)render(true);else settledRender();
+        return receipt;
       }catch(error){toast(globalThis.PlayroomMessages.text("ui.shared-views.57c89972646e",{p0:String(globalThis.PlayroomMessages.error(error))}));render();}
       finally{syncInteraction();}
     }
@@ -264,6 +273,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       const activeSurface=dialogs.activeRoot();if(!event.target.isConnected&&!event.target.closest('[data-game-menu-action]'))return;if(event.target.closest('#modal-root')&&!activeSurface?.contains(event.target))return;
       const dialog=event.target.closest('.shared-modal-backdrop');
       if(dialog&&(!ownedDialog||dialog!==ownedDialog.element||!dialogs.isActive(ownedDialog)))return;
+      if(event.target.closest('[data-sdk-player-scene]'))return;
       if(event.target.closest('[data-room-chat-open]'))return; // Application chat is outside the pack input contract.
       // Reader controls belong to the rulebook's document handler, not pack input.
       if(event.target.closest('[data-rulebook-mode],[data-rulebook-jump]'))return;
@@ -377,7 +387,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     const onOptions=()=>{flow.cancel();if(client.snapshot)render();};root.addEventListener('playroom:game-options',onOptions);
     const visibility=()=>{if(document.hidden){turnNotice.reset();stopReplay();feedback.clear();flow.cancel();}else if(!controller.draining)render();};document.addEventListener('visibilitychange',visibility);
     return {render,openHistory,showResult:result,setHistoryBoundary(value){if(controller.history.backfill(value,{origin:'backfill'}))render();},syncLive(){stopMotion();controller.shown=client.snapshot;controller.queued=controller.shown?.revision??-1;feedback.start(controller.shown?.events||[]);render();},get historyIndex(){return controller.history.index;},setConnected(value,{notice=!value}={}){if(connected!==value||connectionNotice!==notice){const lost=connected&&!value;connected=value;connectionNotice=notice;if(lost){presentedWindow=null;playerTargets.cancel();stopMotion();audio?.stop?.();}render();}},get historyOpen(){return historyOpen;},get selected(){return selected;},get revision(){return renderedRevision;},toast,
-      destroy(){destroyed=true;controller.dispose();modalObserver.disconnect();dialogs.dispose();ownedDialog=null;queuedDialog=null;dialogOpen=false;pendingAction=null;stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();controller.history.ticket++;root.PlayroomFirstTurnGuide?.stop(client);unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
+      destroy(){destroyed=true;sdkRenderer?.destroy();realtimeOff?.();controller.dispose();modalObserver.disconnect();dialogs.dispose();ownedDialog=null;queuedDialog=null;dialogOpen=false;pendingAction=null;stopScrub();stopReplay();stopMotion();playerTargets.destroy();feedback.destroy();controller.history.ticket++;root.PlayroomFirstTurnGuide?.stop(client);unsub?.();document.removeEventListener('click',click,true);document.removeEventListener('input',historySliderInput,true);document.removeEventListener('change',historySliderChange,true);document.removeEventListener('keydown',keydown,true);document.removeEventListener('visibilitychange',visibility);root.removeEventListener('resize',resize);root.removeEventListener('playroom:game-options',onOptions);input.destroy();}};
   }
   root.PlayroomSharedViews={install,mount};
 })(globalThis);

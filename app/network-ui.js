@@ -234,6 +234,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
     // transport switches to the host-authority game projection.
     root.PlayroomHostTransferWire.bind(peer.channel,()=>{throw Error('HOST_TRANSFER_UNAUTHORIZED');});
     const served={
+      subscribeRealtime:listener=>switchable.subscribeRealtime(envelope=>{Promise.resolve(admit?.()).then(()=>listener(envelope)).catch(()=>{});}),
       realtimeScope:()=>switchable.realtimeScope(),
       realtime:async value=>{await admit?.();return switchable.realtime(value);},
       status:async()=>{await admit?.();return switchable.status();},

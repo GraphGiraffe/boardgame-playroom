@@ -53,7 +53,7 @@
         if (!receipt) {
           try {
             next = prepare();
-            receipt = {ok:true, code:'OK', commandId:command.commandId, revision:next.move};
+            receipt = {ok:true, code:'OK', commandId:command.commandId, revision:next.move,...(actor===-1?{hostClock:true}:{})};
           } catch (_) { receipt = receiptOnly(ports.reject('ILLEGAL', command)); }
         }
         const entry = {sessionId, viewer:actor, commandId:command.commandId, signature, receipt};

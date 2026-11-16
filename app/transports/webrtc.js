@@ -98,6 +98,7 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
     const publish=snapshot=>{outgoing=outgoing.then(async()=>{if(negotiated&&channel.readyState==='open'){debug.snapshots++;await send(channel,{kind:'snapshot',snapshot:await encode(snapshot)});}}).catch(error=>{debug.lastError=/^(WIRE_|PROJECTION_|EVENT_)/.test(error?.message)?error.message:'publish-error';channel.close();});};
     const debug=channel.__playroomDebug={side:'server',hellos:0,ready:0,requests:0,responses:0,snapshots:0,errors:0,lastMethod:null,lastError:null};
     const unsubscribe=connection.subscribe?.(snapshot=>{if(negotiated)publish(snapshot);},{wire:true});
+    const realtimeUnsubscribe=connection.subscribeRealtime?.(envelope=>{if(negotiated&&channel.readyState==='open')send(channel,{kind:'realtime-event',envelope});});
     const onMessage=async event=>{
       let message;try{message=event.value||Protocol.parse(event.data);}catch(error){debug.errors++;debug.lastError='parse';return;}
       if(message?.kind==='hello'){
@@ -132,8 +133,8 @@ if(typeof require==='function'&&typeof module==='object'&&module.exports)require
       }
     };
     const unlisten=listen(channel,onMessage);
-    const close=()=>{preview?.close();unsubscribe?.();unlisten();connection.close?.();try{channel.close();}catch(_){}};
-    channel.addEventListener('close',()=>{preview?.close();unsubscribe?.();connection.close?.();},{once:true});
+    const close=()=>{preview?.close();realtimeUnsubscribe?.();unsubscribe?.();unlisten();connection.close?.();try{channel.close();}catch(_){}};
+    channel.addEventListener('close',()=>{preview?.close();realtimeUnsubscribe?.();unsubscribe?.();connection.close?.();},{once:true});
     return close;
   }
   function client(channel,{timeout=7000,handshakeTimeout=5000,peer=null}={}){

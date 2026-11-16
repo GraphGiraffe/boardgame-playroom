@@ -90,7 +90,7 @@
     // their original recent events. Shallow replacement avoids mutating a node.
     states[states.length - 1] = {...states[states.length - 1], events: journal};
     return {format: 'playroom-session', version: 1, game: saved.game, packVersion:saved.packVersion, options,
-      createdAt: saved.createdAt, updatedAt: saved.updatedAt, states};
+      createdAt: saved.createdAt, updatedAt: saved.updatedAt, states,...(saved.clock!==undefined?{clock:saved.clock}:{})};
   }
   // Accidental corruption / changed rules detection, not an authentication signature.
   function fingerprint(state){
@@ -101,15 +101,17 @@
   // Strict, bounded command envelopes. Rule legality belongs to Session/engine replay.
   function actionLog(saved){
     const fail=()=>{throw Error('Invalid action history');};
-    if(!['actions-v1','actions-v2'].includes(saved.encoding)||typeof saved.game!=='string'||typeof saved.packVersion!=='string'||!saved.packVersion||
+    if(!['actions-v1','actions-v2','actions-v3'].includes(saved.encoding)||typeof saved.game!=='string'||typeof saved.packVersion!=='string'||!saved.packVersion||
        !isRecord(saved.options)||saved.options.packVersion!==saved.packVersion||saved.options.seed==null||
        !Number.isSafeInteger(saved.createdAt)||saved.createdAt<0||!Number.isSafeInteger(saved.updatedAt)||saved.updatedAt<saved.createdAt||
        !Array.isArray(saved.actions)||saved.actions.length>100000||!isRecord(saved.end)||saved.end.move!==saved.actions.length||!(/^[a-f0-9]{16}$/).test(saved.end.fingerprint))fail();
+    if(saved.encoding==='actions-v3'&&(!['actions-v1','actions-v2'].includes(saved.base)||!Number.isSafeInteger(saved.clock)||saved.clock<0))fail();
     let count=0;
     function visit(value,depth=0){if(++count>2000000||depth>64)fail();if(value&&typeof value==='object'){for(const item of Object.values(value))visit(item,depth+1);}else if(value!==null&&!['string','boolean','number'].includes(typeof value)||typeof value==='number'&&!Number.isFinite(value))fail();}
     visit(saved.options);
     for(const entry of saved.actions){
-      if(!isRecord(entry)||Object.keys(entry).some(key=>!['actor','command','players'].includes(key))||!Number.isInteger(entry.actor)||entry.actor<0||entry.actor>=32||!isRecord(entry.command))fail();
+      if(!isRecord(entry)||Object.keys(entry).some(key=>!['actor','command','players','now'].includes(key))||!Number.isInteger(entry.actor)||(entry.actor<0&&!(saved.encoding==='actions-v3'&&entry.actor===-1&&entry.command?.type==='host-clock-v1'&&Number.isSafeInteger(entry.command.now)&&entry.command.now>=0))||entry.actor>=32||!isRecord(entry.command))fail();
+      if(entry.now!==undefined&&(!Number.isSafeInteger(entry.now)||entry.now<0||saved.encoding!=='actions-v3'))fail();
       if(entry.players!==undefined&&(!Array.isArray(entry.players)||entry.players.length>32||new Set(entry.players.map(p=>p?.index)).size!==entry.players.length))fail();
       visit(entry);
     }

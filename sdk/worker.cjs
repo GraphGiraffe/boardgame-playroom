@@ -9,6 +9,7 @@ const core=['model-values','events','random','bot-difficulty','model-inputs','mo
  const variant=newVariant(RELEASE_SYNC,{wasmMemory:new WebAssembly.Memory({initial:256,maximum:LIMITS.memoryBytes/65536})});
  const QuickJS=await newQuickJSWASMModule(variant);
  const coreSources=core.map(name=>({file:'sdk/core/'+name+'.js',source:fs.readFileSync(path.join(__dirname,'../core',name+'.js'),'utf8')}));
+ coreSources.push({file:'sdk/support.js',source:fs.readFileSync(path.join(__dirname,'sdk-support.js'),'utf8')});
  const host=createVMHost({QuickJS,coreSources,limits:LIMITS});
  const realm=host.createRealm(workerData.project,workerData.role);
  parentPort.postMessage({ready:true});

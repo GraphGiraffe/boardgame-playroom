@@ -633,8 +633,9 @@ class RoomService{
     snapshot(roomId){return clone(this._room(roomId));}
   }
 class SwitchableConnection{
-    constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
+    constructor(connection=null){this.current=null;this.listeners=new Set();this.wireListeners=new Set();this.realtimeListeners=new Set();this.unsubscribeRealtime=null;this.unsubscribe=null;this.unsubscribeWire=null;if(connection)this.set(connection);}
     _bind(){
+      this.unsubscribeRealtime?.();this.unsubscribeRealtime=null;if(this.realtimeListeners.size)this.unsubscribeRealtime=this.current?.subscribeRealtime?.(envelope=>{for(const listener of this.realtimeListeners)listener(envelope);});
       this.unsubscribe?.();this.unsubscribeWire?.();this.unsubscribe=null;this.unsubscribeWire=null;
       if(this.listeners.size)this.unsubscribe=this.current?.subscribe?.(snapshot=>{for(const listener of this.listeners)listener(snapshot);});
       if(this.wireListeners.size)this.unsubscribeWire=this.current?.subscribe?.(snapshot=>{for(const listener of this.wireListeners)listener(snapshot);},{wire:true});
@@ -649,11 +650,12 @@ class SwitchableConnection{
     dispatch(value,options){if(!this.current)throw Error('CLOSED');return this.current.dispatch(value,options);}
     history(value,options){if(!this.current)throw Error('CLOSED');return this.current.history(value,options);}
     historyRange(start,count,options){if(!this.current)throw Error('CLOSED');return this.current.historyRange(start,count,options);}
+    subscribeRealtime(listener){this.realtimeListeners.add(listener);this._bind();return()=>{this.realtimeListeners.delete(listener);this._bind();};}
     realtimeScope(){return this.current?.realtimeScope?.()||null;}
     realtime(value){if(!this.current?.realtime)throw Error('REALTIME_UNAVAILABLE');return this.current.realtime(value);}
     presentationReady(value){if(!this.current)throw Error('CLOSED');return this.current.presentationReady?.(value)||{ok:false};}
     subscribe(listener,options={}){const listeners=options.wire?this.wireListeners:this.listeners;listeners.add(listener);this._bind();return()=>{listeners.delete(listener);this._bind();};}
-    close(){this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
+    close(){this.unsubscribeRealtime?.();this.realtimeListeners.clear();this.unsubscribe?.();this.unsubscribeWire?.();this.current?.close?.();this.listeners.clear();this.wireListeners.clear();this.current=null;}
   }
 
 return Object.freeze({sessionSetup,STANDARD_RULE_VALUES,standardRule,readyConfiguration,normalizeAvatar,ROOM_CODE,resumeTokenValid,normalizeName,normalizeRoomName,validateRuleSettings,RoomService,SwitchableConnection});

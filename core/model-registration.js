@@ -9,10 +9,10 @@
   const Localization = root.PlayroomLocalization || require('../presentation/localization.js');
   root.PlayroomLocalization = Localization;
   const Scenes = root.PlayroomSceneContract || require('../presentation/scene-contract.js');
-  function adapt(engine, {definition, presentation, locales, version, stateVersion=1, rulebooks=null}) {
+  function adapt(engine, {definition, model:suppliedModel, presentation, locales, version, stateVersion=1, rulebooks=null}) {
     const Runtime = root.PlayroomModelRuntime || require('./model-runtime.js');
     const Values = root.PlayroomModelValues || require('./model-values.js');
-    const model = new Runtime.GameModel(definition);
+    const model = suppliedModel || new Runtime.GameModel(definition);
     const translator = new Localization.Translator({catalogs:locales});
     function bindParticipants(value,players){
       if(value?.kind==='player-list-reference'){
@@ -27,8 +27,8 @@
       if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,bindParticipants(item,players)]));
       return value;
     }
-    const text = (reference,players=[]) => translator.format(bindParticipants(reference,players));
-    const metadata = presentation.metadata;
+    const text = (reference,players=[]) => reference==null?'':typeof reference==='string'?reference:translator.format(bindParticipants(reference,players));
+    const metadata = {name:definition.id,description:'',scoreLabel:'Очки',presets:[{id:'classic',label:'Классика'}],rules:[],...presentation.metadata};
     function translateRulebook(document) {
       return {sections:document.sections.map(section=>({
         title:section.text?text(section.text).split('\n')[0]:text(section.title),paragraphs:section.text?text(section.text).split('\n').slice(1):(section.paragraphs||[]).map(text),layout:section.layout,
@@ -50,11 +50,11 @@
     }
     function position(state){const entry=cache(state);if(entry?.position)return entry.position;const value=Values.snapshot({playerCount:state.players.length, turn:state.turn, status:state.status,
       winners:state.status === 'finished' ? state.winners || (state.winner === null ? [] : [state.winner]) : [],
-      timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});if(entry)entry.position=value;return value;}
+      timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands,...(state.clock!==undefined?{clock:state.clock}:{})});if(entry)entry.position=value;return value;}
     function projected(state,viewer,table=false,factsOnly=false){
       const entry=cache(state),key=(table?'table:':'player:')+viewer+':'+factsOnly;if(entry?.positions.has(key))return entry.positions.get(key);
       const events=entry?(entry.events??=(state.events.filter(value=>value.visibility))):state.events.filter(value=>value.visibility);
-      const value=table?model.projectTable(position(state),viewer,events,{factsOnly}):model.project(position(state),viewer,events,{factsOnly});
+      const value=table?model.projectTable(position(state),viewer,events,{factsOnly:factsOnly&&!!definition.localChoices}):model.project(position(state),viewer,events,{factsOnly:factsOnly&&!!definition.localChoices});
       if(entry)entry.positions.set(key,value);return value;
     }
     function choices(state,actor,reactions=false){
@@ -64,7 +64,7 @@
     }
     function decorated(action,projection,players) { const display=action.type==='batch'?action.actions.at(-1):action,choice=presentation.choice?.(display,projection)||{};return {...Object.fromEntries(Object.entries(choice).map(([key,value])=>[key,value?.key?text(value,players):value])),...action,label:text(presentation.action({...choice,...display},projection),players)}; }
     const Events=root.PlayroomEvents||require('./events.js');
-    function presentScene(projection,players,value=presentation.scene(projection)){const scene=Scenes.validate(value,projection.playerCount),order=model.turnOrder(projection);return {...scene,nextPlayer:order?.next??null,audience:projection.audience,viewer:projection.viewer,...(projection.decisionWindow?{decisionWindow:projection.decisionWindow}:{}),...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,...(person.countLabel?{countLabel:text(person.countLabel,players)}:{}),metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
+    function presentScene(projection,players,value=presentation.scene(projection)){const scene=Scenes.validate(value,projection.playerCount);if(Array.isArray(projection.actions))Scenes.commands(scene,projection);const order=model.turnOrder(projection);return {...scene,nextPlayer:order?.next??null,audience:projection.audience,viewer:projection.viewer,...(projection.decisionWindow?{decisionWindow:projection.decisionWindow}:{}),...(!scene.round&&projection.timeline?.round?{round:{number:projection.timeline.round,limit:null,starts:projection.timeline.roundStarts}}:{}),players:(scene.players||[]).map(person=>({...person,...(person.countLabel?{countLabel:text(person.countLabel,players)}:{}),metrics:(person.metrics||[]).map(metric=>({...metric,label:text(metric.label,players)})),...(person.indicators?{indicators:person.indicators.map(indicator=>({...indicator,label:text(indicator.label,players)}))}:{}),...(person.team?{team:{...person.team,label:text(person.team.label,players)}}:{})}))};}
     function presentEventScenes(projection,players,events) {
       if(!presentation.eventScenes)return events;
       const frames=presentation.eventScenes(projection);
@@ -83,7 +83,7 @@
     function presentEvent(value,players) {
       const description=Scenes.event(presentation.event(value),players.length),params={...description.message.params};
       if(value.actor!==null)params.player=players[value.actor].name;
-      const message={...description.message,params};
+      const message=typeof description.message==='string'?description.message:{...description.message,params};
       return {...value,player:value.actor,text:text(message,players),message:bindParticipants(message,players),kind:description.finish?'finish':description.kind||'action',
         ...(description.presentation?{presentation:description.presentation}:{}),
         ...(description.transfer?{transfer:description.transfer}:{}),
@@ -102,7 +102,7 @@
         if(definition.checkpoint){const value=definition.checkpoint(before.data,next.data,actor,command);if(typeof value!=='boolean')throw Error('CHECKPOINT_INVALID');return value;}
         // Existing portable packs already declare simultaneous decision windows.
         // An unready participant's edit is a draft; becoming ready is the checkpoint.
-        const window=state=>definition.decisionWindow?.({playerCount:state.players.length,turn:state.turn,status:state.status,winners:state.winners||[],timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands});
+        const window=state=>definition.decisionWindow?.({playerCount:state.players.length,turn:state.turn,status:state.status,winners:state.winners||[],timeline:state.timeline,data:state.data,rng:state.rng,preset:state.preset,revision:state.move,openHands:state.openHands,...(state.clock!==undefined?{clock:state.clock}:{})});
         const a=window(before),b=window(next);
         return !(a&&b&&a.id===b.id&&a.participants.length>1&&a.participants.includes(actor)&&!a.ready.includes(actor)&&!b.ready.includes(actor)&&a.versions?.[actor]!==b.versions?.[actor]);
       },
@@ -114,9 +114,9 @@
       ...(rulebooks?.[translator.locale]?{rulebook:engine.clone(rulebooks[translator.locale])}:metadata.rulebook?{rulebook:translateRulebook(metadata.rulebook)}:{}),
       create(state, options) {
         const initial = model.start({playerCount:state.players.length, preset:state.preset,
-          firstPlayer:options.resolvedFirstPlayer ?? 0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
+          firstPlayer:options.resolvedFirstPlayer ?? 0,now:options.now??0,rng:state.rng,openHands:state.openHands,options:engine.clone(options)});
         const created=initial.position;
-        state.timeline=engine.clone(created.timeline);state.turn = created.turn; state.data = engine.clone(created.data);if(created.rng!==undefined)state.rng=created.rng;
+        state.timeline=engine.clone(created.timeline);state.turn = created.turn; state.data = engine.clone(created.data);if(created.rng!==undefined)state.rng=created.rng;if(created.clock!==undefined)state.clock=created.clock;
         const scores=model.score(created);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
         if(created.status==='finished')engine.complete(state,created.winners.length>1?created.winners:created.winners[0]??null,scores?0:1);
         state.events=[...Events.append(state.events,initial.events,state.players.length,state.move)];
@@ -125,9 +125,13 @@
       resolveAction(state,actor,action) {
         const current=position(state),input=model.reactionControl(current,actor,action)?.command||action;
         if(input?.type==='batch'){try{return decorated(model.batch(current,actor,input),projected(state,actor),state.players);}catch{return null;}}
+        if(definition.inputs){try{return model.commandFor(current,actor,input);}catch{}}
         const command=model.availableActions(current,actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(input?.[key])));
         return command?decorated(command,projected(state,actor),state.players):null;
       },
+      inputs(state,actor){return model.inputChoices(position(state),actor);},
+      advance(state,now){const current=position(state),changed=model.advance(current,now);if(changed.position.revision===current.revision)return state;return this.installTransition(state,changed);},
+      installTransition(state,changed){const next={...engine.clone({...state,data:null,events:[]}),data:changed.position.data,move:changed.position.revision,events:[...state.events]};next.timeline=engine.clone(changed.position.timeline);next.turn=changed.position.turn;if(changed.position.rng!==undefined)next.rng=changed.position.rng;if(changed.position.clock!==undefined)next.clock=changed.position.clock;const scores=model.score(changed.position);if(scores)scores.forEach((value,index)=>{next.players[index].score=value;});if(changed.position.status==='finished')engine.complete(next,changed.position.winners.length>1?changed.position.winners:changed.position.winners[0]??null,scores?0:1);next.events=[...Events.append(next.events,changed.events,state.players.length,next.move)];return next;},
       commands(state,actor,reactions=false){return choices(state,actor,reactions);},
       legal(state, actor) { const current=position(state),projection=projected(state,actor);return choices(state,actor).map(command=>decorated(command,projection,state.players)); },
       reactions(state,actor) { if(!definition.reactions)return [];const current=position(state),projection=projected(state,actor);return choices(state,actor,true).map(command=>decorated(command,projection,state.players)); },
@@ -139,10 +143,10 @@
       apply(state, actor, action) {
         // Match against commands, not a blacklist of UI fields. The old engine
         // passes its canonical decorated candidate; labels never reach rules.
-        const legal = action.type==='batch'?model.batch({...position(state),revision:Math.max(0,state.move-1)},actor,{type:'batch',actions:action.actions}):model.availableActions(position(state), actor).find(candidate =>
+        const legal = definition.inputs?(model.availableActions({...position(state),revision:Math.max(0,state.move-1)},actor).find(candidate=>Object.keys(candidate).every(key=>JSON.stringify(candidate[key])===JSON.stringify(action[key])))||model.commandFor({...position(state),revision:Math.max(0,state.move-1)},actor,action)):action.type==='batch'?model.batch({...position(state),revision:Math.max(0,state.move-1)},actor,{type:'batch',actions:action.actions}):model.availableActions(position(state), actor).find(candidate =>
           Object.keys(candidate).every(key => JSON.stringify(candidate[key]) === JSON.stringify(action[key])));
-        const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal);
-        state.timeline=engine.clone(changed.position.timeline);state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;
+        const changed = model.apply({...position(state),revision:Math.max(0,state.move-1)}, actor, legal,{now:state.clock??0});
+        state.timeline=engine.clone(changed.position.timeline);state.turn=changed.position.turn;state.data=engine.clone(changed.position.data);if(changed.position.rng!==undefined)state.rng=changed.position.rng;if(changed.position.clock!==undefined)state.clock=changed.position.clock;
         const scores=model.score(changed.position);if(scores)scores.forEach((value,index)=>{state.players[index].score=value;});
         if(changed.position.status==='finished'){
           const winners=changed.position.winners;
@@ -157,7 +161,7 @@
       bot(state, actor) { const chosen = model.botAction(position(state), actor, {...state.players[actor]?.botSettings,enabled:!!state.players[actor]?.bot}); return chosen ? decorated(chosen,model.project(position(state),actor),state.players) : null; },
       result(state) {
         const summary = model.result(position(state));
-        const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric(metric.id))}));
+        const metrics=summary.metrics.map(metric=>({...metric,label:text(presentation.metric?.(metric.id)||metadata.scoreLabel||metric.id)}));
         return {label:metrics[0].label,metricId:metrics[0].id,values:[...metrics[0].values],order:metrics[0].order||'desc',...(summary.playerOrder?{playerOrder:summary.playerOrder}:{}),places:summary.places,exits:summary.exits||[],lastPlayers:summary.lastPlayers||[],metrics,
           ...(metrics[1]?{detailLabel:metrics[1].label,detailMetricId:metrics[1].id,details:metrics[1].values}:{})};
       }

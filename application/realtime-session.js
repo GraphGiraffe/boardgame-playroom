@@ -129,5 +129,12 @@
   }
   close(){this.closed=true;this.proof=null;this.repairs.clear();}
  }
- return Object.freeze({Hub,Client,scopeKey});
+ class PreviewHub{
+  constructor({scope,authorize,broadcast,now=()=>Date.now()}){validateScope(scope);this.scope=P.immutable(scope);this.authorize=authorize;this.broadcast=broadcast;this.now=now;this.entries=new Map();this.document=new Core.InkDocument();this.roundId=null;this.closed=false;}
+  preview(actor,envelope){check(!this.closed&&scopeKey(envelope?.scope)===scopeKey(this.scope),'REALTIME_SCOPE_MISMATCH');const command=this.authorize(actor,envelope.data);check(command&&command.operation?.kind==='stroke','REALTIME_FORBIDDEN');const operation=command.operation,roundId=command.roundId??'inputs';if(this.roundId!==roundId){this.roundId=roundId;this.entries.clear();this.document=new Core.InkDocument();}check(this.entries.size<128||this.entries.has(operation.id),'REALTIME_PREVIEW_LIMIT');this.document.begin({id:operation.id,actor,style:{color:operation.color,width:operation.width}});const previous=this.document.read(operation.id);if(previous.points.length>operation.points.length)return {ok:true,ignored:true};check(previous.points.every((point,i)=>JSON.stringify(point)===JSON.stringify(operation.points[i])),'INK_PREFIX_CONFLICT');this.document.append({id:operation.id,actor,from:previous.points.length,seq:previous.seq+1,points:operation.points.slice(previous.points.length)});const entry=P.immutable({operation,roundId,expires:this.now()+5000});this.entries.set(operation.id,entry);this.broadcast({scope:this.scope,data:{kind:'sdk.preview',entries:[entry]}});return {ok:true};}
+  request(actor,method,envelope){check(!this.closed&&scopeKey(envelope?.scope)===scopeKey(this.scope),'REALTIME_SCOPE_MISMATCH');check(method==='checkpoint','REALTIME_METHOD_INVALID');for(const [id,entry]of this.entries)if(entry.expires<this.now())this.entries.delete(id);return {scope:this.scope,data:{kind:'sdk.preview',entries:[...this.entries.values()]}};}
+  confirmed(command){if(command?.operation?.id)this.entries.delete(command.operation.id);if(!this.entries.size)this.document=new Core.InkDocument();}
+  close(){this.closed=true;this.entries.clear();}
+ }
+ return Object.freeze({Hub,Client,PreviewHub,scopeKey});
 });
