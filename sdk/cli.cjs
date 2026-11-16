@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 const fs=require('node:fs');
-const {SDKError,inspectProject,loadProject,fail}=require('./project.cjs');
-const {check}=require('./check.cjs');
+const {SDKError,inspectProject,fail}=require('./project.cjs');
+const {check,prepareProject}=require('./check.cjs');
 const {verify,privacy}=require('./verify.cjs');
 async function main(argv=process.argv.slice(2)){
  const [command,directory,...rest]=argv,options={};
@@ -21,9 +21,13 @@ async function main(argv=process.argv.slice(2)){
   result=await privacy(directory,{...JSON.parse(fs.readFileSync(options.fixture,'utf8')),shared:options.shared});
  }
  if(command==='build'){
-  if(!options.output)fail('SDK_OUTPUT_REQUIRED');result=check(directory,options);if(result.status!=='passed')return print(result,1);
-  const p=loadProject(directory,options);const artifact={format:'playroom-sdk-source',contractVersion:1,manifest:p.manifest,descriptor:p.descriptor,catalogs:p.catalogs,sources:{dependencies:p.dependencies,rules:p.rules,helpers:p.helpers,presentation:p.presentation},assets:result.assets.files.map(file=>({file:file.file,sha256:file.sha256,mime:file.mime,data:fs.readFileSync(require('./project.cjs').local(p.root,file.file)).toString('base64')})),sourceHash:p.hash};
-  fs.writeFileSync(options.output,JSON.stringify(artifact)+'\n',{flag:'wx',mode:0o600});result={status:'built',output:options.output,sourceHash:p.hash,bytes:fs.statSync(options.output).size,format:artifact.format,scope:'SDK source package; not an installable player-application pack'};
+  if(!options.output)fail('SDK_OUTPUT_REQUIRED');const prepared=prepareProject(directory,options);result=prepared.report;if(result.status!=='passed')return print(result,1);
+  // Validate the exact bytes before creating the destination. Never leave an
+  // oversized/partial candidate or overwrite an existing author artifact.
+  let descriptor;
+  try{descriptor=fs.openSync(options.output,'wx',0o600);fs.writeFileSync(descriptor,prepared.text);fs.closeSync(descriptor);descriptor=undefined;}
+  catch(error){if(descriptor!==undefined){try{fs.closeSync(descriptor);}catch{}fs.unlinkSync(options.output);}throw error;}
+  result={status:'built',output:options.output,sourceHash:result.hash,bytes:result.budget.bytes,budget:result.budget,warnings:result.warnings,format:result.budget.format,scope:'SDK source package; not an installable player-application pack'};
  }
  print(result,result?.status==='failed'?1:0);
 }

@@ -2,6 +2,7 @@
 const {parse}=require('acorn');
 const {loadProject}=require('./project.cjs');
 const {auditAssets}=require('./assets.cjs');
+const {encodeSource}=require('./artifact.cjs');
 const ts=require('typescript');
 const path=require('node:path');
 const forbidden=new Set(['process','fetch','XMLHttpRequest','WebSocket','WebTransport','EventSource','document','window','navigator','localStorage','sessionStorage','indexedDB','caches','Worker','SharedWorker','importScripts','setTimeout','setInterval','Date','performance']);
@@ -22,7 +23,7 @@ function checkSource({file,source}){
  }
  walk(tree,null);return diagnostics.slice(0,100);
 }
-function check(directory,options){
+function prepareProject(directory,options){
  const p=loadProject(directory,options),sources=[...p.dependencies,...p.rules,...p.helpers,...p.presentation];
  const diagnostics=sources.flatMap(checkSource),assets=auditAssets(p.root);
  if(p.descriptor.checkTypes===true){
@@ -41,6 +42,8 @@ function check(directory,options){
   const program=ts.createProgram([...files,declarations],config,host);
   for(const d of ts.getPreEmitDiagnostics(program).slice(0,100)){const location=d.file&&d.start!==undefined?d.file.getLineAndCharacterOfPosition(d.start):null;diagnostics.push({code:'SDK_TYPE_'+d.code,file:d.file?path.relative(p.root,d.file.fileName).replaceAll('\\','/'):undefined,line:location?location.line+1:undefined,column:location?location.character+1:undefined,message:ts.flattenDiagnosticMessageText(d.messageText,' ').replace(/"[^"\r\n]*"/g,'"<literal>"').slice(0,500),hint:'Check the canonical SDK type at this location. String literal values are redacted.'});}
  }
- return {status:diagnostics.length?'failed':'passed',id:p.manifest.id,hash:p.hash,sourceBytes:p.sourceBytes,diagnostics,assets,scope:'source-contract-and-assets; not gameplay verification'};
+ const artifact=encodeSource(p,assets);
+ return {text:artifact.text,report:{status:diagnostics.length?'failed':'passed',id:p.manifest.id,hash:p.hash,sourceBytes:p.sourceBytes,diagnostics,warnings:[...artifact.budget.warnings,...assets.files.flatMap(file=>file.warnings)],budget:artifact.budget,assets,scope:'source-contract-assets-and-source-export-budget; not gameplay or player-pack verification'}};
 }
-module.exports={checkSource,check};
+function check(directory,options){return prepareProject(directory,options).report;}
+module.exports={checkSource,check,prepareProject};

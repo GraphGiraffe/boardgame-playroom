@@ -8,7 +8,7 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
   'use strict';
   const Loader=root.PlayroomPackLoader||(typeof require==='function'?require('../platform/web/pack-loader.js'):null);
   const Tags=root.PlayroomTags||(typeof require==='function'?require('./tags.js'):null);
-  const FORMAT='playroom-pack', STORAGE='playroom.packs.v1', MAX_BYTES=4*1024*1024;
+  const FORMAT='playroom-pack', STORAGE='playroom.packs.v1', MAX_BYTES=4_000_000;
   const ID=/^[a-z][a-z0-9_-]{0,63}$/;
   const SEMVER=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
   const prepared = new WeakMap();
@@ -293,6 +293,6 @@ if(typeof module==='object'&&module.exports&&typeof require==='function')require
       return publish();
     }
   }
-  Packs.parse=parse;Packs.compareVersions=compare;Packs.STORAGE_KEY=STORAGE;Packs.SDK_FEATURES=SDK_FEATURES;
+  Packs.parse=parse;Packs.compareVersions=compare;Packs.STORAGE_KEY=STORAGE;Packs.SDK_FEATURES=SDK_FEATURES;Packs.MAX_BYTES=MAX_BYTES;
   return Packs;
 });
