@@ -38,6 +38,8 @@ test('SDK validates path boundaries, syntax diagnostics and immutable checkpoint
 });
 test('SDK privacy pairs detect accidental projection leaks and redact the mismatch report',async t=>{
  const root=fixture(t),s=await StudioSession.open(root);await s.start();const left=s.position,right=JSON.parse(JSON.stringify(left));right.data.secret='hidden-beta';s.close();
+ await assert.rejects(privacy(root,{left,right}),error=>error.code==='SDK_PRIVACY_VIEWER_REQUIRED');
+ await assert.rejects(privacy(root,{left,right:left,viewer:0}),error=>error.code==='SDK_PRIVACY_IDENTICAL_FIXTURE');
  assert.equal((await privacy(root,{left,right,viewer:0})).status,'passed');
  const leaky=fixture(t,{project:'position.data'});
  await assert.rejects(privacy(leaky,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE'&&!JSON.stringify(error.diagnostic).includes('hidden-alpha')&&!JSON.stringify(error.diagnostic).includes('hidden-beta'));

@@ -47,6 +47,8 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
  }finally{a.close();b?.close();}
 }
 async function privacy(directory,{shared,left,right,viewer}={}){
+ if(!Number.isInteger(viewer))fail('SDK_PRIVACY_VIEWER_REQUIRED');
+ if(serialized(left)===serialized(right))fail('SDK_PRIVACY_IDENTICAL_FIXTURE');
  const a=await StudioSession.open(directory,{shared});let b;
  try{b=await StudioSession.open(directory,{shared});for(const [session,position]of [[a,left],[b,right]]){await session.rules.call('validate',position);session.position=position;session.events=[];}
   const first=await a.view(viewer),second=await b.view(viewer);
