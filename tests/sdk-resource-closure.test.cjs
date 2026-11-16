@@ -21,3 +21,21 @@ test('support vectors reject active markup, external paint and runtime action at
  assert.equal(graphic('<svg viewBox="0 0 10 10"><path d="M0 0L10 10"/></svg>').kind,'vector');
  for(const source of ['<script>alert(1)</script>','<svg onload="x"/>','<svg><use href="https://example.test/x"/></svg>',`<svg><path style="background:image-set('//example.test/x')"/></svg>`,'<svg><path data-action="noop"/></svg>'])assert.throws(()=>graphic(source));
 });
+
+
+test('tutorial availability follows authorized commands while retaining local help',()=>{
+ const vm=require('node:vm'),guest=vm.createContext({});
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../sdk/sdk-support.js'),'utf8'),guest);
+ vm.runInContext(fs.readFileSync(path.join(packs,'packs/uno/presentation/tutorial.js'),'utf8'),guest);
+ const presentation={metadata:{},scene:()=>({declarationOpen:[],declared:[]})};
+ const tutorial=actions=>guest.PlayroomSDKSupport.project(presentation,{viewer:0,turn:0,data:{},actions}).tutorial;
+ const steps=tutorial([{type:'play',card:0},{type:'draw'}]).steps;
+ assert.equal(steps.find(s=>s.id==='color').available,false);
+ assert.equal(steps.find(s=>s.id==='pass').available,false);
+ assert.equal(steps.find(s=>s.id==='card').available,true);
+ assert.equal(steps.find(s=>s.id==='help').available,true);
+ assert.equal(tutorial([{type:'play',card:0,color:'red'}]).steps.find(s=>s.id==='color').available,true);
+ guest.PlayroomPackTutorial=()=>()=>({steps:[{id:'restricted',selector:`[data-action*='"type":"play"']`,match:()=>false}]});
+ const restricted=tutorial([{type:'play',card:0}]).steps[0];
+ assert.equal(restricted.available,false);assert.equal(restricted.commands.length,0);
+});
