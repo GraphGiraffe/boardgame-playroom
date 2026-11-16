@@ -32,7 +32,7 @@ function render(){
  renderer.update(frame);
  PlayroomSDKKeyed($('actions'),(frame.actions||[]).filter(a=>!frame.scene.vote?.command||JSON.stringify(a.command)!==JSON.stringify(frame.scene.vote.command)),a=>JSON.stringify(a.command),a=>button(text(a.label),a.command),(b,a)=>{if(b.textContent!==text(a.label))b.textContent=text(a.label);b._command=a.command;b.disabled=!!frame.history.reviewing;});
  PlayroomSDKKeyed($('events'),frame.events||[],(event,i)=>event.id??i,()=>node('li'),(li,event)=>{const value=text(event.message||event.kind||'');if(li.textContent!==value)li.textContent=value;});
- const rules=frame.metadata?.rulebook?.brief||frame.metadata?.rulebook||frame.metadata?.rules,key=frame.pack.hash+JSON.stringify(rules);if(key!==ruleKey){ruleKey=key;$('rules').replaceChildren();ruleBlocks(rules,$('rules'));}
+ const rules=frame.support?.catalog?.manual||frame.metadata?.catalog?.manual||frame.metadata?.rulebook?.brief||frame.metadata?.rulebook||frame.metadata?.rules,key=frame.pack.hash+JSON.stringify(rules);if(key!==ruleKey){ruleKey=key;$('rules').replaceChildren();ruleBlocks(rules,$('rules'));}
  renderSettings();
  for(const [id,value]of [['projection',frame.projection],['scene-data',frame.scene],['checks',frame.check||frame.diagnostics||[]]]){const target=$(id);const json=JSON.stringify(value,null,2);if(target.parentElement.open||json.length<64000||id==='checks'&&frame.check)target.textContent=json;else target.textContent='Большой объём данных. Откройте раздел для просмотра.';}
  if(frame.debug){$('debug-data').hidden=false;$('debug-data').textContent=frame.debug.warning+'\n'+JSON.stringify(frame.debug.position,null,2);}else {$('debug-data').hidden=true;$('debug-data').textContent='';}
@@ -64,6 +64,7 @@ function ruleBlocks(value,parent,depth=0){
   if(value.title)parent.append(node('h3',text(value.title)));
   if(value.type==='list'){const list=node(value.ordered?'ol':'ul');for(const item of value.items||[]){const li=node('li');ruleBlocks(item,li,depth+1);list.append(li);}parent.append(list);return;}
   if(value.type==='table'){const table=node('table');if(value.headers){const row=node('tr');for(const header of value.headers)row.append(node('th',text(header)));table.append(row);}for(const cells of value.rows||[]){const row=node('tr');for(const cell of cells)row.append(node('td',text(cell)));table.append(row);}parent.append(table);return;}
+  for(const figure of value.figures||[]){const source=(frame.support?.catalog?.figures||frame.metadata?.catalog?.figures||[]).find(item=>item.id===figure.id);if(source){const block=node('figure');block.className='sdk-manual-figure';block.append(PlayroomSDKRenderGraphic(source.graphic,{text,resources:frame.resources}));if(figure.caption)block.append(node('figcaption',text(figure.caption)));parent.append(block);}}
   for(const key of ['text','paragraphs','items','blocks','sections'])if(value[key]&&!(key==='text'&&value.blocks))ruleBlocks(value[key],parent,depth+1);
  }
 }
