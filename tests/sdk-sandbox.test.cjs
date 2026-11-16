@@ -1,18 +1,11 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const fs=require('node:fs'),path=require('node:path');
 const {StudioSession}=require('../sdk/runtime.cjs');
 const {loadProject}=require('../sdk/project.cjs');
 const {checkSource}=require('../sdk/check.cjs');
 const {privacy}=require('../sdk/verify.cjs');
-function fixture(t,{start='',render='',project='({count:position.data.count})'}={}){
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'playroom-sdk-security-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));for(const dir of ['sdk','domain','presentation'])fs.mkdirSync(path.join(root,dir));
- fs.writeFileSync(path.join(root,'manifest.json'),JSON.stringify({id:'probe',version:'1.0.0',sourceModules:{locales:{}}}));
- fs.writeFileSync(path.join(root,'sdk/project.json'),JSON.stringify({contractVersion:1,rules:['domain/game.js'],presentation:['presentation/scene.js']}));
- fs.writeFileSync(path.join(root,'domain/game.js'),`globalThis.PlayroomPackDefinition={contractVersion:1,id:'probe',minPlayers:2,maxPlayers:2,create:()=>{${start};return {playerCount:2,turn:0,status:'playing',winners:[],data:{count:0,secret:'hidden-alpha'}};},validate:()=>true,actions:()=>[{command:{type:'step'},visibility:'public'}],reduce:p=>({position:p,events:[]}),project:position=>${project},result:()=>({winners:[],places:[1,1],metrics:[]})};`);
- fs.writeFileSync(path.join(root,'presentation/scene.js'),`globalThis.PlayroomPackPresentation={scene:projection=>{${render};return {contractVersion:1,id:'probe',family:'board',players:[0,1].map(player=>({player,metrics:[]}))};}};`);
- return root;
-}
+const {fixture}=require('./sdk-fixture.cjs');
 test('SDK denies network, Node, DOM, storage and ambient randomness even if the guest catches the error',async t=>{
  for(const expression of ['fetch("https://example.invalid")','process.env','document.cookie','localStorage.getItem("x")','Math.random()','Date.now()','require("node:fs")']){
   const root=fixture(t,{start:`try{${expression}}catch{}`}),s=await StudioSession.open(root);t.after(()=>s.close());
@@ -23,6 +16,13 @@ test('SDK gives presentation no authority globals and reports required missing f
  const root=fixture(t,{render:`SDK.read(projection,'authoritySecret')`}),s=await StudioSession.open(root);t.after(()=>s.close());await s.start();
  await assert.rejects(s.view(0),error=>error.code==='SDK_ACCESS_DENIED'&&!JSON.stringify(error.diagnostic).includes('hidden-alpha'));
  const isolated=fixture(t,{render:`if(typeof __definition!=='undefined'||typeof PlayroomPackDefinition!=='undefined')throw Error('LEAK');if(Object.hasOwn(projection.data,'secret'))throw Error('LEAK');`}),other=await StudioSession.open(isolated);t.after(()=>other.close());await other.start();assert.equal((await other.view(0)).scene.id,'probe');
+});
+test('SDK isolates cached presentation data between viewers and rendering calls',async t=>{
+ const root=fixture(t,{project:"({label:viewer===0?'owner-zero':'owner-one'})",render:'globalThis.cachedLabel ||= projection.data.label'}),file=path.join(root,'presentation/scene.js');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('players:[0,1]','label:globalThis.cachedLabel,players:[0,1]'));
+ const session=await StudioSession.open(root);t.after(()=>session.close());await session.start();
+ assert.equal((await session.view(0)).scene.label,'owner-zero');
+ const other=await session.view(1);assert.equal(other.projection.data.label,'owner-one');assert.equal(other.scene.label,'owner-one');
+ assert.equal((await session.view(0)).scene.label,'owner-zero');
 });
 test('SDK diagnostics redact guest exception metadata and dynamic missing-field values',async t=>{
  for(const start of ["const error=Error('PRIVATE_PAYLOAD_XYZ');error.resource='hidden-beta';error.stack=' at domain/hidden-beta.js:1:1';throw error;","try{SDK.read({},'hidden-beta')}catch{}"]) {
@@ -54,4 +54,3 @@ test('SDK privacy pairs detect accidental projection leaks and redact the mismat
  const leaky=fixture(t,{project:'position.data'});
  await assert.rejects(privacy(leaky,{left,right,viewer:0}),error=>error.code==='SDK_PRIVACY_DIFFERENCE'&&!JSON.stringify(error.diagnostic).includes('hidden-alpha')&&!JSON.stringify(error.diagnostic).includes('hidden-beta'));
 });
-module.exports={fixture};

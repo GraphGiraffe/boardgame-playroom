@@ -22,7 +22,8 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
    await a.start({...options,rng:seed});await b.start({...options,rng:seed});const commands=[];
    for(let i=0;i<steps;i++){
     if(serialized(a.position)!==serialized(b.position))fail('SDK_NONDETERMINISTIC',{seed,step:i});
-    for(let viewer=-1;viewer<a.position.playerCount;viewer++){const av=await a.view(viewer),bv=await b.view(viewer);if(serialized(av)!==serialized(bv))fail('SDK_NONDETERMINISTIC',{seed,step:i,viewer});}
+    const views=new Map();for(let viewer=-1;viewer<a.position.playerCount;viewer++)views.set(viewer,await a.view(viewer));
+    for(let viewer=a.position.playerCount-1;viewer>=-1;viewer--){const bv=await b.view(viewer);if(serialized(views.get(viewer))!==serialized(bv))fail('SDK_NONDETERMINISTIC',{seed,step:i,viewer,hint:'Projection or presentation depends on viewer call order or mutable state.'});}
     const checkpoint=await a.checkpoint();await b.restore(checkpoint);
     if(a.position.status==='finished')break;
     let actor=a.position.turn,actions=await a.rules.call('availableActions',a.position,actor);
@@ -43,7 +44,7 @@ async function verify(directory,{shared,steps=20,seeds=[1,17],options={}}={}){
     if(scenario.expect)expectations(a.position,scenario.expect,scenario.id,scenario.steps.length);authored++;
    }
   }
-  return {status:'passed',pack:a.project.manifest.id,hash:a.project.hash,transitions,authoredScenarios:authored,scenarios,scope:['contract','determinism','viewer-rendering','checkpoint','legal-bot-actions',...(authored?['authored-rule-assertions']:[])],notCovered:['exhaustive-rule-correctness','privacy-equivalence-fixtures','physical-device','production-isolation']};
+  return {status:'passed',pack:a.project.manifest.id,hash:a.project.hash,transitions,authoredScenarios:authored,scenarios,scope:['contract','determinism','viewer-rendering','viewer-order-independence','checkpoint','legal-bot-actions',...(authored?['authored-rule-assertions']:[])],notCovered:['exhaustive-rule-correctness','privacy-equivalence-fixtures','physical-device','production-isolation']};
  }finally{a.close();b?.close();}
 }
 async function privacy(directory,{shared,left,right,viewer}={}){
