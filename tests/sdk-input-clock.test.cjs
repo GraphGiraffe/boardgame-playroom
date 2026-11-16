@@ -53,3 +53,8 @@ test('scene contracts bound trusted renderer allocations before a guest can requ
  assert.doesNotThrow(()=>SceneContract.validate({...scene,columns:64,rows:64},2));
  for(const extra of [{columns:1e9,rows:1e9},{columns:-1},{rows:0.5},{geometry:{topology:'fixed',columns:65},zones:[],objects:[],interactions:[]},{cells:Array(4097).fill(null)},{arena:{size:64,board:[],players:[]}}])assert.throws(()=>SceneContract.validate({...scene,...extra},2),e=>e.code==='SCENE_LIMIT');
 });
+
+test('timed draft validation receives the same explicit clock port as committed reducers',()=>{
+ const m=new GameModel({contractVersion:1,id:'timed-draft',minPlayers:1,maxPlayers:1,create:()=>({playerCount:1,turn:0,status:'playing',winners:[],data:{selected:false}}),validate:p=>typeof p.data.selected==='boolean',actions:p=>[{visibility:'public',command:{type:p.data.selected?'commit':'select'}}],draft:()=>({mode:'sequence',select:['select'],commit:['commit'],count:2}),reduce:(p,a,c,ctx)=>{assert(Number.isSafeInteger(ctx.now));return {position:{...p,data:{selected:c.type==='select',lastTime:ctx.now}},events:[]};},advance:()=>null,project:p=>p.data,result:()=>({winners:[],places:[1],metrics:[{id:'points',values:[0]}]})});
+ const p=m.create({playerCount:1,now:7}),command={type:'batch',actions:[{type:'select'},{type:'commit'}]};assert.doesNotThrow(()=>m.commandFor(p,0,command));assert.equal(p.data.selected,false);assert.equal(p.clock,7);const next=m.apply(p,0,command,{now:20}).position;assert.equal(next.revision,1);assert.equal(next.clock,20);assert.equal(next.data.lastTime,20);
+});

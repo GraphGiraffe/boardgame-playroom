@@ -98,3 +98,14 @@ test('SDK privacy pairs include bot memory and authored context but exclude trus
  right.data.secret=left.data.secret;right.rng=2;
  assert.equal((await privacy(root,{left:{...left,rng:1},right,viewer:0})).status,'passed');
 });
+
+test('SDK fresh authored bots resolve numeric inputs against exact actor and round schema',async t=>{
+ for(const [returned,rejected]of [["({...p.inputs[0].command,amount:7})",null],["({...p.inputs[0].command,amount:11})",'INPUT_INVALID'],["({...p.inputs[0].command,amount:7,roundId:2})",'BOT_ACTION_INVALID'],["({...p.inputs[0].command,amount:7,actor:1})",'BOT_ACTION_INVALID']]){
+  const root=fixture(t),file=path.join(root,'domain/game.js');fs.appendFileSync(file,`\nconst D=PlayroomPackDefinition;D.actions=()=>[];D.inputs=(p,actor)=>actor===p.turn?[{visibility:'private',command:{type:'bid',roundId:1,actor},fields:{amount:{kind:'integer',min:0,max:10}}}]:[];D.bot=p=>p.inputs.length?${returned}:null;D.reduce=(p,a,c)=>({position:{...p,data:{...p.data,count:c.amount}},events:[]});`);
+  const s=await StudioSession.open(root);t.after(()=>s.close());await s.start();const before=JSON.stringify(s.position);
+  if(rejected)await assert.rejects(s.rules.call('botAction',s.position,0,{enabled:true}),e=>e.code===rejected);
+  else{const command=await s.rules.call('botAction',s.position,0,{enabled:true});assert.deepEqual(command,{type:'bid',roundId:1,actor:0,amount:7});assert.deepEqual(command,await s.rules.call('botAction',s.position,0,{enabled:true}));await s.apply(0,command);assert.equal(s.position.data.count,7);}
+  if(rejected)assert.equal(JSON.stringify(s.position),before);assert.equal(await s.rules.call('botAction',s.position,1,{}),null);
+ }
+ const root=fixture(t),file=path.join(root,'domain/game.js');fs.appendFileSync(file,"\nPlayroomPackDefinition.actions=()=>[];PlayroomPackDefinition.inputs=()=>[{visibility:'private',command:{type:'bid'},fields:{amount:{kind:'integer',min:0,max:10}}}];");const s=await StudioSession.open(root);t.after(()=>s.close());await s.start();assert.equal(await s.rules.call('botAction',s.position,0,{}),null,'a fallback does not invent input');
+});

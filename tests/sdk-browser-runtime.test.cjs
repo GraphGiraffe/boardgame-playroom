@@ -78,3 +78,12 @@ test('browser sandbox isolates bot hooks from authority caches and rejects direc
  }finally{guest.close();}},payload(root));
  assert.deepEqual(result,{results:[[0,0,0],[0,0,0]],bypass:'SDK_METHOD_DENIED'});
 });
+
+test('portable browser authored bots validate structured bids before authority apply',async t=>{
+ const page=await pageFor(t),results=[];
+ for(const [amount,roundId,actor]of [[7,1,0],[11,1,0],[7,2,0],[7,1,1]]){
+  const root=fixture(t),file=path.join(root,'domain/game.js');fs.appendFileSync(file,`\nconst D=PlayroomPackDefinition;D.actions=()=>[];D.inputs=(p,a)=>a===p.turn?[{visibility:'private',command:{type:'bid',roundId:1,actor:a},fields:{amount:{kind:'integer',min:0,max:10}}}]:[];D.bot=()=>({type:'bid',roundId:${roundId},actor:${actor},amount:${amount}});D.reduce=(p,a,c)=>({position:{...p,data:{...p.data,count:c.amount}},events:[]});`);
+  results.push(await page.evaluate(project=>{const g=PlayroomSandbox.createRules(project);try{const p=g.model.create({playerCount:2,rng:1});try{const c=g.model.botAction(p,0,{enabled:true}),next=g.model.apply(p,0,c).position;return {command:c,count:next.data.count};}catch(e){return {code:e.code};}}finally{g.close();}},payload(root)));
+ }
+ assert.deepEqual(results,[{command:{type:'bid',roundId:1,actor:0,amount:7},count:7},{code:'INPUT_INVALID'},{code:'BOT_ACTION_INVALID'},{code:'BOT_ACTION_INVALID'}]);
+});

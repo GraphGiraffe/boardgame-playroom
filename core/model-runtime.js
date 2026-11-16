@@ -147,7 +147,7 @@
     }
     batch(position,actor,input,surface='player'){
       check(record(input)&&input.type==='batch'&&Object.keys(input).every(k=>['type','actions'].includes(k))&&Array.isArray(input.actions)&&input.actions.length>0&&input.actions.length<=16,'BATCH_INVALID');
-      const spec=this.draftSpec(this.project(position,actor,[],{factsOnly:true})),last=input.actions.at(-1);
+      const spec=this.draftSpec(this.project(position,actor,[],{factsOnly:!!this.#definition.localChoices})),last=input.actions.at(-1);
       check(spec&&['sequence','coalesce'].includes(spec.mode)&&input.actions.length<=(spec.max??spec.count)&&
         (spec.mode!=='sequence'||input.actions.length===spec.count)&&
         input.actions.slice(0,-1).every(c=>spec.select.includes(c?.type))&&
@@ -155,7 +155,7 @@
       let current=position;const actions=[];
       for(let i=0;i<input.actions.length;i++){
         check(input.actions[i]?.type!=='batch','BATCH_INVALID');const rich=this.commandFor(current,actor,input.actions[i],surface);actions.push(this.intent(rich));
-        if(i<input.actions.length-1){const next=this.#definition.reduce(this.#position(current),actor,rich);check(next&&next.events?.length===0&&!next.turnEnded&&!next.roundEnded&&next.position.status==='playing'&&next.position.turn===position.turn&&next.position.rng===position.rng,'BATCH_SELECTOR_INVALID');current=Values.composeRecord({...next.position,revision:position.revision,timeline:position.timeline});this.validate(current);}
+        if(i<input.actions.length-1){const next=this.#definition.reduce(this.#position(current),actor,rich,snapshot({now:position.clock??0}));check(next&&next.events?.length===0&&!next.turnEnded&&!next.roundEnded&&next.position.status==='playing'&&next.position.turn===position.turn&&next.position.rng===position.rng,'BATCH_SELECTOR_INVALID');current=Values.composeRecord({...next.position,revision:position.revision,timeline:position.timeline});this.validate(current);}
       }
       return Values.composeRecord({type:'batch',actions:Values.composeArray(actions)});
     }
@@ -255,17 +255,18 @@
         const delay=this.#definition.botReactionDelay?.(projection,actor,settings,memory)??null;
         check(delay===null||integer(delay,0,60000),'BOT_REACTION_DELAY_INVALID');return delay;
       }
-      if(!actions.length)return null;
       if(kind==='reaction'){
-        if(!this.#definition.botReaction)return null;
+        if(!actions.length||!this.#definition.botReaction)return null;
         const chosen=this.#definition.botReaction(projection,actor,actions,memory,settings);
         if(chosen==null)return null;
         const found=actions.find(value=>command(value)===command(chosen));
         check(found!==undefined,'BOT_REACTION_INVALID');return found;
       }
       const context={...inputs.context,...Difficulty.context(settings,inputs.decisionRandom.seed,inputs.decisionRandom.key)};
-      const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??actions[Math.floor(context.random()*actions.length)];
-      const preferred=actions.find(value=>command(this.intent(value))===command(this.intent(selected)));check(preferred!==undefined,'BOT_ACTION_INVALID');
+      const selected=this.#definition.bot?.(projection,actor,actions,memory,context)??(actions.length?actions[Math.floor(context.random()*actions.length)]:null);
+      if(selected===null)return null;
+      const preferred=actions.find(value=>command(this.intent(value))===command(this.intent(selected)));
+      if(preferred===undefined){const input=Inputs?.resolve(projection.inputs||[],selected);check(input!==null&&input!==undefined,'BOT_ACTION_INVALID');return input;}
       const chosen=this.#definition.botHandlesDifficulty||settings?.enabled===false?preferred:Difficulty.choose(preferred,this.#definition.botMistakes?.(projection,actor,actions)||actions,context);
       const found=actions.find(value=>command(this.intent(value))===command(this.intent(chosen)));check(found!==undefined,'BOT_ACTION_INVALID');return this.intent(found);
     }
