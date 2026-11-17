@@ -79,3 +79,5 @@
 
 .sdk-scene .sdk-ink-toolbar{container-type:inline-size;flex-wrap:nowrap;gap:0;padding:4px;justify-content:space-between}
 .sdk-scene .sdk-ink-toolbar .sdk-icon-button{--ink-control-size:clamp(32px,calc((100cqi - 8px)/7),44px);flex:0 0 var(--ink-control-size);width:var(--ink-control-size);height:var(--ink-control-size);min-width:0;min-height:var(--ink-control-size);padding:5px}
+
+[data-sdk-clock-status]::before{content:" · "}
