@@ -62,10 +62,12 @@ export interface Scene {
  cells?:JSONValue[]; rows?:number|JSONValue[]; columns?:number; dice?:JSONValue[];
  geometry?:JSONValue; zones?:JSONValue[]; objects?:JSONValue[]; interactions?:JSONValue[];
  canvas?:{id:string;operations:JSONValue[];enabled:boolean;command?:Command;allowedTools?:string[];clearEnabled?:boolean;strokeRemaining?:number|null;colors?:string[]};
- clock?:{phase:string;deadline:number;label?:string};
+ clock?:{phase:string;deadline:number;startedAt?:number;player?:number;label?:string};
  chat?:{messages:{id:string;text:string;player?:number;confirmCommand?:Command}[];command?:Command;placeholder?:string};
+ menuActions?:{label:string;command:Command}[];
  roundResult?:JSONValue; prompt?:string; controls?:JSONValue[];
- vote?:{id:string;title:string;deadline:number;eligible:number[];voted:number[];required:number;accepted:boolean;command?:Command};
+ notices?:{id:string;title:string;dismissible?:boolean;summary?:string;details?:string;timer?:{startedAt:number;deadline:number};distribution?:{label:string;value:number;color:"positive"|"negative"|"neutral"}[];actions?:{label:string;command:Command}[]}[];
+ vote?:{id:string;title:string;deadline:number;startedAt?:number;against?:number[];againstCommand?:Command;eligible:number[];voted:number[];required:number;accepted:boolean;command?:Command};
 }
 export interface Presentation {
  metadata?:{name?:Message|string;rules?:Array<Message|string>;rulebook?:JSONValue;[key:string]:unknown};

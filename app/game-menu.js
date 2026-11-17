@@ -20,7 +20,7 @@
   const inHistory=!!shell.querySelector('#replay-range');
   const lobby=actions.find(a=>a.name==='room'),history=actions.find(a=>a.attrs.includes('data-command="history"')),rules=actions.find(a=>a.attrs.includes('data-command="rules"')),settings=actions.find(a=>a.name==='settings'),stop=actions.find(a=>a.name==='stop'),pause=actions.find(a=>a.attrs.includes('data-command="pause"')),home=actions.find(a=>a.attrs.includes('data-command="home"')),chat=actions.find(a=>a.name==='chat');
   const pauseRow=pause?.disabled&&inHistory&&!pause.reason?{...pause,reason:'Недоступно при просмотре истории'}:pause;
-  const main=[lobby&&{...lobby,label:'Лобби',detail:'Партия сохранится'},chat&&{...chat,label:'Чат комнаты'},pauseRow,history,rules&&{...rules,label:'Правила'},settings&&{...settings,label:'Настройки'},home&&{...home,detail:'Партия сохранится'},stop&&{...stop,label:'Остановить партию',detail:'Сохранить и вернуться в лобби'}].filter(Boolean);
+  const main=[lobby&&{...lobby,label:'Лобби',detail:'Партия сохранится'},chat&&{...chat,label:'Чат комнаты'},pauseRow,history,rules&&{...rules,label:'Правила'},settings&&{...settings,label:'Настройки'},home&&{...home,detail:'Партия сохранится'},stop&&{...stop,...(stop.attrs.includes('data-action=')?{}:{label:'Остановить партию',detail:'Сохранить и вернуться в лобби'})}].filter(Boolean);
   const remaining=actions.filter(a=>!main.some(item=>item.attrs===a.attrs)&&a.name!=='chat'&&!a.attrs.includes('data-friends-open'));
   const childAction=attrs=>/data-command=["'](?:rules|settings|preferences|stop-local-match)["']/.test(attrs)||/data-net-action=["']stop-match["']/.test(attrs);
   const row=a=>`<button type="button" class="game-menu-v021-row ${a.name==='stop'?'is-danger':''}" data-game-menu-action data-surface-pull-through ${a.network?'data-quick-shortcut':''} ${childAction(a.attrs)?'data-surface-action="child"':''} ${a.attrs} ${a.disabled?'disabled':''}><span><strong>${H().esc(a.label)}</strong>${a.reason||a.detail?`<small>${H().esc(a.reason||a.detail)}</small>`:''}</span>${H().icon(a.name)}</button>`;
@@ -39,6 +39,7 @@
    const action=event.target.closest('[data-game-menu-action]:not(:disabled)');if(!action)return;
    // Forms and confirmations retain this exact parent. Navigation retires it.
    const child=action.dataset.surfaceAction==='child';
+   if(action.hasAttribute('data-action')&&shell.querySelector('[data-sdk-player-scene]')){const command=JSON.parse(action.dataset.action),scene=shell.querySelector('[data-sdk-player-scene]');event.stopPropagation();close({feedback:false});root.dispatchEvent(new CustomEvent('playroom:scene-menu-command',{detail:{scene,command}}));return;}
    if(!child){
     const chat=action.hasAttribute('data-room-chat-open');
     close({feedback:false});

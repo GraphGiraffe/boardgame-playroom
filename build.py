@@ -455,9 +455,12 @@ def main():
     parser.add_argument("--packs-dir", type=Path, help="Внешний каталог packs/ с manifest.json или dist/ с *.playroom-pack.json")
     parser.add_argument("--all-games", action="store_true", help="Дополнительно собрать playroom-all-games.html из --packs-dir")
     parser.add_argument("--pwa", action="store_true", help="Дополнительно собрать installable PWA-каталог и playroom-pwa.zip")
+    parser.add_argument("--pwa-bundled", action="store_true", help="Локальная PWA со всеми переданными играми внутри; требуется --pwa и --packs-dir")
     parser.add_argument("--remote-catalog", action="store_true", help="Установка паков из каталога (режим PWA по умолчанию); --all-games отдельно создаёт полный автономный HTML")
     parser.add_argument("--prepare-dev", action="store_true", help="Создать installed-packs.js для index.html и ссылку packs/ для локальных тестов")
     args = parser.parse_args()
+    if args.pwa_bundled and (not args.pwa or not args.packs_dir or args.remote_catalog):
+        parser.error("--pwa-bundled требует --pwa/--packs-dir и исключает --remote-catalog")
     if args.all_games and not args.packs_dir:
         parser.error("Для --all-games требуется явный --packs-dir")
     if args.remote_catalog and not args.pwa:
@@ -501,7 +504,7 @@ def main():
         artifacts.append(complete)
     if args.pwa:
         pwa_dir = output / "pwa"
-        pwa_items = pwa_runtime_items(packs)
+        pwa_items = pwa_runtime_items(packs, remote_catalog=not args.pwa_bundled)
         write_directory(pwa_dir, pwa_items)
         pwa_archive = output / "playroom-pwa.zip"
         write_zip(pwa_archive, [("playroom-pwa/" + name, content) for name, content in pwa_items])

@@ -1,0 +1,24 @@
+@property --sdk-progress-elapsed{syntax:'<percentage>';inherits:false;initial-value:0%}
+@property --sdk-progress-fill{syntax:'<color>';inherits:false;initial-value:transparent}
+.has-sdk-progress{background-color:var(--sdk-progress-fill,var(--sdk-progress-base))!important;background-image:linear-gradient(to right,#00000012 0 var(--sdk-progress-elapsed),transparent var(--sdk-progress-elapsed) 100%)!important;transition:--sdk-progress-elapsed 200ms linear,--sdk-progress-fill 200ms linear}
+.ui-notice-stack{position:fixed;z-index:1200;top:max(8px,env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(440px,calc(100% - 16px));display:grid;gap:8px;pointer-events:none}
+.ui-notice-stack .ui-notice{position:relative;display:block;min-width:0;padding:8px 10px;background:var(--paper,#f3f0e7);color:var(--ink,#20352d);border:1px solid var(--line,#cbd4bf);border-radius:16px;box-shadow:0 6px 24px #172d3533;pointer-events:auto}
+.ui-notice-summary{display:flex!important;align-items:center;gap:8px;width:100%;min-height:44px;padding:2px 32px 2px 0!important;border:0!important;box-shadow:none!important;background:transparent!important;color:inherit!important;text-align:left;font:inherit}
+.ui-notice-summary strong{font-size:.875rem;flex:1;min-width:0;overflow-wrap:anywhere}.ui-notice-preview{font-size:.75rem}.ui-notice-time{font-size:.75rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ui-notice-close{position:absolute;right:7px;top:5px;width:44px;min-height:44px;padding:8px;border:0;background:transparent;color:inherit}.ui-notice-close svg{width:22px;height:22px}
+.ui-notice-details{max-height:calc(100dvh - 150px);overflow:auto;padding-top:8px;font-size:.8125rem}.ui-notice-details[hidden],.ui-notice-close[hidden],.ui-distribution[hidden]{display:none!important}
+.ui-notice-details p{margin:4px 0 10px;white-space:pre-line}.ui-notice-actions{display:flex;gap:8px;flex-wrap:wrap}.ui-notice-action{flex:1;min-width:100px;min-height:44px;padding:8px 12px;border:1px solid var(--line,#cbd4bf);border-radius:12px;background:var(--paper,#f3f0e7);color:inherit;font:inherit}.ui-notice-action:disabled{opacity:.5}.ui-notice-error:empty{display:none}
+.ui-distribution-line{display:flex;width:100%;height:8px;overflow:hidden;border-radius:99px;background:var(--line,#cbd4bf)}.ui-distribution-line>span{display:block;height:100%}.ui-distribution-legend{display:flex;justify-content:space-between;gap:12px;font-size:.75rem;margin-top:5px}.ui-distribution-legend>span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--distribution-color)}
+.ui-notice:not(.is-expanded) .ui-distribution-legend{display:none}.ui-notice.is-expanded .ui-notice-summary{flex-wrap:wrap}.ui-notice.is-expanded .ui-notice-preview{flex-basis:100%}
+@media(prefers-reduced-motion:reduce){.has-sdk-progress{transition:none}}
+
+.ui-notice{touch-action:pan-y}.ui-notice-summary{user-select:none}
+.ui-notice-content .chat-composer{position:relative;display:block;margin:8px 0;min-height:50px;border:1px solid var(--line,#cbd4bf);border-radius:14px;background:var(--paper,#f3f0e7)}
+.ui-notice-content .chat-composer>[data-chat-editor]{min-height:44px;max-height:140px;overflow:auto;padding:12px 48px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ui-notice-content .chat-composer>.icon-btn{position:absolute;bottom:3px;right:3px;width:44px;height:44px;padding:8px;border:0;border-radius:50%}.ui-notice-content .chat-composer>.chat-reactions{left:3px;right:auto;background:transparent}
+.ui-notice-content .chat-composer-status{font-size:.75rem;margin:4px 0}
+
+.ui-notice-message{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 10px;font-size:.875rem}
+.ui-notice-summary{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}
+.ui-notice-summary>strong{grid-column:1;min-width:0}.ui-notice-time{grid-column:2;grid-row:1}.ui-notice-preview{grid-column:1/-1;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-notice.is-expanded .ui-notice-preview{white-space:normal}

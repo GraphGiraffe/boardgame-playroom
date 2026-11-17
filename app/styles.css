@@ -383,8 +383,8 @@ body [contenteditable][contenteditable="false"],body [contenteditable][contented
 /* Keep the library header in viewport coordinates, outside sticky scroll calculations. */
 :root{--hub-safe-top:var(--app-safe-top,0px)}
 
-#app .hub-topbar-slot{height:calc(44px + var(--hub-safe-top) / var(--ui-interface-scale,1));min-width:0}
-#app .hub-main .topbar{position:fixed;top:0;left:var(--hub-header-left,0px);width:var(--hub-header-width,100%);height:calc(44px + var(--hub-safe-top) / var(--ui-interface-scale,1));min-height:44px;padding-top:calc(var(--hub-safe-top) / var(--ui-interface-scale,1));margin:0;box-sizing:border-box;z-index:40;background:var(--paper)}
+#app .hub-topbar-slot{height:calc(44px + var(--hub-safe-top));min-width:0}
+#app .hub-main .topbar{position:fixed;top:0;left:var(--hub-header-left,0px);width:var(--hub-header-width,100%);height:calc(44px + var(--hub-safe-top));min-height:44px;padding-top:calc(var(--hub-safe-top));margin:0;box-sizing:border-box;z-index:40;background:var(--paper)}
 #app .hub-main .topbar::before{content:"";position:absolute;inset:0 -12px -8px;z-index:-1;background:var(--paper);pointer-events:none}
 
 .card-help-list .card-help-entry{display:flex;align-items:center;gap:14px}.card-help-art{flex:0 0 58px;width:58px;min-width:0;color:var(--card-color,var(--ink))}.card-help-art>svg{display:block;width:100%;height:auto}.card-help-copy{flex:1;min-width:0}

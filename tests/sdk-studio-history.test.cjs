@@ -12,8 +12,8 @@ test('studio exports the selected historical checkpoint without changing the liv
 });
 test('all dispatch-capable scene controls are constrained to the projected command vocabulary',()=>{
  const projection={game:'probe',playerCount:2,actions:[{type:'ok'}],inputs:[]};const scene={contractVersion:1,id:'x',family:'board',players:[{player:0,metrics:[]},{player:1,metrics:[]}]};
- for(const extra of [{canvas:{command:{type:'forged'}}},{chat:{command:{type:'forged'}}},{chat:{messages:[{confirmCommand:{type:'forged'}}]}},{vote:{command:{type:'forged'}}},{controls:[{command:{type:'forged'}}]}])assert.throws(()=>validateScene({scene:{...scene,...extra},actions:[],events:[]},projection),e=>e.code==='SDK_SCENE_COMMAND_DENIED');
- assert.doesNotThrow(()=>validateScene({scene:{...scene,vote:{command:{type:'ok'}}},actions:[],events:[]},projection));
+ for(const extra of [{canvas:{command:{type:'forged'}}},{chat:{command:{type:'forged'}}},{chat:{messages:[{confirmCommand:{type:'forged'}}]}},{vote:{id:'vote',title:'Завершить',eligible:[0,1],voted:[],required:2,accepted:false,deadline:30000,command:{type:'forged'}}},{controls:[{command:{type:'forged'}}]},{notices:[{id:'denied',title:'Недоступно',actions:[{label:'Действие',command:{type:'forged'}}]}]}])assert.throws(()=>validateScene({scene:{...scene,...extra},actions:[],events:[]},projection),e=>e.code==='SDK_SCENE_COMMAND_DENIED');
+ assert.doesNotThrow(()=>validateScene({scene:{...scene,vote:{id:'vote',title:'Завершить',eligible:[0,1],voted:[],required:2,accepted:false,deadline:30000,command:{type:'ok'}}},actions:[],events:[]},projection));
  assert.throws(()=>validateScene({scene:{...scene,players:[{player:0,metrics:[{id:'points',kind:'number',value:0,label:'Points'}]},{player:1,metrics:[]}]},actions:[],events:[]},projection),e=>e.code==='SDK_SCENE_INVALID'&&e.diagnostic.contract==='SCENE_METRIC_INVALID');
 });
 

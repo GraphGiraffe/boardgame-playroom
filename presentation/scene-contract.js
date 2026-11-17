@@ -102,6 +102,21 @@
         V.check(!ids.has(item.id),'SCENE_METRIC_DUPLICATE');ids.add(item.id);
       }
     }
+    if(scene.vote!==undefined){const vote=scene.vote,validPlayers=list=>Array.isArray(list)&&list.length<=playerCount&&new Set(list).size===list.length&&list.every(player=>V.integer(player,0,playerCount-1));V.check(V.record(vote)&&typeof vote.id==='string'&&vote.id.length>0&&vote.id.length<=128&&typeof vote.title==='string'&&vote.title.length<=200&&V.integer(vote.deadline,0,Number.MAX_SAFE_INTEGER)&&(vote.startedAt===undefined||V.integer(vote.startedAt,0,vote.deadline))&&validPlayers(vote.eligible)&&vote.eligible.length>0&&validPlayers(vote.voted)&&validPlayers(vote.against===undefined?[]:vote.against)&&vote.voted.every(player=>vote.eligible.includes(player))&&(vote.against||[]).every(player=>vote.eligible.includes(player)&&!vote.voted.includes(player))&&V.integer(vote.required,1,vote.eligible.length)&&typeof vote.accepted==='boolean','SCENE_VOTE_INVALID');}
+    if(scene.notices!==undefined){
+      V.check(Array.isArray(scene.notices)&&scene.notices.length<=4&&scene.notices.every(V.record),'SCENE_NOTICE_INVALID');
+      V.check(new Set(scene.notices.map(item=>item.id)).size===scene.notices.length,'SCENE_NOTICE_INVALID');
+      for(const item of scene.notices){
+        V.check(typeof item.id==='string'&&item.id.length>0&&item.id.length<=128&&typeof item.title==='string'&&item.title.length<=200,'SCENE_NOTICE_INVALID');
+        for(const [key,limit]of [['summary',500],['details',2000]])V.check(item[key]===undefined||typeof item[key]==='string'&&item[key].length<=limit,'SCENE_NOTICE_INVALID');
+        V.check(item.dismissible===undefined||typeof item.dismissible==='boolean','SCENE_NOTICE_INVALID');
+        V.check(item.actions===undefined||Array.isArray(item.actions)&&item.actions.length<=6&&item.actions.every(action=>V.record(action)&&typeof action.label==='string'&&action.label.length<=120&&V.record(action.command)),'SCENE_NOTICE_INVALID');
+        V.check(item.timer===undefined||V.record(item.timer)&&V.integer(item.timer.startedAt,0,Number.MAX_SAFE_INTEGER)&&V.integer(item.timer.deadline,item.timer.startedAt,Number.MAX_SAFE_INTEGER),'SCENE_NOTICE_INVALID');
+        V.check(item.distribution===undefined||Array.isArray(item.distribution)&&item.distribution.length<=8&&item.distribution.every(part=>V.record(part)&&typeof part.label==='string'&&part.label.length<=80&&V.integer(part.value,0,1000000)&&['positive','negative','neutral'].includes(part.color)),'SCENE_NOTICE_INVALID');
+      }
+    }
+    if(scene.clock!==undefined)V.check(V.record(scene.clock)&&V.integer(scene.clock.deadline,0,Number.MAX_SAFE_INTEGER)&&(scene.clock.startedAt===undefined||V.integer(scene.clock.startedAt,0,scene.clock.deadline))&&(scene.clock.player===undefined||V.integer(scene.clock.player,0,playerCount-1)),'SCENE_CLOCK_INVALID');
+    if(scene.menuActions!==undefined)V.check(Array.isArray(scene.menuActions)&&scene.menuActions.length<=12&&scene.menuActions.every(action=>V.record(action)&&typeof action.label==='string'&&action.label.length>0&&action.label.length<=120&&V.record(action.command)),'SCENE_MENU_INVALID');
     if(scene.geometry!==undefined)geometry(scene,playerCount);
     if(scene.sequence!==undefined)sequence(scene.sequence);
     if(scene.motionSequence!==undefined)sequence(scene.motionSequence);
@@ -115,7 +130,7 @@
     V.check(V.record(projection)&&Array.isArray(projection.actions),'SCENE_COMMANDS_INVALID');
     const allowed=new Set([...projection.actions,...(projection.inputs||[]).map(input=>input.command)].map(V.canonical));
     const controls=[...(Array.isArray(scene.cells)?scene.cells:[]),...(Array.isArray(scene.rows)?scene.rows.flatMap(row=>row.cells||[]):[]),
-      ...(scene.interactions||[]),...(scene.controls||[]),scene.canvas,scene.chat,scene.vote,
+      ...(scene.interactions||[]),...(scene.controls||[]),...(scene.menuActions||[]),scene.canvas,scene.chat,scene.vote,{command:scene.vote?.againstCommand},...(scene.notices||[]).flatMap(notice=>notice.actions||[]),
       ...(scene.chat?.messages||[]).map(message=>({command:message.confirmCommand}))].filter(Boolean);
     for(const control of controls)V.check(control.command===undefined||control.command===null||allowed.has(V.canonical(control.command)),'SCENE_COMMAND_DENIED');
     return scene;
