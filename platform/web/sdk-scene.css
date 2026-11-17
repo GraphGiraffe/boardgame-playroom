@@ -33,3 +33,49 @@
 .game-rules-help .rulebook-figures:not(.is-list)>.rulebook-figure:is(.is-diagram,.is-control):has(>.rulebook-illustration>:is(.sdk-graphic-group,.sdk-graphic-component)){width:fit-content;max-width:100%}
 
 .game-rules-help .rulebook-figures:not(.is-list)>.rulebook-figure:is(.is-diagram,.is-control):has(>.rulebook-illustration>:is(.sdk-graphic-group,.sdk-graphic-component))>figcaption{contain:inline-size}
+
+/* Drawing takes the host field's available height; hidden panels reserve no space. */
+[data-sdk-canvas-scene].sdk-scene{display:flex;flex-direction:column;height:100%;min-height:0;gap:6px}
+[data-sdk-canvas-scene] .sdk-scene-heading{flex:none;margin:0;min-height:26px}
+[data-sdk-canvas-scene] .sdk-scene-heading>p{margin:0}
+[data-sdk-canvas-scene] .sdk-canvas-root{display:flex;flex:1;min-height:0}
+[data-sdk-canvas-scene] .sdk-ink{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
+.sdk-ink>[hidden]{display:none!important}
+.sdk-scene .sdk-ink-toolbar{flex:none;gap:3px;padding:6px;justify-content:center}
+.sdk-ink>.sdk-segmented,.sdk-ink>.sdk-ink-colors,
+.sdk-ink>.sdk-ink-colors{display:grid;grid-template-columns:repeat(4,44px);overflow:visible;gap:2px}
+.sdk-ink-toolbar button[aria-label="Цвет рисунка"]{color:var(--ink-color)}
+[data-sdk-canvas-scene] .sdk-ink-viewport{flex:1;min-height:0;aspect-ratio:auto;max-height:none}
+.sdk-ink-stage{margin-inline:auto}
+.sdk-ink>.sdk-zoom{position:absolute;z-index:3;bottom:6px;right:6px;display:flex;width:max-content;max-width:100%;margin:0 6px 6px auto;padding:3px;background:var(--color-surface-panel);border:1px solid var(--color-border-subtle);border-radius:12px}
+.sdk-scene .sdk-zoom .sdk-icon-button{width:36px;min-width:36px;min-height:44px;padding:4px}
+[data-sdk-canvas-scene] .sdk-ink-hint{display:none}
+[data-sdk-canvas-scene]>.sdk-players,[data-sdk-canvas-scene]>.sdk-rows,[data-sdk-canvas-scene]>.sdk-chat,[data-sdk-canvas-scene]>.sdk-input-controls{flex:none;margin-block:0}
+
+[data-sdk-canvas-scene]>.sdk-players{display:none}
+.sdk-scene .sdk-ink-toolbar [data-ink-options=width]{display:flex;gap:4px;align-items:center;justify-content:center}
+.sdk-color-sample{display:block;flex:none;width:24px;height:24px;border-radius:50%;background:var(--ink-color);border:2px solid var(--color-surface-panel);box-shadow:0 0 0 1px var(--color-border-strong)}
+.sdk-width-value{font-size:11px;font-variant-numeric:tabular-nums}
+
+.sdk-scene .sdk-ink-toolbar .sdk-icon-button,.sdk-scene .sdk-zoom .sdk-icon-button,.sdk-scene .sdk-ink>.sdk-segmented button{border-radius:50%}
+.sdk-scene .sdk-ink-toolbar [data-ink-options]{position:relative;border-radius:10px;aspect-ratio:1}
+.sdk-scene .sdk-ink-toolbar [data-ink-options]::after{content:'';position:absolute;right:4px;bottom:4px;width:0;height:0;border:3px solid transparent;border-top-color:currentColor;transform:translateY(3px)}
+
+[data-sdk-canvas-scene]>.sdk-chat{max-height:100px;overflow:auto;padding:4px 8px;border-radius:10px}
+[data-sdk-canvas-scene] .sdk-messages{max-height:88px;margin:0}
+.player-panel:has(>[data-sdk-player-input]:not(:empty)){flex-wrap:wrap}
+.player-panel>[data-sdk-player-input]:not(:empty){flex:1 0 100%;min-width:0;padding-top:6px}
+.player-panel [data-sdk-player-input] .sdk-chat-form{display:flex;gap:6px;width:100%;margin:0}
+.player-panel [data-sdk-player-input] .sdk-chat-input{flex:1;min-width:0;width:0;min-height:40px;border:1px solid var(--color-border-strong);border-radius:10px;padding:6px 10px;background:var(--color-surface-panel);color:var(--color-text-primary);font:inherit}
+.player-panel [data-sdk-player-input] .sdk-primary{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;width:44px;padding:8px;border-radius:50%;font-size:0}
+.player-panel [data-sdk-player-input] .sdk-primary svg{width:22px;height:22px}
+
+.sdk-ink>.sdk-ink-colors .sdk-color{border-radius:50%}
+.sdk-ink>.sdk-ink-colors .sdk-color[data-ink-basic]{grid-column:span 2;width:auto;border-radius:999px}
+.sdk-ink>.sdk-ink-colors .sdk-color[data-ink-basic]::before{width:100%;height:28px;border-radius:999px}
+
+[data-sdk-canvas-scene]>.sdk-scene-heading>.sdk-clock{display:none}
+[data-sdk-clock-status]{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.sdk-scene .sdk-ink-toolbar{container-type:inline-size;flex-wrap:nowrap;gap:0;padding:4px;justify-content:space-between}
+.sdk-scene .sdk-ink-toolbar .sdk-icon-button{--ink-control-size:clamp(32px,calc((100cqi - 8px)/7),44px);flex:0 0 var(--ink-control-size);width:var(--ink-control-size);height:var(--ink-control-size);min-width:0;min-height:var(--ink-control-size);padding:5px}

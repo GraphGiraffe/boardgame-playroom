@@ -51,7 +51,7 @@
    button.onclick=()=>{if(picker?.node!==node)return;closePicker(true);void choose(item.emoji);};node.append(button);
   }
   if(actions.length){node.setAttribute('aria-label','Действия с сообщением');const menu=document.createElement('div');menu.className='chat-message-action-list';for(const action of actions){const button=document.createElement('button');button.type='button';button.className='text-btn';button.textContent=action.label;button.dataset.chatMessageAction=action.id;button.onclick=()=>{if(picker?.node!==node)return;closePicker(true);void action.run();};menu.append(button);}node.append(menu);}
-  document.body.append(node);picker={node,anchor:target,key};position(node,target);root.PlayroomDOM.enterVisual(node);node.firstElementChild.focus();animate();
+  if(target.closest('[data-ui-notices]'))node.style.zIndex=String((Number(getComputedStyle(target.closest('[data-ui-notices]')).zIndex)||1200)+1);document.body.append(node);picker={node,anchor:target,key};position(node,target);root.PlayroomDOM.enterVisual(node);node.firstElementChild.focus();animate();
  }
  function bubble(event,{text=false,chat=null}={}){
   const ctx=context();if(document.hidden||chatShown(chat)||!chatCurrent(chat)||ctx?.sessionId!==event.sessionId||!Number.isInteger(event.player)||event.player<0||typeof event.id!=='string'||event.id.length>64||shell()?.dataset.reactionReplay==='true'||!anchor(event.player)||seen.has(event.id))return;

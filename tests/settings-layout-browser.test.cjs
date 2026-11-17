@@ -135,16 +135,17 @@ test('safe edges are automatic without a cutout preference',{timeout:60000},asyn
   if(process.env.PLAYROOM_KEYBOARD_ARTIFACT){const body=fs.readFileSync(process.env.PLAYROOM_KEYBOARD_ARTIFACT);await page.route(server.url,r=>r.fulfill({contentType:'text/html',body}));}
   await page.goto(server.url);await page.locator('.game-tile').first().waitFor();const cdp=await context.newCDPSession(page);
   for(const fullscreen of [false,true]){if(fullscreen)await page.evaluate(()=>PlayroomAppBridge.fullscreen());
-   for(const [width,height] of [[390,844],[844,390]]){
-    await page.setViewportSize({width,height});const insets=width>height?{top:0,left:32,right:0,bottom:18}:{top:32,left:0,right:0,bottom:18};await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets});
+   for(const [width,height] of [[390,844],[844,390]]){for(const requestedScale of [100,120]){
+    await page.setViewportSize({width,height});const insets=width>height?{top:0,left:32,right:0,bottom:18}:{top:32,left:0,right:0,bottom:18};await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets:{...insets,topMax:60,leftMax:60,bottomMax:48}});await page.evaluate(scale=>PlayroomInterfaceScale.set(scale),requestedScale);
     await page.evaluate(()=>{const s=new TabletopSession(TabletopCore,'mage-brawl',{seed:17,players:Array.from({length:8},(_,i)=>({name:'Игрок '+i}))}),state=TabletopCore.project(s.current,0),actions=TabletopCore.legalActions(s.current,0),scene=PlayroomViews.render(state,0,actions,{preferences:{},viewState:{}});PlayroomGameScreen.update(document.querySelector('#app'),PlayroomGameScreen.render({gameName:'Стихийная потасовка',state,viewer:0,actions,scene}));PlayroomGameScreen.layoutScene(document.querySelector('#app'));});
     await page.evaluate(()=>PlayroomAppBridge.showSettings({inGame:true,category:'behavior'}));
-    const active=page.locator('#modal-root>[data-surface-state=active]');await active.locator('#setting-quick-play').waitFor();assert.equal(await active.locator('#setting-display-cutout').count(),0);await active.locator('[data-command=close-modal]').click();
-    const result=await page.locator('.table-shell').evaluate(n=>{const css=getComputedStyle(n);return {top:parseFloat(css.paddingTop),left:parseFloat(css.paddingLeft),bottom:parseFloat(css.paddingBottom),viewport:document.querySelector('meta[name=viewport]').content};});
-    assert.match(result.viewport,/viewport-fit=cover/);assert.equal(result.top,Math.max(4,insets.top));assert.equal(result.left,Math.max(4,insets.left));assert.equal(result.bottom,18);
+    const active=page.locator('#modal-root>[data-surface-state=active]');await active.locator('#setting-quick-play').waitFor();assert.equal(await active.locator('#setting-display-cutout').count(),0);const modal=await active.locator('.modal').evaluate(n=>({top:parseFloat(getComputedStyle(n).paddingTop),scale:PlayroomInterfaceScale.applied/100}));assert(Math.abs(modal.top*modal.scale-Math.max(12*modal.scale,insets.top))<1,'modal reserves current physical safe top once');await active.locator('[data-command=close-modal]').click();
+    const result=await page.locator('.table-shell').evaluate(n=>{const css=getComputedStyle(n);return {top:parseFloat(css.paddingTop),left:parseFloat(css.paddingLeft),bottom:parseFloat(css.paddingBottom),viewport:document.querySelector('meta[name=viewport]').content,scale:n.getBoundingClientRect().width/n.offsetWidth};});
+    assert.match(result.viewport,/viewport-fit=cover/);for(const [side,safe]of [['top',insets.top],['left',insets.left],['bottom',insets.bottom]])assert(Math.abs(result[side]*result.scale-Math.max(4*result.scale,safe))<1,side+' reserves the current physical inset at '+requestedScale);}
    }
   }
-  for(const [insets,expected] of [[{top:0,left:0,right:0,bottom:0,leftMax:32,bottomMax:18},{left:32,bottom:18}],[{top:0,left:0,right:0,bottom:0,leftMax:0,bottomMax:0},{left:4,bottom:4}]]){
+  await page.evaluate(()=>PlayroomInterfaceScale.set(100));
+  for(const [insets,expected] of [[{top:0,left:0,right:0,bottom:0,leftMax:32,bottomMax:18},{left:4,bottom:4}],[{top:0,left:0,right:0,bottom:0,leftMax:0,bottomMax:0},{left:4,bottom:4}]]){
    await cdp.send('Emulation.setSafeAreaInsetsOverride',{insets});const result=await page.locator('.table-shell').evaluate(n=>({left:parseFloat(getComputedStyle(n).paddingLeft),bottom:parseFloat(getComputedStyle(n).paddingBottom)}));assert.deepEqual(result,expected);
   }
  }finally{await context.close();await browser.close();await server.close();}
